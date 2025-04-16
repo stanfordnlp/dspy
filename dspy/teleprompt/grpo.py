@@ -1,14 +1,13 @@
 import logging
 from collections import defaultdict
 import random
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 from copy import deepcopy
 
 import dspy
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import infer_data_format
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
@@ -51,6 +50,8 @@ class GRPO(FinetuneTeleprompter):
         num_rollouts_per_dspy_example_per_step: int = 1,
         use_train_as_val: bool = False,
         num_steps_for_val: int = 5,
+        variably_invoked_predictor_grouping_mode: Union[Literal['truncate'], Literal['fill'], Literal['ragged']] = 'truncate',
+        variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -78,8 +79,14 @@ class GRPO(FinetuneTeleprompter):
 
         self.per_predictor_batch_size = num_dspy_examples_per_grpo_step * num_rollouts_per_dspy_example_per_step
 
+        self.variably_invoked_predictor_grouping_mode = variably_invoked_predictor_grouping_mode
+        if variably_invoked_predictor_grouping_mode == 'fill':
+            assert variably_invoked_predictor_fill_strategy is not None, "variably_invoked_predictor_fill_strategy must be set when variably_invoked_predictor_grouping_mode is 'fill'"
+            assert variably_invoked_predictor_fill_strategy in ['randint', 'max'], "variably_invoked_predictor_fill_strategy must be either 'randint' or 'max'"
+        self.variably_invoked_predictor_fill_strategy = variably_invoked_predictor_fill_strategy
+
     def compile(
-        self, student: Program, trainset: List[Example], valset: Optional[List[Example]] = None, teacher: Optional[Union[Program, List[Program]]] = None
+        self, student: Program, trainset: List[Example], teacher: Optional[Union[Program, List[Program]]] = None, valset: Optional[List[Example]] = None, **kwargs
     ) -> Program:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
@@ -180,65 +187,94 @@ class GRPO(FinetuneTeleprompter):
                     # We need to flatten this list and create a batch for each predictor
 
                     # TODO(Lakshya, Omar, Noah): Discuss what to do with the same module being invoked multiple times within a single dspy.Example
-                    example_training_data: GRPOTrainInstance = {
-                        "input": {
-                            "messages": [None],
-                        },
-                        "completions": [],
-                    }
+                    predictor_example_invocations: List[List[Tuple]] = []
+
                     for teacher_idx, teacher_data in enumerate(example_data):
                         for sample in teacher_data:
                             # Each sample is a Dict(example, prediction, trace, example_ind, score)
                             # sample['prediction'] is module_level prediction
                             assert sample["example_ind"] == example_ind, f"Example index {sample['example_ind']} does not match the expected index {example_ind}"
 
-                            trace_instances_for_current_pred = [t for t in sample["trace"] if hash(t[0].signature) == hash(student.predictors()[pred_id].signature)]
-                            # TODO(Lakshya): For now, we will select one invocation of the module at random
-                            trace_instances_for_current_pred = self.rng.sample(trace_instances_for_current_pred, 1)
+                            trace_instances_for_current_pred = [(*t, sample["score"]) for t in sample["trace"] if hash(t[0].signature) == hash(student.predictors()[pred_id].signature)]
+                            
+                            predictor_example_invocations.append(trace_instances_for_current_pred)
 
-                            for module_invocation_idx, trace_instance in enumerate(trace_instances_for_current_pred):
-                                # Each trace is a tuple of (Predictor, PredictorInputs, Prediction)
-                                trace_pred_id = pred_signature_has_to_pred_index[hash(trace_instance[0].signature)]
-                                assert trace_pred_id == pred_id
+                    assert len(predictor_example_invocations) == self.num_rollouts_per_dspy_example_per_step, f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {self.per_predictor_batch_size}"
 
-                                predictor = trace_instance[0]
-                                pred_lm = predictor.lm
-                                adapter = self.adapter[pred_lm] or settings.adapter or ChatAdapter()
-                                assert isinstance(adapter, ChatAdapter), f"Adapter {adapter} is not a ChatAdapter. GRPO training is not supported for this adapter."
-                                # TODO(Lakshya): Currently we exclude demos from the training data
-                                inp_messages = adapter.format(
-                                    signature=trace_instance[0].signature, 
-                                    inputs=trace_instance[1], 
-                                    demos=[]
-                                )
-                                all_messages = adapter.format_finetune_data(
-                                    signature=trace_instance[0].signature,
-                                    inputs=trace_instance[1],
-                                    outputs=trace_instance[2],
-                                    demos=[]
-                                )['messages']
+                    min_len = min([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
+                    max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
+                    if min_len == 0:
+                        logger.warning(f"Skipping example {example_ind} for predictor {pred_id} as it has no invocations.")
+                        continue
 
-                                assert all_messages[:-1] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {all_messages[:-1]}"
-
-                                if len(example_training_data["input"]["messages"]) == 1 and example_training_data["input"]["messages"][0] is None:
-                                    example_training_data["input"]["messages"] = [{"role": msg['role'], 'content': msg['content']} for msg in inp_messages]
-                                else:
-                                    # TODO(Lakshya): Here, we are assuming that across different runs, the input messages will be the same, which will most likely not be true.
-                                    # We can potentially do away with this assertion.
-                                    assert example_training_data["input"]["messages"] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {example_training_data['input']['messages']}"
-                                
-                                response_msg = all_messages[-1]
-                                assert 'role' in response_msg and 'content' in response_msg, f"Response message {response_msg} does not contain the expected keys 'role' and 'content'"
-                                example_training_data["completions"].append({
-                                    "role": response_msg["role"],
-                                    "content": response_msg["content"],
-                                    "reward": sample["score"],
-                                })
+                    if self.variably_invoked_predictor_grouping_mode == 'truncate':
+                        predictor_example_invocations = [invocation[:min_len] for invocation in predictor_example_invocations]
+                    elif self.variably_invoked_predictor_grouping_mode == 'fill':
+                        if self.variably_invoked_predictor_fill_strategy == 'randint':
+                            selector = lambda l: self.rng.choice(l)
+                        else:
+                            selector = lambda l: l[-1]
+                        predictor_example_invocations = [
+                            invocation + [selector(invocation) for _ in range(max_len - len(invocation))]
+                            for invocation in predictor_example_invocations
+                        ]
+                    else:
+                        assert self.variably_invoked_predictor_grouping_mode == 'ragged', f"Unknown variably invoked predictor grouping mode {self.variably_invoked_predictor_grouping_mode}"
                     
-                    train_batch_per_predictor[pred_id].append(example_training_data)
+                    max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
+
+                    example_training_data: List[GRPOTrainInstance] = [{
+                        "input": {
+                            "messages": [],
+                        },
+                        "completions": [],
+                    } for _ in range(max_len)]
+
+                    for group_idx in range(max_len):
+                        for rollout_idx in range(len(predictor_example_invocations)):
+                            trace_instance = predictor_example_invocations[rollout_idx][group_idx]
+                            score = trace_instance[3]
+                            # for module_invocation_idx, trace_instance in enumerate(trace_instances_for_current_pred):
+                            # Each trace is a tuple of (Predictor, PredictorInputs, Prediction)
+                            trace_pred_id = pred_signature_has_to_pred_index[hash(trace_instance[0].signature)]
+                            assert trace_pred_id == pred_id
+
+                            predictor = trace_instance[0]
+                            pred_lm = predictor.lm
+                            adapter = self.adapter[pred_lm] or settings.adapter or ChatAdapter()
+                            assert isinstance(adapter, ChatAdapter), f"Adapter {adapter} is not a ChatAdapter. GRPO training is not supported for this adapter."
+                            # TODO(Lakshya): Currently we exclude demos from the training data
+                            inp_messages = adapter.format(
+                                signature=trace_instance[0].signature, 
+                                inputs=trace_instance[1], 
+                                demos=[]
+                            )
+                            all_messages = adapter.format_finetune_data(
+                                signature=trace_instance[0].signature,
+                                inputs=trace_instance[1],
+                                outputs=trace_instance[2],
+                                demos=[]
+                            )['messages']
+
+                            assert all_messages[:-1] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {all_messages[:-1]}"
+
+                            if len(example_training_data[group_idx]["input"]["messages"]) == 0:
+                                example_training_data[group_idx]["input"]["messages"] = [{"role": msg['role'], 'content': msg['content']} for msg in inp_messages]
+                            elif example_training_data[group_idx]["input"]["messages"] != inp_messages:
+                                logger.info(f"Input messages {inp_messages} do not match the expected messages {example_training_data[group_idx]['input']['messages']}")
+                            
+                            response_msg = all_messages[-1]
+                            assert 'role' in response_msg and 'content' in response_msg, f"Response message {response_msg} does not contain the expected keys 'role' and 'content'"
+                            example_training_data[group_idx]["completions"].append({
+                                "role": response_msg["role"],
+                                "content": response_msg["content"],
+                                "reward": score,
+                            })
+                    
+                    train_batch_per_predictor[pred_id].extend(example_training_data)
             
             for predictor_train_batch in train_batch_per_predictor:
-                assert len(predictor_train_batch) == self.per_predictor_batch_size, f"Batch size {len(predictor_train_batch)} does not match the expected batch size {self.per_predictor_batch_size}"
+                # assert len(predictor_train_batch) == self.per_predictor_batch_size, f"Batch size {len(predictor_train_batch)} does not match the expected batch size {self.per_predictor_batch_size}"
                 for example_training_data in predictor_train_batch:
                     assert len(example_training_data["completions"]) == self.num_rollouts_per_dspy_example_per_step, f"Number of completions {len(example_training_data['completions'])} does not match the expected number self.num_rollouts_per_dspy_example_per_step={self.num_rollouts_per_dspy_example_per_step}"
 
