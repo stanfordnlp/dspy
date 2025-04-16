@@ -52,13 +52,13 @@ class Evaluate:
         *,
         devset: List["dspy.Example"],
         metric: Optional[Callable] = None,
-        num_threads: int = 1,
+        num_threads: Optional[int] = None,
         display_progress: bool = False,
         display_table: Union[bool, int] = False,
         max_errors: int = 5,
         return_all_scores: bool = False,
         return_outputs: bool = False,
-        provide_traceback: bool = False,
+        provide_traceback: Optional[bool] = None,
         failure_score: float = 0.0,
         **kwargs,
     ):
@@ -66,14 +66,14 @@ class Evaluate:
         Args:
             devset (List[dspy.Example]): the evaluation dataset.
             metric (Callable): The metric function to use for evaluation.
-            num_threads (int): The number of threads to use for parallel evaluation.
+            num_threads (Optional[int]): The number of threads to use for parallel evaluation.
             display_progress (bool): Whether to display progress during evaluation.
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. 
                 If a number is passed, the evaluation results will be truncated to that number before displayed. 
             max_errors (int): The maximum number of errors to allow before stopping evaluation.
             return_all_scores (bool): Whether to return scores for every data record in `devset`.
             return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`.
-            provide_traceback (bool): Whether to provide traceback information during evaluation.
+            provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
         """
         self.devset = devset
@@ -105,7 +105,7 @@ class Evaluate:
             program (dspy.Module): The DSPy program to evaluate.
             metric (Callable): The metric function to use for evaluation. if not provided, use `self.metric`.
             devset (List[dspy.Example]): the evaluation dataset. if not provided, use `self.devset`.
-            num_threads (int): The number of threads to use for parallel evaluation. if not provided, use
+            num_threads (Optional[int]): The number of threads to use for parallel evaluation. if not provided, use
                 `self.num_threads`.
             display_progress (bool): Whether to display progress during evaluation. if not provided, use
                 `self.display_progress`.

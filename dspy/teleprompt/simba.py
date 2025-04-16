@@ -21,7 +21,7 @@ class SIMBA(Teleprompter):
         max_steps=8,
         max_demos=4,
         demo_input_field_maxlen=100_000,
-        num_threads=16,
+        num_threads=None,
         temperature_for_sampling=0.2,
         temperature_for_candidates=0.2,
     ):

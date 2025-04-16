@@ -1,6 +1,6 @@
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.dummies import DummyLM, DummyVectorizer, dummy_rm
-from dspy.utils.streaming import StatusMessage, StatusMessageProvider, streamify
+from dspy.streaming.messages import StatusMessageProvider, StatusMessage
 
 import os
 import requests
@@ -27,5 +27,4 @@ __all__ = [
     "dummy_rm",
     "StatusMessage",
     "StatusMessageProvider",
-    "streamify",
 ]

@@ -5,6 +5,7 @@ from abc import ABC
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 
+MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 
 
@@ -116,6 +117,9 @@ class BaseLM(ABC):
     def update_global_history(self, entry):
         if settings.disable_history:
             return
+
+        if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
+            GLOBAL_HISTORY.pop(0)
 
         GLOBAL_HISTORY.append(entry)
 

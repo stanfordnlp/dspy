@@ -120,10 +120,11 @@ class AvatarOptimizer(Teleprompter):
                 return 0
 
 
-    def thread_safe_evaluator(self, devset, actor, return_outputs=False, num_threads=60):
+    def thread_safe_evaluator(self, devset, actor, return_outputs=False, num_threads=None):
         total_score = 0
         total_examples = len(devset)
         results = []
+        num_threads = num_threads or dspy.settings.num_threads
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = [executor.submit(self.process_example, actor, example, return_outputs) for example in devset]

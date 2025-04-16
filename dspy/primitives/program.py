@@ -1,4 +1,5 @@
 import magicattr
+from typing import Optional
 
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
@@ -92,10 +93,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def batch(
         self,
         examples,
-        num_threads: int = 32,
+        num_threads: Optional[int] = None,
         max_errors: int = 10,
         return_failed_examples: bool = False,
-        provide_traceback: bool = False,
+        provide_traceback: Optional[bool] = None,
         disable_progress_bar: bool = False,
     ):
         """

@@ -1,12 +1,11 @@
 import json
+import regex
 import logging
-from copy import deepcopy
-from typing import Any, Dict, Type
+from typing import Any, Dict, Type, get_origin
 
 import json_repair
 import litellm
 import pydantic
-from pydantic import create_model
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
@@ -18,9 +17,23 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.lm import LM
+from dspy.dsp.utils.settings import settings
 from dspy.signatures.signature import Signature, SignatureMeta
 
 logger = logging.getLogger(__name__)
+
+
+def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
+    """
+    Check whether any output field in the signature has an open-ended mapping type,
+    such as dict[str, Any]. Structured Outputs require explicit properties, so such fields
+    are incompatible.
+    """
+    for name, field in signature.output_fields.items():
+        annotation = field.annotation
+        if get_origin(annotation) is dict:
+            return True
+    return False
 
 
 class JSONAdapter(ChatAdapter):
@@ -35,14 +48,23 @@ class JSONAdapter(ChatAdapter):
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
 
+        stream_listeners = settings.stream_listeners or []
+        if len(stream_listeners) > 0:
+            raise ValueError("Stream listener is not yet supported for JsonAdapter, please use ChatAdapter instead.")
+
         # If response_format is not supported, use basic call
         if not params or "response_format" not in params:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
-        # Try structured output first, fall back to basic json if it fails
+        # Check early for open-ended mapping types before trying structured outputs.
+        if _has_open_ended_mapping(signature):
+            lm_kwargs["response_format"] = {"type": "json_object"}
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+
+        # Try structured output first, fall back to basic JSON if it fails.
         try:
-            structured_output_format = self._get_structured_outputs_response_format(signature)
-            lm_kwargs["response_format"] = structured_output_format
+            structured_output_model = _get_structured_outputs_response_format(signature)
+            lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
             logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
@@ -99,10 +121,14 @@ class JSONAdapter(ChatAdapter):
         return self.format_field_with_value(fields_with_values, role="assistant")
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+        pattern = r'\{(?:[^{}]|(?R))*\}'
+        match = regex.search(pattern, completion, regex.DOTALL)  
+        if match:  
+            completion = match.group(0)
         fields = json_repair.loads(completion)
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
-        # attempt to cast each value to type signature.output_fields[k].annotation
+        # Attempt to cast each value to type signature.output_fields[k].annotation.
         for k, v in fields.items():
             if k in signature.output_fields:
                 fields[k] = parse_value(v, signature.output_fields[k].annotation)
@@ -116,12 +142,12 @@ class JSONAdapter(ChatAdapter):
         """
         Formats the values of the specified fields according to the field's DSPy type (input or output),
         annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
-        into a single string, which is is a multiline string if there are multiple fields.
+        into a single string, which is a multiline string if there are multiple fields.
 
         Args:
-        fields_with_values: A dictionary mapping information about a field to its corresponding value.
+            fields_with_values: A dictionary mapping information about a field to its corresponding value.
         Returns:
-            The joined formatted values of the fields, represented as a string
+            The joined formatted values of the fields, represented as a string.
         """
         if role == "user":
             output = []
@@ -140,49 +166,73 @@ class JSONAdapter(ChatAdapter):
         # TODO: implement format_finetune_data method in JSONAdapter
         raise NotImplementedError
 
-    def _get_structured_outputs_response_format(self, signature: SignatureMeta) -> pydantic.BaseModel:
+
+def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[pydantic.BaseModel]:
+    """
+    Builds a Pydantic model from a DSPy signature's output_fields and ensures the generated JSON schema
+    is compatible with OpenAI Structured Outputs (all objects have a "required" key listing every property,
+    and additionalProperties is always false).
+
+    IMPORTANT: If any field's annotation is an open-ended mapping (e.g. dict[str, Any]), then a structured
+    schema cannot be generated since all properties must be explicitly declared. In that case, an exception
+    is raised so that the caller can fall back to using a plain "json_object" response_format.
+    """
+    # Although we've already performed an early check, we keep this here as a final guard.
+    for name, field in signature.output_fields.items():
+        annotation = field.annotation
+        if get_origin(annotation) is dict:
+            raise ValueError(
+                f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs."
+            )
+
+    fields = {}
+    for name, field in signature.output_fields.items():
+        annotation = field.annotation
+        default = field.default if hasattr(field, "default") else ...
+        fields[name] = (annotation, default)
+
+    # Build the model with extra fields forbidden.
+    Model = pydantic.create_model("DSPyProgramOutputs", **fields, __config__=type("Config", (), {"extra": "forbid"}))
+
+    # Generate the initial schema.
+    schema = Model.schema()
+
+    # Remove any DSPy-specific metadata.
+    for prop in schema.get("properties", {}).values():
+        prop.pop("json_schema_extra", None)
+
+    def enforce_required(schema_part: dict):
         """
-        Obtains the LiteLLM / OpenAI `response_format` parameter for generating structured outputs from
-        an LM request, based on the output fields of the specified DSPy signature.
-
-        Args:
-            signature: The DSPy signature for which to obtain the `response_format` request parameter.
-        Returns:
-            A Pydantic model representing the `response_format` parameter for the LM request.
+        Recursively ensure that:
+         - for any object schema, a "required" key is added with all property names (or [] if no properties)
+         - additionalProperties is set to False regardless of the previous value.
+         - the same enforcement is run for nested arrays and definitions.
         """
+        if schema_part.get("type") == "object":
+            props = schema_part.get("properties")
+            if props is not None:
+                # For objects with explicitly declared properties:
+                schema_part["required"] = list(props.keys())
+                schema_part["additionalProperties"] = False
+                for sub_schema in props.values():
+                    if isinstance(sub_schema, dict):
+                        enforce_required(sub_schema)
+            else:
+                # For objects with no properties (should not happen normally but a fallback).
+                schema_part["properties"] = {}
+                schema_part["required"] = []
+                schema_part["additionalProperties"] = False
+        if schema_part.get("type") == "array" and isinstance(schema_part.get("items"), dict):
+            enforce_required(schema_part["items"])
+        # Also enforce in any nested definitions / $defs.
+        for key in ("$defs", "definitions"):
+            if key in schema_part:
+                for def_schema in schema_part[key].values():
+                    enforce_required(def_schema)
 
-        def filter_json_schema_extra(field_name: str, field_info: FieldInfo) -> FieldInfo:
-            """
-            Recursively filter the `json_schema_extra` of a FieldInfo to exclude DSPy internal attributes
-            (e.g. `__dspy_field_type`) and remove descriptions that are placeholders for the field name.
-            """
-            field_copy = deepcopy(field_info)  # Make a copy to avoid mutating the original
+    enforce_required(schema)
 
-            # Update `json_schema_extra` for the copied field
-            if field_copy.json_schema_extra:
-                field_copy.json_schema_extra = {
-                    key: value
-                    for key, value in field_info.json_schema_extra.items()
-                    if key not in ("desc", "__dspy_field_type")
-                }
-                field_desc = field_info.json_schema_extra.get("desc")
-                if field_desc is not None and field_desc != f"${{{field_name}}}":
-                    field_copy.json_schema_extra["desc"] = field_desc
+    # Override the model's JSON schema generation to return our precomputed schema.
+    Model.model_json_schema = lambda *args, **kwargs: schema
 
-            # Handle nested fields
-            if hasattr(field_copy.annotation, "__pydantic_model__"):
-                # Recursively update fields of the nested model
-                nested_model = field_copy.annotation.__pydantic_model__
-                updated_fields = {
-                    key: filter_json_schema_extra(key, value) for key, value in nested_model.__fields__.items()
-                }
-                # Create a new model with the same name and updated fields
-                field_copy.annotation = create_model(nested_model.__name__, **updated_fields)
-
-            return field_copy
-
-        output_pydantic_fields = {
-            key: (value.annotation, filter_json_schema_extra(key, value))
-            for key, value in signature.output_fields.items()
-        }
-        return create_model("DSPyProgramOutputs", **output_pydantic_fields)
+    return Model
