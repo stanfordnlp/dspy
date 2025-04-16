@@ -93,7 +93,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def batch(
         self,
         examples,
-        num_threads: int = 32,
+        num_threads: Optional[int] = None,
         max_errors: int = 10,
         return_failed_examples: bool = False,
         provide_traceback: Optional[bool] = None,

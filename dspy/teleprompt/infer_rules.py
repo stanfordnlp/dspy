@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class InferRules(BootstrapFewShot):
-    def __init__(self, num_candidates=10, num_rules=10, num_threads=8, teacher_settings=None, **kwargs):
+    def __init__(self, num_candidates=10, num_rules=10, num_threads=None, teacher_settings=None, **kwargs):
         super().__init__(teacher_settings=teacher_settings, **kwargs)
 
         self.num_candidates = num_candidates
