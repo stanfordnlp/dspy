@@ -48,10 +48,7 @@ class BaseLM(ABC):
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
-    @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
-        response = self.forward(prompt=prompt, messages=messages, **kwargs)
-
+    def _process_lm_response(self, response, prompt, messages, **kwargs):
         if kwargs.get("logprobs"):
             outputs = [
                 {
@@ -84,13 +81,32 @@ class BaseLM(ABC):
         }
         self.history.append(entry)
         self.update_global_history(entry)
+        return outputs
 
+    @with_callbacks
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        response = self.forward(prompt=prompt, messages=messages, **kwargs)
+        outputs = self._process_lm_response(response, prompt, messages, **kwargs)
+
+        return outputs
+
+    async def a_call(self, prompt=None, messages=None, **kwargs):
+        response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
+        outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
 
     def forward(self, prompt=None, messages=None, **kwargs):
         """Forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to
+        [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        """Async forward pass for the language model.
+
+        Subclasses that support async should implement this method, and the response should be identical to
         [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
         """
         raise NotImplementedError("Subclasses must implement this method.")

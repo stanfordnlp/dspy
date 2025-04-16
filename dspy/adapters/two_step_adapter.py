@@ -1,13 +1,11 @@
 from typing import Any, Type
 
-from dspy.signatures.signature import Signature
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.utils import get_field_description_string
-from dspy.signatures.field import InputField
-from dspy.signatures.signature import make_signature
 from dspy.clients import LM
-
+from dspy.signatures.field import InputField
+from dspy.signatures.signature import Signature, make_signature
 
 """
 NOTE/TODO/FIMXE:

@@ -75,7 +75,10 @@ class Predict(Module, Parameter):
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
 
-    def forward(self, **kwargs):
+    async def acall(self, **kwargs):
+        return await self.aforward(**kwargs)
+
+    def _forward_preprocess(self, **kwargs):
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
@@ -101,6 +104,17 @@ class Predict(Module, Parameter):
                 present,
                 missing,
             )
+        return lm, config, signature, demos, kwargs
+
+    def _forward_postprocess(self, completions, signature, **kwargs):
+        pred = Prediction.from_completions(completions, signature=signature)
+        if kwargs.pop("_trace", True) and settings.trace is not None:
+            trace = settings.trace
+            trace.append((self, {**kwargs}, pred))
+        return pred
+
+    def forward(self, **kwargs):
+        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
 
@@ -116,13 +130,14 @@ class Predict(Module, Parameter):
             with settings.context(send_stream=None):
                 completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
-        pred = Prediction.from_completions(completions, signature=signature)
+        return self._forward_postprocess(completions, signature, **kwargs)
 
-        if kwargs.pop("_trace", True) and settings.trace is not None:
-            trace = settings.trace
-            trace.append((self, {**kwargs}, pred))
+    async def aforward(self, **kwargs):
+        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        return pred
+        adapter = settings.adapter or ChatAdapter()
+        completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        return self._forward_postprocess(completions, signature, **kwargs)
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}

@@ -20,17 +20,7 @@ class Adapter:
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def __call__(
-        self,
-        lm: "LM",
-        lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
-        demos: list[dict[str, Any]],
-        inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
-
-        outputs = lm(messages=inputs, **lm_kwargs)
+    def _call_post_process(self, outputs: list[dict[str, Any]], signature: Type[Signature]) -> list[dict[str, Any]]:
         values = []
 
         for output in outputs:
@@ -47,6 +37,32 @@ class Adapter:
             values.append(value)
 
         return values
+
+    def __call__(
+        self,
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        inputs = self.format(signature, demos, inputs)
+
+        outputs = lm(messages=inputs, **lm_kwargs)
+        return self._call_post_process(outputs, signature)
+
+    async def acall(
+        self,
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        inputs = self.format(signature, demos, inputs)
+
+        outputs = await lm.acall(messages=inputs, **lm_kwargs)
+        return self._call_post_process(outputs, signature)
 
     def format(
         self,
