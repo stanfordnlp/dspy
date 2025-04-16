@@ -22,6 +22,8 @@ DEFAULT_CONFIG = dotdict(
     disable_history=False,
     track_usage=False,
     usage_tracker=None,
+    caller_predict=None,
+    stream_listeners=[],
     provide_traceback=False, # Whether to include traceback information in error logs.
 )
 

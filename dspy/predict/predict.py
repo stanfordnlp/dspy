@@ -6,13 +6,12 @@ from pydantic import BaseModel
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
-from dspy.dsp.utils import settings
+from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
-
 
 logger = logging.getLogger(__name__)
 
@@ -104,13 +103,18 @@ class Predict(Module, Parameter):
             )
 
         adapter = settings.adapter or ChatAdapter()
-        completions = adapter(
-            lm,
-            lm_kwargs=config,
-            signature=signature,
-            demos=demos,
-            inputs=kwargs,
-        )
+
+        stream_listeners = settings.stream_listeners or []
+        stream = settings.send_stream is not None
+        if stream and len(stream_listeners) > 0:
+            stream = any(stream_listener.predict == self for stream_listener in stream_listeners)
+
+        if stream:
+            with settings.context(caller_predict=self):
+                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        else:
+            with settings.context(send_stream=None):
+                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
         pred = Prediction.from_completions(completions, signature=signature)
 
