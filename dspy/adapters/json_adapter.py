@@ -1,13 +1,14 @@
 import json
+import regex
 import logging
+from typing import Any, Dict, Type, get_origin
+
+import json_repair
 import litellm
 import pydantic
-import json_repair
-
-from typing import Any, Dict, Type, get_origin
 from pydantic.fields import FieldInfo
 
-from dspy.clients.lm import LM
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
@@ -15,8 +16,9 @@ from dspy.adapters.utils import (
     serialize_for_json,
     translate_field_type,
 )
+from dspy.clients.lm import LM
+from dspy.dsp.utils.settings import settings
 from dspy.signatures.signature import Signature, SignatureMeta
-from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,11 @@ class JSONAdapter(ChatAdapter):
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
 
-        # If response_format is not supported, use basic call.
+        stream_listeners = settings.stream_listeners or []
+        if len(stream_listeners) > 0:
+            raise ValueError("Stream listener is not yet supported for JsonAdapter, please use ChatAdapter instead.")
+
+        # If response_format is not supported, use basic call
         if not params or "response_format" not in params:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
@@ -115,6 +121,10 @@ class JSONAdapter(ChatAdapter):
         return self.format_field_with_value(fields_with_values, role="assistant")
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+        pattern = r'\{(?:[^{}]|(?R))*\}'
+        match = regex.search(pattern, completion, regex.DOTALL)  
+        if match:  
+            completion = match.group(0)
         fields = json_repair.loads(completion)
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 

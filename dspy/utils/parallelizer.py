@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 class ParallelExecutor:
     def __init__(
         self,
-        num_threads,
+        num_threads=None,
         max_errors=5,
         disable_progress_bar=False,
-        provide_traceback=False,
+        provide_traceback=None,
         compare_results=False,
         timeout=120,
         straggler_limit=3,
@@ -28,11 +28,12 @@ class ParallelExecutor:
         Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1.
         Handles also straggler timeouts.
         """
+        from dspy.dsp.utils.settings import settings
 
-        self.num_threads = num_threads
+        self.num_threads = num_threads or settings.num_threads
         self.max_errors = max_errors
         self.disable_progress_bar = disable_progress_bar
-        self.provide_traceback = provide_traceback
+        self.provide_traceback = provide_traceback if provide_traceback is not None else settings.provide_traceback
         self.compare_results = compare_results
         self.timeout = timeout
         self.straggler_limit = straggler_limit

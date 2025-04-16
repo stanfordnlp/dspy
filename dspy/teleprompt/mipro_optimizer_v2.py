@@ -55,7 +55,7 @@ class MIPROv2(Teleprompter):
         max_labeled_demos: int = 4,
         auto: Optional[Literal["light", "medium", "heavy"]] = "medium",
         num_candidates: int = 10,
-        num_threads: int = 6,
+        num_threads: Optional[int] = None,
         max_errors: int = 10,
         seed: int = 9,
         init_temperature: float = 0.5,
@@ -109,7 +109,7 @@ class MIPROv2(Teleprompter):
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
         requires_permission_to_run: bool = True,
-        provide_traceback: bool = False,
+        provide_traceback: Optional[bool] = None,
     ) -> Any:
         # Set random seeds
         seed = seed or self.seed

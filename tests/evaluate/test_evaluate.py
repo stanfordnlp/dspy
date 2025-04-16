@@ -30,7 +30,7 @@ def test_evaluate_initialization():
     )
     assert ev.devset == devset
     assert ev.metric == answer_exact_match
-    assert ev.num_threads == len(devset)
+    assert ev.num_threads is None
     assert ev.display_progress == False
 
 

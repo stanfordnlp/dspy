@@ -199,12 +199,12 @@ def test_reasoning_model_token_parameter():
         lm = dspy.LM(
             model=model_name,
             temperature=1.0 if is_reasoning_model else 0.7,
-            max_tokens=5000 if is_reasoning_model else 1000,
+            max_tokens=20_000 if is_reasoning_model else 1000,
         )
         if is_reasoning_model:
             assert "max_completion_tokens" in lm.kwargs
             assert "max_tokens" not in lm.kwargs
-            assert lm.kwargs["max_completion_tokens"] == 5000
+            assert lm.kwargs["max_completion_tokens"] == 20_000
         else:
             assert "max_completion_tokens" not in lm.kwargs
             assert "max_tokens" in lm.kwargs
@@ -217,27 +217,28 @@ def test_reasoning_model_requirements():
         dspy.LM(
             model="openai/o1",
             temperature=0.7,  # Should be 1.0
-            max_tokens=1000,  # Should be >= 5000
+            max_tokens=1000,  # Should be >= 20_000
         )
-    assert "reasoning models require passing temperature=1.0 and max_tokens >= 5000" in str(exc_info.value)
+    assert "reasoning models require passing temperature=1.0 and max_tokens >= 20_000" in str(exc_info.value)
 
     # Should pass with correct parameters
     lm = dspy.LM(
         model="openai/o1",
         temperature=1.0,
-        max_tokens=5000,
+        max_tokens=20_000,
     )
-    assert lm.kwargs["max_completion_tokens"] == 5000
+    assert lm.kwargs["max_completion_tokens"] == 20_000
+
 
 def test_dump_state():
     lm = dspy.LM(
-        model="openai/gpt-4o-mini", 
+        model="openai/gpt-4o-mini",
         model_type="chat",
         temperature=1,
         max_tokens=100,
         num_retries=10,
-        launch_kwargs={ "temperature": 1 },
-        train_kwargs={ "temperature": 5 },
+        launch_kwargs={"temperature": 1},
+        train_kwargs={"temperature": 5},
     )
 
     assert lm.dump_state() == {
@@ -249,13 +250,14 @@ def test_dump_state():
         "cache": True,
         "cache_in_memory": True,
         "finetuning_model": None,
-        "launch_kwargs": { "temperature": 1 },
-        "train_kwargs": { "temperature": 5 },
+        "launch_kwargs": {"temperature": 1},
+        "train_kwargs": {"temperature": 5},
     }
 
 
 def test_exponential_backoff_retry():
     time_counter = []
+
     def mock_create(*args, **kwargs):
         time_counter.append(time.time())
         # These fields are called during the error handling
@@ -263,11 +265,12 @@ def test_exponential_backoff_retry():
         mock_response.headers = {}
         mock_response.status_code = 429
         raise RateLimitError(response=mock_response, message="message", body="error")
-    lm = dspy.LM(model='openai/gpt-3.5-turbo', max_tokens=250, num_retries=3)
+
+    lm = dspy.LM(model="openai/gpt-3.5-turbo", max_tokens=250, num_retries=3)
     with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
         with pytest.raises(RateLimitError):
             lm("question")
-    
+
     # The first retry happens immediately regardless of the configuration
-    for i in range(1, len(time_counter)-1):
-        assert time_counter[i+1] - time_counter[i] >= 2**(i-1)
+    for i in range(1, len(time_counter) - 1):
+        assert time_counter[i + 1] - time_counter[i] >= 2 ** (i - 1)

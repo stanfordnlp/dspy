@@ -90,8 +90,8 @@ class LM(BaseLM):
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
             assert (
-                max_tokens >= 5000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+                max_tokens >= 20_000 and temperature == 1.0
+            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -297,7 +297,10 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     )
 
     stream = dspy.settings.send_stream
+    caller_predict = dspy.settings.caller_predict
     if stream is None:
+        # If `streamify` is not used, or if the exact predict doesn't need to be streamed,
+        # we can just return the completion without streaming.
         return litellm.completion(
             cache=cache,
             **retry_kwargs,
@@ -306,6 +309,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
 
     # The stream is already opened, and will be closed by the caller.
     stream = cast(MemoryObjectSendStream, stream)
+    caller_predict_id = id(caller_predict) if caller_predict else None
 
     @syncify
     async def stream_completion():
@@ -317,6 +321,9 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         )
         chunks = []
         async for chunk in response:
+            if caller_predict_id:
+                # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
+                chunk.predict_id = caller_predict_id
             chunks.append(chunk)
             await stream.send(chunk)
         return litellm.stream_chunk_builder(chunks)

@@ -41,7 +41,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
         adapter: Optional[Union[Adapter, Dict[LM, Adapter]]] = None,
         exclude_demos: bool = False,
-        num_threads: int = 6,
+        num_threads: Optional[int] = None,
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -71,10 +71,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         teachers = teacher if isinstance(teacher, list) else [teacher]
         teachers = [prepare_teacher(student, t) for t in teachers]
+        num_threads = self.num_threads or dspy.settings.num_threads
         for t in teachers:
             set_missing_predictor_lms(t)
             trace_data += bootstrap_trace_data(
-                program=t, dataset=trainset, metric=self.metric, num_threads=self.num_threads
+                program=t, dataset=trainset, metric=self.metric, num_threads=num_threads
             )
 
         logger.info("Preparing the train data...")
@@ -98,11 +99,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
         logger.info("Starting LM fine-tuning...")
         # TODO(feature): We could run batches of fine-tuning jobs in sequence
         # to avoid exceeding the number of threads.
-        if len(key_to_data) > self.num_threads:
+        if len(key_to_data) > num_threads:
             raise ValueError(
                 "BootstrapFinetune requires `num_threads` to be bigger than or equal to the number of fine-tuning "
                 f"jobs. There are {len(key_to_data)} fine-tuning jobs to start, but the number of threads is: "
-                f"{self.num_threads}! If the `multitask` flag is set to False, the number of fine-tuning jobs will "
+                f"{num_threads}! If the `multitask` flag is set to False, the number of fine-tuning jobs will "
                 "be equal to the number of predictors in the student program. If the `multitask` flag is set to True, "
                 "the number of fine-tuning jobs will be equal to: 1 if there is only a context LM, or the number of "
                 "unique LMs attached to the predictors in the student program. In any case, the number of fine-tuning "
@@ -203,7 +204,7 @@ def bootstrap_trace_data(
     program: Program,
     dataset: List[Example],
     metric: Optional[Callable] = None,
-    num_threads=6,
+    num_threads: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
