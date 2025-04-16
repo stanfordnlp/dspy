@@ -17,18 +17,18 @@ class RetryAdapter(Adapter):
     a specified number of times if it fails to parse completion outputs.
     """
 
-    def __init__(self, main_adapter: Adapter, fallback_adapter: Optional[Adapter] = None, max_retries: int = 3):
+    def __init__(self, main_adapter: Adapter, fallback_adapter: Optional[Adapter] = None, main_adapter_max_retries: int = 3):
         """
         Initializes the RetryAdapter.
 
         Args:
             main_adapter (Adapter): The main adapter to use.
             fallback_adapter (Optional[Adapter]): The fallback adapter to use if the main adapter fails.
-            max_retries (int): The maximum number of retries. Defaults to 3.
+            main_adapter_max_retries (int): The maximum number of retries. Defaults to 3.
         """
         self.main_adapter = main_adapter
         self.fallback_adapter = fallback_adapter
-        self.max_retries = max_retries
+        self.main_adapter_max_retries = main_adapter_max_retries
 
     def __call__(
         self,
@@ -58,7 +58,7 @@ class RetryAdapter(Adapter):
             Exception: If fail to parse outputs after the maximum number of retries.
         """
         outputs = []
-        max_retries = max(self.max_retries, 0)
+        max_retries = max(self.main_adapter_max_retries, 0)
         n_completion = lm_kwargs.get("n", 1)
 
         values, parse_failures = self._call_adapter(

@@ -35,7 +35,7 @@ class MockSignature(Signature):
 def test_adapter_max_retry(demos, max_retries, n):
     main_adapter = ChatAdapter()
     fallback_adapter = JSONAdapter()
-    adapter = RetryAdapter(main_adapter=main_adapter, fallback_adapter=fallback_adapter, max_retries=max_retries)
+    adapter = RetryAdapter(main_adapter=main_adapter, fallback_adapter=fallback_adapter, main_adapter_max_retries=max_retries)
     lm = DummyLM([{"answer": "42"}] * (n * 2 + max_retries))
     inputs = {"question": "6 x 7"}
 
@@ -74,7 +74,7 @@ def test_adapter_max_retry(demos, max_retries, n):
 def test_adapter_fallback():
     main_adapter = JSONAdapter()
     fallback_adapter = ChatAdapter()
-    adapter = RetryAdapter(main_adapter=main_adapter, fallback_adapter=fallback_adapter, max_retries=1)
+    adapter = RetryAdapter(main_adapter=main_adapter, fallback_adapter=fallback_adapter, main_adapter_max_retries=1)
     lm = DummyLM([{"answer": "42"}] * 3)
     inputs = {"question": "6 x 7"}
 

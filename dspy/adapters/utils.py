@@ -243,10 +243,8 @@ def _quoted_string_for_literal_type_annotation(s: str) -> str:
 
 def create_signature_for_retry(signature: Type[Signature]):
     signature = signature.append("previous_response", InputField(
-        prefix="Previous Response",
         desc="Previous response with format errors. You should avoid the same type of error as the previous response.",
     )).append("error_message", InputField(
-        prefix="Validation Error Message",
         desc="Error message for the previous response.",
     ))
     return signature
