@@ -75,7 +75,7 @@ def wrap_program(program: dspy.Module, metric: Callable):
 def append_a_demo(demo_input_field_maxlen):
     def append_a_demo_(bucket, system, **kwargs):
         predictor2name, name2predictor = kwargs["predictor2name"], kwargs["name2predictor"]
-        batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
+        batch_10p_score = kwargs["batch_10p_score"]
 
         good = bucket[0]
         trace = good["trace"]
