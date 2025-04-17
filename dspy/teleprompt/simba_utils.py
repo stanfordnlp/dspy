@@ -54,6 +54,8 @@ def wrap_program(program: dspy.Module, metric: Callable):
             if isinstance(output, (int, float)):
                 score = output
             elif isinstance(output, dspy.Prediction):
+                if not hasattr(output, 'score'):
+                    raise ValueError("dspy.Prediction must contain a 'score' attribute")
                 score = output.score
                 # Just extract fields from _store, excluding 'score'
                 output_metadata = {
