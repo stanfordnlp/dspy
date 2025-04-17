@@ -3,7 +3,7 @@ import enum
 import inspect
 import json
 from collections.abc import Mapping
-from typing import Any, List, Literal, Union, get_args, get_origin, Union
+from typing import Any, List, Literal, get_args, get_origin, Union
 
 import json_repair
 import pydantic
