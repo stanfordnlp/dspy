@@ -1,5 +1,4 @@
 from typing import TYPE_CHECKING, Any, Optional, Type
-
 from dspy.adapters.types import History
 from dspy.adapters.types.image import try_expand_image_tags
 from dspy.signatures.signature import Signature
@@ -7,7 +6,6 @@ from dspy.utils.callback import BaseCallback, with_callbacks
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
-
 
 class Adapter:
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
@@ -28,11 +26,10 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
-
-        outputs = lm(messages=inputs, **lm_kwargs)
+        messages = self.format(signature=signature, demos=demos, inputs=inputs)
+        outputs = lm(messages=messages, **lm_kwargs)
         values = []
-
+        
         for output in outputs:
             output_logprobs = None
 

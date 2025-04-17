@@ -3,7 +3,7 @@ import random
 
 from pydantic import BaseModel
 
-from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters import DEFAULT_ADAPTER
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
@@ -102,7 +102,7 @@ class Predict(Module, Parameter):
                 missing,
             )
 
-        adapter = settings.adapter or ChatAdapter()
+        adapter = settings.adapter or DEFAULT_ADAPTER
 
         stream_listeners = settings.stream_listeners or []
         stream = settings.send_stream is not None
