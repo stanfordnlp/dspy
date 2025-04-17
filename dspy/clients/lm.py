@@ -95,7 +95,7 @@ class LM(BaseLM):
         if max_tokens is None:
             max_tokens = 20_000 if is_reasoning_model else 1_000
         elif is_reasoning_model:
-            assert max_tokens == 20_000, "Reasoning models require max_tokens=20_000."
+            assert max_tokens >= 20_000, "Reasoning models require max_tokens>=20_000."
 
         # Set kwargs based on reasoning model check
         if is_reasoning_model:
