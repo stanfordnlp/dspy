@@ -127,6 +127,15 @@ class LM(BaseLM):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
+
+        results = await completion(
+            request=dict(model=self.model, messages=messages, **kwargs),
+            num_retries=self.num_retries,
+        )
+        return results
+
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
         self.provider.launch(self, launch_kwargs)
 
@@ -354,6 +363,51 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
     return litellm.text_completion(
+        cache=cache,
+        model=f"text-completion-openai/{model}",
+        api_key=api_key,
+        api_base=api_base,
+        prompt=prompt,
+        retry_policy=_get_litellm_retry_policy(num_retries),
+        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
+        # to completion()), the default value of max_retries is non-zero for certain providers, and
+        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
+        max_retries=0,
+        **request,
+    )
+
+
+async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+    retry_kwargs = dict(
+        retry_policy=_get_litellm_retry_policy(num_retries),
+        retry_strategy="exponential_backoff_retry",
+        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
+        # to completion()), the default value of max_retries is non-zero for certain providers, and
+        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
+        max_retries=0,
+    )
+
+    return await litellm.acompletion(
+        cache=cache,
+        **retry_kwargs,
+        **request,
+    )
+
+
+async def alitellm_text_completion(
+    request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}
+):
+    model = request.pop("model").split("/", 1)
+    provider, model = model[0] if len(model) > 1 else "openai", model[-1]
+
+    # Use the API key and base from the request, or from the environment.
+    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
+    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
+
+    # Build the prompt from the messages.
+    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
+
+    return await litellm.atext_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,

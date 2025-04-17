@@ -1,9 +1,7 @@
 from typing import Callable, Optional
 
 import dspy
-from dspy.predict.predict import Prediction
-
-from dspy.predict.predict import Module
+from dspy.predict.predict import Module, Prediction
 
 
 class BestOfN(Module):
@@ -53,7 +51,7 @@ class BestOfN(Module):
         self.N = N
         self.fail_count = fail_count or N  # default to N if fail_count is not provided
 
-    def forward(self, **kwargs):
+    async def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
         temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / self.N) for i in range(self.N)]
         temps = list(dict.fromkeys(temps))[: self.N]
@@ -66,7 +64,7 @@ class BestOfN(Module):
 
             try:
                 with dspy.context(trace=[]):
-                    pred = mod(**kwargs)
+                    pred = await mod(**kwargs)
                     trace = dspy.settings.trace.copy()
 
                     # NOTE: Not including the trace of reward_fn.
