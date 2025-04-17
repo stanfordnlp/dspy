@@ -81,8 +81,8 @@ def append_a_demo(demo_input_field_maxlen):
         trace = good["trace"]
         name2demo = {}
 
-        if good["score"] <= batch_10p_score:
-            logger.info(f"Skipping appending a demo as good score {good['score']} is at or below the 10th percentile.")
+        if good["score"] < batch_10p_score:
+            logger.info(f"Skipping appending a demo as good score {good['score']} is below the 10th percentile.")
             return False
 
         for step in trace:
