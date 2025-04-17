@@ -1,6 +1,6 @@
-# dspy.utils.StatusMessageProvider
+# dspy.streaming.StatusMessageProvider
 
-::: dspy.utils.StatusMessageProvider
+::: dspy.streaming.StatusMessageProvider
     handler: python
     options:
         members:
