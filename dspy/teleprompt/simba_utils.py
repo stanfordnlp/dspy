@@ -38,7 +38,7 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings
 def wrap_program(program: dspy.Module, metric: Callable):
     def wrapped_program(example):
         with dspy.context(trace=[]):
-            prediction, trace = None, None
+            prediction, trace, score = None, None, 0.0
             try:
                 prediction = program(**example.inputs())
             except Exception as e:
@@ -114,9 +114,9 @@ def append_a_rule(bucket, system, **kwargs):
     good, bad = bucket[0], bucket[-1]
     example = good["example"]
 
-    if good["score"] <= batch_10p_score or bad["score"] >= batch_90p_score:
-        logger.info(f"Skipping rule generation as good score {good['score']} is at or below the 10th percentile "
-                    f"*or* bad score {bad['score']} is at or above the 90th percentile.")
+    if good["score"] < batch_10p_score or bad["score"] > batch_90p_score:
+        logger.info(f"Skipping rule generation as good score {good['score']} is below the 10th percentile "
+                    f"*or* bad score {bad['score']} is above the 90th percentile.")
         return False
 
     if good["score"] <= bad["score"]:
@@ -206,21 +206,6 @@ class OfferFeedback(dspy.Signature):
         "therein}, then it should ${description of content, behavior, or strategies to adopt and/or others to avoid}. "
         "Basically, your advice be such that if the module has access to your tip, it would be much more likely to act "
         "like the successful trajectory rather than the lower-scoring trajectory."
-    )
-
-def enumerate_field_names(fields):
-    """
-    Enumerates the names of the fields with their prefix and description.
-
-    Args:
-        fields (dict): A dictionary of fields, where keys are field names and values are field objects.
-
-    Returns:
-        str: A formatted string listing each field's prefix and description.
-    """
-    return "\n".join(
-        f"{field.json_schema_extra.get('prefix', '')} {field.json_schema_extra.get('desc', '')}"
-        for field in fields.values()
     )
 
 def inspect_modules(program):
