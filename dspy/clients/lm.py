@@ -88,14 +88,14 @@ class LM(BaseLM):
         # Set default temperature
         if temperature is None:
             temperature = 1.0 if is_reasoning_model else 0.0
-        elif is_reasoning_model and temperature != 1.0:
-            raise ValueError("Reasoning models require temperature=1.0.")
+        elif is_reasoning_model:
+            assert temperature == 1.0, "Reasoning models require temperature=1.0."
 
         # Set default max_tokens
         if max_tokens is None:
             max_tokens = 20_000 if is_reasoning_model else 1_000
-        elif is_reasoning_model and max_tokens < 20_000:
-            raise ValueError("Reasoning models require max_tokens >= 20,000.")
+        elif is_reasoning_model:
+            assert max_tokens == 20_000, "Reasoning models require max_tokens=20_000."
 
         # Set kwargs based on reasoning model check
         if is_reasoning_model:
