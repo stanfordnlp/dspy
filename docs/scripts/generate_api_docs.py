@@ -27,6 +27,7 @@ API_MAPPING = {
         dspy.Adapter,
         dspy.ChatAdapter,
         dspy.JSONAdapter,
+        dspy.TwoStepAdapter,
     ],
     "modules": [
         dspy.Module,
@@ -54,8 +55,9 @@ API_MAPPING = {
         dspy.disable_logging,
         dspy.enable_litellm_logging,
         dspy.disable_litellm_logging,
-        dspy.utils.streaming.StatusMessageProvider,
-        dspy.utils.streaming.StatusMessage,
+        dspy.streaming.StatusMessageProvider,
+        dspy.streaming.StatusMessage,
+        dspy.streaming.StreamListener,
     ],
     "evaluation": [
         dspy.Evaluate,

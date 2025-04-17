@@ -76,6 +76,7 @@ nav:
             - Adapter: api/adapters/Adapter.md
             - ChatAdapter: api/adapters/ChatAdapter.md
             - JSONAdapter: api/adapters/JSONAdapter.md
+            - TwoStepAdapter: api/adapters/TwoStepAdapter.md
         - Evaluation:
             - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md
             - Evaluate: api/evaluation/Evaluate.md
@@ -127,6 +128,7 @@ nav:
         - Utils:
             - StatusMessage: api/utils/StatusMessage.md
             - StatusMessageProvider: api/utils/StatusMessageProvider.md
+            - StreamListener: api/utils/StreamListener.md
             - asyncify: api/utils/asyncify.md
             - disable_litellm_logging: api/utils/disable_litellm_logging.md
             - disable_logging: api/utils/disable_logging.md

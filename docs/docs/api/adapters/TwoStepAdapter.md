@@ -1,6 +1,6 @@
-# dspy.Adapter
+# dspy.TwoStepAdapter
 
-::: dspy.Adapter
+::: dspy.TwoStepAdapter
     handler: python
     options:
         members:
