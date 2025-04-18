@@ -57,6 +57,8 @@ dev = [
     "ruff>=0.3.0",
     "pre-commit>=3.7.0",
     "pillow>=10.1.0",
+    "datamodel_code_generator>=0.26.3",
+    "build>=1.0.3",
 ]
 
 [tool.setuptools.packages.find]
