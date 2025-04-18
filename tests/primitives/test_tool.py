@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 
 # Test fixtures
-def dummy_function(x: int, y: str) -> str:
+def dummy_function(x: int, y: str = "hello") -> str:
     """A dummy function for testing.
 
     Args:
@@ -16,7 +16,7 @@ def dummy_function(x: int, y: str) -> str:
 
 
 class DummyModel(BaseModel):
-    field1: str
+    field1: str = "hello"
     field2: int
 
 
@@ -84,6 +84,7 @@ def test_tool_from_function():
     assert "y" in tool.args
     assert tool.args["x"]["type"] == "integer"
     assert tool.args["y"]["type"] == "string"
+    assert tool.args["y"]["default"] == "hello"
 
 
 def test_tool_from_class():
@@ -109,6 +110,22 @@ def test_tool_from_function_with_pydantic():
     assert tool.args["model"]["type"] == "object"
     assert "field1" in tool.args["model"]["properties"]
     assert "field2" in tool.args["model"]["properties"]
+    assert tool.args["model"]["properties"]["field1"]["default"] == "hello"
+
+
+def test_tool_from_function_with_pydantic_nesting():
+    tool = Tool(complex_dummy_function)
+
+    assert tool.name == "complex_dummy_function"
+    assert "profile" in tool.args
+    assert "priority" in tool.args
+    assert "notes" in tool.args
+    assert tool.args["profile"]["type"] == "object"
+    assert tool.args["profile"]["properties"]["user_id"]["type"] == "integer"
+    assert tool.args["profile"]["properties"]["name"]["type"] == "string"
+    assert tool.args["profile"]["properties"]["age"]["anyOf"] == [{"type": "integer"}, {"type": "null"}]
+    assert tool.args["profile"]["properties"]["contact"]["type"] == "object"
+    assert tool.args["profile"]["properties"]["contact"]["properties"]["email"]["type"] == "string"
 
 
 def test_tool_callable():
