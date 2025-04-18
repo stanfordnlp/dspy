@@ -2,6 +2,7 @@ from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.embedding import Embedder
+from dspy.clients.mcp import MCPServerManager
 import litellm
 import os
 from pathlib import Path
@@ -59,6 +60,7 @@ __all__ = [
     "TrainingJob",
     "inspect_history",
     "Embedder",
+    "MCPServerManager",
     "enable_litellm_logging",
     "disable_litellm_logging",
 ]

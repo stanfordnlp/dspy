@@ -1,4 +1,5 @@
 import logging
+import inspect
 from typing import Any, Callable, Literal, get_origin
 
 from litellm import ContextWindowExceededError
@@ -72,6 +73,8 @@ class ReAct(Module):
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
+        """Synchronous version of forward that supports async tools."""
+        # Original synchronous implementation
         trajectory = {}
         for idx in range(self.max_iters):
             pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -93,6 +96,44 @@ class ReAct(Module):
                             continue
                     parsed_tool_args[k] = v
                 trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**parsed_tool_args)
+            except Exception as e:
+                trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
+
+            if pred.next_tool_name == "finish":
+                break
+
+        extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
+        return dspy.Prediction(trajectory=trajectory, **extract)
+
+    async def async_forward(self, **input_args):
+        """Asynchronous version of forward that supports async tools."""
+        trajectory = {}
+        for idx in range(self.max_iters):
+            pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+
+            trajectory[f"thought_{idx}"] = pred.next_thought
+            trajectory[f"tool_name_{idx}"] = pred.next_tool_name
+            trajectory[f"tool_args_{idx}"] = pred.next_tool_args
+
+            try:
+                parsed_tool_args = {}
+                tool = self.tools[pred.next_tool_name]
+                for k, v in pred.next_tool_args.items():
+                    if hasattr(tool, "arg_types") and k in tool.arg_types:
+                        arg_type = tool.arg_types[k]
+                        if isinstance((origin := get_origin(arg_type) or arg_type), type) and issubclass(
+                            origin, BaseModel
+                        ):
+                            parsed_tool_args[k] = arg_type.model_validate(v)
+                            continue
+                    parsed_tool_args[k] = v
+                
+                result = self.tools[pred.next_tool_name](**parsed_tool_args)
+                # Handle the case where the tool returns a coroutine
+                if inspect.iscoroutine(result):
+                    trajectory[f"observation_{idx}"] = await result
+                else:
+                    trajectory[f"observation_{idx}"] = result
             except Exception as e:
                 trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
 
