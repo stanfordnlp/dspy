@@ -59,6 +59,8 @@ dev = [
     "pillow>=10.1.0",
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
+    "litellm>=1.60.3; sys_platform == 'win32'",
+    "litellm[proxy]>=1.60.3; sys_platform != 'win32'",
 ]
 
 [tool.setuptools.packages.find]
