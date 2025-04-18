@@ -67,7 +67,7 @@ jobs:
         run: uv venv --python=${{ matrix.python-version }} .venv
 
       - name: Install dependencies
-        run: uv sync --python-version ${{ matrix.python-version }} --dev -p .venv
+        run: uv sync --dev -p .venv
 
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
@@ -75,7 +75,7 @@ jobs:
           args: check --fix-only
 
       - name: Run tests with pytest
-        run: uv run pytest tests/
+        run: uv run -p .venv pytest tests/
 
   build_package:
     name: Build Package
@@ -103,8 +103,8 @@ jobs:
       - name: Create virtual environment
         run: uv venv --python=${{ matrix.python-version }} .venv
 
-      - name: Install build dependencies
-        run: uv pip install build -p .venv
+      - name: Install dependencies
+        run: uv sync --dev -p .venv
 
       - name: Build
         run: uv run -p .venv python -m build
