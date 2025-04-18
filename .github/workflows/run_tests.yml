@@ -7,9 +7,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-env:
-  POETRY_VERSION: "2.0.0"
-
 jobs:
   fix:
     name: Check Ruff Fix
@@ -55,67 +52,65 @@ jobs:
       - name: Verify Deno installation
         run: deno --version
 
-      - name: Load cached Poetry installation
-        id: cached-poetry
+      - name: Cache UV dependencies
         uses: actions/cache@v3
         with:
-          path: ~/.local
-          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-      - name: Install Poetry
-        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('**/pyproject.toml', '**/uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+
+      - name: Install UV
+        run: pip install uv
+
+      - name: Create virtual environment
+        run: uv venv --python=${{ matrix.python-version }} .venv
+
       - name: Install dependencies
-        run: |
-          poetry install --no-interaction
+        run: uv sync --python-version ${{ matrix.python-version }} --dev -p .venv
+
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
         with:
           args: check --fix-only
-      - name: Run tests with pytest
-        run: poetry run pytest tests/
-  build_poetry:
-    name: Build Poetry
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11"]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v3
-        with:
-          path: ~/.local
-          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install Poetry
-        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
-      - name: Build
-        run: poetry build
-      - name: Install built package
-        run: python -m pip install dist/*.whl
-      - name: Test import dspy
-        run: python -c "import dspy"
 
-  build_setup:
-    name: Build Setup
+      - name: Run tests with pytest
+        run: uv run pytest tests/
+
+  build_package:
+    name: Build Package
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v3
-        with:
-          path: ~/.local
-          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Poetry
-        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
-      - name: Build the wheel
-        run: python -m build
+
+      - name: Cache UV dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('**/pyproject.toml', '**/uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+
+      - name: Install UV
+        run: pip install uv
+
+      - name: Create virtual environment
+        run: uv venv --python=${{ matrix.python-version }} .venv
+
+      - name: Install build dependencies
+        run: uv pip install build -p .venv
+
+      - name: Build
+        run: uv run -p .venv python -m build
+
+      - name: Install built package
+        run: uv pip install dist/*.whl -p .venv
+
+      - name: Test import dspy
+        run: uv run -p .venv python -c "import dspy"
