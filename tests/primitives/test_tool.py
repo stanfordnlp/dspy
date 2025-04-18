@@ -68,10 +68,10 @@ def complex_dummy_function(profile: UserProfile, priority: int, notes: Optional[
 
 
 def test_basic_initialization():
-    tool = Tool(name="test_tool", desc="A test tool", arg_schema={"param1": {"type": "string"}}, func=lambda x: x)
+    tool = Tool(name="test_tool", desc="A test tool", args={"param1": {"type": "string"}}, func=lambda x: x)
     assert tool.name == "test_tool"
     assert tool.desc == "A test tool"
-    assert tool.arg_schema == {"param1": {"type": "string"}}
+    assert tool.args == {"param1": {"type": "string"}}
     assert callable(tool.func)
 
 
@@ -80,11 +80,11 @@ def test_tool_from_function():
 
     assert tool.name == "dummy_function"
     assert "A dummy function for testing" in tool.desc
-    assert "x" in tool.arg_schema
-    assert "y" in tool.arg_schema
-    assert tool.arg_schema["x"]["type"] == "integer"
-    assert tool.arg_schema["y"]["type"] == "string"
-    assert tool.arg_schema["y"]["default"] == "hello"
+    assert "x" in tool.args
+    assert "y" in tool.args
+    assert tool.args["x"]["type"] == "integer"
+    assert tool.args["y"]["type"] == "string"
+    assert tool.args["y"]["default"] == "hello"
 
 
 def test_tool_from_class():
@@ -99,33 +99,33 @@ def test_tool_from_class():
     tool = Tool(Foo("123"))
     assert tool.name == "Foo"
     assert tool.desc == "Add two numbers."
-    assert tool.arg_schema == {"a": {"type": "integer"}, "b": {"type": "integer"}}
+    assert tool.args == {"a": {"type": "integer"}, "b": {"type": "integer"}}
 
 
 def test_tool_from_function_with_pydantic():
     tool = Tool(dummy_with_pydantic)
 
     assert tool.name == "dummy_with_pydantic"
-    assert "model" in tool.arg_schema
-    assert tool.arg_schema["model"]["type"] == "object"
-    assert "field1" in tool.arg_schema["model"]["properties"]
-    assert "field2" in tool.arg_schema["model"]["properties"]
-    assert tool.arg_schema["model"]["properties"]["field1"]["default"] == "hello"
+    assert "model" in tool.args
+    assert tool.args["model"]["type"] == "object"
+    assert "field1" in tool.args["model"]["properties"]
+    assert "field2" in tool.args["model"]["properties"]
+    assert tool.args["model"]["properties"]["field1"]["default"] == "hello"
 
 
 def test_tool_from_function_with_pydantic_nesting():
     tool = Tool(complex_dummy_function)
 
     assert tool.name == "complex_dummy_function"
-    assert "profile" in tool.arg_schema
-    assert "priority" in tool.arg_schema
-    assert "notes" in tool.arg_schema
-    assert tool.arg_schema["profile"]["type"] == "object"
-    assert tool.arg_schema["profile"]["properties"]["user_id"]["type"] == "integer"
-    assert tool.arg_schema["profile"]["properties"]["name"]["type"] == "string"
-    assert tool.arg_schema["profile"]["properties"]["age"]["anyOf"] == [{"type": "integer"}, {"type": "null"}]
-    assert tool.arg_schema["profile"]["properties"]["contact"]["type"] == "object"
-    assert tool.arg_schema["profile"]["properties"]["contact"]["properties"]["email"]["type"] == "string"
+    assert "profile" in tool.args
+    assert "priority" in tool.args
+    assert "notes" in tool.args
+    assert tool.args["profile"]["type"] == "object"
+    assert tool.args["profile"]["properties"]["user_id"]["type"] == "integer"
+    assert tool.args["profile"]["properties"]["name"]["type"] == "string"
+    assert tool.args["profile"]["properties"]["age"]["anyOf"] == [{"type": "integer"}, {"type": "null"}]
+    assert tool.args["profile"]["properties"]["contact"]["type"] == "object"
+    assert tool.args["profile"]["properties"]["contact"]["properties"]["email"]["type"] == "string"
 
 
 def test_tool_callable():
@@ -149,4 +149,4 @@ def test_invalid_function_call():
 
 def test_parameter_desc():
     tool = Tool(dummy_function, arg_desc={"x": "The x parameter"})
-    assert tool.arg_schema["x"]["description"] == "The x parameter"
+    assert tool.args["x"]["description"] == "The x parameter"

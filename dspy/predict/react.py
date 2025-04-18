@@ -40,14 +40,14 @@ class ReAct(Module):
             func=lambda **kwargs: "Completed.",
             name="finish",
             desc=f"Signals that the final outputs, i.e. {outputs}, are now available and marks the task as complete.",
-            arg_schema={},
+            args={},
         )
 
         for idx, tool in enumerate(tools.values()):
-            arg_schema = getattr(tool, "arg_schema")
+            args = getattr(tool, "args")
             desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
-            desc += f" It takes arguments {arg_schema} in JSON format."
-            instr.append(f"({idx+1}) {tool.name}{desc}")
+            desc += f" It takes arguments {args} in JSON format."
+            instr.append(f"({idx + 1}) {tool.name}{desc}")
 
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))

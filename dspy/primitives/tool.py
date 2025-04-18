@@ -19,13 +19,13 @@ class Tool:
         func: Callable,
         name: Optional[str] = None,
         desc: Optional[str] = None,
-        arg_schema: Optional[dict[str, Any]] = None,
+        args: Optional[dict[str, Any]] = None,
         arg_types: Optional[dict[str, Any]] = None,
         arg_desc: Optional[dict[str, str]] = None,
     ):
         """Initialize the Tool class.
 
-        Users can choose to specify the `name`, `desc`, `arg_schema`, and `arg_types`, or let the `dspy.Tool`
+        Users can choose to specify the `name`, `desc`, `args`, and `arg_types`, or let the `dspy.Tool`
         automatically infer the values from the function. For values that are specified by the user, automatic inference
         will not be performed on them.
 
@@ -33,7 +33,7 @@ class Tool:
             func (Callable): The actual function that is being wrapped by the tool.
             name (Optional[str], optional): The name of the tool. Defaults to None.
             desc (Optional[str], optional): The description of the tool. Defaults to None.
-            arg_schema (Optional[dict[str, Any]], optional): The args and their schema of the tool, represented as a
+            args (Optional[dict[str, Any]], optional): The args and their schema of the tool, represented as a
                 dictionary from arg name to arg's json schema. Defaults to None.
             arg_types (Optional[dict[str, Any]], optional): The argument types of the tool, represented as a dictionary
                 from arg name to the type of the argument. Defaults to None.
@@ -47,14 +47,14 @@ class Tool:
             return str(x) + y
 
         tool = Tool(foo)
-        print(tool.arg_schema)
+        print(tool.args)
         # Expected output: {'x': {'type': 'integer'}, 'y': {'type': 'string', 'default': 'hello'}}
         ```
         """
         self.func = func
         self.name = name
         self.desc = desc
-        self.arg_schema = arg_schema
+        self.args = args
         self.arg_types = arg_types
         self.arg_desc = arg_desc
 
@@ -96,7 +96,7 @@ class Tool:
         annotations_func = func if inspect.isfunction(func) or inspect.ismethod(func) else func.__call__
         name = getattr(func, "__name__", type(func).__name__)
         desc = getattr(func, "__doc__", None) or getattr(annotations_func, "__doc__", "")
-        arg_schema = {}
+        args = {}
         arg_types = {}
 
         # Use inspect.signature to get all arg names
@@ -117,28 +117,28 @@ class Tool:
             if isinstance(origin, type) and issubclass(origin, BaseModel):
                 # Get json schema, and replace $ref with the actual schema
                 v_json_schema = self._resolve_pydantic_schema(v)
-                arg_schema[k] = v_json_schema
+                args[k] = v_json_schema
             else:
-                arg_schema[k] = TypeAdapter(v).json_schema() or "Any"
+                args[k] = TypeAdapter(v).json_schema() or "Any"
             if default_values[k] is not inspect.Parameter.empty:
-                arg_schema[k]["default"] = default_values[k]
+                args[k]["default"] = default_values[k]
             if arg_desc and k in arg_desc:
-                arg_schema[k]["description"] = arg_desc[k]
+                args[k]["description"] = arg_desc[k]
 
         self.name = self.name or name
         self.desc = self.desc or desc
-        self.arg_schema = self.arg_schema or arg_schema
+        self.args = self.args or args
         self.arg_types = self.arg_types or arg_types
 
     @with_callbacks
     def __call__(self, **kwargs):
         for k, v in kwargs.items():
-            if k not in self.arg_schema:
+            if k not in self.args:
                 raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
                 instance = v.model_dump() if hasattr(v, "model_dump") else v
-                if not self.arg_schema[k] == "Any":
-                    validate(instance=instance, schema=self.arg_schema[k])
+                if not self.args[k] == "Any":
+                    validate(instance=instance, schema=self.args[k])
             except ValidationError as e:
                 raise ValueError(f"Arg {k} is invalid: {e.message}")
         return self.func(**kwargs)
