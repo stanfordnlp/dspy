@@ -85,18 +85,18 @@ class LM(BaseLM):
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
         is_reasoning_model = bool(re.match(r"^o([13])(?:-mini)?", model_family))
 
-        # Set default temperature
+        # Set defaults
         if temperature is None:
             temperature = 1.0 if is_reasoning_model else 0.0
-        elif is_reasoning_model:
-            assert temperature == 1.0, "Reasoning models require temperature=1.0."
-
-        # Set default max_tokens
         if max_tokens is None:
             max_tokens = 20_000 if is_reasoning_model else 1_000
-        elif is_reasoning_model:
-            assert max_tokens >= 20_000, "Reasoning models require max_tokens>=20_000."
-
+        
+        # Check to make sure temperature and max_tokens work for the model 
+        if is_reasoning_model:
+            assert (
+                max_tokens >= 20_000 and temperature == 1.0
+            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+        
         # Set kwargs based on reasoning model check
         if is_reasoning_model:
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
