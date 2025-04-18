@@ -17,6 +17,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync --dev -p .venv
       - name: Ruff Fix Attempt
         id: ruff_fix
         uses: chartboost/ruff-action@v1
@@ -44,36 +59,28 @@ jobs:
       - name: Install Deno
         run: |
           curl -fsSL https://deno.land/install.sh | sh
-          echo "Deno installed"
-
-      - name: Add Deno to PATH
-        run: echo "${HOME}/.deno/bin" >> $GITHUB_PATH
-
+          echo "${HOME}/.deno/bin" >> $GITHUB_PATH
       - name: Verify Deno installation
         run: deno --version
-
-      - name: Cache UV dependencies
-        uses: actions/cache@v3
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
         with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('**/pyproject.toml', '**/uv.lock') }}
-          restore-keys: |
-            uv-${{ runner.os }}-
-
-      - name: Install UV
-        run: pip install uv
-
-      - name: Create virtual environment
-        run: uv venv --python=${{ matrix.python-version }} .venv
-
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv sync --dev -p .venv
-
+        run: |
+          uv sync --dev -p .venv --extra dev
+          uv pip list
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
         with:
           args: check --fix-only
-
       - name: Run tests with pytest
         run: uv run -p .venv pytest tests/
 
@@ -88,29 +95,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Cache UV dependencies
-        uses: actions/cache@v3
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
         with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('**/pyproject.toml', '**/uv.lock') }}
-          restore-keys: |
-            uv-${{ runner.os }}-
-
-      - name: Install UV
-        run: pip install uv
-
-      - name: Create virtual environment
-        run: uv venv --python=${{ matrix.python-version }} .venv
-
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv sync --dev -p .venv
-
+        run: uv sync --dev -p .venv --extra dev
       - name: Build
         run: uv run -p .venv python -m build
-
       - name: Install built package
         run: uv pip install dist/*.whl -p .venv
-
       - name: Test import dspy
         run: uv run -p .venv python -c "import dspy"
