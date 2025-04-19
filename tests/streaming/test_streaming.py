@@ -14,7 +14,7 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
         api_base=api_base,
         api_key="fakekey",
     )
-    with dspy.context(lm=lm):
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
 
         class TestSignature(dspy.Signature):
             input_text: str = dspy.InputField()

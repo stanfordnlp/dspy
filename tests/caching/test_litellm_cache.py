@@ -15,7 +15,9 @@ def temporary_blank_cache_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as cache_dir_path:
         monkeypatch.setenv("DSPY_CACHEDIR", cache_dir_path)
         importlib.reload(dspy.clients)
+        dspy.configure_cache(enable_memory_cache=True, enable_disk_cache=False, enable_litellm_cache=True)
         yield cache_dir_path
+        dspy.configure_cache(enable_memory_cache=True, enable_disk_cache=True, enable_litellm_cache=False)
 
 
 @pytest.fixture()
@@ -31,7 +33,9 @@ def temporary_populated_cache_dir(monkeypatch):
         shutil.copytree(populated_cache_path, cache_dir_path, dirs_exist_ok=True)
         monkeypatch.setenv("DSPY_CACHEDIR", cache_dir_path)
         importlib.reload(dspy.clients)
+        dspy.configure_cache(enable_memory_cache=True, enable_disk_cache=False, enable_litellm_cache=True)
         yield cache_dir_path
+        dspy.configure_cache(enable_memory_cache=True, enable_disk_cache=True, enable_litellm_cache=False)
 
 
 def test_lm_calls_are_cached_across_lm_instances(litellm_test_server, temporary_blank_cache_dir):
