@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import openai
 
-from dspy.clients.provider import TrainingJob, Provider, RLBatchJob
+from dspy.clients.provider import TrainingJob, Provider #, RLBatchJob
 from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
 
 if TYPE_CHECKING:
@@ -38,27 +38,27 @@ class SFTTrainingJobArbor(TrainingJob):
         status = ArborProvider.get_training_status(self.provider_job_id)
         return status
 
-class RLBatchJobArbor(RLBatchJob):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.provider_job_id = None
+# class RLBatchJobArbor(RLBatchJob):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self.provider_job_id = None
 
-    def cancel(self):
-        if ArborProvider.does_job_exist(self.provider_job_id):
-            status = self.status()
-            if ArborProvider.is_terminal_training_status(status):
-                err_msg = "Jobs that are complete cannot be canceled."
-                err_msg += f" Job with ID {self.provider_job_id} is done."
-                raise Exception(err_msg)
-            openai.fine_tuning.jobs.cancel(self.provider_job_id)
-            self.provider_job_id = None
+#     def cancel(self):
+#         if ArborProvider.does_job_exist(self.provider_job_id):
+#             status = self.status()
+#             if ArborProvider.is_terminal_training_status(status):
+#                 err_msg = "Jobs that are complete cannot be canceled."
+#                 err_msg += f" Job with ID {self.provider_job_id} is done."
+#                 raise Exception(err_msg)
+#             openai.fine_tuning.jobs.cancel(self.provider_job_id)
+#             self.provider_job_id = None
 
-        # Assuming no file needed for RL batch training (the batches are small enough)
-        super().cancel()
+#         # Assuming no file needed for RL batch training (the batches are small enough)
+#         super().cancel()
 
-    def status(self) -> TrainingStatus:
-        status = ArborProvider.get_training_status(self.provider_job_id)
-        return status
+#     def status(self) -> TrainingStatus:
+#         status = ArborProvider.get_training_status(self.provider_job_id)
+#         return status
 
 class ArborProvider(Provider):
 
@@ -66,7 +66,7 @@ class ArborProvider(Provider):
         super().__init__()
         self.finetunable = True
         self.TrainingJob = SFTTrainingJobArbor
-        self.RLBatchJob = RLBatchJobArbor
+        # self.RLBatchJob = RLBatchJobArbor
         self.api_base = api_base
 
     @staticmethod
@@ -154,36 +154,36 @@ class ArborProvider(Provider):
 
         return f"openai/arbor:{model}"
 
-    @staticmethod
-    def rl_train_batch(
-            job: RLBatchJobArbor,
-            model: str,
-            batch_data: List[Dict[str, Any]],
-            batch_data_format: Optional[TrainDataFormat],
-            train_kwargs: Optional[Dict[str, Any]] = None
-    ) -> str:
-        model = ArborProvider._remove_provider_prefix(model)
+    # @staticmethod
+    # def rl_train_batch(
+    #         job: RLBatchJobArbor,
+    #         model: str,
+    #         batch_data: List[Dict[str, Any]],
+    #         batch_data_format: Optional[TrainDataFormat],
+    #         train_kwargs: Optional[Dict[str, Any]] = None
+    # ) -> str:
+    #     model = ArborProvider._remove_provider_prefix(model)
 
-        print("[Arbor Provider] Validating the data format")
-        ArborProvider.validate_data_format(batch_data_format, type='rl')
+    #     print("[Arbor Provider] Validating the data format")
+    #     ArborProvider.validate_data_format(batch_data_format, type='rl')
 
-        print("[Arbor Provider] Starting remote training")
-        provider_job_id = ArborProvider._start_remote_rl_train_batch(
-            batch_data=batch_data,
-            model=model,
-            train_kwargs=train_kwargs,
-        )
-        job.provider_job_id = provider_job_id
-        print(f"[Arbor Provider] Job started with the Arbor Job ID {provider_job_id}")
+    #     print("[Arbor Provider] Starting remote training")
+    #     provider_job_id = ArborProvider._start_remote_rl_train_batch(
+    #         batch_data=batch_data,
+    #         model=model,
+    #         train_kwargs=train_kwargs,
+    #     )
+    #     job.provider_job_id = provider_job_id
+    #     print(f"[Arbor Provider] Job started with the Arbor Job ID {provider_job_id}")
 
-        print("[Arbor Provider] Waiting for training to complete")
-        # TODO: This takes 1 second but that might still be too long
-        ArborProvider.wait_for_job(job, poll_frequency=1)
+    #     print("[Arbor Provider] Waiting for training to complete")
+    #     # TODO: This takes 1 second but that might still be too long
+    #     ArborProvider.wait_for_job(job, poll_frequency=1)
 
-        model = ArborProvider.get_trained_model(job)
-        print(f"[Arbor Provider] Model retrieved: {model}")
+    #     model = ArborProvider.get_trained_model(job)
+    #     print(f"[Arbor Provider] Model retrieved: {model}")
 
-        return f"openai/arbor:{model}"
+    #     return f"openai/arbor:{model}"
 
 
     @staticmethod

@@ -10,27 +10,27 @@ class Message(TypedDict):
 class Completion(TypedDict):
     role: Literal["assistant"]
     content: str
+
+class GRPOGroupMember(TypedDict):
+    messages: List[Message]
+    completion: Completion
     reward: int
 
-class Input(TypedDict):
-    messages: List[Message]
+GRPOGroup = List[GRPOGroupMember]
 
-class GRPOTrainInstance(TypedDict):
-    input: Input
-    completions: List[Completion]
-
-GRPOTrainBatch = List[GRPOTrainInstance]
+GRPOBatch = List[GRPOGroup]
 
 # TODO(Lakshya, Noah): This currently assumes the server is already running locally
 class ArborGRPOTrainer:
-    def __init__(self, model, suffix, base_url='http://127.0.0.1:8000/v1'):
+    def __init__(self, model, lm, suffix, base_url='http://127.0.0.1:8000/v1'):
         # TODO(Lakshya): This is a temporary hack for testing
-        if model == "openai/gpt-4o":
-            model = "Qwen/Qwen2-0.5B-Instruct"
-            print("Using Qwen/Qwen2-0.5B-Instruct model for GRPO training.")
+        assert model.startswith("openai/arbor:")
+        model = model[len("openai/arbor:"):]
+        print("Initializing GRPO train job for model:", model)
         self.model = model
         self.base_url = base_url
         self.suffix = suffix
+        self.lm = lm
 
     def initialize(self):
         headers = {'Content-Type': 'application/json'}
@@ -42,7 +42,7 @@ class ArborGRPOTrainer:
         assert response.status_code == 200, f"Failed to initialize GRPO: {response.text}"
         return response
 
-    def run_grpo_step(self, batch: GRPOTrainBatch):
+    def run_grpo_step_one_group(self, batch: GRPOGroup):
         url = f"{self.base_url}/fine_tuning/grpo/step"
         headers = {'Content-Type': 'application/json'}
         data = {
@@ -52,6 +52,19 @@ class ArborGRPOTrainer:
         }
         response = requests.post(url, headers=headers, json=data)
         return response
+
+    def run_grpo_step(self, batch: GRPOBatch):
+        responses = []
+        current_model = self.lm.
+        for group in batch:
+            response = self.run_grpo_step_one_group(group).json()
+            responses.append(response)
+            assert "status" in response and response['status'] == "success"
+            assert "current_model" in response
+        return {
+            "responses": responses,
+            "current_model": current_model
+        }
 
     def terminate_grpo(self):
         url = f"{self.base_url}/fine_tuning/grpo/terminate"

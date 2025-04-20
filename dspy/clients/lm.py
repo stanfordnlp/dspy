@@ -15,6 +15,7 @@ from cachetools import LRUCache, cached
 from litellm import RetryPolicy
 
 import dspy
+from dspy.clients.lm_local_arbor import ArborProvider
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat

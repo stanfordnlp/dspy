@@ -16,7 +16,7 @@ from dspy.primitives.program import Program
 from dspy.teleprompt.teleprompt import Teleprompter
 
 # TODO (Lakshya, Noah): This entire file should be appropriately refactored into an arbor LM and arbor provider
-from dspy.clients.arbor.arbor import ArborGRPOTrainer, GRPOTrainBatch, GRPOTrainInstance
+from dspy.clients.arbor.arbor import ArborGRPOTrainer, GRPOGroupMember, GRPOGroup, GRPOBatch
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +116,13 @@ class GRPO(FinetuneTeleprompter):
         grpo_training_jobs = [] # This maps each predictor_idx to its GRPO training job
         if self.multitask:
             # In this, there will be only one GRPO training job for the context LM
+
+
             model_names = {pred.lm.model for pred in student.predictors()}
             assert len(model_names) == 1, "The student program must have only one context LM."
+
+            
+
             model_name = list(model_names)[0]
             grpo_training_job = ArborGRPOTrainer(model=model_name, suffix="grpo")
             grpo_training_job.initialize()
@@ -180,7 +185,7 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Preparing the training data batch from bootstrapped examples for GRPO...")
             # Now, we need to prepare batches of data to be sent for training
             # Shape of train_batch_per_predictor: List[num_student_predictors -> List[ ]]
-            train_batch_per_predictor: List[GRPOTrainBatch] = [[] for _ in range(num_student_predictors)]
+            train_batch_per_predictor: List[GRPOBatch] = [[] for _ in range(num_student_predictors)]
             for pred_id in range(num_student_predictors):
                 for example_ind, example_data in enumerate(trace_data):
                     # Each example_data is a list of teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]
@@ -223,12 +228,7 @@ class GRPO(FinetuneTeleprompter):
                     
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
 
-                    example_training_data: List[GRPOTrainInstance] = [{
-                        "input": {
-                            "messages": [],
-                        },
-                        "completions": [],
-                    } for _ in range(max_len)]
+                    example_training_data: List[GRPOGroup] = [[] for _ in range(max_len)]
 
                     for group_idx in range(max_len):
                         for rollout_idx in range(len(predictor_example_invocations)):
@@ -247,27 +247,36 @@ class GRPO(FinetuneTeleprompter):
                             inp_messages = adapter.format(
                                 signature=trace_instance[0].signature, 
                                 inputs=trace_instance[1], 
-                                demos=[]
+                                demos=[] # TODO: Add support for demos
                             )
                             all_messages = adapter.format_finetune_data(
                                 signature=trace_instance[0].signature,
                                 inputs=trace_instance[1],
                                 outputs=trace_instance[2],
-                                demos=[]
+                                demos=[] # TODO: Add support for demos
                             )['messages']
 
                             assert all_messages[:-1] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {all_messages[:-1]}"
 
-                            if len(example_training_data[group_idx]["input"]["messages"]) == 0:
-                                example_training_data[group_idx]["input"]["messages"] = [{"role": msg['role'], 'content': msg['content']} for msg in inp_messages]
-                            elif example_training_data[group_idx]["input"]["messages"] != inp_messages:
-                                logger.info(f"Input messages {inp_messages} do not match the expected messages {example_training_data[group_idx]['input']['messages']}")
+                            # if len(example_training_data[group_idx]["input"]["messages"]) == 0:
+                            #     example_training_data[group_idx]["input"]["messages"] = [{"role": msg['role'], 'content': msg['content']} for msg in inp_messages]
+                            # elif example_training_data[group_idx]["input"]["messages"] != inp_messages:
+                            #     logger.info(f"Input messages {inp_messages} do not match the expected messages {example_training_data[group_idx]['input']['messages']}")
                             
-                            response_msg = all_messages[-1]
-                            assert 'role' in response_msg and 'content' in response_msg, f"Response message {response_msg} does not contain the expected keys 'role' and 'content'"
-                            example_training_data[group_idx]["completions"].append({
-                                "role": response_msg["role"],
-                                "content": response_msg["content"],
+                            # response_msg = all_messages[-1]
+                            # assert 'role' in response_msg and 'content' in response_msg, f"Response message {response_msg} does not contain the expected keys 'role' and 'content'"
+                            # example_training_data[group_idx]["completions"].append({
+                            #     "role": response_msg["role"],
+                            #     "content": response_msg["content"],
+                            #     "reward": score,
+                            # })
+                            
+                            example_training_data[group_idx].append({
+                                "messages": inp_messages,
+                                "completion": {
+                                    "role": all_messages[-1]["role"],
+                                    "content": all_messages[-1]["content"],
+                                },
                                 "reward": score,
                             })
                     
@@ -275,17 +284,19 @@ class GRPO(FinetuneTeleprompter):
             
             for predictor_train_batch in train_batch_per_predictor:
                 # assert len(predictor_train_batch) == self.per_predictor_batch_size, f"Batch size {len(predictor_train_batch)} does not match the expected batch size {self.per_predictor_batch_size}"
-                for example_training_data in predictor_train_batch:
-                    assert len(example_training_data["completions"]) == self.num_rollouts_per_dspy_example_per_step, f"Number of completions {len(example_training_data['completions'])} does not match the expected number self.num_rollouts_per_dspy_example_per_step={self.num_rollouts_per_dspy_example_per_step}"
+                for grpo_train_group in predictor_train_batch:
+                    assert len(grpo_train_group) == self.num_rollouts_per_dspy_example_per_step, f"Number of completions {len(example_training_data['completions'])} does not match the expected number self.num_rollouts_per_dspy_example_per_step={self.num_rollouts_per_dspy_example_per_step}"
+                    if len(set(map(repr, grpo_train_group))) < 2:
+                        logger.warning(f"GRPOGroup has no diversity. This could be due to low temperature, or low number of rollouts, or the cache could be enabled inadvertently. The GRPOGroup is {grpo_train_group}.")
 
             logger.info("Invoking GRPO training step on the arbor backend...")
             if self.multitask:
-                train_batch = sum(train_batch_per_predictor, [])
+                train_batch: GRPOBatch = sum(train_batch_per_predictor, [])
                 grpo_training_jobs[0].run_grpo_step(train_batch)
             else:
                 # TODO (Lakshya): Implement multitask==False
                 for pred_id, grpo_training_job in enumerate(grpo_training_jobs):
-                    train_batch = train_batch_per_predictor[pred_id]
+                    train_batch: GRPOBatch = train_batch_per_predictor[pred_id]
                     grpo_training_job.run_grpo_step(train_batch)
             
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
