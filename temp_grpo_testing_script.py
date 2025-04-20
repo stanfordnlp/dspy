@@ -29,7 +29,7 @@ class CustomSignature(dspy.Signature):
 
 class CustomModule(dspy.Module):
     def __init__(self):
-        self.modules = [dspy.ChainOfThought(CustomSignature) for i in range(1)]
+        self.modules = [dspy.ChainOfThought(CustomSignature) for i in range(3)]
     
     def forward(self, question):
         answers = []
@@ -48,7 +48,7 @@ class CustomModule(dspy.Module):
 dataset = [
     dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"),
     dspy.Example(question="What is the capital of Germany?", answer="Berlin").with_inputs("question"),
-]
+] * 6
 
 def metric(example, prediction, trace=None):
     score1 = 1 if example.answer == prediction.consice_answer else 0

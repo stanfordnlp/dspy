@@ -54,7 +54,10 @@ class ArborGRPOTrainer:
         response = requests.post(url, headers=headers, json=data).json()
         assert "status" in response and response['status'] == "success"
         assert "current_model" in response
+        if response["current_model"] != self.model:
+            print("Model updated to:", response["current_model"])
         self.model = response["current_model"]
+
         self.lm.model = "openai/arbor:" + self.model
         return {
             "response": response,
