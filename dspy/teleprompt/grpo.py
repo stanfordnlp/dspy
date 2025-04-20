@@ -52,6 +52,8 @@ class GRPO(FinetuneTeleprompter):
         num_steps_for_val: int = 5,
         variably_invoked_predictor_grouping_mode: Union[Literal['truncate'], Literal['fill'], Literal['ragged']] = 'truncate',
         variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
+        grpo_beta: float = 0.04,
+        arbor_inference_model_update_interval: int = 25,
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -84,6 +86,9 @@ class GRPO(FinetuneTeleprompter):
             assert variably_invoked_predictor_fill_strategy is not None, "variably_invoked_predictor_fill_strategy must be set when variably_invoked_predictor_grouping_mode is 'fill'"
             assert variably_invoked_predictor_fill_strategy in ['randint', 'max'], "variably_invoked_predictor_fill_strategy must be either 'randint' or 'max'"
         self.variably_invoked_predictor_fill_strategy = variably_invoked_predictor_fill_strategy
+
+        self.grpo_beta = grpo_beta
+        self.arbor_inference_model_update_interval = arbor_inference_model_update_interval
 
     def compile(
         self, student: Program, trainset: List[Example], teacher: Optional[Union[Program, List[Program]]] = None, valset: Optional[List[Example]] = None, **kwargs
@@ -120,7 +125,13 @@ class GRPO(FinetuneTeleprompter):
             assert len(model_names) == 1, "The student program must have only one context LM."
             model_name = list(model_names)[0]
             lm_being_trained = student.get_lm()
-            grpo_training_job = ArborGRPOTrainer(lm=lm_being_trained, suffix="grpo")
+            grpo_training_job = ArborGRPOTrainer(
+                lm=lm_being_trained,
+                suffix="grpo",
+                beta=self.grpo_beta,
+                num_generations=self.num_rollouts_per_dspy_example_per_step,
+                update_interval=self.arbor_inference_model_update_interval
+            )
             grpo_training_job.initialize()
             grpo_training_jobs = [grpo_training_job]
         else:

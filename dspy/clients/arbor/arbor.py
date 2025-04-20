@@ -22,7 +22,7 @@ GRPOBatch = List[GRPOGroup]
 
 # TODO(Lakshya, Noah): This currently assumes the server is already running locally
 class ArborGRPOTrainer:
-    def __init__(self, lm, suffix, base_url='http://127.0.0.1:8000/v1'):
+    def __init__(self, lm, suffix, beta=0.04, num_generations=8, update_interval=25, base_url='http://127.0.0.1:8000/v1'):
         # TODO(Lakshya): This is a temporary hack for testing
         model = lm.model
         assert model.startswith("openai/arbor:")
@@ -33,11 +33,22 @@ class ArborGRPOTrainer:
         self.suffix = suffix
         self.lm = lm
 
+        self.temperature = lm.kwargs.get("temperature", 0.9)
+        assert self.temperature is not None, "Temperature must be set in the LM kwargs"
+        assert self.temperature > 0, "Temperature must be greater than 0 for GRPO"
+        self.beta = beta
+        self.num_generations = num_generations
+        self.update_interval = update_interval
+
     def initialize(self):
         headers = {'Content-Type': 'application/json'}
         data = {
             'model': self.model,
             'suffix': self.suffix,
+            'temperature': self.temperature,
+            'beta': self.beta,
+            'num_generations': self.num_generations,
+            'update_interval': self.update_interval,
         }
         response = requests.post(f"{self.base_url}/fine_tuning/grpo/initialize", headers=headers, json=data)
         assert response.status_code == 200, f"Failed to initialize GRPO: {response.text}"

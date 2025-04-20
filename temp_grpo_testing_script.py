@@ -73,7 +73,8 @@ compiler = GRPO(
     exclude_demos=True,
     num_train_steps=100,
     use_train_as_val=True,
-    num_rollouts_per_dspy_example_per_step=8
+    num_rollouts_per_dspy_example_per_step=8,
+    arbor_inference_model_update_interval=1
 )
 
 compiler.compile(module, dataset)
