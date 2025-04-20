@@ -22,8 +22,9 @@ GRPOBatch = List[GRPOGroup]
 
 # TODO(Lakshya, Noah): This currently assumes the server is already running locally
 class ArborGRPOTrainer:
-    def __init__(self, model, lm, suffix, base_url='http://127.0.0.1:8000/v1'):
+    def __init__(self, lm, suffix, base_url='http://127.0.0.1:8000/v1'):
         # TODO(Lakshya): This is a temporary hack for testing
+        model = lm.model
         assert model.startswith("openai/arbor:")
         model = model[len("openai/arbor:"):]
         print("Initializing GRPO train job for model:", model)
@@ -50,20 +51,24 @@ class ArborGRPOTrainer:
             'update_inference_model': True,
             "batch": batch
         }
-        response = requests.post(url, headers=headers, json=data)
-        return response
+        response = requests.post(url, headers=headers, json=data).json()
+        assert "status" in response and response['status'] == "success"
+        assert "current_model" in response
+        self.model = response["current_model"]
+        self.lm.model = "openai/arbor:" + self.model
+        return {
+            "response": response,
+            "current_model": self.model
+        }
 
     def run_grpo_step(self, batch: GRPOBatch):
         responses = []
-        current_model = self.lm.
         for group in batch:
-            response = self.run_grpo_step_one_group(group).json()
+            response = self.run_grpo_step_one_group(group)['response']
             responses.append(response)
-            assert "status" in response and response['status'] == "success"
-            assert "current_model" in response
         return {
             "responses": responses,
-            "current_model": current_model
+            "current_model": self.model
         }
 
     def terminate_grpo(self):

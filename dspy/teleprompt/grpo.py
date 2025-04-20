@@ -116,15 +116,11 @@ class GRPO(FinetuneTeleprompter):
         grpo_training_jobs = [] # This maps each predictor_idx to its GRPO training job
         if self.multitask:
             # In this, there will be only one GRPO training job for the context LM
-
-
             model_names = {pred.lm.model for pred in student.predictors()}
             assert len(model_names) == 1, "The student program must have only one context LM."
-
-            
-
             model_name = list(model_names)[0]
-            grpo_training_job = ArborGRPOTrainer(model=model_name, suffix="grpo")
+            lm_being_trained = student.get_lm()
+            grpo_training_job = ArborGRPOTrainer(lm=lm_being_trained, suffix="grpo")
             grpo_training_job.initialize()
             grpo_training_jobs = [grpo_training_job]
         else:
@@ -292,7 +288,6 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Invoking GRPO training step on the arbor backend...")
             if self.multitask:
                 train_batch: GRPOBatch = sum(train_batch_per_predictor, [])
-                grpo_training_jobs[0].run_grpo_step(train_batch)
             else:
                 # TODO (Lakshya): Implement multitask==False
                 for pred_id, grpo_training_job in enumerate(grpo_training_jobs):

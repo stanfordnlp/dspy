@@ -29,7 +29,7 @@ class CustomSignature(dspy.Signature):
 
 class CustomModule(dspy.Module):
     def __init__(self):
-        self.modules = [dspy.ChainOfThought(CustomSignature) for i in range(3)]
+        self.modules = [dspy.ChainOfThought(CustomSignature) for i in range(1)]
     
     def forward(self, question):
         answers = []
