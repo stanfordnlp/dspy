@@ -299,6 +299,7 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Invoking GRPO training step on the arbor backend...")
             if self.multitask:
                 train_batch: GRPOBatch = sum(train_batch_per_predictor, [])
+                grpo_training_job.run_grpo_step(train_batch)
             else:
                 # TODO (Lakshya): Implement multitask==False
                 for pred_id, grpo_training_job in enumerate(grpo_training_jobs):
