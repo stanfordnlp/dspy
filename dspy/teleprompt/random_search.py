@@ -89,6 +89,12 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 )
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
+                # jimboswankster DEBUGGING SAVE/LOAD issue with optimization
+                print(f"[BFRS Compile, Seed {seed}] After candidate compile:")
+                for i_p, p_cand in enumerate(program.predictors()):
+                    print(f"  Pred {i_p}: ID={id(p_cand)}, Has .demos={hasattr(p_cand, 'demos')}, Len={len(p_cand.demos) if hasattr(p_cand, 'demos') and isinstance(p_cand.demos, list) else 'N/A'}")
+                # --- END ADDED LOGGING ---
+
             else:
                 assert seed >= 0, seed
 
@@ -107,6 +113,14 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
+
+                # jimboswankster DEBUGGING SAVE/LOAD issue with optimization
+                print(f"[BFRS Compile, Seed {seed}] After candidate compile:")
+                for i_p, p_cand in enumerate(program.predictors()):
+                    print(f"  Pred {i_p}: ID={id(p_cand)}, Has .demos={hasattr(p_cand, 'demos')}, Len={len(p_cand.demos) if hasattr(p_cand, 'demos') and isinstance(p_cand.demos, list) else 'N/A'}")
+                # --- END ADDED LOGGING ---
+
+
             evaluate = Evaluate(
                 devset=self.valset,
                 metric=self.metric,
@@ -118,6 +132,13 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
             score, subscores = evaluate(program, return_all_scores=True)
 
+
+            # jimboswankster DEBUGGING SAVE/LOAD issue with optimization
+            print(f"[BFRS Compile, Seed {seed}] After candidate eval:")
+            for i_p, p_cand in enumerate(program.predictors()):
+                print(f"  Pred {i_p}: ID={id(p_cand)}, Has .demos={hasattr(p_cand, 'demos')}, Len={len(p_cand.demos) if hasattr(p_cand, 'demos') and isinstance(p_cand.demos, list) else 'N/A'}")
+            # --- END ADDED LOGGING ---
+
             all_subscores.append(subscores)
 
             ############ Assertion-aware Optimization ############
@@ -127,13 +148,35 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 score = 0 if program._assert_failures > 0 else score
             ######################################################
 
-            if len(scores) == 0 or score > max(scores):
-                print("New best score:", score, "for seed", seed)
-                best_program = program
+            # --- OLD LOGIC ---
+            # jimboswankster DEBUGGING SAVE/LOAD issue with optimization - removed, kills return object    
+            # if len(scores) == 0 or score > max(scores):
+            #     print("New best score:", score, "for seed", seed)
+            #     best_program = program
+            # ---- END patch removal
+
+            # --- SIMPLER NEW LOGIC ---
+            # Update best_program if the current score is >= the current best score.
+            # This ensures that if multiple candidates achieve the best score,
+            # the one from the latest seed evaluated is kept.
+            if len(scores) == 0 or score >= max(scores):
+                if len(scores) == 0 or score > max(scores): # Log if it's strictly better
+                    print("New best score:", score, "for seed", seed)
+                else: # Log if it ties the best
+                     print(f"Score {score} for seed {seed} ties best score. Updating best_program reference.")
+                best_program = program # Update the reference
+            # --- END SIMPLER NEW LOGIC ---
 
             scores.append(score)
             print(f"Scores so far: {scores}")
             print(f"Best score so far: {max(scores)}")
+
+
+            # jimboswankster DEBUGGING SAVE/LOAD issue with optimization
+            print(f"[BFRS Compile, Seed {seed}] Before appending to score_data:")
+            for i_p, p_cand in enumerate(program.predictors()):
+                print(f"  Pred {i_p}: ID={id(p_cand)}, Has .demos={hasattr(p_cand, 'demos')}, Len={len(p_cand.demos) if hasattr(p_cand, 'demos') and isinstance(p_cand.demos, list) else 'N/A'}")
+            # --- END ADDED LOGGING ---
 
             score_data.append({"score": score, "subscores": subscores, "seed": seed, "program": program})
 
@@ -147,7 +190,26 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
         print(f"{len(best_program.candidate_programs)} candidate programs found.")
 
-        return best_program
+
+        # # jimboswankster DEBUGGING SAVE/LOAD issue with optimizatio
+        # print(f"[BFRS Compile] Final best_program before return:")
+        # for i_p, p_best in enumerate(best_program.predictors()):
+        #     print(f"  Pred {i_p}: ID={id(p_best)}, Has .demos={hasattr(p_best, 'demos')}, Len={len(p_best.demos) if hasattr(p_best, 'demos') and isinstance(p_best.demos, list) else 'N/A'}")
+        # # --- END ADDED LOGGING ---
+
+        print(f"[BFRS Compile] Final best_program before return:")
+        final_demos_state = {} # Create dict to store demos
+        for i_p, p_best in enumerate(best_program.predictors()):
+            predictor_name = f"predictor_{i_p}" # Or get actual name if possible
+            demos_list = []
+            if hasattr(p_best, 'demos') and isinstance(p_best.demos, list):
+                demos_list = p_best.demos
+            print(f"  Pred {i_p}: ID={id(p_best)}, Has .demos={hasattr(p_best, 'demos')}, Len={len(demos_list)}")
+            # Store a COPY of the demos list, just in case
+            final_demos_state[predictor_name] = demos_list.copy() # Store copy
+
+        # Return both the program and the captured demo state
+        return best_program, final_demos_state
 
 
 # sample between 4 and 10 examples from traces
