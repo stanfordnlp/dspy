@@ -3,20 +3,37 @@ import ujson
 import inspect
 import logging
 import textwrap
+import re
 
 from dspy.adapters.utils import get_field_description_string
 from dspy.signatures import InputField, OutputField
-from typing import Callable
+from typing import Callable, Optional, Dict
 
 logger = logging.getLogger(__name__)
 
-
-def prepare_models_for_resampling(program: dspy.Module, n: int):
+def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: Optional[Dict] = None):
     lm = program.get_lm() or dspy.settings.lm
-    temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / n) for i in range(n)]
-    temps = list(dict.fromkeys(temps))[:n]
-    return [lm.copy(temperature=t) for t in temps]
 
+    # Check to see if our model is a reasoning model, which means temp must stay as 1.0
+    model_family = lm.model.split("/")[-1].lower() if "/" in lm.model else lm.model.lower()
+    model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+
+    models = []
+    if teacher_settings:
+        models.append(dspy.LM(**teacher_settings))
+
+    if model_pattern: # Vary the seed
+        start_seed = 0 if "seed" not in lm.kwargs else lm.kwargs["seed"]
+        seeds = [start_seed + 1 + i for i in range(n-len(models))]
+        seeds = list(dict.fromkeys(seeds))[:(n-len(models))]
+        models.extend([lm.copy(seed=seed) for seed in seeds])
+    else: # Vary the temperature
+        start_temp = 0 if "temperature" not in lm.kwargs else lm.kwargs["temperature"]
+        temps = [start_temp + 0.5 + i * (0.5 / n) for i in range(n-len(models))]
+        temps = list(dict.fromkeys(temps))[:(n-len(models))]
+        models.extend([lm.copy(temperature=t) for t in temps])
+    
+    return models
 
 def wrap_program(program: dspy.Module, metric: Callable):
     def wrapped_program(example):
@@ -28,29 +45,47 @@ def wrap_program(program: dspy.Module, metric: Callable):
                 print(e)
             trace = dspy.settings.trace.copy()
 
+        output = None
+        score = 0.0
+        output_metadata = {}
+
         try:
-            score = metric(example, prediction)
+            output = metric(example, prediction)
+            if isinstance(output, (int, float)):
+                score = output
+            elif isinstance(output, dspy.Prediction):
+                if not hasattr(output, 'score'):
+                    raise ValueError("dspy.Prediction must contain a 'score' attribute")
+                score = output.score
+                # Just extract fields from _store, excluding 'score'
+                output_metadata = {
+                    k: v for k, v in output._store.items() if k != "score"
+                }
         except Exception as e:
             print(e)
 
-        # Include the `example` in the output for subsequent usage in buckets/strategies.
         return {
             "prediction": prediction,
             "trace": trace,
             "score": score,
-            "example": example
+            "example": example,
+            "output_metadata": output_metadata
         }
 
     return wrapped_program
 
-
-
 def append_a_demo(demo_input_field_maxlen):
     def append_a_demo_(bucket, system, **kwargs):
         predictor2name, name2predictor = kwargs["predictor2name"], kwargs["name2predictor"]
+        batch_10p_score = kwargs["batch_10p_score"]
 
-        trace = bucket[0]["trace"]
+        good = bucket[0]
+        trace = good["trace"]
         name2demo = {}
+
+        if good["score"] < batch_10p_score:
+            logger.info(f"Skipping appending a demo as good score {good['score']} is below the 10th percentile.")
+            return False
 
         for step in trace:
             predictor, _inputs, _outputs = step
@@ -62,7 +97,6 @@ def append_a_demo(demo_input_field_maxlen):
             demo = dspy.Example(augmented=True, **_inputs, **_outputs)
             name = predictor2name[id(predictor)]
             name2demo[name] = demo  # keep the last demo for each predictor
-
         for name, demo in name2demo.items():
             predictor = name2predictor[name]
             predictor.demos.append(demo)
@@ -76,6 +110,7 @@ def append_a_demo(demo_input_field_maxlen):
 def append_a_rule(bucket, system, **kwargs):
     predictor2name = kwargs["predictor2name"]
     batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
+    prompt_model = kwargs["prompt_model"]
 
     module_names = [name for name, _ in system.named_predictors()]
     good, bad = bucket[0], bucket[-1]
@@ -116,12 +151,16 @@ def append_a_rule(bucket, system, **kwargs):
         worse_program_outputs=dict(bad["prediction"] or {}),
         worse_reward_value=bad["score"],
         better_reward_value=good["score"],
+        worse_reward_info=bad["output_metadata"],
+        better_reward_info=good["output_metadata"],
         module_names=module_names,
     )
 
     kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
               for k, v in kwargs.items()}
-    advice = dspy.Predict(OfferFeedback)(**kwargs).module_advice
+
+    advice_program = dspy.Predict(OfferFeedback)
+    advice = advice_program(**kwargs).module_advice
 
     for name, predictor in system.named_predictors():
         if name in advice:
@@ -155,11 +194,13 @@ class OfferFeedback(dspy.Signature):
     )
     worse_program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
     worse_reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
+    worse_reward_info: str = InputField(desc="Additional information that might be helpful to understanding the assigned reward value.")
     better_program_trajectory: str = InputField(
         desc="The trajectory of the program's execution, showing each module's I/O"
     )
     better_program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
     better_reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
+    better_reward_info: str = InputField(desc="Additional information that might be helpful to understanding the assigned reward value.")
     module_names: list[str] = InputField(desc="The names of the modules in the program, for which we seek advice")
     discussion: str = OutputField(desc="Discussing blame of where each module went wrong, if it did")
     module_advice: dict[str, str] = OutputField(
@@ -168,7 +209,6 @@ class OfferFeedback(dspy.Signature):
         "Basically, your advice be such that if the module has access to your tip, it would be much more likely to act "
         "like the successful trajectory rather than the lower-scoring trajectory."
     )
-
 
 def inspect_modules(program):
     separator = "-" * 80
