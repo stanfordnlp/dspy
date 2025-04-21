@@ -119,7 +119,7 @@ class Tool:
                 v_json_schema = self._resolve_pydantic_schema(v)
                 args[k] = v_json_schema
             else:
-                args[k] = TypeAdapter(v).json_schema() or "Any"
+                args[k] = TypeAdapter(v).json_schema()
             if default_values[k] is not inspect.Parameter.empty:
                 args[k]["default"] = default_values[k]
             if arg_desc and k in arg_desc:
@@ -137,7 +137,8 @@ class Tool:
                 raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
                 instance = v.model_dump() if hasattr(v, "model_dump") else v
-                if not self.args[k] == "Any":
+                type_str = self.args[k].get("type")
+                if type_str is not None and type_str != "Any":
                     validate(instance=instance, schema=self.args[k])
             except ValidationError as e:
                 raise ValueError(f"Arg {k} is invalid: {e.message}")

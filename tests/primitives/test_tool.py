@@ -150,3 +150,12 @@ def test_invalid_function_call():
 def test_parameter_desc():
     tool = Tool(dummy_function, arg_desc={"x": "The x parameter"})
     assert tool.args["x"]["description"] == "The x parameter"
+
+
+def test_tool_with_default_args_without_type_hints():
+    def foo(x=100):
+        return x
+
+    tool = Tool(foo)
+    assert tool.args["x"]["default"] == 100
+    assert not hasattr(tool.args["x"], "type")
