@@ -38,6 +38,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 output.set_lm_usage(usage_tracker.get_total_tokens())
                 return output
 
+        return await self.aforward(*args, **kwargs)
+
     def named_predictors(self):
         from dspy.predict.predict import Predict
 

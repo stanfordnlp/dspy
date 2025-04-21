@@ -90,7 +90,7 @@ class BaseLM(ABC):
 
         return outputs
 
-    async def a_call(self, prompt=None, messages=None, **kwargs):
+    async def acall(self, prompt=None, messages=None, **kwargs):
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
@@ -186,7 +186,7 @@ def _inspect_history(history, n: int = 1):
         print(_green(outputs[0].strip()))
 
         if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs)-1} other completions)"
+            choices_text = f" \t (and {len(outputs) - 1} other completions)"
             print(_red(choices_text, end=""))
 
     print("\n\n\n")
