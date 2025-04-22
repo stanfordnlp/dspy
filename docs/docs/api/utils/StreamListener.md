@@ -1,8 +1,11 @@
-# dspy.streaming.StatusMessage
+# dspy.streaming.StreamListener
 
-::: dspy.streaming.StatusMessage
+::: dspy.streaming.StreamListener
     handler: python
     options:
+        members:
+            - flush
+            - receive
         show_source: true
         show_root_heading: true
         heading_level: 2

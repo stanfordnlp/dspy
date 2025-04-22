@@ -310,7 +310,7 @@ class SIMBA(Teleprompter):
                 trial_logs[idx_prog-1]["train_score"] = avg_score
         
         best_idx = scores.index(max(scores)) if scores else 0
-        best_program = candidate_programs[best_idx]
+        best_program = candidate_programs[best_idx].deepcopy()
         logger.info(
             f"Final trainset scores: {scores}, Best: {max(scores) if scores else 'N/A'} "
             f"(at index {best_idx if scores else 'N/A'})\n\n\n"

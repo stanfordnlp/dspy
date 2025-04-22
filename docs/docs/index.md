@@ -12,9 +12,12 @@ hide:
 
 [![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
 
-DSPy is the framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and offers algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
+DSPy is a framework for declarative AI programming. It allows you to **iterate fast on modular code**, not brittle strings, and offers algorithms that **compile modular AI programs into effective prompts and model weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
-DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, you write compositional _Python code_ and use DSPy to **teach your LM to deliver high-quality outputs**. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
+DSPy stands for Declarative Self-improving Python. Conventionally, the most important part of your ML system is a sequence of hand-stitched training jobs or long string prompts. Instead, DSPy lets you **define AI software by declaring natural-language modules**, and _generically_ composing them with different models, inference strategies, or learning algorithms.
+
+This higher-level abstraction makes AI software cleaner to build iteratively, easier to maintain, and more portable as new models and optimization techniques emerge. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
+
 
 
 !!! info "Getting Started I: Install DSPy and set up your LM"

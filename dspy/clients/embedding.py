@@ -80,52 +80,69 @@ class Embedder:
         self.caching = caching
         self.default_kwargs = kwargs
 
-    def __call__(self, inputs, batch_size=None, caching=None, **kwargs):
-        """Compute embeddings for the given inputs.
-
-        Args:
-            inputs: The inputs to compute embeddings for, can be a single string or a list of strings.
-            batch_size (int, optional): The batch size for processing inputs. If None, defaults to the batch_size set during initialization.
-            caching (bool, optional): Whether to cache the embedding response when using a hosted model. If None, defaults to the caching setting from initialization.
-            **kwargs: Additional keyword arguments to pass to the embedding model. These will override the default kwargs provided during initialization.
-
-        Returns:
-            numpy.ndarray: If the input is a single string, returns a 1D numpy array representing the embedding.
-            If the input is a list of strings, returns a 2D numpy array of embeddings, one embedding per row.
-        """
-
+    def _preprocess(self, inputs, batch_size=None, caching=None, **kwargs):
         if isinstance(inputs, str):
             is_single_input = True
             inputs = [inputs]
         else:
             is_single_input = False
 
-        assert all(isinstance(inp, str) for inp in inputs), "All inputs must be strings."
+        if not all(isinstance(inp, str) for inp in inputs):
+            raise ValueError("All inputs must be strings.")
 
-        if batch_size is None:
-            batch_size = self.batch_size
-        if caching is None:
-            caching = self.caching
-
+        batch_size = batch_size or self.batch_size
+        caching = caching or self.caching
         merged_kwargs = self.default_kwargs.copy()
         merged_kwargs.update(kwargs)
 
-        embeddings_list = []
+        input_batches = []
+        for i in range(0, len(inputs), batch_size):
+            input_batches.append(inputs[i : i + batch_size])
 
-        def chunk(inputs_list, size):
-            for i in range(0, len(inputs_list), size):
-                yield inputs_list[i : i + size]
+        return input_batches, caching, merged_kwargs, is_single_input
 
-        compute_embeddings = _cached_compute_embeddings if caching else _compute_embeddings
-        for batch_inputs in chunk(inputs, batch_size):
-            embeddings_list.extend(compute_embeddings(self.model, batch_inputs, caching=caching, **merged_kwargs))
-
+    def _postprocess(self, embeddings_list, is_single_input):
         embeddings = np.array(embeddings_list, dtype=np.float32)
-
         if is_single_input:
             return embeddings[0]
         else:
-            return embeddings
+            return np.array(embeddings, dtype=np.float32)
+
+    def __call__(self, inputs, batch_size=None, caching=None, **kwargs):
+        """Compute embeddings for the given inputs.
+
+        Args:
+            inputs: The inputs to compute embeddings for, can be a single string or a list of strings.
+            batch_size (int, optional): The batch size for processing inputs. If None, defaults to the batch_size set
+                during initialization.
+            caching (bool, optional): Whether to cache the embedding response when using a hosted model. If None,
+                defaults to the caching setting from initialization.
+            **kwargs: Additional keyword arguments to pass to the embedding model. These will override the default
+                kwargs provided during initialization.
+
+        Returns:
+            numpy.ndarray: If the input is a single string, returns a 1D numpy array representing the embedding.
+            If the input is a list of strings, returns a 2D numpy array of embeddings, one embedding per row.
+        """
+        input_batches, caching, kwargs, is_single_input = self._preprocess(inputs, batch_size, caching, **kwargs)
+
+        compute_embeddings = _cached_compute_embeddings if caching else _compute_embeddings
+
+        embeddings_list = []
+
+        for batch in input_batches:
+            embeddings_list.extend(compute_embeddings(self.model, batch, caching=caching, **kwargs))
+        return self._postprocess(embeddings_list, is_single_input)
+
+    async def acall(self, inputs, batch_size=None, caching=None, **kwargs):
+        input_batches, caching, kwargs, is_single_input = self._preprocess(inputs, batch_size, caching, **kwargs)
+
+        embeddings_list = []
+        acompute_embeddings = _cached_acompute_embeddings if caching else _acompute_embeddings
+
+        for batch in input_batches:
+            embeddings_list.extend(acompute_embeddings(self.model, batch, caching=caching, **kwargs))
+        return self._postprocess(embeddings_list, is_single_input)
 
 
 def _compute_embeddings(model, batch_inputs, caching=False, **kwargs):
@@ -140,7 +157,19 @@ def _compute_embeddings(model, batch_inputs, caching=False, **kwargs):
 
 @request_cache(ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
 def _cached_compute_embeddings(model, batch_inputs, caching=True, **kwargs):
-    import litellm
-
-    caching = litellm.cache is not None
     return _compute_embeddings(model, batch_inputs, caching=caching, **kwargs)
+
+
+async def _acompute_embeddings(model, batch_inputs, caching=False, **kwargs):
+    if isinstance(model, str):
+        embedding_response = await litellm.aembedding(model=model, input=batch_inputs, caching=caching, **kwargs)
+        return [data["embedding"] for data in embedding_response.data]
+    elif callable(model):
+        return model(batch_inputs, **kwargs)
+    else:
+        raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
+
+
+@request_cache(ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
+async def _cached_acompute_embeddings(model, batch_inputs, caching=True, **kwargs):
+    return await _acompute_embeddings(model, batch_inputs, caching=caching, **kwargs)

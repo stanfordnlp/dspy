@@ -2,6 +2,10 @@
 sidebar_position: 999
 ---
 
+
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5 and 2.6"
+
+
 # DSPy Cheatsheet
 
 This page will contain snippets for frequent usage patterns.

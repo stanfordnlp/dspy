@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.6.17"
+version="2.6.18"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -103,7 +103,7 @@ python = ">=3.9,<3.13"
 pydantic = "^2.0"
 backoff = "^2.2"
 joblib = "^1.3"
-openai = ">=0.28.1,<=1.61.0"
+openai = ">=0.28.1"
 pandas = "^2.1.1"
 regex = "^2023.10.3"
 ujson = "^5.8.0"

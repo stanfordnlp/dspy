@@ -321,3 +321,12 @@ def test_exponential_backoff_retry():
     # The first retry happens immediately regardless of the configuration
     for i in range(1, len(time_counter) - 1):
         assert time_counter[i + 1] - time_counter[i] >= 2 ** (i - 1)
+
+
+@pytest.mark.asyncio
+async def test_async_lm_call(litellm_test_server):
+    api_base, _ = litellm_test_server
+
+    lm = dspy.LM(model="openai/gpt-4o-mini", api_base=api_base, api_key="fakekey", model_type="chat")
+    result = await lm.acall("question")
+    assert result == "answer"
