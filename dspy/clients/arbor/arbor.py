@@ -62,11 +62,10 @@ class ReinforceInterface:
             'model': finetune_model,
             'suffix': suffix,
             'num_generations': num_generations,
-            # 'update_interval': update_interval,
-            # 'temperature': temperature,
-            # 'beta': beta,
+            'update_interval': update_interval,
+            'temperature': temperature,
+            'beta': beta,
         }
-        print("data", data)
         url = f"{self.base_url}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
         response = requests.post(
@@ -80,7 +79,6 @@ class ReinforceInterface:
 
     def _run_grpo_step_one_group(self, model, train_group: GRPOGroup, train_kwargs=None):
         train_kwargs = {} if train_kwargs is None else train_kwargs
-        headers = {'Content-Type': 'application/json'}
         finetune_model = self.from_arbor_model(model)
         data = {
             'model': finetune_model,
@@ -88,6 +86,7 @@ class ReinforceInterface:
             'batch': train_group
         }
         url = f"{self.base_url}fine_tuning/grpo/step"
+        headers = {'Content-Type': 'application/json'}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
         response = response.json()
@@ -96,21 +95,21 @@ class ReinforceInterface:
         current_model = self.to_arbor_model(current_model)
         return current_model
     
-    def step(self, model, train_data: List[GRPOGroup], train_kwargs=None):
+    def step(self, model, train_data: List[GRPOGroup]):
         current_model = model
         for group in train_data:
-            current_model = self._run_grpo_step_one_group(current_model, group, train_kwargs)
+            current_model = self._run_grpo_step_one_group(current_model, group)
         return current_model
 
     def terminate(self):
         # TODO(GRPO Team):
         # * Update after the server starts returning the saved model ID
         # * What's the purpose of us sending a status?
-        url = f"{self.base_url}fine_tuning/grpo/terminate"
-        headers = {'Content-Type': 'application/json'}
         data = {
             'status': 'success'
         }
+        url = f"{self.base_url}fine_tuning/grpo/terminate"
+        headers = {'Content-Type': 'application/json'}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
         # response = response.json()

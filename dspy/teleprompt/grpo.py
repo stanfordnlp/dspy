@@ -30,7 +30,7 @@ class GRPO(FinetuneTeleprompter):
         num_train_steps: int = 100,
         seed: int = 0,
         num_dspy_examples_per_grpo_step: int = 1,
-        num_rollouts_per_dspy_example_per_step: int = 1,
+        num_samples_per_input: int = 1,
         use_train_as_val: bool = False,
         num_steps_for_val: int = 5,
         variably_invoked_predictor_grouping_mode: Union[Literal['truncate'], Literal['fill'], Literal['ragged']] = 'truncate',
@@ -45,17 +45,17 @@ class GRPO(FinetuneTeleprompter):
         self.num_train_steps = num_train_steps
         self.rng = random.Random(seed)
         self.num_dspy_examples_per_grpo_step = num_dspy_examples_per_grpo_step
-        self.num_rollouts_per_dspy_example_per_step = num_rollouts_per_dspy_example_per_step
+        self.num_samples_per_input = num_samples_per_input
         self.use_train_as_val = use_train_as_val
         self.num_steps_for_val = num_steps_for_val
 
         # TODO(GRPO Team): Remove these asserts when done
+        # TODO(GRPO Team): Support teachers
         assert exclude_demos, "exclude_demos==False is not supported yet. Please set it to True."
         assert multitask, "independent GRPO training jobs for each predictor in the student program is not supported yet. Please set multitask=True."
 
-        # The backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_dspy_example_per_step * num_predictors) per training set if multitask is True
-        # If multitask is False, the backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_dspy_example_per_step) per training job
-        self.per_predictor_batch_size = num_dspy_examples_per_grpo_step * num_rollouts_per_dspy_example_per_step
+        # The backend will be called with a batch of (num_dspy_examples_per_grpo_step * (num_samples_per_input * len(teachers)) * num_predictors) per training set if multitask is True
+        # If multitask is False, the backend will be called with a batch of (num_dspy_examples_per_grpo_step * (num_samples_per_input * len(teachers))) per training job
         self.variably_invoked_predictor_grouping_mode = variably_invoked_predictor_grouping_mode
         if variably_invoked_predictor_grouping_mode == 'fill':
             assert variably_invoked_predictor_fill_strategy is not None, "variably_invoked_predictor_fill_strategy must be set when variably_invoked_predictor_grouping_mode is 'fill'"
@@ -108,20 +108,16 @@ class GRPO(FinetuneTeleprompter):
             teachers[ind] = prepare_teacher(student=student, teacher=t)
             disable_lm_cache(teachers[ind])
 
-        # We ensure that self.num_dspy_examples_per_grpo_step is perfectly divisible by num(teachers)
-        assert self.num_rollouts_per_dspy_example_per_step % len(teachers) == 0, f"num_dspy_examples_per_grpo_step {self.num_dspy_examples_per_grpo_step} must be divisible by the number of teachers {len(teachers)}"
+        # We generate num_samples_per_input trace per example per teacher
+        # This way, we will have num_generations trace data for each example
+        num_generations = self.num_samples_per_input * len(teachers)
 
         # Update train_kwargs
         for pred in student.predictors():
             train_kwargs = self.train_kwargs.get(pred.lm)
             train_kwargs = {} if train_kwargs is None else train_kwargs
-            train_kwargs["num_generations"] = self.num_rollouts_per_dspy_example_per_step
+            train_kwargs["num_generations"] = num_generations
             self.train_kwargs[pred.lm] = train_kwargs
-
-        # We generate self.num_rollouts_per_dspy_example_per_step / num(teachers) trace per example per teacher
-        # This way, we will have self.num_rollouts_per_dspy_example_per_step trace data for each example
-        num_samples_per_input = self.num_rollouts_per_dspy_example_per_step // len(teachers)
-
 
         # We need to have a separate job for each unique LM x the data
         # collection strategy. This properly handles all combinations of
@@ -134,7 +130,7 @@ class GRPO(FinetuneTeleprompter):
             if job_key not in grpo_training_jobs:
                 train_kwargs = self.train_kwargs[pred.lm]
                 # TODO(GRPO Team): Uncomment the LM interface when done
-                # grpo_job = pred.lm.reinforce(train_kwrgs=train_kwargs)  # this handles initialize(...)
+                # grpo_job = pred.lm.reinforce(train_kwargs=train_kwargs)  # this handles initialize(...)
                 grpo_job = ReinforceInterface()
                 grpo_job.initialize(model=pred.lm.model, train_kwargs=train_kwargs)
                 grpo_training_jobs[job_key] = grpo_job
@@ -170,7 +166,7 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Bootstrapping data...")
             trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
             for tind, teacher in enumerate(teachers):
-                for _ in range(num_samples_per_input):
+                for _ in range(self.num_samples_per_input):
                     # We rely on disabled caches to ensure that we get different
                     # traces
                     round_data = bootstrap_trace_data(
@@ -186,7 +182,7 @@ class GRPO(FinetuneTeleprompter):
             # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
             assert len(trace_data) == len(subsample_training_dataset), f"Trace data length {len(trace_data)} does not match the number of examples {len(subsample_training_dataset)}"
             assert len(trace_data[0]) == len(teachers), f"Trace data length {len(trace_data[0])} does not match the number of teachers {len(teachers)}"
-            assert len(trace_data[0][0]) == num_samples_per_input, f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {num_samples_per_input}"
+            assert len(trace_data[0][0]) == self.num_samples_per_input, f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {self.num_samples_per_input}"
             assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
             assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
             assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
@@ -213,7 +209,7 @@ class GRPO(FinetuneTeleprompter):
                             
                             predictor_example_invocations.append(trace_instances_for_current_pred)
 
-                    assert len(predictor_example_invocations) == self.num_rollouts_per_dspy_example_per_step, f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {self.per_predictor_batch_size}"
+                    assert len(predictor_example_invocations) == num_generations, f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {num_generations}"
 
                     min_len = min([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
@@ -294,9 +290,8 @@ class GRPO(FinetuneTeleprompter):
                     train_batch_per_predictor[pred_id].extend(example_training_data)
             
             for predictor_train_batch in train_batch_per_predictor:
-                # assert len(predictor_train_batch) == self.per_predictor_batch_size, f"Batch size {len(predictor_train_batch)} does not match the expected batch size {self.per_predictor_batch_size}"
                 for grpo_train_group in predictor_train_batch:
-                    assert len(grpo_train_group) == self.num_rollouts_per_dspy_example_per_step, f"Number of completions {len(example_training_data['completions'])} does not match the expected number self.num_rollouts_per_dspy_example_per_step={self.num_rollouts_per_dspy_example_per_step}"
+                    assert len(grpo_train_group) == num_generations, f"Number of completions {len(example_training_data['completions'])} does not match the expected number num_samples_per_input*len(teachers)={num_generations}"
                     if len(set(map(repr, grpo_train_group))) < 2:
                         # TODO(GRPO Team): How can we avoid this warning?
                         logger.warning(f"GRPOGroup has no diversity. This could be due to low temperature, or low number of rollouts, or the cache could be enabled inadvertently. The GRPOGroup is {grpo_train_group}.")
@@ -318,10 +313,9 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Invoking GRPO training step...")
             for (lm, data_key), job in grpo_training_jobs.items():
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
-                train_kwargs = self.train_kwargs[lm]
                 # TODO(GRPO Team): Uncomment the LM interface when done
-                # lm.model = job.step(train_data=train_data, train_kwargs=train_kwargs)
-                lm.model = job.step(model=lm.model, train_data=train_data, train_kwargs=train_kwargs)
+                # lm.model = job.step(train_data=train_data)
+                lm.model = job.step(model=lm.model, train_data=train_data)
 
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
             if valset and ((train_step_idx + 1) % self.num_steps_for_val == 0 or train_step_idx + 1 == self.num_train_steps):

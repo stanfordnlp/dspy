@@ -31,7 +31,7 @@ class CustomSignature(dspy.Signature):
 
 class CustomModule(dspy.Module):
     def __init__(self):
-        self.modules = [dspy.ChainOfThought(CustomSignature) for i in range(1)]
+        self.modules = [dspy.ChainOfThought(CustomSignature) for i in range(3)]
     
     def forward(self, question):
         answers = []
@@ -50,7 +50,7 @@ class CustomModule(dspy.Module):
 dataset = [
     dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"),
     dspy.Example(question="What is the capital of Germany?", answer="Berlin").with_inputs("question"),
-]
+] * 6
 
 def metric(example, prediction, trace=None):
     score1 = 1 if example.answer == prediction.concise_answer else 0
@@ -69,14 +69,28 @@ from dspy.teleprompt.grpo import GRPO
 importlib.reload(dspy.teleprompt.grpo)
 from dspy.teleprompt.grpo import GRPO
 
+train_kwargs = {
+    "temperature": 0.9,
+    "beta": 0.04,
+    "update_interval": 25,
+    # Note that we don't add the "num_generations" here. dspy.GRPO computes this
+    # as follows. We don't currentl support teacher programs and instead use the
+    # the student program as the teacher program, so len(teachers) is always 1
+    # for now.
+    #
+    #     num_generations = num_samples_per_input * len(teachers)
+    #
+}
+
 compiler = GRPO(
     metric=metric,
     multitask=True,
     num_dspy_examples_per_grpo_step=2,
+    num_samples_per_input=4,  # should we test this with 1?
     exclude_demos=True,
-    num_train_steps=3,
+    num_train_steps=2,
     use_train_as_val=True,
-    num_rollouts_per_dspy_example_per_step=8
+    train_kwargs=train_kwargs
 )
 
 compiler.compile(
