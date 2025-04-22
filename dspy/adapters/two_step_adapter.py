@@ -99,6 +99,48 @@ class TwoStepAdapter(Adapter):
         except Exception as e:
             raise ValueError(f"Failed to parse response from the original completion: {completion}") from e
 
+    async def acall(
+        self,
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        inputs = self.format(signature, demos, inputs)
+
+        outputs = await lm.acall(messages=inputs, **lm_kwargs)
+        # The signature is supposed to be "text -> {original output fields}"
+        extractor_signature = self._create_extractor_signature(signature)
+
+        values = []
+
+        for output in outputs:
+            output_logprobs = None
+
+            if isinstance(output, dict):
+                output, output_logprobs = output["text"], output["logprobs"]
+
+            try:
+                # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
+                value = await ChatAdapter().acall(
+                    lm=self.extraction_model,
+                    lm_kwargs={},
+                    signature=extractor_signature,
+                    demos=[],
+                    inputs={"text": output},
+                )
+                value = value[0]
+
+            except Exception as e:
+                raise ValueError(f"Failed to parse response from the original completion: {output}") from e
+
+            if output_logprobs is not None:
+                value["logprobs"] = output_logprobs
+
+            values.append(value)
+        return values
+
     def format_task_description(self, signature: Signature) -> str:
         """Create a description of the task based on the signature"""
         parts = []
