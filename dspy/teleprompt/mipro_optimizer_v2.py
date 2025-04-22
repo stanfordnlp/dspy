@@ -31,9 +31,9 @@ LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT = 0
 MIN_MINIBATCH_SIZE = 50
 
 AUTO_RUN_SETTINGS = {
-    "light": {"num_trials": 7, "val_size": 100},
-    "medium": {"num_trials": 25, "val_size": 300},
-    "heavy": {"num_trials": 50, "val_size": 1000},
+    "light": {"n": 6, "val_size": 100},
+    "medium": {"n": 12, "val_size": 300},
+    "heavy": {"n": 18, "val_size": 1000},
 }
 
 # ANSI escape codes for colors
@@ -212,15 +212,18 @@ class MIPROv2(Teleprompter):
         if self.auto is None:
             return num_trials, valset, minibatch
 
+        auto_settings = AUTO_RUN_SETTINGS[self.auto]
+        
+        valset = create_minibatch(valset, batch_size=auto_settings["val_size"], rng=self.rng)
+        minibatch = len(valset) > MIN_MINIBATCH_SIZE
+        
+        self.num_candidates = auto_settings["n"]
+
         num_vars = len(program.predictors())
         if not zeroshot_opt:
             num_vars *= 2  # Account for few-shot examples + instruction variables
-
-        auto_settings = AUTO_RUN_SETTINGS[self.auto]
-        num_trials = auto_settings["num_trials"]
-        valset = create_minibatch(valset, batch_size=auto_settings["val_size"], rng=self.rng)
-        minibatch = len(valset) > MIN_MINIBATCH_SIZE
-        self.num_candidates = int(np.round(np.min([num_trials * num_vars, (1.5 * num_trials) / num_vars])))
+        # Trials = MAX(c*M*log(N), c=2, 3/2*N)
+        num_trials = max(2 * num_vars * np.log(self.num_candidates), 1.5 * self.num_candidates)
 
         return num_trials, valset, minibatch
 
