@@ -49,7 +49,6 @@ class BootstrapFinetune(FinetuneTeleprompter):
         # attached to LMs themselves -- an LM could know which adapter it should
         # be used with along with the train_kwargs. This will lead the only
         # required argument for LM.finetune() to be the train dataset.
-
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
         self.multitask = multitask
@@ -64,7 +63,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         # that the default DSPy logger logs info level messages in notebook
         # environments.
         logger.info("Preparing the student and teacher programs...")
-        set_missing_predictor_lms(student)
+        all_predictors_have_lms(student)
 
         logger.info("Bootstrapping data...")
         trace_data = []
@@ -72,7 +71,6 @@ class BootstrapFinetune(FinetuneTeleprompter):
         teachers = teacher if isinstance(teacher, list) else [teacher]
         teachers = [prepare_teacher(student, t) for t in teachers]
         for t in teachers:
-            set_missing_predictor_lms(t)
             trace_data += bootstrap_trace_data(
                 program=t, dataset=trainset, metric=self.metric, num_threads=self.num_threads
             )
@@ -180,6 +178,9 @@ class BootstrapFinetune(FinetuneTeleprompter):
         return data, data_format
 
 
+# Note: Shared below are useful functions for preparing student/teacher programs
+# Similar methods are implemented separately and used by other DSPy
+# teleprompters. These can be moved to shared locations.
 def build_call_data_from_trace(
     trace: List[Dict],
     pred_ind: int,
@@ -260,33 +261,31 @@ def bootstrap_trace_data(
 #     return data_dict
 
 
-# Note: Shared below are useful functions for preparing student/teacher programs
-# Similar methods are implemented separately and used by other DSPy
-# teleprompters. These can be moved to shared locations.
-def set_missing_predictor_lms(program: Program) -> Program:
-    # If the predictors do not have LMs, set them to the global LM
-    for pred in program.predictors():
-        if not pred.lm:
-            pred.lm = dspy.settings.lm
+def all_predictors_have_lms(program: Program) -> bool:
+    """Return True if all predictors in the program have an LM set."""
+    return all(pred.lm for pred in program.predictors())
 
+
+def copy_program_with_lms(program: Program) -> Program:
+    pred_lms = [pred.lm for pred in program.predictors()]
+    program = program.deepcopy()
+    for ind, pred in enumerate(program.predictors()):
+        pred.lm = pred_lms[ind]
     return program
 
 
 def prepare_student(student: Program) -> Program:
     if getattr(student, "_compiled", False):
         raise ValueError("The student program should not be compiled.")
-
-    # TODO: Should we use reset_copy here? How would it affect the student
-    # program's predictor LMs, if they are set?
-    student = student.deepcopy()
     return student
 
 
-def prepare_teacher(student: Program, teacher: Program = None) -> Program:
+def prepare_teacher(student: Program, teacher: Optional[Program] = None) -> Program:
     if teacher is None:
-        return student.deepcopy()
-    else:
-        teacher = teacher.deepcopy()
+        return copy_program_with_lms(student)
+    
+    # We avoid modifying the original teacher program by making a copy
+    teacher = copy_program_with_lms(teacher)
 
     # Ensuring that the student and teacher are are structurally equivalent
     assert_structural_equivalency(student, teacher)

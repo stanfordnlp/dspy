@@ -12,6 +12,7 @@ from dspy.utils.caching import DSPY_CACHEDIR
 class TrainDataFormat(str, Enum):
     CHAT = "chat"
     COMPLETION = "completion"
+    GRPO_CHAT = "grpo_chat"
 
 
 class TrainingStatus(str, Enum):
