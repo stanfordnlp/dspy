@@ -12,6 +12,8 @@
 
 * [Multi-Hop Search](/tutorials/multihop_search/)
 
+* [Advanced Tool Use](/tutorials/tool_use/)
+
 * [Privacy-Conscious Delegation](/tutorials/papillon/)
 
 * [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
