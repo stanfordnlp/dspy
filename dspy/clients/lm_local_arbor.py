@@ -71,11 +71,8 @@ class ArborProvider(Provider):
 
     @staticmethod
     def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
-        model = lm.model
-        if model.startswith("openai/"):
-            model = model[7:]
-        if model.startswith("arbor:"):
-            model = model[6:]
+        model = ArborProvider._remove_provider_prefix(lm.model)
+        # TODO: Handle this on the server side
         if model.startswith("huggingface/"):
             model = model[len("huggingface/"):]
 
@@ -108,8 +105,17 @@ class ArborProvider(Provider):
 
     @staticmethod
     def _remove_provider_prefix(model: str) -> str:
-        provider_prefix = "openai/arbor:"
-        return model.replace(provider_prefix, "")
+        if model.startswith("openai/"):
+            model = model[7:]
+        if model.startswith("arbor:"):
+            model = model[6:]
+        return model
+    
+    @staticmethod
+    def _add_provider_prefix(model: str) -> str:
+        if not model.startswith("openai/arbor:"):
+            model = "openai/arbor:" + model
+        return model
 
     @staticmethod
     def finetune(
@@ -119,11 +125,7 @@ class ArborProvider(Provider):
             train_data_format: Optional[TrainDataFormat],
             train_kwargs: Optional[Dict[str, Any]] = None
     ) -> str:
-        if model.startswith("openai/"):
-            model = model[7:]
-        if model.startswith("arbor:"):
-            model = model[6:]
-
+        model = ArborProvider._remove_provider_prefix(model)
 
         print("[Arbor Provider] Validating the data format")
         ArborProvider.validate_data_format(train_data_format, type='sft')
@@ -146,13 +148,13 @@ class ArborProvider(Provider):
         print(f"[Arbor Provider] Job started with the Arbor Job ID {provider_job_id}")
 
         print("[Arbor Provider] Waiting for training to complete")
-        ArborProvider.wait_for_job(job, training_kwargs)
+        ArborProvider.wait_for_job(job, train_kwargs)
 
         print("[Arbor Provider] Attempting to retrieve the trained model")
         model = ArborProvider.get_trained_model(job)
         print(f"[Arbor Provider] Model retrieved: {model}")
 
-        return f"openai/arbor:{model}"
+        return ArborProvider._add_provider_prefix(model)
 
     # @staticmethod
     # def rl_train_batch(
