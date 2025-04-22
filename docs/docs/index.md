@@ -12,7 +12,7 @@ hide:
 
 [![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
 
-DSPy is a declarative framework for building modular AI software. It allows you to **iterate fast on modular code**, not brittle strings, and offers algorithms that **compile modular AI programs into effective prompts and weights** for your models, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
+DSPy is a declarative framework for building modular AI software. It allows you to **iterate fast on structured code**, rather than brittle strings, and offers algorithms that **compile AI programs into effective prompts and weights** for your models, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
 DSPy stands for Declarative Self-improving Python. Instead of hand-stitched training jobs or long prompts, it lets you **define AI software by declaring natural-language modules** and _generically composing them_ as first-class constructs with different models, inference strategies, or learning algorithms.
 
