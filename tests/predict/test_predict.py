@@ -569,3 +569,11 @@ def test_litellm_cache_initialization_failure():
     # No exception should be raised when litellm.cache is None even if we try to use the cache.
     assert dspy.settings.lm.cache == True
     predictor(question="test")
+
+
+@pytest.mark.asyncio
+async def test_async_predict():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]))
+    result = await program.acall(question="What is the capital of France?")
+    assert result.answer == "Paris"

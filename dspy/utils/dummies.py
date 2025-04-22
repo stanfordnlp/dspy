@@ -129,6 +129,9 @@ class DummyLM(LM):
 
         return outputs
 
+    async def acall(self, prompt=None, messages=None, **kwargs):
+        return self.__call__(prompt=prompt, messages=messages, **kwargs)
+
     def get_convo(self, index):
         """Get the prompt + answer from the ith message."""
         return self.history[index]["messages"], self.history[index]["outputs"]

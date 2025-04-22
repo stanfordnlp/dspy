@@ -1,5 +1,6 @@
-import magicattr
 from typing import Optional
+
+import magicattr
 
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
@@ -29,6 +30,15 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 return output
 
         return self.forward(*args, **kwargs)
+
+    async def acall(self, *args, **kwargs):
+        if settings.track_usage and settings.usage_tracker is None:
+            with track_usage() as usage_tracker:
+                output = await self.aforward(*args, **kwargs)
+                output.set_lm_usage(usage_tracker.get_total_tokens())
+                return output
+
+        return await self.aforward(*args, **kwargs)
 
     def named_predictors(self):
         from dspy.predict.predict import Predict
