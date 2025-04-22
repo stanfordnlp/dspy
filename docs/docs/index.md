@@ -12,11 +12,11 @@ hide:
 
 [![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
 
-DSPy is a declarative framework for building modular AI software. It replaces writing brittle prompts and launching training jobs for such systems. Whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops, DSPy lets you **write modular Python code with natural-language typed interfaces** (`Signatures`) and then **compile your AI program into effective prompts or weights** for your models.
+DSPy is a declarative framework for building modular AI software. It allows you to **iterate fast on modular code**, not brittle strings, and offers algorithms that **compile modular AI programs into effective prompts and weights** for your models, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
-DSPy stands for Declarative Self-improving Python. It decouples your system's AI logic from model-specific details, so that you can _generically_ compose your high-level modules with different models, inference strategies, or optimization methods.
+DSPy stands for Declarative Self-improving Python. Conventionally, the most important part of your ML system is a sequence of hand-stitched training jobs or long string prompts. Instead, DSPy lets you **define AI software by declaring natural-language modules** and _generically composing them_ with different models, inference strategies, or learning algorithms.
 
-This abstraction makes your AI software cleaner to build, easier to maintain, and more reliable and portable as new models and learning techniques emerge. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
+This abstraction makes your AI software more reliable, maintainable, and portable as new models and learning techniques emerge. It's also just rather elegant. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
 
 
 
