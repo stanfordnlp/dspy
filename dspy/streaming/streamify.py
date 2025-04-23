@@ -128,7 +128,10 @@ def streamify(
         )
         return_value = None
         async for value in output:
-            print(value)
+            if isinstance(value, dspy.Prediction):
+                return_value = value
+            else:
+                print(value)
         return return_value
 
     output = asyncio.run(use_streaming())
