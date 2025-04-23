@@ -16,7 +16,7 @@ DSPy is a declarative framework for building modular AI software. It allows you 
 
 DSPy stands for Declarative Self-improving Python. Instead of hand-stitching long prompts or training jobs, DSPy lets you **build AI software from natural-language modules** and to _generically compose_ these modules with different models, inference strategies, or learning algorithms.
 
-*tl;dr* Think of DSPy as a higher-level language for AI programming ([lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw)), making AI software more maintainable and portable, much like the shift from assembly to C or pointer arithmetic to SQL. Meet the community, seek help, or start contributing via [GitHub](https://github.com/stanfordnlp/dspy) and [Discord](https://discord.gg/XCGy2WDCQB).
+*tl;dr* Think of DSPy as a higher-level language for AI programming ([lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw)), much like the shift from assembly to C or pointer arithmetic to SQL. Meet the community, seek help, or start contributing via [GitHub](https://github.com/stanfordnlp/dspy) and [Discord](https://discord.gg/XCGy2WDCQB).
 
 <!-- Its abstractions make your AI software more reliable and maintainable, and allow it to become more portable as new models and learning techniques emerge. It's also just rather elegant! -->
 
