@@ -135,7 +135,7 @@ class Tool:
         for k, v in kwargs.items():
             if k in self.arg_types and self.arg_types[k] != Any and not isinstance(v, self.arg_types[k]):
                 # Create a pydantic model wrapper with a dummy field `value` to parse the arg to the correct type.
-                # This is specifically useful for handling nested Pydantic models like `list[list[]]`
+                # This is specifically useful for handling nested Pydantic models like `list[list[MyPydanticModel]]`
                 pydantic_wrapper = create_model("Wrapper", value=(self.arg_types[k], ...))
                 parsed = pydantic_wrapper.model_validate({"value": v})
                 parsed_kwargs[k] = parsed.value
