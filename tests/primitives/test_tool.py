@@ -173,3 +173,23 @@ def test_tool_call_parses_args():
 
     result = tool(**args)
     assert result == "hello 123"
+
+
+def test_tool_call_parses_nested_list_of_pydantic_model():
+    def dummy_function(x: list[list[DummyModel]]):
+        return x
+
+    tool = Tool(dummy_function)
+    args = {
+        "x": [
+            [
+                {
+                    "field1": "hello",
+                    "field2": 123,
+                }
+            ]
+        ]
+    }
+
+    result = tool(**args)
+    assert result == [[DummyModel(field1="hello", field2=123)]]
