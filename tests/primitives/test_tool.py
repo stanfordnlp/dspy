@@ -159,3 +159,17 @@ def test_tool_with_default_args_without_type_hints():
     tool = Tool(foo)
     assert tool.args["x"]["default"] == 100
     assert not hasattr(tool.args["x"], "type")
+
+
+def test_tool_call_parses_args():
+    tool = Tool(dummy_with_pydantic)
+
+    args = {
+        "model": {
+            "field1": "hello",
+            "field2": 123,
+        }
+    }
+
+    result = tool(**args)
+    assert result == "hello 123"
