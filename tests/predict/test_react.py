@@ -1,10 +1,7 @@
-from dataclasses import dataclass
-
 from pydantic import BaseModel
 
 import dspy
-from dspy.predict import react
-from dspy.utils.dummies import DummyLM, dummy_rm
+from dspy.utils.dummies import DummyLM
 import litellm
 
 # def test_example_no_tools():
@@ -276,3 +273,38 @@ def test_trajectory_truncation():
     assert "thought_0" not in result.trajectory
     assert "thought_2" in result.trajectory
     assert result.output_text == "Final output"
+
+
+def test_error_retry():
+    def foo(a, b):
+        raise Exception("tool error")
+
+    react = dspy.ReAct("a, b -> c:int", tools=[foo])
+    max_iters = 2
+    lm = DummyLM(
+        [
+            {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
+            {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
+            {"reasoning": "I added the numbers successfully", "c": 3},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    outputs = react(a=1, b=2, max_iters=max_iters)
+    expected_trajectory = {
+        "thought_0": "I need to add two numbers.",
+        "tool_name_0": "foo",
+        "tool_args_0": {
+            "a": 1,
+            "b": 2,
+        },
+        'observation_0': 'Failed to execute: tool error',
+        'thought_1': 'I need to add two numbers.',
+        'tool_name_1': 'foo',
+        "tool_args_1": {
+            "a": 1,
+            "b": 2,
+        },
+        'observation_1': 'Failed to execute: tool error',
+    }
+    assert outputs.trajectory == expected_trajectory
