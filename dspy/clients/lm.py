@@ -84,8 +84,8 @@ class LM(BaseLM):
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
 
-        # Match pattern: o[1,3] at the start, optionally followed by -mini and anything else
-        model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+        # Match pattern: o[1,3,4] at the start, optionally followed by -mini and anything else
+        model_pattern = re.match(r"^o([134])(?:-mini)?", model_family)
 
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
