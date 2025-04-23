@@ -14,11 +14,11 @@ hide:
 
 DSPy is a declarative framework for building modular AI software. It allows you to **iterate fast on structured code**, rather than brittle strings, and offers algorithms that **compile AI programs into effective prompts and weights** for your language models, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
-DSPy stands for Declarative Self-improving Python. Instead of hand-stitched long prompts or training jobs, DSPy lets you build AI software from clear, natural-language modules and allows you to generically compose these as first-class constructs with different models, inference strategies, or learning algorithms.
+DSPy stands for Declarative Self-improving Python. Instead of hand-stitched long prompts or training jobs, DSPy lets you **build AI software from clear, natural-language modules** and allows you to _generically compose_ these modules with different models, inference strategies, or learning algorithms.
 
-tl;dr Think of DSPy as a higher-level language for AI programming, much like the shift we got from assembly to C or pointer arithmetic to SQL. Its abstractions makes your AI software more reliable, maintainable, and portable as new models and learning techniques emerge. It's also just rather elegant. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
+**tl;dr** Think of DSPy as a higher-level language for AI programming ([lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw)), making AI software more maintainable and more portable, much like the shift from assembly to C or pointer arithmetic to SQL. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
 
-
+<!-- Its abstractions make your AI software more reliable and maintainable, and allow it to become more portable as new models and learning techniques emerge. It's also just rather elegant! -->
 
 !!! info "Getting Started I: Install DSPy and set up your LM"
 
