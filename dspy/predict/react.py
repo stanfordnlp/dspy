@@ -73,7 +73,8 @@ class ReAct(Module):
 
     def forward(self, **input_args):
         trajectory = {}
-        for idx in range(self.max_iters):
+        max_iters = input_args.pop("max_iters", self.max_iters)
+        for idx in range(max_iters):
             pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
 
             trajectory[f"thought_{idx}"] = pred.next_thought
@@ -173,8 +174,4 @@ TOPIC 05: Adding more structure around how the instruction is formatted.
 TOPIC 06: Idiomatically allowing tools that maintain state across iterations, but not across different `forward` calls.
     * So the tool would be newly initialized at the start of each `forward` call, but maintain state across iterations.
     * This is pretty useful for allowing the agent to keep notes or count certain things, etc.
-
-TOPIC 07: Make max_iters a bit more expressive.
-    * Allow passing `max_iters` in forward to overwrite the default.
-    * Get rid of `last_iteration: bool` in the format function. It's not necessary now.
 """
