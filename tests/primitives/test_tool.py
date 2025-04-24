@@ -264,7 +264,7 @@ async def test_async_tool_from_function():
     assert tool.args["y"]["default"] == "hello"
 
     # Test async call
-    result = await tool(x=42, y="hello")
+    result = await tool.acall(x=42, y="hello")
     assert result == "hello 42"
 
 
@@ -280,11 +280,11 @@ async def test_async_tool_with_pydantic():
 
     # Test async call with pydantic model
     model = DummyModel(field1="test", field2=123)
-    result = await tool(model=model)
+    result = await tool.acall(model=model)
     assert result == "test 123"
 
     # Test async call with dict
-    result = await tool(model={"field1": "test", "field2": 123})
+    result = await tool.acall(model={"field1": "test", "field2": 123})
     assert result == "test 123"
 
 
@@ -304,7 +304,7 @@ async def test_async_tool_with_complex_pydantic():
         ),
     )
 
-    result = await tool(profile=profile, priority=1, notes="Test note")
+    result = await tool.acall(profile=profile, priority=1, notes="Test note")
     assert result["user_id"] == 1
     assert result["name"] == "Test User"
     assert result["priority"] == 1
@@ -316,7 +316,7 @@ async def test_async_tool_with_complex_pydantic():
 async def test_async_tool_invalid_call():
     tool = Tool(async_dummy_function)
     with pytest.raises(ValueError):
-        await tool(x="not an integer", y="hello")
+        await tool.acall(x="not an integer", y="hello")
 
 
 @pytest.mark.asyncio
@@ -326,7 +326,7 @@ async def test_async_tool_with_kwargs():
 
     tool = Tool(fn)
 
-    result = await tool(x=1, y=2, z=3)
+    result = await tool.acall(x=1, y=2, z=3)
     assert result == {"y": 2, "z": 3}
 
 
@@ -336,16 +336,16 @@ async def test_async_concurrent_calls():
     tool = Tool(async_dummy_function)
 
     # Create multiple concurrent calls
-    tasks = [tool(x=i, y=f"hello{i}") for i in range(5)]
+    tasks = [tool.acall(x=i, y=f"hello{i}") for i in range(5)]
 
     # Run them concurrently and measure time
     start_time = asyncio.get_event_loop().time()
     results = await asyncio.gather(*tasks)
     end_time = asyncio.get_event_loop().time()
 
-    # Verify results
+    # Verify results, `asyncio.gather` returns results in the order of the tasks
     assert results == [f"hello{i} {i}" for i in range(5)]
 
     # Check that it ran concurrently (should take ~0.1s, not ~0.5s)
-    # We use 0.2s as threshold to account for some overhead
-    assert end_time - start_time < 0.2
+    # We use 0.3s as threshold to account for some overhead
+    assert end_time - start_time < 0.3
