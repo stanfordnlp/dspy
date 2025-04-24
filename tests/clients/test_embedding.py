@@ -62,3 +62,27 @@ def test_invalid_model_type():
     with pytest.raises(ValueError):
         embedding = Embedder(123)  # Invalid model type
         embedding(["test"])
+
+
+@pytest.mark.asyncio
+async def test_async_embedding():
+    model = "text-embedding-ada-002"
+    inputs = ["hello", "world"]
+    mock_embeddings = [
+        [0.1, 0.2, 0.3],  # embedding for "hello"
+        [0.4, 0.5, 0.6],  # embedding for "world"
+    ]
+
+    with patch("litellm.aembedding") as mock_litellm:
+        # Configure mock to return proper response format.
+        mock_litellm.return_value = MockEmbeddingResponse(mock_embeddings)
+
+        # Create embedding instance and call it.
+        embedding = Embedder(model)
+        result = await embedding.acall(inputs)
+
+        # Verify litellm was called with correct parameters.
+        mock_litellm.assert_called_once_with(model=model, input=inputs, caching=True)
+
+        assert len(result) == len(inputs)
+        np.testing.assert_allclose(result, mock_embeddings)

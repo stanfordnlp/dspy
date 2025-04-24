@@ -195,7 +195,7 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
     Model = pydantic.create_model("DSPyProgramOutputs", **fields, __config__=type("Config", (), {"extra": "forbid"}))
 
     # Generate the initial schema.
-    schema = Model.schema()
+    schema = Model.model_json_schema()
 
     # Remove any DSPy-specific metadata.
     for prop in schema.get("properties", {}).values():
