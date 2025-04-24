@@ -316,7 +316,7 @@ def with_callbacks(fn):
     
     if inspect.iscoroutinefunction(fn):
         @functools.wraps(fn)
-        async def wapper(instance, *args, **kwargs):
+        async def wrapper(instance, *args, **kwargs):
             generator = wrapper_generator(instance, *args, **kwargs)
             next(generator)
             try:
@@ -330,7 +330,7 @@ def with_callbacks(fn):
                 generator.close()
     else:
         @functools.wraps(fn)
-        def wapper(instance, *args, **kwargs):
+        def wrapper(instance, *args, **kwargs):
             generator = wrapper_generator(instance, *args, **kwargs)
             next(generator)
             try:
@@ -341,7 +341,7 @@ def with_callbacks(fn):
             finally:
                 generator.close()
 
-    return wapper
+    return wrapper
 
 
 def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
