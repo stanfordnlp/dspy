@@ -6,14 +6,13 @@ import dspy
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
+from dspy.clients.utils_finetune import TrainDataFormat, GRPOGroup
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
 from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, prepare_teacher, bootstrap_trace_data
 
-# TODO (Lakshya, Noah): This entire file should be appropriately refactored into an arbor LM and arbor provider
-from dspy.clients.arbor.arbor import ReinforceInterface, GRPOGroup
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +48,6 @@ class GRPO(FinetuneTeleprompter):
         self.use_train_as_val = use_train_as_val
         self.num_steps_for_val = num_steps_for_val
 
-        # TODO(GRPO Team): Remove these asserts when done
-        # TODO(GRPO Team): Support teachers
         assert exclude_demos, "exclude_demos==False is not supported yet. Please set it to True."
         assert multitask, "independent GRPO training jobs for each predictor in the student program is not supported yet. Please set multitask=True."
 
@@ -77,6 +74,11 @@ class GRPO(FinetuneTeleprompter):
         # * teacher programs
         # * multitask == False
         # * student program with multiple predictor LMs
+        # The main reason for these is that we update the LMs in place. If these
+        # LMs are shared between the different predictors of the student
+        # program and we have multitask == False, we need to decide which steps
+        # will use new LM copies and we need to ensure our decision is
+        # consistent with any teacher LMs that share the same LMs.
         teacher = None
 
         if not self.multitask:
@@ -98,15 +100,17 @@ class GRPO(FinetuneTeleprompter):
 
         logger.info("Preparing the student program...")
         all_predictors_have_lms(student)
-        disable_lm_cache(student)
+        initial_caches_student = disable_lm_cache(student)
         pred_signature_hash_to_ind = {hash(pred.signature): ind for ind, pred in enumerate(student.predictors())}
         num_student_predictors = len(student.predictors())
 
         logging.info("Preparing the teacher program(s)...")
         teachers = teacher if isinstance(teacher, list) else [teacher]
+        initial_caches_teachers = []
         for ind, t in enumerate(teachers):
             teachers[ind] = prepare_teacher(student=student, teacher=t)
-            disable_lm_cache(teachers[ind])
+            initial_caches = disable_lm_cache(teachers[ind])
+            initial_caches_teachers.append(initial_caches)
 
         # We generate num_samples_per_input trace per example per teacher
         # This way, we will have num_generations trace data for each example
@@ -129,11 +133,8 @@ class GRPO(FinetuneTeleprompter):
             job_key = (pred.lm, data_key)
             if job_key not in grpo_training_jobs:
                 train_kwargs = self.train_kwargs[pred.lm]
-                # TODO(GRPO Team): Uncomment the LM interface when done
-                # grpo_job = pred.lm.reinforce(train_kwargs=train_kwargs)  # this handles initialize(...)
-                grpo_job = ReinforceInterface()
-                grpo_job.initialize(model=pred.lm.model, train_kwargs=train_kwargs)
-                grpo_training_jobs[job_key] = grpo_job
+                job = pred.lm.reinforce(train_kwargs=train_kwargs)
+                grpo_training_jobs[job_key] = job
     
         if valset is None and self.use_train_as_val:
             logger.info("Using the training set as the validation set.")
@@ -297,11 +298,11 @@ class GRPO(FinetuneTeleprompter):
                         logger.warning(f"GRPOGroup has no diversity. This could be due to low temperature, or low number of rollouts, or the cache could be enabled inadvertently. The GRPOGroup is {grpo_train_group}.")
 
             # We now run the GRPO step. Notes:
-            # * The lm here is a reference to the LM that's attached to the
-            #   student program. We update the .model field of this LM after the
-            #   GRPO step, which also updates the LM in the student program
-            #   since these point to the smae reference (along with any teacher
-            #   program that shares the same LM.
+            # * The job here has a reference to a particular M that's attached
+            #   to the student program. We update the .model field of this LM
+            #   inside the job, which also updates the LM in the student program
+            #   since these point to the same reference (along with any teacher
+            #   program that shares the same LM).
             # * TODO(GRPO Team): This is inconsistent with how
             #   BootstrapFinetune works, which creates new LM instances post
             #   training. We should decide whether the LMs should be updated in
@@ -313,9 +314,7 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Invoking GRPO training step...")
             for (lm, data_key), job in grpo_training_jobs.items():
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
-                # TODO(GRPO Team): Uncomment the LM interface when done
-                # lm.model = job.step(train_data=train_data)
-                lm.model = job.step(model=lm.model, train_data=train_data)
+                job.step(train_data=train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
 
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
             if valset and ((train_step_idx + 1) % self.num_steps_for_val == 0 or train_step_idx + 1 == self.num_train_steps):
@@ -325,20 +324,30 @@ class GRPO(FinetuneTeleprompter):
         
         logger.info("Done with the iterations! Retrieving the final model(s)...")
         for (lm, data_key), job in grpo_training_jobs.items():
-            # TODO(GRPO Team): Uncomment the line below after the server starts
-            # sending the final model
-            # lm.model = job.terminate()
             job.terminate()
 
-        logger.info("GRPO compiler has finished compiling the student program")
+        # Revert cache states to their initial values. Note that the student
+        # program might have the same LM as one of the teachers. We first modify
+        # the caches of the student LMs, then those of the teacher LMs. We
+        # follow the opposite order when reverting.
+        for tind, t in enumerate(teachers):
+            for pind, pred in enumerate(t.predictors()):
+                pred.lm.cache = initial_caches_teachers[tind][pind]
 
+        for pind, pred in enumerate(student.predictors()):
+            pred.lm.cache = initial_caches_student[pind]
+
+        logger.info("GRPO compiler has finished compiling the student program")
         student._compiled = True
         return student
 
 
 def disable_lm_cache(program: Program):
     """Disable the LM cache for all predictors in the program."""
+    initial_caches = []
     for pred in program.predictors():
         if not pred.lm:
             raise ValueError(f"Cannot disable cache: predictor {pred} does not have an LM set.")
+        initial_caches.append(pred.lm.cache)
         pred.lm.cache = False
+    return initial_caches
