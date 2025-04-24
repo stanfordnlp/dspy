@@ -1,8 +1,6 @@
-import os
 # os.environ["OPENAI_API_KEY"] = input("OPENAI_API_KEY: ")
 import dspy
 from dspy.clients.lm_local_arbor import ArborProvider
-from dspy.clients.lm_local import LocalProvider
 
 # Assume that the server is running at the following port
 port = 1111
@@ -37,7 +35,7 @@ class CustomModule(dspy.Module):
         answers = []
         for idx, module in enumerate(self.modules):
             for _ in range(idx+1):
-                answers.append(module(**{f"question": (" " * (idx+1)) + question}))
+                answers.append(module(**{"question": (" " * (idx+1)) + question}))
         
         max_joke_length = max([len(answer.joke) for answer in answers])
         concise_answers = [answer.concise_answer for answer in answers]
@@ -67,7 +65,6 @@ importlib.reload(dspy)
 # importlib.reload(dspy.clients.arbor.arbor)
 from dspy.teleprompt.grpo import GRPO
 importlib.reload(dspy.teleprompt.grpo)
-from dspy.teleprompt.grpo import GRPO
 
 train_kwargs = {
     "temperature": 0.9,
