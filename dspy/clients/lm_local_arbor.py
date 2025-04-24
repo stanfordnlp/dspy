@@ -7,7 +7,7 @@ import openai
 
 import dspy
 from dspy.clients.provider import TrainingJob, ReinforceJob, Provider
-from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, GRPOChatData, GRPOGroup, save_data
+from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, GRPOGroup, save_data
 
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ class ArborReinforceJob(ReinforceJob):
 
     def __init__(self, lm: "LM", train_kwargs: Dict[str, Any]):
         # The teleprompter must ensure that this is set
-        if not "num_generations" in train_kwargs:
+        if "num_generations" not in train_kwargs:
             raise ValueError("num_generations must be set in the training kwargs")
 
         self.lm = lm
@@ -202,7 +202,7 @@ class ArborProvider(Provider):
         if response.status_code != 200:
             raise Exception(f"Failed to kill model. Status code: {response.status_code}, Response: {response.text}")
 
-        print(f"Inference killed successfully")
+        print("Inference killed successfully")
 
     @staticmethod
     def _remove_provider_prefix(model: str) -> str:
@@ -365,7 +365,6 @@ class ArborProvider(Provider):
             model: str,
             train_kwargs: Dict[str, Any]
     ) -> str:
-        import dspy.settings as settings
         train_kwargs = train_kwargs or {}
         original_base_url = openai.base_url
         openai.base_url = ArborProvider._get_arbor_base_api()

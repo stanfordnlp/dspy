@@ -2,7 +2,6 @@ import logging
 import random
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
-import dspy
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
