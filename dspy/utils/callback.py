@@ -256,14 +256,15 @@ class BaseCallback:
 
 
 def with_callbacks(fn):
-    @functools.wraps(fn)
-    def wrapper(instance, *args, **kwargs):
+    def wrapper_generator(instance, *args, **kwargs):
         # Combine global and local (per-instance) callbacks.
         callbacks = dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
 
         # If no callbacks are provided, just call the function
         if not callbacks:
-            return fn(instance, *args, **kwargs)
+            result = yield
+            yield result
+            return
 
         # Generate call ID as the unique identifier for the call, this is useful for instrumentation.
         call_id = uuid.uuid4().hex
@@ -289,8 +290,12 @@ def with_callbacks(fn):
             parent_call_id = ACTIVE_CALL_ID.get()
             # Active ID must be set right before the function is called, not before calling the callbacks.
             ACTIVE_CALL_ID.set(call_id)
-            results = fn(instance, *args, **kwargs)
-            return results
+            results = yield # The result of the original function comes here
+            try:
+                yield results
+            except GeneratorExit:
+                # GeneratorExit occurs when the generator is closed
+                pass
         except Exception as e:
             exception = e
             raise exception
@@ -308,8 +313,35 @@ def with_callbacks(fn):
                     logger.warning(
                         f"Error when applying callback {callback}'s end handler on function {fn.__name__}: {e}."
                     )
+    
+    if inspect.iscoroutinefunction(fn):
+        @functools.wraps(fn)
+        async def wapper(instance, *args, **kwargs):
+            generator = wrapper_generator(instance, *args, **kwargs)
+            next(generator)
+            try:
+                result = await fn(instance, *args, **kwargs)
+                return generator.send(result)
+            except Exception as e:
+                # If the original function raises an exception, we need to throw it into the generator
+                generator.throw(e)
+            finally:
+                # Close the generator to run end handlers
+                generator.close()
+    else:
+        @functools.wraps(fn)
+        def wapper(instance, *args, **kwargs):
+            generator = wrapper_generator(instance, *args, **kwargs)
+            next(generator)
+            try:
+                result = fn(instance, *args, **kwargs)
+                return generator.send(result)
+            except Exception as e:
+                generator.throw(e)
+            finally:
+                generator.close()
 
-    return wrapper
+    return wapper
 
 
 def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:

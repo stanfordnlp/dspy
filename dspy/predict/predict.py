@@ -75,6 +75,7 @@ class Predict(Module, Parameter):
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
 
+    @with_callbacks
     async def acall(self, **kwargs):
         return await self.aforward(**kwargs)
 
