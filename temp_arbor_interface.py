@@ -30,9 +30,9 @@ class ReinforceInterface:
     }
 
     def __init__(self):
-        if not hasattr(dspy.settings, "arbor_base_url"):
+        if not hasattr(dspy.settings, "arbor_api_base"):
             raise ValueError("The Arbor base URL is not set in dspy settings. Set it using dspy.settings.arbor_base_url, e.g., dspy.settings.arbor_base_url = 'http://localhost:8000'")
-        self.base_url = dspy.settings.arbor_base_url
+        self.api_base = dspy.settings.arbor_api_base
         self.api_key = "local"
     
     def from_arbor_model(self, model):
@@ -47,9 +47,7 @@ class ReinforceInterface:
 
     def initialize(self, model, train_kwargs=None):
         # TODO(GRPO Team):
-        # * What's the role of suffix?
         # * It would be nice if the server gave us a model ID to use
-        # * Extra kwargs are leading to errors
         train_kwargs = {} if train_kwargs is None else train_kwargs
         num_generations = train_kwargs.get("num_generations")  # The teleprompter must ensure this is set
         update_interval = train_kwargs.get("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
@@ -66,7 +64,7 @@ class ReinforceInterface:
             'temperature': temperature,
             'beta': beta,
         }
-        url = f"{self.base_url}fine_tuning/grpo/initialize"
+        url = f"{self.api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
         response = requests.post(
             url=url,
@@ -85,7 +83,7 @@ class ReinforceInterface:
             'update_inference_model': True,
             'batch': train_group
         }
-        url = f"{self.base_url}fine_tuning/grpo/step"
+        url = f"{self.api_base}fine_tuning/grpo/step"
         headers = {'Content-Type': 'application/json'}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
@@ -104,15 +102,15 @@ class ReinforceInterface:
     def terminate(self):
         # TODO(GRPO Team):
         # * Update after the server starts returning the saved model ID
-        # * What's the purpose of us sending a status?
+        # * Why do we need to send a payload?
         data = {
             'status': 'success'
         }
-        url = f"{self.base_url}fine_tuning/grpo/terminate"
+        url = f"{self.api_base}fine_tuning/grpo/terminate"
         headers = {'Content-Type': 'application/json'}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
-        # response = response.json()
+        # response = response.json()  # TODO: To be updated
         # current_model = response["current_model"]
         # current_model = self.to_arbor_model(current_model)
         # return current_model
