@@ -5,19 +5,19 @@ from dspy.clients.lm_local_arbor import ArborProvider
 from dspy.clients.lm_local import LocalProvider
 
 # Assume that the server is running at the following port
-port = 8000
+port = 1111
 arbor_api_base = f"http://localhost:{port}/v1/"
-dspy.settings.arbor_api_base = arbor_api_base
+api_key = "arbor"
 provider = ArborProvider()
+# Uncomment this line if you want to use LM.finetune(...)
+# This is a hack for the time being, we will modify the "finetune" method to
+# take in an LM instead.
+# dspy.settings.arbor_base_api = arbor_api_base  
 # provider = LocalProvider()
 
-# student_lm_name = "meta-llama/Llama-3.2-1B-Instruct"
 student_lm_name = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
-student_lm = dspy.LM(model=f"openai/arbor:{student_lm_name}", provider=provider, api_key="EMPTY", temperature=0.7)
-
-student_lm.launch({"api_base": arbor_api_base})
-
-# dspy_lm = dspy.LM(model="openai/gpt-4o", max_tokens=None, max_completion_tokens=16384, api_key=os.environ["OPENAI_API_KEY"])
+student_lm = dspy.LM(model=f"openai/arbor:{student_lm_name}", provider=provider, temperature=0.7, api_base=arbor_api_base, api_key=api_key)
+student_lm.launch()
 
 print(student_lm("Hi there! How are you?"))
 

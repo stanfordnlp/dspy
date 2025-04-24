@@ -97,11 +97,6 @@ class LM(BaseLM):
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
-        # TODO: Is this too messy? Otherwise api_base becomes passed to both provider and the LM
-        if isinstance(self.provider, ArborProvider) and self.provider.api_base is not None:
-            self.train_kwargs["api_base"] = self.provider.api_base
-        # Should user be able to override this?
-
     @with_callbacks
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
