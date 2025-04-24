@@ -1,8 +1,7 @@
 import logging
-from typing import Any, Callable, Literal, get_origin
+from typing import Any, Callable, Literal
 
 from litellm import ContextWindowExceededError
-from pydantic import BaseModel
 
 import dspy
 from dspy.primitives.program import Module
@@ -82,18 +81,7 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                parsed_tool_args = {}
-                tool = self.tools[pred.next_tool_name]
-                for k, v in pred.next_tool_args.items():
-                    if hasattr(tool, "arg_types") and k in tool.arg_types:
-                        arg_type = tool.arg_types[k]
-                        if isinstance((origin := get_origin(arg_type) or arg_type), type) and issubclass(
-                            origin, BaseModel
-                        ):
-                            parsed_tool_args[k] = arg_type.model_validate(v)
-                            continue
-                    parsed_tool_args[k] = v
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**parsed_tool_args)
+                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
             except Exception as e:
                 trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
 

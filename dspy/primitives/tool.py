@@ -2,7 +2,7 @@ import inspect
 from typing import Any, Callable, Optional, get_origin, get_type_hints
 
 from jsonschema import ValidationError, validate
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.utils.callback import with_callbacks
 
@@ -130,6 +130,19 @@ class Tool:
         self.args = self.args or args
         self.arg_types = self.arg_types or arg_types
 
+    def _parse_args(self, **kwargs):
+        parsed_kwargs = {}
+        for k, v in kwargs.items():
+            if k in self.arg_types and self.arg_types[k] != any:
+                # Create a pydantic model wrapper with a dummy field `value` to parse the arg to the correct type.
+                # This is specifically useful for handling nested Pydantic models like `list[list[MyPydanticModel]]`
+                pydantic_wrapper = create_model("Wrapper", value=(self.arg_types[k], ...))
+                parsed = pydantic_wrapper.model_validate({"value": v})
+                parsed_kwargs[k] = parsed.value
+            else:
+                parsed_kwargs[k] = v
+        return parsed_kwargs
+
     @with_callbacks
     def __call__(self, **kwargs):
         for k, v in kwargs.items():
@@ -142,4 +155,6 @@ class Tool:
                     validate(instance=instance, schema=self.args[k])
             except ValidationError as e:
                 raise ValueError(f"Arg {k} is invalid: {e.message}")
-        return self.func(**kwargs)
+
+        parsed_kwargs = self._parse_args(**kwargs)
+        return self.func(**parsed_kwargs)
