@@ -193,3 +193,12 @@ def test_tool_call_parses_nested_list_of_pydantic_model():
 
     result = tool(**args)
     assert result == [[DummyModel(field1="hello", field2=123)]]
+
+
+def test_tool_call_kwarg():
+    def fn(x: int, **kwargs):
+        return kwargs
+    tool = Tool(fn)
+
+    assert tool(x=1, y=2, z=3) == {"y": 2, "z": 3}
+
