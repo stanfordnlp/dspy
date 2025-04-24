@@ -6,16 +6,16 @@ from dspy.clients.lm_local import LocalProvider
 
 # Assume that the server is running at the following port
 port = 8000
-base_url = f"http://localhost:{port}/v1/"
-dspy.settings.arbor_base_url = base_url
-provider = ArborProvider(base_url)
+arbor_api_base = f"http://localhost:{port}/v1/"
+dspy.settings.arbor_api_base = arbor_api_base
+provider = ArborProvider()
 # provider = LocalProvider()
 
 # student_lm_name = "meta-llama/Llama-3.2-1B-Instruct"
 student_lm_name = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
 student_lm = dspy.LM(model=f"openai/arbor:{student_lm_name}", provider=provider, api_key="EMPTY", temperature=0.7)
 
-student_lm.launch({"api_base": base_url})
+student_lm.launch({"api_base": arbor_api_base})
 
 # dspy_lm = dspy.LM(model="openai/gpt-4o", max_tokens=None, max_completion_tokens=16384, api_key=os.environ["OPENAI_API_KEY"])
 
@@ -63,8 +63,8 @@ module.set_lm(student_lm)
 import importlib
 import dspy
 importlib.reload(dspy)
-import dspy.clients.arbor.arbor
-importlib.reload(dspy.clients.arbor.arbor)
+# import dspy.clients.arbor.arbor
+# importlib.reload(dspy.clients.arbor.arbor)
 from dspy.teleprompt.grpo import GRPO
 importlib.reload(dspy.teleprompt.grpo)
 from dspy.teleprompt.grpo import GRPO
@@ -82,6 +82,7 @@ train_kwargs = {
     #
 }
 
+dspy.settings.experimental = True
 compiler = GRPO(
     metric=metric,
     multitask=True,
