@@ -1,6 +1,8 @@
 import litellm
 import numpy as np
 
+from dspy.clients.cache import request_cache
+
 
 class Embedder:
     """DSPy embedding class.
@@ -124,37 +126,52 @@ class Embedder:
         """
         input_batches, caching, kwargs, is_single_input = self._preprocess(inputs, batch_size, caching, **kwargs)
 
+        compute_embeddings = _cached_compute_embeddings if caching else _compute_embeddings
+
         embeddings_list = []
 
         for batch in input_batches:
-            if isinstance(self.model, str):
-                embedding_response = litellm.embedding(model=self.model, input=batch, caching=caching, **kwargs)
-                batch_embeddings = [data["embedding"] for data in embedding_response.data]
-            elif callable(self.model):
-                batch_embeddings = self.model(batch, **kwargs)
-            else:
-                raise ValueError(
-                    f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(self.model)}."
-                )
-
-            embeddings_list.extend(batch_embeddings)
+            embeddings_list.extend(compute_embeddings(self.model, batch, caching=caching, **kwargs))
         return self._postprocess(embeddings_list, is_single_input)
 
     async def acall(self, inputs, batch_size=None, caching=None, **kwargs):
         input_batches, caching, kwargs, is_single_input = self._preprocess(inputs, batch_size, caching, **kwargs)
 
         embeddings_list = []
+        acompute_embeddings = _cached_acompute_embeddings if caching else _acompute_embeddings
 
         for batch in input_batches:
-            if isinstance(self.model, str):
-                embedding_response = await litellm.aembedding(model=self.model, input=batch, caching=caching, **kwargs)
-                batch_embeddings = [data["embedding"] for data in embedding_response.data]
-            elif callable(self.model):
-                batch_embeddings = self.model(batch, **kwargs)
-            else:
-                raise ValueError(
-                    f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(self.model)}."
-                )
-
-            embeddings_list.extend(batch_embeddings)
+            embeddings_list.extend(acompute_embeddings(self.model, batch, caching=caching, **kwargs))
         return self._postprocess(embeddings_list, is_single_input)
+
+
+def _compute_embeddings(model, batch_inputs, caching=False, **kwargs):
+    if isinstance(model, str):
+        caching = caching and litellm.cache is not None
+        embedding_response = litellm.embedding(model=model, input=batch_inputs, caching=caching, **kwargs)
+        return [data["embedding"] for data in embedding_response.data]
+    elif callable(model):
+        return model(batch_inputs, **kwargs)
+    else:
+        raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
+
+
+@request_cache(ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
+def _cached_compute_embeddings(model, batch_inputs, caching=True, **kwargs):
+    return _compute_embeddings(model, batch_inputs, caching=caching, **kwargs)
+
+
+async def _acompute_embeddings(model, batch_inputs, caching=False, **kwargs):
+    if isinstance(model, str):
+        caching = caching and litellm.cache is not None
+        embedding_response = await litellm.aembedding(model=model, input=batch_inputs, caching=caching, **kwargs)
+        return [data["embedding"] for data in embedding_response.data]
+    elif callable(model):
+        return model(batch_inputs, **kwargs)
+    else:
+        raise ValueError(f"`model` in `dspy.Embedder` must be a string or a callable, but got {type(model)}.")
+
+
+@request_cache(ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
+async def _cached_acompute_embeddings(model, batch_inputs, caching=True, **kwargs):
+    return await _acompute_embeddings(model, batch_inputs, caching=caching, **kwargs)
