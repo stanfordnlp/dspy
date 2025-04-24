@@ -150,7 +150,7 @@ class Tool:
         for k, v in kwargs.items():
             if k not in self.args:
                 if self.has_kwargs:
-                    # If the tool has kwargs, ignore unknown args
+                    # If the tool has kwargs, skip validation for unknown args
                     continue
                 raise ValueError(f"Arg {k} is not in the tool's args.")
             try:
