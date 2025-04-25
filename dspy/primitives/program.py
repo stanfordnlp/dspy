@@ -31,6 +31,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
         return self.forward(*args, **kwargs)
 
+    @with_callbacks
     async def acall(self, *args, **kwargs):
         if settings.track_usage and settings.usage_tracker is None:
             with track_usage() as usage_tracker:

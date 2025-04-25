@@ -91,6 +91,7 @@ class BaseLM(ABC):
 
         return outputs
 
+    @with_callbacks
     async def acall(self, prompt=None, messages=None, **kwargs):
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
