@@ -49,32 +49,12 @@ class BaseLM(ABC):
         self.history = []
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
-        if self.kwargs.get("logprobs"):
-            # If logprobs is set, we need to extract the logprobs from the response
-            # and format them according to the OpenAI API response format.
-            # This is a workaround for the fact that the OpenAI API does not return
-            # logprobs in the same format as the response.
-            # We need to check if the response is a list of choices or a single choice.
+        merged_kwargs = {**self.kwargs, **kwargs}
+        if merged_kwargs.get("logprobs"):
             outputs = [
                 {
                     "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": {
-                        "content": [
-                            {
-                                "token": token_logprob.token,
-                                "bytes": token_logprob.bytes,
-                                "logprob": token_logprob.logprob,
-                                "top_logprobs": [
-                                    {
-                                        "token": top_logprob.token,
-                                        "bytes": top_logprob.bytes,
-                                        "logprob": top_logprob.logprob,
-                                    } for top_logprob in (token_logprob.top_logprobs or [])
-                                ],
-                            } for token_logprob in (c.logprobs.content if hasattr(c.logprobs, "content") else [])
-                        ],
-                        "refusal": c.logprobs.refusal if hasattr(c.logprobs, "refusal") else None,
-                    } if hasattr(c, "logprobs") else c["logprobs"],
+                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
                 }
                 for c in response.choices
             ]
