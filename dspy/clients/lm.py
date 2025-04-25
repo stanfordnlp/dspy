@@ -15,9 +15,8 @@ from cachetools import LRUCache, cached
 from litellm import RetryPolicy
 
 import dspy
-from dspy.clients.lm_local_arbor import ArborProvider
 from dspy.clients.openai import OpenAIProvider
-from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.provider import Provider, TrainingJob, ReinforceJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -97,11 +96,6 @@ class LM(BaseLM):
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
-        # TODO: Is this too messy? Otherwise api_base becomes passed to both provider and the LM
-        if isinstance(self.provider, ArborProvider) and self.provider.api_base is not None:
-            self.train_kwargs["api_base"] = self.provider.api_base
-        # Should user be able to override this?
-
     @with_callbacks
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
@@ -169,6 +163,21 @@ class LM(BaseLM):
         )
         thread.start()
 
+        return job
+
+    def reinforce(self, train_kwargs) -> ReinforceJob:
+        # TODO(GRPO Team): Should we return an initialized job here?
+        from dspy import settings as settings
+
+        err = "Reinforcement learning is an experimental feature."
+        err += " Set `dspy.settings.experimental` to `True` to use it."
+        assert settings.experimental, err
+    
+        err = f"Provider {self.provider} does not implement the reinforcement learning interface."
+        assert self.provider.reinforceable, err
+
+        job = self.provider.ReinforceJob(lm=self, train_kwargs=train_kwargs)
+        job.initialize()
         return job
 
     def _run_finetune_job(self, job: TrainingJob):

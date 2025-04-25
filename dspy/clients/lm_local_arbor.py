@@ -1,17 +1,20 @@
 import time
 import requests
 from datetime import datetime
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 import openai
 
-from dspy.clients.provider import TrainingJob, Provider #, RLBatchJob
-from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, save_data
+import dspy
+from dspy.clients.provider import TrainingJob, ReinforceJob, Provider
+from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, GRPOGroup, save_data
+
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
-class SFTTrainingJobArbor(TrainingJob):
+
+class ArborTrainingJob(TrainingJob):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.provider_file_id = None
@@ -38,52 +41,146 @@ class SFTTrainingJobArbor(TrainingJob):
         status = ArborProvider.get_training_status(self.provider_job_id)
         return status
 
-# class RLBatchJobArbor(RLBatchJob):
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         self.provider_job_id = None
 
-#     def cancel(self):
-#         if ArborProvider.does_job_exist(self.provider_job_id):
-#             status = self.status()
-#             if ArborProvider.is_terminal_training_status(status):
-#                 err_msg = "Jobs that are complete cannot be canceled."
-#                 err_msg += f" Job with ID {self.provider_job_id} is done."
-#                 raise Exception(err_msg)
-#             openai.fine_tuning.jobs.cancel(self.provider_job_id)
-#             self.provider_job_id = None
+class ArborReinforceJob(ReinforceJob):
+    DEFAULT_TRAIN_KWARGS = {
+        "update_interval": 25,
+        "temperature": 0.9,
+        "beta": 0.04,
+    }
 
-#         # Assuming no file needed for RL batch training (the batches are small enough)
-#         super().cancel()
+    def __init__(self, lm: "LM", train_kwargs: Dict[str, Any]):
+        # The teleprompter must ensure that this is set
+        if "num_generations" not in train_kwargs:
+            raise ValueError("num_generations must be set in the training kwargs")
 
-#     def status(self) -> TrainingStatus:
-#         status = ArborProvider.get_training_status(self.provider_job_id)
-#         return status
+        self.lm = lm
+        self.train_kwargs = train_kwargs
+        self.provider_job_id = None
+
+    def initialize(self):
+        # TODO(GRPO Team): Decide if we will get a new model ID upon initialization
+        # TODO(GRPO Team): Set provider job ID
+        # TODO(GRPO Team): Should we use the API Key anywhere?
+        num_generations = self.train_kwargs.get("num_generations")
+        update_interval = self.train_kwargs.get("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
+        temperature = self.train_kwargs.get("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
+        beta = self.train_kwargs.get("beta", self.DEFAULT_TRAIN_KWARGS["beta"])
+
+        api_base = self.lm.kwargs["api_base"]
+        # api_key = self.lm.kwargs["api_key"]
+
+        suffix = "dspy"
+        finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
+        data = {
+            'model': finetune_model,
+            'suffix': suffix,
+            'num_generations': num_generations,
+            'update_interval': update_interval,
+            'temperature': temperature,
+            'beta': beta,
+        }
+        url = f"{api_base}fine_tuning/grpo/initialize"
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(
+            url=url,
+            headers=headers,
+            json=data
+        )
+        assert response.status_code == 200, f"Failed to initialize GRPO: {response}"
+        self.lm.model = ArborProvider._add_provider_prefix(finetune_model)  # TODO: To be updated
+        # self.provider_job_id = response.json().get("job_id")  # TODO: To be updated
+
+    def _run_grpo_step_one_group(self, train_group: GRPOGroup, train_data_format: Optional[Union[TrainDataFormat, str]] = None):
+        # TODO: (GRPO Team): Update self.lm with the new model
+        # TODO: Check that the data follows the intended format
+        api_base = self.lm.kwargs["api_base"]
+        # api_key = self.lm.kwargs["api_key"]
+
+        finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
+        data = {
+            'model': finetune_model,
+            'update_inference_model': True,
+            'batch': train_group
+        }
+        url = f"{api_base}fine_tuning/grpo/step"
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(url, headers=headers, json=data)
+        assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
+        response = response.json()
+        assert "current_model" in response, f"Response does not contain the next model ID to be used: {response}"
+        current_model = response["current_model"]
+        self.lm.model = ArborProvider._add_provider_prefix(current_model)  # TODO: To be updated
+
+    def step(self, train_data: List[GRPOGroup], train_data_format: Optional[Union[TrainDataFormat, str]]):
+        # Note: TrainDataFormat specifies the format for the inner most dict.
+        # Because we run GRPO at the group level, train_data will be a list of
+        # groups, where each group is a list of GRPOChatData. Our teleprompters
+        # ensure that we pass the right data format.
+        # We can consider making this distinction clearer, e.g., by having two
+        # different step methods or changing our smallets data format to be the
+        # GRPO group.
+        assert train_data_format == TrainDataFormat.GRPO_CHAT, f"GRPO only supports the GRPO_CHAT data format. Got {train_data_format} instead."
+        for group in train_data:
+            self._run_grpo_step_one_group(group, train_data_format)
+
+    def terminate(self):
+        # TODO(GRPO Team):
+        # * Update after the server starts returning the saved model ID
+        # * Why do we need to send a payload?
+        api_base = self.lm.kwargs["api_base"]
+        # api_key = self.lm.kwargs["api_key"]
+
+        data = {
+            'status': 'success'
+        }
+        url = f"{api_base}fine_tuning/grpo/terminate"
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(url, headers=headers, json=data)
+        assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
+        # response = response.json()  # TODO: To be updated
+        # current_model = response["current_model"]
+        # self.lm.model = ArborProvider._add_provider_prefix(current_model)  # TODO: To be updated
+
+    def cancel(self):
+        if ArborProvider.does_job_exist(self.provider_job_id):
+            status = self.status()
+            if ArborProvider.is_terminal_training_status(status):
+                err_msg = "Jobs that are complete cannot be canceled."
+                err_msg += f" Job with ID {self.provider_job_id} is done."
+                raise Exception(err_msg)
+            openai.fine_tuning.jobs.cancel(self.provider_job_id)
+            self.provider_job_id = None
+
+    def status(self) -> TrainingStatus:
+        status = ArborProvider.get_training_status(self.provider_job_id)
+        return status
+
 
 class ArborProvider(Provider):
 
-    def __init__(self, api_base: str):
+    def __init__(self):
         super().__init__()
         self.finetunable = True
-        self.TrainingJob = SFTTrainingJobArbor
-        # self.RLBatchJob = RLBatchJobArbor
-        self.api_base = api_base
+        self.reinforceable = True
+        self.TrainingJob = ArborTrainingJob
+        self.ReinforceJob = ArborReinforceJob
 
     @staticmethod
     def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
-        model = lm.model
-        if model.startswith("openai/"):
-            model = model[7:]
-        if model.startswith("arbor:"):
-            model = model[6:]
+        model = ArborProvider._remove_provider_prefix(lm.model)
+        # TODO: Handle this on the server side
         if model.startswith("huggingface/"):
             model = model[len("huggingface/"):]
+
+        api_base = lm.kwargs["api_base"]
+        api_key = lm.kwargs["api_key"]
 
         launch_kwargs = launch_kwargs or lm.launch_kwargs
 
         # Make request to launch endpoint
         response = requests.post(
-            f"{launch_kwargs['api_base']}chat/launch",
+            f"{api_base}chat/launch",
             json={"model": model, "launch_kwargs": launch_kwargs}
         )
 
@@ -91,42 +188,63 @@ class ArborProvider(Provider):
             raise Exception(f"Failed to launch model. Status code: {response.status_code}, Response: {response.text}")
 
         print(f"Inference server for model {model} launched successfully")
-        lm.kwargs["api_base"] = f"{launch_kwargs['api_base']}"
-        lm.kwargs["api_key"] = "arbor"
+
 
     @staticmethod
     def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
-        launch_kwargs = launch_kwargs or lm.launch_kwargs
+        api_base = lm.kwargs["api_base"]
+        api_key = lm.kwargs["api_key"]
+
         response = requests.post(
-            f"{launch_kwargs['api_base']}chat/kill",
+            f"{api_base}chat/kill",
         )
 
         if response.status_code != 200:
             raise Exception(f"Failed to kill model. Status code: {response.status_code}, Response: {response.text}")
 
-        print(f"Inference killed successfully")
+        print("Inference killed successfully")
 
     @staticmethod
     def _remove_provider_prefix(model: str) -> str:
-        provider_prefix = "openai/arbor:"
-        return model.replace(provider_prefix, "")
+        if model.startswith("openai/"):
+            model = model[7:]
+        if model.startswith("arbor:"):
+            model = model[6:]
+        return model
+    
+    @staticmethod
+    def _add_provider_prefix(model: str) -> str:
+        if not model.startswith("openai/arbor:"):
+            model = "openai/arbor:" + model
+        return model
+
+    @staticmethod
+    def _get_arbor_base_api():
+        # TODO: We will delete this method once we start passing the LM object
+        # to finetune.
+        import dspy.settings as settings
+        if not hasattr(settings, "arbor_api_base"):
+            raise ValueError("Arbor API base not set. Please set the `dspy.settings.arbor_api_base` to the URL for the Arbor server (e.g. 'http://localhost:8000/v1/').")
+        return dspy.settings.arbor_api_base
 
     @staticmethod
     def finetune(
-            job: SFTTrainingJobArbor,
+            job: ArborTrainingJob,
             model: str,
             train_data: List[Dict[str, Any]],
             train_data_format: Optional[TrainDataFormat],
             train_kwargs: Optional[Dict[str, Any]] = None
     ) -> str:
-        if model.startswith("openai/"):
-            model = model[7:]
-        if model.startswith("arbor:"):
-            model = model[6:]
+        # TODO: We want to re-factor finetune so that it takes in an LM.
+        # Until then, we use the following to get the api information. The
+        # following is a dummy call to ensure that dspy.settings.arbor_base_api
+        # is set.
+        ArborProvider._get_arbor_base_api()
 
+        model = ArborProvider._remove_provider_prefix(model)
 
         print("[Arbor Provider] Validating the data format")
-        ArborProvider.validate_data_format(train_data_format, type='sft')
+        ArborProvider.validate_data_format(train_data_format)
 
         print("[Arbor Provider] Saving the data to a file")
         data_path = save_data(train_data)
@@ -146,51 +264,19 @@ class ArborProvider(Provider):
         print(f"[Arbor Provider] Job started with the Arbor Job ID {provider_job_id}")
 
         print("[Arbor Provider] Waiting for training to complete")
-        ArborProvider.wait_for_job(job, training_kwargs)
+        ArborProvider.wait_for_job(job, train_kwargs)
 
         print("[Arbor Provider] Attempting to retrieve the trained model")
         model = ArborProvider.get_trained_model(job)
         print(f"[Arbor Provider] Model retrieved: {model}")
 
-        return f"openai/arbor:{model}"
-
-    # @staticmethod
-    # def rl_train_batch(
-    #         job: RLBatchJobArbor,
-    #         model: str,
-    #         batch_data: List[Dict[str, Any]],
-    #         batch_data_format: Optional[TrainDataFormat],
-    #         train_kwargs: Optional[Dict[str, Any]] = None
-    # ) -> str:
-    #     model = ArborProvider._remove_provider_prefix(model)
-
-    #     print("[Arbor Provider] Validating the data format")
-    #     ArborProvider.validate_data_format(batch_data_format, type='rl')
-
-    #     print("[Arbor Provider] Starting remote training")
-    #     provider_job_id = ArborProvider._start_remote_rl_train_batch(
-    #         batch_data=batch_data,
-    #         model=model,
-    #         train_kwargs=train_kwargs,
-    #     )
-    #     job.provider_job_id = provider_job_id
-    #     print(f"[Arbor Provider] Job started with the Arbor Job ID {provider_job_id}")
-
-    #     print("[Arbor Provider] Waiting for training to complete")
-    #     # TODO: This takes 1 second but that might still be too long
-    #     ArborProvider.wait_for_job(job, poll_frequency=1)
-
-    #     model = ArborProvider.get_trained_model(job)
-    #     print(f"[Arbor Provider] Model retrieved: {model}")
-
-    #     return f"openai/arbor:{model}"
-
+        return ArborProvider._add_provider_prefix(model)
 
     @staticmethod
     def does_job_exist(job_id: str, training_kwargs: Dict[str, Any]) -> bool:
         try:
             original_base_url = openai.base_url
-            openai.base_url = training_kwargs['api_base']
+            openai.base_url = ArborProvider._get_arbor_base_api()
             openai.fine_tuning.jobs.retrieve(job_id)
             openai.base_url = original_base_url
             return True
@@ -201,7 +287,7 @@ class ArborProvider(Provider):
     def does_file_exist(file_id: str, training_kwargs: Dict[str, Any]) -> bool:
         try:
             original_base_url = openai.base_url
-            openai.base_url = training_kwargs['api_base']
+            openai.base_url = ArborProvider._get_arbor_base_api()
             openai.files.retrieve(file_id)
             openai.base_url = original_base_url
             return True
@@ -240,7 +326,7 @@ class ArborProvider(Provider):
         assert ArborProvider.does_job_exist(job_id, training_kwargs), err_msg
 
         original_base_url = openai.base_url
-        openai.base_url = training_kwargs['api_base']
+        openai.base_url = ArborProvider._get_arbor_base_api()
         provider_job = openai.fine_tuning.jobs.retrieve(job_id)
         openai.base_url = original_base_url
 
@@ -250,17 +336,12 @@ class ArborProvider(Provider):
         return status
 
     @staticmethod
-    def validate_data_format(data_format: TrainDataFormat, type: str):
-        supported_data_formats = {
-            'sft': [
-                TrainDataFormat.CHAT,
-                TrainDataFormat.COMPLETION,
-            ],
-            'rl': [
-                TrainDataFormat.CHAT,
-                TrainDataFormat.COMPLETION,
-            ]
-        }[type]
+    def validate_data_format(data_format: TrainDataFormat):
+        supported_data_formats = [
+            TrainDataFormat.CHAT,
+            TrainDataFormat.COMPLETION,
+            TrainDataFormat.GRPO_CHAT,
+        ]
 
         if data_format not in supported_data_formats:
             err_msg = f"Arbor does not support the data format {data_format}."
@@ -268,9 +349,8 @@ class ArborProvider(Provider):
 
     @staticmethod
     def upload_data(data_path: str, training_kwargs: Dict[str, Any]) -> str:
-        # Upload the data to the provider
         original_base_url = openai.base_url
-        openai.base_url = training_kwargs['api_base']
+        openai.base_url = ArborProvider._get_arbor_base_api()
         provider_file = openai.files.create(
             file=open(data_path, "rb"),
             purpose="fine-tune",
@@ -287,7 +367,7 @@ class ArborProvider(Provider):
     ) -> str:
         train_kwargs = train_kwargs or {}
         original_base_url = openai.base_url
-        openai.base_url = train_kwargs['api_base']
+        openai.base_url = ArborProvider._get_arbor_base_api()
         provider_job = openai.fine_tuning.jobs.create(
             model=model,
             training_file=train_file_id,
@@ -310,7 +390,7 @@ class ArborProvider(Provider):
             if not reported_estimated_time:
 
                 original_base_url = openai.base_url
-                openai.base_url = training_kwargs['api_base']
+                openai.base_url = ArborProvider._get_arbor_base_api()
                 remote_job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
                 openai.base_url = original_base_url
 
@@ -323,7 +403,7 @@ class ArborProvider(Provider):
 
             # Get new events
             original_base_url = openai.base_url
-            openai.base_url = training_kwargs['api_base']
+            openai.base_url = ArborProvider._get_arbor_base_api()
             page = openai.fine_tuning.jobs.list_events(fine_tuning_job_id=job.provider_job_id, limit=1)
             openai.base_url = original_base_url
 
@@ -346,7 +426,7 @@ class ArborProvider(Provider):
             raise Exception(err_msg)
 
         original_base_url = openai.base_url
-        openai.base_url = training_kwargs['api_base']
+        openai.base_url = ArborProvider._get_arbor_base_api()
         provider_job = openai.fine_tuning.jobs.retrieve(job.provider_job_id)
         openai.base_url = original_base_url
 
