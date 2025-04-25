@@ -47,7 +47,7 @@ These optimizers extend the signature by automatically generating and including 
 
 3. [**`BootstrapFewShotWithRandomSearch`**](/deep-dive/optimizers/bootstrap-fewshot): Applies `BootstrapFewShot` several times with random search over generated demonstrations, and selects the best program over the optimization. Parameters mirror those of `BootstrapFewShot`, with the addition of `num_candidate_programs`, which specifies the number of random programs evaluated over the optimization, including candidates of the uncompiled program, `LabeledFewShot` optimized program, `BootstrapFewShot` compiled program with unshuffled examples and `num_candidate_programs` of `BootstrapFewShot` compiled programs with randomized example sets.
 
-4. **`KNNFewShot`**. Uses k-Nearest Neighbors algorithm to find the nearest training example demonstrations for a given input example. These nearest neighbor demonstrations are then used as the trainset for the BootstrapFewShot optimization process. See [this notebook](https://github.com/stanfordnlp/dspy/blob/main/examples/outdated_v2.4_examples/knn.ipynb) for an example.
+4. **`KNNFewShot`**. Uses k-Nearest Neighbors algorithm to find the nearest training example demonstrations for a given input example. These nearest neighbor demonstrations are then used as the trainset for the BootstrapFewShot optimization process.
 
 
 ### Automatic Instruction Optimization

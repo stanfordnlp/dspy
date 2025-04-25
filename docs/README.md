@@ -1,4 +1,17 @@
-# DSPy Documentation
+**If you're looking to understand the framework, please go to the [DSPy Docs at dspy.ai](https://dspy.ai)**
+
+&nbsp;
+
+--------
+
+&nbsp;
+
+The content below is focused on how to modify the documentation site.
+
+&nbsp;
+
+# Modifying the DSPy Documentation
+
 
 This website is built using [Material for MKDocs](https://squidfunk.github.io/mkdocs-material/), a Material UI inspired theme for MKDocs.
 
