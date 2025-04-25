@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from typing import Any, Callable, Optional, get_origin, get_type_hints
 
@@ -132,10 +133,26 @@ class Tool:
         self.arg_types = self.arg_types or arg_types
         self.has_kwargs = any([param.kind == param.VAR_KEYWORD for param in sig.parameters.values()])
 
-    def _parse_args(self, **kwargs):
+    def _validate_and_parse_args(self, **kwargs):
+        # Validate the args value comply to the json schema.
+        for k, v in kwargs.items():
+            if k not in self.args:
+                if self.has_kwargs:
+                    continue
+                else:
+                    raise ValueError(f"Arg {k} is not in the tool's args.")
+            try:
+                instance = v.model_dump() if hasattr(v, "model_dump") else v
+                type_str = self.args[k].get("type")
+                if type_str is not None and type_str != "Any":
+                    validate(instance=instance, schema=self.args[k])
+            except ValidationError as e:
+                raise ValueError(f"Arg {k} is invalid: {e.message}")
+
+        # Parse the args to the correct type.
         parsed_kwargs = {}
         for k, v in kwargs.items():
-            if k in self.arg_types and self.arg_types[k] != any:
+            if k in self.arg_types and self.arg_types[k] != Any:
                 # Create a pydantic model wrapper with a dummy field `value` to parse the arg to the correct type.
                 # This is specifically useful for handling nested Pydantic models like `list[list[MyPydanticModel]]`
                 pydantic_wrapper = create_model("Wrapper", value=(self.arg_types[k], ...))
@@ -147,19 +164,15 @@ class Tool:
 
     @with_callbacks
     def __call__(self, **kwargs):
-        for k, v in kwargs.items():
-            if k not in self.args:
-                if self.has_kwargs:
-                    # If the tool has kwargs, skip validation for unknown args
-                    continue
-                raise ValueError(f"Arg {k} is not in the tool's args.")
-            try:
-                instance = v.model_dump() if hasattr(v, "model_dump") else v
-                type_str = self.args[k].get("type")
-                if type_str is not None and type_str != "Any":
-                    validate(instance=instance, schema=self.args[k])
-            except ValidationError as e:
-                raise ValueError(f"Arg {k} is invalid: {e.message}")
+        parsed_kwargs = self._validate_and_parse_args(**kwargs)
+        result = self.func(**parsed_kwargs)
+        if asyncio.iscoroutine(result):
+            raise ValueError("You are calling `__call__` on an async tool, please use `acall` instead.")
+        return result
 
-        parsed_kwargs = self._parse_args(**kwargs)
-        return self.func(**parsed_kwargs)
+    async def acall(self, **kwargs):
+        parsed_kwargs = self._validate_and_parse_args(**kwargs)
+        result = self.func(**parsed_kwargs)
+        if not asyncio.iscoroutine(result):
+            raise ValueError("You are calling `acall` on a non-async tool, please use `__call__` instead.")
+        return await result
