@@ -112,7 +112,7 @@ async def test_async_embedding():
         mock_litellm.return_value = MockEmbeddingResponse(mock_embeddings)
 
         # Create embedding instance and call it.
-        embedding = Embedder(model)
+        embedding = Embedderrrrrrrrrr(model)
         result = await embedding.acall(inputs)
 
         # Verify litellm was called with correct parameters.
