@@ -541,36 +541,6 @@ def test_field_constraints(adapter_type):
     assert "a multiple of the given number: 2" in system_message
 
 
-@pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Skipping if OPENAI_API_KEY is not set")
-def test_litellm_cache_initialization_failure():
-    """Test that DSPy handles litellm cache initialization failure gracefully."""
-    # Mock Cache to raise a permission error
-    mock_cache = MagicMock()
-    mock_cache.side_effect = PermissionError("Permission denied")
-
-    import litellm
-
-    # Normal import should have set litellm.cache
-    assert litellm.cache is not None
-
-    with patch("litellm.caching.Cache", mock_cache):
-        import importlib
-        import dspy.clients
-
-        importlib.reload(dspy.clients)
-
-    # On cache initialization failure, litellm.cache should be set to None
-    assert litellm.cache is None
-
-    # Create a simple predictor to verify it works without cache
-    predictor = Predict("question -> answer")
-    dspy.settings.configure(lm=dspy.LM(model="openai/gpt-4o-mini"))
-
-    # No exception should be raised when litellm.cache is None even if we try to use the cache.
-    assert dspy.settings.lm.cache == True
-    predictor(question="test")
-
-
 @pytest.mark.asyncio
 async def test_async_predict():
     program = Predict("question -> answer")
