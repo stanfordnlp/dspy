@@ -29,16 +29,18 @@ class ReAct(Module):
 
         instr.extend(
             [
-                f"You will be given {inputs} and your goal is to finish with {outputs}.\n",
-                "To do this, you will interleave Thought, Tool Name, and Tool Args, and receive a resulting Observation.\n",
-                "Thought can reason about the current situation, and Tool Name can be the following types:\n",
+                f"You are an Agent. In each episode, you will be given {inputs} as input. And you can see your past trajectory so far.",
+                f"Your goal is to use tools to collect any necessary information for producing {outputs}.\n",
+                "To do this, you will interleave next_thought, next_tool_name, and next_tool_args.",
+                "After each tool call, including finishing the task, you receive a resulting observation, appended to your trajectory.\n",
+                "Thought can reason about the current situation and plan for future steps, and the tool must be one of:\n",
             ]
         )
 
         tools["finish"] = Tool(
             func=lambda **kwargs: "Completed.",
             name="finish",
-            desc=f"Signals that the final outputs, i.e. {outputs}, are now available and marks the task as complete.",
+            desc=f"Marks the task as complete. That is, signals that all infomration for producing the outputs, i.e. {outputs}, are now available to be extracted.",
             args={},
         )
 
@@ -132,9 +134,8 @@ def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
     """
 
     import traceback
-    return '\n' + "".join(
-        traceback.format_exception(type(err), err, err.__traceback__, limit=limit)
-    ).strip()
+
+    return "\n" + "".join(traceback.format_exception(type(err), err, err.__traceback__, limit=limit)).strip()
 
 
 """
