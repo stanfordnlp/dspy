@@ -1,8 +1,10 @@
 from pydantic import BaseModel
 
+import re
 import dspy
-from dspy.utils.dummies import DummyLM
 import litellm
+
+from dspy.utils.dummies import DummyLM
 
 # def test_example_no_tools():
 #     # Create a simple dataset which the model will use with the Retrieve tool.
