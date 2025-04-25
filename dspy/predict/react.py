@@ -29,16 +29,19 @@ class ReAct(Module):
 
         instr.extend(
             [
-                f"You will be given {inputs} and your goal is to finish with {outputs}.\n",
-                "To do this, you will interleave Thought, Tool Name, and Tool Args, and receive a resulting Observation.\n",
-                "Thought can reason about the current situation, and Tool Name can be the following types:\n",
+                f"You are an Agent. In each episode, you will be given the fields {inputs} as input. And you can see your past trajectory so far.",
+                f"Your goal is to use one or more of the supplied tools to collect any necessary information for producing {outputs}.\n",
+                "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.",
+                "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
+                "When writing next_thought, you may reason about the current situation and plan for future steps.",
+                "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
             ]
         )
 
         tools["finish"] = Tool(
-            func=lambda **kwargs: "Completed.",
+            func=lambda: "Completed.",
             name="finish",
-            desc=f"Signals that the final outputs, i.e. {outputs}, are now available and marks the task as complete.",
+            desc=f"Marks the task as complete. That is, signals that all infomration for producing the outputs, i.e. {outputs}, are now available to be extracted.",
             args={},
         )
 
@@ -74,7 +77,11 @@ class ReAct(Module):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
-            pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+            try:
+                pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+            except ValueError as err:
+                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
+                break
 
             trajectory[f"thought_{idx}"] = pred.next_thought
             trajectory[f"tool_name_{idx}"] = pred.next_tool_name
@@ -82,8 +89,8 @@ class ReAct(Module):
 
             try:
                 trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
-            except Exception as e:
-                trajectory[f"observation_{idx}"] = f"Failed to execute: {e}"
+            except Exception as err:
+                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 
             if pred.next_tool_name == "finish":
                 break
@@ -92,7 +99,7 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
-        while True:
+        for _ in range(3):
             try:
                 return module(
                     **input_args,
@@ -119,6 +126,17 @@ class ReAct(Module):
             trajectory.pop(key)
 
         return trajectory
+
+
+def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
+    """
+    Return a one-string traceback summary.
+    * `limit`  – how many stack frames to keep (from the innermost outwards).
+    """
+
+    import traceback
+
+    return "\n" + "".join(traceback.format_exception(type(err), err, err.__traceback__, limit=limit)).strip()
 
 
 """
