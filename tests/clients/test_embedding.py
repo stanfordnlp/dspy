@@ -116,7 +116,7 @@ async def test_async_embedding():
         result = await embedding.acall(inputs)
 
         # Verify litellm was called with correct parameters.
-        mock_litellm.assert_called_once_with(model=model, input=inputs, caching=True)
+        mock_litellm.assert_called_once_with(model=model, input=inputs, caching=False)
 
         assert len(result) == len(inputs)
         np.testing.assert_allclose(result, mock_embeddings)
