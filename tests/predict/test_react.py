@@ -275,11 +275,6 @@ def test_trajectory_truncation():
     assert result.output_text == "Final output"
 
 
-import re
-import dspy
-from dspy.testing import DummyLM
-
-
 def test_error_retry():
     # --- a tiny tool that always fails -------------------------------------
     def foo(a, b):  # noqa: D401, ANN001
