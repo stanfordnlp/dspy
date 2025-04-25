@@ -10,6 +10,7 @@ from openai import RateLimitError
 import dspy
 from dspy.utils.usage_tracker import track_usage
 from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs
+from litellm.utils import ModelResponse, Message, Choices
 
 
 def test_chat_lms_can_be_queried(litellm_test_server):
@@ -322,6 +323,44 @@ def test_exponential_backoff_retry():
     # The first retry happens immediately regardless of the configuration
     for i in range(1, len(time_counter) - 1):
         assert time_counter[i + 1] - time_counter[i] >= 2 ** (i - 1)
+
+
+def test_logprobs_included_when_requested():
+    lm = dspy.LM(model="dspy-test-model", logprobs=True, cache=False)
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(content="test answer"),
+                    logprobs={
+                        "content": [
+                            {"token": "test", "logprob": 0.1, "top_logprobs": [{"token": "test", "logprob": 0.1}]},
+                            {"token": "answer", "logprob": 0.2, "top_logprobs": [{"token": "answer", "logprob": 0.2}]},
+                        ]
+                    },
+                )
+            ],
+            model="dspy-test-model",
+        )
+        result = lm("question")
+        assert result[0]["text"] == "test answer"
+        assert result[0]["logprobs"].dict() == {
+            "content": [
+                {
+                    "token": "test",
+                    "bytes": None,
+                    "logprob": 0.1,
+                    "top_logprobs": [{"token": "test", "bytes": None, "logprob": 0.1}],
+                },
+                {
+                    "token": "answer",
+                    "bytes": None,
+                    "logprob": 0.2,
+                    "top_logprobs": [{"token": "answer", "bytes": None, "logprob": 0.2}],
+                },
+            ]
+        }
+        assert mock_completion.call_args.kwargs["logprobs"] == True
 
 
 @pytest.mark.asyncio
