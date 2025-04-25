@@ -174,6 +174,7 @@ class GRPO(FinetuneTeleprompter):
                         dataset=subsample_training_dataset,
                         metric=self.metric,
                         num_threads=self.num_threads,
+                        raise_on_error=False, # TODO(GRPO Team): This should be True, once the dspy format issue is fixed
                     )
                     for data_dict in round_data:
                         trace_data[data_dict['example_ind']][tind].append(data_dict)
@@ -182,10 +183,15 @@ class GRPO(FinetuneTeleprompter):
             # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
             assert len(trace_data) == len(subsample_training_dataset), f"Trace data length {len(trace_data)} does not match the number of examples {len(subsample_training_dataset)}"
             assert len(trace_data[0]) == len(teachers), f"Trace data length {len(trace_data[0])} does not match the number of teachers {len(teachers)}"
-            assert len(trace_data[0][0]) == self.num_samples_per_input, f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {self.num_samples_per_input}"
-            assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
-            assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
-            assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
+
+            # TODO(GRPO Team): Ideally, once the dspy format issue is fixed, this change should be reverted back to being a normal assert.
+            if len(trace_data[0][0]) == 0:
+                logger.warning(f"Trace data for example {0} and teacher {0} is empty. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
+            elif len(trace_data[0][0]) != self.num_samples_per_input:
+                logger.warning(f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {self.num_samples_per_input}")
+                assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
+                assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
+                assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
 
             logger.info("Preparing the training data batch from bootstrapped examples for GRPO...")
             # Now, we need to prepare batches of data to be sent for training
@@ -209,7 +215,8 @@ class GRPO(FinetuneTeleprompter):
                             
                             predictor_example_invocations.append(trace_instances_for_current_pred)
 
-                    assert len(predictor_example_invocations) == num_generations, f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {num_generations}"
+                    if len(predictor_example_invocations) != num_generations:
+                        logger.warning(f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {num_generations}")
 
                     min_len = min([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
@@ -291,7 +298,9 @@ class GRPO(FinetuneTeleprompter):
             
             for predictor_train_batch in train_batch_per_predictor:
                 for grpo_train_group in predictor_train_batch:
-                    assert len(grpo_train_group) == num_generations, f"Number of completions {len(example_training_data['completions'])} does not match the expected number num_samples_per_input*len(teachers)={num_generations}"
+                    if len(grpo_train_group) != num_generations:
+                        logger.warning(f"Number of completions {len(grpo_train_group)} does not match the expected number num_samples_per_input*len(teachers)={num_generations}")
+                        assert len(grpo_train_group) <= num_generations, f"Number of completions {len(grpo_train_group)} is greater than the expected number num_samples_per_input*len(teachers)={num_generations}"
                     if len(set(map(repr, grpo_train_group))) < 2:
                         # TODO(GRPO Team): How can we avoid this warning?
                         logger.warning(f"GRPOGroup has no diversity. This could be due to low temperature, or low number of rollouts, or the cache could be enabled inadvertently. The GRPOGroup is {grpo_train_group}.")
@@ -313,6 +322,16 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Invoking GRPO training step...")
             for (lm, data_key), job in grpo_training_jobs.items():
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
+                for group in train_data:
+                    if len(group) != num_generations:
+                        # TODO(GRPO Team): This is very undesirable. This occurs only because in some of the generations, the model does not follow the correct dspy format.
+                        # The ideal solution is to identify the full response string in that predictor's group, and then assign  a high-negative (user-configurable) reward to that group.
+
+                        # Pad the group to the expected number of generations by repeating the whole group, might require multiple iterations
+                        while len(group) < num_generations:
+                            group.extend(group[:min(num_generations - len(group), len(group))])
+                    assert len(group) == num_generations, f"Number of completions {len(group)} does not match the expected number num_samples_per_input*len(teachers)={num_generations}"
+
                 job.step(train_data=train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
 
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")

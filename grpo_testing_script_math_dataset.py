@@ -47,7 +47,7 @@ from dspy.teleprompt.grpo import GRPO
 train_kwargs = {
     "temperature": 0.9,
     "beta": 0.04,
-    "update_interval": 25,
+    "update_interval": 1,
     # Note that we don't add the "num_generations" here. dspy.GRPO computes this
     # as follows. We don't currentl support teacher programs and instead use the
     # the student program as the teacher program, so len(teachers) is always 1
@@ -64,7 +64,7 @@ compiler = GRPO(
     num_dspy_examples_per_grpo_step=5,
     num_samples_per_input=4,  # should we test this with 1?
     exclude_demos=True,
-    num_train_steps=10,
+    num_train_steps=100,
     use_train_as_val=False,
     train_kwargs=train_kwargs,
     num_threads=multiprocessing.cpu_count(),

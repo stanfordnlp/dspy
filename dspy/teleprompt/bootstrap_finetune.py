@@ -205,6 +205,7 @@ def bootstrap_trace_data(
     dataset: List[Example],
     metric: Optional[Callable] = None,
     num_threads=6,
+    raise_on_error=True,
 ) -> List[Dict[str, Any]]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
@@ -228,9 +229,18 @@ def bootstrap_trace_data(
 
     data = []
     for example_ind, (example, prediction, score) in enumerate(outputs):
-        # TODO(GRPO Team): Often during GRPO bootstrapping, the LLM response does not follow dspy formatting. This leads to a value error.
-        # To reproduce this issue, try Qwen/Qwen2.5-Coder-0.5B-Instruct with MATH dataset
-        prediction, trace = prediction
+        try:
+            prediction, trace = prediction
+        except ValueError as ve:
+            # TODO(GRPO Team): Often during GRPO bootstrapping, the LLM response does not follow dspy formatting. This leads to a value error.
+            # To reproduce this issue, try Qwen/Qwen2.5-Coder-0.5B-Instruct with MATH dataset
+            # Proposal(Lakshya): We should capture the incorrectly-formatted LLM response, and store it in the trace, and pass it to in the GRPO group
+            # with a high-negative user-configurable score.
+            logger.warning("Failed to unpack prediction and trace. This is likely due to the LLM response not following dspy formatting.")
+            if raise_on_error:
+                raise ve
+            else:
+                continue
         data_dict = dict(example=example, prediction=prediction, trace=trace, example_ind=example_ind)
         if metric:
             data_dict["score"] = score
