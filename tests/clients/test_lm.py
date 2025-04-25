@@ -1,4 +1,5 @@
 from unittest import mock
+from unittest.mock import patch
 
 import time
 import litellm
@@ -324,9 +325,16 @@ def test_exponential_backoff_retry():
 
 
 @pytest.mark.asyncio
-async def test_async_lm_call(litellm_test_server):
-    api_base, _ = litellm_test_server
+async def test_async_lm_call():
+    from litellm.utils import ModelResponse, Message, Choices
 
-    lm = dspy.LM(model="openai/gpt-4o-mini", api_base=api_base, api_key="fakekey", model_type="chat")
-    result = await lm.acall("question")
-    assert result == "answer"
+    mock_response = ModelResponse(choices=[Choices(message=Message(content="answer"))], model="openai/gpt-4o-mini")
+
+    with patch("litellm.acompletion") as mock_acompletion:
+        mock_acompletion.return_value = mock_response
+
+        lm = dspy.LM(model="openai/gpt-4o-mini")
+        result = await lm.acall("question")
+
+        assert result == ["answer"]
+        mock_acompletion.assert_called_once()
