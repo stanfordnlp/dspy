@@ -228,6 +228,8 @@ def bootstrap_trace_data(
 
     data = []
     for example_ind, (example, prediction, score) in enumerate(outputs):
+        # TODO(GRPO Team): Often during GRPO bootstrapping, the LLM response does not follow dspy formatting. This leads to a value error.
+        # To reproduce this issue, try Qwen/Qwen2.5-Coder-0.5B-Instruct with MATH dataset
         prediction, trace = prediction
         data_dict = dict(example=example, prediction=prediction, trace=trace, example_ind=example_ind)
         if metric:
