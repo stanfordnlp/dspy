@@ -1,30 +1,22 @@
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type
 import json
+import anyio
 from dspy.primitives.tool import Tool
 
-def map_json_schema_to_tool_args(
-    schema: Optional[Dict[str, Any]]
-) -> Tuple[Dict[str, Any], Dict[str, Type], Dict[str, str]]:
+def map_json_schema_to_tool_args(schema: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], Dict[str, Type], Dict[str, str]]:
     """Maps a JSON schema to tool arguments compatible with DSPy Tool."""
     args, arg_types, arg_desc = {}, {}, {}
-
     if not schema or "properties" not in schema:
         return args, arg_types, arg_desc
         
+    type_mapping = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
+    required = schema.get("required", [])
+    
     for name, prop in schema["properties"].items():
         args[name] = prop
-
-        # Map JSON schema types to Python types
-        type_mapping = {
-            "string": str, "integer": int, "number": float, 
-            "boolean": bool, "array": list, "object": dict
-        }
-        prop_type = prop.get("type", "string")
-        arg_types[name] = type_mapping.get(prop_type, Any)
-
-        # Description with required indicator
+        arg_types[name] = type_mapping.get(prop.get("type", "string"), Any)
         arg_desc[name] = prop.get("description", "No description provided.")
-        if name in schema.get("required", []):
+        if name in required:
             arg_desc[name] += " (Required)"
 
     return args, arg_types, arg_desc
@@ -33,17 +25,12 @@ class MCPTool(Tool):
     """Wrapper for an MCP tool, compatible with DSPy agents."""
 
     def __init__(self, tool_info: Any, session: Any):
-        """Create a DSPy Tool from an MCP tool description.
-        
-        Args:
-            tool_info: The tool information from MCP server
-            session: The MCP client session
-        """
+        """Create a DSPy Tool from an MCP tool description."""
         self.session = session
         self._raw_tool_info = tool_info
 
         name, desc, input_schema = self._extract_tool_info(tool_info)
-        self.name = name  # Store name as instance attribute for use in call_tool_async
+        self.name = name
         args, arg_types, arg_desc = map_json_schema_to_tool_args(input_schema)
 
         super().__init__(
@@ -57,55 +44,38 @@ class MCPTool(Tool):
 
     def _extract_tool_info(self, tool_info: Any) -> Tuple[str, str, Optional[Dict[str, Any]]]:
         """Extract name, description and input schema from tool info."""
-        # Handle object with attributes first (most common case for MCP tools)
-        try:
-            name = getattr(tool_info, 'name', None)
-            desc = getattr(tool_info, 'description', None)
+        # Try object attributes
+        if hasattr(tool_info, 'name') and hasattr(tool_info, 'description'):
+            return (
+                tool_info.name,
+                tool_info.description,
+                getattr(tool_info, 'inputSchema', None)
+            )
             
-            # Handle inputSchema or schema attribute
-            input_schema = None
-            if hasattr(tool_info, 'inputSchema'):
-                input_schema = tool_info.inputSchema
-            
-            # If all attributes were found, return them
-            if name and desc is not None:
-                return name, desc, input_schema
-        except (AttributeError, TypeError):
-            pass
-            
-        # Handle dictionary format
+        # Try dict format
         if isinstance(tool_info, dict):
-            name = tool_info.get('name')
-            desc = tool_info.get('description')
-            input_schema = tool_info.get('inputSchema')
-            
-            if name and desc is not None:
-                return name, desc, input_schema
+            if 'name' in tool_info and 'description' in tool_info:
+                return tool_info['name'], tool_info['description'], tool_info.get('inputSchema')
         
-        # Handle serialized JSON string
+        # Try JSON string
         if isinstance(tool_info, str):
             try:
                 parsed = json.loads(tool_info)
-                if isinstance(parsed, dict):
-                    name = parsed.get('name')
-                    desc = parsed.get('description')
-                    input_schema = parsed.get('inputSchema')
-                    
-                    if name and desc is not None:
-                        return name, desc, input_schema
+                if isinstance(parsed, dict) and 'name' in parsed and 'description' in parsed:
+                    return parsed['name'], parsed['description'], parsed.get('inputSchema')
             except json.JSONDecodeError:
                 pass
                 
-        # Last resort fallback - use string representation as name
         return str(tool_info), "No description available.", None
 
     async def call_tool_async(self, **kwargs: Any) -> Any:
         """Execute the MCP tool."""
         try:
-            # Pass the kwargs directly without nesting them
             result = await self.session.call_tool(self.name, kwargs)
-            print(result)
+            print(f"Tool {self.name} executed with args: {kwargs}")
+            print(f"Tool {self.name} result: {result}")
             return self._process_result(result)
+
         except Exception as e:
             raise RuntimeError(f"Error executing tool {self.name}: {str(e)}")
 
@@ -114,6 +84,7 @@ class MCPTool(Tool):
         if result is None:
             return "Tool executed successfully but returned no content."
         
+        # Handle content attribute
         if hasattr(result, 'content') and result.content:
             content = result.content
             if isinstance(content, list):
@@ -123,9 +94,11 @@ class MCPTool(Tool):
                     pass
             return str(content)
             
+        # Handle text attribute
         if hasattr(result, 'text') and result.text is not None:
             return result.text
             
+        # Handle dictionary
         if isinstance(result, dict):
             for key in ("message", "output", "result", "text"):
                 if key in result:
@@ -138,19 +111,9 @@ class MCPTools:
     """Collection of tools from an MCP server, usable with DSPy agents."""
     
     def __init__(self, tools_list: List[Any], session: Any):
-        """Initialize the MCPTools collection.
-        
-        Args:
-            tools_list: List of tools from MCP server
-            session: MCP client session
-        """
+        """Initialize the MCPTools collection."""
         self.session = session
-        self.tools = {}
-        
-        # Create MCPTool instances for each tool in the list
-        for tool in tools_list:
-            mcp_tool = MCPTool(tool, session)
-            self.tools[mcp_tool.name] = mcp_tool
+        self.tools = {MCPTool(tool, session).name: MCPTool(tool, session) for tool in tools_list}
     
     def __getitem__(self, tool_name: str) -> MCPTool:
         """Get a tool by name."""

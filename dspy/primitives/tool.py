@@ -172,7 +172,7 @@ class Tool:
 
     async def acall(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
-        result = self.func(**parsed_kwargs)
+        result = await self.func(**parsed_kwargs)
         if not asyncio.iscoroutine(result):
             raise ValueError("You are calling `acall` on a non-async tool, please use `__call__` instead.")
         return await result
