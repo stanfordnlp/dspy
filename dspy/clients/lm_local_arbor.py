@@ -125,22 +125,16 @@ class ArborReinforceJob(ReinforceJob):
             self._run_grpo_step_one_group(group, train_data_format)
 
     def terminate(self):
-        # TODO(GRPO Team):
-        # * Update after the server starts returning the saved model ID
-        # * Why do we need to send a payload?
         api_base = self.lm.kwargs["api_base"]
-        # api_key = self.lm.kwargs["api_key"]
 
-        data = {
-            'status': 'success'
-        }
         url = f"{api_base}fine_tuning/grpo/terminate"
         headers = {'Content-Type': 'application/json'}
-        response = requests.post(url, headers=headers, json=data)
-        assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
-        # response = response.json()  # TODO: To be updated
-        # current_model = response["current_model"]
-        # self.lm.model = ArborProvider._add_provider_prefix(current_model)  # TODO: To be updated
+        response = requests.post(url, headers=headers)
+        assert response.status_code == 200, f"Failed to terminate GRPO: {response.text}"
+
+        response = response.json()
+        current_model = response["current_model"]
+        self.lm.model = ArborProvider._add_provider_prefix(current_model)
 
     def cancel(self):
         if ArborProvider.does_job_exist(self.provider_job_id):
