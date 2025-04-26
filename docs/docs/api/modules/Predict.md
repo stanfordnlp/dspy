@@ -1,10 +1,13 @@
 # dspy.Predict
 
+<!-- START_API_REF -->
 ::: dspy.Predict
     handler: python
     options:
         members:
             - __call__
+            - acall
+            - aforward
             - batch
             - deepcopy
             - dump_state
@@ -32,3 +35,4 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+<!-- END_API_REF -->
