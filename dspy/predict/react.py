@@ -7,6 +7,7 @@ import dspy
 from dspy.primitives.program import Module
 from dspy.primitives.tool import Tool
 from dspy.signatures.signature import ensure_signature
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +89,18 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
+                # if asyncio.iscoroutine(self.tools[pred.next_tool_name]):
+                print(f"Calling async tool: {pred.next_tool_name}")
+                async def async_func():
+                    return await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
+                
+                trajectory[f"observation_{idx}"] = asyncio.run(async_func())
+                
+                # else :
+                #     print(f"Calling sync tool: {pred.next_tool_name}")
+                #     trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
             except Exception as err:
+                print(err)
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 
             if pred.next_tool_name == "finish":
