@@ -23,6 +23,15 @@ dspy.configure(lm=lm)
         dspy.configure(lm=lm)
         ```
 
+    === "Gemini (AI Studio)"
+        You can authenticate by setting the GEMINI_API_KEY env variable or passing `api_key` below.
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM('gemini/gemini-2.5-pro-preview-03-25', api_key='GEMINI_API_KEY')
+        dspy.configure(lm=lm)
+        ```
+
     === "Anthropic"
         You can authenticate by setting the ANTHROPIC_API_KEY env variable or passing `api_key` below.
 
