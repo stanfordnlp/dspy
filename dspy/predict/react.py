@@ -1,8 +1,8 @@
 import logging
 from typing import Any, Callable, Literal
-
 from litellm import ContextWindowExceededError
 
+import asyncio
 import dspy
 from dspy.primitives.program import Module
 from dspy.primitives.tool import Tool
@@ -67,15 +67,28 @@ class ReAct(Module):
         self.tools = tools
         self.react = dspy.Predict(react_signature)
         self.extract = dspy.ChainOfThought(fallback_signature)
-
+        
     def _format_trajectory(self, trajectory: dict[str, Any]):
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
+        """Execute the ReAct agent with the provided input arguments."""
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+        try:
+            asyncio.get_running_loop()
+            async def async_forward():
+                return await self._forward_async(trajectory, max_iters, **input_args)
+            return async_forward()
+        except RuntimeError:
+            async def run_async():
+                return await self._forward_async(trajectory, max_iters, **input_args)
+            return asyncio.run(run_async())
+    
+    async def _forward_async(self, trajectory, max_iters, **input_args):
+        """Async implementation of the ReAct forward method."""
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -88,9 +101,12 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
+                # Execute the tool using the aexecute method
+                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].aexecute(**pred.next_tool_args)
             except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+                error_msg = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+                trajectory[f"observation_{idx}"] = error_msg
+                logger.warning(f"Tool execution error: {_fmt_exc(err)}")
 
             if pred.next_tool_name == "finish":
                 break

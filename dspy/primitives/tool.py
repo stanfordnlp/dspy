@@ -174,5 +174,18 @@ class Tool:
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
         result = self.func(**parsed_kwargs)
         if not asyncio.iscoroutine(result):
-            raise ValueError("You are calling `acall` on a non-async tool, please use `__call__` instead.")
+            raise ValueError("You are calling `acall` on a sync tool, please use `__call__` instead.")
         return await result
+        
+    async def aexecute(self, **kwargs):
+        """Execute the tool in any context (async or sync) handling both sync and async functions.
+        
+        This method is used internally by ReAct and other agents to safely execute tools in any context.
+        It will work with both sync and async functions, making it a universal tool execution method.
+        """
+        parsed_kwargs = self._validate_and_parse_args(**kwargs)
+        result = self.func(**parsed_kwargs)
+        if asyncio.iscoroutine(result):
+            return await result
+        else:
+            return result

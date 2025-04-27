@@ -12,6 +12,7 @@ from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, TwoStepAdapter, Ima
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.saving import load
+from dspy.utils.MCPTools import MCPTools
 from dspy.streaming.streamify import streamify
 from dspy.utils.usage_tracker import track_usage
 
