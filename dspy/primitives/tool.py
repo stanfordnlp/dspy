@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import Any, Callable, Optional, get_origin, get_type_hints 
+from typing import Any, Callable, Optional, get_origin, get_type_hints
 
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -172,7 +172,7 @@ class Tool:
 
     async def acall(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
-        result = await self.func(**parsed_kwargs)
+        result = self.func(**parsed_kwargs)
         if not asyncio.iscoroutine(result):
             raise ValueError("You are calling `acall` on a non-async tool, please use `__call__` instead.")
         return await result

@@ -7,8 +7,6 @@ import dspy
 from dspy.primitives.program import Module
 from dspy.primitives.tool import Tool
 from dspy.signatures.signature import ensure_signature
-import anyio
-from asyncer import syncify
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +73,7 @@ class ReAct(Module):
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
-    async def forward(self, **input_args):
+    def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
