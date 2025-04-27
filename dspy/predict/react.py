@@ -1,8 +1,9 @@
 import logging
 from typing import Any, Callable, Literal
-
 from litellm import ContextWindowExceededError
 
+import asyncio
+import inspect
 import dspy
 from dspy.primitives.program import Module
 from dspy.primitives.tool import Tool
@@ -67,15 +68,44 @@ class ReAct(Module):
         self.tools = tools
         self.react = dspy.Predict(react_signature)
         self.extract = dspy.ChainOfThought(fallback_signature)
-
+        
     def _format_trajectory(self, trajectory: dict[str, Any]):
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
+        """Execute the ReAct agent with the provided input arguments."""
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+        
+        # Check if we're already in an event loop
+        try:
+            asyncio.get_running_loop()
+            # If we are in an event loop, we need a completely different approach
+            # Convert forward to an async coroutine and schedule it for execution in the event loop
+            return self._forward_in_event_loop(trajectory, max_iters, **input_args)
+        except RuntimeError:
+            # If we're not in an event loop, we can use asyncio.run to create one
+            async def run_async():
+                return await self._forward_async(trajectory, max_iters, **input_args)
+            return asyncio.run(run_async())
+    
+    def _forward_in_event_loop(self, trajectory, max_iters, **input_args):
+        """Handle the case where forward is called from within an event loop.
+        
+        In this case, we can't use asyncio.run or run_until_complete, so we need to 
+        return a value that can be awaited by the caller.
+        """
+        async def async_forward():
+            return await self._forward_async(trajectory, max_iters, **input_args)
+        
+        # If we're called from an async function, we can return a coroutine
+        # If we're called from a sync function in an event loop, the caller needs to handle scheduling
+        return async_forward()
+    
+    async def _forward_async(self, trajectory, max_iters, **input_args):
+        """Async implementation of the ReAct forward method."""
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -88,9 +118,13 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
+                # Execute the tool using the universal aexecute method
+                # Here we use await directly since we're in an async function
+                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].aexecute(**pred.next_tool_args)
             except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+                error_msg = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+                trajectory[f"observation_{idx}"] = error_msg
+                logger.warning(f"Tool execution error: {_fmt_exc(err)}")
 
             if pred.next_tool_name == "finish":
                 break
