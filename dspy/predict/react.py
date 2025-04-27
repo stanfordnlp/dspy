@@ -3,7 +3,6 @@ from typing import Any, Callable, Literal
 from litellm import ContextWindowExceededError
 
 import asyncio
-import inspect
 import dspy
 from dspy.primitives.program import Module
 from dspy.primitives.tool import Tool
@@ -82,27 +81,15 @@ class ReAct(Module):
         # Check if we're already in an event loop
         try:
             asyncio.get_running_loop()
-            # If we are in an event loop, we need a completely different approach
-            # Convert forward to an async coroutine and schedule it for execution in the event loop
-            return self._forward_in_event_loop(trajectory, max_iters, **input_args)
+            # If we are in an event loop, we need to return a coroutine
+            async def async_forward():
+                return await self._forward_async(trajectory, max_iters, **input_args)
+            return async_forward()
         except RuntimeError:
-            # If we're not in an event loop, we can use asyncio.run to create one
+            # If we're not in an event loop, we can use asyncio.run
             async def run_async():
                 return await self._forward_async(trajectory, max_iters, **input_args)
             return asyncio.run(run_async())
-    
-    def _forward_in_event_loop(self, trajectory, max_iters, **input_args):
-        """Handle the case where forward is called from within an event loop.
-        
-        In this case, we can't use asyncio.run or run_until_complete, so we need to 
-        return a value that can be awaited by the caller.
-        """
-        async def async_forward():
-            return await self._forward_async(trajectory, max_iters, **input_args)
-        
-        # If we're called from an async function, we can return a coroutine
-        # If we're called from a sync function in an event loop, the caller needs to handle scheduling
-        return async_forward()
     
     async def _forward_async(self, trajectory, max_iters, **input_args):
         """Async implementation of the ReAct forward method."""
@@ -118,8 +105,7 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                # Execute the tool using the universal aexecute method
-                # Here we use await directly since we're in an async function
+                # Execute the tool using the aexecute method
                 trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].aexecute(**pred.next_tool_args)
             except Exception as err:
                 error_msg = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
