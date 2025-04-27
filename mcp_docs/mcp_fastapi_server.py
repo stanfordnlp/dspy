@@ -1,11 +1,9 @@
 import os
-import sys
-import json
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 from contextlib import AsyncExitStack, asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
