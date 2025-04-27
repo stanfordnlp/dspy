@@ -77,16 +77,12 @@ class ReAct(Module):
         """Execute the ReAct agent with the provided input arguments."""
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        
-        # Check if we're already in an event loop
         try:
             asyncio.get_running_loop()
-            # If we are in an event loop, we need to return a coroutine
             async def async_forward():
                 return await self._forward_async(trajectory, max_iters, **input_args)
             return async_forward()
         except RuntimeError:
-            # If we're not in an event loop, we can use asyncio.run
             async def run_async():
                 return await self._forward_async(trajectory, max_iters, **input_args)
             return asyncio.run(run_async())

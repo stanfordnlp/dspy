@@ -174,8 +174,7 @@ class Tool:
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
         result = self.func(**parsed_kwargs)
         if not asyncio.iscoroutine(result):
-            # For compatibility, let's just return the result instead of raising an error
-            return result
+            raise ValueError("You are calling `acall` on a sync tool, please use `__call__` instead.")
         return await result
         
     async def aexecute(self, **kwargs):
