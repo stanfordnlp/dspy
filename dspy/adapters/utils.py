@@ -147,9 +147,16 @@ def parse_value(value, annotation):
             candidate = ast.literal_eval(value)
         except (ValueError, SyntaxError):
             candidate = value
-
-    return TypeAdapter(annotation).validate_python(candidate)
-
+    
+    try:
+        return TypeAdapter(annotation).validate_python(candidate)
+    except pydantic.ValidationError as e:
+        # if the annotation is Optional[str], return just the string value
+        if annotation.__origin__ is Union and type(None) in get_args(annotation):
+            if len(get_args(annotation)) == 2 and str in get_args(annotation):
+                return str(candidate)
+            else:
+                raise e
 
 def get_annotation_name(annotation):
     origin = get_origin(annotation)
