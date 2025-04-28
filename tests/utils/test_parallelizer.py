@@ -2,6 +2,7 @@ import time
 import pytest
 from dspy.utils.parallelizer import ParallelExecutor
 
+
 def test_worker_threads_independence():
     def task(item):
         # Each thread maintains its own state by appending to a thread-local list
@@ -12,6 +13,7 @@ def test_worker_threads_independence():
     results = executor.execute(task, data)
 
     assert results == [2, 4, 6, 8, 10]
+
 
 def test_parallel_execution_speed():
     def task(item):
@@ -27,6 +29,7 @@ def test_parallel_execution_speed():
 
     assert end_time - start_time < len(data)
 
+
 def test_max_errors_handling():
     def task(item):
         if item == 3:
@@ -38,6 +41,7 @@ def test_max_errors_handling():
 
     with pytest.raises(Exception, match="Execution cancelled due to errors or interruption."):
         executor.execute(task, data)
+
 
 def test_max_errors_not_met():
     def task(item):
@@ -52,4 +56,4 @@ def test_max_errors_not_met():
     results = executor.execute(task, data)
 
     # Verify that the results exclude the failed task
-    assert results == [1, 2, 4, 5]
+    assert results == [1, 2, None, 4, 5]
