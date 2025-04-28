@@ -78,21 +78,7 @@ class MCPTool(Tool):
                 tool_info.description,
                 getattr(tool_info, 'inputSchema', None)
             )
-            
-        # Try dict format
-        if isinstance(tool_info, dict):
-            if 'name' in tool_info and 'description' in tool_info:
-                return tool_info['name'], tool_info['description'], tool_info.get('inputSchema')
-        
-        # Try JSON string
-        if isinstance(tool_info, str):
-            try:
-                parsed = json.loads(tool_info)
-                if isinstance(parsed, dict) and 'name' in parsed and 'description' in parsed:
-                    return parsed['name'], parsed['description'], parsed.get('inputSchema')
-            except json.JSONDecodeError:
-                pass
-                
+    
         return str(tool_info), "No description available.", None
 
     async def call_tool_async(self, **kwargs: Any) -> Any:
