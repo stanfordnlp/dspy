@@ -4,7 +4,7 @@ import asyncio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from dspy.utils import convert_mcp_tool
+from dspy.utils.mcp import convert_mcp_tool
 
 
 @pytest.mark.asyncio
