@@ -311,6 +311,22 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
     )
 
 
+@request_cache(cache_arg_name="request", ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
+async def cached_alitellm_completion(request: Dict[str, Any], num_retries: int):
+    import litellm
+
+    if litellm.cache:
+        litellm_cache_args = {"no-cache": False, "no-store": False}
+    else:
+        litellm_cache_args = {"no-cache": True, "no-store": True}
+
+    return await alitellm_completion(
+        request,
+        cache=litellm_cache_args,
+        num_retries=num_retries,
+    )
+
+
 async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
     retry_kwargs = dict(
         retry_policy=_get_litellm_retry_policy(num_retries),
@@ -325,6 +341,22 @@ async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={
         cache=cache,
         **retry_kwargs,
         **request,
+    )
+
+
+@request_cache(cache_arg_name="request", ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
+async def cached_alitellm_text_completion(request: Dict[str, Any], num_retries: int):
+    import litellm
+
+    if litellm.cache:
+        litellm_cache_args = {"no-cache": False, "no-store": False}
+    else:
+        litellm_cache_args = {"no-cache": True, "no-store": True}
+
+    return await alitellm_text_completion(
+        request,
+        num_retries=num_retries,
+        cache=litellm_cache_args,
     )
 
 
