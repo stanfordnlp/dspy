@@ -163,14 +163,29 @@ class Cache:
                 self.memory_cache = cloudpickle.load(f)
 
 
-def request_cache(cache_arg_name: Optional[str] = None, ignored_args_for_cache_key: Optional[list[str]] = None):
-    """Decorator for applying caching to a function based on the request argument.
+def request_cache(
+    cache_arg_name: Optional[str] = None,
+    ignored_args_for_cache_key: Optional[list[str]] = ["api_key", "api_base", "base_url"],
+    *,                              # everything after this is keyword-only
+    maxsize: Optional[int] = None,  # legacy / no-op
+):
+    """
+    Decorator for applying caching to a function based on the request argument.
 
     Args:
         cache_arg_name: The name of the argument that contains the request. If not provided, the entire kwargs is used
             as the request.
         ignored_args_for_cache_key: A list of arguments to ignore when computing the cache key from the request.
     """
+
+    # ---- Deprecation notice ----------------------------------------------
+    if maxsize is not None:
+        logger.warning(
+            "`maxsize` is deprecated and no longer does anything; "
+            "the cache is now handled internally by `dspy.cache`. "
+            "This parameter will be removed in a future release.",
+        )
+    # ----------------------------------------------------------------------
 
     def decorator(fn):
         @wraps(fn)
@@ -179,7 +194,9 @@ def request_cache(cache_arg_name: Optional[str] = None, ignored_args_for_cache_k
 
             cache = dspy.cache
             original_ignored_args_for_cache_key = cache.ignored_args_for_cache_key
-            cache.ignored_args_for_cache_key = ignored_args_for_cache_key or []
+
+            # FIXME: Why is this mutating the global cache instead of passing an argument?
+            cache.ignored_args_for_cache_key = list(ignored_args_for_cache_key) or []
 
             # Use fully qualified function name for uniqueness
             fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
