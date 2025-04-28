@@ -6,7 +6,6 @@ from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.utils.callback import with_callbacks
-from dspy.utils.mcp import convert_mcp_tool
 
 if TYPE_CHECKING:
     import mcp
@@ -192,4 +191,5 @@ class Tool:
         Returns:
             A Tool object.
         """
+        from dspy.utils.mcp import convert_mcp_tool
         return convert_mcp_tool(session, tool)
