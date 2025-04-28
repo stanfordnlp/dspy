@@ -200,7 +200,7 @@ def test_save_and_load_memory_cache(cache, tmp_path):
         assert result == f"Response {requests.index(req)}"
 
 
-def test_lm_cache_decorator(cache):
+def test_request_cache_decorator(cache):
     """Test the lm_cache decorator."""
     from dspy.clients.cache import request_cache
 
@@ -225,3 +225,32 @@ def test_lm_cache_decorator(cache):
         # Call with different arguments should compute again
         result3 = test_function(prompt="Different", model="openai/gpt-4o-mini")
         assert result3 == "Response for Different with openai/gpt-4o-mini"
+
+
+def test_request_cache_decorator_with_ignored_args_for_cache_key(cache):
+    """Test the request_cache decorator with ignored_args_for_cache_key."""
+    from dspy.clients.cache import request_cache
+
+    # Mock the dspy.cache attribute
+    with patch("dspy.cache", cache):
+        # Define a test function
+        @request_cache(ignored_args_for_cache_key=["model"])
+        def test_function1(prompt, model):
+            return f"Response for {prompt} with {model}"
+
+        @request_cache()
+        def test_function2(prompt, model):
+            return f"Response for {prompt} with {model}"
+
+        # First call should compute the result
+        result1 = test_function1(prompt="Hello", model="openai/gpt-4o-mini")
+        result2 = test_function1(prompt="Hello", model="openai/gpt-4o")
+
+        # Because model arg is ignored, the second call should return the same result as the first
+        assert result1 == result2
+
+        result3 = test_function2(prompt="Hello", model="openai/gpt-4o-mini")
+        result4 = test_function2(prompt="Hello", model="openai/gpt-4o")
+
+        # Because model arg is not ignored, the second call should return a different result
+        assert result3 != result4
