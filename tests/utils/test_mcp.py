@@ -4,11 +4,11 @@ import asyncio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from dspy.utils import build_mcp_tool
+from dspy.utils import convert_mcp_tool
 
 
 @pytest.mark.asyncio
-async def test_build_mcp_tool():
+async def test_convert_mcp_tool():
     server_params = StdioServerParameters(
         command="python",
         args=["tests/utils/resources/mcp_server.py"],
@@ -20,7 +20,7 @@ async def test_build_mcp_tool():
             response = await session.list_tools()
 
             # Check add
-            add_tool = build_mcp_tool(session, response.tools[0])
+            add_tool = convert_mcp_tool(session, response.tools[0])
             assert add_tool.name == "add"
             assert add_tool.desc == "Add two numbers"
             assert add_tool.args == {"a": {"title": "A", "type": "integer"}, "b": {"title": "B", "type": "integer"}}
@@ -32,7 +32,7 @@ async def test_build_mcp_tool():
             assert await add_tool.acall(a=1, b=2) == "3"
 
             # Check hello
-            hello_tool = build_mcp_tool(session, response.tools[1])
+            hello_tool = convert_mcp_tool(session, response.tools[1])
             assert hello_tool.name == "hello"
             assert hello_tool.desc == "Greet people"
             assert hello_tool.args == {"names": {"title": "Names", "type": "array", "items": {"type": "string"}}}
@@ -41,7 +41,7 @@ async def test_build_mcp_tool():
             assert await hello_tool.acall(names=["Bob", "Tom"]) == ["Hello, Bob!", "Hello, Tom!"]
 
             # Check error handling
-            error_tool = build_mcp_tool(session, response.tools[2])
+            error_tool = convert_mcp_tool(session, response.tools[2])
             assert error_tool.name == "wrong_tool"
             assert error_tool.desc == "This tool raises an error"
             with pytest.raises(
