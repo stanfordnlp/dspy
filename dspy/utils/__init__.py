@@ -1,7 +1,6 @@
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.dummies import DummyLM, DummyVectorizer, dummy_rm
 from dspy.streaming.messages import StatusMessageProvider, StatusMessage
-from dspy.utils.mcp import convert_mcp_tool
 
 import os
 import requests
@@ -28,5 +27,4 @@ __all__ = [
     "dummy_rm",
     "StatusMessage",
     "StatusMessageProvider",
-    "convert_mcp_tool",
 ]
