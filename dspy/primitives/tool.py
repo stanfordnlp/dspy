@@ -1,12 +1,14 @@
 import asyncio
 import inspect
-from typing import Any, Callable, Optional, get_origin, get_type_hints
+from typing import Any, Callable, Optional, get_origin, get_type_hints, TYPE_CHECKING
 
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.utils.callback import with_callbacks
 
+if TYPE_CHECKING:
+    import mcp
 
 class Tool:
     """Tool class.
@@ -176,3 +178,18 @@ class Tool:
         if not asyncio.iscoroutine(result):
             raise ValueError("You are calling `acall` on a non-async tool, please use `__call__` instead.")
         return await result
+    
+    @classmethod
+    def from_mcp_tool(cls, session: "mcp.client.session.ClientSession", tool: "mcp.types.Tool") -> "Tool":
+        """
+        Build a DSPy tool from an MCP tool and a ClientSession.
+
+        Args:
+            session: The MCP session to use.
+            tool: The MCP tool to convert.
+
+        Returns:
+            A Tool object.
+        """
+        from dspy.utils.mcp import convert_mcp_tool
+        return convert_mcp_tool(session, tool)
