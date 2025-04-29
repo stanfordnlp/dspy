@@ -254,3 +254,31 @@ def test_request_cache_decorator_with_ignored_args_for_cache_key(cache):
 
         # Because model arg is not ignored, the second call should return a different result
         assert result3 != result4
+
+
+@pytest.mark.asyncio
+async def test_request_cache_decorator_async(cache):
+    """Test the request_cache decorator with async functions."""
+    from dspy.clients.cache import request_cache
+
+    # Mock the dspy.cache attribute
+    with patch("dspy.cache", cache):
+        # Define a test function
+        @request_cache()
+        async def test_function(prompt, model):
+            return f"Response for {prompt} with {model}"
+
+        # First call should compute the result
+        result1 = await test_function(prompt="Hello", model="openai/gpt-4o-mini")
+        assert result1 == "Response for Hello with openai/gpt-4o-mini"
+
+        # Second call with same arguments should use cache
+        with patch.object(cache, "get") as mock_get:
+            mock_get.return_value = "Cached response"
+            result2 = await test_function(prompt="Hello", model="openai/gpt-4o-mini")
+            assert result2 == "Cached response"
+            mock_get.assert_called_once()
+
+        # Call with different arguments should compute again
+        result3 = await test_function(prompt="Different", model="openai/gpt-4o-mini")
+        assert result3 == "Response for Different with openai/gpt-4o-mini"

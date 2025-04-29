@@ -1,4 +1,5 @@
 import copy
+import inspect
 import logging
 import threading
 from functools import wraps
@@ -119,14 +120,20 @@ class Cache:
             response.usage = {}
         return response
 
-    def put(self, request: Dict[str, Any], value: Any, ignored_args_for_cache_key: Optional[list[str]] = None) -> None:
+    def put(
+        self,
+        request: Dict[str, Any],
+        value: Any,
+        ignored_args_for_cache_key: Optional[list[str]] = None,
+        enable_memory_cache: bool = True,
+    ) -> None:
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
             logger.debug(f"Failed to generate cache key for request: {request}")
             return
 
-        if self.enable_memory_cache:
+        if self.enable_memory_cache and enable_memory_cache:
             with self._lock:
                 self.memory_cache[key] = value
 
@@ -164,6 +171,7 @@ class Cache:
 def request_cache(
     cache_arg_name: Optional[str] = None,
     ignored_args_for_cache_key: Optional[list[str]] = ["api_key", "api_base", "base_url"],
+    enable_memory_cache: bool = True,
     *,  # everything after this is keyword-only
     maxsize: Optional[int] = None,  # legacy / no-op
 ):
@@ -174,6 +182,8 @@ def request_cache(
         cache_arg_name: The name of the argument that contains the request. If not provided, the entire kwargs is used
             as the request.
         ignored_args_for_cache_key: A list of arguments to ignore when computing the cache key from the request.
+        enable_memory_cache: Whether to enable in-memory cache at call time. If False, the memory cache will not be
+            written to on new data.
     """
 
     # Deprecation notice
@@ -186,10 +196,7 @@ def request_cache(
 
     def decorator(fn):
         @wraps(fn)
-        def wrapper(*args, **kwargs):
-            import dspy
-
-            cache = dspy.cache
+        def process_request(args, kwargs):
             # Use fully qualified function name for uniqueness
             fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
 
@@ -206,6 +213,15 @@ def request_cache(
                     modified_request[f"positional_arg_{i}"] = arg
             modified_request["_fn_identifier"] = fn_identifier
 
+            return modified_request
+
+        @wraps(fn)
+        def sync_wrapper(*args, **kwargs):
+            import dspy
+
+            cache = dspy.cache
+            modified_request = process_request(args, kwargs)
+
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
 
@@ -214,10 +230,32 @@ def request_cache(
 
             # Otherwise, compute and store the result
             result = fn(*args, **kwargs)
-            cache.put(modified_request, result, ignored_args_for_cache_key)
+            # `enable_memory_cache` can be provided at call time to avoid indefinite growth.
+            cache.put(modified_request, result, ignored_args_for_cache_key, enable_memory_cache)
 
             return result
 
-        return wrapper
+        @wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            import dspy
+
+            cache = dspy.cache
+            modified_request = process_request(args, kwargs)
+
+            # Retrieve from cache if available
+            cached_result = cache.get(modified_request, ignored_args_for_cache_key)
+            if cached_result is not None:
+                return cached_result
+
+            # Otherwise, compute and store the result
+            result = await fn(*args, **kwargs)
+            cache.put(modified_request, result, ignored_args_for_cache_key, enable_memory_cache)
+
+            return result
+
+        if inspect.iscoroutinefunction(fn):
+            return async_wrapper
+        else:
+            return sync_wrapper
 
     return decorator
