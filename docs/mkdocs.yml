@@ -160,7 +160,18 @@ extra_css:
 
 plugins:
     - social
-    - search
+    - search:
+        lang: en
+        separator: '[\s\-\.]+'
+        min_search_length: 2
+        prebuild_index: true
+        indexing: 'full'
+        properties:
+            - title
+            - tags
+            - content
+            - sections
+        search_index_only: false
     - mkdocstrings:
         handlers:
             python:
