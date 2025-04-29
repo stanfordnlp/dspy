@@ -252,6 +252,7 @@ class SIMBA(Teleprompter):
                     break
 
             # STEP 5: Evaluate these new system_candidates on the same mini-batch
+            # TODO: refactor the step 5 and 6 with dspy.Evaluate after https://github.com/stanfordnlp/dspy/pull/8003 is merged
             logger.info(f"Batch {batch_idx+1}: Evaluating {len(system_candidates)} programs on {self.bsize} examples.")
 
             exec_pairs = [(wrap_program(sys, self.metric), ex) for sys in system_candidates for ex in batch]
@@ -299,16 +300,13 @@ class SIMBA(Teleprompter):
         exec_pairs = [(wrap_program(sys, self.metric), ex) for sys in candidate_programs for ex in trainset]
         outputs = run_parallel(exec_pairs)
 
-        scores = []
-        for idx_prog, prog in enumerate(candidate_programs):
-            start = idx_prog * len(trainset)
-            end = (idx_prog + 1) * len(trainset)
-            sys_scores = [outputs[i]["score"] for i in range(start, end)]
-            avg_score = sum(sys_scores) / len(sys_scores) if sys_scores else 0.0
-            scores.append(avg_score)
+        evaluate = dspy.Evaluate(devset=trainset, metric=self.metric, num_threads=self.num_threads, display_progress=False, display_table=False)
+        scores = [evaluate(program, callback_metadata={"metric_key": "eval_full"}) for program in candidate_programs]
+
+        for idx_prog, score in enumerate(scores):
             if idx_prog != 0:
-                trial_logs[idx_prog-1]["train_score"] = avg_score
-        
+                trial_logs[idx_prog-1]["train_score"] = score
+
         best_idx = scores.index(max(scores)) if scores else 0
         best_program = candidate_programs[best_idx].deepcopy()
         logger.info(
