@@ -123,12 +123,16 @@ class LM(BaseLM):
         return results
 
     async def aforward(self, prompt=None, messages=None, **kwargs):
+        # enable cache
+        cache = kwargs.pop("cache", self.cache)
         completion = alitellm_completion if self.model_type == "chat" else alitellm_text_completion
 
         messages = messages or [{"role": "user", "content": prompt}]
         results = await completion(
             request=dict(model=self.model, messages=messages, **kwargs),
             num_retries=self.num_retries,
+            # only leverage LiteLLM cache in this case
+            cache={"no-cache": not cache, "no-store": not cache},
         )
         return results
 
