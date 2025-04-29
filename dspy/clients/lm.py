@@ -110,6 +110,8 @@ class LM(BaseLM):
 
         if not cache or litellm.cache is None:
             litellm_cache_args = {"no-cache": True, "no-store": True}
+        else:
+            litellm_cache_args = {"no-cache": False, "no-store": False}
 
         return completion_fn, litellm_cache_args
 
