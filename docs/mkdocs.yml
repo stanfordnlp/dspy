@@ -202,6 +202,8 @@ plugins:
             # Redirect /intro/ to the main page
             "intro/index.md": "index.md"
             "intro.md": "index.md"
+            
+            "deep-dive/optimizers/miprov2": "api/optimizers/MIPROv2"
 
             "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
