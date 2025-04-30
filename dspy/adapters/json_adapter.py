@@ -126,6 +126,10 @@ class JSONAdapter(ChatAdapter):
         if match:  
             completion = match.group(0)
         fields = json_repair.loads(completion)
+
+        if not isinstance(fields, dict):
+            raise ValueError(f"Expected a JSON object but parsed a {type(fields)}")
+
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
         # Attempt to cast each value to type signature.output_fields[k].annotation.
