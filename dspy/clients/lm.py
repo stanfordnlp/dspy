@@ -231,35 +231,20 @@ class LM(BaseLM):
         return {key: getattr(self, key) for key in state_keys} | self.kwargs
 
 
-def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    retry_kwargs = dict(
-        retry_policy=_get_litellm_retry_policy(num_retries),
-        retry_strategy="exponential_backoff_retry",
-        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
-        # to completion()), the default value of max_retries is non-zero for certain providers, and
-        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
-        max_retries=0,
-    )
-
+def get_stream_completion_fn(request: Dict[str, Any], retry_kwargs: Dict[str, Any], cache_kwargs: Dict[str, Any]):
     stream = dspy.settings.send_stream
     caller_predict = dspy.settings.caller_predict
+
     if stream is None:
-        # If `streamify` is not used, or if the exact predict doesn't need to be streamed,
-        # we can just return the completion without streaming.
-        return litellm.completion(
-            cache=cache,
-            **retry_kwargs,
-            **request,
-        )
+        return None
 
     # The stream is already opened, and will be closed by the caller.
     stream = cast(MemoryObjectSendStream, stream)
     caller_predict_id = id(caller_predict) if caller_predict else None
 
-    @syncify
-    async def stream_completion():
+    async def stream_completion(request: Dict[str, Any], retry_kwargs: Dict[str, Any], cache_kwargs: Dict[str, Any]):
         response = await litellm.acompletion(
-            cache=cache,
+            cache=cache_kwargs,
             stream=True,
             **retry_kwargs,
             **request,
@@ -272,6 +257,34 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
             chunks.append(chunk)
             await stream.send(chunk)
         return litellm.stream_chunk_builder(chunks)
+
+    def sync_stream_completion():
+        syncified_stream_completion = syncify(stream_completion)
+        return syncified_stream_completion(request, retry_kwargs, cache_kwargs)
+
+    async def async_stream_completion():
+        return await sync_stream_completion(request, retry_kwargs, cache_kwargs)
+
+    return async_stream_completion
+
+
+def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+    retry_kwargs = dict(
+        retry_policy=_get_litellm_retry_policy(num_retries),
+        retry_strategy="exponential_backoff_retry",
+        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
+        # to completion()), the default value of max_retries is non-zero for certain providers, and
+        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
+        max_retries=0,
+    )
+
+    stream_completion = get_stream_completion_fn(request, retry_kwargs, cache)
+    if stream_completion is None:
+        return litellm.completion(
+            cache=cache,
+            **retry_kwargs,
+            **request,
+        )
 
     return stream_completion()
 
@@ -314,11 +327,15 @@ async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={
         max_retries=0,
     )
 
-    return await litellm.acompletion(
-        cache=cache,
-        **retry_kwargs,
-        **request,
-    )
+    stream_completion = get_stream_completion_fn(request, retry_kwargs, cache)
+    if stream_completion is None:
+        return await litellm.acompletion(
+            cache=cache,
+            **retry_kwargs,
+            **request,
+        )
+
+    return await stream_completion()
 
 
 async def alitellm_text_completion(
