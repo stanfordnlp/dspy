@@ -171,9 +171,6 @@ def streamify(
             tg.start_soon(generator, args, kwargs, send_stream)
 
             async for value in receive_stream:
-                import pdb
-
-                pdb.set_trace()
                 if isinstance(value, ModelResponseStream):
                     if len(predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
