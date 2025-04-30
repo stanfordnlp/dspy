@@ -316,7 +316,7 @@ class GRPO(FinetuneTeleprompter):
                 job.step(train_data=train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
             
             for (lm, data_key), job in grpo_training_jobs.items():
-                if (train_step_idx + 1) % lm.kwargs["update_interval"] == 0 and train_step_idx != 0:
+                if (train_step_idx + 1) % self.train_kwargs[lm]["update_interval"] == 0 and train_step_idx != 0:
                     logger.info(f"Current train step is {train_step_idx + 1}. Updating the model...")
                     job.update_model()
 
