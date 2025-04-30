@@ -48,3 +48,37 @@ async def test_convert_mcp_tool():
                 RuntimeError, match="Failed to call a MCP tool: Error executing tool wrong_tool: error!"
             ):
                 await error_tool.acall()
+
+            # Check nested Pydantic arg
+            nested_pydantic_tool = convert_mcp_tool(session, response.tools[3])
+
+            assert nested_pydantic_tool.name == "get_account_name"
+            assert nested_pydantic_tool.desc == "This extracts the name from account"
+            assert nested_pydantic_tool.args == {
+                "account": {
+                    "title": "Account",
+                    "type": "object",
+                    "required": ["profile", "account_id"],
+                    "properties": {
+                        "profile": {
+                            "title": "Profile",
+                            "type": "object",
+                            "properties": {
+                                "name": {"title": "Name", "type": "string"},
+                                "age": {"title": "Age", "type": "integer"},
+                            },
+                            "required": ["name", "age"],
+                        },
+                        "account_id": {"title": "Account Id", "type": "string"},
+                    },
+                }
+            }
+            account_in_json = {
+                "profile": {
+                    "name": "Bob",
+                    "age": 20,
+                },
+                "account_id": "123",
+            }
+            result = await nested_pydantic_tool.acall(account=account_in_json)
+            assert result == "Bob"
