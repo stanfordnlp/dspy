@@ -11,7 +11,6 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
-from dspy.utils.callback import with_callbacks
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +70,11 @@ class Predict(Module, Parameter):
 
         return self
 
-    @with_callbacks
     def __call__(self, **kwargs):
-        return self.forward(**kwargs)
+        return super().__call__(**kwargs)
 
-    @with_callbacks
     async def acall(self, **kwargs):
-        return await self.aforward(**kwargs)
+        return await super().acall(**kwargs)
 
     def _forward_preprocess(self, **kwargs):
         # Extract the three privileged keyword arguments.
