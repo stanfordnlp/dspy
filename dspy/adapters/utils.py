@@ -155,8 +155,7 @@ def parse_value(value, annotation):
         if annotation.__origin__ is Union and type(None) in get_args(annotation):
             if len(get_args(annotation)) == 2 and str in get_args(annotation):
                 return str(candidate)
-            else:
-                raise e
+        raise e
 
 def get_annotation_name(annotation):
     origin = get_origin(annotation)

@@ -288,10 +288,10 @@ class SIMBA(Teleprompter):
         M = len(winning_programs) - 1
         N = self.num_candidates + 1
         if M < 1:
-            # Only one or zero winning programs
             program_idxs = [0] * N
         else:
             program_idxs = [round(i * M / (N - 1)) for i in range(N)]
+
         program_idxs = list(dict.fromkeys(program_idxs))
 
         candidate_programs = [winning_programs[i].deepcopy() for i in program_idxs]
@@ -307,8 +307,13 @@ class SIMBA(Teleprompter):
             avg_score = sum(sys_scores) / len(sys_scores) if sys_scores else 0.0
             scores.append(avg_score)
             if idx_prog != 0:
-                trial_logs[idx_prog-1]["train_score"] = avg_score
-        
+                trial_logs[idx_prog - 1]["train_score"] = avg_score
+
+        # Build sorted list of {"score", "program"} dicts
+        assert len(scores) == len(candidate_programs)
+        candidate_data = [{"score": s, "program": p} for s, p in zip(scores, candidate_programs)]
+        candidate_data.sort(key=lambda x: x["score"], reverse=True)
+
         best_idx = scores.index(max(scores)) if scores else 0
         best_program = candidate_programs[best_idx].deepcopy()
         logger.info(
@@ -316,9 +321,8 @@ class SIMBA(Teleprompter):
             f"(at index {best_idx if scores else 'N/A'})\n\n\n"
         )
 
-        # FIXME: Attach all program candidates in decreasing average score to the best program.
-        best_program.candidate_programs = candidate_programs
-        best_program.winning_programs = winning_programs
+        # Attach sorted, scored candidates & logs
+        best_program.candidate_programs = candidate_data
         best_program.trial_logs = trial_logs
 
         return best_program
