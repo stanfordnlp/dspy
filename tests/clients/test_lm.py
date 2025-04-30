@@ -377,3 +377,43 @@ async def test_async_lm_call():
 
         assert result == ["answer"]
         mock_acompletion.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_lm_call_with_cache(tmp_path):
+    """Test the async LM call with caching."""
+    original_cache = dspy.cache
+    dspy.clients.configure_cache(
+        enable_disk_cache=True,
+        enable_memory_cache=True,
+        enable_litellm_cache=False,
+        disk_cache_dir=tmp_path / ".disk_cache",
+    )
+    cache = dspy.cache
+
+    lm = dspy.LM(model="openai/gpt-4o-mini")
+
+    with mock.patch("dspy.clients.lm.alitellm_completion") as mock_alitellm_completion:
+        mock_alitellm_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="answer"))], model="openai/gpt-4o-mini"
+        )
+        mock_alitellm_completion.__qualname__ = "alitellm_completion"
+        await lm.acall("Query")
+
+        assert len(cache.memory_cache) == 1
+        cache_key = next(iter(cache.memory_cache.keys()))
+        assert cache_key in cache.disk_cache
+        assert mock_alitellm_completion.call_count == 1
+
+        await lm.acall("Query")
+        # Second call should hit the cache, so no new call to LiteLLM is made.
+        assert mock_alitellm_completion.call_count == 1
+
+        # Test that explicitly disabling memory cache works
+        await lm.acall("New query", cache_in_memory=False)
+
+        # There should be a new call to LiteLLM on new query, but the memory cache shouldn't be written to.
+        assert len(cache.memory_cache) == 1
+        assert mock_alitellm_completion.call_count == 2
+
+    dspy.cache = original_cache

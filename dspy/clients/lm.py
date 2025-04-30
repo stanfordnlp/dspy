@@ -54,7 +54,7 @@ class LM(BaseLM):
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
                    and reduce costs.
-            cache_in_memory: To enable additional caching with LRU in memory.
+            cache_in_memory (deprecated): To enable additional caching with LRU in memory.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
@@ -92,44 +92,69 @@ class LM(BaseLM):
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
+    def _get_cached_completion_fn(self, completion_fn, cache, enable_memory_cache):
+        ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
+        if cache and enable_memory_cache:
+            completion_fn = request_cache(
+                cache_arg_name="request",
+                ignored_args_for_cache_key=ignored_args_for_cache_key,
+            )(completion_fn)
+        elif cache:
+            completion_fn = request_cache(
+                cache_arg_name="request",
+                ignored_args_for_cache_key=ignored_args_for_cache_key,
+                enable_memory_cache=False,
+            )(completion_fn)
+        else:
+            completion_fn = completion_fn
+
+        if not cache or litellm.cache is None:
+            litellm_cache_args = {"no-cache": True, "no-store": True}
+        else:
+            litellm_cache_args = {"no-cache": False, "no-store": False}
+
+        return completion_fn, litellm_cache_args
+
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
-        # disable cache will also disable in memory cache
-        cache_in_memory = cache and kwargs.pop("cache_in_memory", self.cache_in_memory)
+        enable_memory_cache = kwargs.pop("cache_in_memory", self.cache_in_memory)
+
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
-        # Make the request and handle LRU & disk caching.
-        if cache_in_memory:
-            completion = cached_litellm_completion if self.model_type == "chat" else cached_litellm_text_completion
+        completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
+        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache, enable_memory_cache)
 
-            results = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-            )
-        else:
-            completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
-
-            results = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-                # only leverage LiteLLM cache in this case
-                cache={"no-cache": not cache, "no-store": not cache},
-            )
+        results = completion(
+            request=dict(model=self.model, messages=messages, **kwargs),
+            num_retries=self.num_retries,
+            cache=litellm_cache_args,
+        )
 
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
     async def aforward(self, prompt=None, messages=None, **kwargs):
-        completion = alitellm_completion if self.model_type == "chat" else alitellm_text_completion
+        # Build the request.
+        cache = kwargs.pop("cache", self.cache)
+        enable_memory_cache = kwargs.pop("cache_in_memory", self.cache_in_memory)
 
         messages = messages or [{"role": "user", "content": prompt}]
+        kwargs = {**self.kwargs, **kwargs}
+
+        completion = alitellm_completion if self.model_type == "chat" else alitellm_text_completion
+        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache, enable_memory_cache)
+
         results = await completion(
             request=dict(model=self.model, messages=messages, **kwargs),
             num_retries=self.num_retries,
+            cache=litellm_cache_args,
         )
+
+        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
+            settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
@@ -206,22 +231,6 @@ class LM(BaseLM):
         return {key: getattr(self, key) for key in state_keys} | self.kwargs
 
 
-@request_cache(cache_arg_name="request", ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
-def cached_litellm_completion(request: Dict[str, Any], num_retries: int):
-    import litellm
-
-    if litellm.cache:
-        litellm_cache_args = {"no-cache": False, "no-store": False}
-    else:
-        litellm_cache_args = {"no-cache": True, "no-store": True}
-
-    return litellm_completion(
-        request,
-        cache=litellm_cache_args,
-        num_retries=num_retries,
-    )
-
-
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
     retry_kwargs = dict(
         retry_policy=_get_litellm_retry_policy(num_retries),
@@ -265,22 +274,6 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         return litellm.stream_chunk_builder(chunks)
 
     return stream_completion()
-
-
-@request_cache(cache_arg_name="request", ignored_args_for_cache_key=["api_key", "api_base", "base_url"])
-def cached_litellm_text_completion(request: Dict[str, Any], num_retries: int):
-    import litellm
-
-    if litellm.cache:
-        litellm_cache_args = {"no-cache": False, "no-store": False}
-    else:
-        litellm_cache_args = {"no-cache": True, "no-store": True}
-
-    return litellm_text_completion(
-        request,
-        num_retries=num_retries,
-        cache=litellm_cache_args,
-    )
 
 
 def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
