@@ -34,11 +34,36 @@ class TrainingJob(Future):
     def status(self):
         raise NotImplementedError
 
+class ReinforceJob:
+    def __init__(self, lm: "LM", train_kwargs: Optional[Dict[str, Any]] = None):
+        self.lm = LM
+        self.train_kwargs = train_kwargs or {}
+
+    @abstractmethod
+    def initialize(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def step(self, train_data: List[Dict[str, Any]], train_data_format: Optional[Union[TrainDataFormat, str]] = None):
+        raise NotImplementedError
+
+    @abstractmethod
+    def terminate(self):
+        raise NotImplementedError
+
+    def cancel(self):
+        raise NotImplementedError
+
+    def status(self):
+        raise NotImplementedError
+
 
 class Provider:
     def __init__(self):
         self.finetunable = False
+        self.reinforceable = False
         self.TrainingJob = TrainingJob
+        self.ReinforceJob = ReinforceJob
 
     @staticmethod
     def is_provider_model(model: str) -> bool:
