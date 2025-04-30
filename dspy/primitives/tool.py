@@ -146,6 +146,7 @@ class Tool:
             raise ValueError("You are calling `__call__` on an async tool, please use `acall` instead.")
         return result
 
+    @with_callbacks
     async def acall(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
         result = self.func(**parsed_kwargs)

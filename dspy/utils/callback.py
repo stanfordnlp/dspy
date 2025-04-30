@@ -269,6 +269,7 @@ def with_callbacks(fn):
             try:
                 _get_on_start_handler(callback, instance, fn)(call_id=call_id, instance=instance, inputs=inputs)
             except Exception as e:
+                raise e
                 logger.warning(f"Error when calling callback {callback}: {e}")
 
     def _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks):

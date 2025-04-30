@@ -231,7 +231,12 @@ class LM(BaseLM):
         return {key: getattr(self, key) for key in state_keys} | self.kwargs
 
 
-def get_stream_completion_fn(request: Dict[str, Any], retry_kwargs: Dict[str, Any], cache_kwargs: Dict[str, Any]):
+def _get_stream_completion_fn(
+    request: Dict[str, Any],
+    retry_kwargs: Dict[str, Any],
+    cache_kwargs: Dict[str, Any],
+    sync=True,
+):
     stream = dspy.settings.send_stream
     caller_predict = dspy.settings.caller_predict
 
@@ -263,9 +268,12 @@ def get_stream_completion_fn(request: Dict[str, Any], retry_kwargs: Dict[str, An
         return syncified_stream_completion(request, retry_kwargs, cache_kwargs)
 
     async def async_stream_completion():
-        return await sync_stream_completion(request, retry_kwargs, cache_kwargs)
+        return await stream_completion(request, retry_kwargs, cache_kwargs)
 
-    return async_stream_completion
+    if sync:
+        return sync_stream_completion
+    else:
+        return async_stream_completion
 
 
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
@@ -278,7 +286,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         max_retries=0,
     )
 
-    stream_completion = get_stream_completion_fn(request, retry_kwargs, cache)
+    stream_completion = _get_stream_completion_fn(request, retry_kwargs, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
             cache=cache,
@@ -327,7 +335,7 @@ async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={
         max_retries=0,
     )
 
-    stream_completion = get_stream_completion_fn(request, retry_kwargs, cache)
+    stream_completion = _get_stream_completion_fn(request, retry_kwargs, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
             cache=cache,
