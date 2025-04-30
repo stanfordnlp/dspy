@@ -507,6 +507,15 @@ def test_lm_usage():
         assert result.get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
 
 
+def test_positional_arguments():
+    program = Predict("question -> answer")
+    with pytest.raises(ValueError) as e:
+        program("What is the capital of France?")
+    assert "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments" in str(
+        e.value
+    )
+
+
 @pytest.mark.parametrize("adapter_type", ["chat", "json"])
 def test_field_constraints(adapter_type):
     class SpyLM(dspy.LM):

@@ -70,10 +70,23 @@ class Predict(Module, Parameter):
 
         return self
 
-    def __call__(self, **kwargs):
+    def __call__(self, *args, **kwargs):
+        if args:
+            raise ValueError(
+                "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments "
+                "that match your signature input fields. For example: "
+                "dspy.Predict('question -> answer')(question='What is the capital of France?')"
+            )
+
         return super().__call__(**kwargs)
 
-    async def acall(self, **kwargs):
+    async def acall(self, *args, **kwargs):
+        if args:
+            raise ValueError(
+                "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments "
+                "that match your signature input fields. For example: "
+                "dspy.Predict('question -> answer').acall(question='What is the capital of France?')"
+            )
         return await super().acall(**kwargs)
 
     def _forward_preprocess(self, **kwargs):
