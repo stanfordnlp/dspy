@@ -314,6 +314,11 @@ class GRPO(FinetuneTeleprompter):
             for (lm, data_key), job in grpo_training_jobs.items():
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
                 job.step(train_data=train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
+            
+            for (lm, data_key), job in grpo_training_jobs.items():
+                if (train_step_idx + 1) % lm.kwargs["update_interval"] == 0 and train_step_idx != 0:
+                    logger.info(f"Current train step is {train_step_idx + 1}. Updating the model...")
+                    job.update_model()
 
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
             if valset and ((train_step_idx + 1) % self.num_steps_for_val == 0 or train_step_idx + 1 == self.num_train_steps):

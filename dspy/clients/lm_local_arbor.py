@@ -120,6 +120,18 @@ class ArborReinforceJob(ReinforceJob):
         for group in train_data:
             self._run_grpo_step_one_group(group, train_data_format)
 
+    def update_model(self):
+        api_base = self.lm.kwargs["api_base"]
+
+        url = f"{api_base}fine_tuning/grpo/update_model"
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(url, headers=headers)
+        assert response.status_code == 200, f"Failed to update model: {response.text}" 
+
+        response = response.json()
+        current_model = response["current_model"]
+        self.lm.model = ArborProvider._add_provider_prefix(current_model)
+
     def terminate(self):
         api_base = self.lm.kwargs["api_base"]
 

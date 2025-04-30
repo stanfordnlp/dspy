@@ -51,6 +51,10 @@ class ReinforceJob:
     def terminate(self):
         raise NotImplementedError
 
+    @abstractmethod
+    def update_model(self):
+        raise NotImplementedError
+
     def cancel(self):
         raise NotImplementedError
 
