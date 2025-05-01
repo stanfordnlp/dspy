@@ -70,23 +70,24 @@ class Predict(Module, Parameter):
 
         return self
 
+    def _get_positional_args_error_message(self):
+        input_fields = list(self.signature.input_fields.keys())
+        return (
+            "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments "
+            f"that match your signature input fields: '{', '.join(input_fields)}'. For example: "
+            f"`predict({input_fields[0]}=input_value, ...)`."
+        )
+
     def __call__(self, *args, **kwargs):
         if args:
-            raise ValueError(
-                "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments "
-                "that match your signature input fields. For example: "
-                "dspy.Predict('question -> answer')(question='What is the capital of France?')"
-            )
+            raise ValueError(self._get_positional_args_error_message())
 
         return super().__call__(**kwargs)
 
     async def acall(self, *args, **kwargs):
         if args:
-            raise ValueError(
-                "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments "
-                "that match your signature input fields. For example: "
-                "dspy.Predict('question -> answer').acall(question='What is the capital of France?')"
-            )
+            raise ValueError(self._get_positional_args_error_message())
+
         return await super().acall(**kwargs)
 
     def _forward_preprocess(self, **kwargs):
