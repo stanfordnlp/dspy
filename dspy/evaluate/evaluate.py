@@ -52,7 +52,7 @@ class Evaluate:
         *,
         devset: List["dspy.Example"],
         metric: Optional[Callable] = None,
-        num_threads: int = 1,
+        num_threads: Optional[int] = None,
         display_progress: bool = False,
         display_table: Union[bool, int] = False,
         max_errors: int = 5,
@@ -66,7 +66,7 @@ class Evaluate:
         Args:
             devset (List[dspy.Example]): the evaluation dataset.
             metric (Callable): The metric function to use for evaluation.
-            num_threads (int): The number of threads to use for parallel evaluation.
+            num_threads (Optional[int]): The number of threads to use for parallel evaluation.
             display_progress (bool): Whether to display progress during evaluation.
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. 
                 If a number is passed, the evaluation results will be truncated to that number before displayed. 
@@ -105,7 +105,7 @@ class Evaluate:
             program (dspy.Module): The DSPy program to evaluate.
             metric (Callable): The metric function to use for evaluation. if not provided, use `self.metric`.
             devset (List[dspy.Example]): the evaluation dataset. if not provided, use `self.devset`.
-            num_threads (int): The number of threads to use for parallel evaluation. if not provided, use
+            num_threads (Optional[int]): The number of threads to use for parallel evaluation. if not provided, use
                 `self.num_threads`.
             display_progress (bool): Whether to display progress during evaluation. if not provided, use
                 `self.display_progress`.
@@ -176,12 +176,12 @@ class Evaluate:
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
-        # Rename the 'correct' column to the name of the metric object
-        metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
-        # Construct a pandas DataFrame from the results
-        result_df = self._construct_result_table(results, metric_name)
-
         if display_table:
+            # Rename the 'correct' column to the name of the metric object
+            metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
+            # Construct a pandas DataFrame from the results
+            result_df = self._construct_result_table(results, metric_name)
+            
             self._display_result_table(result_df, display_table, metric_name)
 
         if return_all_scores and return_outputs:

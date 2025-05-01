@@ -55,7 +55,7 @@ class MIPROv2(Teleprompter):
         max_labeled_demos: int = 4,
         auto: Optional[Literal["light", "medium", "heavy"]] = "medium",
         num_candidates: int = 10,
-        num_threads: int = 6,
+        num_threads: Optional[int] = None,
         max_errors: int = 10,
         seed: int = 9,
         init_temperature: float = 0.5,

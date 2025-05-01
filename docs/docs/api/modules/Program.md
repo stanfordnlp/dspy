@@ -1,10 +1,12 @@
 # dspy.Program
 
+<!-- START_API_REF -->
 ::: dspy.Program
     handler: python
     options:
         members:
             - __call__
+            - acall
             - batch
             - deepcopy
             - dump_state
@@ -28,3 +30,4 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+<!-- END_API_REF -->

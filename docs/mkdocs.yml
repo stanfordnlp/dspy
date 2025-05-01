@@ -23,26 +23,6 @@ nav:
         - DSPy Optimization:
             - Optimization Overview: learn/optimization/overview.md
             - Optimizers: learn/optimization/optimizers.md
-        - Other References:
-            - Retrieval Clients:
-                - Azure: deep-dive/retrieval_models_clients/Azure.md
-                - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
-                - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
-                - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
-                - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
-                - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
-                - FalkordbRM: deep-dive/retrieval_models_clients/FalkordbRM.md
-                - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
-                - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
-                - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
-                - MyScaleRM: deep-dive/retrieval_models_clients/MyScaleRM.md
-                - Neo4jRM: deep-dive/retrieval_models_clients/Neo4jRM.md
-                - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
-                - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
-                - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
-                - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
-                - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
-                - YouRM: deep-dive/retrieval_models_clients/YouRM.md
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
         - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
@@ -76,6 +56,7 @@ nav:
             - Adapter: api/adapters/Adapter.md
             - ChatAdapter: api/adapters/ChatAdapter.md
             - JSONAdapter: api/adapters/JSONAdapter.md
+            - TwoStepAdapter: api/adapters/TwoStepAdapter.md
         - Evaluation:
             - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md
             - Evaluate: api/evaluation/Evaluate.md
@@ -127,6 +108,7 @@ nav:
         - Utils:
             - StatusMessage: api/utils/StatusMessage.md
             - StatusMessageProvider: api/utils/StatusMessageProvider.md
+            - StreamListener: api/utils/StreamListener.md
             - asyncify: api/utils/asyncify.md
             - disable_litellm_logging: api/utils/disable_litellm_logging.md
             - disable_logging: api/utils/disable_logging.md
@@ -178,7 +160,18 @@ extra_css:
 
 plugins:
     - social
-    - search
+    - search:
+        lang: en
+        separator: '[\s\-\.]+'
+        min_search_length: 2
+        prebuild_index: true
+        indexing: 'full'
+        properties:
+            - title
+            - tags
+            - content
+            - sections
+        search_index_only: false
     - mkdocstrings:
         handlers:
             python:
@@ -209,6 +202,8 @@ plugins:
             # Redirect /intro/ to the main page
             "intro/index.md": "index.md"
             "intro.md": "index.md"
+            
+            "deep-dive/optimizers/miprov2": "api/optimizers/MIPROv2"
 
             "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"

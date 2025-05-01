@@ -12,6 +12,8 @@
 
 * [Multi-Hop Search](/tutorials/multihop_search/)
 
+* [Advanced Tool Use](/tutorials/tool_use/)
+
 * [Privacy-Conscious Delegation](/tutorials/papillon/)
 
 * [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
@@ -26,5 +28,3 @@
 
 * [Debugging & Observability](/tutorials/observability/)
 
-
-We are working on upgrading more tutorials and other examples to [DSPy 2.5](https://github.com/stanfordnlp/dspy/blob/main/examples/migration.ipynb) from earlier DSPy versions.

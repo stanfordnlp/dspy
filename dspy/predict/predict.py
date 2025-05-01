@@ -6,13 +6,12 @@ from pydantic import BaseModel
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
-from dspy.dsp.utils import settings
+from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.callback import with_callbacks
-
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,11 @@ class Predict(Module, Parameter):
     def __call__(self, **kwargs):
         return self.forward(**kwargs)
 
-    def forward(self, **kwargs):
+    @with_callbacks
+    async def acall(self, **kwargs):
+        return await self.aforward(**kwargs)
+
+    def _forward_preprocess(self, **kwargs):
         # Extract the three privileged keyword arguments.
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
@@ -102,23 +105,40 @@ class Predict(Module, Parameter):
                 present,
                 missing,
             )
+        return lm, config, signature, demos, kwargs
 
-        adapter = settings.adapter or ChatAdapter()
-        completions = adapter(
-            lm,
-            lm_kwargs=config,
-            signature=signature,
-            demos=demos,
-            inputs=kwargs,
-        )
-
+    def _forward_postprocess(self, completions, signature, **kwargs):
         pred = Prediction.from_completions(completions, signature=signature)
-
         if kwargs.pop("_trace", True) and settings.trace is not None:
             trace = settings.trace
             trace.append((self, {**kwargs}, pred))
-
         return pred
+
+    def forward(self, **kwargs):
+        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
+
+        adapter = settings.adapter or ChatAdapter()
+
+        stream_listeners = settings.stream_listeners or []
+        stream = settings.send_stream is not None
+        if stream and len(stream_listeners) > 0:
+            stream = any(stream_listener.predict == self for stream_listener in stream_listeners)
+
+        if stream:
+            with settings.context(caller_predict=self):
+                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        else:
+            with settings.context(send_stream=None):
+                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+
+        return self._forward_postprocess(completions, signature, **kwargs)
+
+    async def aforward(self, **kwargs):
+        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
+
+        adapter = settings.adapter or ChatAdapter()
+        completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        return self._forward_postprocess(completions, signature, **kwargs)
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}

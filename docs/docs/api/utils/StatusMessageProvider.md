@@ -1,6 +1,7 @@
-# dspy.utils.StatusMessageProvider
+# dspy.streaming.StatusMessageProvider
 
-::: dspy.utils.StatusMessageProvider
+<!-- START_API_REF -->
+::: dspy.streaming.StatusMessageProvider
     handler: python
     options:
         members:
@@ -18,3 +19,4 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+<!-- END_API_REF -->
