@@ -44,7 +44,7 @@ train_kwargs = {
     "update_interval": 10,
     "per_device_train_batch_size": 4,
     "temperature": 0.5,
-    "beta": 0.04,
+    "beta": 0.02,
     "learning_rate": 1e-5,
     "gradient_accumulation_steps": 1,
     "gradient_checkpointing": True,
