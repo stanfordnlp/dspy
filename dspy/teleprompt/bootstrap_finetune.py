@@ -49,6 +49,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         # attached to LMs themselves -- an LM could know which adapter it should
         # be used with along with the train_kwargs. This will lead the only
         # required argument for LM.finetune() to be the train dataset.
+
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
         self.multitask = multitask
@@ -200,13 +201,12 @@ def build_call_data_from_trace(
     )
     return call_data
 
-
 def bootstrap_trace_data(
     program: Program,
     dataset: List[Example],
     metric: Optional[Callable] = None,
     num_threads: Optional[int] = None,
-    raise_on_error=True,
+    raise_on_error=True
 ) -> List[Dict[str, Any]]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
@@ -216,6 +216,7 @@ def bootstrap_trace_data(
         display_progress=True,
         return_outputs=True,
         provide_traceback=True,  # TODO(check with team)
+        max_errors=len(dataset)*10,  # TODO(check with team)
     )
 
     def wrapped_metric(example, prediction, trace=None):
@@ -274,10 +275,12 @@ def bootstrap_trace_data(
 #     return data_dict
 
 
+# Note: Shared below are useful functions for preparing student/teacher programs
+# Similar methods are implemented separately and used by other DSPy
+# teleprompters. These can be moved to shared locations.
 def all_predictors_have_lms(program: Program) -> bool:
     """Return True if all predictors in the program have an LM set."""
     return all(pred.lm for pred in program.predictors())
-
 
 def copy_program_with_lms(program: Program) -> Program:
     pred_lms = [pred.lm for pred in program.predictors()]
@@ -290,13 +293,19 @@ def copy_program_with_lms(program: Program) -> Program:
 def prepare_student(student: Program) -> Program:
     if getattr(student, "_compiled", False):
         raise ValueError("The student program should not be compiled.")
+
+    # TODO: Should we use reset_copy here? How would it affect the student
+    # program's predictor LMs, if they are set?
+
+    # TODO: Should there be a deepcopy here?
+    # student = student.deepcopy()
     return student
 
 
 def prepare_teacher(student: Program, teacher: Optional[Program] = None) -> Program:
     if teacher is None:
         return copy_program_with_lms(student)
-    
+
     # We avoid modifying the original teacher program by making a copy
     teacher = copy_program_with_lms(teacher)
 

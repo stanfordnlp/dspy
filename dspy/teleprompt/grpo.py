@@ -58,6 +58,25 @@ class GRPO(FinetuneTeleprompter):
             assert variably_invoked_predictor_fill_strategy in ['randint', 'max'], "variably_invoked_predictor_fill_strategy must be either 'randint' or 'max'"
         self.variably_invoked_predictor_fill_strategy = variably_invoked_predictor_fill_strategy
 
+    def validate_trace_data_and_log_issues(
+        self,
+        trace_data: List[List[List[Dict[str, Any]]]],
+        subsample_training_dataset: List[Example],
+        num_teachers: int,
+    ):
+        # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
+        # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
+        assert len(trace_data) == len(subsample_training_dataset), f"Trace data length {len(trace_data)} does not match the number of examples {len(subsample_training_dataset)}"
+        assert len(trace_data[0]) == num_teachers, f"Trace data length {len(trace_data[0])} does not match the number of teachers {num_teachers}"
+        # TODO(GRPO Team): Ideally, once the dspy format issue is fixed, this change should be reverted back to being a normal assert.
+        if len(trace_data[0][0]) == 0:
+            logger.warning(f"Trace data for example {0} and teacher {0} is empty. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
+        elif len(trace_data[0][0]) != self.num_samples_per_input:
+            logger.warning(f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {self.num_samples_per_input}")
+            assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
+            assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
+            assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
+
     def compile(
         self,
         student: Program,
@@ -134,7 +153,6 @@ class GRPO(FinetuneTeleprompter):
                 train_kwargs = self.train_kwargs[pred.lm]
                 job = pred.lm.reinforce(train_kwargs=train_kwargs)
                 grpo_training_jobs[job_key] = job
-    
         if valset is None and self.use_train_as_val:
             logger.info("Using the training set as the validation set.")
             valset = trainset
@@ -151,8 +169,8 @@ class GRPO(FinetuneTeleprompter):
                 display_progress=True,
                 return_outputs=False,
                 provide_traceback=True,  # TODO(check with team)
+                max_errors=len(valset)*10,  # TODO(check with team)
             )
-            
             logger.info("Evaluating the student program on the validation set before training loop...")
             valset_evaluation = valset_evaluator(student, metric=self.metric)
             logger.info(f"Student program validation set score before training loop: {valset_evaluation}")
@@ -166,32 +184,26 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Bootstrapping data...")
             trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
             for tind, teacher in enumerate(teachers):
-                for _ in range(self.num_samples_per_input):
-                    # We rely on disabled caches to ensure that we get different
-                    # traces
-                    round_data = bootstrap_trace_data(
-                        program=teacher,
-                        dataset=subsample_training_dataset,
-                        metric=self.metric,
-                        num_threads=self.num_threads,
-                        raise_on_error=False, # TODO(GRPO Team): This should be True, once the dspy format issue is fixed
-                    )
-                    for data_dict in round_data:
-                        trace_data[data_dict['example_ind']][tind].append(data_dict)
+                subsample_training_dataset_repeated = [example for _ in range(self.num_samples_per_input) for example in subsample_training_dataset]
+                round_data = bootstrap_trace_data(
+                    program=teacher,
+                    dataset=subsample_training_dataset_repeated,
+                    metric=self.metric,
+                    num_threads=self.num_threads,
+                    raise_on_error=False, # TODO(GRPO Team): This should be True, once the dspy format issue is fixed
+                )
+                for data_dict in round_data:
+                    example_ind_in_subsample = data_dict['example_ind'] % len(subsample_training_dataset)
+                    data_dict["example_ind"] = example_ind_in_subsample
+                    trace_data[example_ind_in_subsample][tind].append(data_dict)
 
             # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
             # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
-            assert len(trace_data) == len(subsample_training_dataset), f"Trace data length {len(trace_data)} does not match the number of examples {len(subsample_training_dataset)}"
-            assert len(trace_data[0]) == len(teachers), f"Trace data length {len(trace_data[0])} does not match the number of teachers {len(teachers)}"
-
-            # TODO(GRPO Team): Ideally, once the dspy format issue is fixed, this change should be reverted back to being a normal assert.
-            if len(trace_data[0][0]) == 0:
-                logger.warning(f"Trace data for example {0} and teacher {0} is empty. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
-            elif len(trace_data[0][0]) != self.num_samples_per_input:
-                logger.warning(f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {self.num_samples_per_input}")
-                assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
-                assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
-                assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
+            self.validate_trace_data_and_log_issues(
+                trace_data=trace_data,
+                subsample_training_dataset=subsample_training_dataset,
+                num_teachers=len(teachers),
+            )
 
             logger.info("Preparing the training data batch from bootstrapped examples for GRPO...")
             # Now, we need to prepare batches of data to be sent for training
@@ -215,8 +227,11 @@ class GRPO(FinetuneTeleprompter):
                             
                             predictor_example_invocations.append(trace_instances_for_current_pred)
 
-                    if len(predictor_example_invocations) != num_generations:
-                        logger.warning(f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {num_generations}")
+                    if len(predictor_example_invocations) == 0:
+                        logger.warning(f"Skipping example {example_ind} for predictor {pred_id} as it has no invocations. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
+                        continue
+                    elif len(predictor_example_invocations) != num_generations:
+                        logger.warning(f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {num_generations}. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
 
                     min_len = min([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
@@ -237,7 +252,6 @@ class GRPO(FinetuneTeleprompter):
                         ]
                     else:
                         assert self.variably_invoked_predictor_grouping_mode == 'ragged', f"Unknown variably invoked predictor grouping mode {self.variably_invoked_predictor_grouping_mode}"
-                    
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
 
                     example_training_data: List[GRPOGroup] = [[] for _ in range(max_len)]
@@ -276,7 +290,6 @@ class GRPO(FinetuneTeleprompter):
                             #     example_training_data[group_idx]["input"]["messages"] = [{"role": msg['role'], 'content': msg['content']} for msg in inp_messages]
                             # elif example_training_data[group_idx]["input"]["messages"] != inp_messages:
                             #     logger.info(f"Input messages {inp_messages} do not match the expected messages {example_training_data[group_idx]['input']['messages']}")
-                            
                             # response_msg = all_messages[-1]
                             # assert 'role' in response_msg and 'content' in response_msg, f"Response message {response_msg} does not contain the expected keys 'role' and 'content'"
                             # example_training_data[group_idx]["completions"].append({
@@ -284,7 +297,6 @@ class GRPO(FinetuneTeleprompter):
                             #     "content": response_msg["content"],
                             #     "reward": score,
                             # })
-                            
                             example_training_data[group_idx].append({
                                 "messages": inp_messages,
                                 "completion": {
@@ -333,7 +345,7 @@ class GRPO(FinetuneTeleprompter):
                     assert len(group) == num_generations, f"Number of completions {len(group)} does not match the expected number num_samples_per_input*len(teachers)={num_generations}"
 
                 job.step(train_data=train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
-            
+
             for (lm, data_key), job in grpo_training_jobs.items():
                 if (train_step_idx + 1) % self.train_kwargs[lm]["update_interval"] == 0 and train_step_idx != 0:
                     logger.info(f"Current train step is {train_step_idx + 1}. Updating the model...")
@@ -344,7 +356,6 @@ class GRPO(FinetuneTeleprompter):
                 logger.info(f"Evaluating the student program on the validation set after training step {train_step_idx + 1}/{self.num_train_steps}")
                 valset_evaluation = valset_evaluator(student, metric=self.metric)
                 logger.info(f"Student program validation set score after training step {train_step_idx + 1}/{self.num_train_steps}: {valset_evaluation}")
-        
         logger.info("Done with the iterations! Retrieving the final model(s)...")
         for (lm, data_key), job in grpo_training_jobs.items():
             job.terminate()
