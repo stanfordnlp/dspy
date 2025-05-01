@@ -25,6 +25,7 @@ def streamify(
     status_message_provider: Optional[StatusMessageProvider] = None,
     stream_listeners: Optional[List[StreamListener]] = None,
     include_final_prediction_in_output_stream: bool = True,
+    is_async_program: bool = False,
 ) -> Callable[[Any, Any], Awaitable[Any]]:
     """
     Wrap a DSPy program so that it streams its outputs incrementally, rather than returning them
@@ -43,6 +44,8 @@ def streamify(
             useful when `stream_listeners` is provided. If `False`, the final prediction will not be included in the
             output stream. When the program hit cache, or no listeners captured anything, the final prediction will
             still be included in the output stream even if this is `False`.
+        is_async_program: Whether the program is async. If `False`, the program will be wrapped with `asyncify`,
+            otherwise the program will be called with `acall`.
 
     Returns:
         A function that takes the same arguments as the original program, but returns an async
@@ -146,7 +149,9 @@ def streamify(
     else:
         predict_id_to_listener = {}
 
-    if not iscoroutinefunction(program):
+    if is_async_program:
+        program = program.acall
+    elif not iscoroutinefunction(program):
         program = asyncify(program)
 
     callbacks = settings.callbacks
