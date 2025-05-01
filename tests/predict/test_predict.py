@@ -11,6 +11,7 @@ import dspy
 from dspy import Predict, Signature
 from dspy.utils.dummies import DummyLM
 from unittest.mock import patch, MagicMock, Mock
+from litellm import ModelResponse
 
 
 def test_initialization_with_string_signature():
@@ -489,6 +490,30 @@ def test_call_predict_with_chat_history(adapter_type):
     assert "what's the capital of france?" in messages[1]["content"]
     assert "paris" in messages[2]["content"]
     assert "are you sure that's correct" in messages[3]["content"]
+
+
+def test_lm_usage():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    with patch(
+        "dspy.clients.lm.litellm_completion",
+        return_value=ModelResponse(
+            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+            usage={"total_tokens": 10},
+        ),
+    ):
+        result = program(question="What is the capital of France?")
+        assert result.answer == "Paris"
+        assert result.get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+
+
+def test_positional_arguments():
+    program = Predict("question -> answer")
+    with pytest.raises(ValueError) as e:
+        program("What is the capital of France?")
+    assert "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments" in str(
+        e.value
+    )
 
 
 @pytest.mark.parametrize("adapter_type", ["chat", "json"])
