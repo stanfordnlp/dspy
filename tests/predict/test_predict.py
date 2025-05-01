@@ -511,8 +511,9 @@ def test_positional_arguments():
     program = Predict("question -> answer")
     with pytest.raises(ValueError) as e:
         program("What is the capital of France?")
-    assert "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments" in str(
-        e.value
+    assert str(e.value) == (
+        "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments that match "
+        "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
     )
 
 
