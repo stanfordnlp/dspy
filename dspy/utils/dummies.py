@@ -73,6 +73,7 @@ class DummyLM(LM):
         if isinstance(answers, list):
             self.answers = iter(answers)
         self.follow_examples = follow_examples
+        self.call_count = 0
 
     def _use_example(self, messages):
         # find all field names
@@ -126,6 +127,7 @@ class DummyLM(LM):
             entry = dict(**entry, cost=0)
             self.history.append(entry)
             self.update_global_history(entry)
+        self.call_count += 1
 
         return outputs
 
