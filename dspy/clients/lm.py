@@ -141,10 +141,6 @@ class LM(BaseLM):
     ) -> TrainingJob:
         from dspy import settings as settings
 
-        err = "Fine-tuning is an experimental feature."
-        err += " Set `dspy.settings.experimental` to `True` to use it."
-        assert settings.experimental, err
-
         err = f"Provider {self.provider} does not support fine-tuning."
         assert self.provider.finetunable, err
 
@@ -168,10 +164,6 @@ class LM(BaseLM):
     def reinforce(self, train_kwargs) -> ReinforceJob:
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
-
-        err = "Reinforcement learning is an experimental feature."
-        err += " Set `dspy.settings.experimental` to `True` to use it."
-        assert settings.experimental, err
     
         err = f"Provider {self.provider} does not implement the reinforcement learning interface."
         assert self.provider.reinforceable, err
