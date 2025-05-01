@@ -44,7 +44,7 @@ class ArborTrainingJob(TrainingJob):
 
 class ArborReinforceJob(ReinforceJob):
     DEFAULT_TRAIN_KWARGS = {
-        "update_interval": 25,
+        "update_interval": 5,
         "temperature": 0.9,
         "beta": 0.04,
     }

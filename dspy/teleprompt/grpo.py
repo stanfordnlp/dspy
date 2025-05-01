@@ -117,7 +117,7 @@ class GRPO(FinetuneTeleprompter):
 
         # Update train_kwargs
         for pred in student.predictors():
-            train_kwargs = self.train_kwargs.get(pred.lm)
+            train_kwargs = self.train_kwargs[pred.lm]
             train_kwargs = {} if train_kwargs is None else train_kwargs
             train_kwargs["num_generations"] = num_generations
             self.train_kwargs[pred.lm] = train_kwargs
