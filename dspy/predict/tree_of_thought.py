@@ -321,11 +321,7 @@ class TreeOfThought(dspy.Module):
     def _format_problem_description(self, **kwargs) -> str:
         """Format input kwargs into a problem description string"""
         return "\n".join([f"{k.replace('_', ' ').title()}: {v}" for k, v in kwargs.items()])
-    
-    async def aforward(self, **kwargs):
-        """Async version of forward method"""
-        raise NotImplementedError("Async execution not yet implemented for TreeOfThought")
-            
+           
     def forward(self, **kwargs) -> dspy.Prediction:
         """Execute tree of thought search to solve the problem"""
         # Reset tree and state
@@ -457,7 +453,221 @@ class TreeOfThought(dspy.Module):
 
         # 8. Return final Prediction
         return dspy.Prediction(**output_fields, best_path_trace=best_path_str, best_score=best_score)
+    
+    async def aforward(self, **kwargs) -> dspy.Prediction:
+        """Asynchronous execution of tree of thought search to solve the problem"""
+        # Reset tree and state
+        self.root_node = TreeNode(thought="", depth=0)
+        self.best_paths = []
+        
+        # Prepare input
+        problem_description = self._format_problem_description(**kwargs)
+        initial_state: List[str] = []
 
+        BeamItem = Tuple[List[str], float]
+        beam: List[BeamItem] = [(initial_state, 0.0)]
+        completed_paths: List[BeamItem] = []
+        
+        # Start timing
+        start_time = time.time()
+
+        for depth in range(self.max_depth):
+            candidates: List[BeamItem] = []
+            beam_copy = list(beam)
+            beam = []
+
+            # Create tasks list for parallel generation and evaluation
+            generation_tasks = []
+            
+            for state_path, current_score in beam_copy:
+                current_path_str = "\n-> ".join(state_path) if state_path else "Initial state."
+
+                # Find or create tree node for current path
+                current_node = self.root_node
+                for thought in state_path:
+                    found = False
+                    for child in current_node.children:
+                        if child.thought == thought:
+                            current_node = child
+                            found = True
+                            break
+                    
+                    if not found:
+                        current_node = current_node.add_child(thought, current_score)
+                
+                # Add to generation tasks
+                generation_tasks.append((current_node, state_path, current_path_str))
+            
+            # Process all paths at this level in parallel batches
+            batch_size = min(self.max_workers, len(generation_tasks))
+            all_paths_to_evaluate = []
+            
+            # Process generation tasks in batches
+            for i in range(0, len(generation_tasks), batch_size):
+                batch = generation_tasks[i:i+batch_size]
+                batch_results = await asyncio.gather(*[
+                    self._async_generate_thoughts(
+                        problem_description, path_str, node, path
+                    ) for node, path, path_str in batch
+                ], return_exceptions=True)
+                
+                # Process generation results and collect paths to evaluate
+                for j, result in enumerate(batch_results):
+                    if isinstance(result, Exception):
+                        continue
+                    
+                    node, path, next_thoughts_list = result
+                    if not next_thoughts_list:
+                        continue
+                    
+                    # Prepare new paths to evaluate
+                    for thought in next_thoughts_list:
+                        new_path = path + [thought.strip()]
+                        all_paths_to_evaluate.append((node, new_path, thought))
+            
+            # If no paths to evaluate, break
+            if not all_paths_to_evaluate:
+                break
+            
+            # Evaluate all paths in parallel
+            path_scores = []
+            if self.parallel and len(all_paths_to_evaluate) > 1:
+                eval_results = await self._parallel_evaluate_paths_async(
+                    problem_description, 
+                    [p[1] for p in all_paths_to_evaluate]
+                )
+                
+                # Match results with nodes and thoughts
+                for i, (path, score, reasoning) in enumerate(eval_results):
+                    if i < len(all_paths_to_evaluate):
+                        node, _, thought = all_paths_to_evaluate[i]
+                        # Create child node with evaluation results
+                        node.add_child(thought, score, reasoning)
+                        path_scores.append((path, score, reasoning))
+            else:
+                # Evaluate sequentially if not parallel or only one path
+                for node, new_path, thought in all_paths_to_evaluate:
+                    score, reasoning = await self._evaluate_state_llm_async(problem_description, new_path)
+                    # Create child node with evaluation results
+                    node.add_child(thought, score, reasoning)
+                    path_scores.append((new_path, score, reasoning))
+            
+            # Process evaluation results
+            for new_path, score, reasoning in path_scores:
+                # Check if score is valid
+                if not (score == score):  # NaN check
+                    continue
+                    
+                # Add to candidates list
+                is_complete = depth == self.max_depth - 1
+                item = (new_path, score)
+
+                if is_complete:
+                    completed_paths.append(item)
+                
+                candidates.append(item)
+
+            # Beam pruning
+            candidates.sort(key=lambda item: item[1], reverse=True)
+            beam = candidates[:self.beam_width]
+            
+            if not beam:
+                break
+
+        # Select final best path
+        final_candidates = completed_paths + beam
+        if not final_candidates:
+            try:
+                # Need async version of generate_final_answer
+                final_result_prediction = await self._async_generate_final_answer(
+                    problem_description=problem_description,
+                    best_path="No available reasoning paths."
+                )
+                output_fields = {field: getattr(final_result_prediction, field, None) 
+                                for field in self.signature.output_fields.keys()}
+                return dspy.Prediction(**output_fields, best_path_trace="No available reasoning paths.", best_score=0.0)
+            except Exception:
+                empty_output = {field: None for field in self.signature.output_fields.keys()}
+                return dspy.Prediction(**empty_output, best_path_trace="Failed", best_score=0.0)
+
+        # Sort by score in descending order
+        final_candidates.sort(key=lambda item: item[1], reverse=True)
+        best_path, best_score = final_candidates[0]
+        self.best_paths = [final_candidates[0]]
+        
+        best_path_str = "\n-> ".join(best_path) if best_path else "None"
+
+        # Generate final answer using best path
+        try:
+            final_result_prediction = await self._async_generate_final_answer(
+                problem_description=problem_description,
+                best_path=best_path_str
+            )
+            output_fields = {field: getattr(final_result_prediction, field) 
+                            for field in self.signature.output_fields.keys()}
+        except Exception:
+            failed_output = {field: f"Error: Failed to generate field '{field}'" 
+                            for field in self.signature.output_fields.keys()}
+            return dspy.Prediction(**failed_output, best_path_trace=best_path_str, best_score=best_score)
+
+        # Return final Prediction
+        return dspy.Prediction(**output_fields, best_path_trace=best_path_str, best_score=best_score)
+
+    async def _async_generate_thoughts(self, problem_description, current_path_str, current_node, state_path):
+        """Asynchronously generate thoughts and parse them"""
+        loop = asyncio.get_event_loop()
+        
+        # Use ThreadPoolExecutor for non-async operations
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            try:
+                # Run thought generation in executor
+                generate_fn = lambda: self.generate_thoughts(
+                    problem_description=problem_description,
+                    current_path=current_path_str
+                )
+                generated = await loop.run_in_executor(executor, generate_fn)
+                next_thoughts_output = generated.next_thoughts
+                
+                # Parse thoughts in executor 
+                parse_fn = lambda: self._parse_thoughts(next_thoughts_output)
+                next_thoughts_list = await loop.run_in_executor(executor, parse_fn)
+                
+                return current_node, state_path, next_thoughts_list
+            except Exception as e:
+                raise e
+
+    async def _async_generate_final_answer(self, **kwargs):
+        """Asynchronously generate final answer"""
+        loop = asyncio.get_event_loop()
+        
+        # Use ThreadPoolExecutor for non-async operations
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            try:
+                generate_fn = lambda: self.generate_final_answer(**kwargs)
+                return await loop.run_in_executor(executor, generate_fn)
+            except Exception as e:
+                raise e
+
+    async def _parallel_evaluate_paths_async(self, problem_description: str, paths_to_evaluate: List[List[str]]) -> List[Tuple[List[str], float, str]]:
+        """Asynchronously evaluate multiple paths in parallel"""
+        semaphore = asyncio.Semaphore(self.max_workers)
+        
+        async def evaluate_with_semaphore(path):
+            async with semaphore:
+                score, reasoning = await self._evaluate_state_llm_async(problem_description, path)
+                return (path, score, reasoning)
+        
+        tasks = [evaluate_with_semaphore(path) for path in paths_to_evaluate]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        valid_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                continue
+            valid_results.append(result)
+        
+        return valid_results
+    
 
 class TreeVisualizer:
     """Visualization utilities for Tree of Thought"""
@@ -587,6 +797,6 @@ tot = TreeOfThought("question -> answer", max_depth=1, num_branches=1, beam_widt
 result = tot(question="What is 1+1?")
 
 print(result.answer)
-TreeVisualizer.visualize_tree_ascii(tot.root_node, best_paths=tot.best_paths) # optional
+TreeVisualizer.visualize_tree_ascii(tot.root_node, best_paths=tot.best_paths) # Visualize the tree
 
 '''
