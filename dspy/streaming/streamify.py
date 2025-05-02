@@ -204,8 +204,8 @@ def streamify(
     return streamer
 
 
-def apply_sync_streaming(async_gen: AsyncGenerator) -> Generator:
-    """Convert an AsyncGenerator to a synchronous Generator."""
+def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
+    """Convert the async streaming generator to a sync generator."""
     queue = Queue()  # Queue to hold items from the async generator
     stop_sentinel = object()  # Sentinel to signal the generator is complete
 
@@ -217,7 +217,7 @@ def apply_sync_streaming(async_gen: AsyncGenerator) -> Generator:
 
         async def runner():
             try:
-                async for item in async_gen:
+                async for item in async_generator:
                     queue.put(item)
             finally:
                 # Signal completion
