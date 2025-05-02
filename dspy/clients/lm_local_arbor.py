@@ -44,9 +44,15 @@ class ArborTrainingJob(TrainingJob):
 
 class ArborReinforceJob(ReinforceJob):
     DEFAULT_TRAIN_KWARGS = {
-        "update_interval": 5,
+        "update_interval": 10,
         "temperature": 0.9,
         "beta": 0.04,
+        "per_device_train_batch_size": 8,
+        "learning_rate": 1e-5,
+        "gradient_accumulation_steps": 1,
+        "gradient_checkpointing": True,
+        "bf16": True,
+        "lr_scheduler_type": "constant_with_warmup",
     }
 
     def __init__(self, lm: "LM", train_kwargs: Dict[str, Any]):
@@ -66,6 +72,12 @@ class ArborReinforceJob(ReinforceJob):
         update_interval = self.train_kwargs.get("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
         temperature = self.train_kwargs.get("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
         beta = self.train_kwargs.get("beta", self.DEFAULT_TRAIN_KWARGS["beta"])
+        per_device_train_batch_size = self.train_kwargs.get("per_device_train_batch_size", self.DEFAULT_TRAIN_KWARGS["per_device_train_batch_size"])
+        learning_rate = self.train_kwargs.get("learning_rate", self.DEFAULT_TRAIN_KWARGS["learning_rate"])
+        gradient_accumulation_steps = self.train_kwargs.get("gradient_accumulation_steps", self.DEFAULT_TRAIN_KWARGS["gradient_accumulation_steps"])
+        gradient_checkpointing = self.train_kwargs.get("gradient_checkpointing", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing"])
+        bf16 = self.train_kwargs.get("bf16", self.DEFAULT_TRAIN_KWARGS["bf16"])
+        lr_scheduler_type = self.train_kwargs.get("lr_scheduler_type", self.DEFAULT_TRAIN_KWARGS["lr_scheduler_type"])
 
         api_base = self.lm.kwargs["api_base"]
         # api_key = self.lm.kwargs["api_key"]
@@ -79,6 +91,12 @@ class ArborReinforceJob(ReinforceJob):
             'update_interval': update_interval,
             'temperature': temperature,
             'beta': beta,
+            'per_device_train_batch_size': per_device_train_batch_size,
+            'learning_rate': learning_rate,
+            'gradient_accumulation_steps': gradient_accumulation_steps,
+            'gradient_checkpointing': gradient_checkpointing,
+            'bf16': bf16,
+            'lr_scheduler_type': lr_scheduler_type,
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
