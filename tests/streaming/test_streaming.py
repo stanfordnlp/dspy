@@ -13,6 +13,7 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
+        cache=True,
     )
     with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
 
@@ -45,6 +46,7 @@ async def test_streaming_response_yields_expected_response_chunks(litellm_test_s
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
+        cache=False,
     )
     with dspy.context(lm=lm):
 
@@ -127,7 +129,7 @@ async def test_custom_status_streaming():
 
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
 @pytest.mark.anyio
-async def test_stream_listener():
+async def test_stream_listener_chat_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
@@ -190,23 +192,22 @@ async def test_default_status_streaming_in_async_program():
 
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
 @pytest.mark.anyio
-async def test_stream_listener_in_async_program():
+async def test_stream_listener_json_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question, answer->judgement")
 
-        async def acall(self, x: str, **kwargs):
-            answer = await self.predict1.acall(question=x, **kwargs)
-            judgement = await self.predict2.acall(question=x, answer=answer, **kwargs)
+        def __call__(self, x: str, **kwargs):
+            answer = self.predict1(question=x, **kwargs)
+            judgement = self.predict2(question=x, answer=answer, **kwargs)
             return judgement
 
     # Turn off the cache to ensure the stream is produced.
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
     my_program = MyProgram()
     program = dspy.streamify(
         my_program,
-        is_async_program=True,
         stream_listeners=[
             dspy.streaming.StreamListener(signature_field_name="answer"),
             dspy.streaming.StreamListener(signature_field_name="judgement"),
