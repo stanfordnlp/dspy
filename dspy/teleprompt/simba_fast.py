@@ -147,6 +147,7 @@ class SIMBAFast(Teleprompter):
         instance_idx = 0
 
         # Parallel runner
+        print("Creating parallel runner with num_threads: ", self.num_threads)
         run_parallel = dspy.Parallel(access_examples=False, num_threads=self.num_threads)
 
         trial_logs = {}
@@ -161,15 +162,19 @@ class SIMBAFast(Teleprompter):
         program_idxs = [0] * N if M < 1 else [round(i * M / (N - 1)) for i in range(N)]
         program_idxs = list(dict.fromkeys(program_idxs))
 
-        final_candidate_programs = []
-        final_candidate_scores = []
-        validated_program_outputs = {}  # {prog_idx: {example_idx: output_dict}}
-
         # Compute baseline student score on the full trainset
         logger.info(f"Evaluating student program on full trainset.")
         exec_pairs = [(wrap_program(student, self.metric), ex) for ex in trainset]
         full_outputs = run_parallel(exec_pairs)
         baseline_scores = [o["score"] for o in full_outputs]
+
+        # Compute average score for the baseline program
+        avg_baseline_score = sum(baseline_scores) / len(baseline_scores)
+        logger.info(f"Baseline program (index 0) score: {avg_baseline_score}\n")
+
+        final_candidate_programs = [student]
+        final_candidate_scores = [avg_baseline_score]
+        validated_program_outputs = {}  # {prog_idx: {example_idx: output_dict}}
 
         for batch_idx in range(self.max_steps):
             trial_logs[batch_idx+1] = {}
@@ -310,7 +315,7 @@ class SIMBAFast(Teleprompter):
                 system_candidates.append(system_candidate)
                 logger.info("\n")
 
-                if len(system_candidates) >= self.num_candidates + 1:
+                if len(system_candidates) >= self.num_candidates:
                     break
 
             # STEP 5: Evaluate these new system_candidates on the same mini-batch
@@ -349,6 +354,7 @@ class SIMBAFast(Teleprompter):
                 full_outputs = run_parallel(exec_pairs)
                 scores = [o["score"] for o in full_outputs]
                 avg_score = sum(scores) / len(scores)
+                print(f"Batch {batch_idx+1}: Full trainset score: {avg_score}")
                 trial_logs[batch_idx + 1]["train_score"] = avg_score
 
                 final_candidate_programs.append(best_program.deepcopy())
