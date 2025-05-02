@@ -211,9 +211,15 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
 
     # To propagate prediction request ID context to the child thread
     context = contextvars.copy_context()
+    from dspy.dsp.utils.settings import thread_local_overrides
+
+    parent_overrides = thread_local_overrides.overrides.copy()
 
     def producer():
         """Runs in a background thread to fetch items asynchronously."""
+
+        original_overrides = thread_local_overrides.overrides
+        thread_local_overrides.overrides = parent_overrides.copy()
 
         async def runner():
             try:
@@ -224,6 +230,7 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
                 queue.put(stop_sentinel)
 
         context.run(asyncio.run, runner())
+        thread_local_overrides.overrides = original_overrides
 
     # Start the producer in a background thread
     thread = threading.Thread(target=producer, daemon=True)
