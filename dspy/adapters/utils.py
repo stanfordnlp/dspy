@@ -154,7 +154,7 @@ def parse_value(value, annotation):
 
             if v in allowed:
                 return v
-    
+
         raise ValueError(f"{value!r} is not one of {allowed!r}")
 
     if not isinstance(value, str):
@@ -174,6 +174,7 @@ def parse_value(value, annotation):
             return str(candidate)
         raise
 
+
 def get_annotation_name(annotation):
     origin = get_origin(annotation)
     args = get_args(annotation)
@@ -192,6 +193,7 @@ def get_annotation_name(annotation):
     else:
         args_str = ", ".join(get_annotation_name(a) for a in args)
         return f"{get_annotation_name(origin)}[{args_str}]"
+
 
 def get_field_description_string(fields: dict) -> str:
     field_descriptions = []
@@ -220,7 +222,7 @@ def _format_input_list_field_value(value: List[Any]) -> str:
     if len(value) == 1:
         return _format_blob(value[0])
 
-    return "\n".join([f"[{idx+1}] {_format_blob(txt)}" for idx, txt in enumerate(value)])
+    return "\n".join([f"[{idx + 1}] {_format_blob(txt)}" for idx, txt in enumerate(value)])
 
 
 def _format_blob(blob: str) -> str:
