@@ -138,6 +138,25 @@ def parse_value(value, annotation):
     if isinstance(annotation, enum.EnumMeta):
         return find_enum_member(annotation, value)
 
+    origin = get_origin(annotation)
+
+    if origin is Literal:
+        allowed = get_args(annotation)
+        if value in allowed:
+            return value
+
+        if isinstance(value, str):
+            v = value.strip()
+            if v.startswith(("Literal[", "str[")) and v.endswith("]"):
+                v = v[v.find("[") + 1 : -1]
+            if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'":
+                v = v[1:-1]
+
+            if v in allowed:
+                return v
+
+        raise ValueError(f"{value!r} is not one of {allowed!r}")
+
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
 
@@ -148,7 +167,12 @@ def parse_value(value, annotation):
         except (ValueError, SyntaxError):
             candidate = value
 
-    return TypeAdapter(annotation).validate_python(candidate)
+    try:
+        return TypeAdapter(annotation).validate_python(candidate)
+    except pydantic.ValidationError:
+        if origin is Union and type(None) in get_args(annotation) and str in get_args(annotation):
+            return str(candidate)
+        raise
 
 
 def get_annotation_name(annotation):
@@ -169,6 +193,7 @@ def get_annotation_name(annotation):
     else:
         args_str = ", ".join(get_annotation_name(a) for a in args)
         return f"{get_annotation_name(origin)}[{args_str}]"
+
 
 def get_field_description_string(fields: dict) -> str:
     field_descriptions = []
@@ -197,7 +222,7 @@ def _format_input_list_field_value(value: List[Any]) -> str:
     if len(value) == 1:
         return _format_blob(value[0])
 
-    return "\n".join([f"[{idx+1}] {_format_blob(txt)}" for idx, txt in enumerate(value)])
+    return "\n".join([f"[{idx + 1}] {_format_blob(txt)}" for idx, txt in enumerate(value)])
 
 
 def _format_blob(blob: str) -> str:

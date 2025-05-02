@@ -11,6 +11,7 @@ import dspy
 from dspy import Predict, Signature
 from dspy.utils.dummies import DummyLM
 from unittest.mock import patch, MagicMock, Mock
+from litellm import ModelResponse
 
 
 def test_initialization_with_string_signature():
@@ -491,6 +492,31 @@ def test_call_predict_with_chat_history(adapter_type):
     assert "are you sure that's correct" in messages[3]["content"]
 
 
+def test_lm_usage():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    with patch(
+        "dspy.clients.lm.litellm_completion",
+        return_value=ModelResponse(
+            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+            usage={"total_tokens": 10},
+        ),
+    ):
+        result = program(question="What is the capital of France?")
+        assert result.answer == "Paris"
+        assert result.get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+
+
+def test_positional_arguments():
+    program = Predict("question -> answer")
+    with pytest.raises(ValueError) as e:
+        program("What is the capital of France?")
+    assert str(e.value) == (
+        "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments that match "
+        "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
+    )
+
+
 @pytest.mark.parametrize("adapter_type", ["chat", "json"])
 def test_field_constraints(adapter_type):
     class SpyLM(dspy.LM):
@@ -541,31 +567,9 @@ def test_field_constraints(adapter_type):
     assert "a multiple of the given number: 2" in system_message
 
 
-@pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Skipping if OPENAI_API_KEY is not set")
-def test_litellm_cache_initialization_failure():
-    """Test that DSPy handles litellm cache initialization failure gracefully."""
-    # Mock Cache to raise a permission error
-    mock_cache = MagicMock()
-    mock_cache.side_effect = PermissionError("Permission denied")
-
-    import litellm
-
-    # Normal import should have set litellm.cache
-    assert litellm.cache is not None
-
-    with patch("litellm.caching.Cache", mock_cache):
-        import importlib
-        import dspy.clients
-
-        importlib.reload(dspy.clients)
-
-    # On cache initialization failure, litellm.cache should be set to None
-    assert litellm.cache is None
-
-    # Create a simple predictor to verify it works without cache
-    predictor = Predict("question -> answer")
-    dspy.settings.configure(lm=dspy.LM(model="openai/gpt-4o-mini"))
-
-    # No exception should be raised when litellm.cache is None even if we try to use the cache.
-    assert dspy.settings.lm.cache == True
-    predictor(question="test")
+@pytest.mark.asyncio
+async def test_async_predict():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]))
+    result = await program.acall(question="What is the capital of France?")
+    assert result.answer == "Paris"

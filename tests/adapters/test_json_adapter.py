@@ -42,11 +42,6 @@ def test_json_adapter_passes_structured_output_when_supported_by_model():
     assert response_format is not None
     assert issubclass(response_format, pydantic.BaseModel)
     assert response_format.model_fields.keys() == {"output1", "output2", "output3", "output4_unannotated"}
-    # for field_name in response_format.model_fields:
-    #     assert dict(response_format.model_fields[field_name].__repr_args__()) == clean_schema_extra(
-    #         field_name=field_name,
-    #         field_info=TestSignature.output_fields[field_name],
-    #     )
 
     # Configure DSPy to use a model from a fake provider that doesn't support structured outputs
     dspy.configure(lm=dspy.LM(model="fakeprovider/fakemodel"), adapter=dspy.JSONAdapter())
@@ -93,3 +88,20 @@ def test_json_adapter_with_structured_outputs_does_not_mutate_original_signature
         program(input1="Test input")
 
     assert program.signature.output_fields == TestSignature.output_fields
+
+
+def test_json_adapter_sync_call():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+    lm = dspy.utils.DummyLM([{"answer": "Paris"}])
+    result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+    assert result == [{"answer": "Paris"}]
+
+
+@pytest.mark.asyncio
+async def test_json_adapter_async_call():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+    lm = dspy.utils.DummyLM([{"answer": "Paris"}])
+    result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
+    assert result == [{"answer": "Paris"}]

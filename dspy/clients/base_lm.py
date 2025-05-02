@@ -48,11 +48,9 @@ class BaseLM(ABC):
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
-    @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
-        response = self.forward(prompt=prompt, messages=messages, **kwargs)
-
-        if kwargs.get("logprobs"):
+    def _process_lm_response(self, response, prompt, messages, **kwargs):
+        merged_kwargs = {**self.kwargs, **kwargs}
+        if merged_kwargs.get("logprobs"):
             outputs = [
                 {
                     "text": c.message.content if hasattr(c, "message") else c["text"],
@@ -84,13 +82,33 @@ class BaseLM(ABC):
         }
         self.history.append(entry)
         self.update_global_history(entry)
+        return outputs
 
+    @with_callbacks
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        response = self.forward(prompt=prompt, messages=messages, **kwargs)
+        outputs = self._process_lm_response(response, prompt, messages, **kwargs)
+
+        return outputs
+
+    @with_callbacks
+    async def acall(self, prompt=None, messages=None, **kwargs):
+        response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
+        outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
 
     def forward(self, prompt=None, messages=None, **kwargs):
         """Forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to
+        [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        """Async forward pass for the language model.
+
+        Subclasses that support async should implement this method, and the response should be identical to
         [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
         """
         raise NotImplementedError("Subclasses must implement this method.")
@@ -170,7 +188,7 @@ def _inspect_history(history, n: int = 1):
         print(_green(outputs[0].strip()))
 
         if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs)-1} other completions)"
+            choices_text = f" \t (and {len(outputs) - 1} other completions)"
             print(_red(choices_text, end=""))
 
     print("\n\n\n")
