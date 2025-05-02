@@ -1,5 +1,6 @@
-from typing import Any, Tuple, Type, Union, TYPE_CHECKING
-from dspy.primitives.tool import Tool
+from typing import TYPE_CHECKING, Any, Tuple, Type, Union
+
+from dspy.primitives.tool import Tool, resolve_json_schema_reference
 
 if TYPE_CHECKING:
     import mcp
@@ -25,7 +26,11 @@ def _convert_input_schema_to_tool_args(
 
     required = schema.get("required", [])
 
+    defs = schema.get("$defs", {})
+
     for name, prop in properties.items():
+        if len(defs) > 0:
+            prop = resolve_json_schema_reference({"$defs": defs, **prop})
         args[name] = prop
         # MCP tools are validated through jsonschema using args, so arg_types are not strictly required.
         arg_types[name] = TYPE_MAPPING.get(prop.get("type"), Any)
@@ -37,9 +42,7 @@ def _convert_input_schema_to_tool_args(
 
 
 def _convert_mcp_tool_result(call_tool_result: "mcp.types.CallToolResult") -> Union[str, list[Any]]:
-    from mcp.types import (
-        TextContent,
-    )
+    from mcp.types import TextContent
 
     text_contents: list[TextContent] = []
     non_text_contents = []

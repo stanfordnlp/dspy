@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import Any, Callable, Optional, get_origin, get_type_hints, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Optional, get_origin, get_type_hints
 
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -9,6 +9,7 @@ from dspy.utils.callback import with_callbacks
 
 if TYPE_CHECKING:
     import mcp
+
 
 class Tool:
     """Tool class.
@@ -64,33 +65,6 @@ class Tool:
 
         self._parse_function(func, arg_desc)
 
-    def _resolve_pydantic_schema(self, model: type[BaseModel]) -> dict:
-        """Recursively resolve Pydantic model schema, expanding all references."""
-        schema = model.model_json_schema()
-
-        # If there are no definitions to resolve, return the main schema
-        if "$defs" not in schema and "definitions" not in schema:
-            return schema
-
-        def resolve_refs(obj: Any) -> Any:
-            if not isinstance(obj, (dict, list)):
-                return obj
-
-            if isinstance(obj, dict):
-                if "$ref" in obj:
-                    ref_path = obj["$ref"].split("/")[-1]
-                    return resolve_refs(schema["$defs"][ref_path])
-                return {k: resolve_refs(v) for k, v in obj.items()}
-
-            # Must be a list
-            return [resolve_refs(item) for item in obj]
-
-        # Resolve all references in the main schema
-        resolved_schema = resolve_refs(schema)
-        # Remove the $defs key as it's no longer needed
-        resolved_schema.pop("$defs", None)
-        return resolved_schema
-
     def _parse_function(self, func: Callable, arg_desc: dict[str, str] = None):
         """Helper method that parses a function to extract the name, description, and args.
 
@@ -120,7 +94,7 @@ class Tool:
             origin = get_origin(v) or v
             if isinstance(origin, type) and issubclass(origin, BaseModel):
                 # Get json schema, and replace $ref with the actual schema
-                v_json_schema = self._resolve_pydantic_schema(v)
+                v_json_schema = resolve_json_schema_reference(v.model_json_schema())
                 args[k] = v_json_schema
             else:
                 args[k] = TypeAdapter(v).json_schema()
@@ -172,13 +146,16 @@ class Tool:
             raise ValueError("You are calling `__call__` on an async tool, please use `acall` instead.")
         return result
 
+    @with_callbacks
     async def acall(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
         result = self.func(**parsed_kwargs)
-        if not asyncio.iscoroutine(result):
-            raise ValueError("You are calling `acall` on a non-async tool, please use `__call__` instead.")
-        return await result
-    
+        if asyncio.iscoroutine(result):
+            return await result
+        else:
+            # We should allow calling a sync tool in the async path.
+            return result
+
     @classmethod
     def from_mcp_tool(cls, session: "mcp.client.session.ClientSession", tool: "mcp.types.Tool") -> "Tool":
         """
@@ -192,4 +169,31 @@ class Tool:
             A Tool object.
         """
         from dspy.utils.mcp import convert_mcp_tool
+
         return convert_mcp_tool(session, tool)
+
+
+def resolve_json_schema_reference(schema: dict) -> dict:
+    """Recursively resolve json model schema, expanding all references."""
+
+    # If there are no definitions to resolve, return the main schema
+    if "$defs" not in schema and "definitions" not in schema:
+        return schema
+
+    def resolve_refs(obj: Any) -> Any:
+        if not isinstance(obj, (dict, list)):
+            return obj
+        if isinstance(obj, dict):
+            if "$ref" in obj:
+                ref_path = obj["$ref"].split("/")[-1]
+                return resolve_refs(schema["$defs"][ref_path])
+            return {k: resolve_refs(v) for k, v in obj.items()}
+
+        # Must be a list
+        return [resolve_refs(item) for item in obj]
+
+    # Resolve all references in the main schema
+    resolved_schema = resolve_refs(schema)
+    # Remove the $defs key as it's no longer needed
+    resolved_schema.pop("$defs", None)
+    return resolved_schema

@@ -216,6 +216,6 @@ class ChatAdapter(Adapter):
         assistant_message_content = self.format_assistant_message_content(  # returns a string, without the role
             signature=signature, outputs=outputs
         )
-        assistant_message = dict(role="assistant", content=assistant_message_content)
+        assistant_message = {"role": "assistant", "content": assistant_message_content}
         messages = system_user_messages + [assistant_message]
-        return dict(messages=messages)
+        return {"messages": messages}

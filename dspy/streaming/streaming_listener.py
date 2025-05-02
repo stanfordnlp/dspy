@@ -148,6 +148,7 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: Lis
     predict_id_to_listener = defaultdict(list)
     for listener in stream_listeners:
         if listener.predict:
+            predict_id_to_listener[id(listener.predict)].append(listener)
             continue
         if listener.signature_field_name not in field_name_to_named_predictor:
             raise ValueError(
