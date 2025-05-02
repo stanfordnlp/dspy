@@ -6,8 +6,6 @@ from pydantic import create_model
 
 import dspy
 
-import json
-
 
 def test_json_adapter_passes_structured_output_when_supported_by_model():
     class OutputField3(pydantic.BaseModel):
@@ -110,75 +108,80 @@ async def test_json_adapter_async_call():
 
 
 def test_json_adapter_passes_different_input_and_output_fields():
-    class InputField1SubField3(pydantic.BaseModel):
-        subsubfield1: int = pydantic.Field(description="Int subsubfield 1")
-        subsubfield2: str = pydantic.Field(description="String subsubfield 2")
-    class InputField1(pydantic.BaseModel):
-        subfield1: int = pydantic.Field(description="Int subfield 1", ge=0, le=10)
-        subfield2: str = pydantic.Field(description="Str subfield 2")
-        subfield3: InputField1SubField3 = pydantic.Field(description="Nested field with InputField1SubField3")
-
-    class OutputField1SubField2(pydantic.BaseModel):
-        subsubfield1: bool = pydantic.Field(description="Boolean subsubfield 1")
-        subsubfield2: float = pydantic.Field(description="Float subsubfield 2")
-    class OutputField2(pydantic.BaseModel):
-        subfield1: str = pydantic.Field(description="Str subfield 1")
-        subfield2: OutputField1SubField2 = pydantic.Field(description="Nested field with OutputField1SubField2")
+    from litellm.utils import ModelResponse, Message, Choices
+    class User(pydantic.BaseModel):
+        id: int = pydantic.Field(description="Id of the user who asks the question")
+        name: str = pydantic.Field(description="Name of the user who asks the question")
+        email: str = pydantic.Field(description="Email of the user who asks the question")
     
+    class Answer(pydantic.BaseModel):
+        analysis: str = pydantic.Field(description="Analysis of this question")
+        result: str = pydantic.Field(description="Result of this question")
+
     class TestSignature(dspy.Signature):
-        input1: InputField1 = dspy.InputField(desc="Nested input field")
-        input2: float = dspy.InputField(desc="Float input field")
-        output1: str = dspy.OutputField(desc="String output field")
-        output2: OutputField2 = dspy.OutputField(desc="Nested output field")
-        
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.JSONAdapter())
+        user: User = dspy.InputField(desc="The user who asks the question")
+        question: str = dspy.InputField(desc="Question the user asks")
+        answer: Answer = dspy.OutputField(desc="Answer to this question")
+
     program = dspy.Predict(TestSignature)
 
+    dspy.configure(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter())
+
     with mock.patch("litellm.completion") as mock_completion:
-        program(input1={"subfield1": 5, "subfield2": "Test input1", "subfield3": {"subsubfield1": 100, "subsubfield2": "Test input2"}}, input2=0.1)
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}"
+                    )
+                )
+            ],
+            model="openai/gpt4o"
+        )
+        result = program(user={'id': 5, 'name': 'name_test', 'email': 'email_test'}, question="What is the capital of France?")
+       
+       # Check that litellm.completion was called exactly once
+        mock_completion.assert_called_once()
 
-    mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
+        _, call_kwargs = mock_completion.call_args
+        # Assert that there are exactly 2 messages (system + user)
+        assert len(call_kwargs["messages"]) == 2
 
-    request_data = call_kwargs.get("messages")[1]
+        assert call_kwargs["messages"][0]["role"] == "system"
+        content = call_kwargs["messages"][0]["content"]
+        assert content is not None
+        
+        # Assert that system prompt includes correct input field descriptions
+        expected_input_fields = '1. `user` (User): The user who asks the question\n2. `question` (str): Question the user asks\n'
+        assert expected_input_fields in content
 
-    assert request_data is not None
+        # Assert that system prompt includes correct output field description
+        expected_output_fields = '1. `answer` (Answer): Answer to this question\n'
+        assert expected_output_fields in content
 
-    input_message_content = request_data.get('content')
-    assert input_message_content is not None
+        # Assert that system prompt includes input formatting structure
+        expected_input_structure = '[[ ## user ## ]]\n{user}\n\n[[ ## question ## ]]\n{question}\n\n'
+        assert expected_input_structure in content
+        
+        # Assert that system prompt includes output formatting structure
+        expected_output_structure = '[[ ## answer ## ]]\n{answer}'
+        assert expected_output_structure in content
 
-    input1_json_start = input_message_content.find('[[ ## input1 ## ]]')
-    input1_json_end = input_message_content.find('[[ ## input2 ## ]]')
+        # Assert that system prompt includes full JSON schema for the Answer class
+        expected_answer_structure = '{"analysis": {"type": "string", "description": "Analysis of this question", "title": "Analysis"}, "result": {"type": "string", "description": "Result of this question", "title": "Result"}}, "required": ["analysis", "result"], "title": "Answer"}\n'
+        assert expected_answer_structure in content
 
-    assert input1_json_start != -1, "'[[ ## input1 ## ]]' not found in content"
-    assert input1_json_end != -1, "'[[ ## input2 ## ]]' not found in content"
+        assert call_kwargs["messages"][1]["role"] == "user"
+        content = call_kwargs["messages"][1]["content"]
+        assert content is not None
 
-    input1_json_str = input_message_content[input1_json_start + len('[[ ## input1 ## ]]'):input1_json_end].strip()
-    input1_data = json.loads(input1_json_str)
-
-    assert 'subfield1' in input1_data
-    assert 'subfield2' in input1_data
-    assert 'subfield3' in input1_data
-    assert 'subsubfield1' in input1_data['subfield3']
-    assert 'subsubfield2' in input1_data['subfield3']
-
-    response_format = call_kwargs.get("response_format")
-    assert response_format is not None
-
-    assert "output1" in response_format.model_fields
-    
-    # Check that the output field "output2" is also in the response format
-    assert "output2" in response_format.model_fields
-
-    output2_field = response_format.model_fields["output2"]
-    assert output2_field.annotation.__name__ == "OutputField2"
-    assert "subfield1" in output2_field.annotation.__annotations__
-    assert "subfield2" in output2_field.annotation.__annotations__
-
-    subfield2 = output2_field.annotation.__annotations__["subfield2"]
-    assert "subsubfield1" in subfield2.__annotations__
-    assert "subsubfield2" in subfield2.__annotations__
-    
+        # Assert that the user input data is formatted correctly
+        expected_input_data = '[[ ## user ## ]]\n{"id": 5, "name": "name_test", "email": "email_test"}\n\n[[ ## question ## ]]\nWhat is the capital of France?\n\n'
+        assert expected_input_data in content
+        
+        # Assert that the model's returned answer has expected values
+        assert result.answer.analysis == "Paris is the captial of France"
+        assert result.answer.result == "Paris"
 
 
 def test_json_adapter_sends_signature_info_correctly():
