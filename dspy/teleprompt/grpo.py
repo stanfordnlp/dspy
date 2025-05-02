@@ -308,6 +308,10 @@ class GRPO(FinetuneTeleprompter):
                     
                     train_batch_per_predictor[pred_id].extend(example_training_data)
             
+            if len(sum(train_batch_per_predictor, [])) == 0:
+                logger.warning("No training data found for this training step. This means that the model did not generate valid formatted responses for any of the examples in the training set. This is a critical error. Please check the model and the training set.")
+                continue
+
             for predictor_train_batch in train_batch_per_predictor:
                 for grpo_train_group in predictor_train_batch:
                     if len(grpo_train_group) != num_generations:
