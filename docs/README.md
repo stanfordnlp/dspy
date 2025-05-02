@@ -31,12 +31,17 @@ To build and test the documentation locally:
 
 3. In docs/ directory, run the command below to generate the API docs and index them:
    ```bash
-   cd docs/
    python scripts/generate_api_docs.py
    python scripts/generate_api_summary.py
    ```
 
-4. Run the build command:
+4. (Optional) On MacOS you may also need to install libraries for building the site
+   ```bash
+   brew install cairo freetype libffi libjpeg libpng zlib
+   export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
+   ```
+
+5. Run the build command:
    ```bash
    mkdocs build
    ```
@@ -63,12 +68,7 @@ If the CI build check fails, please review your changes and ensure the documenta
 
 This guide is for contributors looking to make changes to the documentation in the `dspy/docs` folder. 
 
-1. **Pull the up-to-date version of the website**: Please pull the latest version of the live documentation site via its subtree repository with the following command:
-
-```bash
-#Ensure you are in the top-level dspy/ folder
-git subtree pull --prefix=docs https://github.com/krypticmouse/dspy-docs master
-```
+1. **Pull the up-to-date version of the website**: Please pull the latest version of the live documentation site via cloning the dspy repo.  The current docs are in the `dspy/docs` folder.
 
 2. **Push your new changes on a new branch**: Feel free to add or edit existing documentation and open a PR for your changes. Once your PR is reviewed and approved, the changes will be ready to merge into main. 
 
