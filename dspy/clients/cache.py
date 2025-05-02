@@ -83,7 +83,7 @@ class Cache:
                 try:
                     # For regular functions, we can get the source code
                     return f"<callable_source:{inspect.getsource(value)}>"
-                except (TypeError, OSError, IOError):
+                except (TypeError, OSError):
                     # For lambda functions or other callables where source isn't available,
                     # use a string representation
                     return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
@@ -170,7 +170,7 @@ class Cache:
 
 def request_cache(
     cache_arg_name: Optional[str] = None,
-    ignored_args_for_cache_key: Optional[list[str]] = ["api_key", "api_base", "base_url"],
+    ignored_args_for_cache_key: Optional[list[str]] = None,
     enable_memory_cache: bool = True,
     *,  # everything after this is keyword-only
     maxsize: Optional[int] = None,  # legacy / no-op
@@ -185,7 +185,7 @@ def request_cache(
         enable_memory_cache: Whether to enable in-memory cache at call time. If False, the memory cache will not be
             written to on new data.
     """
-
+    ignored_args_for_cache_key = ignored_args_for_cache_key or ["api_key", "api_base", "base_url"]
     # Deprecation notice
     if maxsize is not None:
         logger.warning(
