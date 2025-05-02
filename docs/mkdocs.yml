@@ -40,7 +40,7 @@ nav:
             - Classification Finetuning: tutorials/classification_finetuning/index.ipynb
             - Advanced Tool Use: tutorials/tool_use/index.ipynb
             - Finetuning Agents: tutorials/games/index.ipynb
-        - DSPy Core Development:
+        - Tools, Development, and Deployment:
             - Overview: tutorials/core_development/index.md
             - Use MCP in DSPy: tutorials/mcp/index.md
             - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
