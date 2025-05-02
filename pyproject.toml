@@ -134,6 +134,10 @@ ignore = [
     "FBT003",# Allow boolean positional values in function calls
     "C901",  # Ignore complexity checking
     "E501",  # Ignore line length errors (handled by formatter)
+    "UP006", # Allow python typing modules
+    "UP035", # Allow python typing modules
+    "RUF005", # Allow using + operator to concatenate collections
+    "B904", # Allow raise custom exceptions in except blocks
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
