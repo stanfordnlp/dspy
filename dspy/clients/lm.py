@@ -232,7 +232,6 @@ class LM(BaseLM):
 
 def _get_stream_completion_fn(
     request: Dict[str, Any],
-    retry_kwargs: Dict[str, Any],
     cache_kwargs: Dict[str, Any],
     sync=True,
 ):
@@ -246,11 +245,10 @@ def _get_stream_completion_fn(
     stream = cast(MemoryObjectSendStream, stream)
     caller_predict_id = id(caller_predict) if caller_predict else None
 
-    async def stream_completion(request: Dict[str, Any], retry_kwargs: Dict[str, Any], cache_kwargs: Dict[str, Any]):
+    async def stream_completion(request: Dict[str, Any], cache_kwargs: Dict[str, Any]):
         response = await litellm.acompletion(
             cache=cache_kwargs,
             stream=True,
-            **retry_kwargs,
             **request,
         )
         chunks = []
@@ -264,10 +262,10 @@ def _get_stream_completion_fn(
 
     def sync_stream_completion():
         syncified_stream_completion = syncify(stream_completion)
-        return syncified_stream_completion(request, retry_kwargs, cache_kwargs)
+        return syncified_stream_completion(request, cache_kwargs)
 
     async def async_stream_completion():
-        return await stream_completion(request, retry_kwargs, cache_kwargs)
+        return await stream_completion(request, cache_kwargs)
 
     if sync:
         return sync_stream_completion
@@ -276,7 +274,7 @@ def _get_stream_completion_fn(
 
 
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    stream_completion = _get_stream_completion_fn(request, retry_kwargs, cache, sync=True)
+    stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
             cache=cache,
@@ -312,7 +310,7 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
 
 
 async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    stream_completion = _get_stream_completion_fn(request, retry_kwargs, cache, sync=False)
+    stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
             cache=cache,
