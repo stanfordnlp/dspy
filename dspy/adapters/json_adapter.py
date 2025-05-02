@@ -17,7 +17,6 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.lm import LM
-from dspy.dsp.utils.settings import settings
 from dspy.signatures.signature import Signature, SignatureMeta
 
 logger = logging.getLogger(__name__)
@@ -47,10 +46,6 @@ class JSONAdapter(ChatAdapter):
     ) -> list[dict[str, Any]]:
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
-
-        stream_listeners = settings.stream_listeners or []
-        if len(stream_listeners) > 0:
-            raise ValueError("Stream listener is not yet supported for JsonAdapter, please use ChatAdapter instead.")
 
         # If response_format is not supported, use basic call
         if not params or "response_format" not in params:
