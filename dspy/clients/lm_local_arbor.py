@@ -53,6 +53,8 @@ class ArborReinforceJob(ReinforceJob):
         "gradient_checkpointing": True,
         "bf16": True,
         "lr_scheduler_type": "constant_with_warmup",
+        "max_prompt_length": 3000,
+        "max_completion_length": 1000,
     }
 
     def __init__(self, lm: "LM", train_kwargs: Dict[str, Any]):
@@ -78,6 +80,8 @@ class ArborReinforceJob(ReinforceJob):
         gradient_checkpointing = self.train_kwargs.get("gradient_checkpointing", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing"])
         bf16 = self.train_kwargs.get("bf16", self.DEFAULT_TRAIN_KWARGS["bf16"])
         lr_scheduler_type = self.train_kwargs.get("lr_scheduler_type", self.DEFAULT_TRAIN_KWARGS["lr_scheduler_type"])
+        max_prompt_length = self.train_kwargs.get("max_prompt_length", self.DEFAULT_TRAIN_KWARGS["max_prompt_length"])
+        max_completion_length = self.train_kwargs.get("max_completion_length", self.DEFAULT_TRAIN_KWARGS["max_completion_length"])
 
         api_base = self.lm.kwargs["api_base"]
         # api_key = self.lm.kwargs["api_key"]
@@ -97,6 +101,8 @@ class ArborReinforceJob(ReinforceJob):
             'gradient_checkpointing': gradient_checkpointing,
             'bf16': bf16,
             'lr_scheduler_type': lr_scheduler_type,
+            'max_prompt_length': max_prompt_length,
+            'max_completion_length': max_completion_length,
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}

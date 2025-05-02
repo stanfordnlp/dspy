@@ -50,6 +50,8 @@ train_kwargs = {
     "gradient_checkpointing": True,
     "bf16": True,
     "lr_scheduler_type": "constant_with_warmup",
+    "max_prompt_length": 3000,
+    "max_completion_length": 1000,
 }
 
 compiler = GRPO(
