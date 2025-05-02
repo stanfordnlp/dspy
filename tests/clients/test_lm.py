@@ -169,6 +169,25 @@ def test_retry_number_set_correctly():
     assert mock_completion.call_args.kwargs["num_retries"] == 3
 
 
+def test_retry_made_on_system_errors():
+    retry_tracking = [0]  # Using a list to track retries
+
+    def mock_create(*args, **kwargs):
+        retry_tracking[0] += 1
+        # These fields are called during the error handling
+        mock_response = mock.Mock()
+        mock_response.headers = {}
+        mock_response.status_code = 429
+        raise RateLimitError(response=mock_response, message="message", body="error")
+
+    lm = dspy.LM(model="openai/gpt-4o-mini", max_tokens=250, num_retries=3)
+    with mock.patch.object(litellm.OpenAIChatCompletion, "completion", side_effect=mock_create):
+        with pytest.raises(RateLimitError):
+            lm("question")
+
+    assert retry_tracking[0] == 4
+
+
 def test_reasoning_model_token_parameter():
     test_cases = [
         ("openai/o1", True),

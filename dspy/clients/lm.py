@@ -279,6 +279,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
         return litellm.completion(
             cache=cache,
             num_retries=num_retries,
+            retry_strategy="exponential_backoff_retry",
             **request,
         )
 
@@ -305,6 +306,7 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
         **request,
     )
 
@@ -315,6 +317,7 @@ async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={
         return await litellm.acompletion(
             cache=cache,
             num_retries=num_retries,
+            retry_strategy="exponential_backoff_retry",
             **request,
         )
 
@@ -341,5 +344,6 @@ async def alitellm_text_completion(
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
         **request,
     )
