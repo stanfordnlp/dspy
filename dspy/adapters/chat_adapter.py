@@ -170,7 +170,7 @@ class ChatAdapter(Adapter):
                 except Exception as e:
                     raise ValueError(
                         f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```"
-                    ) from e
+                    )
         if fields.keys() != signature.output_fields.keys():
             raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
 
