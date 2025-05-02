@@ -210,7 +210,13 @@ plugins:
             "intro/index.md": "index.md"
             "intro.md": "index.md"
             
-            "deep-dive/optimizers/miprov2": "api/optimizers/MIPROv2"
+            "deep-dive/optimizers/bootstrap-fewshot.md": "api/optimizers/BootstrapFewShot.md"
+            "deep-dive/optimizers/bfrs.md": "api/optimizers/BootstrapFewShotWithRandomSearch.md"
+            "deep-dive/optimizers/BootstrapFinetune.md": "api/optimizers/BootstrapFinetune.md"
+            "deep-dive/optimizers/copro.md": "api/optimizers/COPRO.md"
+            "deep-dive/optimizers/Ensemble.md": "api/optimizers/Ensemble.md"
+            "deep-dive/optimizers/LabeledFewShot.md": "api/optimizers/LabeledFewShot.md"
+            "deep-dive/optimizers/miprov2.md": "api/optimizers/MIPROv2.md"
 
             "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
