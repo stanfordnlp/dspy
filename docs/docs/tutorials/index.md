@@ -28,7 +28,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Advanced Tool Use](/tutorials/tool_use/)
     - [Finetuning Agents](/tutorials/games/)
 
-- DSPy Core Development
+- Tools, Development, and Deployment
     - [Use MCP in DSPy](/tutorials/mcp/index.md)
     - [Output Refinement](/tutorials/output_refinement/best-of-n-and-refine/)
     - [Saving and Loading](/tutorials/saving/index.md)
