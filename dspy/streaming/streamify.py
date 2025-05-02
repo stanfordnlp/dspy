@@ -1,6 +1,10 @@
+import asyncio
+import contextvars
 import logging
+import threading
 from asyncio import iscoroutinefunction
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, List, Optional
+from queue import Queue
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator, List, Optional
 
 import litellm
 import ujson
@@ -198,6 +202,39 @@ def streamify(
                     return
 
     return streamer
+
+
+def apply_sync_streaming(async_gen: AsyncGenerator) -> Generator:
+    """Convert an AsyncGenerator to a synchronous Generator."""
+    queue = Queue()  # Queue to hold items from the async generator
+    stop_sentinel = object()  # Sentinel to signal the generator is complete
+
+    # To propagate prediction request ID context to the child thread
+    context = contextvars.copy_context()
+
+    def producer():
+        """Runs in a background thread to fetch items asynchronously."""
+
+        async def runner():
+            try:
+                async for item in async_gen:
+                    queue.put(item)
+            finally:
+                # Signal completion
+                queue.put(stop_sentinel)
+
+        context.run(asyncio.run, runner())
+
+    # Start the producer in a background thread
+    thread = threading.Thread(target=producer, daemon=True)
+    thread.start()
+
+    # Consume items from the queue
+    while True:
+        item = queue.get()  # Block until an item is available
+        if item is stop_sentinel:
+            break
+        yield item
 
 
 async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
