@@ -4,7 +4,7 @@ import json
 import asyncio
 import concurrent.futures
 from pydantic import BaseModel, Field
-from typing import List, Tuple, Any, Optional, Callable, Dict, Union
+from typing import List, Tuple, Any, Optional, Callable
 import time
 
 # Define Pydantic model for state evaluation output
@@ -749,7 +749,7 @@ class TreeVisualizer:
             # Print current node
             if node.depth == 0:
                 # Special handling for root node
-                print(f"● Root")
+                print("● Root")
                 next_prefix = ""
             else:
                 # Non-root node with connection lines
