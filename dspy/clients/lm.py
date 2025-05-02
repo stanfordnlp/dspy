@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Literal, Optional, cast
 import litellm
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
-from litellm import RetryPolicy
 
 import dspy
 from dspy.clients.cache import request_cache
@@ -277,20 +276,11 @@ def _get_stream_completion_fn(
 
 
 def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    retry_kwargs = dict(
-        retry_policy=_get_litellm_retry_policy(num_retries),
-        retry_strategy="exponential_backoff_retry",
-        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
-        # to completion()), the default value of max_retries is non-zero for certain providers, and
-        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
-        max_retries=0,
-    )
-
     stream_completion = _get_stream_completion_fn(request, retry_kwargs, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
             cache=cache,
-            **retry_kwargs,
+            num_retries=num_retries,
             **request,
         )
 
@@ -316,30 +306,17 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
-        retry_policy=_get_litellm_retry_policy(num_retries),
-        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
-        # to completion()), the default value of max_retries is non-zero for certain providers, and
-        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
-        max_retries=0,
+        num_retries=num_retries,
         **request,
     )
 
 
 async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
-    retry_kwargs = dict(
-        retry_policy=_get_litellm_retry_policy(num_retries),
-        retry_strategy="exponential_backoff_retry",
-        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
-        # to completion()), the default value of max_retries is non-zero for certain providers, and
-        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
-        max_retries=0,
-    )
-
     stream_completion = _get_stream_completion_fn(request, retry_kwargs, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
             cache=cache,
-            **retry_kwargs,
+            num_retries=num_retries,
             **request,
         )
 
@@ -365,32 +342,6 @@ async def alitellm_text_completion(
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
-        retry_policy=_get_litellm_retry_policy(num_retries),
-        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
-        # to completion()), the default value of max_retries is non-zero for certain providers, and
-        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
-        max_retries=0,
+        num_retries=num_retries,
         **request,
-    )
-
-
-def _get_litellm_retry_policy(num_retries: int) -> RetryPolicy:
-    """
-    Get a LiteLLM retry policy for retrying requests when transient API errors occur.
-    Args:
-        num_retries: The number of times to retry a request if it fails transiently due to
-                     network error, rate limiting, etc. Requests are retried with exponential
-                     backoff.
-    Returns:
-        A LiteLLM RetryPolicy instance.
-    """
-    return RetryPolicy(
-        TimeoutErrorRetries=num_retries,
-        RateLimitErrorRetries=num_retries,
-        InternalServerErrorRetries=num_retries,
-        ContentPolicyViolationErrorRetries=num_retries,
-        # We don't retry on errors that are unlikely to be transient
-        # (e.g. bad request, invalid auth credentials)
-        BadRequestErrorRetries=0,
-        AuthenticationErrorRetries=0,
     )
