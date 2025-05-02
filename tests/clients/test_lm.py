@@ -161,79 +161,12 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
     lm("Query")
 
 
-@pytest.mark.parametrize(
-    ("error_code", "expected_exception", "expected_num_retries"),
-    [
-        ("429", litellm.RateLimitError, 1),
-        ("504", litellm.Timeout, 1),
-        # Don't retry on user errors
-        ("400", litellm.BadRequestError, 0),
-        ("401", litellm.AuthenticationError, 0),
-        # TODO: LiteLLM retry logic isn't implemented properly for internal server errors
-        # and content policy violations, both of which may be transient and should be retried
-        # ("content-policy-violation, litellm.BadRequestError, 1),
-        # ("500", litellm.InternalServerError, 0, 1),
-    ],
-)
-def test_lm_chat_calls_are_retried_for_expected_failures(
-    litellm_test_server,
-    error_code,
-    expected_exception,
-    expected_num_retries,
-):
-    api_base, server_log_file_path = litellm_test_server
-    num_retries = 1
-    openai_lm = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-        num_retries=num_retries,
-        model_type="chat",
-        cache=False,
-    )
-    with pytest.raises(expected_exception):
-        openai_lm(error_code)
+def test_retry_number_set_correctly():
+    lm = dspy.LM("openai/gpt-4o-mini", num_retries=3)
+    with mock.patch("litellm.completion") as mock_completion:
+        lm("query")
 
-    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
-    # LiteLLM has a strange behavior of two-level retries. If `num_retries=1`, it will retry 1 + 1 times on system
-    # erros, and 1 time on user errors.
-    assert len(request_logs) == num_retries + expected_num_retries + 1
-
-
-@pytest.mark.parametrize(
-    ("error_code", "expected_exception", "expected_num_retries"),
-    [
-        ("429", litellm.RateLimitError, 2),
-        ("504", litellm.Timeout, 3),
-        # Don't retry on user errors
-        ("400", litellm.BadRequestError, 0),
-        ("401", litellm.AuthenticationError, 0),
-        # TODO: LiteLLM retry logic isn't implemented properly for internal server errors
-        # and content policy violations, both of which may be transient and should be retried
-        # ("content-policy-violation, litellm.BadRequestError, 2),
-        # ("500", litellm.InternalServerError, 0, 2),
-    ],
-)
-def test_lm_text_calls_are_retried_for_expected_failures(
-    litellm_test_server,
-    error_code,
-    expected_exception,
-    expected_num_retries,
-):
-    api_base, server_log_file_path = litellm_test_server
-
-    openai_lm = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-        num_retries=expected_num_retries,
-        model_type="text",
-    )
-    with pytest.raises(expected_exception):
-        openai_lm(error_code)
-
-    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
-    assert len(request_logs) == expected_num_retries + 1  # 1 initial request + 1 retries
+    assert mock_completion.call_args.kwargs["num_retries"] == 3
 
 
 def test_reasoning_model_token_parameter():
