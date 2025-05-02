@@ -131,6 +131,7 @@ class JSONAdapter(ChatAdapter):
             raise ValueError(f"Expected a JSON object but parsed a {type(fields)}")
 
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
+        
         # Attempt to cast each value to type signature.output_fields[k].annotation.
         for k, v in fields.items():
             if k in signature.output_fields:
