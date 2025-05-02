@@ -212,7 +212,7 @@ class Adapter:
         self,
         signature: Type[Signature],
         outputs: dict[str, Any],
-        missing_field_message: str = None,
+        missing_field_message: Optional[str] = None,
     ) -> str:
         """Format the assistant message content.
 
