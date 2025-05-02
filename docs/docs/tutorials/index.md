@@ -13,26 +13,26 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
 
 
 - Build AI Programs with DSPy
-  - [Retrieval-Augmented Generation (RAG)](/tutorials/rag/)
-  - [Building RAG as Agent](/tutorials/agents/)
-  - [Entity Extraction](/tutorials/entity_extraction/)
-  - [Classification](/tutorials/classification/)
-  - [Multi-Hop RAG](/tutorials/multihop_search/)
-  - [Privacy-Conscious Delegation](/tutorials/papillon/)
-  - [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
+    - [Retrieval-Augmented Generation (RAG)](/tutorials/rag/)
+    - [Building RAG as Agent](/tutorials/agents/)
+    - [Entity Extraction](/tutorials/entity_extraction/)
+    - [Classification](/tutorials/classification/)
+    - [Multi-Hop RAG](/tutorials/multihop_search/)
+    - [Privacy-Conscious Delegation](/tutorials/papillon/)
+    - [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
 
 
 - Optimize AI Programs with DSPy
-  - [Math Reasoning](/tutorials/math/)
-  - [Classification Finetuning](/tutorials/classification_finetuning/)
-  - [Advanced Tool Use](/tutorials/tool_use/)
-  - [Finetuning Agents](/tutorials/games/)
+    - [Math Reasoning](/tutorials/math/)
+    - [Classification Finetuning](/tutorials/classification_finetuning/)
+    - [Advanced Tool Use](/tutorials/tool_use/)
+    - [Finetuning Agents](/tutorials/games/)
 
 - DSPy Core Development
-  - [Use MCP in DSPy](/tutorials/mcp/index.md)
-  - [Output Refinement](/tutorials/output_refinement/best-of-n-and-refine/)
-  - [Saving and Loading](/tutorials/saving/index.md)
-  - [Deployment](/tutorials/deployment/)
-  - [Debugging & Observability](/tutorials/observability/)
+    - [Use MCP in DSPy](/tutorials/mcp/index.md)
+    - [Output Refinement](/tutorials/output_refinement/best-of-n-and-refine/)
+    - [Saving and Loading](/tutorials/saving/index.md)
+    - [Deployment](/tutorials/deployment/)
+    - [Debugging & Observability](/tutorials/observability/)
 
 
