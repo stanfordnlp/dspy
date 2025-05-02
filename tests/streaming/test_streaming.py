@@ -227,6 +227,7 @@ async def test_stream_listener_json_adapter():
     assert all_chunks[-1].signature_field_name == "judgement"
 
 
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
 def test_sync_streaming():
     class MyProgram(dspy.Module):
         def __init__(self):
