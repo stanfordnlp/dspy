@@ -76,18 +76,19 @@ class JSONAdapter(ChatAdapter):
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]):
+        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo], role: str):
             return self.format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
                     for field_name, field_info in fields.items()
                 },
+                role=role,
             )
 
         parts.append("Inputs will have the following structure:")
-        parts.append(format_signature_fields_for_instructions(signature.input_fields))
+        parts.append(format_signature_fields_for_instructions(signature.input_fields, role="user"))
         parts.append("Outputs will be a JSON object with the following fields.")
-        parts.append(format_signature_fields_for_instructions(signature.output_fields))
+        parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
         return "\n\n".join(parts).strip()
 
     def user_message_output_requirements(self, signature: Type[Signature]) -> str:
