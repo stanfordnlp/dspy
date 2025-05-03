@@ -189,7 +189,7 @@ def test_json_adapter_on_pydantic_model():
         )
         assert expected_input_data in user_message_content
 
-        # Assert that the adapter oupput has expected fields and values
+        # Assert that the adapter output has expected fields and values
         assert result.answer.analysis == "Paris is the captial of France"
         assert result.answer.result == "Paris"
 
