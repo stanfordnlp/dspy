@@ -55,6 +55,8 @@ class MIPROv2(Teleprompter):
         max_labeled_demos: int = 4,
         auto: Optional[Literal["light", "medium", "heavy"]] = "medium",
         num_candidates: int = 10,
+        num_fewshot_candidates: Optional[int] = None,
+        num_instruct_candidates: Optional[int] = None,
         num_threads: Optional[int] = None,
         max_errors: int = 10,
         seed: int = 9,
@@ -70,7 +72,8 @@ class MIPROv2(Teleprompter):
             raise ValueError(f"Invalid value for auto: {auto}. Must be one of {allowed_modes}.")
         self.auto = auto
 
-        self.num_candidates = num_candidates
+        self.num_fewshot_candidates = num_fewshot_candidates or num_candidates
+        self.num_instruct_candidates = num_instruct_candidates or num_candidates
         self.metric = metric
         self.init_temperature = init_temperature
         self.task_model = task_model if task_model else dspy.settings.lm
@@ -217,13 +220,17 @@ class MIPROv2(Teleprompter):
         valset = create_minibatch(valset, batch_size=auto_settings["val_size"], rng=self.rng)
         minibatch = len(valset) > MIN_MINIBATCH_SIZE
         
-        self.num_candidates = auto_settings["n"]
+        # Set num instruct candidates to 1/2 of N if optimizing with few-shot examples, otherwise set to N
+        # This is because we've found that it's generally better to spend optimization budget on few-shot examples
+        # When they are allowed.
+        self.num_instruct_candidates = auto_settings["n"] if zeroshot_opt else int(auto_settings["n"] * 0.5)
+        self.num_fewshot_candidates = auto_settings["n"] 
 
         num_vars = len(program.predictors())
         if not zeroshot_opt:
             num_vars *= 2  # Account for few-shot examples + instruction variables
         # Trials = MAX(c*M*log(N), c=2, 3/2*N)
-        num_trials = max(2 * num_vars * np.log(self.num_candidates), 1.5 * self.num_candidates)
+        num_trials = max(2 * num_vars * np.log(auto_settings["n"]), 1.5 * auto_settings["n"])
 
         return num_trials, valset, minibatch
 
@@ -249,7 +256,8 @@ class MIPROv2(Teleprompter):
             f"\nRUNNING WITH THE FOLLOWING {self.auto.upper()} AUTO RUN SETTINGS:"
             f"\nnum_trials: {num_trials}"
             f"\nminibatch: {minibatch}"
-            f"\nnum_candidates: {self.num_candidates}"
+            f"\nnum_fewshot_candidates: {self.num_fewshot_candidates}"
+            f"\nnum_instruct_candidates: {self.num_instruct_candidates}"
             f"\nvalset size: {len(valset)}\n"
         )
 
@@ -268,12 +276,12 @@ class MIPROv2(Teleprompter):
         # Estimate prompt model calls
         estimated_prompt_model_calls = (
             10  # Data summarizer calls
-            + self.num_candidates * num_predictors  # Candidate generation
+            + self.num_instruct_candidates * num_predictors  # Candidate generation
             + (num_predictors + 1 if program_aware_proposer else 0)  # Program-aware proposer
         )
         prompt_model_line = (
             f"{YELLOW}- Prompt Generation: {BLUE}{BOLD}10{ENDC}{YELLOW} data summarizer calls + "
-            f"{BLUE}{BOLD}{self.num_candidates}{ENDC}{YELLOW} * "
+            f"{BLUE}{BOLD}{self.num_instruct_candidates}{ENDC}{YELLOW} * "
             f"{BLUE}{BOLD}{num_predictors}{ENDC}{YELLOW} lm calls in program "
             f"+ ({BLUE}{BOLD}{num_predictors + 1}{ENDC}{YELLOW}) lm calls in program-aware proposer "
             f"= {BLUE}{BOLD}{estimated_prompt_model_calls}{ENDC}{YELLOW} prompt model calls{ENDC}"
@@ -366,14 +374,14 @@ class MIPROv2(Teleprompter):
         else:
             logger.info("These will be used for informing instruction proposal.\n")
 
-        logger.info(f"Bootstrapping N={self.num_candidates} sets of demonstrations...")
+        logger.info(f"Bootstrapping N={self.num_fewshot_candidates} sets of demonstrations...")
 
         zeroshot = self.max_bootstrapped_demos == 0 and self.max_labeled_demos == 0
 
         try:
             demo_candidates = create_n_fewshot_demo_sets(
                 student=program,
-                num_candidate_sets=self.num_candidates,
+                num_candidate_sets=self.num_fewshot_candidates,
                 trainset=trainset,
                 max_labeled_demos=(LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_labeled_demos),
                 max_bootstrapped_demos=(
@@ -427,12 +435,12 @@ class MIPROv2(Teleprompter):
             rng=self.rng,
         )
 
-        logger.info("\nProposing instructions...\n")
+        logger.info(f"\nProposing N={self.num_instruct_candidates} instructions...\n")
         instruction_candidates = proposer.propose_instructions_for_program(
             trainset=trainset,
             program=program,
             demo_candidates=demo_candidates,
-            N=self.num_candidates,
+            N=self.num_instruct_candidates,
             T=self.init_temperature,
             trial_logs={},
         )
@@ -468,7 +476,7 @@ class MIPROv2(Teleprompter):
 
         # Compute the adjusted total trials that we will run (including full evals)
         run_additional_full_eval_at_end = 1 if num_trials % minibatch_full_eval_steps != 0 else 0
-        adjusted_num_trials = (num_trials + num_trials // minibatch_full_eval_steps + 1 + run_additional_full_eval_at_end) if minibatch else num_trials
+        adjusted_num_trials = int((num_trials + num_trials // minibatch_full_eval_steps + 1 + run_additional_full_eval_at_end) if minibatch else num_trials)
         logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
 
         default_score, _ = eval_candidate_program(
