@@ -10,7 +10,6 @@ import time
 import numpy as np
 import optuna
 from optuna.distributions import CategoricalDistribution
-import math
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.propose import GroundedProposer
