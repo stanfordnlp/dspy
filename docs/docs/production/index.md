@@ -8,7 +8,7 @@
 
     DSPy is deployed in production by many enterprises and startups. Explore real-world case studies.
 
-    [:octicons-arrow-right-24: Use Cases](../dspy-usecases.md)
+    [:octicons-arrow-right-24: Use Cases](../community/use-cases)
 
 - :material-magnify-expand:{ .lg .middle } __Monitoring & Observability__
 

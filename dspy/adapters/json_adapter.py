@@ -1,11 +1,11 @@
 import json
-import regex
 import logging
 from typing import Any, Dict, Type, get_origin
 
 import json_repair
 import litellm
 import pydantic
+import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
@@ -17,7 +17,6 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.lm import LM
-from dspy.dsp.utils.settings import settings
 from dspy.signatures.signature import Signature, SignatureMeta
 
 logger = logging.getLogger(__name__)
@@ -29,7 +28,7 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     such as dict[str, Any]. Structured Outputs require explicit properties, so such fields
     are incompatible.
     """
-    for name, field in signature.output_fields.items():
+    for field in signature.output_fields.values():
         annotation = field.annotation
         if get_origin(annotation) is dict:
             return True
@@ -47,10 +46,6 @@ class JSONAdapter(ChatAdapter):
     ) -> list[dict[str, Any]]:
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
-
-        stream_listeners = settings.stream_listeners or []
-        if len(stream_listeners) > 0:
-            raise ValueError("Stream listener is not yet supported for JsonAdapter, please use ChatAdapter instead.")
 
         # If response_format is not supported, use basic call
         if not params or "response_format" not in params:
@@ -81,18 +76,19 @@ class JSONAdapter(ChatAdapter):
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]):
+        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo], role: str):
             return self.format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
                     for field_name, field_info in fields.items()
                 },
+                role=role,
             )
 
         parts.append("Inputs will have the following structure:")
-        parts.append(format_signature_fields_for_instructions(signature.input_fields))
+        parts.append(format_signature_fields_for_instructions(signature.input_fields, role="user"))
         parts.append("Outputs will be a JSON object with the following fields.")
-        parts.append(format_signature_fields_for_instructions(signature.output_fields))
+        parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
         return "\n\n".join(parts).strip()
 
     def user_message_output_requirements(self, signature: Type[Signature]) -> str:
@@ -121,11 +117,15 @@ class JSONAdapter(ChatAdapter):
         return self.format_field_with_value(fields_with_values, role="assistant")
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
-        pattern = r'\{(?:[^{}]|(?R))*\}'
-        match = regex.search(pattern, completion, regex.DOTALL)  
-        if match:  
+        pattern = r"\{(?:[^{}]|(?R))*\}"
+        match = regex.search(pattern, completion, regex.DOTALL)
+        if match:
             completion = match.group(0)
         fields = json_repair.loads(completion)
+
+        if not isinstance(fields, dict):
+            raise ValueError(f"Expected a JSON object but parsed a {type(fields)}")
+
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
         # Attempt to cast each value to type signature.output_fields[k].annotation.
@@ -192,10 +192,14 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
         fields[name] = (annotation, default)
 
     # Build the model with extra fields forbidden.
-    Model = pydantic.create_model("DSPyProgramOutputs", **fields, __config__=type("Config", (), {"extra": "forbid"}))
+    pydantic_model = pydantic.create_model(
+        "DSPyProgramOutputs",
+        **fields,
+        __config__=type("Config", (), {"extra": "forbid"}),
+    )
 
     # Generate the initial schema.
-    schema = Model.model_json_schema()
+    schema = pydantic_model.model_json_schema()
 
     # Remove any DSPy-specific metadata.
     for prop in schema.get("properties", {}).values():
@@ -204,9 +208,9 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
     def enforce_required(schema_part: dict):
         """
         Recursively ensure that:
-         - for any object schema, a "required" key is added with all property names (or [] if no properties)
-         - additionalProperties is set to False regardless of the previous value.
-         - the same enforcement is run for nested arrays and definitions.
+            - for any object schema, a "required" key is added with all property names (or [] if no properties)
+            - additionalProperties is set to False regardless of the previous value.
+            - the same enforcement is run for nested arrays and definitions.
         """
         if schema_part.get("type") == "object":
             props = schema_part.get("properties")
@@ -233,6 +237,6 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
     enforce_required(schema)
 
     # Override the model's JSON schema generation to return our precomputed schema.
-    Model.model_json_schema = lambda *args, **kwargs: schema
+    pydantic_model.model_json_schema = lambda *args, **kwargs: schema
 
-    return Model
+    return pydantic_model

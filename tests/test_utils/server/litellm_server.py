@@ -47,6 +47,7 @@ def _get_mock_llm_response(request_kwargs):
     return litellm.completion(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": "Hello world"}],
+        usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
         mock_response="Hi!",
     )
 

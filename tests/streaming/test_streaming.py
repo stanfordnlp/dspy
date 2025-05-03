@@ -13,8 +13,9 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
+        cache=True,
     )
-    with dspy.context(lm=lm):
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
 
         class TestSignature(dspy.Signature):
             input_text: str = dspy.InputField()
@@ -45,6 +46,7 @@ async def test_streaming_response_yields_expected_response_chunks(litellm_test_s
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
+        cache=False,
     )
     with dspy.context(lm=lm):
 
@@ -127,7 +129,7 @@ async def test_custom_status_streaming():
 
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
 @pytest.mark.anyio
-async def test_stream_listener():
+async def test_stream_listener_chat_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
@@ -140,6 +142,69 @@ async def test_stream_listener():
 
     # Turn off the cache to ensure the stream is produced.
     dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    my_program = MyProgram()
+    program = dspy.streamify(
+        my_program,
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="answer"),
+            dspy.streaming.StreamListener(signature_field_name="judgement"),
+        ],
+        include_final_prediction_in_output_stream=False,
+    )
+    output = program(x="why did a chicken cross the kitchen?")
+    all_chunks = []
+    async for value in output:
+        if isinstance(value, dspy.streaming.StreamResponse):
+            all_chunks.append(value)
+
+    assert all_chunks[0].predict_name == "predict1"
+    assert all_chunks[0].signature_field_name == "answer"
+
+    assert all_chunks[-1].predict_name == "predict2"
+    assert all_chunks[-1].signature_field_name == "judgement"
+
+
+@pytest.mark.anyio
+async def test_default_status_streaming_in_async_program():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.generate_question = dspy.Tool(lambda x: f"What color is the {x}?", name="generate_question")
+            self.predict = dspy.Predict("question->answer")
+
+        async def acall(self, x: str):
+            question = await self.generate_question.acall(x=x)
+            return await self.predict.acall(question=question)
+
+    lm = dspy.utils.DummyLM([{"answer": "red"}, {"answer": "blue"}])
+    with dspy.context(lm=lm):
+        program = dspy.streamify(MyProgram(), is_async_program=True)
+        output = program("sky")
+
+        status_messages = []
+        async for value in output:
+            if isinstance(value, StatusMessage):
+                status_messages.append(value)
+
+    assert len(status_messages) == 2
+    assert status_messages[0].message == "Calling tool generate_question..."
+    assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
+@pytest.mark.anyio
+async def test_stream_listener_json_adapter():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict1 = dspy.Predict("question->answer")
+            self.predict2 = dspy.Predict("question, answer->judgement")
+
+        def __call__(self, x: str, **kwargs):
+            answer = self.predict1(question=x, **kwargs)
+            judgement = self.predict2(question=x, answer=answer, **kwargs)
+            return judgement
+
+    # Turn off the cache to ensure the stream is produced.
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
     my_program = MyProgram()
     program = dspy.streamify(
         my_program,
