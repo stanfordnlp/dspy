@@ -11,7 +11,6 @@ from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
-from dspy.utils.callback import with_callbacks
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +70,25 @@ class Predict(Module, Parameter):
 
         return self
 
-    @with_callbacks
-    def __call__(self, **kwargs):
-        return self.forward(**kwargs)
+    def _get_positional_args_error_message(self):
+        input_fields = list(self.signature.input_fields.keys())
+        return (
+            "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments "
+            f"that match your signature input fields: '{', '.join(input_fields)}'. For example: "
+            f"`predict({input_fields[0]}=input_value, ...)`."
+        )
 
-    @with_callbacks
-    async def acall(self, **kwargs):
-        return await self.aforward(**kwargs)
+    def __call__(self, *args, **kwargs):
+        if args:
+            raise ValueError(self._get_positional_args_error_message())
+
+        return super().__call__(**kwargs)
+
+    async def acall(self, *args, **kwargs):
+        if args:
+            raise ValueError(self._get_positional_args_error_message())
+
+        return await super().acall(**kwargs)
 
     def _forward_preprocess(self, **kwargs):
         # Extract the three privileged keyword arguments.
@@ -114,17 +125,20 @@ class Predict(Module, Parameter):
             trace.append((self, {**kwargs}, pred))
         return pred
 
+    def _should_stream(self):
+        stream_listeners = settings.stream_listeners or []
+        should_stream = settings.send_stream is not None
+        if should_stream and len(stream_listeners) > 0:
+            should_stream = any(stream_listener.predict == self for stream_listener in stream_listeners)
+
+        return should_stream
+
     def forward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
 
-        stream_listeners = settings.stream_listeners or []
-        stream = settings.send_stream is not None
-        if stream and len(stream_listeners) > 0:
-            stream = any(stream_listener.predict == self for stream_listener in stream_listeners)
-
-        if stream:
+        if self._should_stream():
             with settings.context(caller_predict=self):
                 completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
         else:
@@ -137,7 +151,13 @@ class Predict(Module, Parameter):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
-        completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        if self._should_stream():
+            with settings.context(caller_predict=self):
+                completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+        else:
+            with settings.context(send_stream=None):
+                completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+
         return self._forward_postprocess(completions, signature, **kwargs)
 
     def update_config(self, **kwargs):

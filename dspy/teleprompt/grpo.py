@@ -97,6 +97,98 @@ class GRPO(FinetuneTeleprompter):
                 for sample in teacher_data:
                     for t in sample["trace"]:
                         assert hash(t[0].signature) in pred_signature_hash_to_ind
+    
+    def report_validation_metrics(self, student, trainset, valset, logger, step_idx=-1):
+        if step_idx == -1 or step_idx == self.num_train_steps - 1 or (step_idx + 1) % self.num_steps_for_val == 0:
+            pass
+        else:
+            return
+
+        if valset is not None:
+            # Validation set provided by user
+            assert not self.use_train_as_val, "If valset is provided, use_train_as_val must be False."
+            assert isinstance(self.num_steps_for_val, int) and self.num_steps_for_val > 0, "num_steps_for_val must be a positive integer."
+            if self.report_train_scores:
+                if step_idx == -1:
+                    logger.info("Using user provided validation set and reporting train scores for every validation step in addition.")
+                valset_evaluator = Evaluate(
+                    devset=valset + trainset,
+                    num_threads=self.num_threads,
+                    display_progress=True,
+                    return_all_scores=True,
+                    return_outputs=False,
+                    provide_traceback=True,  # TODO(check with team)
+                    max_errors=len(valset)*10,  # TODO(check with team)
+                    failure_score=self.failure_score
+                )
+                if step_idx == -1:
+                    logger.info("Evaluating the student program on the train+validation set before training loop...")
+                else:
+                    logger.info(f"Evaluating the student program on the validation set after training step {step_idx + 1}/{self.num_train_steps}")
+                valset_evaluation = valset_evaluator(student, metric=self.metric)
+                trainset_scores = valset_evaluation[1][len(valset):]
+                valset_scores = valset_evaluation[1][:len(valset)]
+                trainset_agg = sum(trainset_scores) / len(trainset_scores)
+                valset_agg = sum(valset_scores) / len(valset_scores)
+                if step_idx == -1:
+                    logger.info(f"Student program training set score before training loop: {trainset_agg}")
+                    logger.info(f"Student program validation set score before training loop: {valset_agg}")
+                else:
+                    logger.info(f"Student program training set score after training step {step_idx + 1}/{self.num_train_steps}: {trainset_agg}")
+                    logger.info(f"Student program validation set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_agg}")
+            else:
+                if step_idx == -1:
+                    logger.info("Using user provided validation set and not reporting train scores.")
+                valset_evaluator = Evaluate(
+                    devset=valset,
+                    num_threads=self.num_threads,
+                    display_progress=True,
+                    return_all_scores=True,
+                    return_outputs=False,
+                    provide_traceback=True,  # TODO(check with team)
+                    max_errors=len(valset)*10,  # TODO(check with team)
+                    failure_score=self.failure_score
+                )
+                if step_idx == -1:
+                    logger.info("Evaluating the student program on the validation set before training loop...")
+                else:
+                    logger.info(f"Evaluating the student program on the validation set after training step {step_idx + 1}/{self.num_train_steps}")
+                valset_evaluation = valset_evaluator(student, metric=self.metric)
+                if step_idx == -1:
+                    logger.info(f"Student program validation set score before training loop: {valset_evaluation[0]}")
+                else:
+                    logger.info(f"Student program validation set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+        else:
+            # No validation set provided by user
+            if self.report_train_scores:
+                assert self.use_train_as_val, "If report_train_scores is True, use_train_as_val must be True when valset is not provided explicitly."
+                assert isinstance(self.num_steps_for_val, int) and self.num_steps_for_val > 0, "num_steps_for_val must be a positive integer."
+                if step_idx == -1:
+                    logger.info("Using trainset as validation set.")
+                valset_evaluator = Evaluate(
+                    devset=trainset,
+                    num_threads=self.num_threads,
+                    display_progress=True,
+                    return_all_scores=True,
+                    return_outputs=False,
+                    provide_traceback=True,  # TODO(check with team)
+                    max_errors=len(trainset)*10,  # TODO(check with team)
+                    failure_score=self.failure_score
+                )
+                if step_idx == -1:
+                    logger.info("Evaluating the student program on the validation set before training loop...")
+                else:
+                    logger.info(f"Evaluating the student program on the validation set after training step {step_idx + 1}/{self.num_train_steps}")
+                valset_evaluation = valset_evaluator(student, metric=self.metric)
+                if step_idx == -1:
+                    logger.info(f"Student program training set score before training loop: {valset_evaluation[0]}")
+                else:
+                    logger.info(f"Student program training set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+            else:
+                # No valset provided, and not using train as val
+                assert not self.use_train_as_val, "If report_train_scores is False, use_train_as_val must be False."
+                if step_idx == -1:
+                    logger.info("Not using any validation set and not reporting train scores.")
 
     def compile(
         self,
@@ -174,50 +266,14 @@ class GRPO(FinetuneTeleprompter):
                 train_kwargs = self.train_kwargs[pred.lm]
                 job = pred.lm.reinforce(train_kwargs=train_kwargs)
                 grpo_training_jobs[job_key] = job
-        if valset is None and self.use_train_as_val:
-            logger.info("Using the training set as the validation set.")
-            valset = trainset
-        elif valset is not None:
-            logger.info("Using the user provided validation set.")
-        else:
-            logger.info("Not using any validation set.")
         
-        if self.report_train_scores and valset and not self.use_train_as_val:
-            assert isinstance(self.num_steps_for_val, int) and self.num_steps_for_val > 0, "num_steps_for_val must be a positive integer."
-            valset_evaluator = Evaluate(
-                devset=valset + trainset,
-                num_threads=self.num_threads,
-                display_progress=True,
-                return_all_scores=True,
-                return_outputs=False,
-                provide_traceback=True,  # TODO(check with team)
-                max_errors=len(valset)*10,  # TODO(check with team)
-                failure_score=self.failure_score
-            )
-            logger.info("Evaluating the student program on the train+validation set before training loop...")
-            valset_evaluation = valset_evaluator(student, metric=self.metric)
-            trainset_scores = valset_evaluation[1][len(valset):]
-            valset_scores = valset_evaluation[1][:len(valset)]
-            trainset_agg = sum(trainset_scores) / len(trainset_scores)
-            valset_agg = sum(valset_scores) / len(valset_scores)
-            logger.info(f"Student program training set score before training loop: {trainset_agg}")
-            logger.info(f"Student program validation set score before training loop: {valset_agg}")
-        elif valset:
-            assert isinstance(self.num_steps_for_val, int) and self.num_steps_for_val > 0, "num_steps_for_val must be a positive integer."
-            valset_evaluator = Evaluate(
-                devset=valset,
-                num_threads=self.num_threads,
-                display_progress=True,
-                return_all_scores=True,
-                return_outputs=False,
-                provide_traceback=True,  # TODO(check with team)
-                max_errors=len(valset)*10,  # TODO(check with team)
-                failure_score=self.failure_score
-            )
-            logger.info("Evaluating the student program on the validation set before training loop...")
-            valset_evaluation = valset_evaluator(student, metric=self.metric)
-            logger.info(f"Student program validation set score before training loop: {valset_evaluation[0]}")
-
+        self.report_validation_metrics(
+            student=student,
+            trainset=trainset,
+            valset=valset,
+            logger=logger,
+            step_idx=-1,
+        )
 
         logger.info("Starting the GRPO training loop...")
         for train_step_idx in range(self.num_train_steps):
@@ -409,22 +465,14 @@ class GRPO(FinetuneTeleprompter):
                     job.update_model()
 
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
-
-            if valset and ((train_step_idx + 1) % self.num_steps_for_val == 0 or train_step_idx + 1 == self.num_train_steps):
-                if self.report_train_scores and valset and not self.use_train_as_val:
-                    # Here, train and valset are different, so we evaluate on both
-                    _, all_scores = valset_evaluator(student, metric=self.metric)
-                    trainset_scores = all_scores[len(valset):]
-                    valset_scores = all_scores[:len(valset)]
-                    trainset_agg = sum(trainset_scores) / len(trainset_scores)
-                    valset_agg = sum(valset_scores) / len(valset_scores)
-                    logger.info(f"Student program training set score after training step {train_step_idx + 1}/{self.num_train_steps}: {trainset_agg}")
-                    logger.info(f"Student program validation set score after training step {train_step_idx + 1}/{self.num_train_steps}: {valset_agg}")
-                elif self.report_train_scores and self.use_train_as_val:
-                    # Here, train and valset are the same, so we just evaluate on valset alone
-                    logger.info(f"Evaluating the student program on the validation set after training step {train_step_idx + 1}/{self.num_train_steps}")
-                    valset_evaluation = valset_evaluator(student, metric=self.metric)
-                    logger.info(f"Student program validation set score after training step {train_step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+            
+            self.report_validation_metrics(
+                student=student,
+                trainset=trainset,
+                valset=valset,
+                logger=logger,
+                step_idx=train_step_idx,
+            )
 
         logger.info("Done with the iterations! Retrieving the final model(s)...")
         for (lm, data_key), job in grpo_training_jobs.items():
