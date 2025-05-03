@@ -107,16 +107,17 @@ async def test_json_adapter_async_call():
     assert result == [{"answer": "Paris"}]
 
 
-def test_json_adapter_passes_different_input_and_output_fields():
+def test_json_adapter_on_pydantic_model():
     from litellm.utils import ModelResponse, Message, Choices
+
     class User(pydantic.BaseModel):
-        id: int = pydantic.Field(description="Id of the user who asks the question")
-        name: str = pydantic.Field(description="Name of the user who asks the question")
-        email: str = pydantic.Field(description="Email of the user who asks the question")
-    
+        id: int
+        name: str
+        email: str
+
     class Answer(pydantic.BaseModel):
-        analysis: str = pydantic.Field(description="Analysis of this question")
-        result: str = pydantic.Field(description="Result of this question")
+        analysis: str
+        result: str
 
     class TestSignature(dspy.Signature):
         user: User = dspy.InputField(desc="The user who asks the question")
@@ -136,11 +137,13 @@ def test_json_adapter_passes_different_input_and_output_fields():
                     )
                 )
             ],
-            model="openai/gpt4o"
+            model="openai/gpt4o",
         )
-        result = program(user={'id': 5, 'name': 'name_test', 'email': 'email_test'}, question="What is the capital of France?")
-       
-       # Check that litellm.completion was called exactly once
+        result = program(
+            user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
+        )
+
+        # Check that litellm.completion was called exactly once
         mock_completion.assert_called_once()
 
         _, call_kwargs = mock_completion.call_args
@@ -150,74 +153,51 @@ def test_json_adapter_passes_different_input_and_output_fields():
         assert call_kwargs["messages"][0]["role"] == "system"
         content = call_kwargs["messages"][0]["content"]
         assert content is not None
-        
+
         # Assert that system prompt includes correct input field descriptions
-        expected_input_fields = '1. `user` (User): The user who asks the question\n2. `question` (str): Question the user asks\n'
+        expected_input_fields = (
+            "1. `user` (User): The user who asks the question\n2. `question` (str): Question the user asks\n"
+        )
         assert expected_input_fields in content
 
         # Assert that system prompt includes correct output field description
-        expected_output_fields = '1. `answer` (Answer): Answer to this question\n'
+        expected_output_fields = "1. `answer` (Answer): Answer to this question\n"
         assert expected_output_fields in content
 
         # Assert that system prompt includes input formatting structure
-        expected_input_structure = '[[ ## user ## ]]\n{user}\n\n[[ ## question ## ]]\n{question}\n\n'
+        expected_input_structure = "[[ ## user ## ]]\n{user}\n\n[[ ## question ## ]]\n{question}\n\n"
         assert expected_input_structure in content
-        
+
         # Assert that system prompt includes output formatting structure
-        expected_output_structure = '[[ ## answer ## ]]\n{answer}'
+        expected_output_structure = (  # noqa: Q000
+            "Outputs will be a JSON object with the following fields.\n\n{\n  "
+            '"answer": "{answer}        # note: the value you produce must adhere to the JSON schema: '
+            '{\\"type\\": \\"object\\", \\"properties\\": {\\"analysis\\": {\\"type\\": \\"string\\", \\"title\\": '
+            '\\"Analysis\\"}, \\"result\\": {\\"type\\": \\"string\\", \\"title\\": \\"Result\\"}}, \\"required\\": '
+            '[\\"analysis\\", \\"result\\"], \\"title\\": \\"Answer\\"}"\n}'
+        )
         assert expected_output_structure in content
 
-        # Assert that system prompt includes full JSON schema for the Answer class
-        expected_answer_structure = '{"analysis": {"type": "string", "description": "Analysis of this question", "title": "Analysis"}, "result": {"type": "string", "description": "Result of this question", "title": "Result"}}, "required": ["analysis", "result"], "title": "Answer"}\n'
-        assert expected_answer_structure in content
-
         assert call_kwargs["messages"][1]["role"] == "user"
-        content = call_kwargs["messages"][1]["content"]
-        assert content is not None
+        user_message_content = call_kwargs["messages"][1]["content"]
+        assert user_message_content is not None
 
         # Assert that the user input data is formatted correctly
-        expected_input_data = '[[ ## user ## ]]\n{"id": 5, "name": "name_test", "email": "email_test"}\n\n[[ ## question ## ]]\nWhat is the capital of France?\n\n'
-        assert expected_input_data in content
-        
-        # Assert that the model's returned answer has expected values
+        expected_input_data = (  # noqa: Q000
+            '[[ ## user ## ]]\n{"id": 5, "name": "name_test", "email": "email_test"}\n\n[[ ## question ## ]]\n'
+            "What is the capital of France?\n\n"
+        )
+        assert expected_input_data in user_message_content
+
+        # Assert that the adapter oupput has expected fields and values
         assert result.answer.analysis == "Paris is the captial of France"
         assert result.answer.result == "Paris"
 
 
-def test_json_adapter_sends_signature_info_correctly():
-    class TestSignature(dspy.Signature):
-        input1: str = dspy.InputField(desc="String input field")
-        input2: float = dspy.InputField(desc="Float input field")
-        output1: str = dspy.OutputField(desc="string output field")
-
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.JSONAdapter())
-    program = dspy.Predict(TestSignature)
-
-    with mock.patch("litellm.completion") as mock_completion:
-        program(input1="Test input", input2=0.1)
-
-    mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
-
-    assert len(call_kwargs["messages"]) == 2
-    assert call_kwargs["messages"][0]["role"] == "system"
-    content = call_kwargs["messages"][0]["content"]
-    assert content is not None
-    assert "1. `input1` (str)" in content
-    assert "2. `input2` (float)" in content
-    assert "1. `output1` (str)" in content
-
-    assert call_kwargs["messages"][1]["role"] == "user"
-    content = call_kwargs["messages"][1]["content"]
-    assert content is not None
-    assert "[[ ## input1 ## ]]\nTest input" in content
-    assert "[[ ## input2 ## ]]\n0.1" in content
-    assert "`output1`" in content
-
-
-def test_json_adapter_parse_invalid_field_keys():
+def test_json_adapter_parse_raise_error_on_mismatch_fields():
     signature = dspy.make_signature("input1->output1")
     adapter = dspy.JSONAdapter()
     invalid_completion = '{"output": "Test output"}'
-    with pytest.raises(ValueError, match=r"Expected"):
+    with pytest.raises(ValueError) as error:
         adapter.parse(signature, invalid_completion)
+    assert str(error.value) == "Expected dict_keys(['output1']) but got dict_keys([])"
