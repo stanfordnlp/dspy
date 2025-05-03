@@ -47,14 +47,18 @@ class ArborReinforceJob(ReinforceJob):
         "update_interval": 10,
         "temperature": 0.9,
         "beta": 0.04,
+        "num_iterations": 1,
         "per_device_train_batch_size": 8,
-        "learning_rate": 1e-5,
+        "learning_rate": 1e-6,
         "gradient_accumulation_steps": 1,
-        "gradient_checkpointing": True,
-        "bf16": True,
+        # This is false by default in TRL, but I think it makes sense to be true for us
+        "gradient_checkpointing": True, 
         "lr_scheduler_type": "constant_with_warmup",
-        "max_prompt_length": 3000,
-        "max_completion_length": 1000,
+        "max_prompt_length": None,
+        "max_completion_length": None,
+        "gradient_checkpointing_kwargs": None,
+        "bf16": False,
+        "scale_rewards": True
     }
 
     def __init__(self, lm: "LM", train_kwargs: Dict[str, Any]):
@@ -74,17 +78,19 @@ class ArborReinforceJob(ReinforceJob):
         update_interval = self.train_kwargs.get("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
         temperature = self.train_kwargs.get("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
         beta = self.train_kwargs.get("beta", self.DEFAULT_TRAIN_KWARGS["beta"])
+        num_iterations = self.train_kwargs.get("num_iterations", self.DEFAULT_TRAIN_KWARGS["num_iterations"])
         per_device_train_batch_size = self.train_kwargs.get("per_device_train_batch_size", self.DEFAULT_TRAIN_KWARGS["per_device_train_batch_size"])
         learning_rate = self.train_kwargs.get("learning_rate", self.DEFAULT_TRAIN_KWARGS["learning_rate"])
         gradient_accumulation_steps = self.train_kwargs.get("gradient_accumulation_steps", self.DEFAULT_TRAIN_KWARGS["gradient_accumulation_steps"])
         gradient_checkpointing = self.train_kwargs.get("gradient_checkpointing", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing"])
-        bf16 = self.train_kwargs.get("bf16", self.DEFAULT_TRAIN_KWARGS["bf16"])
         lr_scheduler_type = self.train_kwargs.get("lr_scheduler_type", self.DEFAULT_TRAIN_KWARGS["lr_scheduler_type"])
         max_prompt_length = self.train_kwargs.get("max_prompt_length", self.DEFAULT_TRAIN_KWARGS["max_prompt_length"])
         max_completion_length = self.train_kwargs.get("max_completion_length", self.DEFAULT_TRAIN_KWARGS["max_completion_length"])
+        bf16 = self.train_kwargs.get("bf16", self.DEFAULT_TRAIN_KWARGS["bf16"])
+        scale_rewards = self.train_kwargs.get("scale_rewards", self.DEFAULT_TRAIN_KWARGS["scale_rewards"])
+        gradient_checkpointing_kwargs = self.train_kwargs.get("gradient_checkpointing_kwargs", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing_kwargs"])
 
         api_base = self.lm.kwargs["api_base"]
-        # api_key = self.lm.kwargs["api_key"]
 
         suffix = "dspy"
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
@@ -95,14 +101,17 @@ class ArborReinforceJob(ReinforceJob):
             'update_interval': update_interval,
             'temperature': temperature,
             'beta': beta,
+            'num_iterations': num_iterations,
             'per_device_train_batch_size': per_device_train_batch_size,
             'learning_rate': learning_rate,
             'gradient_accumulation_steps': gradient_accumulation_steps,
             'gradient_checkpointing': gradient_checkpointing,
-            'bf16': bf16,
             'lr_scheduler_type': lr_scheduler_type,
             'max_prompt_length': max_prompt_length,
             'max_completion_length': max_completion_length,
+            'bf16': bf16,
+            'scale_rewards': scale_rewards,
+            'gradient_checkpointing_kwargs': gradient_checkpointing_kwargs,
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
