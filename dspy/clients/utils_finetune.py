@@ -37,7 +37,7 @@ class MessageAssistant(TypedDict):
 class GRPOChatData(TypedDict):
     messages: List[Message]
     completion: MessageAssistant
-    reward: int
+    reward: float
 
 
 GRPOGroup = List[GRPOChatData]

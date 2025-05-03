@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import logging
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -201,12 +202,19 @@ def build_call_data_from_trace(
     )
     return call_data
 
+@dataclass
+class FailedPrediction:
+    completion_text: str
+
 def bootstrap_trace_data(
     program: Program,
     dataset: List[Example],
     metric: Optional[Callable] = None,
     num_threads: Optional[int] = None,
-    raise_on_error=True
+    raise_on_error=True,
+    capture_failed_parses=False,
+    failure_score: float=0,
+    format_failure_score: float=-1
 ) -> List[Dict[str, Any]]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
@@ -217,15 +225,40 @@ def bootstrap_trace_data(
         return_outputs=True,
         provide_traceback=True,  # TODO(check with team)
         max_errors=len(dataset)*10,  # TODO(check with team)
+        failure_score=failure_score,
     )
 
     def wrapped_metric(example, prediction, trace=None):
         prediction, _ = prediction
+        if isinstance(prediction, FailedPrediction):
+            return format_failure_score
         return metric(example, prediction, trace) if metric else True
 
     def wrapped_program(**kwargs):
         with dspy.context(trace=[]):
-            return program(**kwargs), dspy.settings.trace.copy()
+            try:
+                return program(**kwargs), dspy.settings.trace.copy()
+            except ValueError as ve:
+                if len(ve.args) == 4 and "Failed to parse response as per signature from original completion with input" in ve.args[0] and capture_failed_parses:
+                    msg, completion_str, failed_signature, failed_inputs = ve.args
+                    found_pred = None
+                    for pred in program.predictors():
+                        if pred.signature == failed_signature:
+                            found_pred = pred
+                            break
+                    assert found_pred is not None, "Failed to find the predictor for the failed signature"
+
+                    trace = dspy.settings.trace.copy()
+                    # Trace is Tuple[signature, inputs, prediction outputs]
+                    trace.append((
+                        found_pred,
+                        failed_inputs,
+                        FailedPrediction(completion_text=completion_str),
+                    ))
+                    logging.warning("Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting.")
+                    return FailedPrediction(completion_text=completion_str), trace
+                else:
+                    raise ve
 
     _, outputs = evaluator(wrapped_program, metric=wrapped_metric)
 

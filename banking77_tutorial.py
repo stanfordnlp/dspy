@@ -20,6 +20,19 @@ trainset = raw_data[:1500] # 1500 examples for training
 valset = raw_data[1500:1600] # 100 examples for validation
 print(trainset[0])
 
+# class MultiModule(dspy.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.module1 = dspy.ChainOfThought("text -> possible_class_names")
+#         self.module2 = dspy.ChainOfThought(f"possible_class_names -> summary")
+#         self.module3 = dspy.ChainOfThought(f"summary -> label: Literal{CLASSES}")
+    
+#     def forward(self, text):
+#         x = self.module1(text=text)
+#         x = self.module2(possible_class_names=x.possible_class_names)
+#         x = self.module3(summery=x.summary)
+#         return x
+
 classify = dspy.ChainOfThought(f"text -> label: Literal{CLASSES}")
 
 from dspy.clients.lm_local_arbor import ArborProvider

@@ -1,7 +1,10 @@
+import copy
+import json
 import logging
 import random
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
+import dspy
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
@@ -10,7 +13,7 @@ from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
-from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, prepare_teacher, bootstrap_trace_data
+from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, prepare_teacher, bootstrap_trace_data, FailedPrediction
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,7 @@ class GRPO(FinetuneTeleprompter):
         num_steps_for_val: int = 5,
         report_train_scores: bool = False,
         failure_score: float = 0,
+        format_failure_score: float = -1,
         variably_invoked_predictor_grouping_mode: Union[Literal['truncate'], Literal['fill'], Literal['ragged']] = 'truncate',
         variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
     ):
@@ -50,6 +54,7 @@ class GRPO(FinetuneTeleprompter):
         self.num_steps_for_val = num_steps_for_val
         self.report_train_scores = report_train_scores
         self.failure_score = failure_score
+        self.format_failure_score = format_failure_score
 
         if self.use_train_as_val:
             # TODO: What makes sense here? assert report_train_scores == False?
@@ -71,6 +76,8 @@ class GRPO(FinetuneTeleprompter):
         trace_data: List[List[List[Dict[str, Any]]]],
         subsample_training_dataset: List[Example],
         num_teachers: int,
+        pred_signature_hash_to_ind: Dict[int, int],
+        student: Program,
     ):
         # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
         # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
@@ -84,6 +91,12 @@ class GRPO(FinetuneTeleprompter):
             assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
             assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
             assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
+        
+        for example_ind, example_data in enumerate(trace_data):
+            for teacher_idx, teacher_data in enumerate(example_data):
+                for sample in teacher_data:
+                    for t in sample["trace"]:
+                        assert hash(t[0].signature) in pred_signature_hash_to_ind
 
     def compile(
         self,
@@ -215,11 +228,17 @@ class GRPO(FinetuneTeleprompter):
                     metric=self.metric,
                     num_threads=self.num_threads,
                     raise_on_error=False, # TODO(GRPO Team): This should be True, once the dspy format issue is fixed
+                    capture_failed_parses=True,
+                    failure_score=self.failure_score,
+                    format_failure_score=self.format_failure_score,
                 )
                 for data_dict in round_data:
                     example_ind_in_subsample = data_dict['example_ind'] % len(subsample_training_dataset)
                     data_dict["example_ind"] = example_ind_in_subsample
                     trace_data[example_ind_in_subsample][tind].append(data_dict)
+
+            # The trace_data for examples with FailedPrediction cases will have the signature at index 0, instead of the predictor
+            # We need to replace the signature with the predictor
 
             # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
             # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
@@ -227,6 +246,8 @@ class GRPO(FinetuneTeleprompter):
                 trace_data=trace_data,
                 subsample_training_dataset=subsample_training_dataset,
                 num_teachers=len(teachers),
+                pred_signature_hash_to_ind=pred_signature_hash_to_ind,
+                student=student
             )
 
             logger.info("Preparing the training data batch from bootstrapped examples for GRPO...")
@@ -286,7 +307,7 @@ class GRPO(FinetuneTeleprompter):
                             score = trace_instance[3]
                             # for module_invocation_idx, trace_instance in enumerate(trace_instances_for_current_pred):
                             # Each trace is a tuple of (Predictor, PredictorInputs, Prediction)
-                            trace_pred_id = pred_signature_hash_to_ind[hash(trace_instance[0].signature)]
+                            trace_pred_id = pred_signature_hash_to_ind.get(hash(trace_instance[0].signature))
                             assert trace_pred_id == pred_id
 
                             predictor = trace_instance[0]
@@ -301,34 +322,36 @@ class GRPO(FinetuneTeleprompter):
                                 inputs=trace_instance[1], 
                                 demos=[] # TODO: Add support for demos
                             )
-                            all_messages = adapter.format_finetune_data(
-                                signature=trace_instance[0].signature,
-                                inputs=trace_instance[1],
-                                outputs=trace_instance[2],
-                                demos=[] # TODO: Add support for demos
-                            )['messages']
 
-                            assert all_messages[:-1] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {all_messages[:-1]}"
+                            if isinstance(trace_instance[2], FailedPrediction):
+                                score = self.format_failure_score
+                                example_training_data[group_idx].append({
+                                    "messages": inp_messages,
+                                    "completion": {
+                                        "role": "assistant",
+                                        "content": trace_instance[2].completion_text,
+                                    },
+                                    "reward": float(score),
+                                })
+                                logger.warning(f"Adding a format failure example to the training data for predictor {pred_id} and example {example_ind}.")
+                            else:
+                                all_messages = adapter.format_finetune_data(
+                                    signature=trace_instance[0].signature,
+                                    inputs=trace_instance[1],
+                                    outputs=trace_instance[2],
+                                    demos=[] # TODO: Add support for demos
+                                )['messages']
 
-                            # if len(example_training_data[group_idx]["input"]["messages"]) == 0:
-                            #     example_training_data[group_idx]["input"]["messages"] = [{"role": msg['role'], 'content': msg['content']} for msg in inp_messages]
-                            # elif example_training_data[group_idx]["input"]["messages"] != inp_messages:
-                            #     logger.info(f"Input messages {inp_messages} do not match the expected messages {example_training_data[group_idx]['input']['messages']}")
-                            # response_msg = all_messages[-1]
-                            # assert 'role' in response_msg and 'content' in response_msg, f"Response message {response_msg} does not contain the expected keys 'role' and 'content'"
-                            # example_training_data[group_idx]["completions"].append({
-                            #     "role": response_msg["role"],
-                            #     "content": response_msg["content"],
-                            #     "reward": score,
-                            # })
-                            example_training_data[group_idx].append({
-                                "messages": inp_messages,
-                                "completion": {
-                                    "role": all_messages[-1]["role"],
-                                    "content": all_messages[-1]["content"],
-                                },
-                                "reward": score,
-                            })
+                                assert all_messages[:-1] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {all_messages[:-1]}"
+
+                                example_training_data[group_idx].append({
+                                    "messages": inp_messages,
+                                    "completion": {
+                                        "role": all_messages[-1]["role"],
+                                        "content": all_messages[-1]["content"],
+                                    },
+                                    "reward": float(score),
+                                })
                     
                     train_batch_per_predictor[pred_id].extend(example_training_data)
             
