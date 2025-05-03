@@ -28,8 +28,11 @@ class Adapter:
 
             if isinstance(output, dict):
                 output, output_logprobs = output["text"], output["logprobs"]
-
-            value = self.parse(signature, output)
+            
+            try:
+                value = self.parse(signature, output)
+            except ValueError as e:
+                raise ValueError(f"Failed to parse response as per signature from the original completion: {output}", output, signature) from e
 
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs
@@ -46,10 +49,19 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        predictor_inputs = inputs.copy()
         inputs = self.format(signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_post_process(outputs, signature)
+        try:
+            return self._call_post_process(outputs, signature)
+        except ValueError as ve:
+            if len(ve.args) == 3 and "Failed to parse response as per signature" in ve.args[0]:
+                # This is formatting error, let's add the original input to the error message
+                raise ValueError(f"Failed to parse response as per signature from original completion with input", ve.args[1], ve.args[2], predictor_inputs) from ve
+            else:
+                # This is not a formatting error, let's raise the original error
+                raise ve
 
     async def acall(
         self,

@@ -71,6 +71,8 @@ class JSONAdapter(ChatAdapter):
             try:
                 lm_kwargs["response_format"] = {"type": "json_object"}
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            except ValueError as ve:
+                raise ve
             except Exception as e:
                 raise RuntimeError(
                     "Both structured output format and JSON mode failed. Please choose a model that supports "
