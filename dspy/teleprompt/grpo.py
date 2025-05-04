@@ -57,6 +57,8 @@ class GRPO(FinetuneTeleprompter):
         self.failure_score = failure_score
         self.format_failure_score = format_failure_score
 
+        assert failure_score > format_failure_score, "failure_score must be greater than format_failure_score since the range [format_failure_score, failure_score] is used to provide dspy formatting rewards"
+
         if self.use_train_as_val:
             # TODO: What makes sense here? assert report_train_scores == False?
             assert report_train_scores, "If use_train_as_val is True, report_train_scores must be True."
@@ -448,7 +450,7 @@ class GRPO(FinetuneTeleprompter):
                             )
 
                             if isinstance(trace_instance[2], FailedPrediction):
-                                score = self.format_failure_score
+                                score = trace_instance[2].format_reward or self.format_failure_score
                                 example_training_data[group_idx].append({
                                     "messages": inp_messages,
                                     "completion": {

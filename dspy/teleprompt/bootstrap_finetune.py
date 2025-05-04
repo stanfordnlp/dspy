@@ -205,6 +205,7 @@ def build_call_data_from_trace(
 @dataclass
 class FailedPrediction:
     completion_text: str
+    format_reward: Union[float, None] = None
 
 def bootstrap_trace_data(
     program: Program,
@@ -214,7 +215,8 @@ def bootstrap_trace_data(
     raise_on_error=True,
     capture_failed_parses=False,
     failure_score: float=0,
-    format_failure_score: float=-1
+    format_failure_score: float=-1,
+    log_format_failures: bool=False,
 ) -> List[Dict[str, Any]]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
@@ -231,7 +233,7 @@ def bootstrap_trace_data(
     def wrapped_metric(example, prediction, trace=None):
         prediction, _ = prediction
         if isinstance(prediction, FailedPrediction):
-            return format_failure_score
+            return prediction.format_reward or format_failure_score
         return metric(example, prediction, trace) if metric else True
 
     def wrapped_program(**kwargs):
@@ -239,8 +241,14 @@ def bootstrap_trace_data(
             try:
                 return program(**kwargs), dspy.settings.trace.copy()
             except ValueError as ve:
-                if len(ve.args) == 4 and "Failed to parse response as per signature from original completion with input" in ve.args[0] and capture_failed_parses:
-                    msg, completion_str, failed_signature, failed_inputs = ve.args
+                if len(ve.args) in [4, 6] and "Failed to parse response as per signature from original completion with input" in ve.args[0] and capture_failed_parses:
+                    if len(ve.args) == 4:
+                        msg, completion_str, failed_signature, failed_inputs = ve.args
+                        present, expected = None, None
+                    else:
+                        msg, completion_str, failed_signature, failed_inputs, present, expected = ve.args
+                        assert present is not None and expected is not None, "Present and expected values should be provided in the error message"
+                        assert present >= 0 and expected > 0, "Present and expected values should be non-negative"
                     found_pred = None
                     for pred in program.predictors():
                         if pred.signature == failed_signature:
@@ -250,13 +258,22 @@ def bootstrap_trace_data(
 
                     trace = dspy.settings.trace.copy()
                     # Trace is Tuple[signature, inputs, prediction outputs]
+
+                    if present is not None:
+                        failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score + (failure_score - format_failure_score)*(present/expected))
+                    else:
+                        failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score)
+
                     trace.append((
                         found_pred,
                         failed_inputs,
-                        FailedPrediction(completion_text=completion_str),
+                        failed_pred,
                     ))
-                    logging.warning("Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting.")
-                    return FailedPrediction(completion_text=completion_str), trace
+
+                    if log_format_failures:
+                        logging.warning("Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting.")
+                    
+                    return failed_pred, trace
                 else:
                     raise ve
 

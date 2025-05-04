@@ -25,6 +25,7 @@ DEFAULT_CONFIG = dotdict(
     stream_listeners=[],
     provide_traceback=False, # Whether to include traceback information in error logs.
     num_threads=8, # Number of threads to use for parallel processing.
+    log_json_fallbacks=True,
 )
 
 # Global base configuration and owner tracking
