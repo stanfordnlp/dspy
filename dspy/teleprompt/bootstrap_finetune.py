@@ -225,7 +225,7 @@ def bootstrap_trace_data(
         num_threads=num_threads,
         display_progress=True,
         return_outputs=True,
-        provide_traceback=True,  # TODO(check with team)
+        provide_traceback=False,  # TODO(check with team)
         max_errors=len(dataset)*10,  # TODO(check with team)
         failure_score=failure_score,
     )

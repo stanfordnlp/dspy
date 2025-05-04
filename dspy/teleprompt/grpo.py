@@ -124,7 +124,7 @@ class GRPO(FinetuneTeleprompter):
                     display_progress=True,
                     return_all_scores=True,
                     return_outputs=False,
-                    provide_traceback=True,  # TODO(check with team)
+                    provide_traceback=False,  # TODO(check with team)
                     max_errors=len(valset)*10,  # TODO(check with team)
                     failure_score=self.failure_score
                 )
@@ -152,7 +152,7 @@ class GRPO(FinetuneTeleprompter):
                     display_progress=True,
                     return_all_scores=True,
                     return_outputs=False,
-                    provide_traceback=True,  # TODO(check with team)
+                    provide_traceback=False,  # TODO(check with team)
                     max_errors=len(valset)*10,  # TODO(check with team)
                     failure_score=self.failure_score
                 )
@@ -178,7 +178,7 @@ class GRPO(FinetuneTeleprompter):
                     display_progress=True,
                     return_all_scores=True,
                     return_outputs=False,
-                    provide_traceback=True,  # TODO(check with team)
+                    provide_traceback=False,  # TODO(check with team)
                     max_errors=len(trainset)*10,  # TODO(check with team)
                     failure_score=self.failure_score
                 )
