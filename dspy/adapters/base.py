@@ -32,6 +32,10 @@ class Adapter:
             try:
                 value = self.parse(signature, output)
             except ValueError as e:
+                if len(e.args) == 3 and isinstance(e.args[1], int) and isinstance(e.args[2], int) and e.args[2] > 0:
+                    # This error contains the number of field keys present vs expected
+                    present, expected = e.args[1], e.args[2]
+                    raise ValueError(f"Failed to parse response as per signature from the original completion with num present and expected: {output}", output, signature, present, expected) from e
                 raise ValueError(f"Failed to parse response as per signature from the original completion: {output}", output, signature) from e
 
             if output_logprobs is not None:
@@ -59,6 +63,9 @@ class Adapter:
             if len(ve.args) == 3 and "Failed to parse response as per signature" in ve.args[0]:
                 # This is formatting error, let's add the original input to the error message
                 raise ValueError(f"Failed to parse response as per signature from original completion with input", ve.args[1], ve.args[2], predictor_inputs) from ve
+            elif len(ve.args) == 5 and "Failed to parse response as per signature from the original completion with num present and expected" in ve.args[0]:
+                # This is formatting error, let's add the original input to the error message
+                raise ValueError(f"Failed to parse response as per signature from original completion with input and num present and expected", ve.args[1], ve.args[2], predictor_inputs, ve.args[3], ve.args[4]) from ve
             else:
                 # This is not a formatting error, let's raise the original error
                 raise ve

@@ -3,6 +3,8 @@ import random
 from dspy.datasets import DataLoader
 from datasets import load_dataset
 
+dspy.settings.configure(log_json_fallbacks=False)
+
 # Load the Banking77 dataset.
 CLASSES = load_dataset("PolyAI/banking77", split="train", trust_remote_code=True).features['label'].names
 kwargs = dict(fields=("text", "label"), input_keys=("text",), split="train", trust_remote_code=True)
