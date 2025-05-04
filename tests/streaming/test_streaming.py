@@ -225,3 +225,65 @@ async def test_stream_listener_json_adapter():
 
     assert all_chunks[-1].predict_name == "predict2"
     assert all_chunks[-1].signature_field_name == "judgement"
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
+def test_sync_streaming():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict1 = dspy.Predict("question->answer")
+            self.predict2 = dspy.Predict("question, answer->judgement")
+
+        def __call__(self, x: str, **kwargs):
+            answer = self.predict1(question=x, **kwargs)
+            judgement = self.predict2(question=x, answer=answer, **kwargs)
+            return judgement
+
+    # Turn off the cache to ensure the stream is produced.
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    my_program = MyProgram()
+    program = dspy.streamify(
+        my_program,
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="answer"),
+            dspy.streaming.StreamListener(signature_field_name="judgement"),
+        ],
+        include_final_prediction_in_output_stream=False,
+    )
+    output = program(x="why did a chicken cross the kitchen?")
+    sync_output = dspy.streaming.apply_sync_streaming(output)
+    all_chunks = []
+    for value in sync_output:
+        if isinstance(value, dspy.streaming.StreamResponse):
+            all_chunks.append(value)
+
+    assert all_chunks[0].predict_name == "predict1"
+    assert all_chunks[0].signature_field_name == "answer"
+
+    assert all_chunks[-1].predict_name == "predict2"
+    assert all_chunks[-1].signature_field_name == "judgement"
+
+
+def test_sync_status_streaming():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.generate_question = dspy.Tool(lambda x: f"What color is the {x}?", name="generate_question")
+            self.predict = dspy.Predict("question->answer")
+
+        def __call__(self, x: str):
+            question = self.generate_question(x=x)
+            return self.predict(question=question)
+
+    lm = dspy.utils.DummyLM([{"answer": "red"}, {"answer": "blue"}])
+    with dspy.context(lm=lm):
+        program = dspy.streamify(MyProgram())
+        output = program("sky")
+        sync_output = dspy.streaming.apply_sync_streaming(output)
+        status_messages = []
+        for value in sync_output:
+            if isinstance(value, StatusMessage):
+                status_messages.append(value)
+
+    assert len(status_messages) == 2
+    assert status_messages[0].message == "Calling tool generate_question..."
+    assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
