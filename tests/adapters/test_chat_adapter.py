@@ -127,8 +127,7 @@ def test_chat_adapter_with_pydantic_models():
 
     system_content = call_kwargs["messages"][0]["content"]
     user_content = call_kwargs["messages"][1]["content"]
-    print(user_content)
-    print(system_content)
+
     assert "1. `sig_input` (InputField)" in system_content
     assert "1. `sig_output` (OutputField)" in system_content
     assert "subfield1" in system_content
@@ -180,8 +179,8 @@ def test_chat_adapter_signature_information():
 def test_chat_adapter_exception_raised_on_failure():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
-    invalid_completion = r'[{"answer": "output"}]'
-    with pytest.raises(ValueError, match=r'[{"answer": "expected"}]'):
+    invalid_completion = "{'output':'mismatched value'}"
+    with pytest.raises(ValueError) as error:
         adapter.parse(signature, invalid_completion)
 
 
