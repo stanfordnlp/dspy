@@ -59,7 +59,8 @@ class ArborReinforceJob(ReinforceJob):
         "gradient_checkpointing_kwargs": None,
         "bf16": False,
         "scale_rewards": True,
-        "max_grad_norm": 1.0
+        "max_grad_norm": 1.0,
+        "lora": False
     }
 
     def __init__(self, lm: "LM", train_kwargs: Dict[str, Any]):
@@ -91,6 +92,7 @@ class ArborReinforceJob(ReinforceJob):
         scale_rewards = self.train_kwargs.get("scale_rewards", self.DEFAULT_TRAIN_KWARGS["scale_rewards"])
         gradient_checkpointing_kwargs = self.train_kwargs.get("gradient_checkpointing_kwargs", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing_kwargs"])
         max_grad_norm = self.train_kwargs.get("max_grad_norm", self.DEFAULT_TRAIN_KWARGS["max_grad_norm"])
+        lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
         suffix = "dspy"
@@ -114,6 +116,7 @@ class ArborReinforceJob(ReinforceJob):
             'scale_rewards': scale_rewards,
             'gradient_checkpointing_kwargs': gradient_checkpointing_kwargs,
             'max_grad_norm': max_grad_norm,
+            'lora': lora
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
