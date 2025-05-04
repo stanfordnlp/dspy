@@ -1,3 +1,4 @@
+from collections import Counter
 import copy
 import json
 import logging
@@ -70,6 +71,10 @@ class GRPO(FinetuneTeleprompter):
             assert variably_invoked_predictor_fill_strategy is not None, "variably_invoked_predictor_fill_strategy must be set when variably_invoked_predictor_grouping_mode is 'fill'"
             assert variably_invoked_predictor_fill_strategy in ['randint', 'max'], "variably_invoked_predictor_fill_strategy must be either 'randint' or 'max'"
         self.variably_invoked_predictor_fill_strategy = variably_invoked_predictor_fill_strategy
+
+        self.shuffled_trainset_ids = []
+        self.epoch = -1
+        self.id_freqs = Counter()
 
     def validate_trace_data_and_log_issues(
         self,
@@ -189,6 +194,45 @@ class GRPO(FinetuneTeleprompter):
                 assert not self.use_train_as_val, "If report_train_scores is False, use_train_as_val must be False."
                 if step_idx == -1:
                     logger.info("Not using any validation set and not reporting train scores.")
+    
+    def update_shuffled_trainset(self, original_trainset):
+        self.shuffled_trainset_ids = list(range(len(original_trainset)))
+        self.rng.shuffle(self.shuffled_trainset_ids)
+        for id in self.shuffled_trainset_ids:
+            self.id_freqs[id] += 1
+
+        num_to_pad = self.num_dspy_examples_per_grpo_step - (len(original_trainset) % self.num_dspy_examples_per_grpo_step)
+        if num_to_pad > 0:
+            # Select ids based on least frequent ids
+            for _ in range(num_to_pad):
+                selected_id = self.id_freqs.most_common()[::-1][0][0]
+                self.shuffled_trainset_ids.append(selected_id)
+                self.id_freqs[selected_id] += 1
+
+    def select_training_sample_and_update_shuffled_trainset(
+        self,
+        original_trainset: List[Example],
+        train_step_idx: int,
+    ) -> List[Example]:
+        base_idx = train_step_idx * self.num_dspy_examples_per_grpo_step
+        if self.epoch == -1:
+            curr_epoch = 0
+        else:
+            curr_epoch = base_idx // len(self.shuffled_trainset_ids)
+        if curr_epoch > self.epoch:
+            logger.info(f"Updating shuffled trainset for epoch {curr_epoch}...")
+            self.epoch = curr_epoch
+            self.update_shuffled_trainset(original_trainset)
+
+        assert len(self.shuffled_trainset_ids) >= self.num_dspy_examples_per_grpo_step, f"Shuffled trainset length {len(self.shuffled_trainset_ids)} is less than num_dspy_examples_per_grpo_step {self.num_dspy_examples_per_grpo_step}"
+        assert len(self.shuffled_trainset_ids) % self.num_dspy_examples_per_grpo_step == 0, f"Shuffled trainset length {len(self.shuffled_trainset_ids)} is not divisible by num_dspy_examples_per_grpo_step {self.num_dspy_examples_per_grpo_step}"
+
+        base_idx = base_idx % len(self.shuffled_trainset_ids)
+        end_idx = base_idx + self.num_dspy_examples_per_grpo_step
+        assert end_idx <= len(self.shuffled_trainset_ids), f"End index {end_idx} is out of bounds for shuffled trainset length {len(self.shuffled_trainset_ids)}"
+        selected_ids = self.shuffled_trainset_ids[base_idx:end_idx]
+        selected_trainset = [original_trainset[i] for i in selected_ids]
+        return selected_trainset
 
     def compile(
         self,
@@ -198,6 +242,20 @@ class GRPO(FinetuneTeleprompter):
         **kwargs,
     ) -> Program:
         logger.info("Validating the inputs...")
+
+        assert len(trainset) > 0, "Training set is empty. Please provide a non-empty training set."
+
+        if len(trainset) < self.num_dspy_examples_per_grpo_step:
+            logger.warning(
+            f"Number of training examples {len(trainset)} is less than the number of examples per GRPO step {self.num_dspy_examples_per_grpo_step}. "
+                "Repeating the training set to fill the GRPO step. This could lead to overfitting and training instability."
+            )
+            multiplier = (self.num_dspy_examples_per_grpo_step + len(trainset) - 1) // len(trainset)
+            if multiplier > 1:
+                logger.warning(
+                    f"Repeating the training set {multiplier} times to fill the GRPO step. This could lead to overfitting and training instability."
+                )
+                trainset = trainset * multiplier
 
         # TODO(GRPO Team): Following checks are for unimplemented features.
         # Consider if we want to eventually implement them or remove. We don't
@@ -278,7 +336,11 @@ class GRPO(FinetuneTeleprompter):
         logger.info("Starting the GRPO training loop...")
         for train_step_idx in range(self.num_train_steps):
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps}...")
-            subsample_training_dataset = self.rng.sample(trainset, self.num_dspy_examples_per_grpo_step)
+
+            subsample_training_dataset = self.select_training_sample_and_update_shuffled_trainset(
+                original_trainset=trainset,
+                train_step_idx=train_step_idx,
+            )
 
             logger.info("Bootstrapping data...")
             trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
