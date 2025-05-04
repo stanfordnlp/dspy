@@ -120,16 +120,17 @@ def test_chat_adapter_with_pydantic_models():
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
-        program(sig_input={"subfield1": True, "nested_field": {"subsubfield1": "Test", "subsubfield2": 11}})
+        program(sig_input=InputField(subfield1=True, nested_field=NestedField(subsubfield1="Test", subsubfield2=10)))
 
     mock_completion.assert_called_once()
     _, call_kwargs = mock_completion.call_args
 
     system_content = call_kwargs["messages"][0]["content"]
     user_content = call_kwargs["messages"][1]["content"]
-
-    assert "InputField" in system_content
-    assert "OutputField" in system_content
+    print(user_content)
+    print(system_content)
+    assert "1. `sig_input` (InputField)" in system_content
+    assert "1. `sig_output` (OutputField)" in system_content
     assert "subfield1" in system_content
     assert "subfield2" in system_content
     assert "subfield3" in system_content
