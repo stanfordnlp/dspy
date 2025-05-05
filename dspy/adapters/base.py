@@ -62,10 +62,10 @@ class Adapter:
         except ValueError as ve:
             if len(ve.args) == 3 and "Failed to parse response as per signature" in ve.args[0]:
                 # This is formatting error, let's add the original input to the error message
-                raise ValueError(f"Failed to parse response as per signature from original completion with input", ve.args[1], ve.args[2], predictor_inputs) from ve
+                raise ValueError("Failed to parse response as per signature from original completion with input", ve.args[1], ve.args[2], predictor_inputs) from ve
             elif len(ve.args) == 5 and "Failed to parse response as per signature from the original completion with num present and expected" in ve.args[0]:
                 # This is formatting error, let's add the original input to the error message
-                raise ValueError(f"Failed to parse response as per signature from original completion with input and num present and expected", ve.args[1], ve.args[2], predictor_inputs, ve.args[3], ve.args[4]) from ve
+                raise ValueError("Failed to parse response as per signature from original completion with input and num present and expected", ve.args[1], ve.args[2], predictor_inputs, ve.args[3], ve.args[4]) from ve
             else:
                 # This is not a formatting error, let's raise the original error
                 raise ve
