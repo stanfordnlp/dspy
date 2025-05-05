@@ -20,7 +20,7 @@ class MariadbRM(dspy.Retrieve):
     Args:
         embedding_func: A function to use for computing query embeddings. Should return iterable
         table: A name of the table containing passages
-        content_field: Name of column containing the passages.
+        content_field: Name of column containing the passages
         embedding_field: Name of column containing embeddings
         host: Host for MariaDB server
         port: The TCP/IP port number to use for the MariaDB connection
