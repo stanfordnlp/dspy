@@ -1,6 +1,5 @@
 import datetime
 import uuid
-from abc import ABC
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
@@ -9,7 +8,7 @@ MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 
 
-class BaseLM(ABC):
+class BaseLM:
     """Base class for handling LLM calls.
 
     Most users can directly use the `dspy.LM` class, which is a subclass of `BaseLM`. Users can also implement their
@@ -49,7 +48,8 @@ class BaseLM(ABC):
         self.history = []
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
-        if kwargs.get("logprobs"):
+        merged_kwargs = {**self.kwargs, **kwargs}
+        if merged_kwargs.get("logprobs"):
             outputs = [
                 {
                     "text": c.message.content if hasattr(c, "message") else c["text"],
@@ -90,6 +90,7 @@ class BaseLM(ABC):
 
         return outputs
 
+    @with_callbacks
     async def acall(self, prompt=None, messages=None, **kwargs):
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
@@ -176,7 +177,10 @@ def _inspect_history(history, n: int = 1):
                             image_str = ""
                             if "base64" in c["image_url"].get("url", ""):
                                 len_base64 = len(c["image_url"]["url"].split("base64,")[1])
-                                image_str = f"<{c['image_url']['url'].split('base64,')[0]}base64,<IMAGE BASE 64 ENCODED({str(len_base64)})>"
+                                image_str = (
+                                    f"<{c['image_url']['url'].split('base64,')[0]}base64,"
+                                    f"<IMAGE BASE 64 ENCODED({len_base64!s})>"
+                                )
                             else:
                                 image_str = f"<image_url: {c['image_url']['url']}>"
                             print(_blue(image_str.strip()))

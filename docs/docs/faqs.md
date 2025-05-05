@@ -2,6 +2,9 @@
 sidebar_position: 998
 ---
 
+!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5 and 2.6"
+
+
 # FAQs
 
 ## Is DSPy right for me? DSPy vs. other frameworks
