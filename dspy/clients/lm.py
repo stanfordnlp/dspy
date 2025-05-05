@@ -14,7 +14,7 @@ from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
-from dspy.utils.callback import BaseCallback
+from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
 
@@ -114,6 +114,7 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
+    @with_callbacks
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
@@ -135,6 +136,7 @@ class LM(BaseLM):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
+    @with_callbacks
     async def aforward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
