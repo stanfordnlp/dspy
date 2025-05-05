@@ -41,6 +41,7 @@ nav:
             - Advanced Tool Use: tutorials/tool_use/index.ipynb
             - Finetuning Agents: tutorials/games/index.ipynb
         - Experimental RL Optimization for DSPy:
+            - Overview: tutorials/rl_ai_program/index.md
             - RL for Privacy-Conscious Delegation: tutorials/rl_papillon/index.ipynb
             - RL for Multi-Hop Research: tutorials/rl_multihop/index.ipynb
         - Tools, Development, and Deployment:
