@@ -1,13 +1,13 @@
 from abc import abstractmethod
 from concurrent.futures import Future
 from threading import Thread
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from dspy.clients.utils_finetune import TrainDataFormat
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
+
 
 class TrainingJob(Future):
     def __init__(

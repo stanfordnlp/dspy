@@ -18,7 +18,6 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.lm import LM
-from dspy.dsp.utils.settings import settings
 from dspy.signatures.signature import Signature, SignatureMeta
 
 logger = logging.getLogger(__name__)
@@ -48,10 +47,6 @@ class JSONAdapter(ChatAdapter):
     ) -> list[dict[str, Any]]:
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
-
-        stream_listeners = settings.stream_listeners or []
-        if len(stream_listeners) > 0:
-            raise ValueError("Stream listener is not yet supported for JsonAdapter, please use ChatAdapter instead.")
 
         # If response_format is not supported, use basic call
         if not params or "response_format" not in params:
@@ -85,18 +80,19 @@ class JSONAdapter(ChatAdapter):
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]):
+        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo], role: str):
             return self.format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
                     for field_name, field_info in fields.items()
                 },
+                role=role,
             )
 
         parts.append("Inputs will have the following structure:")
-        parts.append(format_signature_fields_for_instructions(signature.input_fields))
+        parts.append(format_signature_fields_for_instructions(signature.input_fields, role="user"))
         parts.append("Outputs will be a JSON object with the following fields.")
-        parts.append(format_signature_fields_for_instructions(signature.output_fields))
+        parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
         return "\n\n".join(parts).strip()
 
     def user_message_output_requirements(self, signature: Type[Signature]) -> str:

@@ -1,6 +1,10 @@
+import asyncio
+import contextvars
 import logging
+import threading
 from asyncio import iscoroutinefunction
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, List, Optional
+from queue import Queue
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator, List, Optional
 
 import litellm
 import ujson
@@ -198,6 +202,46 @@ def streamify(
                     return
 
     return streamer
+
+
+def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
+    """Convert the async streaming generator to a sync generator."""
+    queue = Queue()  # Queue to hold items from the async generator
+    stop_sentinel = object()  # Sentinel to signal the generator is complete
+
+    # To propagate prediction request ID context to the child thread
+    context = contextvars.copy_context()
+    from dspy.dsp.utils.settings import thread_local_overrides
+
+    parent_overrides = thread_local_overrides.overrides.copy()
+
+    def producer():
+        """Runs in a background thread to fetch items asynchronously."""
+
+        original_overrides = thread_local_overrides.overrides
+        thread_local_overrides.overrides = parent_overrides.copy()
+
+        async def runner():
+            try:
+                async for item in async_generator:
+                    queue.put(item)
+            finally:
+                # Signal completion
+                queue.put(stop_sentinel)
+
+        context.run(asyncio.run, runner())
+        thread_local_overrides.overrides = original_overrides
+
+    # Start the producer in a background thread
+    thread = threading.Thread(target=producer, daemon=True)
+    thread.start()
+
+    # Consume items from the queue
+    while True:
+        item = queue.get()  # Block until an item is available
+        if item is stop_sentinel:
+            break
+        yield item
 
 
 async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:

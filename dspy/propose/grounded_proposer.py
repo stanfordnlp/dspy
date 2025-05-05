@@ -349,7 +349,7 @@ class GroundedProposer(Proposer):
 
         # Create an instruction for each predictor 
         for pred_i, predictor in enumerate(program.predictors()):
-            for demo_set_i in range(num_demos):
+            for demo_set_i in range(num_demos)[:min(N, num_demos)]:
                 if pred_i not in proposed_instructions:
                     proposed_instructions[pred_i] = []
                 selected_tip = None
