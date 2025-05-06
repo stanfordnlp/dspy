@@ -138,6 +138,7 @@ ignore = [
     "UP035", # Allow python typing modules
     "RUF005", # Allow using + operator to concatenate collections
     "B904", # Allow raise custom exceptions in except blocks
+    "F403", # Allow wildcard imports
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
