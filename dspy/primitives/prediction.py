@@ -26,7 +26,7 @@ class Prediction(Example):
         return obj
 
     def __repr__(self):
-        store_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._store.items())
+        store_repr = ",\n    ".join(f"{k}={v!r}" for k, v in self._store.items())
 
         if self._completions is None or len(self._completions) == 1:
             return f"Prediction(\n    {store_repr}\n)"
@@ -152,7 +152,7 @@ class Completions:
         return key in self._completions
 
     def __repr__(self):
-        items_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._completions.items())
+        items_repr = ",\n    ".join(f"{k}={v!r}" for k, v in self._completions.items())
         return f"Completions(\n    {items_repr}\n)"
 
     def __str__(self):
