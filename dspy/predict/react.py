@@ -46,7 +46,7 @@ class ReAct(Module):
         )
 
         for idx, tool in enumerate(tools.values()):
-            args = getattr(tool, "args")
+            args = tool.args
             desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
             desc += f" It takes arguments {args} in JSON format."
             instr.append(f"({idx + 1}) {tool.name}{desc}")
@@ -167,7 +167,7 @@ class ReAct(Module):
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
     """
     Return a one-string traceback summary.
-    * `limit`  – how many stack frames to keep (from the innermost outwards).
+    * `limit` - how many stack frames to keep (from the innermost outwards).
     """
 
     import traceback
