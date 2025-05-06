@@ -51,6 +51,7 @@ nav:
             - Saving and Loading: tutorials/saving/index.md
             - Deployment: tutorials/deployment/index.md
             - Debugging & Observability: tutorials/observability/index.md
+            - Streaming: tutorials/streaming/index.md
     - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
