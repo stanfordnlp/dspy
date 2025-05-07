@@ -30,6 +30,7 @@ def streamify(
     stream_listeners: Optional[List[StreamListener]] = None,
     include_final_prediction_in_output_stream: bool = True,
     is_async_program: bool = False,
+    async_streaming: bool = True,
 ) -> Callable[[Any, Any], Awaitable[Any]]:
     """
     Wrap a DSPy program so that it streams its outputs incrementally, rather than returning them
@@ -50,6 +51,8 @@ def streamify(
             still be included in the output stream even if this is `False`.
         is_async_program: Whether the program is async. If `False`, the program will be wrapped with `asyncify`,
             otherwise the program will be called with `acall`.
+        async_streaming: Whether to return an async generator or a sync generator. If `False`, the streaming will be
+            converted to a sync generator.
 
     Returns:
         A function that takes the same arguments as the original program, but returns an async
@@ -169,7 +172,7 @@ def streamify(
 
         await stream.send(prediction)
 
-    async def streamer(*args, **kwargs):
+    async def async_streamer(*args, **kwargs):
         send_stream, receive_stream = create_memory_object_stream(16)
         async with create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)
@@ -201,7 +204,15 @@ def streamify(
                         yield value
                     return
 
-    return streamer
+    if async_streaming:
+        return async_streamer
+    else:
+
+        def sync_streamer(*args, **kwargs):
+            output = async_streamer(*args, **kwargs)
+            return apply_sync_streaming(output)
+
+        return sync_streamer
 
 
 def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
