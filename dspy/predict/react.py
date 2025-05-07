@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 from typing import Any, Callable, Literal
 
 from litellm import ContextWindowExceededError
@@ -73,6 +74,7 @@ class ReAct(Module):
     def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+        tools = deepcopy(self.tools)
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -85,7 +87,7 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
+                trajectory[f"observation_{idx}"] = tools[pred.next_tool_name](**pred.next_tool_args)
             except Exception as err:
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 
@@ -98,6 +100,7 @@ class ReAct(Module):
     async def aforward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+        tools = deepcopy(self.tools)
         for idx in range(max_iters):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -110,7 +113,7 @@ class ReAct(Module):
             trajectory[f"tool_args_{idx}"] = pred.next_tool_args
 
             try:
-                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
+                trajectory[f"observation_{idx}"] = await tools[pred.next_tool_name].acall(**pred.next_tool_args)
             except Exception as err:
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 
@@ -204,9 +207,4 @@ TOPIC 04: Default behavior when the trajectory gets too long.
 TOPIC 05: Adding more structure around how the instruction is formatted.
     * Concretely, it's now a string, so an optimizer can and does rewrite it freely.
     * An alternative would be to add more structure, such that a certain template is fixed but values are variable?
-
-
-TOPIC 06: Idiomatically allowing tools that maintain state across iterations, but not across different `forward` calls.
-    * So the tool would be newly initialized at the start of each `forward` call, but maintain state across iterations.
-    * This is pretty useful for allowing the agent to keep notes or count certain things, etc.
 """
