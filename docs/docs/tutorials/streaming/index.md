@@ -399,25 +399,6 @@ Final output:  Prediction(
 By default calling a streamified DSPy program produces an async generator. In order to get back
 a sync generator, you can set the flag `async_streaming=False`:
 
-```
-import os
-
-import dspy
-
-os.environ["OPENAI_API_KEY"] = "your_api_key"
-
-dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-
-predict = dspy.Predict("question->answer")
-
-# Enable streaming for the 'answer' field
-stream_predict = dspy.streamify(
-    predict,
-    stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
-)
-```
-
-To consume the streamed output:
 
 ```python
 import os
