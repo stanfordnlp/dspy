@@ -41,7 +41,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     @with_callbacks
     async def acall(self, *args, **kwargs):
-        caller_modules = list(settings.get("caller_modules", []))
+        caller_modules = settings.caller_modules or []
+        caller_modules = list(caller_modules)
         caller_modules.append(self)
 
         with settings.context(caller_modules=caller_modules):
