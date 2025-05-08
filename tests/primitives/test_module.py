@@ -248,8 +248,8 @@ def test_usage_tracker_in_parallel():
 
 def test_module_history():
     class MyProgram(dspy.Module):
-        def __init__(self):
-            super().__init__()
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
             self.cot = dspy.ChainOfThought("question -> answer")
 
         def forward(self, question: str, **kwargs) -> str:
@@ -269,12 +269,31 @@ def test_module_history():
         # Second call only call the submodule.
         program.cot(question="What is the capital of France?")
 
-    # The LM history entity exists in all the ancestor callers.
-    assert len(program.history) == 1
-    assert len(program.cot.history) == 2
-    assert len(program.cot.predict.history) == 2
+        # The LM history entity exists in all the ancestor callers.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
 
-    assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+        # The same history entity is shared across all the ancestor callers to reduce memory usage.
+        assert id(program.history[0]) == id(program.cot.history[0])
+
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+
+        dspy.settings.configure(disable_history=True)
+
+        program(question="What is the capital of France?")
+        # No history is recorded when history is disabled.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        dspy.settings.configure(disable_history=False)
+
+        program(question="What is the capital of France?")
+        # History is recorded again when history is enabled.
+        assert len(program.history) == 2
+        assert len(program.cot.history) == 3
+        assert len(program.cot.predict.history) == 3
 
 
 def test_module_history_with_concurrency():
