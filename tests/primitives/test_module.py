@@ -5,6 +5,7 @@ import logging
 from unittest.mock import patch
 import pytest
 import os
+from litellm import ModelResponse, Message, Choices
 
 
 def test_deepcopy_basic():
@@ -243,3 +244,64 @@ def test_usage_tracker_in_parallel():
 
     assert results[0].get_lm_usage().keys() == set(["openai/gpt-4o-mini"])
     assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
+
+
+def test_module_history():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        def forward(self, question: str, **kwargs) -> str:
+            return self.cot(question=question)
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+            ],
+            model="openai/gpt-4o-mini",
+        )
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        program = MyProgram()
+        program(question="What is the capital of France?")
+
+        # Second call only call the submodule.
+        program.cot(question="What is the capital of France?")
+
+    # The LM history entity exists in all the ancestor callers.
+    assert len(program.history) == 1
+    assert len(program.cot.history) == 2
+    assert len(program.cot.predict.history) == 2
+
+    assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+
+
+def test_module_history_with_concurrency():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        def forward(self, question: str, **kwargs) -> str:
+            return self.cot(question=question)
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'reasoning': 'N/A', 'answer': 'Holy crab!'}"))],
+            model="openai/gpt-4o-mini",
+        )
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        program = MyProgram()
+
+        parallelizer = dspy.Parallel()
+
+        parallelizer(
+            [
+                (program, {"question": "What is the meaning of life?"}),
+                (program, {"question": "why did a chicken cross the kitchen?"}),
+            ]
+        )
+        assert len(program.history) == 2
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
