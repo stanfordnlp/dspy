@@ -1,16 +1,14 @@
 from typing import Callable, Optional
 
 import dspy
-from dspy.predict.predict import Prediction
-
-from dspy.predict.predict import Module
+from dspy.predict.predict import Module, Prediction
 
 
 class BestOfN(Module):
     def __init__(
         self,
         module: Module,
-        N: int,
+        N: int,  # noqa: N803
         reward_fn: Callable[[dict, Prediction], float],
         threshold: float,
         fail_count: Optional[int] = None,
