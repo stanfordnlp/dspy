@@ -1,11 +1,12 @@
-import dspy
-import random
 import logging
+import random
+from typing import Callable
 
 import numpy as np
-from typing import Callable
+
+import dspy
+from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ class SIMBA(Teleprompter):
             batch_90th_percentile_score = np.percentile([float(o["score"]) for o in outputs], 90)
 
             # We'll chunk `outputs` by example index, each chunk has length = num_candidates
-            for idx, example in enumerate(batch):
+            for idx, _ in enumerate(batch):
                 # gather all results for this example
                 bucket = [outputs[i] for i in range(idx, len(outputs), self.bsize)]
                 bucket.sort(key=lambda x: x["score"], reverse=True)
@@ -222,7 +223,7 @@ class SIMBA(Teleprompter):
                 num_demos_to_drop = min(num_demos_to_drop, num_demos)
                 demos_to_drop = [rng.randrange(num_demos) for _ in range(num_demos_to_drop)]
 
-                for name, predictor in name2predictor.items():
+                for _, predictor in name2predictor.items():
                     predictor.demos = [demo for idxd, demo in enumerate(predictor.demos) if idxd not in demos_to_drop]
 
                 # Pick a strategy
@@ -260,7 +261,7 @@ class SIMBA(Teleprompter):
 
             # STEP 6: Compute average mini-batch scores for each new candidate
             candidate_scores = []
-            for idx_cand, cand_sys in enumerate(system_candidates):
+            for idx_cand, _ in enumerate(system_candidates):
                 start = idx_cand * self.bsize
                 end = (idx_cand + 1) * self.bsize
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
@@ -284,9 +285,9 @@ class SIMBA(Teleprompter):
                 end = (idx_cand + 1) * self.bsize
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
                 register_new_program(cand_sys, sys_scores)
-            
-        M = len(winning_programs) - 1
-        N = self.num_candidates + 1
+
+        M = len(winning_programs) - 1 # noqa: N806
+        N = self.num_candidates + 1 # noqa: N806
         if M < 1:
             program_idxs = [0] * N
         else:
@@ -300,7 +301,7 @@ class SIMBA(Teleprompter):
         outputs = run_parallel(exec_pairs)
 
         scores = []
-        for idx_prog, prog in enumerate(candidate_programs):
+        for idx_prog, _ in enumerate(candidate_programs):
             start = idx_prog * len(trainset)
             end = (idx_prog + 1) * len(trainset)
             sys_scores = [outputs[i]["score"] for i in range(start, end)]
