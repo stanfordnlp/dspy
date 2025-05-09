@@ -6,6 +6,8 @@ import pydantic
 import pytest
 import ujson
 import os
+import time
+import asyncio
 
 import dspy
 from dspy import Predict, Signature
@@ -509,6 +511,12 @@ def test_lm_usage():
 
 def test_lm_usage_with_parallel():
     program = Predict("question -> answer")
+
+    def program_wrapper(question):
+        # Sleep to make it possible to cause a race condition
+        time.sleep(0.5)
+        return program(question=question)
+
     dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
     with patch(
         "dspy.clients.lm.litellm_completion",
@@ -519,10 +527,39 @@ def test_lm_usage_with_parallel():
     ):
         parallelizer = dspy.Parallel()
         input_pairs = [
-            (program, {"question": "What is the capital of France?"}),
-            (program, {"question": "What is the capital of France?"}),
+            (program_wrapper, {"question": "What is the capital of France?"}),
+            (program_wrapper, {"question": "What is the capital of France?"}),
         ]
         results = parallelizer(input_pairs)
+        assert results[0].answer == "Paris"
+        assert results[1].answer == "Paris"
+        assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+        assert results[1].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+
+
+@pytest.mark.asyncio
+async def test_lm_usage_with_async():
+    program = Predict("question -> answer")
+
+    async def program_wrapper(question):
+        # Sleep to make it possible to cause a race condition
+        await asyncio.sleep(0.5)
+        return await program.acall(question=question)
+
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    with patch(
+        "litellm.acompletion",
+        return_value=ModelResponse(
+            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+            usage={"total_tokens": 10},
+        ),
+    ):
+        tasks = []
+        async with asyncio.TaskGroup() as tg:
+            tasks.append(tg.create_task(program_wrapper(question="What is the capital of France?")))
+            tasks.append(tg.create_task(program_wrapper(question="What is the capital of France?")))
+
+        results = await asyncio.gather(*tasks)
         assert results[0].answer == "Paris"
         assert results[1].answer == "Paris"
         assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
