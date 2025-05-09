@@ -8,6 +8,7 @@ import pydantic
 import regex
 from pydantic.fields import FieldInfo
 
+import dspy
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     format_field_value,
@@ -62,10 +63,13 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
+            if dspy.settings.log_json_fallbacks:
+                logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
             try:
                 lm_kwargs["response_format"] = {"type": "json_object"}
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            except ValueError as ve:
+                raise ve
             except Exception as e:
                 raise RuntimeError(
                     "Both structured output format and JSON mode failed. Please choose a model that supports "
@@ -134,7 +138,7 @@ class JSONAdapter(ChatAdapter):
                 fields[k] = parse_value(v, signature.output_fields[k].annotation)
 
         if fields.keys() != signature.output_fields.keys():
-            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
+            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}", len(fields.keys()), len(signature.output_fields.keys()))
 
         return fields
 

@@ -11,7 +11,7 @@ from asyncer import syncify
 import dspy
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
-from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.provider import Provider, TrainingJob, ReinforceJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -172,10 +172,6 @@ class LM(BaseLM):
     ) -> TrainingJob:
         from dspy import settings as settings
 
-        err = "Fine-tuning is an experimental feature."
-        err += " Set `dspy.settings.experimental` to `True` to use it."
-        assert settings.experimental, err
-
         err = f"Provider {self.provider} does not support fine-tuning."
         assert self.provider.finetunable, err
 
@@ -194,6 +190,17 @@ class LM(BaseLM):
         )
         thread.start()
 
+        return job
+
+    def reinforce(self, train_kwargs) -> ReinforceJob:
+        # TODO(GRPO Team): Should we return an initialized job here?
+        from dspy import settings as settings
+    
+        err = f"Provider {self.provider} does not implement the reinforcement learning interface."
+        assert self.provider.reinforceable, err
+
+        job = self.provider.ReinforceJob(lm=self, train_kwargs=train_kwargs)
+        job.initialize()
         return job
 
     def _run_finetune_job(self, job: TrainingJob):
