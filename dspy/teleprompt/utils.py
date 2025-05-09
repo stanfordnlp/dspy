@@ -205,12 +205,12 @@ def save_candidate_program(program, log_dir, trial_num, note=None):
 
     # Define the save path for the program
     if note:
-        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}_{note}.json")
+        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}_{note}")
     else:
-        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}.json")
+        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}")
 
     # Save the program
-    program.save(save_path)
+    program.save(save_path, save_program=True)
 
     return save_path
 
