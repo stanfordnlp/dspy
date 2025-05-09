@@ -1,3 +1,5 @@
+import asyncio
+import contextvars
 import copy
 import threading
 from contextlib import contextmanager
@@ -24,8 +26,8 @@ DEFAULT_CONFIG = dotdict(
     usage_tracker=None,
     caller_predict=None,
     stream_listeners=[],
-    provide_traceback=False, # Whether to include traceback information in error logs.
-    num_threads=8, # Number of threads to use for parallel processing.
+    provide_traceback=False,  # Whether to include traceback information in error logs.
+    num_threads=8,  # Number of threads to use for parallel processing.
 )
 
 # Global base configuration and owner tracking
@@ -35,13 +37,7 @@ config_owner_thread_id = None
 # Global lock for settings configuration
 global_lock = threading.Lock()
 
-
-class ThreadLocalOverrides(threading.local):
-    def __init__(self):
-        self.overrides = dotdict()
-
-
-thread_local_overrides = ThreadLocalOverrides()
+thread_local_overrides = contextvars.ContextVar("context_overrides", default=dotdict())
 
 
 class Settings:
@@ -72,7 +68,7 @@ class Settings:
         return global_lock
 
     def __getattr__(self, name):
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
+        overrides = thread_local_overrides.get()
         if name in overrides:
             return overrides[name]
         elif name in main_thread_config:
@@ -114,6 +110,12 @@ class Settings:
         global main_thread_config, config_owner_thread_id
         current_thread_id = threading.get_ident()
 
+        # Check if we're in an async task
+        if asyncio.current_task() is not None:
+            raise RuntimeError(
+                "dspy.settings.configure(...) cannot be called from an async task. Use `dspy.context(...)` instead."
+            )
+
         with self.lock:
             # First configuration: establish ownership. If ownership established, only that thread can configure.
             if config_owner_thread_id in [None, current_thread_id]:
@@ -133,17 +135,17 @@ class Settings:
         If threads are spawned inside this block using ParallelExecutor, they will inherit these overrides.
         """
 
-        original_overrides = getattr(thread_local_overrides, "overrides", dotdict()).copy()
+        original_overrides = thread_local_overrides.get().copy()
         new_overrides = dotdict({**main_thread_config, **original_overrides, **kwargs})
-        thread_local_overrides.overrides = new_overrides
+        token = thread_local_overrides.set(new_overrides)
 
         try:
             yield
         finally:
-            thread_local_overrides.overrides = original_overrides
+            thread_local_overrides.reset(token)
 
     def __repr__(self):
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
+        overrides = thread_local_overrides.get()
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 
