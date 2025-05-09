@@ -1,6 +1,7 @@
 import dspy
 import random
 import logging
+import sys
 
 import numpy as np
 from typing import Callable
@@ -22,6 +23,7 @@ class SIMBA(Teleprompter):
         max_demos=4,
         demo_input_field_maxlen=100_000,
         num_threads=None,
+        max_errors=sys.maxsize,
         temperature_for_sampling=0.2,
         temperature_for_candidates=0.2,
     ):
@@ -43,7 +45,8 @@ class SIMBA(Teleprompter):
         self.max_demos = max_demos
         self.demo_input_field_maxlen = demo_input_field_maxlen
         self.num_threads = num_threads
-
+        self.max_errors = max_errors
+        
         self.temperature_for_sampling = temperature_for_sampling
         self.temperature_for_candidates = temperature_for_candidates
 
@@ -118,7 +121,7 @@ class SIMBA(Teleprompter):
         instance_idx = 0
 
         # Parallel runner
-        run_parallel = dspy.Parallel(access_examples=False, num_threads=self.num_threads)
+        run_parallel = dspy.Parallel(access_examples=False, num_threads=self.num_threads, max_errors=self.max_errors)
 
         trial_logs = {}
         for batch_idx in range(self.max_steps):
