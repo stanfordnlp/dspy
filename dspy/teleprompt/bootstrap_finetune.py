@@ -116,7 +116,10 @@ class BootstrapFinetune(FinetuneTeleprompter):
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
             training_key = (pred.lm, data_pred_ind)
-            pred.lm = key_to_lm[training_key]
+            finetuned_lm = key_to_lm[training_key]
+            if isinstance(finetuned_lm, Exception):
+                raise RuntimeError(f"Finetuned LM for predictor {pred_ind} failed.") from finetuned_lm
+            pred.lm = finetuned_lm
             # TODO: What should the correct behavior be here? Should
             # BootstrapFinetune modify the prompt demos according to the
             # train data?
@@ -149,7 +152,10 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         key_to_lm = {}
         for ind, (key, job) in enumerate(key_to_job.items()):
-            key_to_lm[key] = job.result()
+            result = job.result()
+            if isinstance(result, Exception):
+                raise result
+            key_to_lm[key] = result
             job.thread.join()
             logger.info(f"Job {ind + 1}/{num_jobs} is done")
 
