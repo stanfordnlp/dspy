@@ -1,5 +1,5 @@
 import logging
-from copy import deepcopy
+from copy import deepcopy, copy
 from typing import Any, Callable, Literal
 
 from litellm import ContextWindowExceededError
@@ -74,7 +74,7 @@ class ReAct(Module):
     def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        tools = deepcopy(self.tools)
+        tools = self._copy_tools(self.tools)
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -100,7 +100,7 @@ class ReAct(Module):
     async def aforward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        tools = deepcopy(self.tools)
+        tools = self._copy_tools(self.tools)
         for idx in range(max_iters):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -162,6 +162,12 @@ class ReAct(Module):
             trajectory.pop(key)
 
         return trajectory
+    
+    def _copy_tools(self, tools):
+        try:
+            return deepcopy(tools)
+        except Exception:
+            return copy(tools)
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
