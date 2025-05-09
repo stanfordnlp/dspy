@@ -87,9 +87,11 @@ async def test_dspy_context_with_async_task_group():
 
         async def aforward(self, question: str) -> str:
             lm = dspy.LM("openai/gpt-4o-mini", cache=False) if "France" in question else dspy.settings.lm
-            with dspy.context(lm=lm):
+            with dspy.context(lm=lm, trace=[]):
                 assert dspy.settings.lm.model == lm.model
-                return await self.predict.acall(question=question)
+                result = await self.predict.acall(question=question)
+                assert len(dspy.settings.trace) == 1
+                return result
 
     module = MyModule()
 
@@ -120,5 +122,7 @@ async def test_dspy_context_with_async_task_group():
         # Germany question uses gpt-4o
         assert mock_completion.call_args_list[2].kwargs["model"] == "openai/gpt-4o"
         assert mock_completion.call_args_list[3].kwargs["model"] == "openai/gpt-4o"
+
         # The main thread is not affected by the context
         assert dspy.settings.lm.model == "openai/gpt-4o"
+        assert dspy.settings.trace == []
