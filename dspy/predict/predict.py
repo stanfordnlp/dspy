@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 class Predict(Module, Parameter):
     def __init__(self, signature, callbacks=None, **config):
+        super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
         self.config = config
-        self.callbacks = callbacks or []
         self.reset()
 
     def reset(self):
