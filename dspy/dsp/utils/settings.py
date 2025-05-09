@@ -89,7 +89,7 @@ class Settings:
         self.__setattr__(key, value)
 
     def __contains__(self, key):
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
+        overrides = thread_local_overrides.get()
         return key in overrides or key in main_thread_config
 
     def get(self, key, default=None):
@@ -99,7 +99,7 @@ class Settings:
             return default
 
     def copy(self):
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
+        overrides = thread_local_overrides.get()
         return dotdict({**main_thread_config, **overrides})
 
     @property
@@ -110,11 +110,15 @@ class Settings:
         global main_thread_config, config_owner_thread_id
         current_thread_id = threading.get_ident()
 
-        # Check if we're in an async task
-        if asyncio.current_task() is not None:
-            raise RuntimeError(
-                "dspy.settings.configure(...) cannot be called from an async task. Use `dspy.context(...)` instead."
-            )
+        # Check if we're actually running in an async task
+        try:
+            if asyncio.current_task() is not None:
+                raise RuntimeError(
+                    "dspy.settings.configure(...) cannot be called from an async task. Use `dspy.context(...)` instead."
+                )
+        except RuntimeError:
+            # We're not in an async context, which is what we want
+            pass
 
         with self.lock:
             # First configuration: establish ownership. If ownership established, only that thread can configure.

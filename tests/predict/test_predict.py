@@ -507,6 +507,28 @@ def test_lm_usage():
         assert result.get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
 
 
+def test_lm_usage_with_parallel():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    with patch(
+        "dspy.clients.lm.litellm_completion",
+        return_value=ModelResponse(
+            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+            usage={"total_tokens": 10},
+        ),
+    ):
+        parallelizer = dspy.Parallel()
+        input_pairs = [
+            (program, {"question": "What is the capital of France?"}),
+            (program, {"question": "What is the capital of France?"}),
+        ]
+        results = parallelizer(input_pairs)
+        assert results[0].answer == "Paris"
+        assert results[1].answer == "Paris"
+        assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+        assert results[1].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+
+
 def test_positional_arguments():
     program = Predict("question -> answer")
     with pytest.raises(ValueError) as e:

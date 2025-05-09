@@ -137,6 +137,9 @@ def test_track_usage_with_multiple_models():
     assert total_usage["gpt-3.5-turbo"]["total_tokens"] == 900
 
 
+i
+
+
 @pytest.mark.skipif(
     not os.getenv("OPENAI_API_KEY"),
     reason="Skip the test if OPENAI_API_KEY is not set.",

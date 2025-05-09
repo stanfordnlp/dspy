@@ -54,6 +54,7 @@ class ParallelExecutor:
             try:
                 return user_function(item)
             except Exception as e:
+                raise e
                 with self.error_lock:
                     self.error_count += 1
                     if self.error_count >= self.max_errors:
@@ -86,8 +87,8 @@ class ParallelExecutor:
             # Apply parent's thread-local overrides
             from dspy.dsp.utils.settings import thread_local_overrides
 
-            original = thread_local_overrides.overrides
-            thread_local_overrides.overrides = parent_overrides.copy()
+            original = thread_local_overrides.get()
+            token = thread_local_overrides.set({**original, **parent_overrides.copy()})
             if parent_overrides.get("usage_tracker"):
                 # Usage tracker needs to be deep copied across threads so that each thread tracks its own usage
                 thread_local_overrides.overrides["usage_tracker"] = copy.deepcopy(parent_overrides["usage_tracker"])
@@ -95,7 +96,7 @@ class ParallelExecutor:
             try:
                 return index, function(item)
             finally:
-                thread_local_overrides.overrides = original
+                thread_local_overrides.reset(token)
 
         # Handle Ctrl-C in the main thread
         @contextlib.contextmanager
@@ -121,7 +122,7 @@ class ParallelExecutor:
             with interrupt_manager():
                 from dspy.dsp.utils.settings import thread_local_overrides
 
-                parent_overrides = thread_local_overrides.overrides.copy()
+                parent_overrides = thread_local_overrides.get().copy()
 
                 futures_map = {}
                 futures_set = set()
