@@ -14,6 +14,30 @@ def test_basic_dspy_settings():
     assert len(dspy.settings.callbacks) == 1
 
 
+def test_forbid_configure_call_in_child_thread():
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
+
+    def worker():
+        with pytest.raises(RuntimeError, match="Cannot call dspy.configure in a child thread"):
+            dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[])
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(worker)
+
+
+@pytest.mark.asyncio
+async def test_forbid_configure_call_in_async_function():
+    with pytest.raises(
+        RuntimeError,
+        match=r"dspy.settings.configure\(\.\.\.\) cannot be called from*",
+    ):
+        dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
+
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[]):
+        # context is allowed
+        pass
+
+
 def test_dspy_context():
     dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
     with dspy.context(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[]):

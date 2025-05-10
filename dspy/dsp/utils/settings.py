@@ -116,9 +116,12 @@ class Settings:
                 raise RuntimeError(
                     "dspy.settings.configure(...) cannot be called from an async task. Use `dspy.context(...)` instead."
                 )
-        except RuntimeError:
+        except RuntimeError as e:
             # We're not in an async context, which is what we want
-            pass
+            if e.args[0].startswith(
+                "dspy.settings.configure(...) cannot be called from an async task. Use `dspy.context(...)` instead."
+            ):
+                raise e
 
         with self.lock:
             # First configuration: establish ownership. If ownership established, only that thread can configure.
