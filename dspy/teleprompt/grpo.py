@@ -75,6 +75,8 @@ class GRPO(FinetuneTeleprompter):
         self.epoch = -1
         self.id_freqs = Counter()
 
+        self.model_name_val_scores = {}
+
     def validate_trace_data_and_log_issues(
         self,
         trace_data: List[List[List[Dict[str, Any]]]],
@@ -103,16 +105,15 @@ class GRPO(FinetuneTeleprompter):
                         assert hash(t[0].signature) in pred_signature_hash_to_ind
     
     def report_validation_metrics(self, student, trainset, valset, logger, step_idx=-1):
-        try:
-            lm_name = student.predictors()[0].lm.model
-            logger.info(f"Validating modelname: {lm_name}")
-        except:
-            pass
+        lm_names = [pred.lm.model for pred in student.predictors()]
+        logger.info(f"Validating modelnames (ord by predictors): {lm_names}")
 
         if step_idx == -1 or step_idx == self.num_train_steps - 1 or (step_idx + 1) % self.num_steps_for_val == 0:
             pass
         else:
             return
+        
+        score = None
 
         if valset is not None:
             # Validation set provided by user
@@ -146,6 +147,8 @@ class GRPO(FinetuneTeleprompter):
                 else:
                     logger.info(f"Student program training set score after training step {step_idx + 1}/{self.num_train_steps}: {trainset_agg}")
                     logger.info(f"Student program validation set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_agg}")
+                
+                score = valset_agg
             else:
                 if step_idx == -1:
                     logger.info("Using user provided validation set and not reporting train scores.")
@@ -168,6 +171,7 @@ class GRPO(FinetuneTeleprompter):
                     logger.info(f"Student program validation set score before training loop: {valset_evaluation[0]}")
                 else:
                     logger.info(f"Student program validation set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+                score = valset_evaluation[0]
         else:
             # No validation set provided by user
             if self.report_train_scores:
@@ -194,12 +198,16 @@ class GRPO(FinetuneTeleprompter):
                     logger.info(f"Student program training set score before training loop: {valset_evaluation[0]}")
                 else:
                     logger.info(f"Student program training set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+                score = valset_evaluation[0]
             else:
                 # No valset provided, and not using train as val
                 assert not self.use_train_as_val, "If report_train_scores is False, use_train_as_val must be False."
                 if step_idx == -1:
                     logger.info("Not using any validation set and not reporting train scores.")
-    
+        
+        if score is not None:
+            self.model_name_val_scores[tuple(lm_names)] = score
+
     def update_shuffled_trainset(self, original_trainset):
         self.shuffled_trainset_ids = list(range(len(original_trainset)))
         self.rng.shuffle(self.shuffled_trainset_ids)
@@ -555,6 +563,12 @@ class GRPO(FinetuneTeleprompter):
 
         for pind, pred in enumerate(student.predictors()):
             pred.lm.cache = initial_caches_student[pind]
+        
+        if self.model_name_val_scores is not None and len(self.model_name_val_scores) > 0:
+            # Find the lm_names with the highest validation score
+            best_model_names_tuple = max(self.model_name_val_scores, key=self.model_name_val_scores.get)
+            for best_model_name, pred in zip(best_model_names_tuple, student.predictors()):
+                pred.lm.model = best_model_name
 
         logger.info("GRPO compiler has finished compiling the student program")
         student._compiled = True
