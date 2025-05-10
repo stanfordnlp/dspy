@@ -54,7 +54,6 @@ class ParallelExecutor:
             try:
                 return user_function(item)
             except Exception as e:
-                raise e
                 with self.error_lock:
                     self.error_count += 1
                     if self.error_count >= self.max_errors:

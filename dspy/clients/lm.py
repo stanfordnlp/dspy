@@ -282,6 +282,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
             retry_strategy="exponential_backoff_retry",
             **request,
         )
+
     return stream_completion()
 
 
