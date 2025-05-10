@@ -99,45 +99,51 @@ async def test_chat_adapter_async_call():
 
 
 def test_chat_adapter_with_pydantic_models():
-    class NestedField(pydantic.BaseModel):
-        subsubfield1: str = pydantic.Field(description="String subsubfield")
-        subsubfield2: int = pydantic.Field(description="Integer subsubfield", ge=0, le=10)
+    class DogClass(pydantic.BaseModel):
+        dog_breeds: list[str] = pydantic.Field(description="List of the breeds of dogs")
+        num_dogs: int = pydantic.Field(description="Number of dogs the owner has", ge=0, le=10)
 
-    class InputField(pydantic.BaseModel):
-        subfield1: bool = pydantic.Field(description="Boolean subfield")
-        nested_field: NestedField = pydantic.Field(description="Nested Pydantic model")
+    class PetOwner(pydantic.BaseModel):
+        name: str = pydantic.Field(description="Name of the owner")
+        num_pets: int = pydantic.Field(description="Amount of pets the owner has", ge=0, le=100)
+        dogs: DogClass = pydantic.Field(description="Nested Pydantic class with dog specific information ")
 
-    class OutputField(pydantic.BaseModel):
-        subfield1: str = pydantic.Field(description="String subfield")
-        subfield2: int = pydantic.Field(description="Integer subfield", ge=0, le=10)
-        subfield3: bool = pydantic.Field(description="Boolean subfield")
+    class Answer(pydantic.BaseModel):
+        result: str
+        analysis: str
 
     class TestSignature(dspy.Signature):
-        sig_input: InputField = dspy.InputField()
-        sig_output: OutputField = dspy.OutputField()
+        owner: PetOwner = dspy.InputField()
+        question: str = dspy.InputField()
+        output: Answer = dspy.OutputField()
 
     dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
-        program(sig_input=InputField(subfield1=True, nested_field=NestedField(subsubfield1="Test", subsubfield2=10)))
+        program(
+            owner=PetOwner(name="John", num_pets=5, dogs=DogClass(dog_breeds=["labrador", "chihuahua"], num_dogs=2)),
+            question="How many non-dog pets does John have?",
+        )
 
     mock_completion.assert_called_once()
     _, call_kwargs = mock_completion.call_args
 
     system_content = call_kwargs["messages"][0]["content"]
     user_content = call_kwargs["messages"][1]["content"]
+    print(system_content)
+    print("\n\n\n\n\n")
+    print(user_content)
+    assert "1. `owner` (PetOwner)" in system_content
+    assert "2. `question` (str)" in system_content
+    assert "1. `output` (Answer)" in system_content
 
-    assert "1. `sig_input` (InputField)" in system_content
-    assert "1. `sig_output` (OutputField)" in system_content
-    assert "subfield1" in system_content
-    assert "subfield2" in system_content
-    assert "subfield3" in system_content
-
-    assert "subfield1" in user_content
-    assert "nested_field" in user_content
-    assert "subsubfield1" in user_content
-    assert "subsubfield2" in user_content
+    assert "name" in user_content
+    assert "num_pets" in user_content
+    assert "dogs" in user_content
+    assert "dog_breeds" in user_content
+    assert "num_dogs" in user_content
+    assert "How many non-dog pets does John have?" in user_content
 
 
 def test_chat_adapter_signature_information():
