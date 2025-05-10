@@ -103,6 +103,12 @@ class GRPO(FinetuneTeleprompter):
                         assert hash(t[0].signature) in pred_signature_hash_to_ind
     
     def report_validation_metrics(self, student, trainset, valset, logger, step_idx=-1):
+        try:
+            lm_name = student.predictors()[0].lm.model
+            logger.info(f"Validating modelname: {lm_name}")
+        except:
+            pass
+
         if step_idx == -1 or step_idx == self.num_train_steps - 1 or (step_idx + 1) % self.num_steps_for_val == 0:
             pass
         else:
