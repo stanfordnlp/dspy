@@ -131,9 +131,6 @@ def test_chat_adapter_with_pydantic_models():
 
     system_content = call_kwargs["messages"][0]["content"]
     user_content = call_kwargs["messages"][1]["content"]
-    print(system_content)
-    print("\n\n\n\n\n")
-    print(user_content)
     assert "1. `owner` (PetOwner)" in system_content
     assert "2. `question` (str)" in system_content
     assert "1. `output` (Answer)" in system_content
