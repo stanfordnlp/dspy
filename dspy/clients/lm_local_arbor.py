@@ -66,6 +66,7 @@ class ArborReinforceJob(ReinforceJob):
         "max_grad_norm": 1.0,
         "report_to": None,
         "log_completions": True,
+        "logging_steps": 100,
         "lora": False
     }
 
@@ -98,6 +99,7 @@ class ArborReinforceJob(ReinforceJob):
         max_grad_norm = self.train_kwargs.get("max_grad_norm", self.DEFAULT_TRAIN_KWARGS["max_grad_norm"])
         report_to = self.train_kwargs.get("report_to", self.DEFAULT_TRAIN_KWARGS["report_to"])
         log_completions = self.train_kwargs.get("log_completions", self.DEFAULT_TRAIN_KWARGS["log_completions"])
+        logging_steps = self.train_kwargs.get("logging_steps", self.DEFAULT_TRAIN_KWARGS["logging_steps"])
         lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
@@ -124,6 +126,7 @@ class ArborReinforceJob(ReinforceJob):
             'max_grad_norm': max_grad_norm,
             'report_to': report_to,
             'log_completions': log_completions,
+            'logging_steps': logging_steps,
             'lora': lora
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
