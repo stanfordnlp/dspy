@@ -64,7 +64,7 @@ class ArborReinforceJob(ReinforceJob):
         "bf16": False,
         "scale_rewards": True,
         "max_grad_norm": 1.0,
-        "report_to": None,
+        "report_to": "none",
         "log_completions": True,
         "logging_steps": 100,
         "lora": False
