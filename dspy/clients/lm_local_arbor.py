@@ -67,6 +67,8 @@ class ArborReinforceJob(ReinforceJob):
         "report_to": "none",
         "log_completions": True,
         "logging_steps": 100,
+        # By default, none is the model's max context length
+        "max_context_length": None,
         "lora": False
     }
 
@@ -100,6 +102,7 @@ class ArborReinforceJob(ReinforceJob):
         report_to = self.train_kwargs.get("report_to", self.DEFAULT_TRAIN_KWARGS["report_to"])
         log_completions = self.train_kwargs.get("log_completions", self.DEFAULT_TRAIN_KWARGS["log_completions"])
         logging_steps = self.train_kwargs.get("logging_steps", self.DEFAULT_TRAIN_KWARGS["logging_steps"])
+        max_context_length = self.train_kwargs.get("max_context_length", self.DEFAULT_TRAIN_KWARGS["max_context_length"])
         lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
@@ -127,7 +130,8 @@ class ArborReinforceJob(ReinforceJob):
             'report_to': report_to,
             'log_completions': log_completions,
             'logging_steps': logging_steps,
-            'lora': lora
+            'max_context_length': max_context_length,
+            'lora': lora,
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
