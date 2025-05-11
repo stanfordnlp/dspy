@@ -1,14 +1,16 @@
-from dspy.clients.lm import LM
-from dspy.clients.provider import Provider, TrainingJob
-from dspy.clients.base_lm import BaseLM, inspect_history
-from dspy.clients.embedding import Embedder
-import litellm
+import logging
 import os
 from pathlib import Path
-from dspy.clients.cache import Cache
-import logging
 from typing import Optional
+
+import litellm
 from litellm.caching.caching import Cache as LitellmCache
+
+from dspy.clients.base_lm import BaseLM, inspect_history
+from dspy.clients.cache import Cache
+from dspy.clients.embedding import Embedder
+from dspy.clients.lm import LM
+from dspy.clients.provider import Provider, TrainingJob
 
 logger = logging.getLogger(__name__)
 
