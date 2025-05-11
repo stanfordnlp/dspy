@@ -37,6 +37,7 @@ class GRPO(FinetuneTeleprompter):
         format_failure_score: float = -1,
         variably_invoked_predictor_grouping_mode: Union[Literal['truncate'], Literal['fill'], Literal['ragged']] = 'truncate',
         variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
+        grpo_group_size: Union[int, None] = None,
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -53,6 +54,10 @@ class GRPO(FinetuneTeleprompter):
         self.report_train_scores = report_train_scores
         self.failure_score = failure_score
         self.format_failure_score = format_failure_score
+
+        self.grpo_group_size = grpo_group_size
+        if grpo_group_size is not None:
+            assert grpo_group_size > 1, "grpo_group_size must be greater than 0"
 
         assert failure_score > format_failure_score, "failure_score must be greater than format_failure_score since the range [format_failure_score, failure_score] is used to provide dspy formatting rewards"
 
@@ -105,13 +110,13 @@ class GRPO(FinetuneTeleprompter):
                         assert hash(t[0].signature) in pred_signature_hash_to_ind
     
     def report_validation_metrics(self, student, trainset, valset, logger, step_idx=-1):
-        lm_names = [pred.lm.model for pred in student.predictors()]
-        logger.info(f"Validating modelnames (ord by predictors): {lm_names}")
-
         if step_idx == -1 or step_idx == self.num_train_steps - 1 or (step_idx + 1) % self.num_steps_for_val == 0:
             pass
         else:
             return
+        
+        lm_names = [pred.lm.model for pred in student.predictors()]
+        logger.info(f"Validating modelnames (ord by predictors): {lm_names}")
         
         score = None
 
@@ -246,6 +251,25 @@ class GRPO(FinetuneTeleprompter):
         selected_ids = self.shuffled_trainset_ids[base_idx:end_idx]
         selected_trainset = [original_trainset[i] for i in selected_ids]
         return selected_trainset
+    
+    def select_k_diverse_elements(self, group: GRPOGroup, k: int) -> GRPOGroup:
+        if len(group) == k:
+            return group
+        
+        def select_evenly_spaced_np(lst, k):
+            import numpy as np
+            n = len(lst)
+            if k == 0:
+                return []
+            if k == 1:
+                return [lst[0]]
+            indices = np.linspace(0, n-1, k)
+            indices = np.round(indices).astype(int)
+            return [lst[i] for i in indices]
+
+        # We need to sort the group by the score, and select k equally spaced elements from the sorted group
+        sorted_group = sorted(group, key=lambda x: x["reward"], reverse=True)
+        return select_evenly_spaced_np(sorted_group, k)
 
     def compile(
         self,
@@ -322,7 +346,11 @@ class GRPO(FinetuneTeleprompter):
         for pred in student.predictors():
             train_kwargs = self.train_kwargs[pred.lm]
             train_kwargs = {} if train_kwargs is None else train_kwargs
-            train_kwargs["num_generations"] = num_generations
+            if self.grpo_group_size is not None:
+                assert self.grpo_group_size <= num_generations, f"grpo_group_size {self.grpo_group_size} is greater than the number of generations {num_generations}"
+                train_kwargs["num_generations"] = self.grpo_group_size
+            else:
+                train_kwargs["num_generations"] = num_generations
             self.train_kwargs[pred.lm] = train_kwargs
 
         # We need to have a separate job for each unique LM x the data
@@ -522,6 +550,7 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Invoking GRPO training step...")
             for (lm, data_key), job in grpo_training_jobs.items():
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
+                new_train_data = []
                 for group in train_data:
                     if len(group) != num_generations:
                         # TODO(GRPO Team): This is very undesirable. This occurs only because in some of the generations, the model does not follow the correct dspy format.
@@ -531,8 +560,14 @@ class GRPO(FinetuneTeleprompter):
                         while len(group) < num_generations:
                             group.extend(group[:min(num_generations - len(group), len(group))])
                     assert len(group) == num_generations, f"Number of completions {len(group)} does not match the expected number num_samples_per_input*len(teachers)={num_generations}"
+                    
+                    if self.grpo_group_size is not None:
+                        group = self.select_k_diverse_elements(group, k=self.grpo_group_size)
+                        assert len(group) == self.grpo_group_size, f"Number of completions {len(group)} does not match the expected number grpo_group_size={self.grpo_group_size}"
 
-                job.step(train_data=train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
+                    new_train_data.append(group)
+                
+                job.step(train_data=new_train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
 
             for (lm, data_key), job in grpo_training_jobs.items():
                 if (train_step_idx + 1) % self.train_kwargs[lm]["update_interval"] == 0 and train_step_idx != 0:
