@@ -64,6 +64,7 @@ class ArborReinforceJob(ReinforceJob):
         "bf16": False,
         "scale_rewards": True,
         "max_grad_norm": 1.0,
+        "report_to": None,
         "lora": False
     }
 
@@ -94,6 +95,7 @@ class ArborReinforceJob(ReinforceJob):
         scale_rewards = self.train_kwargs.get("scale_rewards", self.DEFAULT_TRAIN_KWARGS["scale_rewards"])
         gradient_checkpointing_kwargs = self.train_kwargs.get("gradient_checkpointing_kwargs", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing_kwargs"])
         max_grad_norm = self.train_kwargs.get("max_grad_norm", self.DEFAULT_TRAIN_KWARGS["max_grad_norm"])
+        report_to = self.train_kwargs.get("report_to", self.DEFAULT_TRAIN_KWARGS["report_to"])
         lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
@@ -118,6 +120,7 @@ class ArborReinforceJob(ReinforceJob):
             'scale_rewards': scale_rewards,
             'gradient_checkpointing_kwargs': gradient_checkpointing_kwargs,
             'max_grad_norm': max_grad_norm,
+            'report_to': report_to,
             'lora': lora
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
