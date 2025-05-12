@@ -340,12 +340,12 @@ class GRPO(FinetuneTeleprompter):
         
         # Ensure that the teachers list contain the student program
         assert student in teachers, f"Student program {student} is not in the list of teachers {teachers}. Please provide the student program as one of the teachers. Alternatively, you can leave the teacher argument as None, and the student program will be used as the teacher program."
-        assert self.num_dspy_examples_per_grpo_step % len(teachers) == 0, (
-            f"The GRPO group size (num_dspy_examples_per_grpo_step) {self.num_dspy_examples_per_grpo_step} is not divisible by the number of teachers {len(teachers)}. "
+        assert self.num_rollouts_per_grpo_step % len(teachers) == 0, (
+            f"The GRPO group size (num_rollouts_per_grpo_step) {self.num_rollouts_per_grpo_step} is not divisible by the number of teachers {len(teachers)}. "
             "This is required to ensure that each teacher gets the same number of examples."
             "Please provide a number of examples that is divisible by the number of teachers."
         )
-        num_samples_per_input = self.num_dspy_examples_per_grpo_step // len(teachers)
+        num_samples_per_input = self.num_rollouts_per_grpo_step // len(teachers)
         
         # We will disable the LM cache for all programs (student and teachers)
         # These will be reverted to their original state at the end of the
