@@ -99,6 +99,10 @@ async def test_chat_adapter_async_call():
 
 
 def test_chat_adapter_with_pydantic_models():
+    """
+    This test verifies that ChatAdapter can handle different input and output field types, both basic and nested.
+    """
+
     class DogClass(pydantic.BaseModel):
         dog_breeds: list[str] = pydantic.Field(description="List of the breeds of dogs")
         num_dogs: int = pydantic.Field(description="Number of dogs the owner has", ge=0, le=10)
@@ -144,6 +148,10 @@ def test_chat_adapter_with_pydantic_models():
 
 
 def test_chat_adapter_signature_information():
+    """
+    This test ensures that the signature information sent to the LM follows an expected format.
+    """
+
     class TestSignature(dspy.Signature):
         input1: str = dspy.InputField(desc="String Input")
         input2: int = dspy.InputField(desc="Integer Input")
@@ -180,6 +188,9 @@ def test_chat_adapter_signature_information():
 
 
 def test_chat_adapter_exception_raised_on_failure():
+    """
+    This test ensures that on an error, ChatAdapter raises an explicit exception.
+    """
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
     invalid_completion = "{'output':'mismatched value'}"
