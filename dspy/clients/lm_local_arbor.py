@@ -1,7 +1,7 @@
 import time
 import requests
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TypedDict, TYPE_CHECKING
 
 import openai
 
@@ -12,6 +12,10 @@ from dspy.clients.utils_finetune import TrainDataFormat, TrainingStatus, GRPOGro
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
+
+
+class GRPOTrainKwargs(TypedDict):
+    num_generations: int
 
 
 class ArborTrainingJob(TrainingJob):
@@ -60,10 +64,15 @@ class ArborReinforceJob(ReinforceJob):
         "bf16": False,
         "scale_rewards": True,
         "max_grad_norm": 1.0,
+        "report_to": "none",
+        "log_completions": True,
+        "logging_steps": 100,
+        # By default, none is the model's max context length
+        "max_context_length": None,
         "lora": False
     }
 
-    def __init__(self, lm: "LM", train_kwargs: Dict[str, Any]):
+    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs):
         # The teleprompter must ensure that this is set
         if "num_generations" not in train_kwargs:
             raise ValueError("num_generations must be set in the training kwargs")
@@ -73,9 +82,7 @@ class ArborReinforceJob(ReinforceJob):
         self.provider_job_id = None
 
     def initialize(self):
-        # TODO(GRPO Team): Decide if we will get a new model ID upon initialization
         # TODO(GRPO Team): Set provider job ID
-        # TODO(GRPO Team): Should we use the API Key anywhere?
         num_generations = self.train_kwargs.get("num_generations")
         update_interval = self.train_kwargs.get("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
         temperature = self.train_kwargs.get("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
@@ -92,6 +99,10 @@ class ArborReinforceJob(ReinforceJob):
         scale_rewards = self.train_kwargs.get("scale_rewards", self.DEFAULT_TRAIN_KWARGS["scale_rewards"])
         gradient_checkpointing_kwargs = self.train_kwargs.get("gradient_checkpointing_kwargs", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing_kwargs"])
         max_grad_norm = self.train_kwargs.get("max_grad_norm", self.DEFAULT_TRAIN_KWARGS["max_grad_norm"])
+        report_to = self.train_kwargs.get("report_to", self.DEFAULT_TRAIN_KWARGS["report_to"])
+        log_completions = self.train_kwargs.get("log_completions", self.DEFAULT_TRAIN_KWARGS["log_completions"])
+        logging_steps = self.train_kwargs.get("logging_steps", self.DEFAULT_TRAIN_KWARGS["logging_steps"])
+        max_context_length = self.train_kwargs.get("max_context_length", self.DEFAULT_TRAIN_KWARGS["max_context_length"])
         lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
@@ -116,7 +127,11 @@ class ArborReinforceJob(ReinforceJob):
             'scale_rewards': scale_rewards,
             'gradient_checkpointing_kwargs': gradient_checkpointing_kwargs,
             'max_grad_norm': max_grad_norm,
-            'lora': lora
+            'report_to': report_to,
+            'log_completions': log_completions,
+            'logging_steps': logging_steps,
+            'max_context_length': max_context_length,
+            'lora': lora,
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
@@ -126,11 +141,10 @@ class ArborReinforceJob(ReinforceJob):
             json=data
         )
         assert response.status_code == 200, f"Failed to initialize GRPO: {response}"
-        self.lm.model = ArborProvider._add_provider_prefix(finetune_model)  # TODO: To be updated
+        self.lm.model = ArborProvider._add_provider_prefix(finetune_model)
         # self.provider_job_id = response.json().get("job_id")  # TODO: To be updated
 
     def _run_grpo_step_one_group(self, train_group: GRPOGroup, train_data_format: Optional[Union[TrainDataFormat, str]] = None):
-        # TODO: (GRPO Team): Update self.lm with the new model
         # TODO: Check that the data follows the intended format
         api_base = self.lm.kwargs["api_base"]
         # api_key = self.lm.kwargs["api_key"]
@@ -148,7 +162,7 @@ class ArborReinforceJob(ReinforceJob):
         response = response.json()
         assert "current_model" in response, f"Response does not contain the next model ID to be used: {response}"
         current_model = response["current_model"]
-        self.lm.model = ArborProvider._add_provider_prefix(current_model)  # TODO: To be updated
+        self.lm.model = ArborProvider._add_provider_prefix(current_model)
 
     def step(self, train_data: List[GRPOGroup], train_data_format: Optional[Union[TrainDataFormat, str]]):
         # Note: TrainDataFormat specifies the format for the inner most dict.
@@ -158,6 +172,7 @@ class ArborReinforceJob(ReinforceJob):
         # We can consider making this distinction clearer, e.g., by having two
         # different step methods or changing our smallets data format to be the
         # GRPO group.
+        # TODO: Support step on the server side
         assert train_data_format == TrainDataFormat.GRPO_CHAT, f"GRPO only supports the GRPO_CHAT data format. Got {train_data_format} instead."
         for group in train_data:
             self._run_grpo_step_one_group(group, train_data_format)

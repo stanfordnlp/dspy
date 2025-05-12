@@ -332,6 +332,7 @@ def all_predictors_have_lms(program: Program) -> bool:
     """Return True if all predictors in the program have an LM set."""
     return all(pred.lm for pred in program.predictors())
 
+
 def copy_program_with_lms(program: Program) -> Program:
     pred_lms = [pred.lm for pred in program.predictors()]
     program = program.deepcopy()
@@ -354,10 +355,7 @@ def prepare_student(student: Program) -> Program:
 
 def prepare_teacher(student: Program, teacher: Optional[Program] = None) -> Program:
     if teacher is None:
-        return copy_program_with_lms(student)
-
-    # We avoid modifying the original teacher program by making a copy
-    teacher = copy_program_with_lms(teacher)
+        return student
 
     # Ensuring that the student and teacher are are structurally equivalent
     assert_structural_equivalency(student, teacher)

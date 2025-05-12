@@ -11,7 +11,7 @@ from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
-from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, prepare_teacher, bootstrap_trace_data, FailedPrediction
+from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, assert_structural_equivalency, bootstrap_trace_data, FailedPrediction
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class GRPO(FinetuneTeleprompter):
         num_train_steps: int = 100,
         seed: int = 0,
         num_dspy_examples_per_grpo_step: int = 1,
-        num_samples_per_input: int = 1,
+        num_rollouts_per_grpo_step: int = 1,
         use_train_as_val: bool = False,
         num_steps_for_val: int = 5,
         report_train_scores: bool = False,
@@ -48,7 +48,7 @@ class GRPO(FinetuneTeleprompter):
         self.num_train_steps = num_train_steps
         self.rng = random.Random(seed)
         self.num_dspy_examples_per_grpo_step = num_dspy_examples_per_grpo_step
-        self.num_samples_per_input = num_samples_per_input
+        self.num_rollouts_per_grpo_step = num_rollouts_per_grpo_step
         self.use_train_as_val = use_train_as_val
         self.num_steps_for_val = num_steps_for_val
         self.report_train_scores = report_train_scores
@@ -62,14 +62,13 @@ class GRPO(FinetuneTeleprompter):
         assert failure_score > format_failure_score, "failure_score must be greater than format_failure_score since the range [format_failure_score, failure_score] is used to provide dspy formatting rewards"
 
         if self.use_train_as_val:
-            # TODO: What makes sense here? assert report_train_scores == False?
             assert report_train_scores, "If use_train_as_val is True, report_train_scores must be True."
 
         assert exclude_demos, "exclude_demos==False is not supported yet. Please set it to True."
         assert multitask, "independent GRPO training jobs for each predictor in the student program is not supported yet. Please set multitask=True."
 
-        # The backend will be called with a batch of (num_dspy_examples_per_grpo_step * (num_samples_per_input * len(teachers)) * num_predictors) per training set if multitask is True
-        # If multitask is False, the backend will be called with a batch of (num_dspy_examples_per_grpo_step * (num_samples_per_input * len(teachers))) per training job
+        # The backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_grpo_step * num_predictors) per training set if multitask is True
+        # If multitask is False, the backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_grpo_step) per training job
         self.variably_invoked_predictor_grouping_mode = variably_invoked_predictor_grouping_mode
         if variably_invoked_predictor_grouping_mode == 'fill':
             assert variably_invoked_predictor_fill_strategy is not None, "variably_invoked_predictor_fill_strategy must be set when variably_invoked_predictor_grouping_mode is 'fill'"
@@ -87,8 +86,8 @@ class GRPO(FinetuneTeleprompter):
         trace_data: List[List[List[Dict[str, Any]]]],
         subsample_training_dataset: List[Example],
         num_teachers: int,
+        num_samples_per_input: int,
         pred_signature_hash_to_ind: Dict[int, int],
-        student: Program,
     ):
         # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
         # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
@@ -97,14 +96,14 @@ class GRPO(FinetuneTeleprompter):
         # TODO(GRPO Team): Ideally, once the dspy format issue is fixed, this change should be reverted back to being a normal assert.
         if len(trace_data[0][0]) == 0:
             logger.warning(f"Trace data for example {0} and teacher {0} is empty. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
-        elif len(trace_data[0][0]) != self.num_samples_per_input:
-            logger.warning(f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {self.num_samples_per_input}")
+        elif len(trace_data[0][0]) != num_samples_per_input:
+            logger.warning(f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {num_samples_per_input}")
             assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
             assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
             assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
         
-        for example_ind, example_data in enumerate(trace_data):
-            for teacher_idx, teacher_data in enumerate(example_data):
+        for example_data in trace_data:
+            for teacher_data in example_data:
                 for sample in teacher_data:
                     for t in sample["trace"]:
                         assert hash(t[0].signature) in pred_signature_hash_to_ind
@@ -275,9 +274,11 @@ class GRPO(FinetuneTeleprompter):
         self,
         student: Program,
         trainset: List[Example],
+        teacher: Optional[Union[Program, List[Program]]] = None,
         valset: Optional[List[Example]] = None,
         **kwargs,
     ) -> Program:
+        logger.info("Starting the GRPO compilation process... The LM(s) for the student program will be updated in place at the end of the training.")
         logger.info("Validating the inputs...")
 
         assert len(trainset) > 0, "Training set is empty. Please provide a non-empty training set."
@@ -297,7 +298,6 @@ class GRPO(FinetuneTeleprompter):
         # TODO(GRPO Team): Following checks are for unimplemented features.
         # Consider if we want to eventually implement them or remove. We don't
         # yet support:
-        # * teacher programs
         # * multitask == False
         # * student program with multiple predictor LMs
         # The main reason for these is that we update the LMs in place. If these
@@ -305,8 +305,9 @@ class GRPO(FinetuneTeleprompter):
         # program and we have multitask == False, we need to decide which steps
         # will use new LM copies and we need to ensure our decision is
         # consistent with any teacher LMs that share the same LMs.
-        teacher = None
-
+        # TODO(GRPO Team): We want to make it possible to continue GRPO runs in
+        # the future by saving the state of the GRPO run in the event of a
+        # process failure.
         if not self.multitask:
             raise ValueError(
                 "Independent GRPO training jobs for each predictor in the student program "
@@ -326,31 +327,45 @@ class GRPO(FinetuneTeleprompter):
 
         logger.info("Preparing the student program...")
         all_predictors_have_lms(student)
-        initial_caches_student = disable_lm_cache(student)
         pred_signature_hash_to_ind = {hash(pred.signature): ind for ind, pred in enumerate(student.predictors())}
         num_student_predictors = len(student.predictors())
 
-        logging.info("Preparing the teacher program(s)...")
+        logging.info("Preparing the teacher program(s)... We will ensure that the provided programs have the same program structure as the student program.")
+        if isinstance(teacher, list) and len(teacher) == 0 or teacher is None:
+            teacher = student
         teachers = teacher if isinstance(teacher, list) else [teacher]
-        initial_caches_teachers = []
-        for ind, t in enumerate(teachers):
-            teachers[ind] = prepare_teacher(student=student, teacher=t)
-            initial_caches = disable_lm_cache(teachers[ind])
-            initial_caches_teachers.append(initial_caches)
-
-        # We generate num_samples_per_input trace per example per teacher
-        # This way, we will have num_generations trace data for each example
-        num_generations = self.num_samples_per_input * len(teachers)
+        for t in teachers:
+            assert_structural_equivalency(student, t)
+            all_predictors_have_lms(t)
+        
+        # Ensure that the teachers list contain the student program
+        assert student in teachers, f"Student program {student} is not in the list of teachers {teachers}. Please provide the student program as one of the teachers. Alternatively, you can leave the teacher argument as None, and the student program will be used as the teacher program."
+        assert self.num_dspy_examples_per_grpo_step % len(teachers) == 0, (
+            f"The GRPO group size (num_dspy_examples_per_grpo_step) {self.num_dspy_examples_per_grpo_step} is not divisible by the number of teachers {len(teachers)}. "
+            "This is required to ensure that each teacher gets the same number of examples."
+            "Please provide a number of examples that is divisible by the number of teachers."
+        )
+        num_samples_per_input = self.num_dspy_examples_per_grpo_step // len(teachers)
+        
+        # We will disable the LM cache for all programs (student and teachers)
+        # These will be reverted to their original state at the end of the
+        # training
+        lm_cache_dict = {}
+        disable_lm_cache(program=student, lm_cache_dict=lm_cache_dict)
+        for t in teachers:
+            disable_lm_cache(program=t, lm_cache_dict=lm_cache_dict)
 
         # Update train_kwargs
         for pred in student.predictors():
             train_kwargs = self.train_kwargs[pred.lm]
             train_kwargs = {} if train_kwargs is None else train_kwargs
+
             if self.grpo_group_size is not None:
-                assert self.grpo_group_size <= num_generations, f"grpo_group_size {self.grpo_group_size} is greater than the number of generations {num_generations}"
+                assert self.grpo_group_size <= self.num_rollouts_per_grpo_step, f"grpo_group_size {self.grpo_group_size} is greater than the number of generations {self.num_rollouts_per_grpo_step}"
                 train_kwargs["num_generations"] = self.grpo_group_size
             else:
-                train_kwargs["num_generations"] = num_generations
+                train_kwargs["num_generations"] = self.num_rollouts_per_grpo_step
+
             self.train_kwargs[pred.lm] = train_kwargs
 
         # We need to have a separate job for each unique LM x the data
@@ -386,7 +401,7 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Bootstrapping data...")
             trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
             for tind, teacher in enumerate(teachers):
-                subsample_training_dataset_repeated = [example for _ in range(self.num_samples_per_input) for example in subsample_training_dataset]
+                subsample_training_dataset_repeated = [example for _ in range(num_samples_per_input) for example in subsample_training_dataset]
                 round_data = bootstrap_trace_data(
                     program=teacher,
                     dataset=subsample_training_dataset_repeated,
@@ -411,8 +426,8 @@ class GRPO(FinetuneTeleprompter):
                 trace_data=trace_data,
                 subsample_training_dataset=subsample_training_dataset,
                 num_teachers=len(teachers),
+                num_samples_per_input=num_samples_per_input,
                 pred_signature_hash_to_ind=pred_signature_hash_to_ind,
-                student=student
             )
 
             logger.info("Preparing the training data batch from bootstrapped examples for GRPO...")
@@ -427,7 +442,7 @@ class GRPO(FinetuneTeleprompter):
                     # TODO(Lakshya, Omar, Noah): Discuss what to do with the same module being invoked multiple times within a single dspy.Example
                     predictor_example_invocations: List[List[Tuple]] = []
 
-                    for teacher_idx, teacher_data in enumerate(example_data):
+                    for teacher_data in example_data:
                         for sample in teacher_data:
                             # Each sample is a Dict(example, prediction, trace, example_ind, score)
                             # sample['prediction'] is module_level prediction
@@ -440,8 +455,8 @@ class GRPO(FinetuneTeleprompter):
                     if len(predictor_example_invocations) == 0:
                         logger.warning(f"Skipping example {example_ind} for predictor {pred_id} as it has no invocations. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
                         continue
-                    elif len(predictor_example_invocations) != num_generations:
-                        logger.warning(f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {num_generations}. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
+                    elif len(predictor_example_invocations) != self.num_rollouts_per_grpo_step:
+                        logger.warning(f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {self.num_rollouts_per_grpo_step}. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
 
                     min_len = min([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
@@ -526,9 +541,9 @@ class GRPO(FinetuneTeleprompter):
 
             for predictor_train_batch in train_batch_per_predictor:
                 for grpo_train_group in predictor_train_batch:
-                    if len(grpo_train_group) != num_generations:
-                        logger.warning(f"Number of completions {len(grpo_train_group)} does not match the expected number num_samples_per_input*len(teachers)={num_generations}")
-                        assert len(grpo_train_group) <= num_generations, f"Number of completions {len(grpo_train_group)} is greater than the expected number num_samples_per_input*len(teachers)={num_generations}"
+                    if len(grpo_train_group) != self.num_rollouts_per_grpo_step:
+                        logger.warning(f"Number of completions {len(grpo_train_group)} does not match the expected number num_rollouts_per_grpo_step={self.num_rollouts_per_grpo_step}")
+                        assert len(grpo_train_group) <= self.num_rollouts_per_grpo_step, f"Number of completions {len(grpo_train_group)} is greater than the expected number num_rollouts_per_grpo_step={self.num_rollouts_per_grpo_step}"
                     if len(set(map(repr, grpo_train_group))) < 2:
                         # TODO(GRPO Team): How can we avoid this warning?
                         logger.warning(f"GRPOGroup has no diversity. This could be due to low temperature, or low number of rollouts, or the cache could be enabled inadvertently. The GRPOGroup is {grpo_train_group}.")
@@ -552,15 +567,16 @@ class GRPO(FinetuneTeleprompter):
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
                 new_train_data: List[GRPOGroup] = []
                 for group in train_data:
-                    if len(group) != num_generations:
+                    if len(group) != self.num_rollouts_per_grpo_step:
                         # TODO(GRPO Team): This is very undesirable. This occurs only because in some of the generations, the model does not follow the correct dspy format.
                         # The ideal solution is to identify the full response string in that predictor's group, and then assign  a high-negative (user-configurable) reward to that group.
 
                         # Pad the group to the expected number of generations by repeating the whole group, might require multiple iterations
-                        while len(group) < num_generations:
-                            group.extend(group[:min(num_generations - len(group), len(group))])
-                    assert len(group) == num_generations, f"Number of completions {len(group)} does not match the expected number num_samples_per_input*len(teachers)={num_generations}"
+                        while len(group) < self.num_rollouts_per_grpo_step:
+                            group.extend(group[:min(self.num_rollouts_per_grpo_step - len(group), len(group))])
                     
+                    assert len(group) == self.num_rollouts_per_grpo_step, f"Number of completions {len(group)} does not match the expected number self.num_rollouts_per_grpo_step={self.num_rollouts_per_grpo_step}"
+
                     if self.grpo_group_size is not None:
                         group = self.select_k_diverse_elements(group, k=self.grpo_group_size)
                         assert len(group) == self.grpo_group_size, f"Number of completions {len(group)} does not match the expected number grpo_group_size={self.grpo_group_size}"
@@ -587,18 +603,12 @@ class GRPO(FinetuneTeleprompter):
         logger.info("Done with the iterations! Retrieving the final model(s)...")
         for (lm, data_key), job in grpo_training_jobs.items():
             job.terminate()
-
-        # Revert cache states to their initial values. Note that the student
-        # program might have the same LM as one of the teachers. We first modify
-        # the caches of the student LMs, then those of the teacher LMs. We
-        # follow the opposite order when reverting.
-        for tind, t in enumerate(teachers):
-            for pind, pred in enumerate(t.predictors()):
-                pred.lm.cache = initial_caches_teachers[tind][pind]
-
-        for pind, pred in enumerate(student.predictors()):
-            pred.lm.cache = initial_caches_student[pind]
         
+        # Revert cache states to their initial values
+        recover_lm_cache(program=student, lm_cache_dict=lm_cache_dict)
+        for t in teachers:
+            recover_lm_cache(program=t, lm_cache_dict=lm_cache_dict)
+
         if self.model_name_val_scores is not None and len(self.model_name_val_scores) > 0:
             # Find the lm_names with the highest validation score
             best_model_names_tuple = max(self.model_name_val_scores, key=self.model_name_val_scores.get)
@@ -609,13 +619,24 @@ class GRPO(FinetuneTeleprompter):
         student._compiled = True
         return student
 
-
-def disable_lm_cache(program: Program):
+def disable_lm_cache(program: Program, lm_cache_dict: dict):
     """Disable the LM cache for all predictors in the program."""
-    initial_caches = []
     for pred in program.predictors():
         if not pred.lm:
             raise ValueError(f"Cannot disable cache: predictor {pred} does not have an LM set.")
-        initial_caches.append(pred.lm.cache)
+        if pred.lm not in lm_cache_dict:  # Check to avoid overwriting the cache
+            lm_cache_dict[pred.lm] = pred.lm.cache
         pred.lm.cache = False
-    return initial_caches
+
+
+def recover_lm_cache(program: Program, lm_cache_dict: dict):
+    """Recover the LM caches for all predictors in the program to their original state."""
+    for pred in program.predictors():
+        if pred.lm in lm_cache_dict:
+            pred.lm.cache = lm_cache_dict[pred.lm]
+        else:
+            # We do not expect this branch to execute at all since all the LMs
+            # are modified in place and no new LMs are created during training.
+            # However, we do not complain if this happens since this is a
+            # relatively minor feature. We default the LM cache to True.
+            pred.lm.cache = True
