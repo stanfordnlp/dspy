@@ -550,7 +550,7 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Invoking GRPO training step...")
             for (lm, data_key), job in grpo_training_jobs.items():
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
-                new_train_data = []
+                new_train_data: List[GRPOGroup] = []
                 for group in train_data:
                     if len(group) != num_generations:
                         # TODO(GRPO Team): This is very undesirable. This occurs only because in some of the generations, the model does not follow the correct dspy format.
@@ -566,7 +566,7 @@ class GRPO(FinetuneTeleprompter):
                         assert len(group) == self.grpo_group_size, f"Number of completions {len(group)} does not match the expected number grpo_group_size={self.grpo_group_size}"
 
                     new_train_data.append(group)
-                
+
                 job.step(train_data=new_train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
 
             for (lm, data_key), job in grpo_training_jobs.items():
