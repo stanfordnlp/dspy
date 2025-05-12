@@ -175,7 +175,7 @@ class Tool:
 
     def __repr__(self):
         return (
-            f"Tool(name={self.name!r}, desc={self.desc!r}, "
+            f"Tool(name={self.name}, desc={self.desc}, "
             f"args={self.args})"
         )
     
