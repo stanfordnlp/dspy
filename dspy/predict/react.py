@@ -196,9 +196,6 @@ Trajectories also affect meta-programming modules that view the trace later. It'
 trace of every module repeating the prefix.
 
 
-TOPIC 02: Handling default arguments in the Tool class.
-
-
 TOPIC 03: Simplifying ReAct's __init__ by moving modular logic to the Tool class.
     * Handling descriptions and casting.
     * Handling exceptions and error messages.
