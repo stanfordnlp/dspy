@@ -9,7 +9,7 @@ class CustomType:
     class Image(pydantic.BaseModel, dspy.CustomType):
         url: str
 
-        def __custom_format__(self):
+        def _format(self):
             return [{"type": "image_url", "image_url": {"url": self.url}}]
 
         @classmethod
@@ -17,5 +17,5 @@ class CustomType:
             return cls(url=url)
 
     """
-    def __custom_format__(self) -> list[dict[str, Any]]:
-        raise NotImplementedError("CustomType subclasses must implement __custom_format__")
+    def _format(self) -> list[dict[str, Any]]:
+        raise NotImplementedError("CustomType subclasses must implement _format")

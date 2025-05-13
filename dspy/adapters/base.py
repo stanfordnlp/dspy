@@ -40,9 +40,9 @@ class Adapter:
     @staticmethod
     def _has_custom_format(val: Any, annotation: Any) -> bool:
         args = get_args(annotation)
-        if hasattr(val, '__custom_format__') or hasattr(annotation, '__custom_format__'):
+        if hasattr(val, '_format') or hasattr(annotation, '_format'):
             return True
-        if args and any(hasattr(arg, '__custom_format__') for arg in args):
+        if args and any(hasattr(arg, '_format') for arg in args):
             return True
         if hasattr(annotation, '__annotations__'):
             for field_name in annotation.__annotations__:
@@ -85,17 +85,17 @@ class Adapter:
                 annotation = signature.input_fields[k].annotation
                 args = get_args(annotation)
                 custom_format_output = None
-                if hasattr(val, '__custom_format__'):
-                    custom_format_output = val.__custom_format__()
-                elif hasattr(annotation, '__custom_format__'):
+                if hasattr(val, '_format'):
+                    custom_format_output = val._format()
+                elif hasattr(annotation, '_format'):
                     instance = annotation.model_validate(val)
-                    custom_format_output = instance.__custom_format__()
-                elif args and all(hasattr(arg, '__custom_format__') for arg in args):
+                    custom_format_output = instance._format()
+                elif args and all(hasattr(arg, '_format') for arg in args):
                     custom_format_output = []
                     inner_cls = args[0]
                     for item in val:
                         instance = item if isinstance(item, inner_cls) else inner_cls.model_validate(item)
-                        custom_format_output.extend(instance.__custom_format__())
+                        custom_format_output.extend(instance._format())
                 elif hasattr(annotation, '__annotations__'):
                     cls = annotation
                     instance = cls.model_validate(val) if isinstance(val, dict) else val
@@ -103,13 +103,13 @@ class Adapter:
                     for field_name, field_ann in cls.__annotations__.items():
                         field_val = getattr(instance, field_name, None)
                         field_args = get_args(field_ann)
-                        if hasattr(field_val, '__custom_format__'):
-                            custom_format_output.extend(field_val.__custom_format__())
-                        elif hasattr(field_ann, '__custom_format__'):
+                        if hasattr(field_val, '_format'):
+                            custom_format_output.extend(field_val._format())
+                        elif hasattr(field_ann, '_format'):
                             inner_instance = field_ann.model_validate(field_val)
-                            custom_format_output.extend(inner_instance.__custom_format__())
+                            custom_format_output.extend(inner_instance._format())
                         elif any(
-                            hasattr(nested_arg, '__custom_format__')
+                            hasattr(nested_arg, '_format')
                             for arg in field_args if arg is not type(None)
                             for nested_arg in get_args(arg) or [arg]
                         ):
@@ -118,7 +118,7 @@ class Adapter:
                             actual_cls = inner_args[0]
                             for item in field_val:
                                 inner_instance = item if isinstance(item, actual_cls) else actual_cls.model_validate(item)
-                                custom_format_output.extend(inner_instance.__custom_format__())
+                                custom_format_output.extend(inner_instance._format())
                 if custom_format_output:
                     custom_type_tag = f"<<CUSTOM_TYPE_TAG::{k}>>"
                     if custom_type_tag in current_content:
@@ -398,9 +398,9 @@ class Adapter:
             value = inputs.get(name)
             if hasattr(value, "messages") and isinstance(value.messages, list) and all(isinstance(m, dict) and "role" in m for m in value.messages):
                 return name
-            if hasattr(value, "__custom_format__"):
+            if hasattr(value, "_format"):
                 try:
-                    custom_format_output = value.__custom_format__()
+                    custom_format_output = value._format()
                     if isinstance(custom_format_output, list) and all(isinstance(m, dict) and "role" in m for m in custom_format_output):
                         return name
                 except Exception:
@@ -430,9 +430,9 @@ class Adapter:
         if history is None:
             return []
 
-        if hasattr(history, "__custom_format__"):
+        if hasattr(history, "_format"):
             del inputs[history_field_name]
-            return history.__custom_format__()
+            return history._format()
 
         conversation_history = getattr(history, "messages", None)
 

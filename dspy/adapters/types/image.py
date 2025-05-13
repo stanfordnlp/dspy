@@ -27,7 +27,7 @@ class Image(pydantic.BaseModel, CustomType):
         "extra": "forbid",
     }
 
-    def __custom_format__(self) -> list[dict[str, Any]]:
+    def _format(self) -> list[dict[str, Any]]:
         try:
             url = self.url
             if isinstance(url, str) and "<DSPY_IMAGE_START>" in url and "<DSPY_IMAGE_END>" in url:
