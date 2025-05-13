@@ -377,9 +377,9 @@ class Adapter:
             demo_copy = self._preprocess_inputs_for_custom_format(signature, demo)
             user_msg = {
                 "role": "user",
-                "content": self.format_user_message_content(signature, demo_copy, prefix=incomplete_demo_prefix),
+                "content": self.format_user_message_content(signature, demo_copy),
             }
-            messages.append(self._custom_format_messages([user_msg], signature, demo))
+            messages= self._custom_format_messages([user_msg], signature, demo)
             messages.append(
                 {
                     "role": "assistant",
