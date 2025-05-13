@@ -208,7 +208,7 @@ class ArborReinforceJob(ReinforceJob):
             'model_path':checkpoint_model_path,
             'score': score,
         }
-        self.last_checkpoint = checkpoint_name
+        self.last_checkpoint = last_checkpoint
 
     def terminate(self):
         api_base = self.lm.kwargs["api_base"]
