@@ -41,7 +41,7 @@ class ReAct(Module):
         tools["finish"] = Tool(
             func=lambda: "Completed.",
             name="finish",
-            desc=f"Marks the task as complete. That is, signals that all infomration for producing the outputs, i.e. {outputs}, are now available to be extracted.",
+            desc=f"Marks the task as complete. That is, signals that all information for producing the outputs, i.e. {outputs}, are now available to be extracted.",
             args={},
         )
 
@@ -194,9 +194,6 @@ or a big dictionary, and have each adatper format it accordingly.
 
 Trajectories also affect meta-programming modules that view the trace later. It's inefficient O(n^2) to view the
 trace of every module repeating the prefix.
-
-
-TOPIC 02: Handling default arguments in the Tool class.
 
 
 TOPIC 03: Simplifying ReAct's __init__ by moving modular logic to the Tool class.

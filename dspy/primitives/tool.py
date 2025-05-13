@@ -65,7 +65,7 @@ class Tool:
 
         self._parse_function(func, arg_desc)
 
-    def _parse_function(self, func: Callable, arg_desc: dict[str, str] = None):
+    def _parse_function(self, func: Callable, arg_desc: Optional[dict[str, str]] = None):
         """Helper method that parses a function to extract the name, description, and args.
 
         This is a helper function that automatically infers the name, description, and args of the tool from the
@@ -107,7 +107,7 @@ class Tool:
         self.desc = self.desc or desc
         self.args = self.args or args
         self.arg_types = self.arg_types or arg_types
-        self.has_kwargs = any([param.kind == param.VAR_KEYWORD for param in sig.parameters.values()])
+        self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
 
     def _validate_and_parse_args(self, **kwargs):
         # Validate the args value comply to the json schema.
