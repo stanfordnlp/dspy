@@ -6,7 +6,7 @@ from dspy.teleprompt.copro_optimizer import COPRO
 from dspy.teleprompt.ensemble import Ensemble
 from dspy.teleprompt.knn_fewshot import KNNFewShot
 from dspy.teleprompt.simba import SIMBA
-
+from dspy.teleprompt.simba_fast import SIMBAFast
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.infer_rules import InferRules
@@ -29,4 +29,5 @@ __all__ = [
     "LabeledFewShot",
     "InferRules",
     "SIMBA",
+    "SIMBAFast",
 ]
