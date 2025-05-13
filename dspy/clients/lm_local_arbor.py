@@ -193,7 +193,7 @@ class ArborReinforceJob(ReinforceJob):
     
     def save_checkpoint(self, checkpoint_name: str, score: float = None):
         api_base = self.lm.kwargs["api_base"]
-        url = f"{api_base}fine_tuning/grpo/save_checkpoint"
+        url = f"{api_base}fine_tuning/grpo/checkpoint"
         headers = {'Content-Type': 'application/json'}
         body = {"checkpoint_name": checkpoint_name}
         response = requests.post(url, headers=headers, json=body)
