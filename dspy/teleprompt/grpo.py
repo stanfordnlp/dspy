@@ -219,7 +219,7 @@ class GRPO(FinetuneTeleprompter):
                     logger.info(f"Checkpoint the model at step {step_idx + 1}/{self.num_train_steps}")
                     checkpoint_model_paths = {}
                     for job_key, job in grpo_training_jobs.items():
-                        job.save_checkpoint()
+                        job.save_checkpoint(checkpoint_name=f"model_checkpoint_{step_idx+1}")
                         checkpoint_model_paths[job_key] = job.checkpoints[job.last_checkpoint]['model_path']
                     self.best_model_details = checkpoint_model_paths
 
