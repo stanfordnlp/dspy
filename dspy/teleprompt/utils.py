@@ -1,252 +1,446 @@
-import dspy
-import ujson
 import inspect
 import logging
-import textwrap
-import re
+import math
+import os
+import random
+import shutil
+import sys
+import numpy as np
 
-from dspy.adapters.utils import get_field_description_string
-from dspy.signatures import InputField, OutputField
-from typing import Callable, Optional, Dict
+try:
+    from IPython.core.magics.code import extract_symbols
+except ImportError:
+    # Won't be able to read code from juptyer notebooks
+    extract_symbols = None
+
+import dspy
+from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
+
+"""
+This file consists of helper functions for our variety of optimizers.
+"""
+
+### OPTIMIZER TRAINING UTILS ###
 
 logger = logging.getLogger(__name__)
 
-def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: Optional[Dict] = None):
-    lm = program.get_lm() or dspy.settings.lm
+def create_minibatch(trainset, batch_size=50, rng=None):
+    """Create a minibatch from the trainset."""
 
-    # Check to see if our model is a reasoning model, which means temp must stay as 1.0
-    model_family = lm.model.split("/")[-1].lower() if "/" in lm.model else lm.model.lower()
-    model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+    # Ensure batch_size isn't larger than the size of the dataset
+    batch_size = min(batch_size, len(trainset))
 
-    models = []
-    if teacher_settings:
-        models.append(dspy.LM(**teacher_settings))
+    # If no RNG is provided, fall back to the global random instance
+    rng = rng or random
 
-    if model_pattern: # Vary the seed
-        start_seed = 0 if "seed" not in lm.kwargs else lm.kwargs["seed"]
-        seeds = [start_seed + 1 + i for i in range(n-len(models))]
-        seeds = list(dict.fromkeys(seeds))[:(n-len(models))]
-        models.extend([lm.copy(seed=seed) for seed in seeds])
-    else: # Vary the temperature
-        start_temp = 0 if "temperature" not in lm.kwargs else lm.kwargs["temperature"]
-        temps = [start_temp + 0.5 + i * (0.5 / n) for i in range(n-len(models))]
-        temps = list(dict.fromkeys(temps))[:(n-len(models))]
-        models.extend([lm.copy(temperature=t) for t in temps])
-    
-    return models
+    # Randomly sample indices for the mini-batch using the provided rng
+    sampled_indices = rng.sample(range(len(trainset)), batch_size)
 
-def wrap_program(program: dspy.Module, metric: Callable):
-    def wrapped_program(example):
-        with dspy.context(trace=[]):
-            prediction, trace, score = None, None, 0.0
-            try:
-                prediction = program(**example.inputs())
-            except Exception as e:
-                print(e)
-            trace = dspy.settings.trace.copy()
+    # Create the mini-batch using the sampled indices
+    minibatch = [trainset[i] for i in sampled_indices]
 
-        output = None
-        score = 0.0
-        output_metadata = {}
+    return minibatch
 
-        try:
-            output = metric(example, prediction)
-            if isinstance(output, (int, float)):
-                score = output
-            elif isinstance(output, dspy.Prediction):
-                if not hasattr(output, 'score'):
-                    raise ValueError("dspy.Prediction must contain a 'score' attribute")
-                score = output.score
-                # Just extract fields from _store, excluding 'score'
-                output_metadata = {
-                    k: v for k, v in output._store.items() if k != "score"
-                }
-        except Exception as e:
-            print(e)
 
-        return {
-            "prediction": prediction,
-            "trace": trace,
-            "score": score,
-            "example": example,
-            "output_metadata": output_metadata
+def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None, return_all_scores=False):
+    """Evaluate a candidate program on the trainset, using the specified batch size."""
+
+    try:
+        # Evaluate on the full trainset
+        if batch_size >= len(trainset):
+            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
+        # Or evaluate on a minibatch
+        else:
+            return evaluate(
+                candidate_program,
+                devset=create_minibatch(trainset, batch_size, rng),
+                return_all_scores=return_all_scores,
+                callback_metadata={"metric_key": "eval_minibatch"}
+            )
+    except Exception:
+        logger.error("An exception occurred during evaluation", exc_info=True)
+        if return_all_scores:
+            return 0.0, [0.0] * len(trainset)
+        return 0.0  # TODO: Handle this better, as -ve scores are possible
+
+def eval_candidate_program_with_pruning(
+    trial, trial_logs, trainset, candidate_program, evaluate, trial_num, batch_size=100,
+):
+    """Evaluation of candidate_program with pruning implemented"""
+
+    # Evaluate with the new prompts
+    total_score = 0
+    num_batches = math.ceil(len(trainset) / batch_size)
+    total_eval_size = 0
+
+    for i in range(num_batches):
+        start_index = i * batch_size
+        end_index = min((i + 1) * batch_size, len(trainset))
+        split_trainset = trainset[start_index:end_index]
+        split_score = evaluate(
+            candidate_program, devset=split_trainset, display_table=0,
+        )
+        print(f"{i}st split score: {split_score}")
+        total_eval_size += len(split_trainset)
+
+        total_score += split_score * len(split_trainset)
+        curr_weighted_avg_score = total_score / min((i + 1) * batch_size, len(trainset))
+        print(f"curr average score: {curr_weighted_avg_score}")
+
+        trial.report(curr_weighted_avg_score, i)
+
+        # Handle pruning based on the intermediate value.
+        if trial.should_prune():
+            print("Trial pruned.")
+            trial_logs[trial_num]["score"] = curr_weighted_avg_score
+            trial_logs[trial_num]["num_eval_calls"] = total_eval_size
+            trial_logs[trial_num]["pruned"] = True
+            return curr_weighted_avg_score, trial_logs, total_eval_size, True
+
+    print(f"Fully evaled score: {curr_weighted_avg_score}")
+    score = curr_weighted_avg_score
+
+    trial_logs[trial_num]["full_eval"] = False
+    trial_logs[trial_num]["score"] = score
+    trial_logs[trial_num]["pruned"] = False
+    return score, trial_logs, total_eval_size, False
+
+
+def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_combos):
+    """Used as a helper function for bayesian + minibatching optimizers. Returns the program with the highest average score from the batches evaluated so far."""
+
+    # Calculate the mean for each combination of categorical parameters, based on past trials
+    results = []
+    for key, values in param_score_dict.items():
+        scores = np.array([v[0] for v in values])
+        mean = np.average(scores)
+        program = values[0][1]
+        params = values[0][2]
+        results.append((key, mean, program, params))
+
+    # Sort results by the mean
+    sorted_results = sorted(results, key=lambda x: x[1], reverse=True)
+
+    # Find the combination with the highest mean, skip fully evaluated ones
+    for combination in sorted_results:
+        key, mean, program, params = combination
+
+        if key in fully_evaled_param_combos:
+            continue
+
+        return program, mean, key, params
+
+    # If no valid program is found, we return the last valid one that we found
+    return program, mean, key, params
+
+
+def calculate_last_n_proposed_quality(
+    base_program, trial_logs, evaluate, trainset, devset, n,
+):
+    """
+    Calculate the average and best quality of the last n programs proposed. This is useful for seeing if our proposals
+    are actually 'improving' overtime or not.
+    """
+    # Get the trials from the last n keys in trial logs
+    last_n_trial_nums = list(trial_logs.keys())[-n:]
+
+    # Calculate the average and best score of these trials
+    # if num_eval_calls in the trial is less than the trainset, throw a not-implemented error for now
+    total_train_score = 0
+    best_train_score = 0
+    total_dev_score = 0
+    best_dev_score = 0
+    for trial_num in last_n_trial_nums:
+        full_eval = trial_logs[trial_num]["full_eval"]
+        if not full_eval:
+            raise NotImplementedError(
+                "Still need to implement non full eval handling in calculate_last_n_proposed_quality",
+            )
+        train_score = trial_logs[trial_num]["score"]
+        program = base_program.deepcopy()
+        program.load(trial_logs[trial_num]["program_path"])
+
+        dev_score = evaluate(program, devset=devset)
+
+        total_train_score += train_score
+        total_dev_score += dev_score
+        if train_score > best_train_score:
+            best_train_score = train_score
+            best_dev_score = dev_score
+
+    return best_train_score, total_train_score / n, best_dev_score, total_dev_score / n
+
+
+### LOGGING UTILS ###
+
+
+def get_task_model_history_for_full_example(
+    candidate_program, task_model, devset, evaluate,
+):
+    """Get a full trace of the task model's history for a given candidate program."""
+    _ = evaluate(candidate_program, devset=devset[:1])
+    _ = task_model.inspect_history(n=len(candidate_program.predictors()))
+    return task_model.inspect_history(n=len(candidate_program.predictors()))
+
+
+def print_full_program(program):
+    """Print out the program's instructions & prefixes for each module."""
+    for i, predictor in enumerate(program.predictors()):
+        print(f"Predictor {i}")
+        print(f"i: {get_signature(predictor).instructions}")
+        *_, last_field = get_signature(predictor).fields.values()
+        print(f"p: {last_field.json_schema_extra['prefix']}")
+    print("\n")
+
+
+def save_candidate_program(program, log_dir, trial_num, note=None):
+    """Save the candidate program to the log directory."""
+
+    if log_dir is None:
+        return None
+
+    # Ensure the directory exists
+    eval_programs_dir = os.path.join(log_dir, "evaluated_programs")
+    os.makedirs(eval_programs_dir, exist_ok=True)
+
+    # Define the save path for the program
+    if note:
+        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}_{note}.json")
+    else:
+        save_path = os.path.join(eval_programs_dir, f"program_{trial_num}.json")
+
+    # Save the program
+    program.save(save_path)
+
+    return save_path
+
+
+def save_file_to_log_dir(source_file_path, log_dir):
+    if log_dir is None:
+        return
+    """Save a file to our log directory"""
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    destination_file_path = os.path.join(log_dir, os.path.basename(source_file_path))
+
+    # Copy the file
+    shutil.copy(source_file_path, destination_file_path)
+
+
+def setup_logging(log_dir):
+    """Setup logger, which will log our print statements to a txt file at our log_dir for later viewing"""
+    if log_dir is None:
+        return
+    # Create a logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.WARNING)
+
+    # Create a file handler that logs debug and higher level messages
+    file_handler = logging.FileHandler(f"{log_dir}/logs.txt")
+    file_handler.setLevel(logging.WARNING)
+    file_formatter = logging.Formatter("%(asctime)s - %(message)s")
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+
+    # Create a console handler with a higher log level
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_formatter = logging.Formatter("%(message)s")
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+
+def get_token_usage(model) -> tuple[int, int]:
+    """
+    Extract total input tokens and output tokens from a model's interaction history.
+    Returns (total_input_tokens, total_output_tokens).
+    """
+    if not hasattr(model, "history"):
+        return 0, 0
+
+    input_tokens = []
+    output_tokens = []
+    for interaction in model.history:
+        usage = interaction.get("usage", {})
+        _input_tokens = usage.get("prompt_tokens", 0)
+        _output_tokens = usage.get("completion_tokens", 0)
+        input_tokens.append(_input_tokens)
+        output_tokens.append(_output_tokens)
+
+    total_input_tokens = int(np.sum(input_tokens))
+    total_output_tokens = int(np.sum(output_tokens))
+
+    return total_input_tokens, total_output_tokens
+
+
+def log_token_usage(trial_logs, trial_num, model_dict):
+    """
+    Extract total input and output tokens used by each model and log to trial_logs[trial_num]["token_usage"].
+    """
+
+    token_usage_dict = {}
+
+    for model_name, model in model_dict.items():
+        in_tokens, out_tokens = get_token_usage(model)
+        token_usage_dict[model_name] = {
+            "total_input_tokens": in_tokens,
+            "total_output_tokens": out_tokens
         }
 
-    return wrapped_program
-
-def append_a_demo(demo_input_field_maxlen):
-    def append_a_demo_(bucket, system, **kwargs):
-        predictor2name, name2predictor = kwargs["predictor2name"], kwargs["name2predictor"]
-        batch_10p_score = kwargs["batch_10p_score"]
-
-        good = bucket[0]
-        trace = good["trace"]
-        name2demo = {}
-
-        if good["score"] < batch_10p_score:
-            logger.info(f"Skipping appending a demo as good score {good['score']} is below the 10th percentile.")
-            return False
-
-        for step in trace:
-            predictor, _inputs, _outputs = step
-
-            for k, v in _inputs.items():
-                if demo_input_field_maxlen and len(str(v)) > demo_input_field_maxlen:
-                    _inputs[k] = f"{str(v)[:demo_input_field_maxlen]}\n\t\t... <TRUNCATED FOR BREVITY>"
-
-            demo = dspy.Example(augmented=True, **_inputs, **_outputs)
-            name = predictor2name[id(predictor)]
-            name2demo[name] = demo  # keep the last demo for each predictor
-        for name, demo in name2demo.items():
-            predictor = name2predictor[name]
-            predictor.demos.append(demo)
-
-        logger.info(f"Added {len(name2demo)} demos (one each) across all predictors.")
-        return True
-    
-    return append_a_demo_
+    # Store token usage info in trial logs
+    trial_logs[trial_num]["token_usage"] = token_usage_dict
 
 
-def append_a_rule(bucket, system, **kwargs):
-    predictor2name = kwargs["predictor2name"]
-    batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
-    prompt_model = kwargs["prompt_model"]
+### OTHER UTILS ###
 
-    module_names = [name for name, _ in system.named_predictors()]
-    good, bad = bucket[0], bucket[-1]
-    example = good["example"]
-
-    if good["score"] < batch_10p_score or bad["score"] > batch_90p_score:
-        logger.info(f"Skipping rule generation as good score {good['score']} is below the 10th percentile "
-                    f"*or* bad score {bad['score']} is above the 90th percentile.")
-        return False
-
-    if good["score"] <= bad["score"]:
-        if good["score"] > batch_90p_score:
-            bad["trace"] = []
-            bad["score"] = "N/A"
-            bad["prediction"] = {"N/A": "Prediction not available"}
-        else:
-            good["trace"] = []
-            good["score"] = "N/A"
-            good["prediction"] = {"N/A": "Prediction not available"}
-
-    better_trajectory = [
-        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
-        for p, i, o in good["trace"]
-    ]
-    worse_trajectory = [
-        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
-        for p, i, o in bad["trace"]
-    ]
-
-    kwargs = dict(
-        program_code=inspect.getsource(system.__class__),
-        modules_defn=inspect_modules(system),
-        program_inputs={**example.inputs()},
-        oracle_metadata={**example.labels()},
-        better_program_trajectory=better_trajectory,
-        better_program_outputs=dict(good["prediction"]),
-        worse_program_trajectory=worse_trajectory,
-        worse_program_outputs=dict(bad["prediction"] or {}),
-        worse_reward_value=bad["score"],
-        better_reward_value=good["score"],
-        worse_reward_info=bad["output_metadata"],
-        better_reward_info=good["output_metadata"],
-        module_names=module_names,
-    )
-
-    kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
-              for k, v in kwargs.items()}
-
-    advice_program = dspy.Predict(OfferFeedback)
-    advice = advice_program(**kwargs).module_advice
-
-    for name, predictor in system.named_predictors():
-        if name in advice:
-            logger.info(f"Advice for {name}: {advice[name]}")
-            instructions = predictor.signature.instructions + "\n\n" + advice[name]
-            predictor.signature = predictor.signature.with_instructions(instructions)
-
-    return True
-
-class OfferFeedback(dspy.Signature):
-    """
-    You will be given two trajectories of an LLM-driven program's execution. Your goal is to help the program's modules
-    build up experience on how to maximize the reward value assigned to the program's outputs if it were to receive
-    similar inputs in the future.
-
-    The module won't see its own history. It will rely on your advice balancing being concrete and being generalizable.
-
-    In your advice:
-    - Avoid boilerplate. Offer advice that would change the module's behavior for the better in the future.
-    - Ensure that advice offered to a module M is specific to that M's specific sub-task, not the overall program.
-    - Rely on contrasting the behavior of the worse trajectory against the better trajectory in making recommendations.
-    - Ensure each unique module name appears exactly once as a key in the advice dictionary.
-    """
-
-    program_code: str = InputField(desc="The code of the program that we are analyzing")
-    modules_defn: str = InputField(desc="The definition of each module in the program, including its I/O")
-    program_inputs: str = InputField(desc="The inputs to the program that we are analyzing")
-    oracle_metadata: str = InputField(desc="Any (hidden) metadata about the training set instance we're analyzing")
-    worse_program_trajectory: str = InputField(
-        desc="The trajectory of the program's execution, showing each module's I/O"
-    )
-    worse_program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
-    worse_reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
-    worse_reward_info: str = InputField(desc="Additional information that might be helpful to understanding the assigned reward value.")
-    better_program_trajectory: str = InputField(
-        desc="The trajectory of the program's execution, showing each module's I/O"
-    )
-    better_program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
-    better_reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
-    better_reward_info: str = InputField(desc="Additional information that might be helpful to understanding the assigned reward value.")
-    module_names: list[str] = InputField(desc="The names of the modules in the program, for which we seek advice")
-    discussion: str = OutputField(desc="Discussing blame of where each module went wrong, if it did")
-    module_advice: dict[str, str] = OutputField(
-        desc="For each module, describe very concretely: If the module receives ${description of input or patterns "
-        "therein}, then it should ${description of content, behavior, or strategies to adopt and/or others to avoid}. "
-        "Basically, your advice be such that if the module has access to your tip, it would be much more likely to act "
-        "like the successful trajectory rather than the lower-scoring trajectory."
-    )
-
-def inspect_modules(program):
-    separator = "-" * 80
-    output = [separator]
-
-    for idx, (name, predictor) in enumerate(program.named_predictors()):
-        signature = predictor.signature
-        instructions = textwrap.dedent(signature.instructions)
-        instructions = ("\n" + "\t" * 2).join([""] + instructions.splitlines())
-
-        output.append(f"Module {name}")
-        output.append("\n\tInput Fields:")
-        output.append(("\n" + "\t" * 2).join([""] + get_field_description_string(signature.input_fields).splitlines()))
-        output.append("\tOutput Fields:")
-        output.append(("\n" + "\t" * 2).join([""] + get_field_description_string(signature.output_fields).splitlines()))
-        output.append(f"\tOriginal Instructions: {instructions}")
-        output.append(separator)
-
-    return "\n".join([o.strip("\n") for o in output])
-
-
-def recursive_mask(o):
-    # If the object is already serializable, return it.
-    try:
-        ujson.dumps(o)
-        return o
-    except TypeError:
-        pass
-
-    # If it's a dictionary, apply recursively to its values.
-    if isinstance(o, dict):
-        return {k: recursive_mask(v) for k, v in o.items()}
-    # If it's a list, apply recursively.
-    elif isinstance(o, list):
-        return [recursive_mask(v) for v in o]
-    # If it's a tuple, apply recursively.
-    elif isinstance(o, tuple):
-        return tuple(recursive_mask(v) for v in o)
-    # Otherwise, replace it with a placeholder string (or use repr(o)).
+def get_prompt_model(prompt_model):
+    if prompt_model:
+        return prompt_model
     else:
-        return f"<non-serializable: {type(o).__name__}>"
+        return dspy.settings.lm
+
+def get_signature(predictor):
+    assert hasattr(predictor, "signature")
+    return predictor.signature
+
+
+def set_signature(predictor, updated_signature):
+    assert hasattr(predictor, "signature")
+    predictor.signature = updated_signature
+
+
+def create_n_fewshot_demo_sets(
+    student,
+    num_candidate_sets,
+    trainset,
+    max_labeled_demos,
+    max_bootstrapped_demos,
+    metric,
+    teacher_settings,
+    max_errors=10,
+    max_rounds=1,
+    labeled_sample=True,
+    min_num_samples=1,
+    metric_threshold=None,
+    teacher=None,
+    include_non_bootstrapped=True,
+    seed=0,
+    rng=None
+):
+    """
+    This function is copied from random_search.py, and creates fewshot examples in the same way that random search does.
+    This allows us to take advantage of using the same fewshot examples when we use the same random seed in our optimizers.
+    """
+    demo_candidates = {}
+
+    # Account for confusing way this is set up, where we add in 3 more candidate sets to the N specified
+    num_candidate_sets -= 3
+
+    # Initialize demo_candidates dictionary
+    for i, _ in enumerate(student.predictors()):
+        demo_candidates[i] = []
+
+    rng = rng or random.Random(seed)
+
+    # Go through and create each candidate set
+    for seed in range(-3, num_candidate_sets):
+
+        print(f"Bootstrapping set {seed+4}/{num_candidate_sets+3}")
+
+        trainset_copy = list(trainset)
+
+        if seed == -3 and include_non_bootstrapped:
+            # zero-shot
+            program2 = student.reset_copy()
+
+        elif (
+            seed == -2
+            and max_labeled_demos > 0
+            and include_non_bootstrapped
+        ):
+            # labels only
+            teleprompter = LabeledFewShot(k=max_labeled_demos)
+            program2 = teleprompter.compile(
+                student, trainset=trainset_copy, sample=labeled_sample,
+            )
+
+        elif seed == -1:
+            # unshuffled few-shot
+            program = BootstrapFewShot(
+                metric=metric,
+                max_errors=max_errors,
+                max_bootstrapped_demos=max_bootstrapped_demos,
+                max_labeled_demos=max_labeled_demos,
+                teacher_settings=teacher_settings,
+                max_rounds=max_rounds,
+            )
+            program2 = program.compile(student, teacher=teacher, trainset=trainset_copy)
+
+        else:
+            # shuffled few-shot
+            rng.shuffle(trainset_copy)
+            size = rng.randint(min_num_samples, max_bootstrapped_demos)
+
+            teleprompter = BootstrapFewShot(
+                metric=metric,
+                max_errors=max_errors,
+                metric_threshold=metric_threshold,
+                max_bootstrapped_demos=size,
+                max_labeled_demos=max_labeled_demos,
+                teacher_settings=teacher_settings,
+                max_rounds=max_rounds,
+            )
+
+            program2 = teleprompter.compile(
+                student, teacher=teacher, trainset=trainset_copy,
+            )
+
+        for i, _ in enumerate(student.predictors()):
+            demo_candidates[i].append(program2.predictors()[i].demos)
+
+    return demo_candidates
+
+def old_getfile(object):
+    """Work out which source or compiled file an object was defined in."""
+    if inspect.ismodule(object):
+        if getattr(object, '__file__', None):
+            return object.__file__
+        raise TypeError('{!r} is a built-in module'.format(object))
+    if inspect.isclass(object):
+        if hasattr(object, '__module__'):
+            module = sys.modules.get(object.__module__)
+            if getattr(module, '__file__', None):
+                return module.__file__
+            if object.__module__ == '__main__':
+                raise OSError('source code not available')
+        raise TypeError('{!r} is a built-in class'.format(object))
+    if inspect.ismethod(object):
+        object = object.__func__
+    if inspect.isfunction(object):
+        object = object.__code__
+    if inspect.istraceback(object):
+        object = object.tb_frame
+    if inspect.isframe(object):
+        object = object.f_code
+    if inspect.iscode(object):
+        return object.co_filename
+    raise TypeError('module, class, method, function, traceback, frame, or '
+                    'code object was expected, got {}'.format(
+                    type(object).__name__))
+
+def new_getfile(object):
+    if not inspect.isclass(object):
+        return old_getfile(object)
+    
+    # Lookup by parent module (as in current inspect)
+    if hasattr(object, '__module__'):
+        object_ = sys.modules.get(object.__module__)
+        if hasattr(object_, '__file__'):
+            return object_.__file__
+    
+    # If parent module is __main__, lookup by methods (NEW)
+    for name, member in inspect.getmembers(object):
+        if inspect.isfunction(member) and object.__qualname__ + '.' + member.__name__ == member.__qualname__:
+            return inspect.getfile(member)
+    raise TypeError(f'Source for {object!r} not found')
+
+inspect.getfile = new_getfile
