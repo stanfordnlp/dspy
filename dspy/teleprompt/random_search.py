@@ -1,8 +1,8 @@
 import random
-
+import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
-
+from typing import Optional
 from .bootstrap import BootstrapFewShot
 from .vanilla import LabeledFewShot
 
@@ -27,7 +27,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
     def __init__(
         self,
         metric,
-        teacher_settings={},
+        teacher_model: Optional[dspy.LM] = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -38,7 +38,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         metric_threshold=None,
     ):
         self.metric = metric
-        self.teacher_settings = teacher_settings
+        self.teacher_model = teacher_model if teacher_model else dspy.settings.lm
         self.max_rounds = max_rounds
 
         self.num_threads = num_threads
