@@ -80,6 +80,8 @@ class ArborReinforceJob(ReinforceJob):
         self.lm = lm
         self.train_kwargs = train_kwargs
         self.provider_job_id = None
+        self.checkpoints = {}
+        self.last_checkpoint = None
 
     def initialize(self):
         # TODO(GRPO Team): Set provider job ID
@@ -188,6 +190,25 @@ class ArborReinforceJob(ReinforceJob):
         response = response.json()
         current_model = response["current_model"]
         self.lm.model = ArborProvider._add_provider_prefix(current_model)
+    
+    def save_checkpoint(self, checkpoint_name: str, score: float = None):
+        api_base = self.lm.kwargs["api_base"]
+        url = f"{api_base}fine_tuning/grpo/save_checkpoint"
+        headers = {'Content-Type': 'application/json'}
+        body = {"checkpoint_name": checkpoint_name}
+        response = requests.post(url, headers=headers, json=body)
+        assert response.status_code == 200, f"Failed to save checkpoint: {response.text}"
+        response = response.json()
+
+        current_model = response["current_model"]
+        last_checkpoint = response["last_checkpoint"]
+        checkpoints = response["checkpoints"]
+        checkpoint_model_path = checkpoints[last_checkpoint]
+        self.checkpoints[last_checkpoint] = {
+            'model_path':checkpoint_model_path,
+            'score': score,
+        }
+        self.last_checkpoint = checkpoint_name
 
     def terminate(self):
         api_base = self.lm.kwargs["api_base"]

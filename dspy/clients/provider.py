@@ -40,6 +40,8 @@ class ReinforceJob:
     def __init__(self, lm: "LM", train_kwargs: Optional[Dict[str, Any]] = None):
         self.lm = LM
         self.train_kwargs = train_kwargs or {}
+        self.checkpoints = {}
+        self.last_checkpoint = None
 
     @abstractmethod
     def initialize(self):
@@ -55,6 +57,10 @@ class ReinforceJob:
 
     @abstractmethod
     def update_model(self):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def save_checkpoint(self, checkpoint_name: str):
         raise NotImplementedError
 
     def cancel(self):
