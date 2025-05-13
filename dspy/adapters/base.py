@@ -1,7 +1,6 @@
-from typing import TYPE_CHECKING, Any, Optional, Type
+from typing import TYPE_CHECKING, Any, Optional, Type, get_args
 
 from dspy.adapters.types import History
-from dspy.adapters.types.image import try_expand_image_tags
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 
@@ -37,6 +36,101 @@ class Adapter:
             values.append(value)
 
         return values
+
+    @staticmethod
+    def _has_custom_format(val: Any, annotation: Any) -> bool:
+        args = get_args(annotation)
+        if hasattr(val, '__custom_format__') or hasattr(annotation, '__custom_format__'):
+            return True
+        if args and any(hasattr(arg, '__custom_format__') for arg in args):
+            return True
+        if hasattr(annotation, '__annotations__'):
+            for field_name in annotation.__annotations__:
+                field_val = val.get(field_name) if isinstance(val, dict) else getattr(val, field_name, None)
+                field_ann = annotation.__annotations__.get(field_name)
+                if Adapter._has_custom_format(field_val, field_ann):
+                    return True
+        return False
+    
+    @staticmethod
+    def _preprocess_inputs_for_custom_format(signature, inputs: dict[str, Any]) -> dict[str, Any]:
+        processed = {}
+        for k, _ in signature.input_fields.items():
+            v = inputs.get(k)
+            annotation = signature.input_fields.get(k).annotation
+            if Adapter._has_custom_format(v, annotation):
+                processed[k] = f"<<CUSTOM_TYPE_TAG::{k}>>"
+            else:
+                processed[k] = v
+        return processed
+    
+    @staticmethod
+    def _custom_format_messages(messages: list[dict], signature, original_inputs: dict[str, Any]) -> list[dict]:
+        new_messages = []
+        for msg in messages:
+            if msg.get("role") != "user":
+                new_messages.append(msg)
+                continue
+            has_custom_type_tag = any(
+                Adapter._has_custom_format(original_inputs.get(k), field.annotation)
+                for k, field in signature.input_fields.items()
+            )
+            if not has_custom_type_tag:
+                new_messages.append(msg)
+                continue
+            content_blocks = []
+            current_content = msg.get("content")
+            for k, _ in signature.input_fields.items():
+                val = original_inputs.get(k)
+                annotation = signature.input_fields[k].annotation
+                args = get_args(annotation)
+                custom_format_output = None
+                if hasattr(val, '__custom_format__'):
+                    custom_format_output = val.__custom_format__()
+                elif hasattr(annotation, '__custom_format__'):
+                    instance = annotation.model_validate(val)
+                    custom_format_output = instance.__custom_format__()
+                elif args and all(hasattr(arg, '__custom_format__') for arg in args):
+                    custom_format_output = []
+                    inner_cls = args[0]
+                    for item in val:
+                        instance = item if isinstance(item, inner_cls) else inner_cls.model_validate(item)
+                        custom_format_output.extend(instance.__custom_format__())
+                elif hasattr(annotation, '__annotations__'):
+                    cls = annotation
+                    instance = cls.model_validate(val) if isinstance(val, dict) else val
+                    custom_format_output = []
+                    for field_name, field_ann in cls.__annotations__.items():
+                        field_val = getattr(instance, field_name, None)
+                        field_args = get_args(field_ann)
+                        if hasattr(field_val, '__custom_format__'):
+                            custom_format_output.extend(field_val.__custom_format__())
+                        elif hasattr(field_ann, '__custom_format__'):
+                            inner_instance = field_ann.model_validate(field_val)
+                            custom_format_output.extend(inner_instance.__custom_format__())
+                        elif any(
+                            hasattr(nested_arg, '__custom_format__')
+                            for arg in field_args if arg is not type(None)
+                            for nested_arg in get_args(arg) or [arg]
+                        ):
+                            inner_cls = field_args[0]
+                            inner_args = get_args(inner_cls) or [inner_cls]
+                            actual_cls = inner_args[0]
+                            for item in field_val:
+                                inner_instance = item if isinstance(item, actual_cls) else actual_cls.model_validate(item)
+                                custom_format_output.extend(inner_instance.__custom_format__())
+                if custom_format_output:
+                    custom_type_tag = f"<<CUSTOM_TYPE_TAG::{k}>>"
+                    if custom_type_tag in current_content:
+                        before_tag, after_tag = current_content.split(custom_type_tag, 1)
+                        if before_tag.strip():
+                            content_blocks.append({"type": "text", "text": before_tag.strip()})
+                        content_blocks.extend(custom_format_output)
+                        current_content = after_tag
+            if current_content.strip():
+                content_blocks.append({"type": "text", "text": current_content.strip()})
+            new_messages.append({"role": msg["role"], "content": content_blocks})
+        return new_messages
 
     def __call__(
         self,
@@ -109,18 +203,18 @@ class Adapter:
         Returns:
             A list of multiturn messages as expected by the LM.
         """
-        inputs_copy = dict(inputs)
+        original_inputs = dict(inputs)
 
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.
-        history_field_name = self._get_history_field_name(signature)
+        history_field_name = self._get_history_field_name(signature, original_inputs)
         if history_field_name:
             # In order to format the conversation history, we need to remove the history field from the signature.
             signature_without_history = signature.delete(history_field_name)
             conversation_history = self.format_conversation_history(
                 signature_without_history,
                 history_field_name,
-                inputs_copy,
+                original_inputs,
             )
 
         messages = []
@@ -131,17 +225,18 @@ class Adapter:
         )
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
+        messages_after_demos = []
+        inputs_copy = self._preprocess_inputs_for_custom_format(signature, original_inputs)
         if history_field_name:
             # Conversation history and current input
             content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
-            messages.extend(conversation_history)
-            messages.append({"role": "user", "content": content})
+            messages_after_demos.extend(conversation_history)
+            messages_after_demos.append({"role": "user", "content": content})
         else:
             # Only current input
             content = self.format_user_message_content(signature, inputs_copy, main_request=True)
-            messages.append({"role": "user", "content": content})
-
-        messages = try_expand_image_tags(messages)
+            messages_after_demos.append({"role": "user", "content": content})
+        messages = messages + self._custom_format_messages(messages_after_demos, signature, original_inputs)
         return messages
 
     def format_field_description(self, signature: Type[Signature]) -> str:
@@ -263,12 +358,12 @@ class Adapter:
 
         incomplete_demo_prefix = "This is an example of the task, though some input or output fields are not supplied."
         for demo in incomplete_demos:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": self.format_user_message_content(signature, demo, prefix=incomplete_demo_prefix),
-                }
-            )
+            demo_copy = self._preprocess_inputs_for_custom_format(signature, demo)
+            user_msg = {
+                "role": "user",
+                "content": self.format_user_message_content(signature, demo_copy, prefix=incomplete_demo_prefix),
+            }
+            messages.append(self._custom_format_messages([user_msg], signature, demo))
             messages.append(
                 {
                     "role": "assistant",
@@ -279,7 +374,12 @@ class Adapter:
             )
 
         for demo in complete_demos:
-            messages.append({"role": "user", "content": self.format_user_message_content(signature, demo)})
+            demo_copy = self._preprocess_inputs_for_custom_format(signature, demo)
+            user_msg = {
+                "role": "user",
+                "content": self.format_user_message_content(signature, demo_copy, prefix=incomplete_demo_prefix),
+            }
+            messages.append(self._custom_format_messages([user_msg], signature, demo))
             messages.append(
                 {
                     "role": "assistant",
@@ -291,10 +391,20 @@ class Adapter:
 
         return messages
 
-    def _get_history_field_name(self, signature: Type[Signature]) -> bool:
+    def _get_history_field_name(self, signature: Type[Signature], inputs: dict[str, Any]) -> Optional[str]:
         for name, field in signature.input_fields.items():
             if field.annotation == History:
                 return name
+            value = inputs.get(name)
+            if hasattr(value, "messages") and isinstance(value.messages, list) and all(isinstance(m, dict) and "role" in m for m in value.messages):
+                return name
+            if hasattr(value, "__custom_format__"):
+                try:
+                    custom_format_output = value.__custom_format__()
+                    if isinstance(custom_format_output, list) and all(isinstance(m, dict) and "role" in m for m in custom_format_output):
+                        return name
+                except Exception:
+                    pass
         return None
 
     def format_conversation_history(
@@ -315,7 +425,16 @@ class Adapter:
         Returns:
             A list of multiturn messages.
         """
-        conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
+        history = inputs.get(history_field_name, None)
+
+        if history is None:
+            return []
+
+        if hasattr(history, "__custom_format__"):
+            del inputs[history_field_name]
+            return history.__custom_format__()
+
+        conversation_history = getattr(history, "messages", None)
 
         if conversation_history is None:
             return []
