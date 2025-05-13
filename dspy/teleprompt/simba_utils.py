@@ -7,11 +7,11 @@ import re
 
 from dspy.adapters.utils import get_field_description_string
 from dspy.signatures import InputField, OutputField
-from typing import Callable, Optional, Dict
+from typing import Callable, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_model: Optional[dspy.LM] = None):
+def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_model: Optional[Any] = None):
     lm = program.get_lm() or dspy.settings.lm
 
     # Check to see if our model is a reasoning model, which means temp must stay as 1.0
