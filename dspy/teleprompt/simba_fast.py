@@ -5,7 +5,7 @@ import logging
 import numpy as np
 from typing import Callable, Optional, Any, Dict
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule, summarize_batch
+from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule
 from dspy.teleprompt.utils import log_token_usage
 
 logger = logging.getLogger(__name__)
