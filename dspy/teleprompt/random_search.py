@@ -27,7 +27,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
     def __init__(
         self,
         metric,
-        teacher_model: Optional[dspy.LM] = None,
+        teacher_model= None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
