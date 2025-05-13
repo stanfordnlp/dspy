@@ -38,6 +38,7 @@ class GRPO(FinetuneTeleprompter):
         variably_invoked_predictor_grouping_mode: Union[Literal['truncate'], Literal['fill'], Literal['ragged']] = 'truncate',
         variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
         grpo_group_size: Union[int, None] = None,
+        checkpoint_on_validation_improvement: bool = True,
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -54,6 +55,7 @@ class GRPO(FinetuneTeleprompter):
         self.report_train_scores = report_train_scores
         self.failure_score = failure_score
         self.format_failure_score = format_failure_score
+        self.checkpoint_on_validation_improvement = checkpoint_on_validation_improvement
 
         self.grpo_group_size = grpo_group_size
         if grpo_group_size is not None:
@@ -80,6 +82,8 @@ class GRPO(FinetuneTeleprompter):
         self.id_freqs = Counter()
 
         self.model_name_val_scores = {}
+        self.best_model_step_idx = None
+        self.best_model_details = None
 
     def validate_trace_data_and_log_issues(
         self,
@@ -108,14 +112,11 @@ class GRPO(FinetuneTeleprompter):
                     for t in sample["trace"]:
                         assert hash(t[0].signature) in pred_signature_hash_to_ind
     
-    def report_validation_metrics(self, student, trainset, valset, logger, step_idx=-1):
+    def report_validation_metrics(self, student, trainset, valset, logger, step_idx=-1, grpo_training_jobs=None):
         if step_idx == -1 or step_idx == self.num_train_steps - 1 or (step_idx + 1) % self.num_steps_for_val == 0:
             pass
         else:
             return
-        
-        lm_names = [pred.lm.model for pred in student.predictors()]
-        logger.info(f"Validating modelnames (ord by predictors): {lm_names}")
         
         score = None
 
@@ -210,7 +211,17 @@ class GRPO(FinetuneTeleprompter):
                     logger.info("Not using any validation set and not reporting train scores.")
         
         if score is not None:
-            self.model_name_val_scores[tuple(lm_names)] = score
+            self.model_name_val_scores[step_idx] = score
+            if self.best_model_step_idx is None or score > self.model_name_val_scores[self.best_model_step_idx]:
+                self.best_model_step_idx = step_idx
+                logger.info(f"New best score on validation set: {score} at step {step_idx + 1}/{self.num_train_steps}")
+                if self.checkpoint_on_validation_improvement and grpo_training_jobs is not None:
+                    logger.info(f"Checkpoint the model at step {step_idx + 1}/{self.num_train_steps}")
+                    checkpoint_model_paths = {}
+                    for job_key, job in grpo_training_jobs.items():
+                        job.save_checkpoint()
+                        checkpoint_model_paths[job_key] = job.checkpoints[job.last_checkpoint]['model_path']
+                    self.best_model_details = checkpoint_model_paths
 
     def update_shuffled_trainset(self, original_trainset):
         self.shuffled_trainset_ids = list(range(len(original_trainset)))
@@ -387,6 +398,7 @@ class GRPO(FinetuneTeleprompter):
             valset=valset,
             logger=logger,
             step_idx=-1,
+            grpo_training_jobs=grpo_training_jobs,
         )
 
         logger.info("Starting the GRPO training loop...")
@@ -598,6 +610,7 @@ class GRPO(FinetuneTeleprompter):
                 valset=valset,
                 logger=logger,
                 step_idx=train_step_idx,
+                grpo_training_jobs=grpo_training_jobs,
             )
 
         logger.info("Done with the iterations! Retrieving the final model(s)...")
@@ -611,9 +624,10 @@ class GRPO(FinetuneTeleprompter):
 
         if self.model_name_val_scores is not None and len(self.model_name_val_scores) > 0:
             # Find the lm_names with the highest validation score
-            best_model_names_tuple = max(self.model_name_val_scores, key=self.model_name_val_scores.get)
-            for best_model_name, pred in zip(best_model_names_tuple, student.predictors()):
-                pred.lm.model = best_model_name
+            best_model_details = self.best_model_details
+            for job_key, job in grpo_training_jobs.items():
+                lm, data_key = job_key
+                lm.model = best_model_details[job_key]['model_path']
 
         logger.info("GRPO compiler has finished compiling the student program")
         student._compiled = True
