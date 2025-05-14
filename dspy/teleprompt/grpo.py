@@ -12,10 +12,12 @@ from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
 from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, assert_structural_equivalency, bootstrap_trace_data, FailedPrediction
+from dspy.clients.provider import ReinforceJob
 
 
 logger = logging.getLogger(__name__)
 
+tokenizers = {}
 
 class GRPO(FinetuneTeleprompter):
     def __init__(
@@ -39,6 +41,7 @@ class GRPO(FinetuneTeleprompter):
         variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
         grpo_group_size: Union[int, None] = None,
         checkpoint_on_validation_improvement: bool = True,
+        max_context_length: int = None
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -85,6 +88,9 @@ class GRPO(FinetuneTeleprompter):
         self.best_model_step_idx = None
         self.best_model_details = None
 
+        self.max_context_length = max_context_length
+        self.tokenizer = None
+
     def validate_trace_data_and_log_issues(
         self,
         trace_data: List[List[List[Dict[str, Any]]]],
@@ -112,6 +118,10 @@ class GRPO(FinetuneTeleprompter):
                     for t in sample["trace"]:
                         assert hash(t[0].signature) in pred_signature_hash_to_ind
     
+    def token_seq_len(self, messages: List[Dict[str, Any]]) -> int:
+        # TODO(GRPO Team): This should actually be tied to pred_lm's tokenizer from the provider
+        return len(self.tokenizer.apply_chat_template(messages))
+
     def report_validation_metrics(self, student, trainset, valset, logger, step_idx=-1, grpo_training_jobs=None):
         if step_idx == -1 or step_idx == self.num_train_steps - 1 or (step_idx + 1) % self.num_steps_for_val == 0:
             pass
@@ -379,6 +389,15 @@ class GRPO(FinetuneTeleprompter):
 
             self.train_kwargs[pred.lm] = train_kwargs
 
+            # TODO(GRPO Team): This should be done in the provider, and needs much better handling
+            if self.tokenizer is None:
+                from transformers import AutoTokenizer
+                model_name = pred.lm.model
+                if model_name.startswith("openai/arbor:"):
+                    model_name = model_name[len("openai/arbor:"):]
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                del model_name
+
         # We need to have a separate job for each unique LM x the data
         # collection strategy. This properly handles all combinations of
         # multitask and predictor LMs
@@ -544,6 +563,11 @@ class GRPO(FinetuneTeleprompter):
                                     },
                                     "reward": float(score),
                                 })
+                            
+                            if self.max_context_length is not None:
+                                if self.token_seq_len(example_training_data[group_idx][-1]['messages'] + [example_training_data[group_idx][-1]['completion']]) > self.max_context_length:
+                                    logger.warning(f"Skipping example {example_ind} for predictor {pred_id} as it exceeds the max context length {self.max_context_length}.")
+                                    example_training_data[group_idx] = example_training_data[group_idx][:-1]
                     
                     train_batch_per_predictor[pred_id].extend(example_training_data)
             
