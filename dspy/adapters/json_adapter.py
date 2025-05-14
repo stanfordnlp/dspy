@@ -146,16 +146,12 @@ class JSONAdapter(ChatAdapter):
                 fields[k] = parse_value(v, signature.output_fields[k].annotation)
 
         if fields.keys() != signature.output_fields.keys():
-<<<<<<< HEAD
-            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}", len(fields.keys()), len(signature.output_fields.keys()))
-=======
             raise AdapterParseError(
                 adapter_name="JSONAdapter",
                 signature=signature,
                 lm_response=completion,
                 parsed_result=fields,
             )
->>>>>>> main
 
         return fields
 
