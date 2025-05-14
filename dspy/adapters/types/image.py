@@ -4,10 +4,11 @@ import mimetypes
 import os
 from typing import Any, Union
 from urllib.parse import urlparse
-from ..types.custom_type import CustomType
 
 import pydantic
 import requests
+
+from dspy.adapters.types.base_type import BaseType
 
 try:
     from PIL import Image as PILImage
@@ -17,7 +18,7 @@ except ImportError:
     PIL_AVAILABLE = False
 
 
-class Image(pydantic.BaseModel, CustomType):
+class Image(BaseType):
     url: str
 
     model_config = {
@@ -27,7 +28,7 @@ class Image(pydantic.BaseModel, CustomType):
         "extra": "forbid",
     }
 
-    def _format(self) -> list[dict[str, Any]]:
+    def format(self) -> Union[list[dict[str, Any]], str]:
         try:
             url = self.url
             if isinstance(url, str) and "<DSPY_IMAGE_START>" in url and "<DSPY_IMAGE_END>" in url:
@@ -65,10 +66,6 @@ class Image(pydantic.BaseModel, CustomType):
     @classmethod
     def from_PIL(cls, pil_image):  # noqa: N802
         return cls(url=encode_image(pil_image))
-
-    @pydantic.model_serializer()
-    def serialize_model(self):
-        return "<DSPY_IMAGE_START>" + self.url + "<DSPY_IMAGE_END>"
 
     def __str__(self):
         return self.serialize_model()
