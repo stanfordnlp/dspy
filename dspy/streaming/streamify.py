@@ -272,6 +272,9 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
         elif isinstance(value, litellm.ModelResponseStream):
             data = {"chunk": value.json()}
             yield f"data: {ujson.dumps(data)}\n\n"
+        elif isinstance(value, StatusMessage):
+            data = {"status": value.message}
+            yield f"data: {ujson.dumps(data)}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):
             # The chunk value is an OpenAI-compatible streaming chunk value,
             # e.g. "data: {"finish_reason": "stop", "index": 0, "is_finished": True, ...}",
