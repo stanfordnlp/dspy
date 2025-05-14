@@ -8,7 +8,6 @@ import pydantic
 import regex
 from pydantic.fields import FieldInfo
 
-import dspy
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     format_field_value,
@@ -63,9 +62,8 @@ class JSONAdapter(ChatAdapter):
             structured_output_model = _get_structured_outputs_response_format(signature)
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
-            if dspy.settings.log_json_fallbacks:
-                logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
+        except Exception:
+            logger.warning("Failed to use structured output format, falling back to JSON mode.")
             try:
                 lm_kwargs["response_format"] = {"type": "json_object"}
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
