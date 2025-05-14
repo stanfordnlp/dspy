@@ -132,7 +132,6 @@ def find_enum_member(enum, identifier):
 
 
 def parse_value(value, annotation):
-    
     if annotation is str:
         return str(value)
 
