@@ -31,7 +31,7 @@ class LM(BaseLM):
         model: str,
         model_type: Literal["chat", "text"] = "chat",
         temperature: float = 0.0,
-        max_tokens: int = 1000,
+        max_tokens: int = 4000,
         cache: bool = True,
         cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
@@ -131,6 +131,15 @@ class LM(BaseLM):
             cache=litellm_cache_args,
         )
 
+        if any(c.finish_reason == "length" for c in results["choices"]):
+            logger.warning(
+                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
+                "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
+                f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
+                " if the reason for truncation is repetition."
+            )
+
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
@@ -151,6 +160,15 @@ class LM(BaseLM):
             num_retries=self.num_retries,
             cache=litellm_cache_args,
         )
+
+        if any(c.finish_reason == "length" for c in results["choices"]):
+            logger.warning(
+                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
+                "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
+                f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
+                " if the reason for truncation is repetition."
+            )
 
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
