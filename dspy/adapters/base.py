@@ -70,10 +70,6 @@ class Adapter:
                     parsed = {"type": "text", "text": custom_type_content}
                     result.append(parsed)
 
-                import pdb
-
-                pdb.set_trace()
-
                 last_end = end
 
             # Add any remaining text after the last match

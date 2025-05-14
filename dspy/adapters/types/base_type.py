@@ -1,28 +1,26 @@
-import json
-from typing import Any, Union
+from typing import Any
 
 import pydantic
 
 
 class BaseType(pydantic.BaseModel):
+    """Base class to support creating custom types for DSPy signatures.
+
+    This is the parent class of DSPy custom types, e.g, dspy.Image. Subclasses must implement the `format` method to
+    return a list of dictionaries (same as the Array of content parts in the OpenAI API user message's content field).
+
+    Example:
+
+        ```python
+        class Image(BaseType):
+            url: str
+
+            def format(self) -> list[dict[str, Any]]:
+                return [{"type": "image_url", "image_url": {"url": self.url}}]
+        ```
     """
-    Base class to support creating custom types for DSPy signatures.
 
-    Example (supporting images through custom type):
-
-    class Image(dspy.BaseType):
-        url: str
-
-        def format(self):
-            return [{"type": "image_url", "image_url": {"url": self.url}}]
-
-        @classmethod
-        def from_url(cls, url: str):
-            return cls(url=url)
-
-    """
-
-    def format(self) -> Union[list[dict[str, Any]], str]:
+    def format(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
     @pydantic.model_serializer()

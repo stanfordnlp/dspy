@@ -201,3 +201,28 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
     with pytest.raises(ValueError) as error:
         adapter.parse(signature, invalid_completion)
     assert str(error.value) == "Expected dict_keys(['output1']) but got dict_keys([])"
+
+
+def test_json_adapter_formats_image():
+    # Test basic image formatting
+    image = dspy.Image(url="https://example.com/image.jpg")
+
+    class Signature(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(Signature, [], {"image": image})
+
+    assert len(messages) == 2
+    user_message_content = messages[1]["content"]
+    assert user_message_content is not None
+
+    # The message should have 3 chunks of types: text, image_url, text
+    assert len(user_message_content) == 3
+    assert user_message_content[0]["type"] == "text"
+    assert user_message_content[2]["type"] == "text"
+
+    # Assert that the image is formatted correctly
+    expected_image_content = {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+    assert expected_image_content in user_message_content
