@@ -19,6 +19,7 @@ from dspy.adapters.utils import (
 )
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature, SignatureMeta
+from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +69,11 @@ class JSONAdapter(ChatAdapter):
             try:
                 lm_kwargs["response_format"] = {"type": "json_object"}
                 return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-            except ValueError as ve:
-                raise ve
+            except AdapterParseError as e:
+                # On AdapterParseError, we raise the original error.
+                raise e
             except Exception as e:
+                # On any other error, we raise a RuntimeError with the original error message.
                 raise RuntimeError(
                     "Both structured output format and JSON mode failed. Please choose a model that supports "
                     f"`response_format` argument. Original error: {e}"
@@ -128,7 +131,12 @@ class JSONAdapter(ChatAdapter):
         fields = json_repair.loads(completion)
 
         if not isinstance(fields, dict):
-            raise ValueError(f"Expected a JSON object but parsed a {type(fields)}")
+            raise AdapterParseError(
+                adapter_name="JSONAdapter",
+                signature=signature,
+                lm_response=completion,
+                message="LM response cannot be serialized to a JSON object.",
+            )
 
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
@@ -138,7 +146,16 @@ class JSONAdapter(ChatAdapter):
                 fields[k] = parse_value(v, signature.output_fields[k].annotation)
 
         if fields.keys() != signature.output_fields.keys():
+<<<<<<< HEAD
             raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}", len(fields.keys()), len(signature.output_fields.keys()))
+=======
+            raise AdapterParseError(
+                adapter_name="JSONAdapter",
+                signature=signature,
+                lm_response=completion,
+                parsed_result=fields,
+            )
+>>>>>>> main
 
         return fields
 

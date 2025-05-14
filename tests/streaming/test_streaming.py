@@ -249,11 +249,11 @@ def test_sync_streaming():
             dspy.streaming.StreamListener(signature_field_name="judgement"),
         ],
         include_final_prediction_in_output_stream=False,
+        async_streaming=False,
     )
     output = program(x="why did a chicken cross the kitchen?")
-    sync_output = dspy.streaming.apply_sync_streaming(output)
     all_chunks = []
-    for value in sync_output:
+    for value in output:
         if isinstance(value, dspy.streaming.StreamResponse):
             all_chunks.append(value)
 

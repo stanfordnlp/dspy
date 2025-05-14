@@ -40,6 +40,10 @@ nav:
             - Classification Finetuning: tutorials/classification_finetuning/index.ipynb
             - Advanced Tool Use: tutorials/tool_use/index.ipynb
             - Finetuning Agents: tutorials/games/index.ipynb
+        - Experimental RL Optimization for DSPy:
+            - Overview: tutorials/rl_ai_program/index.md
+            - RL for Privacy-Conscious Delegation: tutorials/rl_papillon/index.ipynb
+            - RL for Multi-Hop Research: tutorials/rl_multihop/index.ipynb
         - Tools, Development, and Deployment:
             - Overview: tutorials/core_development/index.md
             - Use MCP in DSPy: tutorials/mcp/index.md
@@ -47,6 +51,8 @@ nav:
             - Saving and Loading: tutorials/saving/index.md
             - Deployment: tutorials/deployment/index.md
             - Debugging & Observability: tutorials/observability/index.md
+            - Streaming: tutorials/streaming/index.md
+            - Async: tutorials/async/index.md
     - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
