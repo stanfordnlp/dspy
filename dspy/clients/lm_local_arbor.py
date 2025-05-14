@@ -69,7 +69,8 @@ class ArborReinforceJob(ReinforceJob):
         "logging_steps": 100,
         # By default, none is the model's max context length
         "max_context_length": None,
-        "lora": False
+        "lora": False,
+        "generation_batch_size": None,
     }
 
     def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs):
@@ -85,27 +86,32 @@ class ArborReinforceJob(ReinforceJob):
 
     def initialize(self):
         # TODO(GRPO Team): Set provider job ID
-        num_generations = self.train_kwargs.get("num_generations")
-        update_interval = self.train_kwargs.get("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
-        temperature = self.train_kwargs.get("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
-        beta = self.train_kwargs.get("beta", self.DEFAULT_TRAIN_KWARGS["beta"])
-        num_iterations = self.train_kwargs.get("num_iterations", self.DEFAULT_TRAIN_KWARGS["num_iterations"])
-        per_device_train_batch_size = self.train_kwargs.get("per_device_train_batch_size", self.DEFAULT_TRAIN_KWARGS["per_device_train_batch_size"])
-        learning_rate = self.train_kwargs.get("learning_rate", self.DEFAULT_TRAIN_KWARGS["learning_rate"])
-        gradient_accumulation_steps = self.train_kwargs.get("gradient_accumulation_steps", self.DEFAULT_TRAIN_KWARGS["gradient_accumulation_steps"])
-        gradient_checkpointing = self.train_kwargs.get("gradient_checkpointing", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing"])
-        lr_scheduler_type = self.train_kwargs.get("lr_scheduler_type", self.DEFAULT_TRAIN_KWARGS["lr_scheduler_type"])
-        max_prompt_length = self.train_kwargs.get("max_prompt_length", self.DEFAULT_TRAIN_KWARGS["max_prompt_length"])
-        max_completion_length = self.train_kwargs.get("max_completion_length", self.DEFAULT_TRAIN_KWARGS["max_completion_length"])
-        bf16 = self.train_kwargs.get("bf16", self.DEFAULT_TRAIN_KWARGS["bf16"])
-        scale_rewards = self.train_kwargs.get("scale_rewards", self.DEFAULT_TRAIN_KWARGS["scale_rewards"])
-        gradient_checkpointing_kwargs = self.train_kwargs.get("gradient_checkpointing_kwargs", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing_kwargs"])
-        max_grad_norm = self.train_kwargs.get("max_grad_norm", self.DEFAULT_TRAIN_KWARGS["max_grad_norm"])
-        report_to = self.train_kwargs.get("report_to", self.DEFAULT_TRAIN_KWARGS["report_to"])
-        log_completions = self.train_kwargs.get("log_completions", self.DEFAULT_TRAIN_KWARGS["log_completions"])
-        logging_steps = self.train_kwargs.get("logging_steps", self.DEFAULT_TRAIN_KWARGS["logging_steps"])
-        max_context_length = self.train_kwargs.get("max_context_length", self.DEFAULT_TRAIN_KWARGS["max_context_length"])
-        lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
+        train_kwargs = {**self.train_kwargs}
+        num_generations = train_kwargs.pop("num_generations")
+        update_interval = train_kwargs.pop("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
+        temperature = train_kwargs.pop("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
+        beta = train_kwargs.pop("beta", self.DEFAULT_TRAIN_KWARGS["beta"])
+        num_iterations = train_kwargs.pop("num_iterations", self.DEFAULT_TRAIN_KWARGS["num_iterations"])
+        per_device_train_batch_size = train_kwargs.pop("per_device_train_batch_size", self.DEFAULT_TRAIN_KWARGS["per_device_train_batch_size"])
+        learning_rate = train_kwargs.pop("learning_rate", self.DEFAULT_TRAIN_KWARGS["learning_rate"])
+        gradient_accumulation_steps = train_kwargs.pop("gradient_accumulation_steps", self.DEFAULT_TRAIN_KWARGS["gradient_accumulation_steps"])
+        gradient_checkpointing = train_kwargs.pop("gradient_checkpointing", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing"])
+        lr_scheduler_type = train_kwargs.pop("lr_scheduler_type", self.DEFAULT_TRAIN_KWARGS["lr_scheduler_type"])
+        max_prompt_length = train_kwargs.pop("max_prompt_length", self.DEFAULT_TRAIN_KWARGS["max_prompt_length"])
+        max_completion_length = train_kwargs.pop("max_completion_length", self.DEFAULT_TRAIN_KWARGS["max_completion_length"])
+        bf16 = train_kwargs.pop("bf16", self.DEFAULT_TRAIN_KWARGS["bf16"])
+        scale_rewards = train_kwargs.pop("scale_rewards", self.DEFAULT_TRAIN_KWARGS["scale_rewards"])
+        gradient_checkpointing_kwargs = train_kwargs.pop("gradient_checkpointing_kwargs", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing_kwargs"])
+        max_grad_norm = train_kwargs.pop("max_grad_norm", self.DEFAULT_TRAIN_KWARGS["max_grad_norm"])
+        report_to = train_kwargs.pop("report_to", self.DEFAULT_TRAIN_KWARGS["report_to"])
+        log_completions = train_kwargs.pop("log_completions", self.DEFAULT_TRAIN_KWARGS["log_completions"])
+        logging_steps = train_kwargs.pop("logging_steps", self.DEFAULT_TRAIN_KWARGS["logging_steps"])
+        max_context_length = train_kwargs.pop("max_context_length", self.DEFAULT_TRAIN_KWARGS["max_context_length"])
+        lora = train_kwargs.pop("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
+        generation_batch_size = train_kwargs.pop("generation_batch_size", self.DEFAULT_TRAIN_KWARGS["generation_batch_size"])
+
+        assert len(train_kwargs) == 0, f"Unknown training kwargs: {train_kwargs}"
+
         api_base = self.lm.kwargs["api_base"]
 
         suffix = "dspy"
@@ -134,6 +140,7 @@ class ArborReinforceJob(ReinforceJob):
             'logging_steps': logging_steps,
             'max_context_length': max_context_length,
             'lora': lora,
+            'generation_batch_size': generation_batch_size,
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
