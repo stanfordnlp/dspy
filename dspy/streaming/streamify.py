@@ -3,6 +3,7 @@ import contextvars
 import logging
 import threading
 from asyncio import iscoroutinefunction
+from dataclasses import asdict
 from queue import Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator, List, Optional
 
@@ -14,7 +15,7 @@ from litellm import ModelResponseStream
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
-from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback
+from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback, StreamResponse
 from dspy.streaming.streaming_listener import StreamListener, find_predictor_for_stream_listeners
 from dspy.utils.asyncify import asyncify
 
@@ -274,6 +275,9 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
             yield f"data: {ujson.dumps(data)}\n\n"
         elif isinstance(value, StatusMessage):
             data = {"status": value.message}
+            yield f"data: {ujson.dumps(data)}\n\n"
+        elif isinstance(value, StreamResponse):
+            data = {"chunk": {k: v for k, v in asdict(value).items()}}
             yield f"data: {ujson.dumps(data)}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):
             # The chunk value is an OpenAI-compatible streaming chunk value,
