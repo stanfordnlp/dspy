@@ -19,7 +19,7 @@ def test_initialization_with_string_signature():
 @pytest.mark.asyncio
 async def test_async_chain_of_thought():
     lm = DummyLM([{"reasoning": "find the number after 1", "answer": "2"}])
-    dspy.settings.configure(lm=lm)
-    program = ChainOfThought("question -> answer")
-    result = await program.acall(question="What is 1+1?")
-    assert result.answer == "2"
+    with dspy.context(lm=lm):
+        program = ChainOfThought("question -> answer")
+        result = await program.acall(question="What is 1+1?")
+        assert result.answer == "2"

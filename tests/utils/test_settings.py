@@ -108,7 +108,6 @@ def test_dspy_context_with_dspy_parallel():
 
 @pytest.mark.asyncio
 async def test_dspy_context_with_async_task_group():
-    dspy.configure(lm=dspy.LM("openai/gpt-4.1", cache=False), adapter=dspy.ChatAdapter())
 
     class MyModule(dspy.Module):
         def __init__(self):
@@ -129,19 +128,20 @@ async def test_dspy_context_with_async_task_group():
 
     module = MyModule()
 
-    with mock.patch("litellm.acompletion") as mock_completion:
-        mock_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],
-            model="openai/gpt-4o-mini",
-        )
-        tasks = []
-        async with asyncio.TaskGroup() as tg:
-            tasks.append(tg.create_task(module.acall(question="What is the capital of France?")))
-            tasks.append(tg.create_task(module.acall(question="What is the capital of France?")))
-            tasks.append(tg.create_task(module.acall(question="What is the capital of Germany?")))
-            tasks.append(tg.create_task(module.acall(question="What is the capital of Germany?")))
+    with dspy.context(lm=dspy.LM("openai/gpt-4.1", cache=False), adapter=dspy.ChatAdapter()):
+        with mock.patch("litellm.acompletion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],
+                model="openai/gpt-4o-mini",
+            )
+            tasks = []
+            async with asyncio.TaskGroup() as tg:
+                tasks.append(tg.create_task(module.acall(question="What is the capital of France?")))
+                tasks.append(tg.create_task(module.acall(question="What is the capital of France?")))
+                tasks.append(tg.create_task(module.acall(question="What is the capital of Germany?")))
+                tasks.append(tg.create_task(module.acall(question="What is the capital of Germany?")))
 
-        results = await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks)
 
         assert results[0].answer == "Paris"
         assert results[1].answer == "Paris"

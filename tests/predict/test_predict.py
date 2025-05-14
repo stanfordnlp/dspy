@@ -550,28 +550,28 @@ async def test_lm_usage_with_async():
 
     program.aforward = types.MethodType(patched_aforward, program)
 
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
-    with patch(
-        "litellm.acompletion",
-        return_value=ModelResponse(
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True):
+        with patch(
+            "litellm.acompletion",
+            return_value=ModelResponse(
             choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
             usage={"total_tokens": 10},
-        ),
-    ):
-        tasks = []
-        async with asyncio.TaskGroup() as tg:
-            tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
-            tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
-            tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
-            tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
+            ),
+        ):
+            tasks = []
+            async with asyncio.TaskGroup() as tg:
+                tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
+                tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
+                tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
+                tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
 
-        results = await asyncio.gather(*tasks)
-        assert results[0].answer == "Paris"
-        assert results[1].answer == "Paris"
-        assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
-        assert results[1].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
-        assert results[2].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
-        assert results[3].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+            results = await asyncio.gather(*tasks)
+            assert results[0].answer == "Paris"
+            assert results[1].answer == "Paris"
+            assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+            assert results[1].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+            assert results[2].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+            assert results[3].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
 
 
 def test_positional_arguments():
@@ -637,6 +637,6 @@ def test_field_constraints(adapter_type):
 @pytest.mark.asyncio
 async def test_async_predict():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]))
-    result = await program.acall(question="What is the capital of France?")
-    assert result.answer == "Paris"
+    with dspy.context(lm=DummyLM([{"answer": "Paris"}])):
+        result = await program.acall(question="What is the capital of France?")
+        assert result.answer == "Paris"
