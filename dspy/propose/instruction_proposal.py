@@ -120,7 +120,6 @@ class GenerateInstructionGivenAttempts(dspy.Signature):
 
 Your task is to propose a new instruction that will lead a good language model to perform the task even better. Don't be afraid to be creative."""
 
-        attempted_instructions = dspy.InputField(format=dsp.passages2text)
-        # attempted_instructions = dspy.InputField(desc="Previously attempted task instructions, along with their resulting validation score, and an example of the instruction in use on a sample from our dataset.")
+        attempted_instructions = dspy.InputField(desc="Previously attempted task instructions, along with their resulting validation score, and an example of the instruction in use on a sample from our dataset.")
         proposed_instruction = dspy.OutputField(desc="The improved instructions for the language model")
         proposed_prefix_for_output_field = dspy.OutputField(desc="The string at the end of the prompt, which will help the model start solving the task")
