@@ -22,7 +22,7 @@ class SIMBA(Teleprompter):
         max_steps=8,
         max_demos=4,
         prompt_model: Optional[Any] = None,
-        teacher_settings: Optional[Dict] = None,
+        teacher_model: Optional[Any] = None,
         demo_input_field_maxlen=100_000,
         num_threads=None,
         temperature_for_sampling=0.2,
@@ -45,7 +45,7 @@ class SIMBA(Teleprompter):
         self.max_steps = max_steps
         self.max_demos = max_demos
         self.prompt_model = prompt_model if prompt_model else dspy.settings.lm
-        self.teacher_settings = teacher_settings
+        self.teacher_model = teacher_model
         self.demo_input_field_maxlen = demo_input_field_maxlen
         self.num_threads = num_threads
 
@@ -142,7 +142,7 @@ class SIMBA(Teleprompter):
 
             # We'll generate (program, model) pairs for the trajectory sampling.
             # Prepare distinct LMs (with different temperatures, etc.) from the baseline=programs[0].
-            models = prepare_models_for_resampling(programs[0], self.num_candidates, self.teacher_settings)
+            models = prepare_models_for_resampling(programs[0], self.num_candidates, self.teacher_model)
             top_programs = top_k_plus_baseline(self.num_candidates)
 
             exec_pairs = []

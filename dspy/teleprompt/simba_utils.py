@@ -20,6 +20,7 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_model: O
 
     models = []
     if teacher_model:
+        logger.info(f"Using teacher model: {teacher_model}")
         models.append(teacher_model)
 
     if model_pattern: # Vary the seed
