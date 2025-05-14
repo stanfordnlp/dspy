@@ -226,3 +226,5 @@ def test_json_adapter_formats_image():
     # Assert that the image is formatted correctly
     expected_image_content = {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
     assert expected_image_content in user_message_content
+
+
