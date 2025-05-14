@@ -31,7 +31,7 @@ class LM(BaseLM):
         model: str,
         model_type: Literal["chat", "text"] = "chat",
         temperature: float = 0.0,
-        max_tokens: int = 1000,
+        max_tokens: int = 4000,
         cache: bool = True,
         cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
