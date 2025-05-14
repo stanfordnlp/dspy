@@ -39,7 +39,7 @@ class BootstrapFewShot(Teleprompter):
         self,
         metric=None,
         metric_threshold=None,
-        teacher_model= None,
+        teacher_settings: Optional[Dict] = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -54,7 +54,7 @@ class BootstrapFewShot(Teleprompter):
             metric_threshold (float, optional): If the metric yields a numerical value, then check it
                 against this threshold when deciding whether or not to accept a bootstrap example.
                 Defaults to None.
-            teacher_model (dspy.LM, optional): The `teacher` model.
+            teacher_settings (dict, optional): Settings for the `teacher` model.
                 Defaults to None.
             max_bootstrapped_demos (int): Maximum number of bootstrapped demonstrations to include.
                 Defaults to 4.
@@ -66,7 +66,7 @@ class BootstrapFewShot(Teleprompter):
         """
         self.metric = metric
         self.metric_threshold = metric_threshold
-        self.teacher_model = teacher_model if teacher_model else dspy.settings.lm
+        self.teacher_settings = {} if teacher_settings is None else teacher_settings
 
         self.max_bootstrapped_demos = max_bootstrapped_demos
         self.max_labeled_demos = max_labeled_demos
@@ -181,7 +181,7 @@ class BootstrapFewShot(Teleprompter):
         predictor_cache = {}
 
         try:
-            with dspy.settings.context(trace=[], **self.teacher_model.kwargs):
+            with dspy.settings.context(trace=[], **self.teacher_settings):
                 lm = dspy.settings.lm
                 lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
                 new_settings = dict(lm=lm) if round_idx > 0 else {}

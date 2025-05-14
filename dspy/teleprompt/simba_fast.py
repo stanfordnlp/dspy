@@ -22,7 +22,7 @@ class SIMBAFast(Teleprompter):
         max_steps=8,
         max_demos=4,
         prompt_model: Optional[Any] = None,
-        teacher_model: Optional[Any] = None,
+        teacher_settings: Optional[Dict] = None,
         demo_input_field_maxlen=100_000,
         num_threads=16,
         temperature_for_sampling=0.2,
@@ -45,7 +45,7 @@ class SIMBAFast(Teleprompter):
         self.max_steps = max_steps
         self.max_demos = max_demos
         self.prompt_model = prompt_model if prompt_model else dspy.settings.lm
-        self.teacher_model = teacher_model if teacher_model else None
+        self.teacher_settings = teacher_settings if teacher_settings else {}
         self.demo_input_field_maxlen = demo_input_field_maxlen
         self.num_threads = num_threads
 
@@ -198,7 +198,7 @@ class SIMBAFast(Teleprompter):
             batch_idx_to_baseline_scores[batch_idx] = [score for i, score in enumerate(baseline_scores) if i in batch_indices]
 
             # STEP 2 (or hybrid): Collect execution results for bucket building
-            models = prepare_models_for_resampling(programs[0], self.num_candidates, self.teacher_model)
+            models = prepare_models_for_resampling(programs[0], self.num_candidates, self.teacher_settings)
             top_programs = top_k_plus_baseline(self.num_candidates)
 
             exec_pairs = []

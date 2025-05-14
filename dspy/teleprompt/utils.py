@@ -315,7 +315,7 @@ def create_n_fewshot_demo_sets(
     max_labeled_demos,
     max_bootstrapped_demos,
     metric,
-    teacher_model,
+    teacher_settings,
     max_errors=10,
     max_rounds=1,
     labeled_sample=True,
@@ -370,7 +370,7 @@ def create_n_fewshot_demo_sets(
                 max_errors=max_errors,
                 max_bootstrapped_demos=max_bootstrapped_demos,
                 max_labeled_demos=max_labeled_demos,
-                teacher_model=teacher_model,
+                teacher_settings=teacher_settings,
                 max_rounds=max_rounds,
             )
             program2 = program.compile(student, teacher=teacher, trainset=trainset_copy)
@@ -386,7 +386,7 @@ def create_n_fewshot_demo_sets(
                 metric_threshold=metric_threshold,
                 max_bootstrapped_demos=size,
                 max_labeled_demos=max_labeled_demos,
-                teacher_model=teacher_model,
+                teacher_settings=teacher_settings,
                 max_rounds=max_rounds,
             )
 

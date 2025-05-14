@@ -11,7 +11,7 @@ from typing import Callable, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_model: Optional[Any] = None):
+def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: Optional[Dict] = None):
     lm = program.get_lm() or dspy.settings.lm
 
     # Check to see if our model is a reasoning model, which means temp must stay as 1.0
@@ -19,9 +19,10 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_model: O
     model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
 
     models = []
-    if teacher_model:
-        logger.info(f"Using teacher model: {teacher_model}")
-        models.append(teacher_model)
+    if teacher_settings:
+        with dspy.settings.context(trace=[], **teacher_settings):
+            lm = dspy.settings.lm
+            models.append(lm)
 
     if model_pattern: # Vary the seed
         start_seed = 0 if "seed" not in lm.kwargs else lm.kwargs["seed"]
