@@ -38,7 +38,7 @@ class Image(BaseType):
             raise ValueError(f"Failed to format image for DSPy: {e}")
         return [{"type": "image_url", "image_url": {"url": image_url}}]
 
-    
+
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, values):

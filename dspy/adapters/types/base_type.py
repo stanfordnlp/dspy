@@ -1,3 +1,4 @@
+import json
 from typing import Any, Union
 
 import pydantic
@@ -20,6 +21,7 @@ class BaseType(pydantic.BaseModel):
             return cls(url=url)
 
     """
+
     def format(self) -> Union[list[dict[str, Any]], str]:
         raise NotImplementedError
 
