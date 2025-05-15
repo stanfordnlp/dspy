@@ -173,8 +173,8 @@ class ReAct(Module):
                 try:
                     results[tool_name] = deepcopy(tool)
                 except Exception as e:
-                    logger.warning(f"Failed to deepcopy tool: {tool!r}. Consider making your class deep-copyable "
-                                   "if managing the internal states. Error: {e}.")
+                    logger.warning(f"Failed to deepcopy tool: {tool!r}. Consider making your tool deep-copyable "
+                                   "if it needs to manage internal state. Error: {e}.")
         return results
 
 
