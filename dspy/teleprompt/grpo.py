@@ -1,18 +1,23 @@
-from collections import Counter
 import logging
 import random
+from collections import Counter
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import TrainDataFormat, GRPOGroup
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
-from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, assert_structural_equivalency, bootstrap_trace_data, FailedPrediction
-
+from dspy.teleprompt.bootstrap_finetune import (
+    FailedPrediction,
+    FinetuneTeleprompter,
+    all_predictors_have_lms,
+    assert_structural_equivalency,
+    bootstrap_trace_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +99,13 @@ class GRPO(FinetuneTeleprompter):
             assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
             assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
             assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
-        
+
         for example_data in trace_data:
             for teacher_data in example_data:
                 for sample in teacher_data:
                     for t in sample["trace"]:
                         assert hash(t[0].signature) in pred_signature_hash_to_ind
-    
+
     def report_validation_metrics(self, student, trainset, valset, logger, step_idx=-1):
         if step_idx == -1 or step_idx == self.num_train_steps - 1 or (step_idx + 1) % self.num_steps_for_val == 0:
             pass
@@ -192,7 +197,7 @@ class GRPO(FinetuneTeleprompter):
                 assert not self.use_train_as_val, "If report_train_scores is False, use_train_as_val must be False."
                 if step_idx == -1:
                     logger.info("Not using any validation set and not reporting train scores.")
-    
+
     def update_shuffled_trainset(self, original_trainset):
         self.shuffled_trainset_ids = list(range(len(original_trainset)))
         self.rng.shuffle(self.shuffled_trainset_ids)
@@ -299,7 +304,7 @@ class GRPO(FinetuneTeleprompter):
         for t in teachers:
             assert_structural_equivalency(student, t)
             all_predictors_have_lms(t)
-        
+
         # Ensure that the teachers list contain the student program
         assert student in teachers, f"Student program {student} is not in the list of teachers {teachers}. Please provide the student program as one of the teachers. Alternatively, you can leave the teacher argument as None, and the student program will be used as the teacher program."
         assert self.num_rollouts_per_grpo_step % len(teachers) == 0, (
@@ -308,7 +313,7 @@ class GRPO(FinetuneTeleprompter):
             "Please provide a number of examples that is divisible by the number of teachers."
         )
         num_samples_per_input = self.num_rollouts_per_grpo_step // len(teachers)
-        
+
         # We will disable the LM cache for all programs (student and teachers)
         # These will be reverted to their original state at the end of the
         # training
@@ -336,7 +341,7 @@ class GRPO(FinetuneTeleprompter):
                 train_kwargs = self.train_kwargs[pred.lm]
                 job = pred.lm.reinforce(train_kwargs=train_kwargs)
                 grpo_training_jobs[job_key] = job
-        
+
         self.report_validation_metrics(
             student=student,
             trainset=trainset,
@@ -405,7 +410,7 @@ class GRPO(FinetuneTeleprompter):
                             assert sample["example_ind"] == example_ind, f"Example index {sample['example_ind']} does not match the expected index {example_ind}"
 
                             trace_instances_for_current_pred = [(*t, sample["score"]) for t in sample["trace"] if hash(t[0].signature) == hash(student.predictors()[pred_id].signature)]
-                            
+
                             predictor_example_invocations.append(trace_instances_for_current_pred)
 
                     if len(predictor_example_invocations) == 0:
@@ -424,9 +429,9 @@ class GRPO(FinetuneTeleprompter):
                         predictor_example_invocations = [invocation[:min_len] for invocation in predictor_example_invocations]
                     elif self.variably_invoked_predictor_grouping_mode == 'fill':
                         if self.variably_invoked_predictor_fill_strategy == 'randint':
-                            selector = lambda l: self.rng.choice(l)
+                            selector = lambda l: self.rng.choice(l) # noqa: E731, E741
                         else:
-                            selector = lambda l: l[-1]
+                            selector = lambda l: l[-1] # noqa: E731, E741
                         predictor_example_invocations = [
                             invocation + [selector(invocation) for _ in range(max_len - len(invocation))]
                             for invocation in predictor_example_invocations
@@ -454,8 +459,8 @@ class GRPO(FinetuneTeleprompter):
                             # TODO(GRPO Team): Use build_call_data_from_trace (from bootstrap_finetune) instead of
                             # dealing with the message formatting ourselves.
                             inp_messages = adapter.format(
-                                signature=trace_instance[0].signature, 
-                                inputs=trace_instance[1], 
+                                signature=trace_instance[0].signature,
+                                inputs=trace_instance[1],
                                 demos=[] # TODO: Add support for demos
                             )
 
@@ -488,10 +493,10 @@ class GRPO(FinetuneTeleprompter):
                                     },
                                     "reward": float(score),
                                 })
-                    
+
                     train_batch_per_predictor[pred_id].extend(example_training_data)
-            
-            if len(sum(train_batch_per_predictor, [])) == 0:
+
+            if not any(train_batch_per_predictor):
                 logger.warning("No training data found for this training step. This means that the model did not generate valid formatted responses for any of the examples in the training set. This is a critical error. Please check the model and the training set.")
                 continue
 
@@ -519,8 +524,8 @@ class GRPO(FinetuneTeleprompter):
             #   addition to updating any teacher programs that share the same
             #   LM.
             logger.info("Invoking GRPO training step...")
-            for (lm, data_key), job in grpo_training_jobs.items():
-                train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
+            for (_, data_key), job in grpo_training_jobs.items():
+                train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key] #noqa: RUF017
                 for group in train_data:
                     if len(group) != self.num_rollouts_per_grpo_step:
                         # TODO(GRPO Team): This is very undesirable. This occurs only because in some of the generations, the model does not follow the correct dspy format.
@@ -533,13 +538,13 @@ class GRPO(FinetuneTeleprompter):
 
                 job.step(train_data=train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
 
-            for (lm, data_key), job in grpo_training_jobs.items():
+            for (lm, _), job in grpo_training_jobs.items():
                 if (train_step_idx + 1) % self.train_kwargs[lm]["update_interval"] == 0 and train_step_idx != 0:
                     logger.info(f"Current train step is {train_step_idx + 1}. Updating the model...")
                     job.update_model()
 
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
-            
+
             self.report_validation_metrics(
                 student=student,
                 trainset=trainset,
@@ -549,7 +554,7 @@ class GRPO(FinetuneTeleprompter):
             )
 
         logger.info("Done with the iterations! Retrieving the final model(s)...")
-        for (lm, data_key), job in grpo_training_jobs.items():
+        for _, job in grpo_training_jobs.items():
             job.terminate()
 
         # Revert cache states to their initial values
