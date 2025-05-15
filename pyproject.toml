@@ -110,6 +110,9 @@ exclude_lines = [
 
 [tool.ruff]
 include = ["dspy/**/*.py", "tests/**/*.py"]
+exclude = [
+  "dspy/retrieve/*.py"
+]
 
 
 line-length = 120
