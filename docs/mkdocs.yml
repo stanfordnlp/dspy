@@ -104,6 +104,7 @@ nav:
             - KNNFewShot: api/optimizers/KNNFewShot.md
             - LabeledFewShot: api/optimizers/LabeledFewShot.md
             - MIPROv2: api/optimizers/MIPROv2.md
+            - SIMBA: api/optimizers/SIMBA.md
         - Primitives:
             - Example: api/primitives/Example.md
             - History: api/primitives/History.md
