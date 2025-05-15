@@ -19,28 +19,9 @@
 
 ## Example Usage
 
-The program below shows optimizing a math program with SIMBA:
-
 ```python
-import dspy
-from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
-
-# Initialize the LM
-lm = dspy.LM('openai/gpt-4o-mini', api_key='YOUR_OPENAI_API_KEY')
-dspy.configure(lm=lm)
-
-# Initialize optimizer
-teleprompter = dspy.SIMBA(
-    metric=gsm8k_metric,
-)
-
-# Optimize program
-print(f"Optimizing program with SIMBA...")
-optimized_program = teleprompter.compile(
-    dspy.ChainOfThought("question -> answer"),
-    trainset=gsm8k.train,
-    requires_permission_to_run=False,
-)
+optimizer = dspy.SIMBA(metric=your_metric)
+optimized_program = optimizer.compile(your_program, trainset=your_trainset)
 
 # Save optimize program for future use
 optimized_program.save(f"optimized.json")
