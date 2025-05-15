@@ -87,6 +87,10 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
 
             last_end = end
 
+        if last_end == 0:
+            # No custom type found, return the original message
+            continue
+
         # Add any remaining text after the last match
         if last_end < len(content):
             result.append({"type": "text", "text": content[last_end:]})

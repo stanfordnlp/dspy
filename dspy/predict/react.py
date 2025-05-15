@@ -46,10 +46,7 @@ class ReAct(Module):
         )
 
         for idx, tool in enumerate(tools.values()):
-            args = getattr(tool, "args")
-            desc = (f", whose description is <desc>{tool.desc}</desc>." if tool.desc else ".").replace("\n", "  ")
-            desc += f" It takes arguments {args} in JSON format."
-            instr.append(f"({idx + 1}) {tool.name}{desc}")
+            instr.append(f"({idx + 1}) {tool}")
 
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
@@ -196,11 +193,7 @@ Trajectories also affect meta-programming modules that view the trace later. It'
 trace of every module repeating the prefix.
 
 
-TOPIC 02: Handling default arguments in the Tool class.
-
-
 TOPIC 03: Simplifying ReAct's __init__ by moving modular logic to the Tool class.
-    * Handling descriptions and casting.
     * Handling exceptions and error messages.
     * More cleanly defining the "finish" tool, perhaps as a runtime-defined function?
 

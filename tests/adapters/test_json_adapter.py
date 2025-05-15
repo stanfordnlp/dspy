@@ -3,6 +3,7 @@ from unittest import mock
 import pydantic
 import pytest
 from pydantic import create_model
+from litellm.utils import ModelResponse, Message, Choices
 
 import dspy
 
@@ -195,24 +196,42 @@ def test_json_adapter_on_pydantic_model():
 
 
 def test_json_adapter_parse_raise_error_on_mismatch_fields():
-    signature = dspy.make_signature("input1->output1")
+    signature = dspy.make_signature("question->answer")
     adapter = dspy.JSONAdapter()
-    invalid_completion = '{"output": "Test output"}'
-    with pytest.raises(ValueError) as error:
-        adapter.parse(signature, invalid_completion)
-    assert str(error.value) == "Expected dict_keys(['output1']) but got dict_keys([])"
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="{'answer1': 'Paris'}")),
+            ],
+            model="openai/gpt4o",
+        )
+        lm = dspy.LM(model="openai/gpt-4o-mini")
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+            adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+    assert e.value.adapter_name == "JSONAdapter"
+    assert e.value.signature == signature
+    assert e.value.lm_response == "{'answer1': 'Paris'}"
+    assert e.value.parsed_result == {}
+
+    assert str(e.value) == (
+        "Adapter JSONAdapter failed to parse the LM response. \n\n"
+        "LM Response: {'answer1': 'Paris'} \n\n"
+        "Expected to find output fields in the LM response: [answer] \n\n"
+        "Actual output fields parsed from the LM response: [] \n\n"
+    )
 
 
 def test_json_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")
 
-    class Signature(dspy.Signature):
+    class MySignature(dspy.Signature):
         image: dspy.Image = dspy.InputField()
         text: str = dspy.OutputField()
 
     adapter = dspy.JSONAdapter()
-    messages = adapter.format(Signature, [], {"image": image})
+    messages = adapter.format(MySignature, [], {"image": image})
 
     assert len(messages) == 2
     user_message_content = messages[1]["content"]

@@ -88,6 +88,7 @@ def test_lm_calls_are_cached_across_interpreter_sessions(litellm_test_server, te
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
+        max_tokens=1000,
     )
     lm1("Example query")
 
