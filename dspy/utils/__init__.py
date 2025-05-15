@@ -1,13 +1,9 @@
-from dspy.utils.callback import BaseCallback, with_callbacks
-from dspy.utils.dummies import DummyLM, DummyVectorizer, dummy_rm
-from dspy.streaming.messages import StatusMessageProvider, StatusMessage
-from dspy.utils import exceptions
-
 import os
 
 import requests
 
 from dspy.streaming.messages import StatusMessage, StatusMessageProvider
+from dspy.utils import exceptions
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.dummies import DummyLM, DummyVectorizer, dummy_rm
 
