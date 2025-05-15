@@ -254,16 +254,15 @@ async def test_async_tool_calling_with_pydantic_args():
             },
         ]
     )
-    dspy.settings.configure(lm=lm)
-
-    outputs = await react.acall(
-        participant_name="Alice",
-        event_info=CalendarEvent(
-            name="Science Fair",
-            date="Friday",
-            participants={"Alice": "female", "Bob": "male"},
-        ),
-    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(
+            participant_name="Alice",
+            event_info=CalendarEvent(
+                name="Science Fair",
+                date="Friday",
+                participants={"Alice": "female", "Bob": "male"},
+            ),
+        )
     assert outputs.invitation_letter == "It's my honor to invite Alice to the Science Fair event on Friday."
 
     expected_trajectory = {
@@ -309,9 +308,8 @@ async def test_async_error_retry():
             {"reasoning": "I added the numbers successfully", "c": 3},
         ]
     )
-    dspy.settings.configure(lm=lm)
-
-    outputs = await react.acall(a=1, b=2, max_iters=2)
+    with dspy.context(lm=lm):
+        outputs = await react.acall(a=1, b=2, max_iters=2)
     traj = outputs.trajectory
 
     # Exact-match checks (thoughts + tool calls)
