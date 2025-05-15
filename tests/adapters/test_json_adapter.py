@@ -227,4 +227,67 @@ def test_json_adapter_formats_image():
     expected_image_content = {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
     assert expected_image_content in user_message_content
 
+    # Test formatting with few-shot examples
+    demos = [
+        dspy.Example(
+            image=dspy.Image(url="https://example.com/image1.jpg"),
+            text="This is a test image",
+        ),
+        dspy.Example(
+            image=dspy.Image(url="https://example.com/image2.jpg"),
+            text="This is another test image",
+        ),
+    ]
+    messages = adapter.format(MySignature, demos, {"image": dspy.Image(url="https://example.com/image3.jpg")})
 
+    # 1 system message, 2 few shot examples (1 user and assistant message for each example), 1 user message
+    assert len(messages) == 6
+
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}} in messages[1]["content"]
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}} in messages[3]["content"]
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}} in messages[5]["content"]
+
+
+def test_json_adapter_formats_image_with_nested_images():
+    class ImageWrapper(pydantic.BaseModel):
+        images: list[dspy.Image]
+        tag: list[str]
+
+    class MySignature(dspy.Signature):
+        image: ImageWrapper = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    image1 = dspy.Image(url="https://example.com/image1.jpg")
+    image2 = dspy.Image(url="https://example.com/image2.jpg")
+    image3 = dspy.Image(url="https://example.com/image3.jpg")
+
+    image_wrapper = ImageWrapper(images=[image1, image2, image3], tag=["test", "example"])
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"image": image_wrapper})
+
+    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
+    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
+    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
+
+    assert expected_image1_content in messages[1]["content"]
+    assert expected_image2_content in messages[1]["content"]
+    assert expected_image3_content in messages[1]["content"]
+
+    demos = [
+        dspy.Example(
+            image=image_wrapper,
+            text="This is a test image",
+        ),
+    ]
+
+    image_wrapper_2 = ImageWrapper(images=[dspy.Image(url="https://example.com/image4.jpg")], tag=["test", "example"])
+    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2})
+
+    assert len(messages) == 4
+
+    assert expected_image1_content in messages[1]["content"]
+    assert expected_image2_content in messages[1]["content"]
+    assert expected_image3_content in messages[1]["content"]
+
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[3]["content"]
