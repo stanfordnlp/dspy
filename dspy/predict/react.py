@@ -1,5 +1,6 @@
 import logging
-from copy import deepcopy, copy
+import inspect
+from copy import deepcopy
 from typing import Any, Callable, Literal
 
 from litellm import ContextWindowExceededError
@@ -164,10 +165,17 @@ class ReAct(Module):
         return trajectory
     
     def _copy_tools(self, tools):
-        try:
-            return deepcopy(tools)
-        except Exception:
-            return copy(tools)
+        results = tools.copy()
+        for tool_name, tool in tools.items():
+            if inspect.isfunction(tool.func):
+                results[tool_name] = tool
+            else:
+                try:
+                    results[tool_name] = deepcopy(tool)
+                except Exception as e:
+                    logger.warning(f"Failed to deepcopy tool: {tool!r}. Consider making your class deep-copyable "
+                                   "if managing the internal states. Error: {e}.")
+        return results
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
