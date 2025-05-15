@@ -1,10 +1,7 @@
-import json
-import re
 from typing import TYPE_CHECKING, Any, Optional, Type
 
-import json_repair
-
 from dspy.adapters.types import History
+from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 
@@ -40,45 +37,6 @@ class Adapter:
             values.append(value)
 
         return values
-
-    def _split_custom_type_blocks(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        for message in messages:
-            if message["role"] != "user":
-                # Custom type messages are only in user messages
-                continue
-
-            pattern = r"<<CUSTOM-TYPE-START-IDENTIFIER>>(.*?)<<CUSTOM-TYPE-END-IDENTIFIER>>"
-            result = []
-            last_end = 0
-            content = message["content"]
-
-            for match in re.finditer(pattern, content, re.DOTALL):
-                start, end = match.span()
-
-                # Add text before the current block
-                if start > last_end:
-                    result.append({"type": "text", "text": content[last_end:start]})
-
-                # Parse the JSON inside the block
-                custom_type_content = match.group(1).strip()
-                try:
-                    parsed = json_repair.loads(custom_type_content)
-                    for custom_type_content in parsed:
-                        result.append(custom_type_content)
-                except json.JSONDecodeError:
-                    # fallback to raw string if it's not valid JSON
-                    parsed = {"type": "text", "text": custom_type_content}
-                    result.append(parsed)
-
-                last_end = end
-
-            # Add any remaining text after the last match
-            if last_end < len(content):
-                result.append({"type": "text", "text": content[last_end:]})
-
-            message["content"] = result
-
-        return messages
 
     def __call__(
         self,
@@ -183,7 +141,7 @@ class Adapter:
             content = self.format_user_message_content(signature, inputs_copy, main_request=True)
             messages.append({"role": "user", "content": content})
 
-        messages = self._split_custom_type_blocks(messages)
+        messages = split_message_content_for_custom_types(messages)
         return messages
 
     def format_field_description(self, signature: Type[Signature]) -> str:
