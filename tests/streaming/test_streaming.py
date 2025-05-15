@@ -1,9 +1,9 @@
 import os
+
 import pytest
 
 import dspy
 from dspy.streaming import StatusMessage, StatusMessageProvider, streaming_response
-from tests.test_utils.server import litellm_test_server
 
 
 @pytest.mark.anyio
@@ -102,7 +102,7 @@ async def test_custom_status_streaming():
 
     class MyStatusMessageProvider(StatusMessageProvider):
         def tool_start_status_message(self, instance, inputs):
-            return f"Tool starting!"
+            return "Tool starting!"
 
         def tool_end_status_message(self, outputs):
             return "Tool finished!"
