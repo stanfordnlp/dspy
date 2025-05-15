@@ -1,10 +1,9 @@
-
-from inspect import Signature
 import logging
 import inspect
-from typing import Callable, Union
 
-from litellm import Type
+from typing import Callable, Union, Type
+from inspect import Signature
+
 import dspy
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.tool import Tool
@@ -29,7 +28,7 @@ class CodeAct(ReAct, ProgramOfThought):
             max_iters (int): The maximum number of iterations to generate the answer.
         
         Example:
-        
+
             ```python
             from dspy.predict import CodeAct
             def factorial(n):
