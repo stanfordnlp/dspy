@@ -1,16 +1,15 @@
+import time
 from unittest import mock
 from unittest.mock import patch
 
-import time
 import litellm
 import pydantic
 import pytest
+from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
 
 import dspy
 from dspy.utils.usage_tracker import track_usage
-from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs
-from litellm.utils import ModelResponse, Message, Choices
 
 
 def test_chat_lms_can_be_queried(litellm_test_server):
@@ -127,7 +126,10 @@ def test_lm_calls_support_callables(litellm_test_server):
     api_base, _ = litellm_test_server
 
     with mock.patch("litellm.completion", autospec=True, wraps=litellm.completion) as spy_completion:
-        azure_ad_token_provider = lambda *args, **kwargs: None
+
+        def azure_ad_token_provider(*args, **kwargs):
+            return None
+
         lm_with_callable = dspy.LM(
             model="openai/dspy-test-model",
             api_base=api_base,
@@ -315,12 +317,12 @@ def test_logprobs_included_when_requested():
                 },
             ]
         }
-        assert mock_completion.call_args.kwargs["logprobs"] == True
+        assert mock_completion.call_args.kwargs["logprobs"]
 
 
 @pytest.mark.asyncio
 async def test_async_lm_call():
-    from litellm.utils import ModelResponse, Message, Choices
+    from litellm.utils import Choices, Message, ModelResponse
 
     mock_response = ModelResponse(choices=[Choices(message=Message(content="answer"))], model="openai/gpt-4o-mini")
 
