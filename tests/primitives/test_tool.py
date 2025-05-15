@@ -251,6 +251,11 @@ def test_tool_call_kwarg():
     assert tool(x=1, y=2, z=3) == {"y": 2, "z": 3}
 
 
+def test_tool_str():
+    tool = Tool(dummy_function)
+    assert str(tool) == "dummy_function, whose description is <desc>A dummy function for testing.        Args:          x: An integer parameter          y: A string parameter      </desc>. It takes arguments {'x': {'type': 'integer'}, 'y': {'type': 'string', 'default': 'hello'}} in JSON format."
+
+
 @pytest.mark.asyncio
 async def test_async_tool_from_function():
     tool = Tool(async_dummy_function)

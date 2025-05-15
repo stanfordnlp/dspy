@@ -10,7 +10,7 @@ from dspy.teleprompt.bootstrap_finetune import (
     kill_lms,
     launch_lms,
     prepare_student,
-    set_missing_predictor_lms,
+    all_predictors_have_lms,
 )
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.teleprompt import Teleprompter
@@ -72,7 +72,7 @@ class BetterTogether(Teleprompter):
         # TODO: Prepare student returns student.reset_copy(), which is what gets
         # optimized. We should make this clear in the doc comments.
         student = prepare_student(student)
-        set_missing_predictor_lms(student)
+        all_predictors_have_lms(student)
 
         # Make a shallow copy of the trainset, so that we don't change the order
         # of the examples in the original trainset
