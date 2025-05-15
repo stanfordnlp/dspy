@@ -87,12 +87,12 @@ class BootstrapFinetune(FinetuneTeleprompter):
                     trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind
                 )
                 logger.info(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
-                finetune_kwargs = dict(
-                    lm=pred.lm,
-                    train_data=train_data,
-                    train_data_format=data_format,
-                    train_kwargs=self.train_kwargs[pred.lm],
-                )
+                finetune_kwargs = {
+                    "lm": pred.lm,
+                    "train_data": train_data,
+                    "train_data_format": data_format,
+                    "train_kwargs": self.train_kwargs[pred.lm],
+                }
                 key_to_data[training_key] = finetune_kwargs
 
         logger.info("Starting LM fine-tuning...")
@@ -308,7 +308,7 @@ def bootstrap_trace_data(
                 raise ve
             else:
                 continue
-        data_dict = dict(example=example, prediction=prediction, trace=trace, example_ind=example_ind)
+        data_dict = {"example": example, "prediction": prediction, "trace": trace, "example_ind": example_ind}
         if metric:
             data_dict["score"] = score
         data.append(data_dict)
