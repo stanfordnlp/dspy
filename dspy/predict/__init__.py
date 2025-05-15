@@ -8,6 +8,7 @@ from dspy.predict.parallel import Parallel
 from dspy.predict.predict import Predict
 from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct, Tool
+from dspy.predict.code_act import CodeAct
 from dspy.predict.refine import Refine
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "BestOfN",
     "ChainOfThought",
     "ChainOfThoughtWithHint",
+    "CodeAct",
     "KNN",
     "MultiChainComparison",
     "Predict",
