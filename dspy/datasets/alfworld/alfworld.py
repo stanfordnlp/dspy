@@ -2,6 +2,7 @@ import os
 import queue
 import random
 
+
 def env_worker(inq, outq):
     """
     Worker process: creates a single AlfredTWEnv instance,
@@ -10,16 +11,19 @@ def env_worker(inq, outq):
 
     try:
         import io
-        import yaml
+        from contextlib import redirect_stderr, redirect_stdout
+
         import alfworld.agents.environment as environment
-        from contextlib import redirect_stdout, redirect_stderr
+        import yaml
     except ImportError:
-        raise ImportError("alfworld is not installed. " \
-            "Please install it via `pip install alfworld==0.3.5` then run `alfworld-download`.")
+        raise ImportError(
+            "alfworld is not installed. "
+            "Please install it via `pip install alfworld==0.3.5` then run `alfworld-download`."
+        )
 
     buf = io.StringIO()
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(base_dir, 'base_config.yml')
+    config_path = os.path.join(base_dir, "base_config.yml")
 
     with open(config_path) as f:
         config = yaml.safe_load(f)
@@ -30,19 +34,19 @@ def env_worker(inq, outq):
     env = None
     while True:
         cmd, data = inq.get()
-        if cmd == 'init':
+        if cmd == "init":
             env = base_env.init_env(batch_size=1)
             env.skip(data)
             task_def, info = env.reset()
             outq.put((task_def[0], info))
-        elif cmd == 'step':
+        elif cmd == "step":
             obs, rew, done, info = env.step([data])
             outq.put((obs, rew, done, info))
-        elif cmd == 'close':
-            outq.put('CLOSED')
+        elif cmd == "close":
+            outq.put("CLOSED")
             break
         else:
-            outq.put('UNKNOWN_CMD')
+            outq.put("UNKNOWN_CMD")
 
 
 class EnvPool:
@@ -54,6 +58,7 @@ class EnvPool:
             obs, rew, done, info = sess.step("go north")
             ...
     """
+
     def __init__(self, size=2):
         self.size = size
         self.workers = []
@@ -62,8 +67,7 @@ class EnvPool:
         try:
             import multiprocess as mp
         except ImportError:
-            raise ImportError("multiprocess is not installed. " \
-                "Please install it via `pip install multiprocess`.")
+            raise ImportError("multiprocess is not installed. " "Please install it via `pip install multiprocess`.")
 
         # Must call set_start_method('spawn') here, before creating any processes
         try:
@@ -93,7 +97,7 @@ class EnvPool:
         while not self.available.empty():
             wid = self.available.get()
             inq, outq, proc = self.workers[wid]
-            inq.put(('close', None))
+            inq.put(("close", None))
             outq.get()  # Wait 'CLOSED'
             inq.close()
             outq.close()
@@ -109,6 +113,7 @@ class _EnvSession:
     A context manager that acquires a worker from the pool,
     provides .init(idx) and .step(action), then releases the worker.
     """
+
     def __init__(self, pool: EnvPool):
         self.pool = pool
         self.wid = None
@@ -123,11 +128,11 @@ class _EnvSession:
         self.pool._release(self.wid)
 
     def init(self, idx):
-        self.inq.put(('init', idx))
+        self.inq.put(("init", idx))
         return self.outq.get()  # (task_def, info)
 
     def step(self, action):
-        self.inq.put(('step', action))
+        self.inq.put(("step", action))
         return self.outq.get()  # (obs, rew, done, info)
 
 
@@ -136,7 +141,8 @@ class AlfWorld:
         self.POOL = EnvPool(size=max_threads)
 
         import dspy
-        dataset = [dspy.Example(idx=idx).with_inputs('idx') for idx in range(3500)]
+
+        dataset = [dspy.Example(idx=idx).with_inputs("idx") for idx in range(3500)]
         random.Random(0).shuffle(dataset)
 
         trainset, devset = dataset[:3000], dataset[-500:]
