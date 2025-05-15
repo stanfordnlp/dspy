@@ -5,7 +5,13 @@ from typing import Callable, List, Optional
 import dspy
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
-from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune, prepare_student, set_missing_predictor_lms, launch_lms, kill_lms
+from dspy.teleprompt.bootstrap_finetune import (
+    BootstrapFinetune,
+    all_predictors_have_lms,
+    kill_lms,
+    launch_lms,
+    prepare_student,
+)
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -27,7 +33,7 @@ class BetterTogether(Teleprompter):
 
         # TODO: Note that the BetterTogether optimizer is meaningful when
         # BootstrapFinetune uses a metric to filter the training data before
-        # fine-tuning. However, one can also choose to run this optimizer with 
+        # fine-tuning. However, one can also choose to run this optimizer with
         # a BoostrapFinetune without a metric, say, if there aren't labels
         # available for the training data. Should this be noted somewhere?
         # TODO: We should re-consider if the metric should be required.
@@ -56,7 +62,7 @@ class BetterTogether(Teleprompter):
         logger.info("Validating the strategy")
         parsed_strategy = strategy.lower().split(self.STRAT_SEP)
 
-        if not all([s in ["p", "w"] for s in parsed_strategy]):
+        if not all(s in ["p", "w"] for s in parsed_strategy):
             raise ValueError(
                 f"The strategy should be a sequence of 'p' and 'w' separated by '{self.STRAT_SEP}', but "
                 f"found: {strategy}"
@@ -66,17 +72,17 @@ class BetterTogether(Teleprompter):
         # TODO: Prepare student returns student.reset_copy(), which is what gets
         # optimized. We should make this clear in the doc comments.
         student = prepare_student(student)
-        set_missing_predictor_lms(student)
+        all_predictors_have_lms(student)
 
         # Make a shallow copy of the trainset, so that we don't change the order
         # of the examples in the original trainset
         trainset = trainset[:]
         logger.info("Compiling the student program...")
         student = self._run_strategies(parsed_strategy, student, trainset, valset_ratio)
-        
+
         logger.info("BetterTogether has finished compiling the student program")
         return student
-  
+
     def _run_strategies(self, parsed_strategy, student, trainset, valset_ratio) -> Program:
         # Keep track of all the partial strategies/programs in parsed_strategy
         # "" corresponds to the initial student program
@@ -115,7 +121,7 @@ class BetterTogether(Teleprompter):
 
         student.candidate_programs = candidate_programs
         return student
-  
+
     def _compile_prompt_optimizer(self, student, trainset, valset_ratio) -> Program:
         logger.info("Preparing for prompt optimization...")
 
@@ -141,7 +147,7 @@ class BetterTogether(Teleprompter):
             pred.lm = lm
 
         return student
-    
+
     def _compile_weight_optimizer(self, student, trainset) -> Program:
         logger.info("Preparing for weight optimization...")
 
@@ -152,7 +158,7 @@ class BetterTogether(Teleprompter):
         # prompt optimizers are accepting a valset or encode a way to check if
         # a valset should be passed to an optimizer's compile.
         logger.info("Compiling the weight optimizer...")
-        student = self.weight_optimizer.compile(student, trainset=trainset)     
+        student = self.weight_optimizer.compile(student, trainset=trainset)
 
         # Updating the train kwargs for the new LMs. This is needed because the
         # train_kwargs of the optimizer is configured for the original LMs.

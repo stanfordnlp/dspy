@@ -103,13 +103,6 @@ def test_signature_from_dict():
         assert signature.fields[k].annotation == str
 
 
-def test_signature_from_dict():
-    signature = Signature({"input1": InputField(), "input2": InputField(), "output": OutputField()})
-    assert "input1" in signature.input_fields
-    assert "input2" in signature.input_fields
-    assert "output" in signature.output_fields
-
-
 def test_signature_equality():
     sig1 = Signature("input1 -> output1")
     sig2 = Signature("input1 -> output1")

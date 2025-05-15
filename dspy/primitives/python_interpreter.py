@@ -1,8 +1,8 @@
 import json
+import os
 import subprocess
 from types import TracebackType
 from typing import Any, Dict, List, Optional
-import os
 
 
 class InterpreterError(RuntimeError):

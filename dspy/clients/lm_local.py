@@ -49,12 +49,10 @@ class LocalProvider(Provider):
         if model.startswith("local:"):
             model = model[6:]
         if model.startswith("huggingface/"):
-            model = model[len("huggingface/"):]
+            model = model[len("huggingface/") :]
 
         logger.info(f"Grabbing a free port to launch an SGLang server for model {model}")
-        logger.info(
-            f"We see that CUDA_VISIBLE_DEVICES is {os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')}"
-        )
+        logger.info(f"We see that CUDA_VISIBLE_DEVICES is {os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')}")
         port = get_free_port()
         timeout = launch_kwargs.get("timeout", 1800)
         command = f"python -m sglang.launch_server --model-path {model} --port {port} --host 0.0.0.0"
@@ -111,9 +109,7 @@ class LocalProvider(Provider):
             return "".join(logs_buffer)
 
         # Let the user know server is up
-        logger.info(
-            f"Server ready on random port {port}! Logs are available via lm.get_logs() method on returned lm."
-        )
+        logger.info(f"Server ready on random port {port}! Logs are available via lm.get_logs() method on returned lm.")
 
         lm.kwargs["api_base"] = f"http://localhost:{port}/v1"
         lm.kwargs["api_key"] = "local"
@@ -121,10 +117,10 @@ class LocalProvider(Provider):
         lm.process = process
         lm.thread = thread
 
-
     @staticmethod
     def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         from sglang.utils import terminate_process
+
         if not hasattr(lm, "process"):
             logger.info("No running server to kill.")
             return
@@ -168,7 +164,7 @@ class LocalProvider(Provider):
             "bf16": True,
             "output_dir": output_dir,
         }
-        train_kwargs={**default_train_kwargs, **(train_kwargs or {})}
+        train_kwargs = {**default_train_kwargs, **(train_kwargs or {})}
         output_dir = train_kwargs["output_dir"]  # user might have changed the output_dir
 
         logger.info(f"Starting local training, will save to {output_dir}")
@@ -185,7 +181,7 @@ class LocalProvider(Provider):
 def create_output_dir(model_name, data_path):
     model_str = model_name.replace("/", "-")
     time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    rnd_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    rnd_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
     model_identifier = f"{rnd_str}_{model_str}_{time_str}"
     output_dir = data_path.replace(".jsonl", "_" + model_identifier)
     return output_dir
@@ -204,16 +200,10 @@ def train_sft_locally(model_name, train_data, train_kwargs):
 
     device = train_kwargs.get("device", None)
     if device is None:
-        device = (
-            "cuda"
-            if torch.cuda.is_available()
-            else "mps" if torch.backends.mps.is_available() else "cpu"
-        )
+        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     logger.info(f"Using device: {device}")
 
-    model = AutoModelForCausalLM.from_pretrained(
-        pretrained_model_name_or_path=model_name
-    ).to(device)
+    model = AutoModelForCausalLM.from_pretrained(pretrained_model_name_or_path=model_name).to(device)
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path=model_name)
 
     # Set up the chat format; generally only for non-chat model variants, hence the try-except.
@@ -229,21 +219,25 @@ def train_sft_locally(model_name, train_data, train_kwargs):
     logger.info("Creating dataset")
     if "max_seq_length" not in train_kwargs:
         train_kwargs["max_seq_length"] = 4096
-        logger.info(f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}")
+        logger.info(
+            f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}"
+        )
 
     from datasets import Dataset
 
     hf_dataset = Dataset.from_list(train_data)
+
     def tokenize_function(example):
-        return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])
+        return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])  # noqa: F821
+
     tokenized_dataset = hf_dataset.map(tokenize_function, batched=False)
     tokenized_dataset.set_format(type="torch")
     tokenized_dataset = tokenized_dataset.filter(lambda example: (example["labels"] != -100).any())
 
-    USE_PEFT = train_kwargs.get("use_peft", False)
+    use_peft = train_kwargs.get("use_peft", False)
     peft_config = None
 
-    if USE_PEFT:
+    if use_peft:
         from peft import LoraConfig
 
         rank_dimension = 32
@@ -293,8 +287,8 @@ def train_sft_locally(model_name, train_data, train_kwargs):
     # Save the model!
     trainer.save_model()
 
-    MERGE = True
-    if USE_PEFT and MERGE:
+    merge = True
+    if use_peft and merge:
         from peft import AutoPeftModelForCausalLM
 
         # Load PEFT model on CPU
@@ -305,9 +299,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         )
 
         merged_model = model_.merge_and_unload()
-        merged_model.save_pretrained(
-            sft_config.output_dir, safe_serialization=True, max_shard_size="5GB"
-        )
+        merged_model.save_pretrained(sft_config.output_dir, safe_serialization=True, max_shard_size="5GB")
 
     # Clean up!
     import gc
@@ -330,7 +322,7 @@ def get_free_port() -> int:
         return s.getsockname()[1]
 
 
-def wait_for_server(base_url: str, timeout: int = None) -> None:
+def wait_for_server(base_url: str, timeout: Optional[int] = None) -> None:
     """
     Wait for the server to be ready by polling the /v1/models endpoint.
 

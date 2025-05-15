@@ -1,4 +1,4 @@
-from typing import Any, Type
+from typing import Any, Optional, Type
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
@@ -175,7 +175,7 @@ class TwoStepAdapter(Adapter):
         self,
         signature: Type[Signature],
         outputs: dict[str, Any],
-        missing_field_message: str = None,
+        missing_field_message: Optional[str] = None,
     ) -> str:
         parts = []
 

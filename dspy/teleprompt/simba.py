@@ -1,11 +1,12 @@
-import dspy
-import random
 import logging
+import random
+from typing import Callable
 
 import numpy as np
-from typing import Callable
+
+import dspy
+from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ class SIMBA(Teleprompter):
             batch_90th_percentile_score = np.percentile([float(o["score"]) for o in outputs], 90)
 
             # We'll chunk `outputs` by example index, each chunk has length = num_candidates
-            for idx, example in enumerate(batch):
+            for idx, _ in enumerate(batch):
                 # gather all results for this example
                 bucket = [outputs[i] for i in range(idx, len(outputs), self.bsize)]
                 bucket.sort(key=lambda x: x["score"], reverse=True)
@@ -222,7 +223,7 @@ class SIMBA(Teleprompter):
                 num_demos_to_drop = min(num_demos_to_drop, num_demos)
                 demos_to_drop = [rng.randrange(num_demos) for _ in range(num_demos_to_drop)]
 
-                for name, predictor in name2predictor.items():
+                for _, predictor in name2predictor.items():
                     predictor.demos = [demo for idxd, demo in enumerate(predictor.demos) if idxd not in demos_to_drop]
 
                 # Pick a strategy
@@ -260,7 +261,7 @@ class SIMBA(Teleprompter):
 
             # STEP 6: Compute average mini-batch scores for each new candidate
             candidate_scores = []
-            for idx_cand, cand_sys in enumerate(system_candidates):
+            for idx_cand, _ in enumerate(system_candidates):
                 start = idx_cand * self.bsize
                 end = (idx_cand + 1) * self.bsize
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
@@ -284,14 +285,14 @@ class SIMBA(Teleprompter):
                 end = (idx_cand + 1) * self.bsize
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
                 register_new_program(cand_sys, sys_scores)
-            
-        M = len(winning_programs) - 1
-        N = self.num_candidates + 1
+
+        M = len(winning_programs) - 1 # noqa: N806
+        N = self.num_candidates + 1 # noqa: N806
         if M < 1:
-            # Only one or zero winning programs
             program_idxs = [0] * N
         else:
             program_idxs = [round(i * M / (N - 1)) for i in range(N)]
+
         program_idxs = list(dict.fromkeys(program_idxs))
 
         candidate_programs = [winning_programs[i].deepcopy() for i in program_idxs]
@@ -300,15 +301,20 @@ class SIMBA(Teleprompter):
         outputs = run_parallel(exec_pairs)
 
         scores = []
-        for idx_prog, prog in enumerate(candidate_programs):
+        for idx_prog, _ in enumerate(candidate_programs):
             start = idx_prog * len(trainset)
             end = (idx_prog + 1) * len(trainset)
             sys_scores = [outputs[i]["score"] for i in range(start, end)]
             avg_score = sum(sys_scores) / len(sys_scores) if sys_scores else 0.0
             scores.append(avg_score)
             if idx_prog != 0:
-                trial_logs[idx_prog-1]["train_score"] = avg_score
-        
+                trial_logs[idx_prog - 1]["train_score"] = avg_score
+
+        # Build sorted list of {"score", "program"} dicts
+        assert len(scores) == len(candidate_programs)
+        candidate_data = [{"score": s, "program": p} for s, p in zip(scores, candidate_programs)]
+        candidate_data.sort(key=lambda x: x["score"], reverse=True)
+
         best_idx = scores.index(max(scores)) if scores else 0
         best_program = candidate_programs[best_idx].deepcopy()
         logger.info(
@@ -316,9 +322,8 @@ class SIMBA(Teleprompter):
             f"(at index {best_idx if scores else 'N/A'})\n\n\n"
         )
 
-        # FIXME: Attach all program candidates in decreasing average score to the best program.
-        best_program.candidate_programs = candidate_programs
-        best_program.winning_programs = winning_programs
+        # Attach sorted, scored candidates & logs
+        best_program.candidate_programs = candidate_data
         best_program.trial_logs = trial_logs
 
         return best_program

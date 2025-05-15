@@ -1,7 +1,6 @@
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-
-from asyncer import syncify
 
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
@@ -19,6 +18,39 @@ class StatusMessage:
     """Dataclass that wraps a status message for status streaming."""
 
     message: str
+
+
+def sync_send_to_stream(stream, message):
+    """Send message to stream in a sync context, regardless of whether the caller is async or not."""
+    # Try to get current event loop, create one if none exists
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        # "There is no current event loop in thread" error
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # If we're in an async context
+    if loop.is_running():
+        # In an async context, we need to use an approach that doesn't block
+        # Create a new thread and run a new event loop there
+        import concurrent.futures
+
+        def run_async_in_new_loop():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return new_loop.run_until_complete(stream.send(message))
+            finally:
+                new_loop.close()
+
+        # Run the function in a separate thread
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_async_in_new_loop)
+            return future.result()  # This shouldn't hang now
+    else:
+        # We're in a sync context, use run_until_complete
+        return loop.run_until_complete(stream.send(message))
 
 
 class StatusMessageProvider:
@@ -80,13 +112,9 @@ class StatusStreamingCallback(BaseCallback):
         if stream is None or instance.name == "finish":
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.tool_start_status_message(instance, inputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.tool_start_status_message(instance, inputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_tool_end(
         self,
@@ -98,13 +126,9 @@ class StatusStreamingCallback(BaseCallback):
         if stream is None or outputs == "Completed.":
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.tool_end_status_message(outputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.tool_end_status_message(outputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_lm_start(
         self,
@@ -116,13 +140,9 @@ class StatusStreamingCallback(BaseCallback):
         if stream is None:
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.lm_start_status_message(instance, inputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.lm_start_status_message(instance, inputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_lm_end(
         self,
@@ -134,13 +154,9 @@ class StatusStreamingCallback(BaseCallback):
         if stream is None:
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.lm_end_status_message(outputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.lm_end_status_message(outputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_module_start(
         self,
@@ -152,13 +168,9 @@ class StatusStreamingCallback(BaseCallback):
         if stream is None:
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.module_start_status_message(instance, inputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.module_start_status_message(instance, inputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_module_end(
         self,
@@ -170,10 +182,6 @@ class StatusStreamingCallback(BaseCallback):
         if stream is None:
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.module_end_status_message(outputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.module_end_status_message(outputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))

@@ -1,9 +1,8 @@
-import functools
 from typing import Any, List, Optional, Union
 
 import requests
 
-from dspy.dsp.cache_utils import CacheMemory, NotebookCacheMemory
+from dspy.clients.cache import request_cache
 from dspy.dsp.utils import dotdict
 
 # TODO: Ideally, this takes the name of the index and looks up its port.
@@ -35,7 +34,7 @@ class ColBERTv2:
         return [dotdict(psg) for psg in topk]
 
 
-@CacheMemory.cache
+@request_cache()
 def colbertv2_get_request_v2(url: str, query: str, k: int):
     assert (
         k <= 100
@@ -49,8 +48,7 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
     return topk[:k]
 
 
-@functools.cache
-@NotebookCacheMemory.cache
+@request_cache()
 def colbertv2_get_request_v2_wrapped(*args, **kwargs):
     return colbertv2_get_request_v2(*args, **kwargs)
 
@@ -58,7 +56,7 @@ def colbertv2_get_request_v2_wrapped(*args, **kwargs):
 colbertv2_get_request = colbertv2_get_request_v2_wrapped
 
 
-@CacheMemory.cache
+@request_cache()
 def colbertv2_post_request_v2(url: str, query: str, k: int):
     headers = {"Content-Type": "application/json; charset=utf-8"}
     payload = {"query": query, "k": k}
@@ -67,8 +65,7 @@ def colbertv2_post_request_v2(url: str, query: str, k: int):
     return res.json()["topk"][:k]
 
 
-@functools.cache
-@NotebookCacheMemory.cache
+@request_cache()
 def colbertv2_post_request_v2_wrapped(*args, **kwargs):
     return colbertv2_post_request_v2(*args, **kwargs)
 

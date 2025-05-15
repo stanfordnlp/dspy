@@ -1,8 +1,9 @@
-import time
 import queue
 import threading
-from typing import Any, Callable, List
+import time
 from concurrent.futures import Future
+from typing import Any, Callable, List
+
 
 class Unbatchify:
     def __init__(
