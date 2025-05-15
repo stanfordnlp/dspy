@@ -8,8 +8,7 @@ from tqdm import tqdm
 
 import dspy
 from dspy.predict.avatar import ActionOutput
-
-from .teleprompt import Teleprompter
+from dspy.teleprompt.teleprompt import Teleprompter
 
 DEFAULT_MAX_EXAMPLES = 10
 

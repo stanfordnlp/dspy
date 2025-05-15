@@ -6,8 +6,8 @@ from typing import Dict, Optional
 import tqdm
 
 import dspy
+from dspy.teleprompt.teleprompt import Teleprompter
 
-from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
