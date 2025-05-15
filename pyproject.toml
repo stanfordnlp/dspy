@@ -111,7 +111,9 @@ exclude_lines = [
 [tool.ruff]
 include = ["dspy/**/*.py", "tests/**/*.py"]
 exclude = [
-  "dspy/retrieve/*.py"
+  "dspy/retrieve/*.py",
+  "tests/reliability/*.py",
+  "tests/retrieve/*.py",
 ]
 
 
