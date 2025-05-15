@@ -22,7 +22,7 @@ import re
 import types
 import typing
 from copy import deepcopy
-from typing import Any, Dict, Tuple, Type, Union  # noqa: UP035
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -38,7 +38,7 @@ def _default_instructions(cls) -> str:
 
 
 class SignatureMeta(type(BaseModel)):
-    def __call__(cls, *args, **kwargs):  # noqa: ANN002
+    def __call__(cls, *args, **kwargs):
         if cls is Signature:
             # We don't create an actual Signature instance, instead, we create a new Signature class.
             return make_signature(*args, **kwargs)
@@ -105,7 +105,7 @@ class SignatureMeta(type(BaseModel)):
 
     @instructions.setter
     def instructions(cls, instructions: str) -> None:
-        setattr(cls, "__doc__", instructions)
+        cls.__doc__ = instructions
 
     @property
     def input_fields(cls) -> dict[str, FieldInfo]:
@@ -144,11 +144,11 @@ class SignatureMeta(type(BaseModel)):
         for name, field in cls.fields.items():
             field_reprs.append(f"{name} = Field({field})")
         field_repr = "\n    ".join(field_reprs)
-        return f"{cls.__name__}({cls.signature}\n    instructions={repr(cls.instructions)}\n    {field_repr}\n)"
+        return f"{cls.__name__}({cls.signature}\n    instructions={cls.instructions!r}\n    {field_repr}\n)"
 
 
 class Signature(BaseModel, metaclass=SignatureMeta):
-    ""  # noqa: D419
+    ""
 
     # Note: Don't put a docstring here, as it will become the default instructions
     # for any signature that doesn't define it's own instructions.
@@ -203,7 +203,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields, cls.instructions)
 
     @classmethod
-    def insert(cls, index: int, name: str, field, type_: Type = None) -> Type["Signature"]:
+    def insert(cls, index: int, name: str, field, type_: Optional[Type] = None) -> Type["Signature"]:
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
@@ -280,7 +280,7 @@ def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) 
 
 def make_signature(
     signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
-    instructions: str = None,
+    instructions: Optional[str] = None,
     signature_name: str = "StringSignature",
 ) -> Type[Signature]:
     """Create a new Signature subclass with the specified fields and instructions.
