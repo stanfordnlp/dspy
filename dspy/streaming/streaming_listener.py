@@ -1,7 +1,7 @@
 import re
 from collections import defaultdict
 from queue import Queue
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from litellm import ModelResponseStream
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
 
-    def __init__(self, signature_field_name: str, predict: Any = None, predict_name: str = None):
+    def __init__(self, signature_field_name: str, predict: Any = None, predict_name: Optional[str] = None):
         """
         Args:
             signature_field_name: The name of the field to listen to.
@@ -36,7 +36,7 @@ class StreamListener:
         self.stream_end = False
         self.cache_hit = False
 
-        self.json_adapter_start_identifier = f'{{"{self.signature_field_name}":"'  # noqa: Q000
+        self.json_adapter_start_identifier = f'{{"{self.signature_field_name}":"'
         self.json_adapter_end_identifier = re.compile(r"\w*\",\w*")
 
         self.chat_adapter_start_identifier = f"[[ ## {self.signature_field_name} ## ]]"
@@ -130,7 +130,7 @@ class StreamListener:
         last_tokens = "".join(self.field_end_queue.queue)
         self.field_end_queue = Queue()
         if isinstance(settings.adapter, JSONAdapter):
-            boundary_index = last_tokens.find('",')  # noqa: Q000
+            boundary_index = last_tokens.find('",')
             return last_tokens[:boundary_index]
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
             boundary_index = last_tokens.find("[[")

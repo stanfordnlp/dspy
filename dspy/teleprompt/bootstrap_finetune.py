@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dspy
@@ -13,6 +14,7 @@ from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         # that the default DSPy logger logs info level messages in notebook
         # environments.
         logger.info("Preparing the student and teacher programs...")
-        set_missing_predictor_lms(student)
+        all_predictors_have_lms(student)
 
         logger.info("Bootstrapping data...")
         trace_data = []
@@ -73,10 +75,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         teachers = [prepare_teacher(student, t) for t in teachers]
         num_threads = self.num_threads or dspy.settings.num_threads
         for t in teachers:
-            set_missing_predictor_lms(t)
-            trace_data += bootstrap_trace_data(
-                program=t, dataset=trainset, metric=self.metric, num_threads=num_threads
-            )
+            trace_data += bootstrap_trace_data(program=t, dataset=trainset, metric=self.metric, num_threads=num_threads)
 
         logger.info("Preparing the train data...")
         key_to_data = {}
@@ -116,7 +115,10 @@ class BootstrapFinetune(FinetuneTeleprompter):
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
             training_key = (pred.lm, data_pred_ind)
-            pred.lm = key_to_lm[training_key]
+            finetuned_lm = key_to_lm[training_key]
+            if isinstance(finetuned_lm, Exception):
+                raise RuntimeError(f"Finetuned LM for predictor {pred_ind} failed.") from finetuned_lm
+            pred.lm = finetuned_lm
             # TODO: What should the correct behavior be here? Should
             # BootstrapFinetune modify the prompt demos according to the
             # train data?
@@ -149,7 +151,10 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         key_to_lm = {}
         for ind, (key, job) in enumerate(key_to_job.items()):
-            key_to_lm[key] = job.result()
+            result = job.result()
+            if isinstance(result, Exception):
+                raise result
+            key_to_lm[key] = result
             job.thread.join()
             logger.info(f"Job {ind + 1}/{num_jobs} is done")
 
@@ -181,6 +186,9 @@ class BootstrapFinetune(FinetuneTeleprompter):
         return data, data_format
 
 
+# Note: Shared below are useful functions for preparing student/teacher programs
+# Similar methods are implemented separately and used by other DSPy
+# teleprompters. These can be moved to shared locations.
 def build_call_data_from_trace(
     trace: List[Dict],
     pred_ind: int,
@@ -200,11 +208,22 @@ def build_call_data_from_trace(
     return call_data
 
 
+@dataclass
+class FailedPrediction:
+    completion_text: str
+    format_reward: Union[float, None] = None
+
+
 def bootstrap_trace_data(
     program: Program,
     dataset: List[Example],
     metric: Optional[Callable] = None,
     num_threads: Optional[int] = None,
+    raise_on_error=True,
+    capture_failed_parses=False,
+    failure_score: float = 0,
+    format_failure_score: float = -1,
+    log_format_failures: bool = False,
 ) -> List[Dict[str, Any]]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
@@ -213,22 +232,82 @@ def bootstrap_trace_data(
         num_threads=num_threads,
         display_progress=True,
         return_outputs=True,
-        provide_traceback=True,  # TODO(check with team)
+        provide_traceback=False,  # TODO(check with team)
+        max_errors=len(dataset) * 10,  # TODO(check with team)
+        failure_score=failure_score,
     )
 
     def wrapped_metric(example, prediction, trace=None):
         prediction, _ = prediction
+        if isinstance(prediction, FailedPrediction):
+            return prediction.format_reward or format_failure_score
         return metric(example, prediction, trace) if metric else True
 
     def wrapped_program(**kwargs):
         with dspy.context(trace=[]):
-            return program(**kwargs), dspy.settings.trace.copy()
+            try:
+                return program(**kwargs), dspy.settings.trace.copy()
+            except AdapterParseError as e:
+                completion_str = e.lm_response
+                parsed_result = e.parsed_result
+                failed_signature = e.signature
+                failed_inputs = kwargs
+
+                present = list(parsed_result.keys()) if parsed_result else None
+                expected = list(failed_signature.output_fields.keys())
+
+                found_pred = None
+                for pred in program.predictors():
+                    if pred.signature == failed_signature:
+                        found_pred = pred
+                        break
+                if found_pred is None:
+                    raise ValueError(f"Failed to find the predictor for the failed signature: {failed_signature}")
+
+                trace = dspy.settings.trace.copy()
+                # Trace is Tuple[signature, inputs, prediction outputs]
+                if present:
+                    failed_pred = FailedPrediction(
+                        completion_text=completion_str,
+                        format_reward=format_failure_score
+                        + (failure_score - format_failure_score) * (present / expected),
+                    )
+                else:
+                    failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score)
+
+                trace.append(
+                    (
+                        found_pred,
+                        failed_inputs,
+                        failed_pred,
+                    )
+                )
+
+                if log_format_failures:
+                    logging.warning(
+                        "Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting."
+                    )
+
+                return failed_pred, trace
 
     _, outputs = evaluator(wrapped_program, metric=wrapped_metric)
 
     data = []
     for example_ind, (example, prediction, score) in enumerate(outputs):
-        prediction, trace = prediction
+        try:
+            prediction, trace = prediction
+        except ValueError as ve:
+            # TODO(GRPO Team): Often during GRPO bootstrapping, the LLM response does not follow dspy formatting. This leads to a value error.
+            # To reproduce this issue, try Qwen/Qwen2.5-Coder-0.5B-Instruct with MATH dataset
+            # Proposal(Lakshya): We should capture the incorrectly-formatted LLM response, and store it in the trace, and pass it to in the GRPO group
+            # with a high-negative user-configurable score.
+            logger.warning(
+                "Failed to unpack prediction and trace. This is likely due to the LLM response not following dspy formatting."
+            )
+            if raise_on_error:
+                raise ve
+            else:
+                continue
         data_dict = dict(example=example, prediction=prediction, trace=trace, example_ind=example_ind)
         if metric:
             data_dict["score"] = score
@@ -264,12 +343,16 @@ def bootstrap_trace_data(
 # Note: Shared below are useful functions for preparing student/teacher programs
 # Similar methods are implemented separately and used by other DSPy
 # teleprompters. These can be moved to shared locations.
-def set_missing_predictor_lms(program: Program) -> Program:
-    # If the predictors do not have LMs, set them to the global LM
-    for pred in program.predictors():
-        if not pred.lm:
-            pred.lm = dspy.settings.lm
+def all_predictors_have_lms(program: Program) -> bool:
+    """Return True if all predictors in the program have an LM set."""
+    return all(pred.lm for pred in program.predictors())
 
+
+def copy_program_with_lms(program: Program) -> Program:
+    pred_lms = [pred.lm for pred in program.predictors()]
+    program = program.deepcopy()
+    for ind, pred in enumerate(program.predictors()):
+        pred.lm = pred_lms[ind]
     return program
 
 
@@ -279,15 +362,15 @@ def prepare_student(student: Program) -> Program:
 
     # TODO: Should we use reset_copy here? How would it affect the student
     # program's predictor LMs, if they are set?
-    student = student.deepcopy()
+
+    # TODO: Should there be a deepcopy here?
+    # student = student.deepcopy()
     return student
 
 
-def prepare_teacher(student: Program, teacher: Program = None) -> Program:
+def prepare_teacher(student: Program, teacher: Optional[Program] = None) -> Program:
     if teacher is None:
-        return student.deepcopy()
-    else:
-        teacher = teacher.deepcopy()
+        return student
 
     # Ensuring that the student and teacher are are structurally equivalent
     assert_structural_equivalency(student, teacher)

@@ -5,7 +5,7 @@ from typing import Callable, List, Optional
 import dspy
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
-from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune, prepare_student, set_missing_predictor_lms, launch_lms, kill_lms
+from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune, prepare_student, all_predictors_have_lms, launch_lms, kill_lms
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -66,7 +66,7 @@ class BetterTogether(Teleprompter):
         # TODO: Prepare student returns student.reset_copy(), which is what gets
         # optimized. We should make this clear in the doc comments.
         student = prepare_student(student)
-        set_missing_predictor_lms(student)
+        all_predictors_have_lms(student)
 
         # Make a shallow copy of the trainset, so that we don't change the order
         # of the examples in the original trainset
