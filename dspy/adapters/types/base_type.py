@@ -5,6 +5,9 @@ from typing import Any
 import json_repair
 import pydantic
 
+CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
+CUSTOM_TYPE_END_IDENTIFIER = "<<CUSTOM-TYPE-END-IDENTIFIER>>"
+
 
 class BaseType(pydantic.BaseModel):
     """Base class to support creating custom types for DSPy signatures.
@@ -28,7 +31,7 @@ class BaseType(pydantic.BaseModel):
 
     @pydantic.model_serializer()
     def serialize_model(self):
-        return f"<<CUSTOM-TYPE-START-IDENTIFIER>>{self.format()}<<CUSTOM-TYPE-END-IDENTIFIER>>"
+        return f"{CUSTOM_TYPE_START_IDENTIFIER}{self.format()}{CUSTOM_TYPE_END_IDENTIFIER}"
 
 
 def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -62,7 +65,7 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
             # Custom type messages are only in user messages
             continue
 
-        pattern = r"<<CUSTOM-TYPE-START-IDENTIFIER>>(.*?)<<CUSTOM-TYPE-END-IDENTIFIER>>"
+        pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
         result = []
         last_end = 0
         content = message["content"]

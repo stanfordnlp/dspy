@@ -30,14 +30,10 @@ class Image(BaseType):
 
     def format(self) -> Union[list[dict[str, Any]], str]:
         try:
-            url = self.url
-            if isinstance(url, str) and "<DSPY_IMAGE_START>" in url and "<DSPY_IMAGE_END>" in url:
-                url = url.split("<DSPY_IMAGE_START>", 1)[-1].split("<DSPY_IMAGE_END>", 1)[0]
-            image_url = encode_image(url)
+            image_url = encode_image(self.url)
         except Exception as e:
             raise ValueError(f"Failed to format image for DSPy: {e}")
         return [{"type": "image_url", "image_url": {"url": image_url}}]
-
 
     @pydantic.model_validator(mode="before")
     @classmethod

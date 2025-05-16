@@ -121,7 +121,14 @@ def test_chat_adapter_formats_image():
     expected_image_content = {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
     assert expected_image_content in user_message_content
 
-    # Test formatting with few-shot examples
+
+def test_chat_adapter_formats_image_with_few_shot_examples():
+    class MySignature(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
     demos = [
         dspy.Example(
             image=dspy.Image(url="https://example.com/image1.jpg"),
@@ -168,6 +175,21 @@ def test_chat_adapter_formats_image_with_nested_images():
     assert expected_image2_content in messages[1]["content"]
     assert expected_image3_content in messages[1]["content"]
 
+
+def test_chat_adapter_formats_image_with_few_shot_examples_with_nested_images():
+    class ImageWrapper(pydantic.BaseModel):
+        images: list[dspy.Image]
+        tag: list[str]
+
+    class MySignature(dspy.Signature):
+        image: ImageWrapper = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    image1 = dspy.Image(url="https://example.com/image1.jpg")
+    image2 = dspy.Image(url="https://example.com/image2.jpg")
+    image3 = dspy.Image(url="https://example.com/image3.jpg")
+
+    image_wrapper = ImageWrapper(images=[image1, image2, image3], tag=["test", "example"])
     demos = [
         dspy.Example(
             image=image_wrapper,
@@ -176,12 +198,18 @@ def test_chat_adapter_formats_image_with_nested_images():
     ]
 
     image_wrapper_2 = ImageWrapper(images=[dspy.Image(url="https://example.com/image4.jpg")], tag=["test", "example"])
+    adapter = dspy.ChatAdapter()
     messages = adapter.format(MySignature, demos, {"image": image_wrapper_2})
 
     assert len(messages) == 4
 
+    # Image information in the few-shot example's user message
+    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
+    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
+    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
     assert expected_image1_content in messages[1]["content"]
     assert expected_image2_content in messages[1]["content"]
     assert expected_image3_content in messages[1]["content"]
 
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[3]["content"]
+    # The query image is formatted in the last user message
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]
