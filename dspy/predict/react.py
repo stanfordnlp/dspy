@@ -216,9 +216,4 @@ TOPIC 03: Simplifying ReAct's __init__ by moving modular logic to the Tool class
 
 
 TOPIC 04: Default behavior when the trajectory gets too long.
-
-
-TOPIC 05: Adding more structure around how the instruction is formatted.
-    * Concretely, it's now a string, so an optimizer can and does rewrite it freely.
-    * An alternative would be to add more structure, such that a certain template is fixed but values are variable?
 """
