@@ -1,5 +1,7 @@
-import numpy as np
 from typing import Any, List, Optional
+
+import numpy as np
+
 from dspy.utils.unbatchify import Unbatchify
 
 # TODO: Add .save and .load methods!
@@ -14,7 +16,7 @@ class Embeddings:
         callbacks: Optional[List[Any]] = None,
         cache: bool = False,
         brute_force_threshold: int = 20_000,
-        normalize: bool = True
+        normalize: bool = True,
     ):
         assert cache is False, "Caching is not supported for embeddings-based retrievers"
 
@@ -44,7 +46,7 @@ class Embeddings:
 
         pids = self._faiss_search(q_embeds, self.k * 10) if self.index else None
         pids = np.tile(np.arange(len(self.corpus)), (len(queries), 1)) if pids is None else pids
-        
+
         return self._rerank_and_predict(q_embeds, pids)
 
     def _build_faiss(self):
@@ -60,8 +62,10 @@ class Embeddings:
         quantizer = faiss.IndexFlatL2(dim)
         index = faiss.IndexIVFPQ(quantizer, dim, partitions, nbytes, 8)
 
-        print(f"Training a {nbytes}-byte FAISS index with {partitions} partitions, based on "
-              f"{len(self.corpus)} x {dim}-dim embeddings")
+        print(
+            f"Training a {nbytes}-byte FAISS index with {partitions} partitions, based on "
+            f"{len(self.corpus)} x {dim}-dim embeddings"
+        )
         index.train(self.corpus_embeddings)
         index.add(self.corpus_embeddings)
         index.nprobe = min(16, partitions)
@@ -73,12 +77,12 @@ class Embeddings:
 
     def _rerank_and_predict(self, q_embeds: np.ndarray, candidate_indices: np.ndarray):
         candidate_embeddings = self.corpus_embeddings[candidate_indices]
-        scores = np.einsum('qd,qkd->qk', q_embeds, candidate_embeddings)
+        scores = np.einsum("qd,qkd->qk", q_embeds, candidate_embeddings)
 
-        top_k_indices = np.argsort(-scores, axis=1)[:, :self.k]
+        top_k_indices = np.argsort(-scores, axis=1)[:, : self.k]
         top_indices = candidate_indices[np.arange(len(q_embeds))[:, None], top_k_indices]
 
-        return [([self.corpus[idx] for idx in indices], [idx for idx in indices]) for indices in top_indices]
+        return [([self.corpus[idx] for idx in indices], [idx for idx in indices]) for indices in top_indices]  # noqa: C416
 
     def _normalize(self, embeddings: np.ndarray):
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
