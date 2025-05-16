@@ -7,6 +7,7 @@
         members:
             - __call__
             - acall
+            - aforward
             - batch
             - deepcopy
             - dump_state

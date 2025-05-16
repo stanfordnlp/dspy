@@ -11,7 +11,7 @@ from asyncer import syncify
 import dspy
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
-from dspy.clients.provider import Provider, TrainingJob, ReinforceJob
+from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
@@ -211,7 +211,7 @@ class LM(BaseLM):
     def reinforce(self, train_kwargs) -> ReinforceJob:
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
-    
+
         err = f"Provider {self.provider} does not implement the reinforcement learning interface."
         assert self.provider.reinforceable, err
 
@@ -298,7 +298,8 @@ def _get_stream_completion_fn(
         return async_stream_completion
 
 
-def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+def litellm_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
@@ -311,7 +312,8 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     return stream_completion()
 
 
-def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -336,7 +338,8 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
     )
 
 
-async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
@@ -349,9 +352,8 @@ async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={
     return await stream_completion()
 
 
-async def alitellm_text_completion(
-    request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}
-):
+async def alitellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
     model = request.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 

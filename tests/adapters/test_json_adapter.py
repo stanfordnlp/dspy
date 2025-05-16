@@ -2,8 +2,7 @@ from unittest import mock
 
 import pydantic
 import pytest
-from pydantic import create_model
-from litellm.utils import ModelResponse, Message, Choices
+from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
 
@@ -109,7 +108,7 @@ async def test_json_adapter_async_call():
 
 
 def test_json_adapter_on_pydantic_model():
-    from litellm.utils import ModelResponse, Message, Choices
+    from litellm.utils import Choices, Message, ModelResponse
 
     class User(pydantic.BaseModel):
         id: int
@@ -170,7 +169,7 @@ def test_json_adapter_on_pydantic_model():
         assert expected_input_structure in content
 
         # Assert that system prompt includes output formatting structure
-        expected_output_structure = (  # noqa: Q000
+        expected_output_structure = (
             "Outputs will be a JSON object with the following fields.\n\n{\n  "
             '"answer": "{answer}        # note: the value you produce must adhere to the JSON schema: '
             '{\\"type\\": \\"object\\", \\"properties\\": {\\"analysis\\": {\\"type\\": \\"string\\", \\"title\\": '
@@ -184,7 +183,7 @@ def test_json_adapter_on_pydantic_model():
         assert user_message_content is not None
 
         # Assert that the user input data is formatted correctly
-        expected_input_data = (  # noqa: Q000
+        expected_input_data = (
             '[[ ## user ## ]]\n{"id": 5, "name": "name_test", "email": "email_test"}\n\n[[ ## question ## ]]\n'
             "What is the capital of France?\n\n"
         )
