@@ -27,15 +27,25 @@ class SIMBA(Teleprompter):
         temperature_for_candidates=0.2,
     ):
         """
-        :param metric: A function (Example, prediction_dict) -> float
-        :param bsize: mini-batch size
-        :param num_candidates: how many new candidate programs to produce per iteration
-        :param max_steps: how many optimization steps to run
-        :param max_demos: how many demos we allow a predictor to hold before we must drop some
-        :param demo_input_field_maxlen: how many characters of an input field to keep when building a new demo
-        :param num_threads: how many threads for run_parallel
-        :param temperature_for_sampling: temperature used for picking programs for the trajectory-sampling step
-        :param temperature_for_candidates: temperature used for picking the source program for building new candidates
+        Initializes SIMBA.
+
+        Args:
+            metric (Callable): A function that takes an Example and a prediction_dict
+                as input and returns a float.
+            bsize (int, optional): Mini-batch size. Defaults to 32.
+            num_candidates (int, optional): Number of new candidate programs to produce
+                per iteration. Defaults to 6.
+            max_steps (int, optional): Number of optimization steps to run. Defaults to 8.
+            max_demos (int, optional): Maximum number of demos a predictor can hold
+                before dropping some. Defaults to 4.
+            demo_input_field_maxlen (int, optional): Maximum number of characters to keep
+                in an input field when building a new demo. Defaults to 100,000.
+            num_threads (int, optional): Number of threads for parallel execution.
+                Defaults to None.
+            temperature_for_sampling (float, optional): Temperature used for picking
+                programs during the trajectory-sampling step. Defaults to 0.2.
+            temperature_for_candidates (float, optional): Temperature used for picking
+                the source program for building new candidates. Defaults to 0.2.
         """
         self.metric = metric
         self.bsize = bsize
@@ -286,8 +296,8 @@ class SIMBA(Teleprompter):
                 sys_scores = [outputs[i]["score"] for i in range(start, end)]
                 register_new_program(cand_sys, sys_scores)
 
-        M = len(winning_programs) - 1 # noqa: N806
-        N = self.num_candidates + 1 # noqa: N806
+        M = len(winning_programs) - 1  # noqa: N806
+        N = self.num_candidates + 1  # noqa: N806
         if M < 1:
             program_idxs = [0] * N
         else:
