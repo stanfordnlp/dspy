@@ -1,7 +1,5 @@
 import logging
-import inspect
-from copy import deepcopy
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Optional
 
 from litellm import ContextWindowExceededError
 
@@ -22,8 +20,7 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
-        tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
-        tools = {tool.name: tool for tool in tools}
+        tools = self._convert_tools(tools)
 
         inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
         outputs = ", ".join([f"`{k}`" for k in signature.output_fields.keys()])
@@ -36,7 +33,6 @@ class ReAct(Module):
                 "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.",
                 "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
                 "When writing next_thought, you may reason about the current situation and plan for future steps.",
-                "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
             ]
         )
 
@@ -47,14 +43,12 @@ class ReAct(Module):
             args={},
         )
 
-        for idx, tool in enumerate(tools.values()):
-            instr.append(f"({idx + 1}) {tool}")
-
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
             .append("trajectory", dspy.InputField(), type_=str)
+            .append("tools", dspy.InputField(desc="Tools you select from when selecting the next_tool_name and its next_tool_args"), type_=list[str])
             .append("next_thought", dspy.OutputField(), type_=str)
-            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
+            .append("next_tool_name", dspy.OutputField(), type_=str)
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
         )
 
@@ -67,18 +61,18 @@ class ReAct(Module):
         self.react = dspy.Predict(react_signature)
         self.extract = dspy.ChainOfThought(fallback_signature)
 
-    def _format_trajectory(self, trajectory: dict[str, Any]):
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
-        trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
-        return adapter.format_user_message_content(trajectory_signature, trajectory)
-
-    def forward(self, **input_args):
+    def forward(self, additional_tools: Optional[list[Callable]] = None, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        tools = self._copy_tools(self.tools)
+        tools = self.tools | self._convert_tools(additional_tools)
         for idx in range(max_iters):
             try:
-                pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+                pred = self._call_with_potential_trajectory_truncation(
+                    self.react,
+                    trajectory,
+                    tools=self._format_tools_string(tools),
+                    **input_args
+                )
             except ValueError as err:
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
                 break
@@ -98,13 +92,18 @@ class ReAct(Module):
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
 
-    async def aforward(self, **input_args):
+    async def aforward(self, additional_tools: Optional[list[Callable]] = None, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        tools = self._copy_tools(self.tools)
+        tools = self.tools | self._convert_tools(additional_tools)
         for idx in range(max_iters):
             try:
-                pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+                pred = await self._async_call_with_potential_trajectory_truncation(
+                    self.react, 
+                    trajectory, 
+                    tools=self._format_tools_string(tools), 
+                    **input_args
+                )
             except ValueError as err:
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
                 break
@@ -164,18 +163,19 @@ class ReAct(Module):
 
         return trajectory
     
-    def _copy_tools(self, tools):
-        results = tools.copy()
-        for tool_name, tool in tools.items():
-            if inspect.isfunction(tool.func):
-                results[tool_name] = tool
-            else:
-                try:
-                    results[tool_name] = deepcopy(tool)
-                except Exception:
-                    logger.warning(f"Failed to deepcopy tool: {tool!r}. Consider making your tool deep-copyable "
-                                   "if it needs to manage internal state. Error: {e}.")
-        return results
+    def _format_trajectory(self, trajectory: dict[str, Any]):
+        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
+        return adapter.format_user_message_content(trajectory_signature, trajectory)
+    
+    def _convert_tools(self, tools: Optional[list[Callable]]) -> dict[str, Tool]:
+        """Convert the tools to a dictionary of name -> tool."""
+        tools = [t if isinstance(t, Tool) else Tool(t) for t in tools or []]
+        return {tool.name: tool for tool in tools}
+    
+    def _format_tools_string(self, tools: dict[str, Tool]) -> list[str]:
+        """Format the tools into a list of string."""
+        return [f"({idx + 1}) {tool}" for idx, tool in enumerate(tools.values())]
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:

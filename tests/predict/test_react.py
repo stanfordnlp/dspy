@@ -343,10 +343,8 @@ def test_tool_call_state_management():
         def __call__(self, i: int):
             self.count += i
             return self.count
-    
-    counter = Counter()
 
-    react = dspy.ReAct("max -> sum:int", tools=[counter])
+    react = dspy.ReAct("max -> sum:int", tools=[])
     lm = DummyLM(
         [
             {"next_thought": "I need to add 1", "next_tool_name": "Counter", "next_tool_args": {"i": 1}},
@@ -358,11 +356,10 @@ def test_tool_call_state_management():
     )
     dspy.settings.configure(lm=lm)
 
-    outputs = react(call_count=3) 
+    # Pass the tool object as an additional tool
+    outputs = react(call_count=3, additional_tools=[Counter()])
     
     assert outputs.sum == 6
-    # Verify the state is not changed after the forward call
-    assert counter.count == 0
 
     # Check the state is managed during the forward call
     expected_trajectory = {
