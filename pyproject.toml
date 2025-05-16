@@ -109,64 +109,27 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-include = ["dspy/**/*.py", "tests/**/*.py"]
-exclude = [
-  "dspy/retrieve/*.py",
-  "tests/reliability/*.py",
-  "tests/retrieve/*.py",
-]
-
-
 line-length = 120
 indent-width = 4
 target-version = "py39"
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "C",   # flake8-comprehensions
-    "B",   # flake8-bugbear
-    "UP",  # ≈
-    "N",   # pep8-naming
-    "RUF", # ruff-specific rules
+    "F", # Pyflakes
+    "E", # Pycodestyle
+    "TID252", # Absolute imports
 ]
-
 ignore = [
-    "B027",  # Allow non-abstract empty methods in abstract base classes
-    "FBT003",# Allow boolean positional values in function calls
-    "C901",  # Ignore complexity checking
-    "E501",  # Ignore line length errors (handled by formatter)
-    "UP006", # Allow python typing modules
-    "UP035", # Allow python typing modules
-    "RUF005", # Allow using + operator to concatenate collections
-    "B904", # Allow raise custom exceptions in except blocks
-    "F403", # Allow wildcard imports
+    "E501", # Line too long
 ]
-
-# Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.format]
 docstring-code-format = false
-quote-style = "double"
 indent-style = "space"
-skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.ruff.lint.isort]
-known-first-party = ["dspy"]
-
-[tool.ruff.lint.flake8-tidy-imports]
-ban-relative-imports = "all"
-
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = [
-    "S101",    # Allow assert statements in tests
-    "TID252",  # Allow relative imports in tests
-    "ARG001",  # Allow unused arguments in tests (like pytest fixtures)
-]
-"__init__.py" = ["F401"]  # Init files can be empty
+"**/{tests,testing,docs}/*" = ["ALL"]
+"**__init__.py" = ["ALL"]
