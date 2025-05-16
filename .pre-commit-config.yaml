@@ -2,26 +2,19 @@ default_language_version:
   python: python3.9
 
 default_stages: [pre-commit]
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit]
 
 repos:
   - repo: local
     hooks:
-      - id: ruff
-        name: ruff (lint and format)
+      - id: ruff-check
+        name: ruff (lint)
         entry: ruff
         language: system
         types_or: [python, pyi]
+        files: ^(dspy|tests)/.*\.py$
+        exclude: ^(dspy/__metadata__\.py|dspy/retrieve/.*\.py|tests/reliability/.*\.py|tests/retrieve/.*\.py)$
         args: [check, --fix-only]
-        require_serial: true
-
-      - id: ruff-format
-        name: ruff (format)
-        entry: ruff
-        language: system
-        types_or: [python, pyi]
-        args: [format]
-        require_serial: true
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
