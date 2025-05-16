@@ -42,35 +42,45 @@ class SignatureMeta(type(BaseModel)):
         if cls is Signature:
             # We don't create an actual Signature instance, instead, we create a new Signature class.
             custom_types = kwargs.pop('custom_types', None)
-            # If no custom_types in kwargs, check if any are available in the caller's frame
-            if custom_types is None:
-                import inspect
-                caller_frame = inspect.currentframe().f_back
-                if caller_frame:
-                    # Look for the custom type in the caller's local and global namespaces
-                    caller_locals = caller_frame.f_locals
-                    caller_globals = caller_frame.f_globals
-                    # Check if we need any custom types based on the signature string
-                    if args and isinstance(args[0], str):
-                        sig_str = args[0]
-                        # Extract potential type names from the signature string
-                        import re
-                        type_patterns = re.findall(r':\s*([A-Za-z_][A-Za-z0-9_]*)', sig_str)
-                        if type_patterns:
-                            found_types = {}
-                            for type_name in type_patterns:
-                                # Skip built-in types and typing module types
-                                if type_name in typing.__dict__ or type_name in __builtins__:
-                                    continue
-                                # Look in caller's namespace
-                                if type_name in caller_locals:
-                                    found_types[type_name] = caller_locals[type_name]
-                                elif type_name in caller_globals:
-                                    found_types[type_name] = caller_globals[type_name]
-                            if found_types:
-                                custom_types = found_types
+
+            if custom_types is None and args and isinstance(args[0], str):
+                custom_types = cls._detect_custom_types_from_caller(args[0])
+
             return make_signature(*args, custom_types=custom_types, **kwargs)
         return super().__call__(*args, **kwargs)
+
+    @staticmethod
+    def _detect_custom_types_from_caller(signature_str):
+        """Detect custom types from the caller's frame based on the signature string."""
+        import inspect
+        import re
+
+        # Get the caller's frame
+        # Two levels back to skip _detect_custom_types_from_caller and __call__
+        caller_frame = inspect.currentframe().f_back.f_back
+        if not caller_frame:
+            return None
+
+        # Extract potential type names from the signature string
+        type_names = re.findall(r':\s*([A-Za-z_][A-Za-z0-9_]*)', signature_str)
+        if not type_names:
+            return None
+
+        # Get caller's namespaces
+        caller_locals = caller_frame.f_locals
+        caller_globals = caller_frame.f_globals
+        found_types = {}
+        for type_name in type_names:
+            # This ignores if you override a built-in type or typing module type.
+            if type_name in typing.__dict__ or type_name in __builtins__:
+                continue
+
+            if type_name in caller_locals:
+                found_types[type_name] = caller_locals[type_name]
+            elif type_name in caller_globals:
+                found_types[type_name] = caller_globals[type_name]
+
+        return found_types or None
 
     def __new__(mcs, signature_name, bases, namespace, **kwargs):  # noqa: N804
         # At this point, the orders have been swapped already.
