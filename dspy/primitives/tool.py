@@ -181,7 +181,7 @@ class Tool:
     
     def __str__(self):
         desc = f", whose description is <desc>{self.desc}</desc>.".replace("\n", "  ") if self.desc else "."
-        arg_desc = f"It takes arguments {self.args} in JSON format."
+        arg_desc = f"It takes arguments {self.args}."
         return f"{self.name}{desc} {arg_desc}"
 
 
