@@ -44,7 +44,7 @@ class SignatureMeta(type(BaseModel)):
             return make_signature(*args, **kwargs)
         return super().__call__(*args, **kwargs)
 
-    def __new__(mcs, signature_name, bases, namespace, **kwargs):  # noqa: N804
+    def __new__(mcs, signature_name, bases, namespace, **kwargs):
         # At this point, the orders have been swapped already.
         field_order = [name for name, value in namespace.items() if isinstance(value, FieldInfo)]
         # Set `str` as the default type for all fields
@@ -196,7 +196,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         fields = dict(cls.fields)
 
         if name in fields:
-            del fields[name]
+            del fields[name]  # noqa: RUF051
         else:
             raise ValueError(f"Field `{name}` not found in `{cls.__name__}`.")
 

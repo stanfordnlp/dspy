@@ -145,6 +145,9 @@ ignore = [
     "RUF005", # Allow using + operator to concatenate collections
     "B904", # Allow raise custom exceptions in except blocks
     "F403", # Allow wildcard imports
+    "E721", # Allow using == to compare with type
+    "UP031", # Allow percent format
+    "RUF022", # Allow unsorted __all__ value
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
