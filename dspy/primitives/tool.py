@@ -172,13 +172,9 @@ class Tool:
 
         return convert_mcp_tool(session, tool)
 
-
     def __repr__(self):
-        return (
-            f"Tool(name={self.name}, desc={self.desc}, args={self.args})"
-        )
-    
-    
+        return f"Tool(name={self.name}, desc={self.desc}, args={self.args})"
+
     def __str__(self):
         desc = f", whose description is <desc>{self.desc}</desc>.".replace("\n", "  ") if self.desc else "."
         arg_desc = f"It takes arguments {self.args} in JSON format."

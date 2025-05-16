@@ -1,5 +1,3 @@
-import textwrap
-
 import pytest
 
 import dspy

@@ -1,9 +1,10 @@
-import pytest
-from unittest.mock import Mock, patch
-import numpy as np
+from unittest.mock import patch
 
-from dspy.clients.embedding import Embedder
+import numpy as np
+import pytest
+
 import dspy
+from dspy.clients.embedding import Embedder
 
 
 # Mock response format similar to litellm's embedding response.

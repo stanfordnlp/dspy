@@ -1,9 +1,8 @@
+import logging
+from unittest.mock import patch
+
 import dspy
 from dspy.utils import DummyLM
-from unittest.mock import patch
-import pytest
-from dspy.utils.saving import get_dependency_versions
-import logging
 
 
 def test_save_predict(tmp_path):
