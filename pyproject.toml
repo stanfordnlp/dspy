@@ -111,6 +111,7 @@ exclude_lines = [
 [tool.ruff]
 include = ["dspy/**/*.py", "tests/**/*.py"]
 exclude = [
+  "dspy/__metadata__.py",
   "dspy/retrieve/*.py",
   "tests/reliability/*.py",
   "tests/retrieve/*.py",
@@ -170,3 +171,4 @@ ban-relative-imports = "all"
     "ARG001",  # Allow unused arguments in tests (like pytest fixtures)
 ]
 "__init__.py" = ["F401"]  # Init files can be empty
+"dspy/__init__.py" = ["I001", "E402", "F405"]
