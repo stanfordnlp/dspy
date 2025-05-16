@@ -69,7 +69,7 @@ class GRPO(FinetuneTeleprompter):
         if self.use_train_as_val:
             assert report_train_scores, "If use_train_as_val is True, report_train_scores must be True."
 
-        assert exclude_demos, "exclude_demos==False is not supported yet. Please set it to True."
+        # assert exclude_demos, "exclude_demos==False is not supported yet. Please set it to True."
         assert multitask, "independent GRPO training jobs for each predictor in the student program is not supported yet. Please set multitask=True."
 
         # The backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_grpo_step * num_predictors) per training set if multitask is True
@@ -231,6 +231,7 @@ class GRPO(FinetuneTeleprompter):
                     for job_key, job in grpo_training_jobs.items():
                         job.save_checkpoint(checkpoint_name=f"model_checkpoint_{step_idx+1}")
                         checkpoint_model_paths[job_key] = job.checkpoints[job.last_checkpoint]['model_path']
+                        logger.info(f"Checkpoint model path: {checkpoint_model_paths[job_key]}")
                     self.best_model_details = checkpoint_model_paths
 
     def update_shuffled_trainset(self, original_trainset):
@@ -531,7 +532,7 @@ class GRPO(FinetuneTeleprompter):
                             inp_messages = adapter.format(
                                 signature=trace_instance[0].signature, 
                                 inputs=trace_instance[1], 
-                                demos=[] # TODO: Add support for demos
+                                demos=predictor.demos if not self.exclude_demos else [] # TODO: Add support for demos
                             )
 
                             if isinstance(trace_instance[2], FailedPrediction):
@@ -550,7 +551,7 @@ class GRPO(FinetuneTeleprompter):
                                     signature=trace_instance[0].signature,
                                     inputs=trace_instance[1],
                                     outputs=trace_instance[2],
-                                    demos=[] # TODO: Add support for demos
+                                    demos=predictor.demos if not self.exclude_demos else [] # TODO: Add support for demos
                                 )['messages']
 
                                 assert all_messages[:-1] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {all_messages[:-1]}"
@@ -639,7 +640,11 @@ class GRPO(FinetuneTeleprompter):
 
         logger.info("Done with the iterations! Retrieving the final model(s)...")
         for (lm, data_key), job in grpo_training_jobs.items():
-            job.terminate()
+            # job.terminate()
+            # pass # Temporary fix for the backend crashing on termination
+            lm.kill()
+        
+        logger.debug("Killed the LM. Now recovering the LM cache...")
         
         # Revert cache states to their initial values
         recover_lm_cache(program=student, lm_cache_dict=lm_cache_dict)
@@ -648,10 +653,14 @@ class GRPO(FinetuneTeleprompter):
 
         if self.model_name_val_scores is not None and len(self.model_name_val_scores) > 0:
             # Find the lm_names with the highest validation score
+            logger.info("Setting the best model(s) for each predictor...")
             best_model_details = self.best_model_details
             for job_key, job in grpo_training_jobs.items():
                 lm, data_key = job_key
-                lm.model = best_model_details[job_key]['model_path']
+                lm.model = best_model_details[job_key]
+                if not lm.model.startswith("openai/arbor:"):
+                    lm.model = "openai/arbor:" + lm.model
+                logger.info(f"Updated the model for {job_key} to {best_model_details[job_key]}")
 
         logger.info("GRPO compiler has finished compiling the student program")
         student._compiled = True
