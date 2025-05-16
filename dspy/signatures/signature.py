@@ -27,7 +27,6 @@ from typing import Any, Dict, Optional, Tuple, Type, Union
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.types.image import Image  # noqa: F401
 from dspy.signatures.field import InputField, OutputField
 
 
