@@ -120,7 +120,13 @@ print(response.json())
 You should see the response like below:
 
 ```json
-{'status': 'success', 'data': {'reasoning': 'The capital of France is a well-known fact, commonly taught in geography classes and referenced in various contexts. Paris is recognized globally as the capital city, serving as the political, cultural, and economic center of the country.', 'answer': 'The capital of France is Paris.'}}
+{
+  "status": "success",
+  "data": {
+    "reasoning": "The capital of France is a well-known fact, commonly taught in geography classes and referenced in various contexts. Paris is recognized globally as the capital city, serving as the political, cultural, and economic center of the country.",
+    "answer": "The capital of France is Paris."
+  }
+}
 ```
 
 ## Deploying with MLflow
@@ -140,7 +146,9 @@ Let's spin up the MLflow tracking server, where we will store our DSPy program. 
 ```
 
 Then we can define the DSPy program and log it to the MLflow server. "log" is an overloaded term in MLflow, basically it means
-we store the program information along with environment requirements in the MLflow server. See the code below:
+we store the program information along with environment requirements in the MLflow server. This is done via the `mlflow.dspy.log_model()` function which takes a custom `dspy.Module` object along with a model signature that defines the expected schema for model inputs and outputs.
+
+See the code below:
 
 ```python
 import dspy
@@ -151,7 +159,16 @@ mlflow.set_experiment("deploy_dspy_program")
 
 lm = dspy.LM("openai/gpt-4o-mini")
 dspy.settings.configure(lm=lm)
-dspy_program = dspy.ChainOfThought("question -> answer")
+
+class CoT(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.prog = dspy.ChainOfThought("question -> answer")
+
+    def forward(self, question):
+        return self.prog(question=question)
+
+dspy_program = CoT()
 
 with mlflow.start_run():
     mlflow.dspy.log_model(
@@ -188,7 +205,18 @@ After the program is deployed, you can test it with the following command:
 You should see the response like below:
 
 ```json
-{"choices": [{"index": 0, "message": {"role": "assistant", "content": "{\"reasoning\": \"The question asks for the sum of 2 and 2. To find the answer, we simply add the two numbers together: 2 + 2 = 4.\", \"answer\": \"4\"}"}, "finish_reason": "stop"}]}
+{
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"reasoning\": \"The question asks for the sum of 2 and 2. To find the answer, we simply add the two numbers together: 2 + 2 = 4.\", \"answer\": \"4\"}"
+      },
+      "finish_reason": "stop"
+    }
+  ]
+}
 ```
 
 For complete guide on how to deploy a DSPy program with MLflow, and how to customize the deployment, please refer to the
