@@ -21,6 +21,7 @@ import inspect
 import re
 import types
 import typing
+import sys
 from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
@@ -61,9 +62,6 @@ class SignatureMeta(type(BaseModel)):
         For more reliable custom type resolution, explicitly provide types using the 
         `custom_types` parameter when creating a Signature.
         """
-        import inspect
-        import re
-        import sys
 
         # Extract potential type names from the signature string, including dotted names
         # Match both simple types like 'MyType' and dotted names like 'Module.Type'
