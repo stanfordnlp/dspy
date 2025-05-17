@@ -96,28 +96,30 @@ class GRPO(FinetuneTeleprompter):
         trace_data: List[List[List[Dict[str, Any]]]],
         subsample_training_dataset: List[Example],
         num_teachers: int,
-        num_samples_per_input: int,
-        pred_signature_hash_to_ind: Dict[int, int],
+        num_gens_per_teacher: List[int],
+        # pred_signature_hash_to_ind: Dict[int, int],
+        student_pred_signature_hash_to_ind: Dict[int, int],
+        teacher_pred_signature_hash_to_ind: List[Dict[int, int]],
     ):
-        # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
+        # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_gens_per_teacher[tind] * Dict(example, prediction, trace, example_ind, score)]]]
         # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
         assert len(trace_data) == len(subsample_training_dataset), f"Trace data length {len(trace_data)} does not match the number of examples {len(subsample_training_dataset)}"
         assert len(trace_data[0]) == num_teachers, f"Trace data length {len(trace_data[0])} does not match the number of teachers {num_teachers}"
         # TODO(GRPO Team): Ideally, once the dspy format issue is fixed, this change should be reverted back to being a normal assert.
         if len(trace_data[0][0]) == 0:
             logger.warning(f"Trace data for example {0} and teacher {0} is empty. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
-        elif len(trace_data[0][0]) != num_samples_per_input:
-            logger.warning(f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {num_samples_per_input}")
+        elif len(trace_data[0][0]) != num_gens_per_teacher[0]:
+            logger.warning(f"Trace data length {len(trace_data[0][0])} does not match the expected number of samples per input {num_gens_per_teacher[0]}")
             assert "trace" in trace_data[0][0][0], "Trace data does not contain the 'trace' key"
             assert len(trace_data[0][0][0]["trace"]) > 0, "Trace data is empty"
             assert len(trace_data[0][0][0]["trace"][0]) == 3, f"Trace tuple length {len(trace_data[0][0][0]['trace'][0])} does not match the expected length 3"
         
         for example_data in trace_data:
-            for teacher_data in example_data:
+            for teacher_ind, teacher_data in enumerate(example_data):
                 for sample in teacher_data:
                     for t in sample["trace"]:
-                        assert hash(t[0].signature) in pred_signature_hash_to_ind
-    
+                        assert hash(t[0].signature) in teacher_pred_signature_hash_to_ind[teacher_ind], f"Predictor {t[0].signature} not found in student or teacher {teacher_ind}"
+
     def token_seq_len(self, messages: List[Dict[str, Any]]) -> int:
         # TODO(GRPO Team): This should actually be tied to pred_lm's tokenizer from the provider
         return len(self.tokenizer.apply_chat_template(messages))
@@ -291,6 +293,30 @@ class GRPO(FinetuneTeleprompter):
         # We need to sort the group by the score, and select k equally spaced elements from the sorted group
         sorted_group = sorted(group, key=lambda x: x["reward"], reverse=True)
         return select_evenly_spaced_np(sorted_group, k)
+    
+    def bootstrap_data(self,
+        teachers: List[Program],
+        subsample_training_dataset: List[Example],
+        num_gens_per_teacher: List[int],
+    ) -> List[List[List[Dict[str, Any]]]]:
+        trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
+        for tind, teacher in enumerate(teachers):
+            subsample_training_dataset_repeated = [example for _ in range(num_gens_per_teacher[tind]) for example in subsample_training_dataset]
+            round_data = bootstrap_trace_data(
+                program=teacher,
+                dataset=subsample_training_dataset_repeated,
+                metric=self.metric,
+                num_threads=self.num_threads,
+                raise_on_error=False, # TODO(GRPO Team): This should be True, once the dspy format issue is fixed
+                capture_failed_parses=True,
+                failure_score=self.failure_score,
+                format_failure_score=self.format_failure_score,
+            )
+            for data_dict in round_data:
+                example_ind_in_subsample = data_dict['example_ind'] % len(subsample_training_dataset)
+                data_dict["example_ind"] = example_ind_in_subsample
+                trace_data[example_ind_in_subsample][tind].append(data_dict)
+        return trace_data
 
     def compile(
         self,
@@ -298,6 +324,7 @@ class GRPO(FinetuneTeleprompter):
         trainset: List[Example],
         teacher: Optional[Union[Program, List[Program]]] = None,
         valset: Optional[List[Example]] = None,
+        num_gens_per_teacher: Optional[List[int]] = None,
         **kwargs,
     ) -> Program:
         logger.info("Starting the GRPO compilation process... The LM(s) for the student program will be updated in place at the end of the training.")
@@ -349,11 +376,9 @@ class GRPO(FinetuneTeleprompter):
 
         logger.info("Preparing the student program...")
         all_predictors_have_lms(student)
-        pred_signature_hash_to_ind = {hash(pred.signature): ind for ind, pred in enumerate(student.predictors())}
-        num_student_predictors = len(student.predictors())
 
         logging.info("Preparing the teacher program(s)... We will ensure that the provided programs have the same program structure as the student program.")
-        if isinstance(teacher, list) and len(teacher) == 0 or teacher is None:
+        if (isinstance(teacher, list) and len(teacher) == 0) or teacher is None:
             teacher = student
         teachers = teacher if isinstance(teacher, list) else [teacher]
         for t in teachers:
@@ -362,13 +387,25 @@ class GRPO(FinetuneTeleprompter):
         
         # Ensure that the teachers list contain the student program
         assert student in teachers, f"Student program {student} is not in the list of teachers {teachers}. Please provide the student program as one of the teachers. Alternatively, you can leave the teacher argument as None, and the student program will be used as the teacher program."
-        assert self.num_rollouts_per_grpo_step % len(teachers) == 0, (
-            f"The GRPO group size (num_rollouts_per_grpo_step) {self.num_rollouts_per_grpo_step} is not divisible by the number of teachers {len(teachers)}. "
-            "This is required to ensure that each teacher gets the same number of examples."
-            "Please provide a number of examples that is divisible by the number of teachers."
-        )
-        num_samples_per_input = self.num_rollouts_per_grpo_step // len(teachers)
+        if num_gens_per_teacher is None:
+            assert self.num_rollouts_per_grpo_step % len(teachers) == 0, (
+                f"The GRPO group size (num_rollouts_per_grpo_step) {self.num_rollouts_per_grpo_step} is not divisible by the number of teachers {len(teachers)}. "
+                "This is required to ensure that each teacher gets the same number of examples."
+                "Please provide a number of examples that is divisible by the number of teachers."
+            )
+            num_gens_per_teacher = [self.num_rollouts_per_grpo_step // len(teachers) for _ in range(len(teachers))]
+        else:
+            assert len(num_gens_per_teacher) == len(teachers), f"The number of generations per teacher {num_gens_per_teacher} must be the same as the number of teachers {len(teachers)}"
+            assert sum(num_gens_per_teacher) == self.num_rollouts_per_grpo_step, f"The total number of generations {sum(num_gens_per_teacher)} must be equal to the number of rollouts per GRPO step {self.num_rollouts_per_grpo_step}"
         
+        student_pred_signature_hash_to_ind = {hash(pred.signature): ind for ind, pred in enumerate(student.predictors())}
+        teacher_pred_signature_hash_to_ind = [
+            {hash(pred.signature): ind for ind, pred in enumerate(t.predictors())} for t in teachers
+        ]
+        num_student_predictors = len(student.predictors())
+        for t in teachers:
+            assert len(t.predictors()) == num_student_predictors, f"Teacher {t} has a different number of predictors than the student program {student}. Please provide a teacher program with the same number of predictors as the student program."
+
         # We will disable the LM cache for all programs (student and teachers)
         # These will be reverted to their original state at the end of the
         # training
@@ -431,35 +468,24 @@ class GRPO(FinetuneTeleprompter):
             )
 
             logger.info("Bootstrapping data...")
-            trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
-            for tind, teacher in enumerate(teachers):
-                subsample_training_dataset_repeated = [example for _ in range(num_samples_per_input) for example in subsample_training_dataset]
-                round_data = bootstrap_trace_data(
-                    program=teacher,
-                    dataset=subsample_training_dataset_repeated,
-                    metric=self.metric,
-                    num_threads=self.num_threads,
-                    raise_on_error=False, # TODO(GRPO Team): This should be True, once the dspy format issue is fixed
-                    capture_failed_parses=True,
-                    failure_score=self.failure_score,
-                    format_failure_score=self.format_failure_score,
-                )
-                for data_dict in round_data:
-                    example_ind_in_subsample = data_dict['example_ind'] % len(subsample_training_dataset)
-                    data_dict["example_ind"] = example_ind_in_subsample
-                    trace_data[example_ind_in_subsample][tind].append(data_dict)
+            trace_data: List[List[List[Dict[str, Any]]]] = self.bootstrap_data(
+                teachers=teachers,
+                subsample_training_dataset=subsample_training_dataset,
+                num_gens_per_teacher=num_gens_per_teacher,
+            )
 
             # The trace_data for examples with FailedPrediction cases will have the signature at index 0, instead of the predictor
             # We need to replace the signature with the predictor
 
-            # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
+            # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_gens_per_teacher[tind] * Dict(example, prediction, trace, example_ind, score)]]]
             # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
             self.validate_trace_data_and_log_issues(
                 trace_data=trace_data,
                 subsample_training_dataset=subsample_training_dataset,
                 num_teachers=len(teachers),
-                num_samples_per_input=num_samples_per_input,
-                pred_signature_hash_to_ind=pred_signature_hash_to_ind,
+                num_gens_per_teacher=num_gens_per_teacher,
+                student_pred_signature_hash_to_ind=student_pred_signature_hash_to_ind,
+                teacher_pred_signature_hash_to_ind=teacher_pred_signature_hash_to_ind,
             )
 
             logger.info("Preparing the training data batch from bootstrapped examples for GRPO...")
@@ -468,19 +494,19 @@ class GRPO(FinetuneTeleprompter):
             train_batch_per_predictor: List[List[GRPOGroup]] = [[] for _ in range(num_student_predictors)]
             for pred_id in range(num_student_predictors):
                 for example_ind, example_data in enumerate(trace_data):
-                    # Each example_data is a list of teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]
+                    # Each example_data is a list of teacher_idx -> [num_gens_per_teacher[tind] * Dict(example, prediction, trace, example_ind, score)]
                     # We need to flatten this list and create a batch for each predictor
 
                     # TODO(Lakshya, Omar, Noah): Discuss what to do with the same module being invoked multiple times within a single dspy.Example
                     predictor_example_invocations: List[List[Tuple]] = []
 
-                    for teacher_data in example_data:
+                    for teacher_ind, teacher_data in enumerate(example_data):
                         for sample in teacher_data:
                             # Each sample is a Dict(example, prediction, trace, example_ind, score)
                             # sample['prediction'] is module_level prediction
                             assert sample["example_ind"] == example_ind, f"Example index {sample['example_ind']} does not match the expected index {example_ind}"
 
-                            trace_instances_for_current_pred = [(*t, sample["score"]) for t in sample["trace"] if hash(t[0].signature) == hash(student.predictors()[pred_id].signature)]
+                            trace_instances_for_current_pred = [(*t, sample["score"], teacher_ind) for t in sample["trace"] if hash(t[0].signature) == hash(teachers[teacher_ind].predictors()[pred_id].signature)]
                             
                             predictor_example_invocations.append(trace_instances_for_current_pred)
 
@@ -517,12 +543,13 @@ class GRPO(FinetuneTeleprompter):
                         for rollout_idx in range(len(predictor_example_invocations)):
                             trace_instance = predictor_example_invocations[rollout_idx][group_idx]
                             score = trace_instance[3]
+                            teacher_ind = trace_instance[4]
                             # for module_invocation_idx, trace_instance in enumerate(trace_instances_for_current_pred):
                             # Each trace is a tuple of (Predictor, PredictorInputs, Prediction)
-                            trace_pred_id = pred_signature_hash_to_ind.get(hash(trace_instance[0].signature))
-                            assert trace_pred_id == pred_id
+                            trace_pred_id = teacher_pred_signature_hash_to_ind[teacher_ind].get(hash(trace_instance[0].signature))
+                            assert trace_pred_id == pred_id, f"Predictor {trace_instance[0].signature} not found in teacher {teacher_ind}"
 
-                            predictor = trace_instance[0]
+                            predictor = student.predictors()[pred_id] # trace_instance[0]
                             pred_lm = predictor.lm
                             adapter = self.adapter[pred_lm] or settings.adapter or ChatAdapter()
                             assert isinstance(adapter, ChatAdapter), f"Adapter {adapter} is not a ChatAdapter. GRPO training is not supported for this adapter."
@@ -530,7 +557,7 @@ class GRPO(FinetuneTeleprompter):
                             # TODO(GRPO Team): Use build_call_data_from_trace (from bootstrap_finetune) instead of
                             # dealing with the message formatting ourselves.
                             inp_messages = adapter.format(
-                                signature=trace_instance[0].signature, 
+                                signature=predictor.signature, 
                                 inputs=trace_instance[1], 
                                 demos=predictor.demos if not self.exclude_demos else [] # TODO: Add support for demos
                             )
@@ -548,7 +575,7 @@ class GRPO(FinetuneTeleprompter):
                                 logger.warning(f"Adding a format failure example to the training data for predictor {pred_id} and example {example_ind}.")
                             else:
                                 all_messages = adapter.format_finetune_data(
-                                    signature=trace_instance[0].signature,
+                                    signature=predictor.signature,
                                     inputs=trace_instance[1],
                                     outputs=trace_instance[2],
                                     demos=predictor.demos if not self.exclude_demos else [] # TODO: Add support for demos
