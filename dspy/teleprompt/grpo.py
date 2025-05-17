@@ -1,4 +1,5 @@
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import random
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
@@ -299,8 +300,8 @@ class GRPO(FinetuneTeleprompter):
         subsample_training_dataset: List[Example],
         num_gens_per_teacher: List[int],
     ) -> List[List[List[Dict[str, Any]]]]:
-        trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
-        for tind, teacher in enumerate(teachers):
+        def teacher_round_data(tind: int) -> List[Dict[str, Any]]:
+            teacher = teachers[tind]
             subsample_training_dataset_repeated = [example for _ in range(num_gens_per_teacher[tind]) for example in subsample_training_dataset]
             round_data = bootstrap_trace_data(
                 program=teacher,
@@ -312,10 +313,19 @@ class GRPO(FinetuneTeleprompter):
                 failure_score=self.failure_score,
                 format_failure_score=self.format_failure_score,
             )
-            for data_dict in round_data:
-                example_ind_in_subsample = data_dict['example_ind'] % len(subsample_training_dataset)
-                data_dict["example_ind"] = example_ind_in_subsample
-                trace_data[example_ind_in_subsample][tind].append(data_dict)
+            return round_data
+
+        trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
+
+        with ThreadPoolExecutor(max_workers=len(teachers)) as executor:
+            futures = [executor.submit(teacher_round_data, tind) for tind in range(len(teachers))]
+            for tind, future in enumerate(futures):
+                round_data = future.result()
+                for data_dict in round_data:
+                    example_ind_in_subsample = data_dict['example_ind'] % len(subsample_training_dataset)
+                    data_dict["example_ind"] = example_ind_in_subsample
+                    trace_data[example_ind_in_subsample][tind].append(data_dict)
+
         return trace_data
 
     def compile(
