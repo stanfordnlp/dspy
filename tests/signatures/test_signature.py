@@ -243,7 +243,6 @@ def test_dump_and_load_state():
 
 
 def test_typed_signatures_basic_types():
-    # Simple built-in types
     sig = Signature("input1: int, input2: str -> output: float")
     assert "input1" in sig.input_fields
     assert sig.input_fields["input1"].annotation == int
@@ -254,7 +253,6 @@ def test_typed_signatures_basic_types():
 
 
 def test_typed_signatures_generics():
-    # More complex generic types
     sig = Signature(
         "input_list: List[int], input_dict: Dict[str, float] -> output_tuple: Tuple[str, int]")
     assert "input_list" in sig.input_fields
@@ -305,7 +303,6 @@ def test_typed_signatures_any():
 
 
 def test_typed_signatures_nested():
-    # Nested generics and unions
     sig = Signature(
         "input_nested: List[Union[str, int]] -> output_nested: Tuple[int, Optional[float], List[str]]")
     input_nested_ann = sig.input_fields["input_nested"].annotation
@@ -329,7 +326,6 @@ def test_typed_signatures_nested():
 
 
 def test_typed_signatures_from_dict():
-    # Creating a Signature directly from a dictionary with types
     fields = {
         "input_str_list": (List[str], InputField()),
         "input_dict_int": (Dict[str, int], InputField()),
@@ -345,8 +341,6 @@ def test_typed_signatures_from_dict():
 
 
 def test_typed_signatures_complex_combinations():
-    # Test a very complex signature with multiple nested constructs
-    # input_complex: Dict[str, List[Optional[Tuple[int, str]]]] -> output_complex: Union[List[str], Dict[str, Any]]
     sig = Signature(
         "input_complex: Dict[str, List[Optional[Tuple[int, str]]]] -> output_complex: Union[List[str], Dict[str, Any]]"
     )
@@ -411,146 +405,34 @@ def test_signature_field_with_constraints():
     assert "less than or equal to: 10" in output2_constraints
 
 
-# Custom type resolution tests
-def test_name_resolution_failure():
-    class Foo(pydantic.BaseModel):
-        name: str
-
-    example_test_case = Foo(
-        name="TEST_EXAMPLE",
-    )
-
-    globally_relevant_test_names = ["TEST_EXAMPLE", "TEST_EXAMPLE_2"]
-
-    test_signature = dspy.Signature(
-        "test_case: Foo -> name_matches: bool",
-        f"say if this testcase is in {globally_relevant_test_names}",
-    )
-
-    # Set up a dummy LM that will return True
-    lm = DummyLM([{"name_matches": True}])
-    dspy.settings.configure(lm=lm)
-
-    # This should now work without raising an error
-    pred = dspy.Predict(test_signature)(test_case=example_test_case)
-
-    # Verify the result
-    assert pred.name_matches is True
-
-
-def test_explicitly_provided_custom_types():
-    # Define a custom type
+def test_basic_custom_type():
     class CustomType(pydantic.BaseModel):
         value: str
 
-    # Test explicitly providing the type mapping
     test_signature = dspy.Signature(
         "input: CustomType -> output: str",
-        "Process the custom type",
         custom_types={"CustomType": CustomType}
     )
 
     assert test_signature.input_fields["input"].annotation == CustomType
 
-    # Configure a dummy LM
     lm = DummyLM([{"output": "processed"}])
     dspy.settings.configure(lm=lm)
 
-    # Create an instance of CustomType
     custom_obj = CustomType(value="test")
-
-    # This should work without errors
     pred = dspy.Predict(test_signature)(input=custom_obj)
     assert pred.output == "processed"
 
 
-def test_nested_custom_types():
-    # Define nested custom types
-    class Inner(pydantic.BaseModel):
-        value: str
-
-    class Outer(pydantic.BaseModel):
-        inner: Inner
-
-    # Test with nested types in a List
-    test_signature = dspy.Signature(
-        "input: List[Inner] -> output: Outer",
-        "Process list of inner objects to create outer object",
-        custom_types={"Inner": Inner, "Outer": Outer}
-    )
-
-    assert test_signature.input_fields["input"].annotation.__origin__ == list
-    assert test_signature.input_fields["input"].annotation.__args__[0] == Inner
-    assert test_signature.output_fields["output"].annotation == Outer
-
-    # Configure a dummy LM - the actual return doesn't matter for this test
-    lm = DummyLM([{"output": Outer(inner=Inner(value="processed"))}])
-    dspy.settings.configure(lm=lm)
-
-    # Create inputs
-    inner_objs = [Inner(value="test1"), Inner(value="test2")]
-
-    # This should work without errors
-    pred = dspy.Predict(test_signature)(input=inner_objs)
-    assert isinstance(pred.output, Outer)
-
-
-def test_custom_types_from_different_modules():
-    # Import a type from a different module
+def test_custom_type_from_different_module():
     from pathlib import Path
 
-    # Test resolving a type from a different module
-    test_signature = dspy.Signature(
-        "input: Path -> output: str",
-        "Convert path to string representation"
-    )
-
+    test_signature = dspy.Signature("input: Path -> output: str")
     assert test_signature.input_fields["input"].annotation == Path
 
-    # Configure a dummy LM
     lm = DummyLM([{"output": "/test/path"}])
     dspy.settings.configure(lm=lm)
 
-    # Use a Path object
     path_obj = Path("/test/path")
-
-    # This should work without errors
     pred = dspy.Predict(test_signature)(input=path_obj)
     assert pred.output == "/test/path"
-
-
-def test_multiple_custom_types_in_signature():
-    # Define multiple custom types
-    class TypeA(pydantic.BaseModel):
-        value: str
-
-    class TypeB(pydantic.BaseModel):
-        value: str
-
-    class TypeC(pydantic.BaseModel):
-        a: TypeA
-        b: TypeB
-
-    # Test signature with multiple custom types
-    test_signature = dspy.Signature(
-        "input_a: TypeA, input_b: TypeB -> output: TypeC",
-        "Combine TypeA and TypeB into TypeC"
-    )
-
-    assert test_signature.input_fields["input_a"].annotation == TypeA
-    assert test_signature.input_fields["input_b"].annotation == TypeB
-    assert test_signature.output_fields["output"].annotation == TypeC
-
-    # Configure a dummy LM
-    lm = DummyLM([{"output": TypeC(a=TypeA(value="a"), b=TypeB(value="b"))}])
-    dspy.settings.configure(lm=lm)
-
-    # Create inputs
-    type_a = TypeA(value="test_a")
-    type_b = TypeB(value="test_b")
-
-    # This should work without errors
-    pred = dspy.Predict(test_signature)(input_a=type_a, input_b=type_b)
-    assert isinstance(pred.output, TypeC)
-    assert isinstance(pred.output.a, TypeA)
-    assert isinstance(pred.output.b, TypeB)

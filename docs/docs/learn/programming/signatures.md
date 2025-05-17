@@ -157,6 +157,46 @@ Prediction(
 )
 ```
 
+## Type Resolution in Signatures
+
+DSPy signatures support various annotation types:
+
+1. **Basic types** like `str`, `int`, `bool`
+2. **Typing module types** like `List[str]`, `Dict[str, int]`, `Optional[float]`
+3. **Custom types** defined in your code
+4. **Dot notation** for nested types with proper configuration
+5. **Special data types** like `dspy.Image`
+
+### Working with Custom Types
+
+```python
+# Simple custom type
+class QueryResult(pydantic.BaseModel):
+    text: str
+    score: float
+
+# Automatic resolution - works in the same scope
+signature = dspy.Signature("query: str -> result: QueryResult")
+
+# Nested types with dot notation
+class Container:
+    class NestedType(pydantic.BaseModel):
+        value: str
+
+# Approach 1: Type aliases (recommended)
+NestedResult = Container.NestedType
+signature = dspy.Signature("query: str -> result: NestedResult")
+
+# Approach 2: Explicit custom_types parameter
+signature = dspy.Signature(
+    "query: str -> result: Container.NestedType",
+    custom_types={
+        "Container": Container,
+        "Container.NestedType": Container.NestedType
+    }
+)
+```
+
 ## Using signatures to build modules & compiling them
 
 While signatures are convenient for prototyping with structured inputs/outputs, that's not the only reason to use them!

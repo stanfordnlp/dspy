@@ -51,34 +51,76 @@ class SignatureMeta(type(BaseModel)):
 
     @staticmethod
     def _detect_custom_types_from_caller(signature_str):
-        """Detect custom types from the caller's frame based on the signature string."""
+        """Detect custom types from the caller's frame based on the signature string.
+        
+        Note: This method relies on Python's frame introspection which has some limitations:
+        1. May not work in all Python implementations (e.g., compiled with optimizations)
+        2. Looks up a limited number of frames in the call stack
+        3. Cannot find types that are imported but not in the caller's namespace
+        
+        For more reliable custom type resolution, explicitly provide types using the 
+        `custom_types` parameter when creating a Signature.
+        """
         import inspect
         import re
-
-        # Get the caller's frame
-        # Two levels back to skip _detect_custom_types_from_caller and __call__
-        caller_frame = inspect.currentframe().f_back.f_back
-        if not caller_frame:
-            return None
+        import sys
 
         # Extract potential type names from the signature string
         type_names = re.findall(r':\s*([A-Za-z_][A-Za-z0-9_]*)', signature_str)
         if not type_names:
             return None
 
-        # Get caller's namespaces
-        caller_locals = caller_frame.f_locals
-        caller_globals = caller_frame.f_globals
+        # Get type references from caller frames by walking the stack
         found_types = {}
+        
+        # Filter to only the types we need to find
+        # Skip built-in types and typing module types
+        needed_types = set()
         for type_name in type_names:
-            # This ignores if you override a built-in type or typing module type.
-            if type_name in typing.__dict__ or type_name in __builtins__:
-                continue
-
-            if type_name in caller_locals:
-                found_types[type_name] = caller_locals[type_name]
-            elif type_name in caller_globals:
-                found_types[type_name] = caller_globals[type_name]
+            if type_name not in typing.__dict__ and type_name not in __builtins__:
+                needed_types.add(type_name)
+        
+        if not needed_types:
+            return None
+            
+        # Walk the call stack looking for the types
+        try:
+            frame = sys._getframe(1)  # Start one level up (skip this function)
+            # We look up to 5 frames up the call stack:
+            # 1: Inside _detect_custom_types_from_caller (skipped with sys._getframe(1))
+            # 2: The __call__ method in SignatureMeta
+            # 3: The caller of Signature (e.g., user's code creating a signature)
+            # 4-5: Potential wrapper functions around the user code (decorators, etc.)
+            max_frames = 5
+            
+            while frame and max_frames > 0:
+                # Check frame locals and globals for the types
+                for type_name in needed_types.copy():  # Copy so we can modify during iteration
+                    if type_name in frame.f_locals:
+                        found_types[type_name] = frame.f_locals[type_name]
+                        needed_types.remove(type_name)
+                    elif frame.f_globals and type_name in frame.f_globals:
+                        found_types[type_name] = frame.f_globals[type_name]
+                        needed_types.remove(type_name)
+                
+                # If we found all needed types, stop looking
+                if not needed_types:
+                    break
+                    
+                # Move up one frame
+                frame = frame.f_back
+                max_frames -= 1
+                
+                # Explicitly delete the reference when done with it
+                if not frame or not needed_types:
+                    del frame
+        except (AttributeError, ValueError):
+            # Handle environments where frame introspection is not available
+            import logging
+            logging.getLogger("dspy").debug(
+                "Frame introspection failed while trying to resolve custom types. "
+                "Consider providing custom_types explicitly to Signature."
+            )
 
         return found_types or None
 
