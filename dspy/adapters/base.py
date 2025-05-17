@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Any, Optional, Type
 
 from dspy.adapters.types import History
-from dspy.adapters.types.image import try_expand_image_tags
+from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 
@@ -141,7 +141,7 @@ class Adapter:
             content = self.format_user_message_content(signature, inputs_copy, main_request=True)
             messages.append({"role": "user", "content": content})
 
-        messages = try_expand_image_tags(messages)
+        messages = split_message_content_for_custom_types(messages)
         return messages
 
     def format_field_description(self, signature: Type[Signature]) -> str:

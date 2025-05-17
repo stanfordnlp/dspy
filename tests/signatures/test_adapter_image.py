@@ -449,11 +449,15 @@ def test_pdf_from_file():
 def test_image_repr():
     """Test string representation of Image objects"""
     url_image = dspy.Image.from_url("https://example.com/dog.jpg", download=False)
-    assert str(url_image) == "<DSPY_IMAGE_START>https://example.com/dog.jpg<DSPY_IMAGE_END>"
+    assert str(url_image) == (
+        "<<CUSTOM-TYPE-START-IDENTIFIER>>"
+        "[{'type': 'image_url', 'image_url': {'url': 'https://example.com/dog.jpg'}}]"
+        "<<CUSTOM-TYPE-END-IDENTIFIER>>"
+    )
     assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
     pil_image = dspy.Image.from_PIL(sample_pil)
-    assert str(pil_image).startswith("<DSPY_IMAGE_START>data:image/png;base64,")
-    assert str(pil_image).endswith("<DSPY_IMAGE_END>")
+    assert str(pil_image).startswith("<<CUSTOM-TYPE-START-IDENTIFIER>>[{'type': 'image_url',")
+    assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
     assert "base64" in str(pil_image)
