@@ -65,37 +65,44 @@ class SignatureMeta(type(BaseModel)):
         import re
         import sys
 
-        # Extract potential type names from the signature string
-        type_names = re.findall(r':\s*([A-Za-z_][A-Za-z0-9_]*)', signature_str)
+        # Extract potential type names from the signature string, including dotted names
+        # Match both simple types like 'MyType' and dotted names like 'Module.Type'
+        type_pattern = r':\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)'
+        type_names = re.findall(type_pattern, signature_str)
         if not type_names:
             return None
 
         # Get type references from caller frames by walking the stack
         found_types = {}
         
-        # Filter to only the types we need to find
-        # Skip built-in types and typing module types
         needed_types = set()
+        dotted_types = {}
+        
         for type_name in type_names:
-            if type_name not in typing.__dict__ and type_name not in __builtins__:
-                needed_types.add(type_name)
+            parts = type_name.split('.')
+            base_name = parts[0]
+            
+            if base_name not in typing.__dict__ and base_name not in __builtins__:
+                if len(parts) > 1:
+                    dotted_types[type_name] = base_name
+                    needed_types.add(base_name)
+                else:
+                    needed_types.add(type_name)
         
         if not needed_types:
             return None
             
-        # Walk the call stack looking for the types
+        frame = None
         try:
             frame = sys._getframe(1)  # Start one level up (skip this function)
-            # We look up to 5 frames up the call stack:
-            # 1: Inside _detect_custom_types_from_caller (skipped with sys._getframe(1))
-            # 2: The __call__ method in SignatureMeta
-            # 3: The caller of Signature (e.g., user's code creating a signature)
-            # 4-5: Potential wrapper functions around the user code (decorators, etc.)
-            max_frames = 5
             
-            while frame and max_frames > 0:
-                # Check frame locals and globals for the types
-                for type_name in needed_types.copy():  # Copy so we can modify during iteration
+            max_frames = 100
+            frame_count = 0
+            
+            while frame and needed_types and frame_count < max_frames:
+                frame_count += 1
+                
+                for type_name in list(needed_types):
                     if type_name in frame.f_locals:
                         found_types[type_name] = frame.f_locals[type_name]
                         needed_types.remove(type_name)
@@ -107,13 +114,14 @@ class SignatureMeta(type(BaseModel)):
                 if not needed_types:
                     break
                     
-                # Move up one frame
                 frame = frame.f_back
-                max_frames -= 1
                 
-                # Explicitly delete the reference when done with it
-                if not frame or not needed_types:
-                    del frame
+            if needed_types and frame_count >= max_frames:
+                import logging
+                logging.getLogger("dspy").warning(
+                    f"Reached maximum frame search depth ({max_frames}) while looking for types: {needed_types}. "
+                    "Consider providing custom_types explicitly to Signature."
+                )
         except (AttributeError, ValueError):
             # Handle environments where frame introspection is not available
             import logging
@@ -121,6 +129,9 @@ class SignatureMeta(type(BaseModel)):
                 "Frame introspection failed while trying to resolve custom types. "
                 "Consider providing custom_types explicitly to Signature."
             )
+        finally:
+            if frame:
+                del frame
 
         return found_types or None
 
@@ -541,10 +552,16 @@ def _parse_type_node(node, names=None) -> Any:
     if isinstance(node, ast.Attribute):
         base = _parse_type_node(node.value, names)
         attr_name = node.attr
+        
         if hasattr(base, attr_name):
             return getattr(base, attr_name)
-        else:
-            raise ValueError(f"Unknown attribute: {attr_name} on {base}")
+        
+        if isinstance(node.value, ast.Name):
+            full_name = f"{node.value.id}.{attr_name}"
+            if full_name in names:
+                return names[full_name]
+        
+        raise ValueError(f"Unknown attribute: {attr_name} on {base}")
 
     if isinstance(node, ast.Subscript):
         base_type = _parse_type_node(node.value, names)

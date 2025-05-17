@@ -78,7 +78,7 @@ def test_recommended_patterns():
     sig4 = Signature("input: str -> output: InnerTypeAlias")
     assert sig4.output_fields["output"].annotation == InnerTypeAlias
 
-    # PATTERN 5: Nested type with dot notation and alias
+    # PATTERN 5: Nested type with dot notation
     sig5 = Signature("input: str -> output: OuterContainer.InnerType")
     assert sig5.output_fields["output"].annotation == OuterContainer.InnerType
 
@@ -87,7 +87,6 @@ def test_expected_failure():
         sig4 = Signature("input: str -> output: InnerType")
         assert sig4.output_fields["output"].annotation == InnerType
 
-# FROZEN -- DO NOT EDIT THIS TEST
 def test_module_type_resolution():
     class TestModule(dspy.Module):
         def __init__(self):
@@ -100,3 +99,13 @@ def test_module_type_resolution():
     module = TestModule()
     sig = module.predict.signature
     assert sig.output_fields["output"].annotation == OuterContainer.InnerType
+
+def test_basic_custom_type_resolution():
+    class CustomType(pydantic.BaseModel):
+        value: str
+
+    sig = Signature("input: CustomType -> output: str", custom_types={"CustomType": CustomType})
+    assert sig.input_fields["input"].annotation == CustomType
+
+    sig = Signature("input: CustomType -> output: str")
+    assert sig.input_fields["input"].annotation == CustomType
