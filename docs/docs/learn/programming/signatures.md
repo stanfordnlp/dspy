@@ -32,6 +32,13 @@ Your signatures can also have multiple input/output fields with types:
 
 **Tip:** For fields, any valid variable names work! Field names should be semantically meaningful, but start simple and don't prematurely optimize keywords! Leave that kind of hacking to the DSPy compiler. For example, for summarization, it's probably fine to say `"document -> summary"`, `"text -> gist"`, or `"long_context -> tldr"`.
 
+You can also add instructions to your inline signature, which can use variables at runtime. Use the `instructions` keyword argument to add instructions to your signature.
+
+```python
+toxicity = dspy.Predict(
+    'comment -> toxic: bool',
+    instructions="Mark as 'toxic' if the comment includes insults, harassment, or sarcastic derogatory remarks.")
+```
 
 ### Example A: Sentiment Classification
 
@@ -162,10 +169,10 @@ Prediction(
 DSPy signatures support various annotation types:
 
 1. **Basic types** like `str`, `int`, `bool`
-2. **Typing module types** like `List[str]`, `Dict[str, int]`, `Optional[float]`
+2. **Typing module types** like `List[str]`, `Dict[str, int]`, `Optional[float]`. `Union[str, int]`
 3. **Custom types** defined in your code
 4. **Dot notation** for nested types with proper configuration
-5. **Special data types** like `dspy.Image`
+5. **Special data types** like `dspy.Image, dspy.History`
 
 ### Working with Custom Types
 
@@ -175,26 +182,15 @@ class QueryResult(pydantic.BaseModel):
     text: str
     score: float
 
-# Automatic resolution - works in the same scope
 signature = dspy.Signature("query: str -> result: QueryResult")
 
-# Nested types with dot notation
 class Container:
-    class NestedType(pydantic.BaseModel):
-        value: str
+    class Query(pydantic.BaseModel):
+        text: str
+    class Score(pydantic.BaseModel):
+        score: float
 
-# Approach 1: Type aliases (recommended)
-NestedResult = Container.NestedType
-signature = dspy.Signature("query: str -> result: NestedResult")
-
-# Approach 2: Explicit custom_types parameter
-signature = dspy.Signature(
-    "query: str -> result: Container.NestedType",
-    custom_types={
-        "Container": Container,
-        "Container.NestedType": Container.NestedType
-    }
-)
+signature = dspy.Signature("query: Container.Query -> score: Container.Score")
 ```
 
 ## Using signatures to build modules & compiling them

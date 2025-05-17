@@ -34,6 +34,15 @@ def test_type_alias_for_nested_types():
     alias_sig = Signature("input: str -> output: NestedType")
     assert alias_sig.output_fields["output"].annotation == Container.NestedType
 
+    class Container2:
+        class Query(pydantic.BaseModel):
+            text: str
+        class Score(pydantic.BaseModel):
+            score: float
+
+    signature = dspy.Signature("query: Container2.Query -> score: Container2.Score")
+    assert signature.output_fields["score"].annotation == Container2.Score
+
 
 class GlobalCustomType(pydantic.BaseModel):
     """A type defined at module level for testing module-level resolution."""
@@ -83,6 +92,7 @@ def test_recommended_patterns():
     assert sig5.output_fields["output"].annotation == OuterContainer.InnerType
 
 def test_expected_failure():
+    # InnerType DNE when not OuterContainer.InnerTypes, so this type shouldnt be resolved
     with pytest.raises(ValueError):
         sig4 = Signature("input: str -> output: InnerType")
         assert sig4.output_fields["output"].annotation == InnerType
