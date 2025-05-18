@@ -1,6 +1,5 @@
 import json
 import logging
-import traceback
 from typing import Any, Dict, Type, get_origin
 
 import json_repair
@@ -60,7 +59,6 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            logger.debug(traceback.format_exc(e))
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             try:
                 lm_kwargs["response_format"] = {"type": "json_object"}
@@ -125,9 +123,8 @@ class JSONAdapter(ChatAdapter):
         if match:
             completion = match.group(0)
         fields = json_repair.loads(completion)
-
         if not isinstance(fields, dict):
-            if len(signature.output_fields) == 1:
+            if isinstance(fields, list) and len(signature.output_fields) == 1:
                 field_name = next(iter(signature.output_fields.keys()))
                 fields = {field_name: fields}
             else:
