@@ -58,7 +58,7 @@ class JSONAdapter(ChatAdapter):
             structured_output_model = _get_structured_outputs_response_format(signature)
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
+        except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             try:
                 lm_kwargs["response_format"] = {"type": "json_object"}
