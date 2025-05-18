@@ -36,8 +36,11 @@ You can also add instructions to your inline signature, which can use variables 
 
 ```python
 toxicity = dspy.Predict(
-    'comment -> toxic: bool',
-    instructions="Mark as 'toxic' if the comment includes insults, harassment, or sarcastic derogatory remarks.")
+    dspy.Signature(
+        "comment -> toxic: bool",
+        instructions="Mark as 'toxic' if the comment includes insults, harassment, or sarcastic derogatory remarks.",
+    )
+)
 ```
 
 ### Example A: Sentiment Classification
