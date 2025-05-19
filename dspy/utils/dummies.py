@@ -121,9 +121,9 @@ class DummyLM(LM):
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-            entry = dict(prompt=prompt, messages=messages, kwargs=kwargs)
-            entry = dict(**entry, outputs=outputs, usage=0)
-            entry = dict(**entry, cost=0)
+            entry = {"prompt": prompt, "messages": messages, "kwargs": kwargs}
+            entry = {**entry, "outputs": outputs, "usage": 0}
+            entry = {**entry, "cost": 0}
             self.history.append(entry)
             self.update_global_history(entry)
 
@@ -141,7 +141,7 @@ def dummy_rm(passages=()) -> callable:
     if not passages:
 
         def inner(query: str, *, k: int, **kwargs):
-            assert False, "No passages defined"
+            raise ValueError("No passages defined")
 
         return inner
     max_length = max(map(len, passages)) + 100
@@ -153,8 +153,8 @@ def dummy_rm(passages=()) -> callable:
         query_vec = vectorizer([query])[0]
         scores = passage_vecs @ query_vec
         largest_idx = (-scores).argsort()[:k]
-        # return dspy.Prediction(passages=[passages[i] for i in largest_idx])
-        return [dotdict(dict(long_text=passages[i])) for i in largest_idx]
+
+        return [dotdict(long_text=passages[i]) for i in largest_idx]
 
     return inner
 

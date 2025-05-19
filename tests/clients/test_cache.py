@@ -1,5 +1,4 @@
-import os
-import shutil
+from dataclasses import dataclass
 from unittest.mock import patch
 
 import pydantic
@@ -8,7 +7,6 @@ from cachetools import LRUCache
 from diskcache import FanoutCache
 
 from dspy.clients.cache import Cache
-from dataclasses import dataclass
 
 
 @dataclass

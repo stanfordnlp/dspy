@@ -2,11 +2,12 @@ import base64
 import io
 import mimetypes
 import os
-from typing import Any
-from ..types.custom_type import CustomType
+from typing import Any, Union
 
 import pydantic
 import requests
+
+from dspy.adapters.types.base_type import BaseType
 
 try:
     import soundfile as sf
@@ -16,7 +17,12 @@ except ImportError:
     SF_AVAILABLE = False
 
 
-class Audio(pydantic.BaseModel, CustomType):
+class Audio(BaseType):
+    """
+    Encode audio to dict with 'data' and 'format'.
+    
+    Accepts: local file path, URL, data URI, dict, Audio instance, numpy array, or bytes (with known format).
+    """
     data: str
     format: str
 
@@ -25,11 +31,9 @@ class Audio(pydantic.BaseModel, CustomType):
         "extra": "forbid",
     }
 
-    def _format(self) -> list[dict[str, Any]]:
+    def format(self) -> Union[list[dict[str, Any]], str]:
         try:
             data = self.data
-            if isinstance(data, str) and "<DSPY_AUDIO_START>" in data and "<DSPY_AUDIO_END>" in data:
-                data = data.split("<DSPY_AUDIO_START>", 1)[-1].split("<DSPY_AUDIO_END>", 1)[0]
         except Exception as e:
             raise ValueError(f"Failed to format audio for DSPy: {e}")
         return [{
@@ -47,9 +51,9 @@ class Audio(pydantic.BaseModel, CustomType):
         """
         Validate input for Audio, expecting 'data' and 'format' keys in dictionary.
         """
-        if isinstance(values, dict) and {"data", "format"} <= set(values.keys()):
-            return values
-        raise TypeError("Expected dict with keys 'data' and 'format'.")
+        if isinstance(values, cls):
+            return {"data": values.data, "format": values.format}
+        return encode_audio(values) 
 
     @classmethod
     def from_url(cls, url: str) -> "Audio":
@@ -105,13 +109,37 @@ class Audio(pydantic.BaseModel, CustomType):
         encoded_data = base64.b64encode(byte_buffer.getvalue()).decode("utf-8")
         return cls(data=encoded_data, format=format)
 
-    @pydantic.model_serializer()
-    def serialize_model(self) -> str:
-        return f"<DSPY_AUDIO_START>{self.data}<DSPY_AUDIO_END>"
-
     def __str__(self) -> str:
         return self.serialize_model()
 
     def __repr__(self) -> str:
         length = len(self.data)
         return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, format='{self.format}')"
+
+def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
+    if isinstance(audio, dict) and "data" in audio and "format" in audio:
+        return audio
+    elif isinstance(audio, Audio):
+        return {"data": audio.data, "format": audio.format}
+    elif isinstance(audio, str) and audio.startswith("data:audio/"):
+        try:
+            header, b64data = audio.split(",", 1)
+            mime = header.split(";")[0].split(":")[1]
+            audio_format = mime.split("/")[1]
+            return {"data": b64data, "format": audio_format}
+        except Exception as e:
+            raise ValueError(f"Malformed audio data URI: {e}")
+    elif isinstance(audio, str) and os.path.isfile(audio):
+        a = Audio.from_file(audio)
+        return {"data": a.data, "format": a.format}
+    elif isinstance(audio, str) and audio.startswith("http"):
+        a = Audio.from_url(audio)
+        return {"data": a.data, "format": a.format}
+    elif SF_AVAILABLE and hasattr(audio, "shape"):
+        a = Audio.from_array(audio, sampling_rate=sampling_rate, format=format)
+        return {"data": a.data, "format": a.format}
+    elif isinstance(audio, bytes):
+        encoded = base64.b64encode(audio).decode("utf-8")
+        return {"data": encoded, "format": format}
+    else:
+        raise ValueError(f"Unsupported type for encode_audio: {type(audio)}")

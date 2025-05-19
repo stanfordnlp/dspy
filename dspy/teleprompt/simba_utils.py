@@ -1,12 +1,13 @@
-import dspy
-import ujson
 import inspect
 import logging
 import textwrap
+from typing import Callable
 
+import ujson
+
+import dspy
 from dspy.adapters.utils import get_field_description_string
 from dspy.signatures import InputField, OutputField
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ def append_a_demo(demo_input_field_maxlen):
 
         logger.info(f"Added {len(name2demo)} demos (one each) across all predictors.")
         return True
-    
+
     return append_a_demo_
 
 
@@ -97,27 +98,27 @@ def append_a_rule(bucket, system, **kwargs):
             good["prediction"] = {"N/A": "Prediction not available"}
 
     better_trajectory = [
-        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
+        {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
         for p, i, o in good["trace"]
     ]
     worse_trajectory = [
-        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
+        {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
         for p, i, o in bad["trace"]
     ]
 
-    kwargs = dict(
-        program_code=inspect.getsource(system.__class__),
-        modules_defn=inspect_modules(system),
-        program_inputs={**example.inputs()},
-        oracle_metadata={**example.labels()},
-        better_program_trajectory=better_trajectory,
-        better_program_outputs=dict(good["prediction"]),
-        worse_program_trajectory=worse_trajectory,
-        worse_program_outputs=dict(bad["prediction"] or {}),
-        worse_reward_value=bad["score"],
-        better_reward_value=good["score"],
-        module_names=module_names,
-    )
+    kwargs = {
+        "program_code": inspect.getsource(system.__class__),
+        "modules_defn": inspect_modules(system),
+        "program_inputs": {**example.inputs()},
+        "oracle_metadata": {**example.labels()},
+        "better_program_trajectory": better_trajectory,
+        "better_program_outputs": dict(good["prediction"]),
+        "worse_program_trajectory": worse_trajectory,
+        "worse_program_outputs": dict(bad["prediction"] or {}),
+        "worse_reward_value": bad["score"],
+        "better_reward_value": good["score"],
+        "module_names": module_names,
+    }
 
     kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
               for k, v in kwargs.items()}
@@ -174,7 +175,7 @@ def inspect_modules(program):
     separator = "-" * 80
     output = [separator]
 
-    for idx, (name, predictor) in enumerate(program.named_predictors()):
+    for name, predictor in program.named_predictors():
         signature = predictor.signature
         instructions = textwrap.dedent(signature.instructions)
         instructions = ("\n" + "\t" * 2).join([""] + instructions.splitlines())
