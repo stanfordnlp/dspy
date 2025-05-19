@@ -19,14 +19,14 @@ except ImportError:
 
 class Audio(BaseType):
     data: str
-    format: str
+    audio_format: str
 
     model_config = {
         "frozen": True,
         "extra": "forbid",
     }
 
-    def format(self) -> Union[list[dict[str, Any]], str]:
+    def format(self) -> list[dict[str, Any]]:
         try:
             data = self.data
         except Exception as e:
@@ -35,7 +35,7 @@ class Audio(BaseType):
             "type": "input_audio",
             "input_audio": {
                 "data": data,
-                "format": self.format
+                "format": self.audio_format
             }
         }]
 
@@ -109,7 +109,7 @@ class Audio(BaseType):
 
     def __repr__(self) -> str:
         length = len(self.data)
-        return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, format='{self.format}')"
+        return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, format='{self.audio_format}')"
 
 def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
     """
