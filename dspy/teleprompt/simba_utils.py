@@ -81,6 +81,8 @@ def append_a_demo(demo_input_field_maxlen):
         predictor2name, name2predictor = kwargs["predictor2name"], kwargs["name2predictor"]
         batch_10p_score = kwargs["batch_10p_score"]
 
+        logger.info(f"Appending a demo with max length {demo_input_field_maxlen}")
+        
         good = bucket[0]
         trace = good["trace"]
         name2demo = {}

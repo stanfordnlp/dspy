@@ -151,7 +151,7 @@ class SIMBAFast(Teleprompter):
         instance_idx = 0
 
         # Parallel runner
-        print("Creating parallel runner with num_threads: ", self.num_threads)
+        logger.info("Creating parallel runner with num_threads: ", self.num_threads)
         run_parallel = dspy.Parallel(access_examples=False, num_threads=self.num_threads)
 
         trial_logs = {}
@@ -359,7 +359,7 @@ class SIMBAFast(Teleprompter):
                 full_outputs = run_parallel(exec_pairs)
                 scores = [o["score"] for o in full_outputs]
                 avg_score = sum(scores) / len(scores)
-                print(f"Batch {batch_idx+1}: Full trainset score: {avg_score}")
+                logger.info(f"Batch {batch_idx+1}: Full trainset score: {avg_score}")
                 trial_logs[batch_idx + 1]["train_score"] = avg_score
 
                 final_candidate_programs.append(best_program.deepcopy())
