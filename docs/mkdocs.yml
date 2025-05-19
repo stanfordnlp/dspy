@@ -34,7 +34,7 @@ nav:
             - Multi-Hop RAG: tutorials/multihop_search/index.ipynb
             - Privacy-Conscious Delegation: tutorials/papillon/index.md
             - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
-            - Image Generation Prompt iteration: tutorials/audio/index.ipynb
+            - Audio: tutorials/audio/index.ipynb
         - Optimize AI Programs with DSPy:
             - Overview: tutorials/optimize_ai_program/index.md
             - Math Reasoning: tutorials/math/index.ipynb
