@@ -18,11 +18,6 @@ except ImportError:
 
 
 class Audio(BaseType):
-    """
-    Encode audio to dict with 'data' and 'format'.
-    
-    Accepts: local file path, URL, data URI, dict, Audio instance, numpy array, or bytes (with known format).
-    """
     data: str
     format: str
 
@@ -117,6 +112,11 @@ class Audio(BaseType):
         return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, format='{self.format}')"
 
 def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
+    """
+    Encode audio to a dict with 'data' and 'format'.
+    
+    Accepts: local file path, URL, data URI, dict, Audio instance, numpy array, or bytes (with known format).
+    """
     if isinstance(audio, dict) and "data" in audio and "format" in audio:
         return audio
     elif isinstance(audio, Audio):
