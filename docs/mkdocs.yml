@@ -1,6 +1,6 @@
 site_name: DSPy
 site_description: The framework for programming—rather than prompting—language models.
-site_url: https://dspy.ai
+site_url: https://dspy.ai/
 
 repo_url: https://github.com/stanfordnlp/dspy
 repo_name: stanfordnlp/dspy
@@ -262,4 +262,4 @@ markdown_extensions:
         emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 copyright: |
-    &copy; 2024 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">Stanford NLP</a>
+    &copy; 2025 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>
