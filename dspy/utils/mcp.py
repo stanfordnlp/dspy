@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Tuple, Type, Union
 
-from dspy.primitives.tool import Tool, resolve_json_schema_reference
+from dspy.adapters.types.tool import Tool, resolve_json_schema_reference
 
 if TYPE_CHECKING:
     import mcp

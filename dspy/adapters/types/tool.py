@@ -140,7 +140,7 @@ class Tool(BaseType):
                 parsed_kwargs[k] = v
         return parsed_kwargs
 
-    def format(self, **kwargs):
+    def format(self):
         return [
             {
                 "type": "function",
@@ -194,6 +194,11 @@ class Tool(BaseType):
         desc = f", whose description is <desc>{self.desc}</desc>.".replace("\n", "  ") if self.desc else "."
         arg_desc = f"It takes arguments {self.args} in JSON format."
         return f"{self.name}{desc} {arg_desc}"
+
+
+class ToolCall(BaseType):
+    name: str
+    args: dict[str, Any]
 
 
 def resolve_json_schema_reference(schema: dict) -> dict:
