@@ -100,13 +100,18 @@ class CodeAct(ReAct, ProgramOfThought):
             code_data = self.codeact(trajectory=trajectory, **kwargs)
             output = None
             code, error = self._parse_code(code_data)
-            if not error:
-                output, error = self._execute_code(code)
 
-                trajectory[f"generated_code_{idx}"] = code
+            if error:
+                trajectory[f"observation_{idx}"] = f"Failed to parse the generated code: {error}"
+                continue
+
+            trajectory[f"generated_code_{idx}"] = code
+            output, error = self._execute_code(code)
+
+            if not error:
                 trajectory[f"code_output_{idx}"] = output
             else:
-                trajectory[f"observation_{idx}"] = f"Execution error in {error}"
+                trajectory[f"observation_{idx}"] = f"Failed to execute the generated code: {error}"
             
             if code_data.finished:
                 break

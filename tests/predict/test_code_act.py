@@ -17,11 +17,9 @@ class BasicQA(Signature):
     question = dspy.InputField()
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 
-
 def add(a: float, b: float) -> float:
     "add two numbers"
     return a + b
-
 
 @skip_if_deno_not_available
 def test_codeact_code_generation():
@@ -77,6 +75,67 @@ def test_codeact_support_multiple_fields():
         'generated_code_0': "result = extract_maximum_minimum('2, 3, 5, 6')\nprint(result)",
     }
     assert program.interpreter.deno_process is None
+
+
+@skip_if_deno_not_available
+def test_codeact_code_parse_failure():
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\nparse(error\n```",
+                "finished": False,
+            },
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\nresult = add(1,1)\nprint(result)\n```",
+                "finished": True,
+            },
+            {"reasoning": "Reason_B", "answer": "2"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+    program = CodeAct(BasicQA, tools=[add])
+    res = program(question="What is 1+1?")
+    assert res.answer == "2"
+    assert res.trajectory == {
+        'generated_code_0': 'parse(error',
+        'observation_0': 'Failed to execute the generated code: Invalid Python syntax. message: ',
+        'generated_code_1': 'result = add(1,1)\nprint(result)',
+        'code_output_1': '"2\\n"',
+    }
+    assert program.interpreter.deno_process is None
+
+
+@skip_if_deno_not_available
+def test_codeact_code_execution_failure():
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\nunknown+1\n```",
+                "finished": False,
+            },
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\nresult = add(1,1)\nprint(result)\n```",
+                "finished": True,
+            },
+            {"reasoning": "Reason_B", "answer": "2"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+    program = CodeAct(BasicQA, tools=[add])
+    res = program(question="What is 1+1?")
+    assert res.answer == "2"
+    assert res.trajectory == {
+        'generated_code_0': 'unknown+1',
+        'observation_0': 'Failed to execute the generated code: NameError: ["name \'unknown\' is not defined"]',
+        'generated_code_1': 'result = add(1,1)\nprint(result)',
+        'code_output_1': '"2\\n"',
+    }
+    assert program.interpreter.deno_process is None
+
 
 class CustomTool:
     def __call__(self, a: float, b: float) -> float:

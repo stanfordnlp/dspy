@@ -47,7 +47,7 @@ class ReAct(Module):
 
         for idx, tool in enumerate(tools.values()):
             instr.append(f"({idx + 1}) {tool}")
-        instr.append("You should pass the tool argument in JSON format")
+        instr.append("When providing `next_tool_args`, the value inside the field must be in JSON format")
 
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
