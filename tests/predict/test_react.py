@@ -387,3 +387,13 @@ def test_tool_call_state_management():
         "observation_3": "Completed.",
     }
     assert outputs.trajectory == expected_trajectory
+
+
+def test_duplicate_tools():
+    def add(a: int, b: int) -> int:
+        return a + b
+    
+    react = dspy.ReAct("question -> answer", tools=[add])
+
+    with pytest.raises(ValueError, match="Duplicate tools found: add."):
+        react(question="what is 1+1?", additional_tools=[add])

@@ -46,7 +46,10 @@ class ReAct(Module):
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
             .append("trajectory", dspy.InputField(), type_=str)
-            .append("tools", dspy.InputField(desc="Tools you select from when selecting the next_tool_name and its next_tool_args"), type_=list[str])
+            .append("tools", dspy.InputField(
+                desc="A list of tools you select from to gather information when selecting the next_tool_name and next_tool_args. "
+                    "Each tool includes its name, description and input parameters in JSON schema."
+                ), type_=list[str])
             .append("next_thought", dspy.OutputField(), type_=str)
             .append("next_tool_name", dspy.OutputField(), type_=str)
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
@@ -64,7 +67,13 @@ class ReAct(Module):
     def forward(self, additional_tools: Optional[list[Callable]] = None, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        tools = self.tools | self._convert_tools(additional_tools)
+        additional_tools = self._convert_tools(additional_tools)
+        if duplicate_tools := set(self.tools) & set(additional_tools):
+            raise ValueError(
+                f"Duplicate tools found: {', '.join(duplicate_tools)}."
+                "Overwriting the existing tools is not allowed."
+            )
+        tools = self.tools | additional_tools
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(
@@ -95,7 +104,13 @@ class ReAct(Module):
     async def aforward(self, additional_tools: Optional[list[Callable]] = None, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        tools = self.tools | self._convert_tools(additional_tools)
+        additional_tools = self._convert_tools(additional_tools)
+        if duplicate_tools := set(self.tools) & set(additional_tools):
+            raise ValueError(
+                f"Duplicate tools found: {', '.join(duplicate_tools)}."
+                "Overwriting the existing tools is not allowed."
+            )
+        tools = self.tools | additional_tools
         for idx in range(max_iters):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(
@@ -174,7 +189,7 @@ class ReAct(Module):
         return {tool.name: tool for tool in tools}
     
     def _format_tools_string(self, tools: dict[str, Tool]) -> list[str]:
-        """Format the tools into a list of string."""
+        """Format the tools into a list of strings."""
         return [f"({idx + 1}) {tool}" for idx, tool in enumerate(tools.values())]
 
 
