@@ -37,7 +37,7 @@ class TrainingJob(Future):
 
 class ReinforceJob:
     def __init__(self, lm: "LM", train_kwargs: Optional[Dict[str, Any]] = None):
-        self.lm = LM
+        self.lm = lm
         self.train_kwargs = train_kwargs or {}
         self.checkpoints = {}
         self.last_checkpoint = None
