@@ -62,7 +62,6 @@ dev = [
     "build>=1.0.3",
     "litellm>=1.60.3; sys_platform == 'win32'",
     "litellm[proxy]>=1.60.3; sys_platform != 'win32'",
-    "mcp>=1.5.0; python_version >= '3.10'",
 ]
 mcp = ["mcp; python_version >= '3.10'"]
 
