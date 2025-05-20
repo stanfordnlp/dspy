@@ -16,7 +16,7 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
-        cache=False,
+        cache=True,
     )
     with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
 
