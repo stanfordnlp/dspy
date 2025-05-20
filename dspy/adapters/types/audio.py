@@ -48,7 +48,7 @@ class Audio(BaseType):
         """
         if isinstance(values, cls):
             return {"data": values.data, "format": values.format}
-        return encode_audio(values) 
+        return encode_audio(values)
 
     @classmethod
     def from_url(cls, url: str) -> "Audio":

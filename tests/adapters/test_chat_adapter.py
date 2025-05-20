@@ -1,10 +1,10 @@
 from typing import Literal
 from unittest import mock
 
+import pydantic
 import pytest
 
 import dspy
-import pydantic
 
 
 @pytest.mark.parametrize(

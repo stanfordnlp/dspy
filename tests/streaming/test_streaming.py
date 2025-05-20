@@ -1,12 +1,12 @@
 import os
+from unittest import mock
+from unittest.mock import AsyncMock
 
 import pytest
+from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
 from dspy.streaming import StatusMessage, StatusMessageProvider, streaming_response
-from unittest import mock
-from unittest.mock import AsyncMock
-from litellm.types.utils import ModelResponseStream, StreamingChoices, Delta
 
 
 @pytest.mark.anyio
