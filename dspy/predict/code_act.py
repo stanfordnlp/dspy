@@ -18,7 +18,7 @@ class CodeAct(ReAct, ProgramOfThought):
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
     """
 
-    def __init__(self, signature: Union[str, Type[Signature]], tools: list[Callable], max_iters=5):
+    def __init__(self, signature: Union[str, Type[Signature]], tools: list[Callable], max_iters: int = 5):
         """
         Initializes the CodeAct class with the specified model, temperature, and max tokens.
 
@@ -55,7 +55,7 @@ class CodeAct(ReAct, ProgramOfThought):
         codeact_signature = (
             dspy.Signature({**self.signature.input_fields}, "\n".join(instructions))
             .append("trajectory", dspy.InputField(), type_=str)
-            .append("generated_code", dspy.OutputField(desc="python code that answers the question"), type_=str)
+            .append("generated_code", dspy.OutputField(desc="Python code that when executed, produces output relevant to answering the question"), type_=str)
             .append("finished", dspy.OutputField(desc="a boolean flag to determine if the process is done"), type_=bool)
         )
 
