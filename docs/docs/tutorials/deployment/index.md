@@ -146,9 +146,14 @@ Let's spin up the MLflow tracking server, where we will store our DSPy program. 
 ```
 
 Then we can define the DSPy program and log it to the MLflow server. "log" is an overloaded term in MLflow, basically it means
-we store the program information along with environment requirements in the MLflow server. This is done via the `mlflow.dspy.log_model()` function which takes a custom `dspy.Module` object along with a model signature that defines the expected schema for model inputs and outputs.
+we store the program information along with environment requirements in the MLflow server. This is done via the `mlflow.dspy.log_model()`
+function, please see the code below:
 
-See the code below:
+> [!NOTE]
+> As of MLflow 2.22.0, there is a caveat that you must wrap your DSPy program in a custom DSPy Module class when deploying with MLflow.
+> This is because MLflow requires positional arguments while DSPy pre-built modules disallow positional arguments, e.g., `dspy.Predict`
+> or `dspy.ChainOfThought`. To work around this, create a wrapper class that inherits from `dspy.Module` and implement your program's
+> logic in the `forward()` method, as shown in the example below.
 
 ```python
 import dspy
@@ -160,15 +165,15 @@ mlflow.set_experiment("deploy_dspy_program")
 lm = dspy.LM("openai/gpt-4o-mini")
 dspy.settings.configure(lm=lm)
 
-class CoT(dspy.Module):
+class MyProgram(dspy.Module):
     def __init__(self):
         super().__init__()
-        self.prog = dspy.ChainOfThought("question -> answer")
+        self.cot = dspy.ChainOfThought("question -> answer")
 
     def forward(self, question):
-        return self.prog(question=question)
+        return self.cot(question=question)
 
-dspy_program = CoT()
+dspy_program = MyProgram()
 
 with mlflow.start_run():
     mlflow.dspy.log_model(
