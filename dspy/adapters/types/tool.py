@@ -19,6 +19,14 @@ class Tool(BaseType):
     functions for now.
     """
 
+    func: Callable
+    name: Optional[str] = None
+    desc: Optional[str] = None
+    args: Optional[dict[str, Any]] = None
+    arg_types: Optional[dict[str, Any]] = None
+    arg_desc: Optional[dict[str, str]] = None
+    has_kwargs: bool = False
+
     def __init__(
         self,
         func: Callable,
@@ -56,15 +64,7 @@ class Tool(BaseType):
         # Expected output: {'x': {'type': 'integer'}, 'y': {'type': 'string', 'default': 'hello'}}
         ```
         """
-        super().__init__()  # Initialize the Pydantic BaseModel
-        self.func = func
-        self.name = name
-        self.desc = desc
-        self.args = args
-        self.arg_types = arg_types
-        self.arg_desc = arg_desc
-        self.has_kwargs = False
-
+        super().__init__(func=func, name=name, desc=desc, args=args, arg_types=arg_types, arg_desc=arg_desc)
         self._parse_function(func, arg_desc)
 
     def _parse_function(self, func: Callable, arg_desc: Optional[dict[str, str]] = None):
@@ -141,17 +141,7 @@ class Tool(BaseType):
         return parsed_kwargs
 
     def format(self):
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": self.name,
-                    "description": self.desc,
-                    "parameters": self.args,
-                    "requirements": "Arguments must be provided in JSON format.",
-                },
-            }
-        ]
+        return str(self)
 
     @with_callbacks
     def __call__(self, **kwargs):
@@ -199,6 +189,13 @@ class Tool(BaseType):
 class ToolCall(BaseType):
     name: str
     args: dict[str, Any]
+
+    @classmethod
+    def description(cls) -> str:
+        return (
+            "Tool call information, including the name of the tool and the arguments to be passed to it. "
+            "Arguments must be provided in JSON format."
+        )
 
 
 def resolve_json_schema_reference(schema: dict) -> dict:
