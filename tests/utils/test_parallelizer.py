@@ -1,5 +1,7 @@
 import time
+
 import pytest
+
 from dspy.utils.parallelizer import ParallelExecutor
 
 

@@ -1,11 +1,13 @@
-import dspy
-import threading
-from dspy.utils.dummies import DummyLM
 import logging
-from unittest.mock import patch
-import pytest
 import os
 from litellm import ModelResponse, Message, Choices
+import threading
+from unittest.mock import patch
+
+import pytest
+
+import dspy
+from dspy.utils.dummies import DummyLM
 
 
 def test_deepcopy_basic():

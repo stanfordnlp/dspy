@@ -11,10 +11,10 @@ from asyncer import syncify
 import dspy
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
-from dspy.clients.provider import Provider, TrainingJob
+from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
-from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.callback import BaseCallback
 
 from .base_lm import BaseLM
 
@@ -31,7 +31,7 @@ class LM(BaseLM):
         model: str,
         model_type: Literal["chat", "text"] = "chat",
         temperature: float = 0.0,
-        max_tokens: int = 1000,
+        max_tokens: int = 4000,
         cache: bool = True,
         cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
@@ -70,7 +70,6 @@ class LM(BaseLM):
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
         self.history = []
-        self.callbacks = callbacks or []
         self.num_retries = num_retries
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
@@ -114,7 +113,6 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    @with_callbacks
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
@@ -132,11 +130,19 @@ class LM(BaseLM):
             cache=litellm_cache_args,
         )
 
+        if any(c.finish_reason == "length" for c in results["choices"]):
+            logger.warning(
+                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
+                "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
+                f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
+                " if the reason for truncation is repetition."
+            )
+
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
-    @with_callbacks
     async def aforward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
@@ -153,6 +159,15 @@ class LM(BaseLM):
             num_retries=self.num_retries,
             cache=litellm_cache_args,
         )
+
+        if any(c.finish_reason == "length" for c in results["choices"]):
+            logger.warning(
+                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
+                "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
+                f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
+                " if the reason for truncation is repetition."
+            )
 
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
@@ -172,10 +187,6 @@ class LM(BaseLM):
     ) -> TrainingJob:
         from dspy import settings as settings
 
-        err = "Fine-tuning is an experimental feature."
-        err += " Set `dspy.settings.experimental` to `True` to use it."
-        assert settings.experimental, err
-
         err = f"Provider {self.provider} does not support fine-tuning."
         assert self.provider.finetunable, err
 
@@ -194,6 +205,17 @@ class LM(BaseLM):
         )
         thread.start()
 
+        return job
+
+    def reinforce(self, train_kwargs) -> ReinforceJob:
+        # TODO(GRPO Team): Should we return an initialized job here?
+        from dspy import settings as settings
+
+        err = f"Provider {self.provider} does not implement the reinforcement learning interface."
+        assert self.provider.reinforceable, err
+
+        job = self.provider.ReinforceJob(lm=self, train_kwargs=train_kwargs)
+        job.initialize()
         return job
 
     def _run_finetune_job(self, job: TrainingJob):
@@ -275,7 +297,8 @@ def _get_stream_completion_fn(
         return async_stream_completion
 
 
-def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+def litellm_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
@@ -288,7 +311,8 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cac
     return stream_completion()
 
 
-def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -313,7 +337,8 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
     )
 
 
-async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
@@ -326,9 +351,8 @@ async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={
     return await stream_completion()
 
 
-async def alitellm_text_completion(
-    request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}
-):
+async def alitellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
     model = request.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 

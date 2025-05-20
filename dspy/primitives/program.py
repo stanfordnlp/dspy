@@ -91,32 +91,6 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def inspect_history(self, n: int = 1):
         return pretty_print_history(self.history, n)
 
-    # def activate_assertions(self, handler=backtrack_handler, **handler_args):
-    #     """
-    #     Activates assertions for the module.
-    #     The default handler is the backtrack_handler.
-    #     """
-    #     assert_transform_module(self, handler, **handler_args)
-    #     return self
-
-    # def __deepcopy__(self, memo):
-    #     # memo is a dict of id's to copies already made during the current call
-    #     # Check if the object is already copied
-    #     if id(self) in memo:
-    #         return memo[id(self)]
-
-    #     print(f"Deep copying {self.__class__.__name__}...")
-
-    #     new_copy = copy.copy(self)
-    #     memo[id(self)] = new_copy
-
-    #     for k, v in self.__dict__.items():
-    #         print(f"Copying attribute {k} of type {type(v)}...")
-    #         setattr(new_copy, k, copy.deepcopy(v, memo))
-    #         print("Done")
-
-    #     return new_copy
-
     def batch(
         self,
         examples,
