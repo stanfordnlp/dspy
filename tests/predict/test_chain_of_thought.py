@@ -1,8 +1,8 @@
+import pytest
+
 import dspy
 from dspy import ChainOfThought
 from dspy.utils import DummyLM
-
-import pytest
 
 
 def test_initialization_with_string_signature():

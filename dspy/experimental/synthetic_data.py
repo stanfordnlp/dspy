@@ -45,15 +45,19 @@ class SyntheticDataGenerator:
 
         Returns:
             dict: dictionary of fields to generate
-        """  # noqa: D205
+        """
         if self.schema_class:
             data_schema = self.schema_class.model_json_schema()
-            properties = data_schema['properties']
+            properties = data_schema["properties"]
         elif self.examples:
-            inferred_schema = self.examples[0].__dict__['_store']
+            inferred_schema = self.examples[0].__dict__["_store"]
             descriptor = dspy.Predict(DescriptionSignature)
-            properties = {field: {'description': str((descriptor(field_name=field, example=str(inferred_schema[field]))).description)}
-                          for field in inferred_schema.keys()}
+            properties = {
+                field: {
+                    "description": str((descriptor(field_name=field, example=str(inferred_schema[field]))).description)
+                }
+                for field in inferred_schema.keys()
+            }
         else:
             properties = {}
         return properties
@@ -75,17 +79,22 @@ class SyntheticDataGenerator:
         generator = dspy.Predict(signature_class, n=additional_samples_needed)
         response = generator(sindex=str(random.randint(1, additional_samples_needed)))
 
-        return [dspy.Example({field_name: getattr(completion, field_name) for field_name in properties.keys()})
-                for completion in response.completions]
+        return [
+            dspy.Example({field_name: getattr(completion, field_name) for field_name in properties.keys()})
+            for completion in response.completions
+        ]
 
     def _prepare_fields(self, properties) -> dict:
         """Prepare fields to generate in an appropriate format."""
         return {
-            '__doc__': f"Generates the following outputs: {{{', '.join(properties.keys())}}}.",
-            'sindex': dspy.InputField(desc="a random string"),
-            **{field_name: dspy.OutputField(desc=properties[field_name].get('description', 'No description'))
-               for field_name in properties.keys()},
+            "__doc__": f"Generates the following outputs: {{{', '.join(properties.keys())}}}.",
+            "sindex": dspy.InputField(desc="a random string"),
+            **{
+                field_name: dspy.OutputField(desc=properties[field_name].get("description", "No description"))
+                for field_name in properties.keys()
+            },
         }
+
 
 # # Usage example
 # # Generating synthetic data via a pydantic model

@@ -1,7 +1,8 @@
 import pytest
+
 import dspy
-from dspy.propose.grounded_proposer import GroundedProposer
 from dspy.predict import Predict
+from dspy.propose.grounded_proposer import GroundedProposer
 from dspy.utils.dummies import DummyLM
 
 

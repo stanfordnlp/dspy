@@ -1,8 +1,8 @@
 import signal
 import threading
 from unittest.mock import patch
-import pandas as pd
 
+import pandas as pd
 import pytest
 
 import dspy
@@ -31,7 +31,7 @@ def test_evaluate_initialization():
     assert ev.devset == devset
     assert ev.metric == answer_exact_match
     assert ev.num_threads is None
-    assert ev.display_progress == False
+    assert not ev.display_progress
 
 
 def test_evaluate_call():
@@ -75,7 +75,7 @@ def test_construct_result_df():
                 "pred_answer": ["2", "4"],
                 "answer_exact_match": [100.0, 100.0],
             }
-        )
+        ),
     )
 
 
@@ -200,6 +200,7 @@ def test_evaluate_display_table(program_with_example, display_table, is_in_ipyth
             example_input = next(iter(example.inputs().values()))
             assert example_input in out
 
+
 def test_evaluate_callback():
     class TestCallback(BaseCallback):
         def __init__(self):
@@ -216,12 +217,12 @@ def test_evaluate_callback():
         ):
             self.start_call_inputs = inputs
             self.start_call_count += 1
-        
+
         def on_evaluate_end(
             self,
             call_id: str,
             outputs,
-            exception = None,
+            exception=None,
         ):
             self.end_call_outputs = outputs
             self.end_call_count += 1
@@ -234,7 +235,7 @@ def test_evaluate_callback():
                 "What is 2+2?": {"answer": "4"},
             }
         ),
-        callbacks=[callback]
+        callbacks=[callback],
     )
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")

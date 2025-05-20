@@ -139,7 +139,7 @@ class BetterTogether(Teleprompter):
         # predictor.lm attributes. In particular,
         # BootstrapFewShotWithRandomSearch seems to be resetting these. We are
         # manually re-setting the LMs here to circumvent this issue, but we
-        # should consider adressing it in BFRS.
+        # should consider addressing it in BFRS.
         logger.info("Compiling the prompt optimizer...")
         pred_lms = [pred.lm for pred in student.predictors()]
         student = self.prompt_optimizer.compile(student, trainset=prompt_trainset, valset=prompt_valset)

@@ -184,6 +184,11 @@ def _inspect_history(history, n: int = 1):
                             else:
                                 image_str = f"<image_url: {c['image_url']['url']}>"
                             print(_blue(image_str.strip()))
+                        elif c["type"] == "input_audio":
+                            audio_format = c["input_audio"]["format"]
+                            len_audio = len(c["input_audio"]["data"])
+                            audio_str = f"<audio format='{audio_format}' base64-encoded, length={len_audio}>"
+                            print(_blue(audio_str.strip()))
             print("\n")
 
         print(_red("Response:"))

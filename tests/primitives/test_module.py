@@ -1,10 +1,12 @@
-import dspy
-import threading
-from dspy.utils.dummies import DummyLM
 import logging
-from unittest.mock import patch
-import pytest
 import os
+import threading
+from unittest.mock import patch
+
+import pytest
+
+import dspy
+from dspy.utils.dummies import DummyLM
 
 
 def test_deepcopy_basic():
@@ -241,5 +243,5 @@ def test_usage_tracker_in_parallel():
     assert results[0].get_lm_usage() is not None
     assert results[1].get_lm_usage() is not None
 
-    assert results[0].get_lm_usage().keys() == set(["openai/gpt-4o-mini"])
-    assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
+    assert results[0].get_lm_usage().keys() == {"openai/gpt-4o-mini"}
+    assert results[1].get_lm_usage().keys() == {"openai/gpt-3.5-turbo"}

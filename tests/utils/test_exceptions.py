@@ -1,7 +1,5 @@
-import pytest
-from dspy.utils.exceptions import AdapterParseError
-from dspy.signatures.signature import Signature
 import dspy
+from dspy.utils.exceptions import AdapterParseError
 
 
 def test_adapter_parse_error_basic():

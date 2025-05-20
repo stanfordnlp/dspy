@@ -1,6 +1,7 @@
-from unittest.mock import patch
-import pytest
 import shutil
+from unittest.mock import patch
+
+import pytest
 
 import dspy
 from dspy import ProgramOfThought, Signature

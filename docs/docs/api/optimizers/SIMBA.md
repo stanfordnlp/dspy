@@ -1,13 +1,12 @@
-# dspy.Tool
+# dspy.SIMBA
 
 <!-- START_API_REF -->
-::: dspy.Tool
+::: dspy.SIMBA
     handler: python
     options:
         members:
-            - __call__
-            - acall
-            - from_mcp_tool
+            - compile
+            - get_params
         show_source: true
         show_root_heading: true
         heading_level: 2
@@ -17,3 +16,13 @@
         separate_signature: false
         inherited_members: true
 <!-- END_API_REF -->
+
+## Example Usage
+
+```python
+optimizer = dspy.SIMBA(metric=your_metric)
+optimized_program = optimizer.compile(your_program, trainset=your_trainset)
+
+# Save optimize program for future use
+optimized_program.save(f"optimized.json")
+```

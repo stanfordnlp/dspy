@@ -1,9 +1,9 @@
 import threading
-from typing import Any, List, Tuple, Optional
+from typing import Any, List, Optional, Tuple
 
+from dspy.dsp.utils.settings import settings
 from dspy.primitives.example import Example
 from dspy.utils.parallelizer import ParallelExecutor
-from dspy.dsp.utils.settings import settings
 
 
 class Parallel:

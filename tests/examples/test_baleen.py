@@ -1,8 +1,7 @@
-import pytest
-from dspy.dsp.utils import deduplicate
-import dspy.evaluate
 import dspy
+import dspy.evaluate
 from dspy.datasets import HotPotQA
+from dspy.dsp.utils import deduplicate
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.bootstrap import BootstrapFewShot
 
@@ -27,9 +26,7 @@ class SimplifiedBaleen(dspy.Module):
     def __init__(self, passages_per_hop=3, max_hops=2):
         super().__init__()
 
-        self.generate_query = [
-            dspy.ChainOfThought(GenerateSearchQuery) for _ in range(max_hops)
-        ]
+        self.generate_query = [dspy.ChainOfThought(GenerateSearchQuery) for _ in range(max_hops)]
         self.retrieve = dspy.Retrieve(k=passages_per_hop)
         self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
         self.max_hops = max_hops
@@ -48,9 +45,7 @@ class SimplifiedBaleen(dspy.Module):
 
 def load_hotpotqa():
     # Load the dataset.
-    dataset = HotPotQA(
-        train_seed=1, train_size=20, eval_seed=2023, dev_size=50, test_size=0
-    )
+    dataset = HotPotQA(train_seed=1, train_size=20, eval_seed=2023, dev_size=50, test_size=0)
     # Tell DSPy that the 'question' field is the input. Any other fields are labels and/or metadata.
     trainset = [x.with_inputs("question") for x in dataset.train]
     devset = [x.with_inputs("question") for x in dataset.dev]
@@ -80,16 +75,11 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
     if not dspy.evaluate.answer_passage_match(example, pred):
         return False
 
-    hops = [example.question] + [
-        outputs.query for *_, outputs in trace if "query" in outputs
-    ]
+    hops = [example.question] + [outputs.query for *_, outputs in trace if "query" in outputs]
 
     if max([len(h) for h in hops]) > 100:
         return False
-    if any(
-        dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8)
-        for idx in range(2, len(hops))
-    ):
+    if any(dspy.evaluate.answer_exact_match_str(hops[idx], hops[:idx], frac=0.8) for idx in range(2, len(hops))):
         return False
 
     return True
@@ -97,9 +87,7 @@ def validate_context_and_answer_and_hops(example, pred, trace=None):
 
 def gold_passages_retrieved(example, pred, trace=None):
     gold_titles = set(map(dspy.evaluate.normalize_text, example["gold_titles"]))
-    found_titles = set(
-        map(dspy.evaluate.normalize_text, [c.split(" | ")[0] for c in pred.context])
-    )
+    found_titles = set(map(dspy.evaluate.normalize_text, [c.split(" | ")[0] for c in pred.context]))
 
     return gold_titles.issubset(found_titles)
 
@@ -121,16 +109,12 @@ def _test_compiled_baleen():
         trainset=trainset,
     )
 
-    evaluate_on_hotpotqa = Evaluate(
-        devset=devset, num_threads=1, display_progress=True, display_table=5
-    )
+    evaluate_on_hotpotqa = Evaluate(devset=devset, num_threads=1, display_progress=True, display_table=5)
     uncompiled_baleen_retrieval_score = evaluate_on_hotpotqa(
         uncompiled_baleen, metric=gold_passages_retrieved, display=False
     )
     # assert uncompiled_baleen_retrieval_score / 100 == 18 / 50
 
-    compiled_baleen_retrieval_score = evaluate_on_hotpotqa(
-        compiled_baleen, metric=gold_passages_retrieved
-    )
+    compiled_baleen_retrieval_score = evaluate_on_hotpotqa(compiled_baleen, metric=gold_passages_retrieved)
     # assert compiled_baleen_retrieval_score / 100 == 27 / 50
     assert uncompiled_baleen_retrieval_score < compiled_baleen_retrieval_score

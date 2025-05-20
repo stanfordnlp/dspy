@@ -35,7 +35,6 @@ class TrainingJob(Future):
         raise NotImplementedError
 
 
-
 class ReinforceJob:
     def __init__(self, lm: "LM", train_kwargs: Optional[Dict[str, Any]] = None):
         self.lm = LM
@@ -58,7 +57,7 @@ class ReinforceJob:
     @abstractmethod
     def update_model(self):
         raise NotImplementedError
-    
+
     @abstractmethod
     def save_checkpoint(self, checkpoint_name: str):
         raise NotImplementedError

@@ -1,8 +1,10 @@
+import asyncio
+from typing import Any, Optional
+
 import pytest
 from pydantic import BaseModel
+
 from dspy.primitives.tool import Tool
-from typing import Any, Optional
-import asyncio
 
 
 # Test fixtures
@@ -253,7 +255,10 @@ def test_tool_call_kwarg():
 
 def test_tool_str():
     tool = Tool(dummy_function)
-    assert str(tool) == "dummy_function, whose description is <desc>A dummy function for testing.        Args:          x: An integer parameter          y: A string parameter      </desc>. It takes arguments {'x': {'type': 'integer'}, 'y': {'type': 'string', 'default': 'hello'}} in JSON format."
+    assert (
+        str(tool)
+        == "dummy_function, whose description is <desc>A dummy function for testing.        Args:          x: An integer parameter          y: A string parameter      </desc>. It takes arguments {'x': {'type': 'integer'}, 'y': {'type': 'string', 'default': 'hello'}} in JSON format."
+    )
 
 
 @pytest.mark.asyncio
