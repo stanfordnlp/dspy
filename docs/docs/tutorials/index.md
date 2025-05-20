@@ -20,6 +20,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Multi-Hop RAG](/tutorials/multihop_search/)
     - [Privacy-Conscious Delegation](/tutorials/papillon/)
     - [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
+    - [Audio](/tutorials/audio/)
 
 
 - Optimize AI Programs with DSPy
@@ -29,9 +30,9 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Finetuning Agents](/tutorials/games/)
 
 - Tools, Development, and Deployment
-    - [Use MCP in DSPy](/tutorials/mcp/index.md)
+    - [Use MCP in DSPy](/tutorials/mcp/)
     - [Output Refinement](/tutorials/output_refinement/best-of-n-and-refine/)
-    - [Saving and Loading](/tutorials/saving/index.md)
+    - [Saving and Loading](/tutorials/saving/)
     - [Deployment](/tutorials/deployment/)
     - [Debugging & Observability](/tutorials/observability/)
     - [Streaming](/tutorials/streaming/)

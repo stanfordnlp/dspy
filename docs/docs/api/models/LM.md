@@ -16,6 +16,7 @@
             - inspect_history
             - kill
             - launch
+            - reinforce
             - update_global_history
         show_source: true
         show_root_heading: true

@@ -1,11 +1,11 @@
+import re
+
+import litellm
+import pytest
 from pydantic import BaseModel
 
-import re
 import dspy
-import litellm
-
 from dspy.utils.dummies import DummyLM
-import pytest
 
 
 def test_tool_calling_with_pydantic_args():
@@ -161,7 +161,7 @@ def test_trajectory_truncation():
 
 def test_error_retry():
     # --- a tiny tool that always fails -------------------------------------
-    def foo(a, b):  # noqa: D401, ANN001
+    def foo(a, b):
         raise Exception("tool error")
 
     # --- program under test -------------------------------------------------
@@ -288,7 +288,7 @@ async def test_async_tool_calling_with_pydantic_args():
 @pytest.mark.asyncio
 async def test_async_error_retry():
     # A tiny tool that always fails
-    async def foo(a, b):  # noqa: D401, ANN001
+    async def foo(a, b):
         raise Exception("tool error")
 
     react = dspy.ReAct("a, b -> c:int", tools=[foo])

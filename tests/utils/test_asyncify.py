@@ -1,7 +1,7 @@
-from time import time, sleep
 import asyncio
-
 import math
+from time import sleep, time
+
 import pytest
 
 import dspy
@@ -50,5 +50,3 @@ async def test_asyncify():
     await verify_asyncify(4, 10)
     await verify_asyncify(8, 15)
     await verify_asyncify(8, 30)
-
-

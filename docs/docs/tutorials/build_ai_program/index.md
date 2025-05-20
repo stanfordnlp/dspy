@@ -5,3 +5,4 @@
 - [Multi-Hop RAG](/tutorials/multihop_search/)
 - [Privacy-Conscious Delegation](/tutorials/papillon/)
 - [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
+- [Audio](/tutorials/audio/)

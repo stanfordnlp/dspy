@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 import dspy
-from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs
+from tests.test_utils.server import read_litellm_test_server_request_logs
 
 
 @pytest.fixture()
@@ -88,6 +88,7 @@ def test_lm_calls_are_cached_across_interpreter_sessions(litellm_test_server, te
         model="openai/dspy-test-model",
         api_base=api_base,
         api_key="fakekey",
+        max_tokens=1000,
     )
     lm1("Example query")
 
@@ -157,8 +158,8 @@ def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
 
 
 def test_lms_called_expected_number_of_times_for_cache_key_generation_failures():
-    with pytest.raises(Exception), patch("litellm.completion") as mock_completion:
-        mock_completion.side_effect = Exception("Mocked exception")
+    with pytest.raises(RuntimeError), patch("litellm.completion") as mock_completion:
+        mock_completion.side_effect = RuntimeError("Mocked exception")
         lm = dspy.LM(
             model="openai/dspy-test-model",
             api_base="fakebase",

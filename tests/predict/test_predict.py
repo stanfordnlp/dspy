@@ -1,6 +1,7 @@
 import copy
 import enum
 from datetime import datetime
+from unittest.mock import patch
 
 import pydantic
 import pytest
@@ -9,12 +10,11 @@ import os
 import time
 import asyncio
 import types
+from litellm import ModelResponse
 
 import dspy
 from dspy import Predict, Signature
 from dspy.utils.dummies import DummyLM
-from unittest.mock import patch, MagicMock, Mock
-from litellm import ModelResponse
 
 
 def test_initialization_with_string_signature():
@@ -393,7 +393,7 @@ def test_enum_inputs_and_outputs_with_shared_names_and_values():
 
 
 def test_auto_valued_enum_inputs_and_outputs():
-    Status = enum.Enum("Status", ["PENDING", "IN_PROGRESS", "COMPLETED"])
+    Status = enum.Enum("Status", ["PENDING", "IN_PROGRESS", "COMPLETED"])  # noqa: N806
 
     class StatusSignature(dspy.Signature):
         current_status: Status = dspy.InputField()
@@ -554,8 +554,8 @@ async def test_lm_usage_with_async():
         with patch(
             "litellm.acompletion",
             return_value=ModelResponse(
-            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
-            usage={"total_tokens": 10},
+                choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+                usage={"total_tokens": 10},
             ),
         ):
             tasks = []
