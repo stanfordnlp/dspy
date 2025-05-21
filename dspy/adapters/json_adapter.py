@@ -36,50 +36,6 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
-    def __call__(
-        self,
-        lm: LM,
-        lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
-        demos: list[dict[str, Any]],
-        inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        provider = lm.model.split("/", 1)[0] or "openai"
-        params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
-        # print(params)
-
-        # If response_format is not supported, use basic call
-        if not params or "response_format" not in params:
-            # print(f"Response format not supported for {lm.model}. Falling back to basic call.")
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-
-        # Check early for open-ended mapping types before trying structured outputs.
-        if _has_open_ended_mapping(signature):
-            # print(f"Open-ended mapping type found in signature. Falling back to basic call.")
-            lm_kwargs["response_format"] = {"type": "json_object"}
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-
-        # Try structured output first, fall back to basic JSON if it fails.
-        try:
-            # print(f"Using structured output format for {lm.model}.")
-            structured_output_model = _get_structured_outputs_response_format(signature)
-            lm_kwargs["response_format"] = structured_output_model
-            values = super().__call__(lm, lm_kwargs, signature, demos, inputs)
-            # print(f"Values: {values}")
-            return values
-        except Exception as e:
-            # print(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
-            logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
-            try:
-                # print(f"Using JSON mode for {lm.model}.")
-                lm_kwargs["response_format"] = {"type": "json_object"}
-                return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-            except Exception as e:
-                raise RuntimeError(
-                    "Both structured output format and JSON mode failed. Please choose a model that supports "
-                    f"`response_format` argument. Original error: {e}"
-                ) from e
-
     # def __call__(
     #     self,
     #     lm: LM,
@@ -88,42 +44,86 @@ class JSONAdapter(ChatAdapter):
     #     demos: list[dict[str, Any]],
     #     inputs: dict[str, Any],
     # ) -> list[dict[str, Any]]:
-    #     inputs = self.format(signature, demos, inputs)
-    #     inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
+    #     provider = lm.model.split("/", 1)[0] or "openai"
+    #     params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
+    #     # print(params)
 
-    #     # try:
-    #     #     provider = lm.model.split("/", 1)[0] or "openai"
-    #     #     params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
-    #     #     if params and "response_format" in params:
-    #     #         try:
-    #     #             response_format = _get_structured_outputs_response_format(signature)
-    #     #             outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
-    #     #         except Exception as e:
-    #     #             logger.debug(
-    #     #                 f"Failed to obtain response using signature-based structured outputs"
-    #     #                 f" response format: Falling back to default 'json_object' response format."
-    #     #                 f" Exception: {e}"
-    #     #             )
-    #     #             outputs = lm(**inputs, **lm_kwargs, response_format={"type": "json_object"})
-    #     #     else:
-    #     #         outputs = lm(**inputs, **lm_kwargs)
+    #     # If response_format is not supported, use basic call
+    #     if not params or "response_format" not in params:
+    #         # print(f"Response format not supported for {lm.model}. Falling back to basic call.")
+    #         return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
-    #     # except litellm.UnsupportedParamsError:
-    #     # print(f"formatted inputs: {inputs}")
-    #     # print(f"lm_kwargs: {lm_kwargs}")
-    #     # print("--------------------------------")
-    #     outputs = lm(**inputs, **lm_kwargs)
+    #     # Check early for open-ended mapping types before trying structured outputs.
+    #     if _has_open_ended_mapping(signature):
+    #         # print(f"Open-ended mapping type found in signature. Falling back to basic call.")
+    #         lm_kwargs["response_format"] = {"type": "json_object"}
+    #         return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
-    #     values = []
+    #     # Try structured output first, fall back to basic JSON if it fails.
+    #     try:
+    #         # print(f"Using structured output format for {lm.model}.")
+    #         structured_output_model = _get_structured_outputs_response_format(signature)
+    #         lm_kwargs["response_format"] = structured_output_model
+    #         values = super().__call__(lm, lm_kwargs, signature, demos, inputs)
+    #         # print(f"Values: {values}")
+    #         return values
+    #     except Exception as e:
+    #         # print(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
+    #         logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
+    #         try:
+    #             # print(f"Using JSON mode for {lm.model}.")
+    #             lm_kwargs["response_format"] = {"type": "json_object"}
+    #             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+    #         except Exception as e:
+    #             raise RuntimeError(
+    #                 "Both structured output format and JSON mode failed. Please choose a model that supports "
+    #                 f"`response_format` argument. Original error: {e}"
+    #             ) from e
 
-    #     for output in outputs:
-    #         value = self.parse(signature, output)
-    #         assert set(value.keys()) == set(
-    #             signature.output_fields.keys()
-    #         ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
-    #         values.append(value)
+    def __call__(
+        self,
+        lm: LM,
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        inputs = self.format(signature, demos, inputs)
+        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
+
+        # try:
+        #     provider = lm.model.split("/", 1)[0] or "openai"
+        #     params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
+        #     if params and "response_format" in params:
+        #         try:
+        #             response_format = _get_structured_outputs_response_format(signature)
+        #             outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
+        #         except Exception as e:
+        #             logger.debug(
+        #                 f"Failed to obtain response using signature-based structured outputs"
+        #                 f" response format: Falling back to default 'json_object' response format."
+        #                 f" Exception: {e}"
+        #             )
+        #             outputs = lm(**inputs, **lm_kwargs, response_format={"type": "json_object"})
+        #     else:
+        #         outputs = lm(**inputs, **lm_kwargs)
+
+        # except litellm.UnsupportedParamsError:
+        # print(f"formatted inputs: {inputs}")
+        # print(f"lm_kwargs: {lm_kwargs}")
+        # print("--------------------------------")
+        outputs = lm(**inputs, **lm_kwargs)
+
+        values = []
+
+        for output in outputs:
+            value = self.parse(signature, output)
+            assert set(value.keys()) == set(
+                signature.output_fields.keys()
+            ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
+            values.append(value)
         
-    #     return values
+        return values
     
     def format_field_structure(self, signature: Type[Signature]) -> str:
         parts = []
