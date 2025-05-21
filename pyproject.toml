@@ -36,7 +36,7 @@ dependencies = [
     "magicattr>=0.1.6",
     "litellm>=1.60.3",
     "diskcache>=5.6.0",
-    "json-repair>=0.30.0",
+    "json-repair>=0.30.0,<0.45.0",
     "tenacity>=8.2.3",
     "anyio",
     "asyncer==0.0.8",
