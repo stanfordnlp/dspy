@@ -51,6 +51,7 @@ dependencies = [
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 aws = ["boto3~=1.34.78"]
+mcp = ["mcp; python_version >= '3.10'"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
@@ -62,9 +63,10 @@ dev = [
     "build>=1.0.3",
     "litellm>=1.60.3; sys_platform == 'win32'",
     "litellm[proxy]>=1.60.3; sys_platform != 'win32'",
-    "mcp>=1.5.0; python_version >= '3.10'",
 ]
-mcp = ["mcp; python_version >= '3.10'"]
+test_extras = [
+    "mcp; python_version >= '3.10'",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
