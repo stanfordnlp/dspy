@@ -12,17 +12,19 @@ from typing import Callable, Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: Optional[Dict] = None):
+
+    models = []
+    if teacher_settings:
+        print(f"teacher_settings: {teacher_settings}")
+        with dspy.settings.context(trace=[], **teacher_settings):
+            lm = dspy.settings.lm
+            models.append(lm)
+
     lm = program.get_lm() or dspy.settings.lm
 
     # Check to see if our model is a reasoning model, which means temp must stay as 1.0
     model_family = lm.model.split("/")[-1].lower() if "/" in lm.model else lm.model.lower()
     model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
-
-    models = []
-    if teacher_settings:
-        with dspy.settings.context(trace=[], **teacher_settings):
-            lm = dspy.settings.lm
-            models.append(lm)
 
     if model_pattern: # Vary the seed
         start_seed = 0 if "seed" not in lm.kwargs else lm.kwargs["seed"]
@@ -34,6 +36,10 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings
         temps = [start_temp + 0.5 + i * (0.5 / n) for i in range(n-len(models))]
         temps = list(dict.fromkeys(temps))[:(n-len(models))]
         models.extend([lm.copy(temperature=t) for t in temps])
+    
+    print("Models:")
+    for model in models:
+        print(f"model: {model.model}, kwargs: {model.kwargs}")
     
     return models
 
@@ -87,8 +93,11 @@ def append_a_demo(demo_input_field_maxlen):
         trace = good["trace"]
         name2demo = {}
 
-        if good["score"] < batch_10p_score:
-            logger.info(f"Skipping appending a demo as good score {good['score']} is below the 10th percentile.")
+        # if good["score"] < batch_10p_score:
+        #     logger.info(f"Skipping appending a demo as good score {good['score']} is below the 10th percentile.")
+        #     return False
+        if good["score"] <= batch_10p_score:
+            logger.info(f"Skipping appending a demo as good score {good['score']} is at or below the 10th percentile.")
             return False
 
         for step in trace:
@@ -105,13 +114,14 @@ def append_a_demo(demo_input_field_maxlen):
             predictor = name2predictor[name]
             predictor.demos.append(demo)
 
-        logger.info(f"Added {len(name2demo)} demos (one each) across all predictors.")
+        logger.info(f"Added {len(name2demo)} demos (one each) across all predictors. Each predictor now has {len(predictor.demos)} demos total.")
         return True
     
     return append_a_demo_
 
 
 def append_a_rule(bucket, system, **kwargs):
+    # Read in kwargs
     predictor2name = kwargs["predictor2name"]
     batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
     prompt_model = kwargs["prompt_model"]
@@ -120,9 +130,13 @@ def append_a_rule(bucket, system, **kwargs):
     good, bad = bucket[0], bucket[-1]
     example = good["example"]
 
-    if good["score"] < batch_10p_score or bad["score"] > batch_90p_score:
-        logger.info(f"Skipping rule generation as good score {good['score']} is below the 10th percentile "
-                    f"*or* bad score {bad['score']} is above the 90th percentile.")
+    # if good["score"] < batch_10p_score or bad["score"] > batch_90p_score:
+    #     logger.info(f"Skipping rule generation as good score {good['score']} is below the 10th percentile "
+    #                 f"*or* bad score {bad['score']} is above the 90th percentile.")
+    #     return False
+    if good["score"] <= batch_10p_score or bad["score"] >= batch_90p_score:
+        logger.info(f"Skipping rule generation as good score {good['score']} is at or below the 10th percentile "
+                    f"*or* bad score {bad['score']} is at or above the 90th percentile.")
         return False
 
     if good["score"] <= bad["score"]:
@@ -163,8 +177,9 @@ def append_a_rule(bucket, system, **kwargs):
     kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
               for k, v in kwargs.items()}
 
-    advice_program = dspy.Predict(OfferFeedback)
-    advice = advice_program(**kwargs).module_advice
+    with dspy.settings.context(trace=[], lm=prompt_model):
+        advice_program = dspy.Predict(OfferFeedback)
+        advice = advice_program(**kwargs).module_advice
 
     for name, predictor in system.named_predictors():
         if name in advice:

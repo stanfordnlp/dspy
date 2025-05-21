@@ -151,7 +151,7 @@ class SIMBAFast(Teleprompter):
         instance_idx = 0
 
         # Parallel runner
-        logger.info("Creating parallel runner with num_threads: ", self.num_threads)
+        logger.info(f"Creating parallel runner with num_threads: {self.num_threads}")
         run_parallel = dspy.Parallel(access_examples=False, num_threads=self.num_threads)
 
         trial_logs = {}
