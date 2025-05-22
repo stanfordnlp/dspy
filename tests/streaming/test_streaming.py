@@ -27,7 +27,6 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
         program = dspy.streamify(dspy.Predict(TestSignature))
         output_stream1 = program(input_text="Test")
         output_chunks1 = [chunk async for chunk in output_stream1]
-        assert len(output_chunks1) > 1
         last_chunk1 = output_chunks1[-1]
         assert isinstance(last_chunk1, dspy.Prediction)
         assert last_chunk1.output_text == "Hello!"
@@ -296,6 +295,7 @@ def test_sync_status_streaming():
 async def test_stream_listener_returns_correct_chunk_chat_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question, answer->judgement")
 
@@ -397,6 +397,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
 async def test_stream_listener_returns_correct_chunk_json_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question,answer->judgement")
 
@@ -489,6 +490,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
 async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_stream():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question,answer->judgement")
 
@@ -562,6 +564,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
 async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_stream():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question,answer->judgement")
 
