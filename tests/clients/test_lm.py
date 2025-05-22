@@ -329,7 +329,7 @@ async def test_async_lm_call():
     with patch("litellm.acompletion") as mock_acompletion:
         mock_acompletion.return_value = mock_response
 
-        lm = dspy.LM(model="openai/gpt-4o-mini")
+        lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
         result = await lm.acall("question")
 
         assert result == ["answer"]
