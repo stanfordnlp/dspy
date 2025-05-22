@@ -324,7 +324,7 @@ def test_chat_adapter_with_tool():
         question: str = dspy.InputField()
         tools: list[dspy.Tool] = dspy.InputField()
         answer: str = dspy.OutputField()
-        tool_calls: list[dspy.ToolCall] = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
 
     def get_weather(city: str) -> str:
         """Get the weather for a city"""
@@ -342,7 +342,7 @@ def test_chat_adapter_with_tool():
     assert len(messages) == 2
 
     # The output field type description should be included in the system message even if the output field is nested
-    assert dspy.ToolCall.description() in messages[0]["content"]
+    assert dspy.ToolCalls.description() in messages[0]["content"]
 
     # The user message should include the question and the tools
     assert "What is the weather in Tokyo?" in messages[1]["content"]

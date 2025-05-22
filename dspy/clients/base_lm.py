@@ -49,16 +49,16 @@ class BaseLM:
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
-        if merged_kwargs.get("logprobs"):
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
-                }
-                for c in response.choices
-            ]
-        else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response.choices]
+
+        outputs = []
+        for c in response.choices:
+            output = {}
+            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+            if merged_kwargs.get("logprobs"):
+                output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+            if getattr(c.message, "tool_calls", None):
+                output["tool_calls"] = c.message.tool_calls
+            outputs.append(output)
 
         if settings.disable_history:
             return outputs
@@ -191,8 +191,14 @@ def _inspect_history(history, n: int = 1):
                             print(_blue(audio_str.strip()))
             print("\n")
 
-        print(_red("Response:"))
-        print(_green(outputs[0].strip()))
+        if outputs[0]["text"]:
+            print(_red("Response:"))
+            print(_green(outputs[0]["text"].strip()))
+
+        if outputs[0].get("tool_calls"):
+            print(_red("Tool calls:"))
+            for tool_call in outputs[0]["tool_calls"]:
+                print(_green(f"{tool_call['function']['name']}: {tool_call['function']['arguments']}"))
 
         if len(outputs) > 1:
             choices_text = f" \t (and {len(outputs) - 1} other completions)"

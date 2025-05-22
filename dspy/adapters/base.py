@@ -1,10 +1,16 @@
+import logging
 from typing import TYPE_CHECKING, Any, Optional, Type, get_origin
+
+import json_repair
+import litellm
 
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
-from dspy.adapters.types.tool import Tool
+from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -27,21 +33,67 @@ class Adapter:
         lm_kwargs: dict[str, Any],
         signature: Type[Signature],
         inputs: dict[str, Any],
+        use_native_function_calling: bool = False,
     ) -> dict[str, Any]:
-        tool_call_field_name = self._get_tool_call_field_name(signature)
+        if use_native_function_calling:
+            tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
+            tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
 
-    def _call_postprocess(self, outputs: list[dict[str, Any]], signature: Type[Signature]) -> list[dict[str, Any]]:
+            if tool_call_output_field_name and tool_call_input_field_name is None:
+                raise ValueError(
+                    f"You provided an output field {tool_call_output_field_name} to receive the tool calls information, "
+                    "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
+                    "input field with type `list[dspy.Tool]`."
+                )
+
+            if tool_call_output_field_name and litellm.supports_function_calling(model=lm.model):
+                tools = inputs[tool_call_input_field_name]
+                tools = tools if isinstance(tools, list) else [tools]
+
+                litellm_tools = []
+                for tool in tools:
+                    litellm_tools.append(tool.format_as_litellm_function_call())
+
+                lm_kwargs["tools"] = litellm_tools
+
+                signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
+
+                return signature_for_native_function_calling
+
+        return signature
+
+    def _call_postprocess(
+        self,
+        signature: Type[Signature],
+        outputs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         values = []
 
+        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
+
         for output in outputs:
-            output_logprobs = None
+            text = output["text"]
+            output_logprobs = output.get("logprobs")
+            tool_calls = output.get("tool_calls")
 
-            if isinstance(output, dict):
-                output, output_logprobs = output["text"], output["logprobs"]
+            if text:
+                value = self.parse(signature, text)
+            else:
+                value = {}
+                for field_name in signature.output_fields.keys():
+                    value[field_name] = None
 
-            value = self.parse(signature, output)
+            if tool_calls and tool_call_output_field_name:
+                tool_calls = [
+                    {
+                        "name": v["function"]["name"],
+                        "args": json_repair.loads(v["function"]["arguments"]),
+                    }
+                    for v in tool_calls
+                ]
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
-            if output_logprobs is not None:
+            if output_logprobs:
                 value["logprobs"] = output_logprobs
 
             values.append(value)
@@ -60,7 +112,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(outputs, processed_signature)
+        return self._call_postprocess(signature, outputs)
 
     async def acall(
         self,
@@ -70,11 +122,11 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        processed_signature = self._call_preprocess(inputs, signature)
+        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(outputs, processed_signature)
+        return self._call_postprocess(signature, outputs)
 
     def format(
         self,
@@ -309,13 +361,19 @@ class Adapter:
                 return name
         return None
 
-    def _get_tool_call_field_name(self, signature: Type[Signature]) -> bool:
+    def _get_tool_call_input_field_name(self, signature: Type[Signature]) -> bool:
         for name, field in signature.input_fields.items():
             # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
             origin = get_origin(field.annotation)
             if origin is list and field.annotation.__args__[0] == Tool:
                 return name
             if field.annotation == Tool:
+                return name
+        return None
+
+    def _get_tool_call_output_field_name(self, signature: Type[Signature]) -> bool:
+        for name, field in signature.output_fields.items():
+            if field.annotation == ToolCalls:
                 return name
         return None
 

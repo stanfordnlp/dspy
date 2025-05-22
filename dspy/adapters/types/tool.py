@@ -143,6 +143,20 @@ class Tool(BaseType):
     def format(self):
         return str(self)
 
+    def format_as_litellm_function_call(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.desc,
+                "parameters": {
+                    "type": "object",
+                    "properties": self.args,
+                    "required": list(self.args.keys()),
+                },
+            },
+        }
+
     @with_callbacks
     def __call__(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
@@ -186,14 +200,40 @@ class Tool(BaseType):
         return f"{self.name}{desc} {arg_desc}"
 
 
-class ToolCall(BaseType):
-    name: str
-    args: dict[str, Any]
+class ToolCalls(BaseType):
+    class ToolCall(BaseModel):
+        name: str
+        args: dict[str, Any]
+
+    tool_calls: list[ToolCall]
+
+    @classmethod
+    def from_dict_list(cls, dict_list: list[dict[str, Any]]) -> "ToolCalls":
+        """Convert a list of dictionaries to a ToolCalls instance.
+
+        Args:
+            dict_list: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
+
+        Returns:
+            A ToolCalls instance.
+
+        Example:
+
+            ```python
+            tool_calls_dict = [
+                {"name": "search", "args": {"query": "hello"}},
+                {"name": "translate", "args": {"text": "world"}}
+            ]
+            tool_calls = ToolCalls.from_dict_list(tool_calls_dict)
+            ```
+        """
+        tool_calls = [cls.ToolCall(**item) for item in dict_list]
+        return cls(tool_calls=tool_calls)
 
     @classmethod
     def description(cls) -> str:
         return (
-            "Tool call information, including the name of the tool and the arguments to be passed to it. "
+            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
             "Arguments must be provided in JSON format."
         )
 

@@ -57,9 +57,6 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
-        if litellm.supports_function_calling(model=lm.model):
-            lm_kwargs["tools"] = self._get_tool_calling_value(signature, inputs)
-
         # Try structured output first, fall back to basic JSON if it fails.
         try:
             structured_output_model = _get_structured_outputs_response_format(signature)
@@ -79,6 +76,16 @@ class JSONAdapter(ChatAdapter):
                     "Both structured output format and JSON mode failed. Please choose a model that supports "
                     f"`response_format` argument. Original error: {e}"
                 ) from e
+
+    def _call_preprocess(
+        self,
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        inputs: dict[str, Any],
+        use_native_function_calling: bool = True,
+    ) -> dict[str, Any]:
+        return super()._call_preprocess(lm, lm_kwargs, signature, inputs, use_native_function_calling)
 
     def format_field_structure(self, signature: Type[Signature]) -> str:
         parts = []
