@@ -295,6 +295,7 @@ def test_sync_status_streaming():
 async def test_stream_listener_returns_correct_chunk_chat_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question, answer->judgement")
 
@@ -396,6 +397,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
 async def test_stream_listener_returns_correct_chunk_json_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question,answer->judgement")
 
@@ -488,6 +490,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
 async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_stream():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question,answer->judgement")
 
@@ -561,6 +564,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
 async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_stream():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question,answer->judgement")
 

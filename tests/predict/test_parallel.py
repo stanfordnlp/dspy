@@ -68,11 +68,11 @@ def test_batch_module():
             self.parallel = dspy.Parallel(num_threads=2)
 
         def forward(self, input):
-            dspy.settings.configure(lm=lm)
-            res1 = self.predictor.batch([input] * 5)
+            with dspy.context(lm=lm):
+                res1 = self.predictor.batch([input] * 5)
 
-            dspy.settings.configure(lm=res_lm)
-            res2 = self.predictor2.batch([input] * 5)
+            with dspy.context(lm=res_lm):
+                res2 = self.predictor2.batch([input] * 5)
 
             return (res1, res2)
 
