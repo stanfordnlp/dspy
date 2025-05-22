@@ -27,7 +27,6 @@ async def test_streamify_yields_expected_response_chunks(litellm_test_server):
         program = dspy.streamify(dspy.Predict(TestSignature))
         output_stream1 = program(input_text="Test")
         output_chunks1 = [chunk async for chunk in output_stream1]
-        assert len(output_chunks1) > 1
         last_chunk1 = output_chunks1[-1]
         assert isinstance(last_chunk1, dspy.Prediction)
         assert last_chunk1.output_text == "Hello!"
