@@ -1,5 +1,3 @@
-import optuna
-
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -55,6 +53,7 @@ class BootstrapFewShotWithOptuna(Teleprompter):
         return score
 
     def compile(self, student, *, teacher=None, max_demos, trainset, valset=None):
+        import optuna
         self.trainset = trainset
         self.valset = valset or trainset
         self.student = student.reset_copy()
