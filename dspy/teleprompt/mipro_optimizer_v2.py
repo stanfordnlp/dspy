@@ -4,12 +4,11 @@ import select
 import sys
 import textwrap
 import time
+from typing import TYPE_CHECKING
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
-import optuna
-from optuna.distributions import CategoricalDistribution
 
 import dspy
 from dspy.evaluate.evaluate import Evaluate
@@ -25,6 +24,9 @@ from dspy.teleprompt.utils import (
     save_candidate_program,
     set_signature,
 )
+
+if TYPE_CHECKING:
+    import optuna
 
 logger = logging.getLogger(__name__)
 
@@ -496,6 +498,7 @@ class MIPROv2(Teleprompter):
         minibatch_full_eval_steps: int,
         seed: int,
     ) -> Optional[Any]:
+        import optuna
         # Run optimization
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         logger.info("==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
@@ -727,7 +730,7 @@ class MIPROv2(Teleprompter):
         candidate_program: Any,
         instruction_candidates: Dict[int, List[str]],
         demo_candidates: Optional[List],
-        trial: optuna.trial.Trial,
+        trial: "optuna.trial.Trial",
         trial_logs: Dict,
         trial_num: int,
     ) -> List[str]:
@@ -756,6 +759,7 @@ class MIPROv2(Teleprompter):
         return chosen_params, raw_chosen_params
 
     def _get_param_distributions(self, program, instruction_candidates, demo_candidates):
+        from optuna.distributions import CategoricalDistribution
         param_distributions = {}
 
         for i in range(len(instruction_candidates)):
@@ -780,10 +784,11 @@ class MIPROv2(Teleprompter):
         score_data,
         best_score: float,
         best_program: Any,
-        study: optuna.Study,
+        study: "optuna.Study",
         instruction_candidates: List,
         demo_candidates: List,
     ):
+        import optuna
         logger.info(f"===== Trial {trial_num + 1} / {adjusted_num_trials} - Full Evaluation =====")
 
         # Identify best program to evaluate fully
