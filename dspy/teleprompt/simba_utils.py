@@ -15,7 +15,6 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings
 
     models = []
     if teacher_settings:
-        print(f"teacher_settings: {teacher_settings}")
         with dspy.settings.context(trace=[], **teacher_settings):
             lm = dspy.settings.lm
             models.append(lm)
@@ -37,10 +36,6 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings
         temps = list(dict.fromkeys(temps))[:(n-len(models))]
         models.extend([lm.copy(temperature=t) for t in temps])
     
-    print("Models:")
-    for model in models:
-        print(f"model: {model.model}, kwargs: {model.kwargs}")
-    
     return models
 
 def wrap_program(program: dspy.Module, metric: Callable):
@@ -50,7 +45,7 @@ def wrap_program(program: dspy.Module, metric: Callable):
             try:
                 prediction = program(**example.inputs())
             except Exception as e:
-                print(e)
+                logger.info(e)
             trace = dspy.settings.trace.copy()
 
         output = None
@@ -70,7 +65,7 @@ def wrap_program(program: dspy.Module, metric: Callable):
                     k: v for k, v in output._store.items() if k != "score"
                 }
         except Exception as e:
-            print(e)
+            logger.info(e)
 
         return {
             "prediction": prediction,
@@ -124,16 +119,12 @@ def append_a_rule(bucket, system, **kwargs):
     # Read in kwargs
     predictor2name = kwargs["predictor2name"]
     batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
-    prompt_model = kwargs["prompt_model"]
+    prompt_model = kwargs["prompt_model"] or dspy.settings.lm
 
     module_names = [name for name, _ in system.named_predictors()]
     good, bad = bucket[0], bucket[-1]
     example = good["example"]
 
-    # if good["score"] < batch_10p_score or bad["score"] > batch_90p_score:
-    #     logger.info(f"Skipping rule generation as good score {good['score']} is below the 10th percentile "
-    #                 f"*or* bad score {bad['score']} is above the 90th percentile.")
-    #     return False
     if good["score"] <= batch_10p_score or bad["score"] >= batch_90p_score:
         logger.info(f"Skipping rule generation as good score {good['score']} is at or below the 10th percentile "
                     f"*or* bad score {bad['score']} is at or above the 90th percentile.")
