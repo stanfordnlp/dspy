@@ -1,7 +1,8 @@
-from typing import TYPE_CHECKING, Any, Optional, Type
+from typing import TYPE_CHECKING, Any, Optional, Type, get_origin
 
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
+from dspy.adapters.types.tool import Tool
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 
@@ -20,7 +21,16 @@ class Adapter:
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def _call_post_process(self, outputs: list[dict[str, Any]], signature: Type[Signature]) -> list[dict[str, Any]]:
+    def _call_preprocess(
+        self,
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        inputs: dict[str, Any],
+    ) -> dict[str, Any]:
+        tool_call_field_name = self._get_tool_call_field_name(signature)
+
+    def _call_postprocess(self, outputs: list[dict[str, Any]], signature: Type[Signature]) -> list[dict[str, Any]]:
         values = []
 
         for output in outputs:
@@ -46,10 +56,11 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
+        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+        inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_post_process(outputs, signature)
+        return self._call_postprocess(outputs, processed_signature)
 
     async def acall(
         self,
@@ -59,10 +70,11 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
+        processed_signature = self._call_preprocess(inputs, signature)
+        inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_post_process(outputs, signature)
+        return self._call_postprocess(outputs, processed_signature)
 
     def format(
         self,
@@ -294,6 +306,16 @@ class Adapter:
     def _get_history_field_name(self, signature: Type[Signature]) -> bool:
         for name, field in signature.input_fields.items():
             if field.annotation == History:
+                return name
+        return None
+
+    def _get_tool_call_field_name(self, signature: Type[Signature]) -> bool:
+        for name, field in signature.input_fields.items():
+            # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
+            origin = get_origin(field.annotation)
+            if origin is list and field.annotation.__args__[0] == Tool:
+                return name
+            if field.annotation == Tool:
                 return name
         return None
 

@@ -57,6 +57,9 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
+        if litellm.supports_function_calling(model=lm.model):
+            lm_kwargs["tools"] = self._get_tool_calling_value(signature, inputs)
+
         # Try structured output first, fall back to basic JSON if it fails.
         try:
             structured_output_model = _get_structured_outputs_response_format(signature)
