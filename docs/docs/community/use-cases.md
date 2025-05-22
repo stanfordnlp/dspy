@@ -1,8 +1,8 @@
 # Use Cases
 
-We often get questions like "How are people using DSPy in practice?", both in production and for research. This list was created to collect a few pointers and to encourage others in the community to add their own work below.
+We often get questions like “How are people using DSPy in practice?”, both in production and for research. This list was created to collect a few pointers and to encourage others in the community to add their own work below.
 
-This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your product or research to this list, please make a PR.
+This list is ever-expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your product or research to this list, please submit a PR.
 
 ## A Few Company Use Cases
 
@@ -33,6 +33,7 @@ This list is ever expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Isoform.ai](https://isoform.ai)** | Building custom integrations using DSPy. |
 | **[Trampoline AI](https://trampoline.ai)** | Uses DSPy to power their data-augmentation and LM pipelines. |
 | **[Pretrain](https://pretrain.com)** | Uses DSPy to automatically optimize AI performance towards user-defined tasks based on uploaded examples. |
+| **[Spindle AI](https://spindle.ai)** | Turns natural-language constrained optimization problems into solvable mathematical programs whose candidate solutions are scenarios. |
 
 WIP. This list mainly the small fraction of companies that have public posts or have OKed being publicly included for specific products so far, out of hundreds of other industry use cases.
 
