@@ -210,7 +210,7 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
     pydantic_model = pydantic.create_model(
         "DSPyProgramOutputs",
         **fields,
-        __config__=type("Config", (), {"extra": "forbid"}),
+        model_config={"extra": "forbid"},
     )
 
     # Generate the initial schema.
