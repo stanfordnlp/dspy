@@ -61,6 +61,10 @@ class BaseLM:
                 output["tool_calls"] = c.message.tool_calls
             outputs.append(output)
 
+        if all(len(output) == 1 for output in outputs):
+            # Return a list if every output only has "text" key
+            outputs = [output["text"] for output in outputs]
+
         if settings.disable_history:
             return outputs
 

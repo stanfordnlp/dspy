@@ -72,9 +72,14 @@ class Adapter:
         tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
 
         for output in outputs:
-            text = output["text"]
-            output_logprobs = output.get("logprobs")
-            tool_calls = output.get("tool_calls")
+            output_logprobs = None
+            tool_calls = None
+            text = output
+
+            if isinstance(output, dict):
+                text = output["text"]
+                output_logprobs = output.get("logprobs")
+                tool_calls = output.get("tool_calls")
 
             if text:
                 value = self.parse(signature, text)

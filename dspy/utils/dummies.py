@@ -119,7 +119,6 @@ class DummyLM(LM):
             else:
                 outputs.append(format_answer_fields(next(self.answers, {"answer": "No more responses"})))
 
-            outputs = [{"text": output} for output in outputs]
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
             entry = {"prompt": prompt, "messages": messages, "kwargs": kwargs}
