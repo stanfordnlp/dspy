@@ -57,7 +57,7 @@ class BaseLM:
             output["text"] = c.message.content if hasattr(c, "message") else c["text"]
             if merged_kwargs.get("logprobs"):
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
-            if getattr(c.message, "tool_calls", None):
+            if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
                 output["tool_calls"] = c.message.tool_calls
             outputs.append(output)
 

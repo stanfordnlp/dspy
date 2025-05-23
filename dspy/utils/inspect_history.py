@@ -43,14 +43,18 @@ def pretty_print_history(history, n: int = 1):
                             print(_blue(image_str.strip()))
             print("\n")
 
-        if outputs[0]["text"]:
-            print(_red("Response:"))
-            print(_green(outputs[0]["text"].strip()))
+        if isinstance(outputs[0], dict):
+            if outputs[0]["text"]:
+                print(_red("Response:"))
+                print(_green(outputs[0]["text"].strip()))
 
-        if outputs[0].get("tool_calls"):
-            print(_red("Tool calls:"))
-            for tool_call in outputs[0]["tool_calls"]:
-                print(_green(f"{tool_call['function']['name']}: {tool_call['function']['arguments']}"))
+            if outputs[0].get("tool_calls"):
+                print(_red("Tool calls:"))
+                for tool_call in outputs[0]["tool_calls"]:
+                    print(_green(f"{tool_call['function']['name']}: {tool_call['function']['arguments']}"))
+        else:
+            print(_red("Response:"))
+            print(_green(outputs[0].strip()))
 
         if len(outputs) > 1:
             choices_text = f" \t (and {len(outputs) - 1} other completions)"
