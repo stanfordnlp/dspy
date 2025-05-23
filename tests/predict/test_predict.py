@@ -55,6 +55,8 @@ def test_lm_after_dump_and_load_state():
         "finetuning_model": None,
         "launch_kwargs": {},
         "train_kwargs": {},
+        "provider_name": "OpenAIProvider",
+        "router_is_configured": False,
     }
     assert lm.dump_state() == expected_lm_state
     dumped_state = predict_instance.dump_state()

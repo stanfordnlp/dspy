@@ -22,18 +22,23 @@ import unittest
 class TestLMWithRouterIntegration(unittest.TestCase):
     def setUp(self):
         # Mock dspy.settings.usage_tracker for all tests in this class
-        self.usage_tracker_patch = patch('dspy.settings.usage_tracker', MagicMock())
+        self.usage_tracker_patch = patch.object(dspy.settings, 'usage_tracker', MagicMock(), create=True)
         self.mock_usage_tracker = self.usage_tracker_patch.start()
         
         # Mock _get_cached_completion_fn to simplify testing its bypass
-        self.get_cached_fn_patch = patch('dspy.clients.lm._get_cached_completion_fn')
+        self.get_cached_fn_patch = patch('dspy.clients.lm.LM._get_cached_completion_fn')
         self.mock_get_cached_fn = self.get_cached_fn_patch.start()
-        # Make it return the original function and dummy cache args so non-router path still works
+        # Make it return the original function without modification so the litellm patch works
+        # This way the real _get_cached_completion_fn is called, which will call the mocked litellm.completion
         self.mock_get_cached_fn.side_effect = lambda fn, cache, mem_cache: (fn, {"no-cache": True})
 
 
     def tearDown(self):
-        self.usage_tracker_patch.stop()
+        try:
+            self.usage_tracker_patch.stop()
+        except AttributeError:
+            # usage_tracker didn't exist before patching, this is fine
+            pass
         self.get_cached_fn_patch.stop()
 
     # 1. Initialization (__init__) Tests
@@ -175,12 +180,17 @@ class TestLMWithRouterIntegration(unittest.TestCase):
         lm = dspy.LM(router=mock_router_instance, model="usage_model")
         lm.forward(prompt="usage test")
         
-        self.mock_usage_tracker.add_usage.assert_called_once_with(
-            model_name="usage_model", 
-            usage_data=usage_data 
-        )
+        # Check that usage tracking was called with the model and usage data
+        self.mock_usage_tracker.add_usage.assert_called_once()
+        call_args = self.mock_usage_tracker.add_usage.call_args
+        assert call_args[0][0] == "usage_model"  # First positional arg: model
+        # Second positional arg: usage dict (may contain extra fields)
+        usage_dict = call_args[0][1]
+        assert usage_dict["total_tokens"] == 100
+        assert usage_dict["prompt_tokens"] == 30
+        assert usage_dict["completion_tokens"] == 70
 
-    @patch('dspy.clients.lm.litellm_completion')
+    @patch('litellm.completion')
     def test_usage_tracking_without_router(self, mock_litellm_completion_func):
         usage_data = {"total_tokens": 120, "prompt_tokens": 40, "completion_tokens": 80}
         mock_litellm_completion_func.return_value = ModelResponse(
@@ -191,10 +201,15 @@ class TestLMWithRouterIntegration(unittest.TestCase):
         lm = dspy.LM(model="openai/gpt-3.5-turbo")
         lm.forward(prompt="usage test no router")
         
-        self.mock_usage_tracker.add_usage.assert_called_once_with(
-            model_name="openai/gpt-3.5-turbo", 
-            usage_data=usage_data
-        )
+        # Check that usage tracking was called with the model and usage data
+        self.mock_usage_tracker.add_usage.assert_called_once()
+        call_args = self.mock_usage_tracker.add_usage.call_args
+        assert call_args[0][0] == "openai/gpt-3.5-turbo"  # First positional arg: model
+        # Second positional arg: usage dict (may contain extra fields)
+        usage_dict = call_args[0][1]
+        assert usage_dict["total_tokens"] == 120
+        assert usage_dict["prompt_tokens"] == 40
+        assert usage_dict["completion_tokens"] == 80
 
     # 5. dump_state Method Tests
     def test_dump_state_with_router(self):
@@ -551,22 +566,20 @@ def test_logprobs_included_when_requested():
             model="dspy-test-model",
         )
         result = lm("question")
-        # The result is a dspy.Prediction object, not a list of strings.
-        # Accessing choice text: result.choices[0].text
-        # Accessing choice logprobs: result.choices[0].logprobs
-        assert result.choices[0].text == "test answer"
-        # Logprobs structure needs to be asserted carefully
-        # The structure in the mock is already a dict, so .dict() might not be needed or available
-        # depending on how dspy.Prediction wraps it.
-        # Assuming dspy.Prediction makes it accessible directly or via a .dict() method.
-        # For now, let's assume direct access or that the structure matches.
-        # This part might need adjustment based on dspy.Prediction's actual API for logprobs.
-        # Based on previous test, it seems logprobs are accessed on the choice object.
-        # The mock response should be a dspy.Prediction for consistency if that's what LM returns.
-        # However, lm() returns a list of strings or list of dspy.Prediction based on context.
-        # The test `test_logprobs_included_when_requested` implies `lm()` returns a list of dicts
-        # where each dict has 'text' and 'logprobs'.
-        # Let's assume the structure returned by lm() is as per the test's original assertions.
+        # The result is a list of dicts with text and logprobs when logprobs=True
+        assert result[0]["text"] == "test answer"
+        # Check that logprobs are included in the result
+        assert "logprobs" in result[0]
+        # The logprobs should be present as an object (not necessarily a dict)
+        logprobs = result[0]["logprobs"]
+        assert logprobs is not None
+        # Check that the content tokens are accessible
+        assert hasattr(logprobs, "content") or "content" in logprobs
+        if hasattr(logprobs, "content"):
+            content = logprobs.content
+        else:
+            content = logprobs["content"]
+        assert len(content) == 2  # Two tokens: "test" and "answer"
         # This means lm() must be returning something like:
         # [{"text": "test answer", "logprobs": <logprobs_object_or_dict>}]
         # The current dspy.LM returns a list of strings by default (completions).
