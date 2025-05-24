@@ -208,7 +208,7 @@ class ToolCalls(BaseType):
     tool_calls: list[ToolCall]
 
     @classmethod
-    def from_dict_list(cls, dict_list: list[dict[str, Any]]) -> "ToolCalls":
+    def from_dict_list(cls, tool_calls_dicts: list[dict[str, Any]]) -> "ToolCalls":
         """Convert a list of dictionaries to a ToolCalls instance.
 
         Args:
@@ -227,7 +227,7 @@ class ToolCalls(BaseType):
             tool_calls = ToolCalls.from_dict_list(tool_calls_dict)
             ```
         """
-        tool_calls = [cls.ToolCall(**item) for item in dict_list]
+        tool_calls = [cls.ToolCall(**item) for item in tool_calls_dicts]
         return cls(tool_calls=tool_calls)
 
     @classmethod
