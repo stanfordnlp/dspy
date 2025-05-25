@@ -114,7 +114,7 @@ class ParallelExecutor:
                     signal.signal(signal.SIGINT, orig_handler)
             else:
                 yield
-        print(f"num_threads: {self.num_threads}")
+
         executor = ThreadPoolExecutor(max_workers=self.num_threads)
         try:
             with interrupt_manager():
