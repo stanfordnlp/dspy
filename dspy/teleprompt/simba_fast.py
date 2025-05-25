@@ -3,9 +3,9 @@ import random
 import logging
 
 import numpy as np
-from typing import Callable
+from typing import Callable, Optional, Any, Dict
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule, summarize_batch
+from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule
 from dspy.teleprompt.utils import log_token_usage
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,8 @@ class SIMBAFast(Teleprompter):
         num_candidates=6,
         max_steps=8,
         max_demos=4,
+        prompt_model: Optional[Any] = None,
+        teacher_settings: Optional[Dict] = None,
         demo_input_field_maxlen=100_000,
         num_threads=16,
         temperature_for_sampling=0.2,
@@ -42,6 +44,8 @@ class SIMBAFast(Teleprompter):
         self.num_candidates = num_candidates
         self.max_steps = max_steps
         self.max_demos = max_demos
+        self.prompt_model = prompt_model if prompt_model else dspy.settings.lm
+        self.teacher_settings = teacher_settings if teacher_settings else {}
         self.demo_input_field_maxlen = demo_input_field_maxlen
         self.num_threads = num_threads
 
@@ -147,7 +151,7 @@ class SIMBAFast(Teleprompter):
         instance_idx = 0
 
         # Parallel runner
-        print("Creating parallel runner with num_threads: ", self.num_threads)
+        logger.info(f"Creating parallel runner with num_threads: {self.num_threads}")
         run_parallel = dspy.Parallel(access_examples=False, num_threads=self.num_threads)
 
         trial_logs = {}
@@ -194,7 +198,7 @@ class SIMBAFast(Teleprompter):
             batch_idx_to_baseline_scores[batch_idx] = [score for i, score in enumerate(baseline_scores) if i in batch_indices]
 
             # STEP 2 (or hybrid): Collect execution results for bucket building
-            models = prepare_models_for_resampling(programs[0], self.num_candidates)
+            models = prepare_models_for_resampling(programs[0], self.num_candidates, self.teacher_settings)
             top_programs = top_k_plus_baseline(self.num_candidates)
 
             exec_pairs = []
@@ -307,6 +311,7 @@ class SIMBAFast(Teleprompter):
                         name2predictor=name2predictor,
                         batch_10p_score=batch_10th_percentile_score,
                         batch_90p_score=batch_90th_percentile_score,
+                        prompt_model=self.prompt_model,
                     )
                 except Exception as e:
                     logger.error(f"Strategy failed with error: {e}")
@@ -354,7 +359,7 @@ class SIMBAFast(Teleprompter):
                 full_outputs = run_parallel(exec_pairs)
                 scores = [o["score"] for o in full_outputs]
                 avg_score = sum(scores) / len(scores)
-                print(f"Batch {batch_idx+1}: Full trainset score: {avg_score}")
+                logger.info(f"Batch {batch_idx+1}: Full trainset score: {avg_score}")
                 trial_logs[batch_idx + 1]["train_score"] = avg_score
 
                 final_candidate_programs.append(best_program.deepcopy())
