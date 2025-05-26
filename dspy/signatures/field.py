@@ -51,11 +51,11 @@ def _translate_pydantic_field_constraints(**kwargs):
     return ", ".join(constraints)
 
 
-def InputField(**kwargs):
+def InputField(**kwargs): # noqa: N802
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
-def OutputField(**kwargs):
+def OutputField(**kwargs): # noqa: N802
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
 

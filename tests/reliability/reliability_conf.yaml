@@ -73,3 +73,9 @@ model_list:
       # model: "<litellm_provider>/<litellm_model_name>"
       # api_key: "api key"
       # api_base: "<api_base>"
+  - model_name: "deepseek-r1"
+    litellm_params:
+      # model: "<litellm_provider>/<litellm_model_name>"
+      # api_key: "api key"
+      # max_tokens: 10000
+

@@ -1,5 +1,6 @@
 # dspy.Parallel
 
+<!-- START_API_REF -->
 ::: dspy.Parallel
     handler: python
     options:
@@ -14,3 +15,4 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+<!-- END_API_REF -->

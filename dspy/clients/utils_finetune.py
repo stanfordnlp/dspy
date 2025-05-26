@@ -1,17 +1,12 @@
 import os
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 
 import ujson
 
 import dspy
 from dspy.adapters.base import Adapter
 from dspy.utils.caching import DSPY_CACHEDIR
-
-
-class TrainDataFormat(str, Enum):
-    CHAT = "chat"
-    COMPLETION = "completion"
 
 
 class TrainingStatus(str, Enum):
@@ -21,6 +16,31 @@ class TrainingStatus(str, Enum):
     succeeded = "succeeded"
     failed = "failed"
     cancelled = "cancelled"
+
+
+class TrainDataFormat(str, Enum):
+    CHAT = "chat"
+    COMPLETION = "completion"
+    GRPO_CHAT = "grpo_chat"
+
+
+class Message(TypedDict):
+    role: Union[Literal["user"], Literal["assistant"], Literal["system"]]
+    content: str
+
+
+class MessageAssistant(TypedDict):
+    role: Literal["assistant"]
+    content: str
+
+
+class GRPOChatData(TypedDict):
+    messages: List[Message]
+    completion: MessageAssistant
+    reward: float
+
+
+GRPOGroup = List[GRPOChatData]
 
 
 def infer_data_format(adapter: Adapter) -> str:
@@ -62,12 +82,12 @@ def save_data(
 
 
 def validate_data_format(
-        data: List[Dict[str, Any]],
-        data_format: TrainDataFormat,
-    ):
+    data: List[Dict[str, Any]],
+    data_format: TrainDataFormat,
+):
     find_err_funcs = {
         TrainDataFormat.CHAT: find_data_error_chat,
-        TrainDataFormat.COMPLETION: find_data_errors_completion
+        TrainDataFormat.COMPLETION: find_data_errors_completion,
     }
     err = f"Data format {data_format} is not supported."
     assert data_format in find_err_funcs, err
@@ -83,7 +103,7 @@ def validate_data_format(
         if isinstance(data_dict, dict):
             err = find_err_func(data_dict)
         if err:
-            err_dict = dict(index=ind, error=err)
+            err_dict = {"index": ind, "error": err}
             data_dict_errors.append(err_dict)
 
     if data_dict_errors:
@@ -96,9 +116,7 @@ def validate_data_format(
         raise ValueError(err)
 
 
-def find_data_errors_completion(
-        data_dict: Dict[str, str]
-    ) -> Optional[str]:
+def find_data_errors_completion(data_dict: Dict[str, str]) -> Optional[str]:
     keys = ["prompt", "completion"]
 
     assert isinstance(data_dict, dict)
@@ -106,7 +124,7 @@ def find_data_errors_completion(
     found_keys = sorted(data_dict.keys())
     if set(expected_keys) != set(found_keys):
         return f"Expected Keys: {expected_keys}; Found Keys: {found_keys}"
-    
+
     for key in keys:
         if not isinstance(data_dict[key], str):
             return f"Expected `{key}` to be of type `str`. Found: {type(data_dict[key])}"
@@ -114,9 +132,7 @@ def find_data_errors_completion(
 
 # Following functions are modified from the OpenAI cookbook:
 # https://cookbook.openai.com/examples/chat_finetuning_data_prep
-def find_data_error_chat(
-        messages: Dict[str, Any]
-    ) -> Optional[str]:
+def find_data_error_chat(messages: Dict[str, Any]) -> Optional[str]:
     assert isinstance(messages, dict)
 
     expected_keys = ["messages"]
@@ -133,9 +149,7 @@ def find_data_error_chat(
             return f"Error in message at index {ind}: {err}"
 
 
-def find_data_error_chat_message(
-        message: Dict[str, Any]
-    ) -> Optional[str]:
+def find_data_error_chat_message(message: Dict[str, Any]) -> Optional[str]:
     assert isinstance(message, dict)
 
     message_keys = sorted(["role", "content"])

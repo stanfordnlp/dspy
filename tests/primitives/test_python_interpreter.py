@@ -1,8 +1,7 @@
+import random
 import shutil
 
 import pytest
-import random
-
 
 from dspy.primitives.python_interpreter import InterpreterError, PythonInterpreter
 

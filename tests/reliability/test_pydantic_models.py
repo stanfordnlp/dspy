@@ -90,18 +90,18 @@ def test_entity_extraction_with_multiple_primitive_outputs():
     assert_program_output_correct(
         program_input=description,
         program_output=extracted_entity.entity_hu,
-        grading_guidelines="The translation of the text into English should be equivalent to 'coffee'",
+        grading_guidelines="The translation of the extracted entity into English should be equivalent to 'coffee'",
     )
     assert_program_output_correct(
         program_input=description,
-        program_output=extracted_entity.entity_hu,
-        grading_guidelines="The text should be equivalent to 'coffee'",
+        program_output=extracted_entity.entity_en,
+        grading_guidelines="The extracted entity should be equivalent to 'coffee'",
     )
     assert_program_output_correct(
         program_input=description,
         program_output=extracted_entity.categories,
         grading_guidelines=(
-            "The text should contain English language categories that apply to the word 'coffee'."
+            "The extracted entity should be associated with English language categories that apply to the word 'coffee'."
             " The categories should be separated by the character '|'."
         ),
     )

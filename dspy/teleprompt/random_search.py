@@ -27,18 +27,18 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
     def __init__(
         self,
         metric,
-        teacher_settings={},
+        teacher_settings=None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
         num_candidate_programs=16,
-        num_threads=6,
+        num_threads=None,
         max_errors=10,
         stop_at_score=None,
         metric_threshold=None,
     ):
         self.metric = metric
-        self.teacher_settings = teacher_settings
+        self.teacher_settings = teacher_settings or {}
         self.max_rounds = max_rounds
 
         self.num_threads = num_threads

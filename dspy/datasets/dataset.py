@@ -1,19 +1,19 @@
 import random
 import uuid
 
-from dspy.dsp.utils import dotdict
 from dspy import Example
+from dspy.dsp.utils import dotdict
 
 
 class Dataset:
-    def __init__(self, train_seed=0, train_size=None, eval_seed=0, dev_size=None, test_size=None, input_keys=[]):
+    def __init__(self, train_seed=0, train_size=None, eval_seed=0, dev_size=None, test_size=None, input_keys=None):
         self.train_size = train_size
         self.train_seed = train_seed
         self.dev_size = dev_size
         self.dev_seed = eval_seed
         self.test_size = test_size
         self.test_seed = eval_seed
-        self.input_keys = input_keys
+        self.input_keys = input_keys or []
 
         self.do_shuffle = True
 
@@ -84,13 +84,14 @@ class Dataset:
     @classmethod
     def prepare_by_seed(
         cls,
-        train_seeds=[1, 2, 3, 4, 5],
+        train_seeds=None,
         train_size=16,
         dev_size=1000,
         divide_eval_per_seed=True,
         eval_seed=2023,
         **kwargs,
     ):
+        train_seeds = train_seeds or [1, 2, 3, 4, 5]
         data_args = dotdict(train_size=train_size, eval_seed=eval_seed, dev_size=dev_size, test_size=0, **kwargs)
         dataset = cls(**data_args)
 

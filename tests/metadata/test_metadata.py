@@ -1,5 +1,6 @@
-import dspy
 import re
+
+import dspy
 
 
 def test_metadata():

@@ -1,13 +1,13 @@
 from abc import abstractmethod
 from concurrent.futures import Future
 from threading import Thread
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from dspy.clients.utils_finetune import TrainDataFormat
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
+
 
 class TrainingJob(Future):
     def __init__(
@@ -35,10 +35,46 @@ class TrainingJob(Future):
         raise NotImplementedError
 
 
+class ReinforceJob:
+    def __init__(self, lm: "LM", train_kwargs: Optional[Dict[str, Any]] = None):
+        self.lm = lm
+        self.train_kwargs = train_kwargs or {}
+        self.checkpoints = {}
+        self.last_checkpoint = None
+
+    @abstractmethod
+    def initialize(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def step(self, train_data: List[Dict[str, Any]], train_data_format: Optional[Union[TrainDataFormat, str]] = None):
+        raise NotImplementedError
+
+    @abstractmethod
+    def terminate(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def update_model(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def save_checkpoint(self, checkpoint_name: str):
+        raise NotImplementedError
+
+    def cancel(self):
+        raise NotImplementedError
+
+    def status(self):
+        raise NotImplementedError
+
+
 class Provider:
     def __init__(self):
         self.finetunable = False
+        self.reinforceable = False
         self.TrainingJob = TrainingJob
+        self.ReinforceJob = ReinforceJob
 
     @staticmethod
     def is_provider_model(model: str) -> bool:

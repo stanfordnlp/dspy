@@ -1,9 +1,9 @@
-import pytest
-import dspy
-from unittest.mock import Mock, patch, MagicMock
-from dspy.utils.usage_tracker import UsageTracker, track_usage
-from dspy.utils.dummies import DummyLM
 import os
+
+import pytest
+
+import dspy
+from dspy.utils.usage_tracker import UsageTracker, track_usage
 
 
 def test_add_usage_entry():

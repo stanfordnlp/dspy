@@ -1,9 +1,8 @@
+import logging
+from unittest.mock import patch
+
 import dspy
 from dspy.utils import DummyLM
-from unittest.mock import patch
-import pytest
-from dspy.utils.saving import get_dependency_versions
-import logging
 
 
 def test_save_predict(tmp_path):
@@ -108,7 +107,7 @@ def test_load_with_version_mismatch(tmp_path):
 
     try:
         # Mock version during save
-        with patch("dspy.utils.saving.get_dependency_versions", return_value=save_versions):
+        with patch("dspy.primitives.module.get_dependency_versions", return_value=save_versions):
             predict.save(tmp_path, save_program=True)
 
         # Mock version during load

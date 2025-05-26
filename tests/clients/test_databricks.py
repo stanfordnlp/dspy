@@ -4,14 +4,14 @@ This test requires valid Databricks credentials, so it is skipped on github acti
 manual testing.
 """
 
+import pytest
+
+import dspy
 from dspy.clients.databricks import (
     DatabricksProvider,
-    _create_directory_in_databricks_unity_catalog,
     TrainingJobDatabricks,
+    _create_directory_in_databricks_unity_catalog,
 )
-
-import pytest
-import dspy
 
 try:
     from databricks.sdk import WorkspaceClient
@@ -66,7 +66,7 @@ def test_create_finetuning_job():
 
     job = TrainingJobDatabricks()
 
-    finetuned_model = DatabricksProvider.finetune(
+    DatabricksProvider.finetune(
         job=job,
         model="meta-llama/Llama-3.2-1B",
         train_data=fake_training_data,

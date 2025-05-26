@@ -35,7 +35,7 @@ def load(path):
     if not path.exists():
         raise FileNotFoundError(f"The path '{path}' does not exist.")
 
-    with open(path / "metadata.json", "r") as f:
+    with open(path / "metadata.json") as f:
         metadata = ujson.load(f)
 
     dependency_versions = get_dependency_versions()

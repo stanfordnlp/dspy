@@ -6,36 +6,36 @@ from collections import Counter
 from dspy.dsp.utils.utils import print_message
 
 
-def EM(prediction, answers_list):
+def EM(prediction, answers_list):  # noqa: N802
     assert isinstance(answers_list, list)
 
     return max(em_score(prediction, ans) for ans in answers_list)
 
 
-def F1(prediction, answers_list):
+def F1(prediction, answers_list):  # noqa: N802
     assert isinstance(answers_list, list)
 
     return max(f1_score(prediction, ans) for ans in answers_list)
 
 
-def HotPotF1(prediction, answers_list):
+def HotPotF1(prediction, answers_list):  # noqa: N802
     assert isinstance(answers_list, list)
 
     return max(hotpot_f1_score(prediction, ans) for ans in answers_list)
 
 
 def normalize_text(s):
-    s = unicodedata.normalize('NFD', s)
+    s = unicodedata.normalize("NFD", s)
 
     def remove_articles(text):
-        return re.sub(r'\b(a|an|the)\b', ' ', text)
+        return re.sub(r"\b(a|an|the)\b", " ", text)
 
     def white_space_fix(text):
-        return ' '.join(text.split())
+        return " ".join(text.split())
 
     def remove_punc(text):
         exclude = set(string.punctuation)
-        return ''.join(ch for ch in text if ch not in exclude)
+        return "".join(ch for ch in text if ch not in exclude)
 
     def lower(text):
         return text.lower()
@@ -51,6 +51,7 @@ def em_score(prediction, ground_truth):
 # See: https://rajpurkar.github.io/SQuAD-explorer/ under Evaluation Script
 # See: QReCC's
 
+
 def f1_score(prediction, ground_truth):
     prediction_tokens = normalize_text(prediction).split()
     ground_truth_tokens = normalize_text(ground_truth).split()
@@ -60,8 +61,7 @@ def f1_score(prediction, ground_truth):
 
     if len(prediction_tokens) == len(ground_truth_tokens) == 0:
         # Unlike most tasks, QReCC and SQuAD-2.0 assign 1.0 in this edge case. We don't for uniformity.
-        print_message(
-            "\n#> F1 Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n")
+        print_message("\n#> F1 Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n")
 
     if num_same == 0:
         return 0
@@ -77,9 +77,9 @@ def hotpot_f1_score(prediction, ground_truth):
     normalized_prediction = normalize_text(prediction)
     normalized_ground_truth = normalize_text(ground_truth)
 
-    if normalized_prediction in ['yes', 'no', 'noanswer'] and normalized_prediction != normalized_ground_truth:
+    if normalized_prediction in ["yes", "no", "noanswer"] and normalized_prediction != normalized_ground_truth:
         return 0
-    if normalized_ground_truth in ['yes', 'no', 'noanswer'] and normalized_prediction != normalized_ground_truth:
+    if normalized_ground_truth in ["yes", "no", "noanswer"] and normalized_prediction != normalized_ground_truth:
         return 0
 
     prediction_tokens = normalized_prediction.split()
@@ -103,8 +103,7 @@ def precision_score(prediction, ground_truth):
 
     if len(prediction_tokens) == len(ground_truth_tokens) == 0:
         # Unlike most tasks, QReCC and SQuAD-2.0 assign 1.0 in this edge case. We don't for uniformity.
-        print_message(
-            "\n#> F1 Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n")
+        print_message("\n#> F1 Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n")
 
     if num_same == 0:
         return 0

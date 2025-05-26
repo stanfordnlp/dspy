@@ -1,13 +1,12 @@
+import json
 import logging
 import re
-from typing import Union, Type
-import json
+from typing import Type, Union
 
 import dspy
-from dspy.signatures.signature import ensure_signature, Signature
-
 from dspy.primitives.program import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.signatures.signature import Signature, ensure_signature
 
 logger = logging.getLogger(__name__)
 

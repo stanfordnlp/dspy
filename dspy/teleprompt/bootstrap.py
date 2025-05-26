@@ -6,8 +6,8 @@ from typing import Dict, Optional
 import tqdm
 
 import dspy
+from dspy.teleprompt.teleprompt import Teleprompter
 
-from .teleprompt import Teleprompter
 from .vanilla import LabeledFewShot
 
 # TODO: metrics should return an object with __bool__ basically, but fine if they're more complex.
@@ -184,7 +184,7 @@ class BootstrapFewShot(Teleprompter):
             with dspy.settings.context(trace=[], **self.teacher_settings):
                 lm = dspy.settings.lm
                 lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
-                new_settings = dict(lm=lm) if round_idx > 0 else {}
+                new_settings = {"lm": lm} if round_idx > 0 else {}
 
                 with dspy.settings.context(**new_settings):
                     for name, predictor in teacher.named_predictors():

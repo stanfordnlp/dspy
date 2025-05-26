@@ -1,4 +1,4 @@
-Please refer to [this tutorial from the PAPILLON authors](https://github.com/Columbia-NLP-Lab/PAPILLON/blob/main/papillon_tutorial.ipynb) using DSPy.
+Please refer to [this tutorial from the PAPILLON authors](https://colab.research.google.com/github/Columbia-NLP-Lab/PAPILLON/blob/main/papillon_tutorial.ipynb) using DSPy.
 
 This tutorial demonstrates a few aspects of using DSPy in a more advanced context:
 
