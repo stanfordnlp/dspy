@@ -29,6 +29,8 @@ class BaseType(pydantic.BaseModel):
     def format(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    # WARN: This is the serialization step that then gets unserialized later
+    # to support image parts.
     @pydantic.model_serializer()
     def serialize_model(self):
         return f"{CUSTOM_TYPE_START_IDENTIFIER}{self.format()}{CUSTOM_TYPE_END_IDENTIFIER}"
@@ -81,6 +83,8 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
             # Parse the JSON inside the block
             custom_type_content = match.group(1).strip()
             try:
+                # WARN: This occasionally fails to correctly deserialize string to original
+                # pre-CUSTOM_TYPE_START_IDENTIFIER string.
                 parsed = json_repair.loads(custom_type_content)
                 for custom_type_content in parsed:
                     result.append(custom_type_content)
