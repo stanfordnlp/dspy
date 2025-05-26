@@ -133,7 +133,8 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
         ```python linenums="1"
         math = dspy.ChainOfThought("question -> answer: float")
-        math(question="Two dice are tossed. What is the probability that the sum equals two?")
+        response = math(question="Two dice are tossed. What is the probability that the sum equals two?")
+        print(response)
         ```
         
         **Possible Output:**
@@ -154,7 +155,8 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         rag = dspy.ChainOfThought('context, question -> response')
 
         question = "What's the name of the castle that David Gregory inherited?"
-        rag(context=search_wikipedia(question), question=question)
+        response = rag(context=search_wikipedia(question), question=question)
+        print(response)
         ```
         
         **Possible Output:**
@@ -178,7 +180,8 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
             confidence: float = dspy.OutputField()
 
         classify = dspy.Predict(Classify)
-        classify(sentence="This book was super fun to read, though not the last chapter.")
+        response = classify(sentence="This book was super fun to read, though not the last chapter.")
+        print(response)
         ```
         
         **Possible Output:**
