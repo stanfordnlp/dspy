@@ -73,12 +73,12 @@ import dspy
 from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
 # Configure your language model
-lm = dspy.LM(model="openai/gpt-3.5-turbo")
+lm = dspy.LM(model="openai/gpt-4o")
 dspy.configure(lm=lm)
 
 # Load dataset
 gsm8k = GSM8K()
-trainset, devset = gsm8k.train, gsm8k.dev[:50]
+trainset, devset = gsm8k.train, gsm8k.dev
 
 # Define your program
 program = dspy.ChainOfThought("question -> answer")
@@ -99,10 +99,10 @@ optimized_program = teleprompter.compile(
 ### 5. Viewing Results
 Open `http://localhost:5000` in your browser to visit the MLflow tracking server UI. Then navigate to your experiment to see:
 
-- Parent runs (optimization process)
-- Child runs (individual evaluations)
-- Metrics progression
-- Artifacts and program states
+- Optimization trials (Parent Runs)
+- Individual intermediate programs (Child Runs)
+- Evaluation metrics progression
+- Datasets and optimized program states
 
 ![DSPy Optimiser Tracking](./child_run.png)
 
