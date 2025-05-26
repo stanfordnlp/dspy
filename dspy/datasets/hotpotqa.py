@@ -20,8 +20,8 @@ class HotPotQA(Dataset):
 
         from datasets import load_dataset
 
-        hf_official_train = load_dataset("hotpot_qa", "fullwiki", split="train", trust_remote_code=True)
-        hf_official_dev = load_dataset("hotpot_qa", "fullwiki", split="validation", trust_remote_code=True)
+        hf_official_train = load_dataset("vincentkoc/hotpot_qa_archive", "fullwiki", split="train", trust_remote_code=True)
+        hf_official_dev = load_dataset("vincentkoc/hotpot_qa_archive", "fullwiki", split="validation", trust_remote_code=True)
 
         official_train = []
         for raw_example in hf_official_train:

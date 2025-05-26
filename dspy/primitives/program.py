@@ -6,6 +6,7 @@ from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
 from dspy.primitives.module import BaseModule
 from dspy.utils.callback import with_callbacks
+from dspy.utils.inspect_history import pretty_print_history
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -20,26 +21,38 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
         self._compiled = False
+        # LM calling history of the module.
+        self.history = []
 
     @with_callbacks
     def __call__(self, *args, **kwargs):
-        if settings.track_usage and settings.usage_tracker is None:
-            with track_usage() as usage_tracker:
-                output = self.forward(*args, **kwargs)
+        caller_modules = settings.caller_modules or []
+        caller_modules = list(caller_modules)
+        caller_modules.append(self)
+
+        with settings.context(caller_modules=caller_modules):
+            if settings.track_usage and settings.usage_tracker is None:
+                with track_usage() as usage_tracker:
+                    output = self.forward(*args, **kwargs)
                 output.set_lm_usage(usage_tracker.get_total_tokens())
                 return output
 
-        return self.forward(*args, **kwargs)
+            return self.forward(*args, **kwargs)
 
     @with_callbacks
     async def acall(self, *args, **kwargs):
-        if settings.track_usage and settings.usage_tracker is None:
-            with track_usage() as usage_tracker:
-                output = await self.aforward(*args, **kwargs)
-                output.set_lm_usage(usage_tracker.get_total_tokens())
-                return output
+        caller_modules = settings.caller_modules or []
+        caller_modules = list(caller_modules)
+        caller_modules.append(self)
 
-        return await self.aforward(*args, **kwargs)
+        with settings.context(caller_modules=caller_modules):
+            if settings.track_usage and settings.usage_tracker is None:
+                with track_usage() as usage_tracker:
+                    output = await self.aforward(*args, **kwargs)
+                    output.set_lm_usage(usage_tracker.get_total_tokens())
+                    return output
+
+            return await self.aforward(*args, **kwargs)
 
     def named_predictors(self):
         from dspy.predict.predict import Predict
@@ -75,6 +88,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
             set_attribute_by_name(self, name, func(predictor))
         return self
 
+    def inspect_history(self, n: int = 1):
+        return pretty_print_history(self.history, n)
 
     def batch(
         self,

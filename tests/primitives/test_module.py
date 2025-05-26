@@ -1,5 +1,6 @@
 import logging
 import os
+from litellm import ModelResponse, Message, Choices
 import threading
 from unittest.mock import patch
 
@@ -243,5 +244,136 @@ def test_usage_tracker_in_parallel():
     assert results[0].get_lm_usage() is not None
     assert results[1].get_lm_usage() is not None
 
-    assert results[0].get_lm_usage().keys() == {"openai/gpt-4o-mini"}
-    assert results[1].get_lm_usage().keys() == {"openai/gpt-3.5-turbo"}
+    assert results[0].get_lm_usage().keys() == set(["openai/gpt-4o-mini"])
+    assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
+
+
+def test_module_history():
+    class MyProgram(dspy.Module):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        def forward(self, question: str, **kwargs) -> str:
+            return self.cot(question=question)
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+            ],
+            model="openai/gpt-4o-mini",
+        )
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        program = MyProgram()
+        program(question="What is the capital of France?")
+
+        # Second call only call the submodule.
+        program.cot(question="What is the capital of France?")
+
+        # The LM history entity exists in all the ancestor callers.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        # The same history entity is shared across all the ancestor callers to reduce memory usage.
+        assert id(program.history[0]) == id(program.cot.history[0])
+
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+
+        dspy.settings.configure(disable_history=True)
+
+        program(question="What is the capital of France?")
+        # No history is recorded when history is disabled.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        dspy.settings.configure(disable_history=False)
+
+        program(question="What is the capital of France?")
+        # History is recorded again when history is enabled.
+        assert len(program.history) == 2
+        assert len(program.cot.history) == 3
+        assert len(program.cot.predict.history) == 3
+
+
+def test_module_history_with_concurrency():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        def forward(self, question: str, **kwargs) -> str:
+            return self.cot(question=question)
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'reasoning': 'N/A', 'answer': 'Holy crab!'}"))],
+            model="openai/gpt-4o-mini",
+        )
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        program = MyProgram()
+
+        parallelizer = dspy.Parallel()
+
+        parallelizer(
+            [
+                (program, {"question": "What is the meaning of life?"}),
+                (program, {"question": "why did a chicken cross the kitchen?"}),
+            ]
+        )
+        assert len(program.history) == 2
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+
+@pytest.mark.asyncio
+async def test_module_history_async():
+    class MyProgram(dspy.Module):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        async def aforward(self, question: str, **kwargs) -> str:
+            return await self.cot.acall(question=question)
+
+    with patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+            ],
+            model="openai/gpt-4o-mini",
+        )
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        program = MyProgram()
+        await program.acall(question="What is the capital of France?")
+
+        # Second call only call the submodule.
+        await program.cot.acall(question="What is the capital of France?")
+
+        # The LM history entity exists in all the ancestor callers.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        # The same history entity is shared across all the ancestor callers to reduce memory usage.
+        assert id(program.history[0]) == id(program.cot.history[0])
+
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+
+        dspy.settings.configure(disable_history=True)
+
+        await program.acall(question="What is the capital of France?")
+        # No history is recorded when history is disabled.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        dspy.settings.configure(disable_history=False)
+
+        await program.acall(question="What is the capital of France?")
+        # History is recorded again when history is enabled.
+        assert len(program.history) == 2
+        assert len(program.cot.history) == 3
+        assert len(program.cot.predict.history) == 3

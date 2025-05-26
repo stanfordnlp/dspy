@@ -20,6 +20,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Multi-Hop RAG](/tutorials/multihop_search/)
     - [Privacy-Conscious Delegation](/tutorials/papillon/)
     - [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
+    - [Audio](/tutorials/audio/)
 
 
 - Optimize AI Programs with DSPy
