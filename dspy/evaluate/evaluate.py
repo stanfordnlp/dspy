@@ -1,5 +1,6 @@
 import logging
 import types
+import importlib
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
@@ -178,12 +179,13 @@ class Evaluate:
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         if display_table:
-            # Rename the 'correct' column to the name of the metric object
-            metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
-            # Construct a pandas DataFrame from the results
-            result_df = self._construct_result_table(results, metric_name)
+            if importlib.util.find_spec("pandas") is not None:
+                # Rename the 'correct' column to the name of the metric object
+                metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
+                # Construct a pandas DataFrame from the results
+                result_df = self._construct_result_table(results, metric_name)
 
-            self._display_result_table(result_df, display_table, metric_name)
+                self._display_result_table(result_df, display_table, metric_name)
 
         if return_all_scores and return_outputs:
             return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in results]
