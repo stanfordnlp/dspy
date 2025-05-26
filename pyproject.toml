@@ -68,6 +68,9 @@ dev = [
 ]
 test_extras = [
     "mcp; python_version >= '3.10'",
+    "datasets>=2.14.6",
+    "pandas>=2.1.1",
+    "optuna>=3.4.0",
 ]
 
 [tool.setuptools.packages.find]
