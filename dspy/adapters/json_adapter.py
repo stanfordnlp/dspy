@@ -44,24 +44,6 @@ class JSONAdapter(Adapter):
         inputs = self.format(signature, demos, inputs)
         inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
 
-        # try:
-        #     provider = lm.model.split("/", 1)[0] or "openai"
-        #     params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
-        #     if params and "response_format" in params:
-        #         try:
-        #             response_format = _get_structured_outputs_response_format(signature)
-        #             outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
-        #         except Exception as e:
-        #             logger.debug(
-        #                 f"Failed to obtain response using signature-based structured outputs"
-        #                 f" response format: Falling back to default 'json_object' response format."
-        #                 f" Exception: {e}"
-        #             )
-        #             outputs = lm(**inputs, **lm_kwargs, response_format={"type": "json_object"})
-        #     else:
-        #         outputs = lm(**inputs, **lm_kwargs)
-
-        # except litellm.UnsupportedParamsError:
         outputs = lm(**inputs, **lm_kwargs)
 
         values = []

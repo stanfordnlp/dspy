@@ -87,24 +87,33 @@ def find_enum_member(enum, identifier):
 
 
 def parse_value(value, annotation):
+    # Handle Optional[T] (i.e., Union[T, None]) and validate Union assumptions
+    if get_origin(annotation) is Union:
+        args = get_args(annotation)
+        non_none_args = [arg for arg in args if arg is not type(None)]
 
-    is_optional_str = (
-        getattr(annotation, '__origin__', None) is Union and str in get_args(annotation)
-    )
+        if len(non_none_args) == 1:
+            annotation = non_none_args[0]
+        else:
+            raise TypeError(
+                f"Unsupported Union type: {annotation}. "
+                f"Expected Optional[T] (i.e., Union[T, None]), but got Union with multiple concrete types: {non_none_args}"
+            )
 
-    if annotation is str or is_optional_str:
-        return str(value) if value is not None else None  # Ensure string output, preserving None
-    
-    # if annotation is str:
-    #     return str(value)
+    # Handle str
+    if annotation is str:
+        return str(value) if value is not None else None
 
+    # Handle Enums
     if isinstance(annotation, enum.EnumMeta):
         return find_enum_member(annotation, value)
 
+    # Validate if input is already the right type
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
 
-    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
+    # Try to parse string value
+    candidate = json_repair.loads(value)
     if candidate == "" and value != "":
         try:
             candidate = ast.literal_eval(value)
