@@ -2,14 +2,17 @@
 import os
 import traceback
 from typing import Union
-import dspy
 import json
-
-import dspy.teleprompt
-import dspy.teleprompt.teleprompt
 import wandb
 
 from .instruction_proposal import ProposeNewInstructionModule
+
+from dspy.teleprompt import Teleprompter
+from dspy.clients import LM
+from dspy.primitives import Module
+from dspy.primitives import Example
+from dspy.evaluate import Evaluate
+from dspy.dsp.utils.settings import settings
 
 from .gepa_utils import (
     calculate_aggregate_trainval_scores,
@@ -29,7 +32,7 @@ from .merge_programs import (
     sample_and_attempt_merge_programs_by_common_predictors
 )
 
-class GEPA(dspy.teleprompt.teleprompt.Teleprompter):
+class GEPA(Teleprompter):
     def __init__(
         self,
         named_predictor_to_feedback_fn_map: dict[str, callable],
@@ -42,7 +45,7 @@ class GEPA(dspy.teleprompt.teleprompt.Teleprompter):
         num_iters=30,
         failure_score=0,
         perfect_score=1,
-        teacher_lm: dspy.LM = None,
+        teacher_lm: LM = None,
         use_wandb: bool = False,
         wandb_api_key: str = None,
         max_evals_per_trainval_instance=30,
@@ -130,21 +133,21 @@ class GEPA(dspy.teleprompt.teleprompt.Teleprompter):
 
     def gepa(
         self,
-        base_dspy_program: dspy.Module, 
+        base_dspy_program: Module, 
         named_predictor_to_feedback_fn_map: dict[str, callable],
-        trainset: list[dspy.Example],
+        trainset: list[Example],
         knowledgebase_qe, 
         metric_fn: callable,
         logger,
         run_dir: str,
-        valset: list[dspy.Example]=None,
+        valset: list[Example]=None,
         run_linearized_gepa: bool=True,
         gepa_state_to_use: Union[GEPAState, None]=None,
         num_threads=None,
         num_iters=5,
         failure_score=0,
         perfect_score=1,
-        teacher_lm: dspy.LM = None,
+        teacher_lm: LM = None,
         use_wandb: bool = False,
         wandb_api_key: str = None,
         max_evals_per_trainval_instance=30,
@@ -154,7 +157,8 @@ class GEPA(dspy.teleprompt.teleprompt.Teleprompter):
         SIMBA_metric=None,
         use_merge=False,
         max_merge_invocations=5,
-        seed=0, me_sample_size=400, me_elite_ratio=0.4, me_iterations=50, me_reversed=False, skip_perfect_score=False
+        seed=0,
+        skip_perfect_score=False
     ):
         if use_wandb:
             wandb_run = initialize_wandb(wandb_api_key=wandb_api_key, run_dir=run_dir)
@@ -162,7 +166,7 @@ class GEPA(dspy.teleprompt.teleprompt.Teleprompter):
         if num_threads is None:
             num_threads = os.cpu_count()
 
-        trainset_evaluator = dspy.Evaluate(
+        trainset_evaluator = Evaluate(
             devset=trainset,
             metric=metric_fn,
             num_threads=num_threads,
@@ -175,7 +179,7 @@ class GEPA(dspy.teleprompt.teleprompt.Teleprompter):
         if valset is None:
             valset = trainset
 
-        valset_evaluator = dspy.Evaluate(
+        valset_evaluator = Evaluate(
             devset=valset,
             metric=metric_fn,
             num_threads=num_threads,
@@ -272,13 +276,11 @@ class GEPA(dspy.teleprompt.teleprompt.Teleprompter):
 
                 instruction_propose_module = ProposeNewInstructionModule(
                     base_program=module, 
-                    instruction_lm=curr_prog.get_lm() or dspy.settings.lm,
+                    instruction_lm=self.teacher_lm or settings.lm or curr_prog.get_lm(),
                     dataset_with_feedback=dataset_with_feedback, 
                     knowledgebase_qe=knowledgebase_qe)
-                if teacher_lm is not None:
-                    instruction_propose_module.instruction_propose_module.set_lm(teacher_lm)
+
                 try:
-                    # new_instruction, module_output = instruction_propose_module.compile()
                     output = instruction_propose_module.compile()
                     with open(os.path.join(run_dir, "instruction_proposer_inpouts.jsonl"), 'a') as f:
                         f.write(json.dumps(output, default=lambda x: {**x}) + "\n")
@@ -302,11 +304,11 @@ class GEPA(dspy.teleprompt.teleprompt.Teleprompter):
                 subsample_evaluator_args['devset'] = [trainset[i] for i in subsample_ids]
                 subsample_evaluator_args['return_outputs'] = True
                 subsample_evaluator_args['return_all_scores'] = True
-                subsample_evaluator = dspy.Evaluate(**subsample_evaluator_args)
+                subsample_evaluator = Evaluate(**subsample_evaluator_args)
                 new_subsample_score = sum(subsample_evaluator(new_program)[2])
 
                 gepa_state.total_num_evals_per_trainval_instance += len(subsample_ids) / (len(trainset) + len(valset) if valset is not None else 0)
-                
+
                 logger.log(f"Iteration {gepa_state.i+1}: New subsample score: {new_subsample_score}")
                 if use_wandb:
                     wandb.log({

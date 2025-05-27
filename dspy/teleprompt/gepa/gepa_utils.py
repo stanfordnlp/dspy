@@ -1,19 +1,24 @@
 from copy import deepcopy
 import os
 import traceback
-import dspy
 import random
 import itertools
 import json
 
-import dspy.teleprompt
-import dspy.teleprompt.teleprompt
 import wandb
 
 from .entropy_utils import remove_dominated_programs
 
+from dspy.primitives import Module
+from dspy.primitives import Example
+from dspy.primitives import Prediction
+from dspy.utils.saving import load as dspy_load
+from dspy.dsp.utils.settings import settings
+from dspy.evaluate import Evaluate
+from dspy.teleprompt.simba import SIMBA
+
 class GEPAState:
-    program_candidates: list[dspy.Module]
+    program_candidates: list[Module]
     parent_program_for_candidate: list[int | None]
 
     program_full_scores: list[float]
@@ -44,9 +49,9 @@ class GEPAState:
 
     def __init__(
         self, 
-        base_program: dspy.Module, 
-        base_trainset_eval_output: tuple[float, list[dspy.Prediction], list[float]],
-        base_valset_eval_output: tuple[float, list[dspy.Prediction], list[float]],
+        base_program: Module, 
+        base_trainset_eval_output: tuple[float, list[Prediction], list[float]],
+        base_valset_eval_output: tuple[float, list[Prediction], list[float]],
         seed: int, 
         run_linearized_gepa: bool=False
     ):
@@ -112,7 +117,7 @@ class GEPAState:
             dir_to_load = os.path.join(run_dir, "prog_candidates", str(i))
             if not os.path.exists(dir_to_load):
                 break
-            prog = dspy.load(dir_to_load)
+            prog = dspy_load(dir_to_load)
             state.program_candidates.append(prog)
         
         assert len(state.program_candidates) == len(state.program_full_scores)
@@ -218,9 +223,9 @@ def update_pareto_front(new_prog_all_scores, new_program_idx, new_program_full_s
     return pareto_front, program_at_pareto_front
 
 def capture_module_trace_with_feedback(
-    module: dspy.Module,
-    full_program: dspy.Module,
-    evalset: list[dspy.Example],
+    module: Module,
+    full_program: Module,
+    evalset: list[Example],
     metric_fn: callable,
     logger,
     gepa_state: GEPAState,
@@ -247,9 +252,9 @@ def capture_module_trace_with_feedback(
         for testcase in evalset:
             captured.append([])
             captured_trace = None
-            with dspy.settings.context(trace=[]):
+            with settings.context(trace=[]):
                 o = full_program(**testcase.inputs())
-                captured_trace = dspy.settings.trace
+                captured_trace = settings.trace
             score = metric_fn(testcase, o)
             if score == perfect_score:
                 logger.log(f"Iteration {gepa_state.i+1}: Score is 1, skipping")
@@ -381,7 +386,7 @@ def select_program_candidate_from_pareto_front(gepa_state: GEPAState, train_val_
     curr_prog_id = gepa_state.rng2.choice(sampling_list)
     return curr_prog_id
 
-def select_next_candidate_to_update(gepa_state: GEPAState, trainset: list[dspy.Example], valset: list[dspy.Example]):
+def select_next_candidate_to_update(gepa_state: GEPAState, trainset: list[Example], valset: list[Example]):
     train_val_weighted_agg_scores_for_all_programs = calculate_aggregate_trainval_scores(
         prog_ids=range(len(gepa_state.program_candidates)),
         train_scores=gepa_state.program_full_scores,
@@ -466,13 +471,13 @@ def log_detailed_metrics_after_discovering_new_program(logger, gepa_state, valse
 def run_simba_on_one_program_and_update_gepa_state(
     SIMBA_metric: callable,
     gepa_state: GEPAState,
-    base_simba_program: dspy.Module,
+    base_simba_program: Module,
     base_simba_progidx_in_gepa_state: int,
-    trainset_evaluator: dspy.Evaluate,
-    valset_evaluator: dspy.Evaluate,
+    trainset_evaluator: Evaluate,
+    valset_evaluator: Evaluate,
     run_dir: str,
-    trainset: list[dspy.Example],
-    valset: list[dspy.Example],
+    trainset: list[Example],
+    valset: list[Example],
     logger,
     num_threads=None,
     SIMBA_max_steps=2,
@@ -480,7 +485,7 @@ def run_simba_on_one_program_and_update_gepa_state(
 ):
     try:
         logger.log(f"Iteration {gepa_state.i+1}: Running SIMBA")
-        simba_opt = dspy.SIMBA(max_steps=SIMBA_max_steps, num_threads=num_threads, metric=SIMBA_metric)
+        simba_opt = SIMBA(max_steps=SIMBA_max_steps, num_threads=num_threads, metric=SIMBA_metric)
         optimized_program = simba_opt.compile(
             base_simba_program,
             trainset= trainset + valset,
@@ -529,11 +534,11 @@ def run_simba_on_one_program_and_update_gepa_state(
 def run_simba_on_all_gepa_programs_and_update_gepa_state(
     SIMBA_metric: callable,
     gepa_state: GEPAState,
-    trainset_evaluator: dspy.Evaluate,
-    valset_evaluator: dspy.Evaluate,
+    trainset_evaluator: Evaluate,
+    valset_evaluator: Evaluate,
     run_dir: str,
-    trainset: list[dspy.Example],
-    valset: list[dspy.Example],
+    trainset: list[Example],
+    valset: list[Example],
     logger,
     num_threads=None,
     SIMBA_max_steps=2,
@@ -541,7 +546,7 @@ def run_simba_on_all_gepa_programs_and_update_gepa_state(
 ):
     try:
         logger.log(f"Iteration {gepa_state.i+1}: Running SIMBA")
-        simba_opt = dspy.SIMBA(max_steps=SIMBA_max_steps, num_threads=num_threads, metric=SIMBA_metric)
+        simba_opt = SIMBA(max_steps=SIMBA_max_steps, num_threads=num_threads, metric=SIMBA_metric)
 
         optimized_program = simba_opt.compile(
             student=None,
