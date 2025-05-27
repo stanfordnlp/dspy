@@ -86,6 +86,8 @@ class DatabricksRM(dspy.Retrieve):
         databricks_index_name: str,
         databricks_endpoint: Optional[str] = None,
         databricks_token: Optional[str] = None,
+        databricks_client_id: Optional[str] = None,
+        databricks_client_secret: Optional[str] = None,
         columns: Optional[List[str]] = None,
         filters_json: Optional[str] = None,
         k: int = 3,
@@ -105,6 +107,10 @@ class DatabricksRM(dspy.Retrieve):
                 when querying the Vector Search Index. Defaults to the value of the
                 ``DATABRICKS_TOKEN`` environment variable. If unspecified, the Databricks SDK is
                 used to identify the token based on the current environment.
+            databricks_client_id (str): Databricks service principal id. If not specified,
+                the token is resolved from the current environment (DATABRICKS_CLIENT_ID).
+            databricks_client_secret (str): Databricks service principal secret. If not specified,
+                the endpoint is resolved from the current environment (DATABRICKS_CLIENT_SECRET).
             columns (Optional[List[str]]): Extra column names to include in response,
                 in addition to the document id and text columns specified by
                 ``docs_id_column_name`` and ``text_column_name``.
@@ -127,7 +133,13 @@ class DatabricksRM(dspy.Retrieve):
         self.databricks_endpoint = (
             databricks_endpoint if databricks_endpoint is not None else os.environ.get("DATABRICKS_HOST")
         )
-        if not _databricks_sdk_installed and (self.databricks_token, self.databricks_endpoint).count(None) > 0:
+        self.databricks_client_id = databricks_client_id if databricks_client_id is not None else os.environ.get("DATABRICKS_CLIENT_ID")
+        self.databricks_client_secret = (
+            databricks_client_secret if databricks_client_secret is not None else os.environ.get("DATABRICKS_CLIENT_SECRET")
+        )
+
+        if not _databricks_sdk_installed and ((self.databricks_token, self.databricks_endpoint).count(None) > 0 and
+                                              (self.databricks_client_id, self.databricks_client_secret).count(None) > 0):
             raise ValueError(
                 "To retrieve documents with Databricks Vector Search, you must install the"
                 " databricks-sdk Python library, supply the databricks_token and"
@@ -245,6 +257,8 @@ class DatabricksRM(dspy.Retrieve):
                 query_vector=query_vector,
                 databricks_token=self.databricks_token,
                 databricks_endpoint=self.databricks_endpoint,
+                databricks_client_id=self.databricks_client_id,
+                databricks_client_secret=self.databricks_client_secret,
                 filters_json=filters_json or self.filters_json,
             )
         else:
@@ -315,6 +329,8 @@ class DatabricksRM(dspy.Retrieve):
         query_vector: Optional[List[float]],
         databricks_token: Optional[str],
         databricks_endpoint: Optional[str],
+        databricks_client_id: Optional[str],
+        databricks_client_secret: Optional[str],
         filters_json: Optional[str],
     ) -> Dict[str, Any]:
         """
@@ -334,15 +350,33 @@ class DatabricksRM(dspy.Retrieve):
                 the token is resolved from the current environment.
             databricks_endpoint (str): Databricks index endpoint url. If not specified,
                 the endpoint is resolved from the current environment.
+            databricks_client_id (str): Databricks service principal id. If not specified,
+                the token is resolved from the current environment (DATABRICKS_CLIENT_ID).
+            databricks_client_secret (str): Databricks service principal secret. If not specified,
+                the endpoint is resolved from the current environment (DATABRICKS_CLIENT_SECRET).
+        Returns:
         Returns:
             Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
         """
+
         from databricks.sdk import WorkspaceClient
 
         if (query_text, query_vector).count(None) != 1:
             raise ValueError("Exactly one of query_text or query_vector must be specified.")
 
-        databricks_client = WorkspaceClient(host=databricks_endpoint, token=databricks_token)
+        if databricks_client_secret and databricks_client_id:
+            # Use client ID and secret for authentication if they are provided
+            databricks_client = WorkspaceClient(
+                client_id=databricks_client_id,
+                client_secret=databricks_client_secret,
+            )
+        else:
+            # Fallback for token-based authentication
+            databricks_client = WorkspaceClient(
+                host=databricks_endpoint,
+                token=databricks_token,
+            )
+
         return databricks_client.vector_search_indexes.query_index(
             index_name=index_name,
             query_type=query_type,
