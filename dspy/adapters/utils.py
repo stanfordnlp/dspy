@@ -132,48 +132,40 @@ def find_enum_member(enum, identifier):
 
 
 def parse_value(value, annotation):
-    if annotation is str:
-        return str(value)
+    # Handle Optional[T] (i.e., Union[T, None]) and validate Union assumptions
+    if get_origin(annotation) is Union:
+        args = get_args(annotation)
+        non_none_args = [arg for arg in args if arg is not type(None)]
 
+        if len(non_none_args) == 1:
+            annotation = non_none_args[0]
+        else:
+            raise TypeError(
+                f"Unsupported Union type: {annotation}. "
+                f"Expected Optional[T] (i.e., Union[T, None]), but got Union with multiple concrete types: {non_none_args}"
+            )
+
+    # Handle str
+    if annotation is str:
+        return str(value) if value is not None else None
+
+    # Handle Enums
     if isinstance(annotation, enum.EnumMeta):
         return find_enum_member(annotation, value)
 
-    origin = get_origin(annotation)
-
-    if origin is Literal:
-        allowed = get_args(annotation)
-        if value in allowed:
-            return value
-
-        if isinstance(value, str):
-            v = value.strip()
-            if v.startswith(("Literal[", "str[")) and v.endswith("]"):
-                v = v[v.find("[") + 1 : -1]
-            if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'":
-                v = v[1:-1]
-
-            if v in allowed:
-                return v
-
-        raise ValueError(f"{value!r} is not one of {allowed!r}")
-
+    # Validate if input is already the right type
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
 
-    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
+    # Try to parse string value
+    candidate = json_repair.loads(value)
     if candidate == "" and value != "":
         try:
             candidate = ast.literal_eval(value)
         except (ValueError, SyntaxError):
             candidate = value
 
-    try:
-        return TypeAdapter(annotation).validate_python(candidate)
-    except pydantic.ValidationError:
-        if origin is Union and type(None) in get_args(annotation) and str in get_args(annotation):
-            return str(candidate)
-        raise
-
+    return TypeAdapter(annotation).validate_python(candidate)
 
 def get_annotation_name(annotation):
     origin = get_origin(annotation)
