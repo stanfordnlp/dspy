@@ -87,6 +87,8 @@ def find_enum_member(enum, identifier):
 
 
 def parse_value(value, annotation):
+    origin_annotation = annotation
+
     # Handle Optional[T] (i.e., Union[T, None]) and validate Union assumptions
     if get_origin(annotation) is Union:
         args = get_args(annotation)
@@ -100,9 +102,16 @@ def parse_value(value, annotation):
                 f"Expected Optional[T] (i.e., Union[T, None]), but got Union with multiple concrete types: {non_none_args}"
             )
 
+    # Explicitly return None if the value is None and the annotation allowed it
+    if value is None:
+        if get_origin(origin_annotation) is Union and type(None) in get_args(origin_annotation):
+            return None
+        else:
+            raise TypeError(f"Received None for non-optional annotation: {annotation}")
+
     # Handle str
     if annotation is str:
-        return str(value) if value is not None else None
+        return str(value)
 
     # Handle Enums
     if isinstance(annotation, enum.EnumMeta):
