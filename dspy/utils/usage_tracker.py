@@ -41,8 +41,7 @@ class UsageTracker:
             if isinstance(v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
             else:
-                result[k] = current_v or 0
-                result[k] += v if v else 0
+                result[k] = (current_v or 0) + (v or 0)
         return result
 
     def add_usage(self, lm: str, usage_entry: dict):
