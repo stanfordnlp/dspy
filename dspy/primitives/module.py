@@ -163,7 +163,7 @@ class BaseModule:
         for name, param in self.named_parameters():
             param.load_state(state[name])
 
-    def save(self, path, save_program=False):
+    def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
 
         Save the module to a directory or a file. There are two modes:
@@ -171,6 +171,10 @@ class BaseModule:
             the file extension.
         - `save_program=True`: Save the whole module to a directory via cloudpickle, which contains both the state and
             architecture of the model.
+
+        If save_program=True and modules_to_serialize are provided, it will register those modules for serialization 
+        with cloudpickle's `register_pickle_by_value`. This is useful when you have custom modules that need to be
+        serialized with cloudpickle. If None, then no modules will be registered for serialization.
 
         We also save the dependency versions, so that the loaded model can check if there is a version mismatch on
         critical dependencies or DSPy version.
@@ -180,6 +184,9 @@ class BaseModule:
                 and a directory when `save_program=True`.
             save_program (bool): If True, save the whole module to a directory via cloudpickle, otherwise only save
                 the state.
+            modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
+                If None, then no modules will be registered for serialization.
+
         """
         metadata = {}
         metadata["dependency_versions"] = get_dependency_versions()
@@ -198,6 +205,10 @@ class BaseModule:
                 path.mkdir(parents=True)
 
             try:
+                if modules_to_serialize is not None:
+                    for module in modules_to_serialize:
+                        cloudpickle.register_pickle_by_value(module)
+
                 with open(path / "program.pkl", "wb") as f:
                     cloudpickle.dump(self, f)
             except Exception as e:
