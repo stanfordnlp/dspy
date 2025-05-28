@@ -138,6 +138,21 @@ class MyModule(dspy.Module):
         import custom_module
 
         cot = custom_module.MyModule()
+
+        cot.save(tmp_path, save_program=True)
+        # Remove the custom module from sys.modules to simulate it not being available
+        sys.modules.pop("custom_module", None)
+        # Also remove it from sys.path
+        sys.path.remove(str(tmp_path))
+        del custom_module
+
+        # Test the loading fails without using `modules_to_serialize`
+        with pytest.raises(ModuleNotFoundError):
+            dspy.load(tmp_path)
+
+        sys.path.insert(0, str(tmp_path))
+        import custom_module
+
         cot.save(
             tmp_path,
             modules_to_serialize=[custom_module],
