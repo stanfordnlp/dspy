@@ -115,6 +115,50 @@ def test_save_and_load_with_pkl(tmp_path):
     assert new_cot.predict.demos == compiled_cot.predict.demos
 
 
+def test_save_with_extra_modules(tmp_path):
+    import sys
+
+    # Create a temporary Python file with our custom module
+    custom_module_path = tmp_path / "custom_module.py"
+    with open(custom_module_path, "w") as f:
+        f.write("""
+import dspy
+
+class MyModule(dspy.Module):
+    def __init__(self):
+        self.cot = dspy.ChainOfThought(dspy.Signature("q -> a"))
+
+    def forward(self, q):
+        return self.cot(q=q)
+""")
+
+    # Add the tmp_path to Python path so we can import the module
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import custom_module
+
+        cot = custom_module.MyModule()
+        cot.save(
+            tmp_path,
+            modules_to_serialize=[custom_module],
+            save_program=True,
+        )
+
+        # Remove the custom module from sys.modules to simulate it not being available
+        sys.modules.pop("custom_module", None)
+        # Also remove it from sys.path
+        sys.path.remove(str(tmp_path))
+        del custom_module
+
+        loaded_module = dspy.load(tmp_path)
+        assert loaded_module.cot.predict.signature == cot.cot.predict.signature
+
+    finally:
+        # Only need to clean up sys.path
+        if str(tmp_path) in sys.path:
+            sys.path.remove(str(tmp_path))
+
+
 def test_load_with_version_mismatch(tmp_path):
     from dspy.primitives.module import logger
 
