@@ -173,8 +173,10 @@ class BaseModule:
             architecture of the model.
 
         If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization 
-        with cloudpickle's `register_pickle_by_value`. This is useful when you have custom modules that need to be
-        serialized with cloudpickle. If None, then no modules will be registered for serialization.
+        with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize the module by value rather 
+        than by reference, ensuring the module is fully preserved along with the saved program. This is useful 
+        when you have custom modules that need to be serialized alongside your program. If None, then no modules 
+        will be registered for serialization.
 
         We also save the dependency versions, so that the loaded model can check if there is a version mismatch on
         critical dependencies or DSPy version.
