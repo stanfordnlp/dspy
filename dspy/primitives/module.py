@@ -172,7 +172,7 @@ class BaseModule:
         - `save_program=True`: Save the whole module to a directory via cloudpickle, which contains both the state and
             architecture of the model.
 
-        If save_program=True and modules_to_serialize are provided, it will register those modules for serialization 
+        If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization 
         with cloudpickle's `register_pickle_by_value`. This is useful when you have custom modules that need to be
         serialized with cloudpickle. If None, then no modules will be registered for serialization.
 
@@ -205,9 +205,9 @@ class BaseModule:
                 path.mkdir(parents=True)
 
             try:
-                if modules_to_serialize is not None:
-                    for module in modules_to_serialize:
-                        cloudpickle.register_pickle_by_value(module)
+                modules_to_serialize = modules_to_serialize or []
+                for module in modules_to_serialize:
+                    cloudpickle.register_pickle_by_value(module)
 
                 with open(path / "program.pkl", "wb") as f:
                     cloudpickle.dump(self, f)
