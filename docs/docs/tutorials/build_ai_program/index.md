@@ -1,5 +1,6 @@
 - [Retrieval-Augmented Generation (RAG)](/tutorials/rag/)
 - [Building RAG as Agent](/tutorials/agents/)
+- [Build AI Agents with DSPy](/tutorials/customer_service_agent/)
 - [Entity Extraction](/tutorials/entity_extraction/)
 - [Classification](/tutorials/classification/)
 - [Multi-Hop RAG](/tutorials/multihop_search/)
