@@ -5,14 +5,14 @@ This tutorial demonstrates how to use MLflow to track and analyze your DSPy opti
 Through the autologging capability, MLflow tracks the following information:
 
 * **Optimizer Parameters**
-    * Number of demonstrations
+    * Number of few-shot examples
     * Number of candidates
     * Other configuration settings
 
 * **Program States**
-    * Initial program state
-    * Optimized program state
-    * Intermediate states during optimization
+    * Initial instuctions and few-shot examples
+    * Optimized instuctions and few-shot examples
+    * Intermediate instuctions and few-shot examples during optimization
 
 * **Datasets**
     * Training data used
@@ -41,6 +41,7 @@ pip install mlflow>=2.21.1
 Let's spin up the MLflow tracking server with the following command. This will start a local server at `http://127.0.0.1:5000/`:
 
 ```bash
+# It is highly recommended to use SQL store when using MLflow tracing
 mlflow server --backend-store-uri sqlite:///mydb.sqlite
 ```
 
@@ -97,14 +98,28 @@ optimized_program = teleprompter.compile(
 ```
 
 ### 5. Viewing Results
-Open `http://localhost:5000` in your browser to visit the MLflow tracking server UI. Then navigate to your experiment to see:
 
-- Optimization trials (Parent Runs)
-- Individual intermediate programs (Child Runs)
-- Evaluation metrics progression
-- Datasets and optimized program states
+Once your optimization is complete, you can analyze the results through MLflow's UI. Let's walk through how to explore your optimization runs.
 
-![DSPy Optimiser Tracking](./child_run.png)
+#### Step 1: Access the MLflow UI
+Navigate to `http://localhost:5000` in your web browser to access the MLflow tracking server UI.
+
+#### Step 2: Understanding the Experiment Structure
+When you open the experiment page, you'll see a hierarchical view of your optimization process. The parent run represents your overall optimization process, while the child runs show each intermediate version of your program that was created during optimization.
+
+![Experiments](./experiment.png)
+
+#### Step 3: Analyzing the Parent Run
+Clicking on the parent run reveals the big picture of your optimization process. You'll find detailed information about your optimizer's configuration parameters and how your evaluation metrics progressed over time. The parent run also stores your final optimized program, including the instructions, signature definitions, and few-shot examples that were used. Additionally, you can review the training data that was used during the optimization process.
+
+![Parent Run](./parent_run.png)
+
+#### Step 4: Examining Child Runs
+Each child run provides a detailed snapshot of a specific optimization attempt. When you select a child run from the experiment page, you can explore several aspects of that particular intermediate program.
+On the run parameter tab or artifact tab, you can review the instructions and few-shot examples used for the intermediate program.
+One of the most powerful features is the Traces tab, which provides a step-by-step view of your program's execution. Here you can understand exactly how your DSPy program processes inputs and generates outputs.
+
+![Child Run](./child_run.png)
 
 ### 6. Loading Models for Inference
 You can load the optimized program directly from the MLflow tracking server for inference:
