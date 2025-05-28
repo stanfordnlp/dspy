@@ -186,6 +186,8 @@ class Evaluate:
                 result_df = self._construct_result_table(results, metric_name)
 
                 self._display_result_table(result_df, display_table, metric_name)
+            else:
+                logger.warning("Skipping table display since `pandas` is not installed.")
 
         if return_all_scores and return_outputs:
             return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in results]
