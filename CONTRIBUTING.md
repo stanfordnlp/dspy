@@ -35,17 +35,55 @@ For minor changes (simple bug fixes or documentation fixes), feel free to open a
 To make code changes, fork the repository and set up your local development environment following the
 instructions in the "Environment Setup" section below.
 
-### Step 3. Create a Pull Request
+### Step 3 Commit Your Code and Run Autoformatting
+
+We follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) and use `ruff` for both linting and formatting. To ensure consistent code quality, we use pre-commit hooks that automatically check and fix common issues.
+
+
+First you need to set up the pre-commit hooks (do this once after cloning the repository):
+
+```shell
+pre-commit install
+```
+
+Then stage and commit your changes. When you run `git commit`, the pre-commit hook will be
+automatically run.
+
+```shell
+git add .
+git commit -m "your commit message"
+```
+
+If the hooks make any changes, you'll need to stage and commit those changes as well.
+
+You can also run the hooks manually:
+
+- Check staged files only:
+
+  ```shell
+  pre-commit run
+  ```
+
+- Check specific files:
+
+  ```shell
+  pre-commit run --files path/to/file1.py path/to/file2.py
+  ```
+
+Please ensure all pre-commit checks pass before creating your pull request. If you're unsure about any
+formatting issues, feel free to commit your changes and let the pre-commit hooks fix them automatically.
+
+### Step 4. Create a Pull Request
 
 Once your changes are ready, open a pull request from your branch in your fork to the main branch in the
 [DSPy repo](https://github.com/stanfordnlp/dspy).
 
-### Step 4. Code Review
+### Step 5. Code Review
 
 Once your PR is up and passes all CI tests, we will assign reviewers to review the code. There may be
 several rounds of comments and code changes before the pull request gets approved by the reviewer.
 
-### Step 5. Merging
+### Step 6. Merging
 
 Once the pull request is approved, a team member will take care of merging.
 

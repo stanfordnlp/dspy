@@ -5,7 +5,6 @@ import pydantic
 import pytest
 
 import dspy
-import pydantic
 
 
 @pytest.mark.parametrize(
