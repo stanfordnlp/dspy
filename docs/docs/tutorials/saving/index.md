@@ -7,7 +7,7 @@ This guide demonstrates how to save and load your DSPy program. At a high level,
 
 ## State-only Saving
 
-State represents the DSPy program's internal state, including the signature, demos (few-shot examples), and other informaiton like
+State represents the DSPy program's internal state, including the signature, demos (few-shot examples), and other information like
 the `lm` to use for each `dspy.Predict` in the program. It also includes configurable attributes of other DSPy modules like
 `k` for `dspy.retrievers.Retriever`. To save the state of a program, use the `save` method and set `save_program=False`. You can
 choose to save the state to a JSON file or a pickle file. We recommend saving the state to a JSON file because it is safer and readable.
@@ -94,7 +94,39 @@ assert str(compiled_dspy_program.signature) == str(loaded_dspy_program.signature
 ```
 
 With whole program saving, you don't need to recreate the program, but can directly load the architecture along with the state.
-You can pick the suitable saviing approach based on your needs.
+You can pick the suitable saving approach based on your needs.
+
+### Serializing Imported Modules
+
+When saving a program with `save_program=True`, you might need to include custom modules that your program depends on.
+
+You can specify which custom modules should be serialized with your program by passing them to the `modules_to_serialize`
+parameter when calling `save`. This ensures that any dependencies your program relies on are included during serialization and
+available when loading the program later.
+
+This uses cloudpickle's `cloudpickle.register_pickle_by_value` function in order to register a module as picklable by value. When
+a module is registered this way, cloudpickle will serialize the module by value rather than by reference, ensuring that the
+module contents are preserved with the saved program.
+
+For example, if your program uses custom modules:
+
+```python
+import dspy
+import my_custom_module
+
+compiled_dspy_program = dspy.ChainOfThought(my_custom_module.custom_signature)
+
+# Save the program with the custom module
+compiled_dspy_program.save(
+    "./dspy_program/",
+    save_program=True,
+    modules_to_serialize=[my_custom_module]
+)
+```
+
+This ensures that the required modules are properly serialized and available when loading the program later. Any number of
+modules can be passed to `modules_to_serialize`. If you don't specify `modules_to_serialize`, no additional modules will be
+registered for serialization.
 
 ## Backward Compatibility
 
@@ -104,4 +136,4 @@ are that loading a saved file in a different version of DSPy will not raise an e
 the program was saved.
 
 Starting from `dspy>=2.7`, we will guarantee the backward compatibility of the saved program in major releases, i.e., programs saved in `dspy==2.7.0`
-should be loadeable in `dspy==2.7.10`.
+should be loadable in `dspy==2.7.10`.
