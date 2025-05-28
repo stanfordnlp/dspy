@@ -332,3 +332,68 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_tool_call_state_management():
+    # Create a tool class that maintains state
+    class Counter():
+        def __init__(self):
+            self.count = 0
+
+        def __call__(self, i: int):
+            self.count += i
+            return self.count
+
+    react = dspy.ReAct("max -> sum:int", tools=[])
+    lm = DummyLM(
+        [
+            {"next_thought": "I need to add 1", "next_tool_name": "Counter", "next_tool_args": {"i": 1}},
+            {"next_thought": "I need to add 2", "next_tool_name": "Counter", "next_tool_args": {"i": 2}},
+            {"next_thought": "I need to add 3", "next_tool_name": "Counter", "next_tool_args": {"i": 3}},
+            {"next_thought": "I have the sum, now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "I added the numbers successfully", "sum": 6},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    # Pass the tool object as an additional tool
+    outputs = react(call_count=3, additional_tools=[Counter()])
+    
+    assert outputs.sum == 6
+
+    # Check the state is managed during the forward call
+    expected_trajectory = {
+        "thought_0": "I need to add 1",
+        "tool_name_0": "Counter",
+        "tool_args_0": {
+            "i": 1,
+        },
+        "observation_0": 1,
+        "thought_1": "I need to add 2",
+        "tool_name_1": "Counter",
+        "tool_args_1": {
+            "i": 2,
+        },
+        "observation_1": 3,
+        "thought_2": "I need to add 3",
+        "tool_name_2": "Counter",
+        "tool_args_2": {
+            "i": 3,
+        },
+        "observation_2": 6,
+        "thought_3": "I have the sum, now I can finish.",
+        "tool_name_3": "finish",
+        "tool_args_3": {},
+        "observation_3": "Completed.",
+    }
+    assert outputs.trajectory == expected_trajectory
+
+
+def test_duplicate_tools():
+    def add(a: int, b: int) -> int:
+        return a + b
+    
+    react = dspy.ReAct("question -> answer", tools=[add])
+
+    with pytest.raises(ValueError, match="Duplicate tools found: add."):
+        react(question="what is 1+1?", additional_tools=[add])
