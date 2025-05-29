@@ -1,9 +1,9 @@
 import importlib
+import pytest
 
 if importlib.util.find_spec("langchain_core") is None:
     pytest.skip(reason="langchain_core is not installed", allow_module_level=True)
 
-import pytest
 from pydantic import BaseModel
 
 from dspy.utils.langchain_tool import convert_langchain_tool
