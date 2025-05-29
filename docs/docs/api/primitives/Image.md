@@ -5,6 +5,7 @@
     handler: python
     options:
         members:
+            - format
             - from_PIL
             - from_file
             - from_url

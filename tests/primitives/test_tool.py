@@ -1,8 +1,10 @@
+import asyncio
+from typing import Any, Optional
+
 import pytest
 from pydantic import BaseModel
+
 from dspy.primitives.tool import Tool
-from typing import Any, Optional
-import asyncio
 
 
 # Test fixtures
@@ -249,6 +251,18 @@ def test_tool_call_kwarg():
     tool = Tool(fn)
 
     assert tool(x=1, y=2, z=3) == {"y": 2, "z": 3}
+
+
+def test_tool_str():
+    def add(x: int, y: int = 0) -> int:
+        """Add two integers."""
+        return x + y
+    
+    tool = Tool(add)
+    assert (
+        str(tool)
+        == "add, whose description is <desc>Add two integers.</desc>. It takes arguments {'x': {'type': 'integer'}, 'y': {'type': 'integer', 'default': 0}} in JSON format."
+    )
 
 
 @pytest.mark.asyncio

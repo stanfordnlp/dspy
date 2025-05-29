@@ -393,3 +393,38 @@ Final output:  Prediction(
     sum='9'
 )
 ```
+
+## Synchronous Streaming
+
+By default calling a streamified DSPy program produces an async generator. In order to get back
+a sync generator, you can set the flag `async_streaming=False`:
+
+
+```python
+import os
+
+import dspy
+
+os.environ["OPENAI_API_KEY"] = "your_api_key"
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+predict = dspy.Predict("question->answer")
+
+# Enable streaming for the 'answer' field
+stream_predict = dspy.streamify(
+    predict,
+    stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    async_streaming=False,
+)
+
+output = stream_predict(question="why did a chicken cross the kitchen?")
+
+program_output = None
+for chunk in output:
+    if isinstance(chunk, dspy.streaming.StreamResponse):
+        print(chunk)
+    elif isinstance(chunk, dspy.Prediction):
+        program_output = chunk
+print(f"Program output: {program_output}")
+```

@@ -11,6 +11,7 @@
             - deepcopy
             - dump_state
             - get_lm
+            - inspect_history
             - load
             - load_state
             - map_named_predictors

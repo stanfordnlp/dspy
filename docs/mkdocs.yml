@@ -1,6 +1,6 @@
 site_name: DSPy
 site_description: The framework for programming—rather than prompting—language models.
-site_url: https://dspy.ai
+site_url: https://dspy.ai/
 
 repo_url: https://github.com/stanfordnlp/dspy
 repo_name: stanfordnlp/dspy
@@ -28,12 +28,14 @@ nav:
         - Build AI Programs with DSPy:
             - Overview: tutorials/build_ai_program/index.md
             - Retrieval-Augmented Generation (RAG): tutorials/rag/index.ipynb
+            - Build AI Agents with DSPy: tutorials/customer_service_agent/index.ipynb
             - Building RAG as Agent: tutorials/agents/index.ipynb
             - Entity Extraction: tutorials/entity_extraction/index.ipynb
             - Classification: tutorials/classification/index.md
             - Multi-Hop RAG: tutorials/multihop_search/index.ipynb
             - Privacy-Conscious Delegation: tutorials/papillon/index.md
             - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
+            - Audio: tutorials/audio/index.ipynb
         - Optimize AI Programs with DSPy:
             - Overview: tutorials/optimize_ai_program/index.md
             - Math Reasoning: tutorials/math/index.ipynb
@@ -51,7 +53,9 @@ nav:
             - Saving and Loading: tutorials/saving/index.md
             - Deployment: tutorials/deployment/index.md
             - Debugging & Observability: tutorials/observability/index.md
+            - Tracking DSPy Optimizers: tutorials/optimizer_tracking/index.md
             - Streaming: tutorials/streaming/index.md
+            - Async: tutorials/async/index.md
     - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
@@ -103,6 +107,7 @@ nav:
             - KNNFewShot: api/optimizers/KNNFewShot.md
             - LabeledFewShot: api/optimizers/LabeledFewShot.md
             - MIPROv2: api/optimizers/MIPROv2.md
+            - SIMBA: api/optimizers/SIMBA.md
         - Primitives:
             - Example: api/primitives/Example.md
             - History: api/primitives/History.md
@@ -259,4 +264,4 @@ markdown_extensions:
         emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 copyright: |
-    &copy; 2024 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">Stanford NLP</a>
+    &copy; 2025 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>
