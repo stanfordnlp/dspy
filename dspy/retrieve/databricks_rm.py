@@ -137,14 +137,13 @@ class DatabricksRM(dspy.Retrieve):
         self.databricks_client_secret = (
             databricks_client_secret if databricks_client_secret is not None else os.environ.get("DATABRICKS_CLIENT_SECRET")
         )
-
-        if not _databricks_sdk_installed and ((self.databricks_token, self.databricks_endpoint).count(None) > 0 and
-                                              (self.databricks_client_id, self.databricks_client_secret).count(None) > 0):
+        if not _databricks_sdk_installed and (self.databricks_token, self.databricks_endpoint).count(None) > 0:
             raise ValueError(
                 "To retrieve documents with Databricks Vector Search, you must install the"
                 " databricks-sdk Python library, supply the databricks_token and"
                 " databricks_endpoint parameters, or set the DATABRICKS_TOKEN and DATABRICKS_HOST"
-                " environment variables."
+                " environment variables. You may also supply a service principal the databricks_client_id and"
+                " databricks_client_secret parameters, or set the DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET"
             )
         self.databricks_index_name = databricks_index_name
         self.columns = list({docs_id_column_name, text_column_name, *(columns or [])})
@@ -370,6 +369,7 @@ class DatabricksRM(dspy.Retrieve):
                 client_id=databricks_client_id,
                 client_secret=databricks_client_secret,
             )
+
         else:
             # Fallback for token-based authentication
             databricks_client = WorkspaceClient(
