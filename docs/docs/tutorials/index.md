@@ -36,6 +36,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Saving and Loading](/tutorials/saving/)
     - [Deployment](/tutorials/deployment/)
     - [Debugging & Observability](/tutorials/observability/)
+    - [Tracking DSPy Optimizers](/tutorials/optimizer_tracking/)
     - [Streaming](/tutorials/streaming/)
     - [Async](/tutorials/async/)
 
