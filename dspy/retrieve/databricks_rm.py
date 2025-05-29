@@ -133,9 +133,13 @@ class DatabricksRM(dspy.Retrieve):
         self.databricks_endpoint = (
             databricks_endpoint if databricks_endpoint is not None else os.environ.get("DATABRICKS_HOST")
         )
-        self.databricks_client_id = databricks_client_id if databricks_client_id is not None else os.environ.get("DATABRICKS_CLIENT_ID")
+        self.databricks_client_id = (
+            databricks_client_id if databricks_client_id is not None else os.environ.get("DATABRICKS_CLIENT_ID")
+        )
         self.databricks_client_secret = (
-            databricks_client_secret if databricks_client_secret is not None else os.environ.get("DATABRICKS_CLIENT_SECRET")
+            databricks_client_secret
+            if databricks_client_secret is not None
+            else os.environ.get("DATABRICKS_CLIENT_SECRET")
         )
         if not _databricks_sdk_installed and (self.databricks_token, self.databricks_endpoint).count(None) > 0:
             raise ValueError(
