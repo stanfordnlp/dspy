@@ -127,6 +127,7 @@ nav:
             - StatusMessageProvider: api/utils/StatusMessageProvider.md
             - StreamListener: api/utils/StreamListener.md
             - asyncify: api/utils/asyncify.md
+            - configure_cache: api/utils/configure_cache.md
             - disable_litellm_logging: api/utils/disable_litellm_logging.md
             - disable_logging: api/utils/disable_logging.md
             - enable_litellm_logging: api/utils/enable_litellm_logging.md
