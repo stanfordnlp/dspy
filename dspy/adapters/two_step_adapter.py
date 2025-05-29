@@ -8,7 +8,7 @@ from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
 
 """
-NOTE/TODO/FIMXE:
+NOTE/TODO/FIXME:
 
 The main issue below is that the second step's signature is entirely created on the fly and is invoked with a chat
 adapter explicitly constructed with no demonstrations. This means that it cannot "learn" or get optimized.

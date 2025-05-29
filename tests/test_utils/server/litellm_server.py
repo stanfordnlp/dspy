@@ -1,6 +1,5 @@
 import json
 import os
-import time
 from typing import AsyncIterator, Iterator
 
 import litellm
@@ -72,7 +71,7 @@ def _append_request_to_log_file(completion_kwargs):
     log_file_path = os.environ.get(LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR)
     if log_file_path is None:
         raise ValueError(
-            f"Server logs file path is not defined! Please set the path using the"
+            "Server logs file path is not defined! Please set the path using the"
             + f" {LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR} environment variable."
         )
 

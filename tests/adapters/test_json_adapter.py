@@ -2,7 +2,7 @@ from unittest import mock
 
 import pydantic
 import pytest
-from pydantic import create_model
+from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
 
@@ -108,7 +108,7 @@ async def test_json_adapter_async_call():
 
 
 def test_json_adapter_on_pydantic_model():
-    from litellm.utils import ModelResponse, Message, Choices
+    from litellm.utils import Choices, Message, ModelResponse
 
     class User(pydantic.BaseModel):
         id: int
@@ -169,7 +169,7 @@ def test_json_adapter_on_pydantic_model():
         assert expected_input_structure in content
 
         # Assert that system prompt includes output formatting structure
-        expected_output_structure = (  # noqa: Q000
+        expected_output_structure = (
             "Outputs will be a JSON object with the following fields.\n\n{\n  "
             '"answer": "{answer}        # note: the value you produce must adhere to the JSON schema: '
             '{\\"type\\": \\"object\\", \\"properties\\": {\\"analysis\\": {\\"type\\": \\"string\\", \\"title\\": '
@@ -183,7 +183,7 @@ def test_json_adapter_on_pydantic_model():
         assert user_message_content is not None
 
         # Assert that the user input data is formatted correctly
-        expected_input_data = (  # noqa: Q000
+        expected_input_data = (
             '[[ ## user ## ]]\n{"id": 5, "name": "name_test", "email": "email_test"}\n\n[[ ## question ## ]]\n'
             "What is the capital of France?\n\n"
         )
@@ -195,9 +195,145 @@ def test_json_adapter_on_pydantic_model():
 
 
 def test_json_adapter_parse_raise_error_on_mismatch_fields():
-    signature = dspy.make_signature("input1->output1")
+    signature = dspy.make_signature("question->answer")
     adapter = dspy.JSONAdapter()
-    invalid_completion = '{"output": "Test output"}'
-    with pytest.raises(ValueError) as error:
-        adapter.parse(signature, invalid_completion)
-    assert str(error.value) == "Expected dict_keys(['output1']) but got dict_keys([])"
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="{'answer1': 'Paris'}")),
+            ],
+            model="openai/gpt4o",
+        )
+        lm = dspy.LM(model="openai/gpt-4o-mini")
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+            adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+    assert e.value.adapter_name == "JSONAdapter"
+    assert e.value.signature == signature
+    assert e.value.lm_response == "{'answer1': 'Paris'}"
+    assert e.value.parsed_result == {}
+
+    assert str(e.value) == (
+        "Adapter JSONAdapter failed to parse the LM response. \n\n"
+        "LM Response: {'answer1': 'Paris'} \n\n"
+        "Expected to find output fields in the LM response: [answer] \n\n"
+        "Actual output fields parsed from the LM response: [] \n\n"
+    )
+
+
+def test_json_adapter_formats_image():
+    # Test basic image formatting
+    image = dspy.Image(url="https://example.com/image.jpg")
+
+    class MySignature(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"image": image})
+
+    assert len(messages) == 2
+    user_message_content = messages[1]["content"]
+    assert user_message_content is not None
+
+    # The message should have 3 chunks of types: text, image_url, text
+    assert len(user_message_content) == 3
+    assert user_message_content[0]["type"] == "text"
+    assert user_message_content[2]["type"] == "text"
+
+    # Assert that the image is formatted correctly
+    expected_image_content = {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+    assert expected_image_content in user_message_content
+
+
+def test_json_adapter_formats_image_with_few_shot_examples():
+    class MySignature(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+
+    demos = [
+        dspy.Example(
+            image=dspy.Image(url="https://example.com/image1.jpg"),
+            text="This is a test image",
+        ),
+        dspy.Example(
+            image=dspy.Image(url="https://example.com/image2.jpg"),
+            text="This is another test image",
+        ),
+    ]
+    messages = adapter.format(MySignature, demos, {"image": dspy.Image(url="https://example.com/image3.jpg")})
+
+    # 1 system message, 2 few shot examples (1 user and assistant message for each example), 1 user message
+    assert len(messages) == 6
+
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}} in messages[1]["content"]
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}} in messages[3]["content"]
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}} in messages[5]["content"]
+
+
+def test_json_adapter_formats_image_with_nested_images():
+    class ImageWrapper(pydantic.BaseModel):
+        images: list[dspy.Image]
+        tag: list[str]
+
+    class MySignature(dspy.Signature):
+        image: ImageWrapper = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    image1 = dspy.Image(url="https://example.com/image1.jpg")
+    image2 = dspy.Image(url="https://example.com/image2.jpg")
+    image3 = dspy.Image(url="https://example.com/image3.jpg")
+
+    image_wrapper = ImageWrapper(images=[image1, image2, image3], tag=["test", "example"])
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"image": image_wrapper})
+
+    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
+    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
+    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
+
+    assert expected_image1_content in messages[1]["content"]
+    assert expected_image2_content in messages[1]["content"]
+    assert expected_image3_content in messages[1]["content"]
+
+
+def test_json_adapter_formats_image_with_few_shot_examples_with_nested_images():
+    class ImageWrapper(pydantic.BaseModel):
+        images: list[dspy.Image]
+        tag: list[str]
+
+    class MySignature(dspy.Signature):
+        image: ImageWrapper = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    image1 = dspy.Image(url="https://example.com/image1.jpg")
+    image2 = dspy.Image(url="https://example.com/image2.jpg")
+    image3 = dspy.Image(url="https://example.com/image3.jpg")
+
+    image_wrapper = ImageWrapper(images=[image1, image2, image3], tag=["test", "example"])
+    demos = [
+        dspy.Example(
+            image=image_wrapper,
+            text="This is a test image",
+        ),
+    ]
+
+    image_wrapper_2 = ImageWrapper(images=[dspy.Image(url="https://example.com/image4.jpg")], tag=["test", "example"])
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2})
+
+    assert len(messages) == 4
+
+    # Image information in the few-shot example's user message
+    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
+    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
+    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
+    assert expected_image1_content in messages[1]["content"]
+    assert expected_image2_content in messages[1]["content"]
+    assert expected_image3_content in messages[1]["content"]
+
+    # The query image is formatted in the last user message
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]

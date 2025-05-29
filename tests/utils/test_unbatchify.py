@@ -1,6 +1,6 @@
 import time
-from unittest.mock import MagicMock
 from concurrent.futures import Future
+from unittest.mock import MagicMock
 
 from dspy.utils.unbatchify import Unbatchify
 
@@ -50,7 +50,6 @@ def test_unbatchify_batch_size_trigger():
     unbatcher.close()
 
 
-
 def test_unbatchify_timeout_trigger():
     """Test that the batch processes after max_wait_time."""
     batch_fn_mock = MagicMock(wraps=simple_batch_processor)
@@ -71,5 +70,3 @@ def test_unbatchify_timeout_trigger():
     assert results == [101, 201]
 
     unbatcher.close()
-
-
