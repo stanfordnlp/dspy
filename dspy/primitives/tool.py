@@ -175,7 +175,7 @@ class Tool:
         return convert_mcp_tool(session, tool)
 
     @classmethod
-    def from_langchain_tool(cls, tool: "BaseTool") -> "Tool":
+    def from_langchain(cls, tool: "BaseTool") -> "Tool":
         """
         Build a DSPy tool from a LangChain tool.
 
