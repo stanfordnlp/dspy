@@ -369,6 +369,7 @@ class DatabricksRM(dspy.Retrieve):
                 client_id=databricks_client_id,
                 client_secret=databricks_client_secret,
             )
+            print("Creating Databricks workspace client using  service principal authentication.")
 
         else:
             # Fallback for token-based authentication
@@ -376,6 +377,7 @@ class DatabricksRM(dspy.Retrieve):
                 host=databricks_endpoint,
                 token=databricks_token,
             )
+            print("Creating Databricks workspace client using token authentication.")
 
         return databricks_client.vector_search_indexes.query_index(
             index_name=index_name,
