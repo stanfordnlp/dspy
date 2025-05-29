@@ -2,7 +2,6 @@ import signal
 import threading
 from unittest.mock import patch
 
-import pandas as pd
 import pytest
 
 import dspy
@@ -55,7 +54,9 @@ def test_evaluate_call():
     assert score == 100.0
 
 
+@pytest.mark.extra
 def test_construct_result_df():
+    import pandas as pd
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     ev = Evaluate(
         devset=devset,
@@ -145,6 +146,7 @@ def test_evaluate_call_bad():
     assert score == 0.0
 
 
+@pytest.mark.extra
 @pytest.mark.parametrize(
     "program_with_example",
     [
