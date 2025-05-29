@@ -170,8 +170,8 @@ class MyProgram(dspy.Module):
         super().__init__()
         self.cot = dspy.ChainOfThought("question -> answer")
 
-    def forward(self, question):
-        return self.cot(question=question)
+    def forward(self, messages):
+        return self.cot(question=messages[0]["content"])
 
 dspy_program = MyProgram()
 
