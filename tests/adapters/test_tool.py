@@ -1,10 +1,12 @@
 import asyncio
 from typing import Any, Optional
 
+import dspy
 import pytest
 from pydantic import BaseModel
 
-from dspy.primitives.tool import Tool
+from dspy.adapters.types.tool import Tool
+from unittest import mock
 
 
 # Test fixtures

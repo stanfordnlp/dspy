@@ -77,6 +77,16 @@ class JSONAdapter(ChatAdapter):
                     f"`response_format` argument. Original error: {e}"
                 ) from e
 
+    def _call_preprocess(
+        self,
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        inputs: dict[str, Any],
+        use_native_function_calling: bool = True,
+    ) -> dict[str, Any]:
+        return super()._call_preprocess(lm, lm_kwargs, signature, inputs, use_native_function_calling)
+
     def format_field_structure(self, signature: Type[Signature]) -> str:
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
