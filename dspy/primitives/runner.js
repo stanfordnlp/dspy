@@ -41,7 +41,7 @@ for await (const line of readLines(Deno.stdin)) {
               try {
                   pyodide.FS.mkdir(cur);
               } catch (e) {
-                  if (!e.message.includes('File exists')) {
+                  if (!(e && e.message && e.message.includes('File exists'))) {
                       console.log("[DEBUG] Error creating directory in Pyodide file system:", cur, "|", e.message);
                   }
               }

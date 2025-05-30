@@ -87,7 +87,7 @@ def test_read_file_access_control():
             f"data"
         )
         result = interpreter.execute(code)
-        assert result == "test content"
+        assert result == "test content", "Test file should be accessible with enable_read and specified file"
 
     with PythonInterpreter(enable_read=False) as interpreter:
         code = (
@@ -99,7 +99,7 @@ def test_read_file_access_control():
             f"data"
         )
         result = interpreter.execute(code)
-        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower())
+        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be accessible without enable_read"
 
     os.remove(testfile_path)
 
@@ -117,7 +117,7 @@ def test_enable_write_flag():
             f"result"
         )
         result = interpreter.execute(code)
-        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower())
+        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be writable without allow-write"
 
     with PythonInterpreter(enable_write=[testfile_path]) as interpreter:
         code = (
@@ -126,10 +126,10 @@ def test_enable_write_flag():
             f"'ok'"
         )
         result = interpreter.execute(code)
-        assert result == "ok"
+        assert result == "ok", "Test file should be writable with allow-write"
     assert os.path.exists(testfile_path)
     with open(testfile_path, "r") as f:
-        assert f.read() == "allowed"
+        assert f.read() == "allowed", "Test file outputs should match content written during execution"
 
     os.remove(testfile_path)
 
@@ -142,7 +142,7 @@ def test_enable_net_flag():
             f"resp = await js.fetch({repr(test_url)})\n"
             "resp.status"
         )
-        with pytest.raises(InterpreterError): #TODO fix up because ideally it should deny permission, currently trace says uncaught python error
+        with pytest.raises(InterpreterError, match="PythonError"):
             interpreter.execute(code)
 
     with PythonInterpreter(enable_network_access=True) as interpreter:
@@ -152,4 +152,4 @@ def test_enable_net_flag():
             "resp.status"
         )
         result = interpreter.execute(code)
-        assert int(result) == 200
+        assert int(result) == 200, "Network access is permitted with --allow-net"
