@@ -8,6 +8,7 @@
             - __call__
             - acall
             - from_mcp_tool
+            - from_langchain
         show_source: true
         show_root_heading: true
         heading_level: 2
