@@ -2,7 +2,8 @@ import json
 import os
 import subprocess
 from types import TracebackType
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Iterable, Union
+from os import PathLike
 
 
 class InterpreterError(RuntimeError):
@@ -24,15 +25,73 @@ class PythonInterpreter:
     ```
     """
 
-    def __init__(self, deno_command: Optional[List[str]] = None) -> None:
+    def __init__(self, deno_command: Optional[List[str]] = None, enable_read: Iterable[Union[PathLike, str]] = None, enable_env_vars: bool | Iterable[str] = False, enable_network_access: bool | Iterable[str] = False, enable_write: bool | Iterable[Union[PathLike, str]] = False) -> None:
         if isinstance(deno_command, dict):
             deno_command = None  # no-op, just a guard in case someone passes a dict
-        self.deno_command = deno_command or ["deno", "run", "--allow-read", self._get_runner_path()]
+
+        self.enable_read = enable_read
+        self.enable_env_vars = enable_env_vars
+        self.enable_network_access = enable_network_access
+        self.enable_write = enable_write
+        #TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
+
+        if deno_command:
+            self.deno_command = list(deno_command)
+        else:
+            permissions = {
+                'enable_env_vars': 'env',
+                'enable_network_access': 'net',
+                'enable_write': 'write',
+            }
+            args = ['deno', 'run', '--allow-read']
+            for attr, perm in permissions.items():
+                val = getattr(self, attr)
+                if not val:
+                    continue
+                if val is True:
+                    args.append(f'--allow-{perm}')
+                else:
+                    args.append(f"--allow-{perm}={','.join(str(x) for x in val)}")
+            args.append(self._get_runner_path())
+            self.deno_command = args
+
         self.deno_process = None
 
     def _get_runner_path(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         return os.path.join(current_dir, "runner.js")
+
+    def _mount_files(self):
+        if getattr(self, "_mounted_files", False):
+            return
+        paths_to_mount = []
+        if self.enable_read and not isinstance(self.enable_read, bool):
+            paths_to_mount.extend(self.enable_read)
+        if self.enable_write and not isinstance(self.enable_write, bool):
+            paths_to_mount.extend(self.enable_write)
+        if not paths_to_mount:
+            return
+        for path in paths_to_mount:
+            if path in (None, ""):
+                continue
+            if not os.path.exists(path):
+                if self.enable_write and path in self.enable_write:
+                    open(path, "a").close()  
+                else:
+                    continue
+            mount_msg = json.dumps({"mount_file": str(path), "virtual_path": str(path)})
+            self.deno_process.stdin.write(mount_msg + "\n")
+            self.deno_process.stdin.flush()
+        self._mounted_files = True
+
+    def _sync_files(self):
+        if not self.enable_write or isinstance(self.enable_write, bool):
+            return
+        for path in self.enable_write:
+            sync_msg = json.dumps({"sync_file": str(path)})
+            self.deno_process.stdin.write(sync_msg + "\n")
+            self.deno_process.stdin.flush()
+
 
     def _ensure_deno_process(self) -> None:
         if self.deno_process is None or self.deno_process.poll() is not None:
@@ -43,6 +102,7 @@ class PythonInterpreter:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    env = os.environ.copy()
                 )
             except FileNotFoundError as e:
                 install_instructions = (
@@ -87,6 +147,7 @@ class PythonInterpreter:
         variables = variables or {}
         code = self._inject_variables(code, variables)
         self._ensure_deno_process()
+        self._mount_files()
 
         # Send the code as JSON
         input_data = json.dumps({"code": code})
@@ -127,6 +188,7 @@ class PythonInterpreter:
                 raise InterpreterError(f"{error_type}: {result.get('errorArgs') or error_msg}")
 
         # If there's no error or got `FinalAnswer`, return the "output" field
+        self._sync_files()
         return result.get("output", None)
 
     def __enter__(self):
