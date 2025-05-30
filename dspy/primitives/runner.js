@@ -55,7 +55,7 @@ for await (const line of readLines(Deno.stdin)) {
 
   if (input.sync_file) {
       const virtualPath = input.sync_file;
-      const hostPath = virtualPath;
+      const hostPath = input.host_file || virtualPath;
       try {
           const contents = pyodide.FS.readFile(virtualPath);
           await Deno.writeFile(hostPath, contents);

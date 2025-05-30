@@ -77,12 +77,13 @@ def test_enable_env_vars_flag():
 
 def test_read_file_access_control():
     testfile_path = os.path.abspath("tests/primitives/test_temp_file.txt")
+    virtual_path = f"/sandbox/{os.path.basename(testfile_path)}"
     with open(testfile_path, "w") as f:
         f.write("test content")
 
     with PythonInterpreter(enable_read=[testfile_path]) as interpreter:
         code = (
-            f"with open({repr(testfile_path)}, 'r') as f:\n"
+            f"with open({repr(virtual_path)}, 'r') as f:\n"
             f"    data = f.read()\n"
             f"data"
         )
@@ -92,7 +93,7 @@ def test_read_file_access_control():
     with PythonInterpreter(enable_read=False) as interpreter:
         code = (
             f"try:\n"
-            f"    with open({repr(testfile_path)}, 'r') as f:\n"
+            f"    with open({repr(virtual_path)}, 'r') as f:\n"
             f"        data = f.read()\n"
             f"except Exception as e:\n"
             f"    data = str(e)\n"
@@ -105,11 +106,12 @@ def test_read_file_access_control():
 
 def test_enable_write_flag():
     testfile_path = os.path.abspath("tests/primitives/test_temp_output.txt")
+    virtual_path = f"/sandbox/{os.path.basename(testfile_path)}"
 
     with PythonInterpreter(enable_write=False) as interpreter:
         code = (
             f"try:\n"
-            f"    with open({repr(testfile_path)}, 'w') as f:\n"
+            f"    with open({repr(virtual_path)}, 'w') as f:\n"
             f"        f.write('blocked')\n"
             f"    result = 'wrote'\n"
             f"except Exception as e:\n"
@@ -121,7 +123,7 @@ def test_enable_write_flag():
 
     with PythonInterpreter(enable_write=[testfile_path]) as interpreter:
         code = (
-            f"with open({repr(testfile_path)}, 'w') as f:\n"
+            f"with open({repr(virtual_path)}, 'w') as f:\n"
             f"    f.write('allowed')\n"
             f"'ok'"
         )
@@ -132,6 +134,7 @@ def test_enable_write_flag():
         assert f.read() == "allowed", "Test file outputs should match content written during execution"
 
     os.remove(testfile_path)
+
 
 def test_enable_net_flag():
     test_url = "https://example.com"

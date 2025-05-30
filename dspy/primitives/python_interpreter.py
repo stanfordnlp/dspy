@@ -79,7 +79,8 @@ class PythonInterpreter:
                     open(path, "a").close()  
                 else:
                     continue
-            mount_msg = json.dumps({"mount_file": str(path), "virtual_path": str(path)})
+            virtual_path = f"/sandbox/{os.path.basename(path)}"
+            mount_msg = json.dumps({"mount_file": str(path), "virtual_path": virtual_path})
             self.deno_process.stdin.write(mount_msg + "\n")
             self.deno_process.stdin.flush()
         self._mounted_files = True
@@ -88,7 +89,11 @@ class PythonInterpreter:
         if not self.enable_write or isinstance(self.enable_write, bool):
             return
         for path in self.enable_write:
-            sync_msg = json.dumps({"sync_file": str(path)})
+            virtual_path = f"/sandbox/{os.path.basename(path)}"
+            sync_msg = json.dumps({
+                "sync_file": virtual_path,
+                "host_file": str(path)
+            })
             self.deno_process.stdin.write(sync_msg + "\n")
             self.deno_process.stdin.flush()
 
