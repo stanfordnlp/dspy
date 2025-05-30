@@ -6,6 +6,7 @@ import ujson
 
 import dspy
 from dspy.adapters.utils import get_field_description_string
+from dspy.adapters import DEFAULT_ADAPTER
 from dspy.predict.predict import Prediction
 from dspy.signatures import InputField, OutputField, Signature
 
@@ -100,7 +101,7 @@ class Refine(Module):
         temps = list(dict.fromkeys(temps))[: self.N]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        adapter = dspy.settings.adapter or DEFAULT_ADAPTER
 
         for idx, t in enumerate(temps):
             lm_ = lm.copy(temperature=t)

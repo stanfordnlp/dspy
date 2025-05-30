@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 
 import dspy
+from dspy.utils.dummies import DummyLM
 
 
 def test_two_step_adapter_call():
