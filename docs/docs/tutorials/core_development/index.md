@@ -1,6 +1,7 @@
 - [Use MCP in DSPy](/tutorials/mcp/)
 - [Output Refinement](/tutorials/output_refinement/best-of-n-and-refine/)
 - [Saving and Loading](/tutorials/saving/)
+- [Cache](/tutorials/cache/)
 - [Deployment](/tutorials/deployment/)
 - [Debugging & Observability](/tutorials/observability/)
 - [Streaming](/tutorials/streaming/)
