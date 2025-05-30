@@ -75,13 +75,13 @@ def test_enable_env_vars_flag():
         assert result == "test_value", "Environment variables should be accessible with allow-env"
 
 
-def test_read_file_access_control():
-    testfile_path = os.path.abspath("tests/primitives/test_temp_file.txt")
-    virtual_path = f"/sandbox/{os.path.basename(testfile_path)}"
+def test_read_file_access_control(tmp_path):
+    testfile_path = tmp_path / "test_temp_file.txt"
+    virtual_path = f"/sandbox/{testfile_path.name}"
     with open(testfile_path, "w") as f:
         f.write("test content")
 
-    with PythonInterpreter(enable_read=[testfile_path]) as interpreter:
+    with PythonInterpreter(enable_read=[str(testfile_path)]) as interpreter:
         code = (
             f"with open({repr(virtual_path)}, 'r') as f:\n"
             f"    data = f.read()\n"
@@ -102,11 +102,9 @@ def test_read_file_access_control():
         result = interpreter.execute(code)
         assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be accessible without enable_read"
 
-    os.remove(testfile_path)
-
-def test_enable_write_flag():
-    testfile_path = os.path.abspath("tests/primitives/test_temp_output.txt")
-    virtual_path = f"/sandbox/{os.path.basename(testfile_path)}"
+def test_enable_write_flag(tmp_path):
+    testfile_path = tmp_path / "test_temp_output.txt"
+    virtual_path = f"/sandbox/{testfile_path.name}"
 
     with PythonInterpreter(enable_write=False) as interpreter:
         code = (
@@ -121,7 +119,7 @@ def test_enable_write_flag():
         result = interpreter.execute(code)
         assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be writable without allow-write"
 
-    with PythonInterpreter(enable_write=[testfile_path]) as interpreter:
+    with PythonInterpreter(enable_write=[str(testfile_path)]) as interpreter:
         code = (
             f"with open({repr(virtual_path)}, 'w') as f:\n"
             f"    f.write('allowed')\n"
@@ -129,11 +127,10 @@ def test_enable_write_flag():
         )
         result = interpreter.execute(code)
         assert result == "ok", "Test file should be writable with allow-write"
-    assert os.path.exists(testfile_path)
+    assert testfile_path.exists()
     with open(testfile_path, "r") as f:
         assert f.read() == "allowed", "Test file outputs should match content written during execution"
 
-    os.remove(testfile_path)
 
 
 def test_enable_net_flag():

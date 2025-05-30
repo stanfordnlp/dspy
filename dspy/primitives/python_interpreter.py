@@ -25,7 +25,7 @@ class PythonInterpreter:
     ```
     """
 
-    def __init__(self, deno_command: Optional[List[str]] = None, enable_read: Iterable[Union[PathLike, str]] = None, enable_env_vars: bool | Iterable[str] = False, enable_network_access: bool | Iterable[str] = False, enable_write: bool | Iterable[Union[PathLike, str]] = False) -> None:
+    def __init__(self, deno_command: Optional[List[str]] = None, enable_read: Iterable[Union[PathLike, str]] = None, enable_env_vars: Iterable[str] = None, enable_network_access: Iterable[str] = None, enable_write: Iterable[Union[PathLike, str]] = None) -> None:
         if isinstance(deno_command, dict):
             deno_command = None  # no-op, just a guard in case someone passes a dict
 
@@ -65,9 +65,9 @@ class PythonInterpreter:
         if getattr(self, "_mounted_files", False):
             return
         paths_to_mount = []
-        if self.enable_read and not isinstance(self.enable_read, bool):
+        if self.enable_read:
             paths_to_mount.extend(self.enable_read)
-        if self.enable_write and not isinstance(self.enable_write, bool):
+        if self.enable_write:
             paths_to_mount.extend(self.enable_write)
         if not paths_to_mount:
             return
@@ -76,9 +76,9 @@ class PythonInterpreter:
                 continue
             if not os.path.exists(path):
                 if self.enable_write and path in self.enable_write:
-                    open(path, "a").close()  
+                    open(path, "a").close()
                 else:
-                    continue
+                    raise FileNotFoundError(f"Cannot mount non-existent file: {path}")
             virtual_path = f"/sandbox/{os.path.basename(path)}"
             mount_msg = json.dumps({"mount_file": str(path), "virtual_path": virtual_path})
             self.deno_process.stdin.write(mount_msg + "\n")
@@ -86,7 +86,7 @@ class PythonInterpreter:
         self._mounted_files = True
 
     def _sync_files(self):
-        if not self.enable_write or isinstance(self.enable_write, bool):
+        if not self.enable_write:
             return
         for path in self.enable_write:
             virtual_path = f"/sandbox/{os.path.basename(path)}"
