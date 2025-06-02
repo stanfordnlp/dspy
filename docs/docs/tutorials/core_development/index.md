@@ -4,5 +4,6 @@
 - [Cache](/tutorials/cache/)
 - [Deployment](/tutorials/deployment/)
 - [Debugging & Observability](/tutorials/observability/)
+- [Tracking DSPy Optimizers](/tutorials/optimizer_tracking/)
 - [Streaming](/tutorials/streaming/)
 - [Async](/tutorials/async/)
