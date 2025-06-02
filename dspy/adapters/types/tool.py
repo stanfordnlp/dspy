@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Optional, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, get_origin, get_type_hints
 
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -10,6 +10,9 @@ from dspy.utils.callback import with_callbacks
 
 if TYPE_CHECKING:
     import mcp
+    from langchain.tools import BaseTool
+
+_TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
 
 
 class Tool(BaseType):
@@ -96,7 +99,7 @@ class Tool(BaseType):
             origin = get_origin(v) or v
             if isinstance(origin, type) and issubclass(origin, BaseModel):
                 # Get json schema, and replace $ref with the actual schema
-                v_json_schema = resolve_json_schema_reference(v.model_json_schema())
+                v_json_schema = _resolve_json_schema_reference(v.model_json_schema())
                 args[k] = v_json_schema
             else:
                 args[k] = TypeAdapter(v).json_schema()
@@ -191,6 +194,21 @@ class Tool(BaseType):
 
         return convert_mcp_tool(session, tool)
 
+    @classmethod
+    def from_langchain(cls, tool: "BaseTool") -> "Tool":
+        """
+        Build a DSPy tool from a LangChain tool.
+
+        Args:
+            tool: The LangChain tool to convert.
+
+        Returns:
+            A Tool object.
+        """
+        from dspy.utils.langchain_tool import convert_langchain_tool
+
+        return convert_langchain_tool(tool)
+
     def __repr__(self):
         return f"Tool(name={self.name}, desc={self.desc}, args={self.args})"
 
@@ -238,7 +256,7 @@ class ToolCalls(BaseType):
         )
 
 
-def resolve_json_schema_reference(schema: dict) -> dict:
+def _resolve_json_schema_reference(schema: dict) -> dict:
     """Recursively resolve json model schema, expanding all references."""
 
     # If there are no definitions to resolve, return the main schema
@@ -262,3 +280,35 @@ def resolve_json_schema_reference(schema: dict) -> dict:
     # Remove the $defs key as it's no longer needed
     resolved_schema.pop("$defs", None)
     return resolved_schema
+
+
+def convert_input_schema_to_tool_args(
+    schema: dict[str, Any],
+) -> Tuple[dict[str, Any], dict[str, Type], dict[str, str]]:
+    """Convert an input json schema to tool arguments compatible with DSPy Tool.
+
+    Args:
+        schema: An input json schema describing the tool's input parameters
+
+    Returns:
+        A tuple of (args, arg_types, arg_desc) for DSPy Tool definition.
+    """
+    args, arg_types, arg_desc = {}, {}, {}
+    properties = schema.get("properties", None)
+    if properties is None:
+        return args, arg_types, arg_desc
+
+    required = schema.get("required", [])
+
+    defs = schema.get("$defs", {})
+
+    for name, prop in properties.items():
+        if len(defs) > 0:
+            prop = _resolve_json_schema_reference({"$defs": defs, **prop})
+        args[name] = prop
+        arg_types[name] = _TYPE_MAPPING.get(prop.get("type"), Any)
+        arg_desc[name] = prop.get("description", "No description provided.")
+        if name in required:
+            arg_desc[name] += " (Required)"
+
+    return args, arg_types, arg_desc
