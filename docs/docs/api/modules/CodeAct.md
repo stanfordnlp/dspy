@@ -113,13 +113,13 @@ class Profile(BaseModel):
 def age(profile: Profile):
     return 
 
-def secret_function():
-    print("external")
+def parent_function():
+    print("Hi!")
 
-def passed_function():
-    secret_function()
+def child_function():
+    parent_function()
 
-dspy.CodeAct("question -> answer", tools=[age, passed_function])
+dspy.CodeAct("question -> answer", tools=[age, child_function])
 ```
 
 Instead, the following example works since all necessary tool functions are passed to `CodeAct`:
