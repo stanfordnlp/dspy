@@ -16,7 +16,7 @@ class ReAct(Module):
         """
         `tools` is either a list of functions, callable classes, or `dspy.Tool` instances.
         """
-
+        super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
