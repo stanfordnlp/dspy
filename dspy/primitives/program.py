@@ -11,12 +11,32 @@ from dspy.utils.usage_tracker import track_usage
 
 
 class ProgramMeta(type):
-    pass
+    """Metaclass ensuring every ``dspy.Module`` instance is properly initialised."""
+
+    def __call__(cls, *args, **kwargs):
+        # Create the instance without invoking ``__init__`` so we can inject
+        # the base initialization beforehand.
+        obj = cls.__new__(cls, *args, **kwargs)
+        if isinstance(obj, cls):
+            # ``_base_init`` sets attributes that should exist on all modules
+            # even when a subclass forgets to call ``super().__init__``.
+            Module._base_init(obj)
+            cls.__init__(obj, *args, **kwargs)
+
+            # Guarantee existence of critical attributes if ``__init__`` didn't
+            # create them.
+            if not hasattr(obj, "callbacks"):
+                obj.callbacks = []
+            if not hasattr(obj, "history"):
+                obj.history = []
+        return obj
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
+        self.callbacks = []
+        self.history = []
 
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
