@@ -5,7 +5,6 @@ import pytest
 from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
-import json
 
 
 def test_json_adapter_passes_structured_output_when_supported_by_model():

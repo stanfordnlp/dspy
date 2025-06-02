@@ -1,4 +1,5 @@
 import importlib
+
 import pytest
 
 if importlib.util.find_spec("langchain_core") is None:
@@ -41,7 +42,7 @@ async def test_convert_custom_tool_with_custom_class():
     def get_age(profile: Profile) -> int:
         """Get the age of the profile."""
         return profile.age
-    
+
     tool = convert_langchain_tool(get_age)
     assert tool.name == "get_age"
     assert tool.desc == "Get the age of the profile."

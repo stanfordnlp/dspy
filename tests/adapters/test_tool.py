@@ -1,12 +1,10 @@
 import asyncio
 from typing import Any, Optional
 
-import dspy
 import pytest
 from pydantic import BaseModel
 
 from dspy.adapters.types.tool import Tool
-from unittest import mock
 
 
 # Test fixtures
@@ -259,7 +257,7 @@ def test_tool_str():
     def add(x: int, y: int = 0) -> int:
         """Add two integers."""
         return x + y
-    
+
     tool = Tool(add)
     assert (
         str(tool)
