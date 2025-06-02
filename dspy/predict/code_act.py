@@ -41,6 +41,7 @@ class CodeAct(ReAct, ProgramOfThought):
         """
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+        self.history = []
 
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         if any(
