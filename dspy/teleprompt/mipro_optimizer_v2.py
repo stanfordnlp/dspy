@@ -7,14 +7,9 @@ import time
 from typing import TYPE_CHECKING
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
-import select
-import sys
-import time
 
 import numpy as np
-import optuna
-from optuna.distributions import CategoricalDistribution
-import math
+
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.propose import GroundedProposer
@@ -122,23 +117,6 @@ class MIPROv2(Teleprompter):
         requires_permission_to_run: bool = True,
         provide_traceback: Optional[bool] = None,
     ) -> Any:
-<<<<<<< HEAD
-        
-        zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
-        
-        # If auto is None, and num_trials is not provided (but num_candidates is), raise an error that suggests a good num_trials value
-        if self.auto is None and (self.num_candidates is not None and num_trials is None):
-            raise ValueError(f"If auto is None, num_trials must also be provided. Given num_candidates={self.num_candidates}, we'd recommend setting num_trials to ~{self._set_num_trials_from_num_candidates(student, zeroshot_opt, self.num_candidates)}.")
-        
-        # If auto is None, and num_candidates or num_trials is None, raise an error
-        if self.auto is None and (self.num_candidates is None or num_trials is None):
-            raise ValueError("If auto is None, num_candidates must also be provided.")
-        
-        # If auto is provided, and either num_candidates or num_trials is not None, raise an error
-        if self.auto is not None and (self.num_candidates is not None or num_trials is not None):
-            raise ValueError("If auto is not None, num_candidates and num_trials cannot be set, since they would be overrided by the auto settings. Please either set auto to None, or do not specify num_candidates and num_trials.")
-        
-=======
 
         zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
 
@@ -154,7 +132,6 @@ class MIPROv2(Teleprompter):
         if self.auto is not None and (self.num_candidates is not None or num_trials is not None):
             raise ValueError("If auto is not None, num_candidates and num_trials cannot be set, since they would be overrided by the auto settings. Please either set auto to None, or do not specify num_candidates and num_trials.")
 
->>>>>>> 82d3878b12b4632b3c549d9c4e85eaef360ad1f7
         # Set random seeds
         seed = seed or self.seed
         self._set_random_seeds(seed)
@@ -252,11 +229,7 @@ class MIPROv2(Teleprompter):
         num_trials = int(max(2 * num_vars * np.log2(num_candidates), 1.5 * num_candidates))
 
         return num_trials
-<<<<<<< HEAD
-        
-=======
 
->>>>>>> 82d3878b12b4632b3c549d9c4e85eaef360ad1f7
     def _set_hyperparams_from_run_mode(
         self,
         program: Any,
@@ -411,11 +384,7 @@ class MIPROv2(Teleprompter):
         )
 
         print(f"{user_message}\n{user_confirmation_message}\nDo you wish to continue? (y/n): ", end='', flush=True)
-<<<<<<< HEAD
-        
-=======
 
->>>>>>> 82d3878b12b4632b3c549d9c4e85eaef360ad1f7
         # Wait for input with timeout
         start_time = time.time()
         while time.time() - start_time < 20:
@@ -423,11 +392,7 @@ class MIPROv2(Teleprompter):
                 user_input = sys.stdin.readline().strip().lower()
                 return user_input == "y"
             time.sleep(0.1)
-<<<<<<< HEAD
-        
-=======
 
->>>>>>> 82d3878b12b4632b3c549d9c4e85eaef360ad1f7
         print("\nNo input received within 20 seconds. Proceeding with execution...")
         return True
 
