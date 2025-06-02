@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any
-from dspy.primitives.tool import Tool, convert_input_schema_to_tool_args
+
+from dspy.adapters.types.tool import Tool, convert_input_schema_to_tool_args
 
 if TYPE_CHECKING:
     from langchain.tools import BaseTool
