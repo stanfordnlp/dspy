@@ -5,5 +5,6 @@
 - [Classification](/tutorials/classification/)
 - [Multi-Hop RAG](/tutorials/multihop_search/)
 - [Privacy-Conscious Delegation](/tutorials/papillon/)
+- [Program Of Thought](/tutorials/program_of_thought/)
 - [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
 - [Audio](/tutorials/audio/)
