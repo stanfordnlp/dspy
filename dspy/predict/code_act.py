@@ -28,7 +28,6 @@ class CodeAct(ReAct, ProgramOfThought):
             max_iters (int): The maximum number of iterations to generate the answer.
         
         Example:
-
             ```python
             from dspy.predict import CodeAct
             def factorial(n):
