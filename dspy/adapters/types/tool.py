@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, get_orig
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
+from dspy.adapters.types.base_type import BaseType
 from dspy.utils.callback import with_callbacks
 
 if TYPE_CHECKING:
@@ -13,12 +14,21 @@ if TYPE_CHECKING:
 
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
 
-class Tool:
+
+class Tool(BaseType):
     """Tool class.
 
     This class is used to simplify the creation of tools for tool calling (function calling) in LLMs. Only supports
     functions for now.
     """
+
+    func: Callable
+    name: Optional[str] = None
+    desc: Optional[str] = None
+    args: Optional[dict[str, Any]] = None
+    arg_types: Optional[dict[str, Any]] = None
+    arg_desc: Optional[dict[str, str]] = None
+    has_kwargs: bool = False
 
     def __init__(
         self,
@@ -57,14 +67,7 @@ class Tool:
         # Expected output: {'x': {'type': 'integer'}, 'y': {'type': 'string', 'default': 'hello'}}
         ```
         """
-        self.func = func
-        self.name = name
-        self.desc = desc
-        self.args = args
-        self.arg_types = arg_types
-        self.arg_desc = arg_desc
-        self.has_kwargs = False
-
+        super().__init__(func=func, name=name, desc=desc, args=args, arg_types=arg_types, arg_desc=arg_desc)
         self._parse_function(func, arg_desc)
 
     def _parse_function(self, func: Callable, arg_desc: Optional[dict[str, str]] = None):
@@ -140,6 +143,23 @@ class Tool:
                 parsed_kwargs[k] = v
         return parsed_kwargs
 
+    def format(self):
+        return str(self)
+
+    def format_as_litellm_function_call(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.desc,
+                "parameters": {
+                    "type": "object",
+                    "properties": self.args,
+                    "required": list(self.args.keys()),
+                },
+            },
+        }
+
     @with_callbacks
     def __call__(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
@@ -188,7 +208,7 @@ class Tool:
         from dspy.utils.langchain_tool import convert_langchain_tool
 
         return convert_langchain_tool(tool)
-    
+
     def __repr__(self):
         return f"Tool(name={self.name}, desc={self.desc}, args={self.args})"
 
@@ -196,6 +216,44 @@ class Tool:
         desc = f", whose description is <desc>{self.desc}</desc>.".replace("\n", "  ") if self.desc else "."
         arg_desc = f"It takes arguments {self.args}."
         return f"{self.name}{desc} {arg_desc}"
+
+
+class ToolCalls(BaseType):
+    class ToolCall(BaseModel):
+        name: str
+        args: dict[str, Any]
+
+    tool_calls: list[ToolCall]
+
+    @classmethod
+    def from_dict_list(cls, tool_calls_dicts: list[dict[str, Any]]) -> "ToolCalls":
+        """Convert a list of dictionaries to a ToolCalls instance.
+
+        Args:
+            dict_list: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
+
+        Returns:
+            A ToolCalls instance.
+
+        Example:
+
+            ```python
+            tool_calls_dict = [
+                {"name": "search", "args": {"query": "hello"}},
+                {"name": "translate", "args": {"text": "world"}}
+            ]
+            tool_calls = ToolCalls.from_dict_list(tool_calls_dict)
+            ```
+        """
+        tool_calls = [cls.ToolCall(**item) for item in tool_calls_dicts]
+        return cls(tool_calls=tool_calls)
+
+    @classmethod
+    def description(cls) -> str:
+        return (
+            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
+            "Arguments must be provided in JSON format."
+        )
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
