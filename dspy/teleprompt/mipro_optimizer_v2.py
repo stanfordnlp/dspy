@@ -1,6 +1,10 @@
 import logging
 import random
+import select
+import sys
 import textwrap
+import time
+from typing import TYPE_CHECKING
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 import select
@@ -25,6 +29,9 @@ from dspy.teleprompt.utils import (
     save_candidate_program,
     set_signature,
 )
+
+if TYPE_CHECKING:
+    import optuna
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +60,7 @@ class MIPROv2(Teleprompter):
         metric: Callable,
         prompt_model: Optional[Any] = None,
         task_model: Optional[Any] = None,
-        teacher_settings: Dict = {},
+        teacher_settings: Optional[dict] = None,
         max_bootstrapped_demos: int = 4,
         max_labeled_demos: int = 4,
         auto: Optional[Literal["light", "medium", "heavy"]] = "light",
@@ -84,7 +91,7 @@ class MIPROv2(Teleprompter):
         self.verbose = verbose
         self.track_stats = track_stats
         self.log_dir = log_dir
-        self.teacher_settings = teacher_settings
+        self.teacher_settings = teacher_settings or {}
         self.prompt_model_total_calls = 0
         self.total_calls = 0
         self.num_threads = num_threads
@@ -115,6 +122,7 @@ class MIPROv2(Teleprompter):
         requires_permission_to_run: bool = True,
         provide_traceback: Optional[bool] = None,
     ) -> Any:
+<<<<<<< HEAD
         
         zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
         
@@ -130,6 +138,23 @@ class MIPROv2(Teleprompter):
         if self.auto is not None and (self.num_candidates is not None or num_trials is not None):
             raise ValueError("If auto is not None, num_candidates and num_trials cannot be set, since they would be overrided by the auto settings. Please either set auto to None, or do not specify num_candidates and num_trials.")
         
+=======
+
+        zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
+
+        # If auto is None, and num_trials is not provided (but num_candidates is), raise an error that suggests a good num_trials value
+        if self.auto is None and (self.num_candidates is not None and num_trials is None):
+            raise ValueError(f"If auto is None, num_trials must also be provided. Given num_candidates={self.num_candidates}, we'd recommend setting num_trials to ~{self._set_num_trials_from_num_candidates(student, zeroshot_opt, self.num_candidates)}.")
+
+        # If auto is None, and num_candidates or num_trials is None, raise an error
+        if self.auto is None and (self.num_candidates is None or num_trials is None):
+            raise ValueError("If auto is None, num_candidates must also be provided.")
+
+        # If auto is provided, and either num_candidates or num_trials is not None, raise an error
+        if self.auto is not None and (self.num_candidates is not None or num_trials is not None):
+            raise ValueError("If auto is not None, num_candidates and num_trials cannot be set, since they would be overrided by the auto settings. Please either set auto to None, or do not specify num_candidates and num_trials.")
+
+>>>>>>> 82d3878b12b4632b3c549d9c4e85eaef360ad1f7
         # Set random seeds
         seed = seed or self.seed
         self._set_random_seeds(seed)
@@ -227,7 +252,11 @@ class MIPROv2(Teleprompter):
         num_trials = int(max(2 * num_vars * np.log2(num_candidates), 1.5 * num_candidates))
 
         return num_trials
+<<<<<<< HEAD
         
+=======
+
+>>>>>>> 82d3878b12b4632b3c549d9c4e85eaef360ad1f7
     def _set_hyperparams_from_run_mode(
         self,
         program: Any,
@@ -240,15 +269,15 @@ class MIPROv2(Teleprompter):
             return num_trials, valset, minibatch
 
         auto_settings = AUTO_RUN_SETTINGS[self.auto]
-        
+
         valset = create_minibatch(valset, batch_size=auto_settings["val_size"], rng=self.rng)
         minibatch = len(valset) > MIN_MINIBATCH_SIZE
-        
+
         # Set num instruct candidates to 1/2 of N if optimizing with few-shot examples, otherwise set to N
         # This is because we've found that it's generally better to spend optimization budget on few-shot examples
         # When they are allowed.
         self.num_instruct_candidates = auto_settings["n"] if zeroshot_opt else int(auto_settings["n"] * 0.5)
-        self.num_fewshot_candidates = auto_settings["n"] 
+        self.num_fewshot_candidates = auto_settings["n"]
 
         num_trials = self._set_num_trials_from_num_candidates(program, zeroshot_opt, auto_settings["n"])
 
@@ -382,7 +411,11 @@ class MIPROv2(Teleprompter):
         )
 
         print(f"{user_message}\n{user_confirmation_message}\nDo you wish to continue? (y/n): ", end='', flush=True)
+<<<<<<< HEAD
         
+=======
+
+>>>>>>> 82d3878b12b4632b3c549d9c4e85eaef360ad1f7
         # Wait for input with timeout
         start_time = time.time()
         while time.time() - start_time < 20:
@@ -390,7 +423,11 @@ class MIPROv2(Teleprompter):
                 user_input = sys.stdin.readline().strip().lower()
                 return user_input == "y"
             time.sleep(0.1)
+<<<<<<< HEAD
         
+=======
+
+>>>>>>> 82d3878b12b4632b3c549d9c4e85eaef360ad1f7
         print("\nNo input received within 20 seconds. Proceeding with execution...")
         return True
 
@@ -496,6 +533,7 @@ class MIPROv2(Teleprompter):
         minibatch_full_eval_steps: int,
         seed: int,
     ) -> Optional[Any]:
+        import optuna
         # Run optimization
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         logger.info("==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
@@ -727,7 +765,7 @@ class MIPROv2(Teleprompter):
         candidate_program: Any,
         instruction_candidates: Dict[int, List[str]],
         demo_candidates: Optional[List],
-        trial: optuna.trial.Trial,
+        trial: "optuna.trial.Trial",
         trial_logs: Dict,
         trial_num: int,
     ) -> List[str]:
@@ -756,6 +794,7 @@ class MIPROv2(Teleprompter):
         return chosen_params, raw_chosen_params
 
     def _get_param_distributions(self, program, instruction_candidates, demo_candidates):
+        from optuna.distributions import CategoricalDistribution
         param_distributions = {}
 
         for i in range(len(instruction_candidates)):
@@ -780,10 +819,11 @@ class MIPROv2(Teleprompter):
         score_data,
         best_score: float,
         best_program: Any,
-        study: optuna.Study,
+        study: "optuna.Study",
         instruction_candidates: List,
         demo_candidates: List,
     ):
+        import optuna
         logger.info(f"===== Trial {trial_num + 1} / {adjusted_num_trials} - Full Evaluation =====")
 
         # Identify best program to evaluate fully

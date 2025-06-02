@@ -1,9 +1,9 @@
-import pytest
-import dspy
-from unittest.mock import Mock, patch, MagicMock
-from dspy.utils.usage_tracker import UsageTracker, track_usage
-from dspy.utils.dummies import DummyLM
 import os
+
+import pytest
+
+import dspy
+from dspy.utils.usage_tracker import UsageTracker, track_usage
 
 
 def test_add_usage_entry():
@@ -157,3 +157,16 @@ def test_track_usage_context_manager():
     assert "openai/gpt-4o-mini" in total_usage
     assert len(total_usage.keys()) == 1
     assert isinstance(total_usage["openai/gpt-4o-mini"], dict)
+
+
+def test_merge_usage_entries_with_new_keys():
+    """Ensure merging usage entries preserves unseen keys."""
+    tracker = UsageTracker()
+
+    tracker.add_usage("model-x", {"prompt_tokens": 5})
+    tracker.add_usage("model-x", {"completion_tokens": 2})
+
+    total_usage = tracker.get_total_tokens()
+
+    assert total_usage["model-x"]["prompt_tokens"] == 5
+    assert total_usage["model-x"]["completion_tokens"] == 2

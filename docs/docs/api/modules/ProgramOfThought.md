@@ -12,6 +12,7 @@
             - dump_state
             - forward
             - get_lm
+            - inspect_history
             - load
             - load_state
             - map_named_predictors

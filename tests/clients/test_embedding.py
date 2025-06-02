@@ -1,9 +1,10 @@
-import pytest
-from unittest.mock import Mock, patch
-import numpy as np
+from unittest.mock import patch
 
-from dspy.clients.embedding import Embedder
+import numpy as np
+import pytest
+
 import dspy
+from dspy.clients.embedding import Embedder
 
 
 # Mock response format similar to litellm's embedding response.
@@ -112,7 +113,7 @@ async def test_async_embedding():
         mock_litellm.return_value = MockEmbeddingResponse(mock_embeddings)
 
         # Create embedding instance and call it.
-        embedding = Embedder(model)
+        embedding = Embedder(model, caching=False)
         result = await embedding.acall(inputs)
 
         # Verify litellm was called with correct parameters.

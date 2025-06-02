@@ -1,17 +1,12 @@
 import os
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 
 import ujson
 
 import dspy
 from dspy.adapters.base import Adapter
 from dspy.utils.caching import DSPY_CACHEDIR
-
-
-class TrainDataFormat(str, Enum):
-    CHAT = "chat"
-    COMPLETION = "completion"
 
 
 class TrainingStatus(str, Enum):
@@ -21,6 +16,31 @@ class TrainingStatus(str, Enum):
     succeeded = "succeeded"
     failed = "failed"
     cancelled = "cancelled"
+
+
+class TrainDataFormat(str, Enum):
+    CHAT = "chat"
+    COMPLETION = "completion"
+    GRPO_CHAT = "grpo_chat"
+
+
+class Message(TypedDict):
+    role: Union[Literal["user"], Literal["assistant"], Literal["system"]]
+    content: str
+
+
+class MessageAssistant(TypedDict):
+    role: Literal["assistant"]
+    content: str
+
+
+class GRPOChatData(TypedDict):
+    messages: List[Message]
+    completion: MessageAssistant
+    reward: float
+
+
+GRPOGroup = List[GRPOChatData]
 
 
 def infer_data_format(adapter: Adapter) -> str:

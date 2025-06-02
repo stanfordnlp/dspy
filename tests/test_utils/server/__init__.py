@@ -2,7 +2,6 @@ import json
 import os
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 from typing import Any, Dict, List, Tuple
@@ -56,7 +55,7 @@ def read_litellm_test_server_request_logs(server_log_file_path: str) -> List[Dic
         A list of log entries, where each entry corresponds to one request handled by the server.
     """
     data = []
-    with open(server_log_file_path, "r") as f:
+    with open(server_log_file_path) as f:
         for line in f:
             data.append(json.loads(line))
 
