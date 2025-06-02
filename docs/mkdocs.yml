@@ -1,6 +1,6 @@
 site_name: DSPy
 site_description: The framework for programming—rather than prompting—language models.
-site_url: https://dspy.ai
+site_url: https://dspy.ai/
 
 repo_url: https://github.com/stanfordnlp/dspy
 repo_name: stanfordnlp/dspy
@@ -23,40 +23,41 @@ nav:
         - DSPy Optimization:
             - Optimization Overview: learn/optimization/overview.md
             - Optimizers: learn/optimization/optimizers.md
-        - Other References:
-            - Retrieval Clients:
-                - Azure: deep-dive/retrieval_models_clients/Azure.md
-                - ChromadbRM: deep-dive/retrieval_models_clients/ChromadbRM.md
-                - ClarifaiRM: deep-dive/retrieval_models_clients/ClarifaiRM.md
-                - ColBERTv2: deep-dive/retrieval_models_clients/ColBERTv2.md
-                - Custom RM Client: deep-dive/retrieval_models_clients/custom-rm-client.md
-                - DatabricksRM: deep-dive/retrieval_models_clients/DatabricksRM.md
-                - FalkordbRM: deep-dive/retrieval_models_clients/FalkordbRM.md
-                - FaissRM: deep-dive/retrieval_models_clients/FaissRM.md
-                - LancedbRM: deep-dive/retrieval_models_clients/LancedbRM.md
-                - MilvusRM: deep-dive/retrieval_models_clients/MilvusRM.md
-                - MyScaleRM: deep-dive/retrieval_models_clients/MyScaleRM.md
-                - Neo4jRM: deep-dive/retrieval_models_clients/Neo4jRM.md
-                - QdrantRM: deep-dive/retrieval_models_clients/QdrantRM.md
-                - RAGatouilleRM: deep-dive/retrieval_models_clients/RAGatouilleRM.md
-                - SnowflakeRM: deep-dive/retrieval_models_clients/SnowflakeRM.md
-                - WatsonDiscovery: deep-dive/retrieval_models_clients/WatsonDiscovery.md
-                - WeaviateRM: deep-dive/retrieval_models_clients/WeaviateRM.md
-                - YouRM: deep-dive/retrieval_models_clients/YouRM.md
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
-        - Retrieval-Augmented Generation: tutorials/rag/index.ipynb
-        - Agents: tutorials/agents/index.ipynb
-        - Reasoning: tutorials/math/index.ipynb
-        - Entity Extraction: tutorials/entity_extraction/index.ipynb
-        - Classification: tutorials/classification/index.md
-        - Multi-Hop Search: tutorials/multihop_search/index.ipynb
-        - Privacy-Conscious Delegation: tutorials/papillon/index.md
-        - Program Of Thought: tutorials/program_of_thought/index.ipynb
-        - Finetuning Agents: tutorials/games/index.ipynb
-        - Saving and Loading: tutorials/saving/index.md
-        - Deployment: tutorials/deployment/index.md
-        - Debugging & Observability: tutorials/observability/index.md
+        - Build AI Programs with DSPy:
+            - Overview: tutorials/build_ai_program/index.md
+            - Retrieval-Augmented Generation (RAG): tutorials/rag/index.ipynb
+            - Build AI Agents with DSPy: tutorials/customer_service_agent/index.ipynb
+            - Building RAG as Agent: tutorials/agents/index.ipynb
+            - Entity Extraction: tutorials/entity_extraction/index.ipynb
+            - Classification: tutorials/classification/index.md
+            - Multi-Hop RAG: tutorials/multihop_search/index.ipynb
+            - Privacy-Conscious Delegation: tutorials/papillon/index.md
+            - Program Of Thought: tutorials/program_of_thought/index.ipynb
+            - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
+            - Audio: tutorials/audio/index.ipynb
+        - Optimize AI Programs with DSPy:
+            - Overview: tutorials/optimize_ai_program/index.md
+            - Math Reasoning: tutorials/math/index.ipynb
+            - Classification Finetuning: tutorials/classification_finetuning/index.ipynb
+            - Advanced Tool Use: tutorials/tool_use/index.ipynb
+            - Finetuning Agents: tutorials/games/index.ipynb
+        - Experimental RL Optimization for DSPy:
+            - Overview: tutorials/rl_ai_program/index.md
+            - RL for Privacy-Conscious Delegation: tutorials/rl_papillon/index.ipynb
+            - RL for Multi-Hop Research: tutorials/rl_multihop/index.ipynb
+        - Tools, Development, and Deployment:
+            - Overview: tutorials/core_development/index.md
+            - Use MCP in DSPy: tutorials/mcp/index.md
+            - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
+            - Saving and Loading: tutorials/saving/index.md
+            - Deployment: tutorials/deployment/index.md
+            - Debugging & Observability: tutorials/observability/index.md
+            - Tracking DSPy Optimizers: tutorials/optimizer_tracking/index.md
+            - Streaming: tutorials/streaming/index.md
+            - Async: tutorials/async/index.md
+    - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
         - Use Cases: community/use-cases.md
@@ -67,10 +68,12 @@ nav:
         - Cheatsheet: cheatsheet.md
 
     - API Reference:
+        - API Reference: api/index.md
         - Adapters:
             - Adapter: api/adapters/Adapter.md
             - ChatAdapter: api/adapters/ChatAdapter.md
             - JSONAdapter: api/adapters/JSONAdapter.md
+            - TwoStepAdapter: api/adapters/TwoStepAdapter.md
         - Evaluation:
             - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md
             - Evaluate: api/evaluation/Evaluate.md
@@ -81,6 +84,7 @@ nav:
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
         - Modules:
+            - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - ChainOfThoughtWithHint: api/modules/ChainOfThoughtWithHint.md
             - Module: api/modules/Module.md
@@ -90,6 +94,7 @@ nav:
             - Program: api/modules/Program.md
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
+            - Refine: api/modules/Refine.md
         - Optimizers:
             - BetterTogether: api/optimizers/BetterTogether.md
             - BootstrapFewShot: api/optimizers/BootstrapFewShot.md
@@ -98,12 +103,15 @@ nav:
             - BootstrapRS: api/optimizers/BootstrapRS.md
             - COPRO: api/optimizers/COPRO.md
             - Ensemble: api/optimizers/Ensemble.md
+            - InferRules: api/optimizers/InferRules.md
             - KNN: api/optimizers/KNN.md
             - KNNFewShot: api/optimizers/KNNFewShot.md
             - LabeledFewShot: api/optimizers/LabeledFewShot.md
             - MIPROv2: api/optimizers/MIPROv2.md
+            - SIMBA: api/optimizers/SIMBA.md
         - Primitives:
             - Example: api/primitives/Example.md
+            - History: api/primitives/History.md
             - Image: api/primitives/Image.md
             - Prediction: api/primitives/Prediction.md
             - Tool: api/primitives/Tool.md
@@ -116,7 +124,11 @@ nav:
             - Embeddings: api/tools/Embeddings.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:
+            - StatusMessage: api/utils/StatusMessage.md
+            - StatusMessageProvider: api/utils/StatusMessageProvider.md
+            - StreamListener: api/utils/StreamListener.md
             - asyncify: api/utils/asyncify.md
+            - configure_cache: api/utils/configure_cache.md
             - disable_litellm_logging: api/utils/disable_litellm_logging.md
             - disable_logging: api/utils/disable_logging.md
             - enable_litellm_logging: api/utils/enable_litellm_logging.md
@@ -167,7 +179,18 @@ extra_css:
 
 plugins:
     - social
-    - search
+    - search:
+        lang: en
+        separator: '[\s\-\.]+'
+        min_search_length: 2
+        prebuild_index: true
+        indexing: 'full'
+        properties:
+            - title
+            - tags
+            - content
+            - sections
+        search_index_only: false
     - mkdocstrings:
         handlers:
             python:
@@ -191,10 +214,6 @@ plugins:
                         show_if_no_docstring: true
                         show_warnings: false
                         html_meta: false
-                    docstring_options:
-                        returns_style: table
-                        separate_signature: false
-                        merge_return_lines: true
     - mkdocs-jupyter:
         ignore_h1_titles: True
     - redirects:
@@ -202,6 +221,14 @@ plugins:
             # Redirect /intro/ to the main page
             "intro/index.md": "index.md"
             "intro.md": "index.md"
+            
+            "deep-dive/optimizers/bootstrap-fewshot.md": "api/optimizers/BootstrapFewShot.md"
+            "deep-dive/optimizers/bfrs.md": "api/optimizers/BootstrapFewShotWithRandomSearch.md"
+            "deep-dive/optimizers/BootstrapFinetune.md": "api/optimizers/BootstrapFinetune.md"
+            "deep-dive/optimizers/copro.md": "api/optimizers/COPRO.md"
+            "deep-dive/optimizers/Ensemble.md": "api/optimizers/Ensemble.md"
+            "deep-dive/optimizers/LabeledFewShot.md": "api/optimizers/LabeledFewShot.md"
+            "deep-dive/optimizers/miprov2.md": "api/optimizers/MIPROv2.md"
 
             "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
@@ -233,9 +260,10 @@ markdown_extensions:
     - pymdownx.superfences
     - pymdownx.mark
     - attr_list
+    - md_in_html
     - pymdownx.emoji:
         emoji_index: !!python/name:material.extensions.emoji.twemoji
-        emoji_generator: !!python/name:materialx.emoji.to_svg
+        emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 copyright: |
-    &copy; 2024 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">Stanford NLP</a>
+    &copy; 2025 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>

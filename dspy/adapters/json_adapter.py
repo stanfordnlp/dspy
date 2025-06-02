@@ -1,230 +1,102 @@
-import ast
-import enum
-import inspect
 import json
 import logging
-import textwrap
-from copy import deepcopy
-from typing import Any, Dict, KeysView, Literal, NamedTuple, get_args, get_origin
+from typing import Any, Dict, Type, get_origin
 
 import json_repair
 import litellm
 import pydantic
-from pydantic import TypeAdapter, create_model
+import regex
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.base import Adapter
-from dspy.adapters.image_utils import Image
-from dspy.adapters.utils import find_enum_member, format_field_value, serialize_for_json
-from dspy.signatures.signature import SignatureMeta
-from dspy.signatures.utils import get_dspy_field_type
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.adapters.utils import (
+    format_field_value,
+    get_annotation_name,
+    parse_value,
+    serialize_for_json,
+    translate_field_type,
+)
+from dspy.clients.lm import LM
+from dspy.signatures.signature import Signature, SignatureMeta
+from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
 
-class FieldInfoWithName(NamedTuple):
-    name: str
-    info: FieldInfo
+def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
+    """
+    Check whether any output field in the signature has an open-ended mapping type,
+    such as dict[str, Any]. Structured Outputs require explicit properties, so such fields
+    are incompatible.
+    """
+    for field in signature.output_fields.values():
+        annotation = field.annotation
+        if get_origin(annotation) is dict:
+            return True
+    return False
 
 
-class JSONAdapter(Adapter):
-    def __init__(self):
-        pass
+class JSONAdapter(ChatAdapter):
+    def __call__(
+        self,
+        lm: LM,
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        provider = lm.model.split("/", 1)[0] or "openai"
+        params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
 
-    def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-        inputs = self.format(signature, demos, inputs)
-        inputs = dict(prompt=inputs) if isinstance(inputs, str) else dict(messages=inputs)
+        # If response_format is not supported, use basic call
+        if not params or "response_format" not in params:
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
+        # Check early for open-ended mapping types before trying structured outputs.
+        if _has_open_ended_mapping(signature):
+            lm_kwargs["response_format"] = {"type": "json_object"}
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+
+        # Try structured output first, fall back to basic JSON if it fails.
         try:
-            provider = lm.model.split("/", 1)[0] or "openai"
-            if "response_format" in litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider):
-                try:
-                    response_format = _get_structured_outputs_response_format(signature)
-                    outputs = lm(**inputs, **lm_kwargs, response_format=response_format)
-                except Exception:
-                    logger.debug(
-                        "Failed to obtain response using signature-based structured outputs"
-                        " response format: Falling back to default 'json_object' response format."
-                        " Exception: {e}"
-                    )
-                    outputs = lm(**inputs, **lm_kwargs, response_format={"type": "json_object"})
-            else:
-                outputs = lm(**inputs, **lm_kwargs)
-
-        except litellm.UnsupportedParamsError:
-            outputs = lm(**inputs, **lm_kwargs)
-
-        values = []
-
-        for output in outputs:
-            value = self.parse(signature, output)
-            assert set(value.keys()) == set(
-                signature.output_fields.keys()
-            ), f"Expected {signature.output_fields.keys()} but got {value.keys()}"
-            values.append(value)
-
-        return values
-
-    def format(self, signature, demos, inputs):
-        messages = []
-
-        # Extract demos where some of the output_fields are not filled in.
-        incomplete_demos = [demo for demo in demos if not all(k in demo for k in signature.fields)]
-        complete_demos = [demo for demo in demos if demo not in incomplete_demos]
-        incomplete_demos = [
-            demo
-            for demo in incomplete_demos
-            if any(k in demo for k in signature.input_fields) and any(k in demo for k in signature.output_fields)
-        ]
-
-        demos = incomplete_demos + complete_demos
-
-        messages.append({"role": "system", "content": prepare_instructions(signature)})
-
-        for demo in demos:
-            messages.append(format_turn(signature, demo, role="user", incomplete=demo in incomplete_demos))
-            messages.append(format_turn(signature, demo, role="assistant", incomplete=demo in incomplete_demos))
-
-        messages.append(format_turn(signature, inputs, role="user"))
-
-        return messages
-
-    def parse(self, signature, completion):
-        fields = json_repair.loads(completion)
-        fields = {k: v for k, v in fields.items() if k in signature.output_fields}
-
-        # attempt to cast each value to type signature.output_fields[k].annotation
-        for k, v in fields.items():
-            if k in signature.output_fields:
-                fields[k] = parse_value(v, signature.output_fields[k].annotation)
-
-        if fields.keys() != signature.output_fields.keys():
-            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
-
-        return fields
-
-    def format_turn(self, signature, values, role, incomplete=False):
-        return format_turn(signature, values, role, incomplete)
-
-    def format_fields(self, signature, values, role):
-        fields_with_values = {
-            FieldInfoWithName(name=field_name, info=field_info): values.get(
-                field_name, "Not supplied for this particular example."
-            )
-            for field_name, field_info in signature.fields.items()
-            if field_name in values
-        }
-
-        return format_fields(role=role, fields_with_values=fields_with_values)
-
-
-def parse_value(value, annotation):
-    if annotation is str:
-        return str(value)
-
-    parsed_value = value
-
-    if isinstance(annotation, enum.EnumMeta):
-        parsed_value = find_enum_member(annotation, value)
-    elif isinstance(value, str):
-        try:
-            parsed_value = json.loads(value)
-        except json.JSONDecodeError:
+            structured_output_model = _get_structured_outputs_response_format(signature)
+            lm_kwargs["response_format"] = structured_output_model
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+        except Exception:
+            logger.warning("Failed to use structured output format, falling back to JSON mode.")
             try:
-                parsed_value = ast.literal_eval(value)
-            except (ValueError, SyntaxError):
-                parsed_value = value
+                lm_kwargs["response_format"] = {"type": "json_object"}
+                return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterParseError as e:
+                # On AdapterParseError, we raise the original error.
+                raise e
+            except Exception as e:
+                # On any other error, we raise a RuntimeError with the original error message.
+                raise RuntimeError(
+                    "Both structured output format and JSON mode failed. Please choose a model that supports "
+                    f"`response_format` argument. Original error: {e}"
+                ) from e
 
-    return TypeAdapter(annotation).validate_python(parsed_value)
+    def format_field_structure(self, signature: Type[Signature]) -> str:
+        parts = []
+        parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-
-def _format_field_value(field_info: FieldInfo, value: Any) -> str:
-    """
-    Formats the value of the specified field according to the field's DSPy type (input or output),
-    annotation (e.g. str, int, etc.), and the type of the value itself.
-
-    Args:
-      field_info: Information about the field, including its DSPy field type and annotation.
-      value: The value of the field.
-
-    Returns:
-      The formatted value of the field, represented as a string.
-    """
-    if field_info.annotation is Image:
-        raise NotImplementedError("Images are not yet supported in JSON mode.")
-
-    return format_field_value(field_info=field_info, value=value, assume_text=True)
-
-
-def format_fields(role: str, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
-    """
-    Formats the values of the specified fields according to the field's DSPy type (input or output),
-    annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
-    into a single string, which is is a multiline string if there are multiple fields.
-
-    Args:
-      fields_with_values: A dictionary mapping information about a field to its corresponding
-                          value.
-    Returns:
-      The joined formatted values of the fields, represented as a string.
-    """
-
-    if role == "assistant":
-        d = fields_with_values.items()
-        d = {k.name: v for k, v in d}
-        return json.dumps(serialize_for_json(d), indent=2)
-
-    output = []
-    for field, field_value in fields_with_values.items():
-        formatted_field_value = _format_field_value(field_info=field.info, value=field_value)
-        output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
-
-    return "\n\n".join(output).strip()
-
-
-def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomplete=False) -> Dict[str, str]:
-    """
-    Constructs a new message ("turn") to append to a chat thread. The message is carefully formatted
-    so that it can instruct an LLM to generate responses conforming to the specified DSPy signature.
-
-    Args:
-        signature: The DSPy signature to which future LLM responses should conform.
-        values: A dictionary mapping field names (from the DSPy signature) to corresponding values
-            that should be included in the message.
-        role: The role of the message, which can be either "user" or "assistant".
-        incomplete: If True, indicates that output field values are present in the set of specified
-            ``values``. If False, indicates that ``values`` only contains input field values.
-    Returns:
-        A chat message that can be appended to a chat thread. The message contains two string fields:
-        ``role`` ("user" or "assistant") and ``content`` (the message text).
-    """
-    content = []
-
-    if role == "user":
-        fields: Dict[str, FieldInfo] = signature.input_fields
-        if incomplete:
-            content.append("This is an example of the task, though some input or output fields are not supplied.")
-    else:
-        fields: Dict[str, FieldInfo] = signature.output_fields
-
-    if not incomplete:
-        field_names: KeysView = fields.keys()
-        if not set(values).issuperset(set(field_names)):
-            raise ValueError(f"Expected {field_names} but got {values.keys()}")
-
-    formatted_fields = format_fields(
-        role=role,
-        fields_with_values={
-            FieldInfoWithName(name=field_name, info=field_info): values.get(
-                field_name, "Not supplied for this particular example."
+        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo], role: str):
+            return self.format_field_with_value(
+                fields_with_values={
+                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
+                    for field_name, field_info in fields.items()
+                },
+                role=role,
             )
-            for field_name, field_info in fields.items()
-        },
-    )
-    content.append(formatted_fields)
 
-    if role == "user":
+        parts.append("Inputs will have the following structure:")
+        parts.append(format_signature_fields_for_instructions(signature.input_fields, role="user"))
+        parts.append("Outputs will be a JSON object with the following fields.")
+        parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
+        return "\n\n".join(parts).strip()
 
+    def user_message_output_requirements(self, signature: Type[Signature]) -> str:
         def type_info(v):
             return (
                 f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
@@ -232,134 +104,154 @@ def format_turn(signature: SignatureMeta, values: Dict[str, Any], role, incomple
                 else ""
             )
 
-        # TODO: Consider if not incomplete:
-        content.append(
-            "Respond with a JSON object in the following order of fields: "
-            + ", then ".join(f"`{f}`{type_info(v)}" for f, v in signature.output_fields.items())
-            + "."
-        )
+        message = "Respond with a JSON object in the following order of fields: "
+        message += ", then ".join(f"`{f}`{type_info(v)}" for f, v in signature.output_fields.items())
+        message += "."
+        return message
 
-    return {"role": role, "content": "\n\n".join(content).strip()}
+    def format_assistant_message_content(
+        self,
+        signature: Type[Signature],
+        outputs: dict[str, Any],
+        missing_field_message=None,
+    ) -> str:
+        fields_with_values = {
+            FieldInfoWithName(name=k, info=v): outputs.get(k, missing_field_message)
+            for k, v in signature.output_fields.items()
+        }
+        return self.format_field_with_value(fields_with_values, role="assistant")
 
+    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+        pattern = r"\{(?:[^{}]|(?R))*\}"
+        match = regex.search(pattern, completion, regex.DOTALL)
+        if match:
+            completion = match.group(0)
+        fields = json_repair.loads(completion)
 
-def get_annotation_name(annotation):
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin is None:
-        if hasattr(annotation, "__name__"):
-            return annotation.__name__
-        else:
-            return str(annotation)
-    else:
-        args_str = ", ".join(get_annotation_name(arg) for arg in args)
-        return f"{get_annotation_name(origin)}[{args_str}]"
+        if not isinstance(fields, dict):
+            raise AdapterParseError(
+                adapter_name="JSONAdapter",
+                signature=signature,
+                lm_response=completion,
+                message="LM response cannot be serialized to a JSON object.",
+            )
 
+        fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
-def enumerate_fields(fields):
-    parts = []
-    for idx, (k, v) in enumerate(fields.items()):
-        parts.append(f"{idx+1}. `{k}`")
-        parts[-1] += f" ({get_annotation_name(v.annotation)})"
-        parts[-1] += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
+        # Attempt to cast each value to type signature.output_fields[k].annotation.
+        for k, v in fields.items():
+            if k in signature.output_fields:
+                fields[k] = parse_value(v, signature.output_fields[k].annotation)
 
-    return "\n".join(parts).strip()
+        if fields.keys() != signature.output_fields.keys():
+            raise AdapterParseError(
+                adapter_name="JSONAdapter",
+                signature=signature,
+                lm_response=completion,
+                parsed_result=fields,
+            )
 
+        return fields
 
-def prepare_instructions(signature: SignatureMeta):
-    parts = []
-    parts.append("Your input fields are:\n" + enumerate_fields(signature.input_fields))
-    parts.append("Your output fields are:\n" + enumerate_fields(signature.output_fields))
-    parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
-
-    def field_metadata(field_name, field_info):
-        type_ = field_info.annotation
-
-        if get_dspy_field_type(field_info) == "input" or type_ is str:
-            desc = ""
-        elif type_ is bool:
-            desc = "must be True or False"
-        elif type_ in (int, float):
-            desc = f"must be a single {type_.__name__} value"
-        elif inspect.isclass(type_) and issubclass(type_, enum.Enum):
-            desc = f"must be one of: {'; '.join(type_.__members__)}"
-        elif hasattr(type_, "__origin__") and type_.__origin__ is Literal:
-            desc = f"must be one of: {'; '.join([str(x) for x in type_.__args__])}"
-        else:
-            desc = "must be pareseable according to the following JSON schema: "
-            desc += json.dumps(pydantic.TypeAdapter(type_).json_schema())
-
-        desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
-        return f"{{{field_name}}}{desc}"
-
-    def format_signature_fields_for_instructions(role, fields: Dict[str, FieldInfo]):
-        return format_fields(
-            role=role,
-            fields_with_values={
-                FieldInfoWithName(name=field_name, info=field_info): field_metadata(field_name, field_info)
-                for field_name, field_info in fields.items()
-            },
-        )
-
-    parts.append("Inputs will have the following structure:")
-    parts.append(format_signature_fields_for_instructions("user", signature.input_fields))
-    parts.append("Outputs will be a JSON object with the following fields.")
-    parts.append(format_signature_fields_for_instructions("assistant", signature.output_fields))
-    # parts.append(format_fields({BuiltInCompletedOutputFieldInfo: ""}))
-
-    instructions = textwrap.dedent(signature.instructions)
-    objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
-    parts.append(f"In adhering to this structure, your objective is: {objective}")
-
-    # parts.append("You will receive some input fields in each interaction. " +
-    #              "Respond only with the corresponding output fields, starting with the field " +
-    #              ", then ".join(f"`{f}`" for f in signature.output_fields) +
-    #              ", and then ending with the marker for `completed`.")
-
-    return "\n\n".join(parts).strip()
-
-
-def _get_structured_outputs_response_format(signature: SignatureMeta) -> pydantic.BaseModel:
-    """
-    Obtains the LiteLLM / OpenAI `response_format` parameter for generating structured outputs from
-    an LM request, based on the output fields of the specified DSPy signature.
-
-    Args:
-        signature: The DSPy signature for which to obtain the `response_format` request parameter.
-    Returns:
-        A Pydantic model representing the `response_format` parameter for the LM request.
-    """
-
-    def filter_json_schema_extra(field_name: str, field_info: FieldInfo) -> FieldInfo:
+    def format_field_with_value(self, fields_with_values: Dict[FieldInfoWithName, Any], role: str = "user") -> str:
         """
-        Recursively filter the `json_schema_extra` of a FieldInfo to exclude DSPy internal attributes
-        (e.g. `__dspy_field_type`) and remove descriptions that are placeholders for the field name.
+        Formats the values of the specified fields according to the field's DSPy type (input or output),
+        annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
+        into a single string, which is a multiline string if there are multiple fields.
+
+        Args:
+            fields_with_values: A dictionary mapping information about a field to its corresponding value.
+        Returns:
+            The joined formatted values of the fields, represented as a string.
         """
-        field_copy = deepcopy(field_info)  # Make a copy to avoid mutating the original
+        if role == "user":
+            output = []
+            for field, field_value in fields_with_values.items():
+                formatted_field_value = format_field_value(field_info=field.info, value=field_value)
+                output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
+            return "\n\n".join(output).strip()
+        else:
+            d = fields_with_values.items()
+            d = {k.name: v for k, v in d}
+            return json.dumps(serialize_for_json(d), indent=2)
 
-        # Update `json_schema_extra` for the copied field
-        if field_copy.json_schema_extra:
-            field_copy.json_schema_extra = {
-                key: value
-                for key, value in field_info.json_schema_extra.items()
-                if key not in ("desc", "__dspy_field_type")
-            }
-            field_desc = field_info.json_schema_extra.get("desc")
-            if field_desc is not None and field_desc != f"${{{field_name}}}":
-                field_copy.json_schema_extra["desc"] = field_desc
+    def format_finetune_data(
+        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
+    ) -> dict[str, list[Any]]:
+        # TODO: implement format_finetune_data method in JSONAdapter
+        raise NotImplementedError
 
-        # Handle nested fields
-        if hasattr(field_copy.annotation, "__pydantic_model__"):
-            # Recursively update fields of the nested model
-            nested_model = field_copy.annotation.__pydantic_model__
-            updated_fields = {
-                key: filter_json_schema_extra(key, value) for key, value in nested_model.__fields__.items()
-            }
-            # Create a new model with the same name and updated fields
-            field_copy.annotation = create_model(nested_model.__name__, **updated_fields)
 
-        return field_copy
+def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[pydantic.BaseModel]:
+    """
+    Builds a Pydantic model from a DSPy signature's output_fields and ensures the generated JSON schema
+    is compatible with OpenAI Structured Outputs (all objects have a "required" key listing every property,
+    and additionalProperties is always false).
 
-    output_pydantic_fields = {
-        key: (value.annotation, filter_json_schema_extra(key, value)) for key, value in signature.output_fields.items()
-    }
-    return create_model("DSPyProgramOutputs", **output_pydantic_fields)
+    IMPORTANT: If any field's annotation is an open-ended mapping (e.g. dict[str, Any]), then a structured
+    schema cannot be generated since all properties must be explicitly declared. In that case, an exception
+    is raised so that the caller can fall back to using a plain "json_object" response_format.
+    """
+    # Although we've already performed an early check, we keep this here as a final guard.
+    for name, field in signature.output_fields.items():
+        annotation = field.annotation
+        if get_origin(annotation) is dict:
+            raise ValueError(
+                f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs."
+            )
+
+    fields = {}
+    for name, field in signature.output_fields.items():
+        annotation = field.annotation
+        default = field.default if hasattr(field, "default") else ...
+        fields[name] = (annotation, default)
+
+    # Build the model with extra fields forbidden.
+    pydantic_model = pydantic.create_model(
+        "DSPyProgramOutputs",
+        **fields,
+        __config__=type("Config", (), {"extra": "forbid"}),
+    )
+
+    # Generate the initial schema.
+    schema = pydantic_model.model_json_schema()
+
+    # Remove any DSPy-specific metadata.
+    for prop in schema.get("properties", {}).values():
+        prop.pop("json_schema_extra", None)
+
+    def enforce_required(schema_part: dict):
+        """
+        Recursively ensure that:
+            - for any object schema, a "required" key is added with all property names (or [] if no properties)
+            - additionalProperties is set to False regardless of the previous value.
+            - the same enforcement is run for nested arrays and definitions.
+        """
+        if schema_part.get("type") == "object":
+            props = schema_part.get("properties")
+            if props is not None:
+                # For objects with explicitly declared properties:
+                schema_part["required"] = list(props.keys())
+                schema_part["additionalProperties"] = False
+                for sub_schema in props.values():
+                    if isinstance(sub_schema, dict):
+                        enforce_required(sub_schema)
+            else:
+                # For objects with no properties (should not happen normally but a fallback).
+                schema_part["properties"] = {}
+                schema_part["required"] = []
+                schema_part["additionalProperties"] = False
+        if schema_part.get("type") == "array" and isinstance(schema_part.get("items"), dict):
+            enforce_required(schema_part["items"])
+        # Also enforce in any nested definitions / $defs.
+        for key in ("$defs", "definitions"):
+            if key in schema_part:
+                for def_schema in schema_part[key].values():
+                    enforce_required(def_schema)
+
+    enforce_required(schema)
+
+    # Override the model's JSON schema generation to return our precomputed schema.
+    pydantic_model.model_json_schema = lambda *args, **kwargs: schema
+
+    return pydantic_model

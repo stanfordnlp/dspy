@@ -222,63 +222,138 @@ class BaseCallback:
         """
         pass
 
+    def on_evaluate_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: Dict[str, Any],
+    ):
+        """A handler triggered when evaluation is started.
+
+        Args:
+            call_id: A unique identifier for the call. Can be used to connect start/end handlers.
+            instance: The Evaluate instance.
+            inputs: The inputs to the Evaluate's __call__ method. Each arguments is stored as
+                a key-value pair in a dictionary.
+        """
+        pass
+
+    def on_evaluate_end(
+        self,
+        call_id: str,
+        outputs: Optional[Any],
+        exception: Optional[Exception] = None,
+    ):
+        """A handler triggered after evaluation is executed.
+
+        Args:
+            call_id: A unique identifier for the call. Can be used to connect start/end handlers.
+            outputs: The outputs of the Evaluate's __call__ method. If the method is interrupted by
+                an exception, this will be None.
+            exception: If an exception is raised during the execution, it will be stored here.
+        """
+        pass
+
 
 def with_callbacks(fn):
-    @functools.wraps(fn)
-    def wrapper(instance, *args, **kwargs):
-        # Combine global and local (per-instance) callbacks.
-        callbacks = dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
+    """Decorator to add callback functionality to instance methods."""
 
-        # If no callbacks are provided, just call the function
-        if not callbacks:
-            return fn(instance, *args, **kwargs)
-
-        # Generate call ID as the unique identifier for the call, this is useful for instrumentation.
-        call_id = uuid.uuid4().hex
-
+    def _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs):
+        """Execute all start callbacks for a function call."""
         inputs = inspect.getcallargs(fn, instance, *args, **kwargs)
-        inputs.pop("self")  # Not logging self as input
-
+        if "self" in inputs:
+            inputs.pop("self")
+        elif "instance" in inputs:
+            inputs.pop("instance")
         for callback in callbacks:
             try:
                 _get_on_start_handler(callback, instance, fn)(call_id=call_id, instance=instance, inputs=inputs)
-
             except Exception as e:
                 logger.warning(f"Error when calling callback {callback}: {e}")
 
-        results = None
-        exception = None
-        try:
-            parent_call_id = ACTIVE_CALL_ID.get()
-            # Active ID must be set right before the function is called, not before calling the callbacks.
-            ACTIVE_CALL_ID.set(call_id)
-            results = fn(instance, *args, **kwargs)
-            return results
-        except Exception as e:
-            exception = e
-            raise exception
-        finally:
-            # Execute the end handlers even if the function call raises an exception.
-            ACTIVE_CALL_ID.set(parent_call_id)
-            for callback in callbacks:
-                try:
-                    _get_on_end_handler(callback, instance, fn)(
-                        call_id=call_id,
-                        outputs=results,
-                        exception=exception,
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Error when applying callback {callback}'s end handler on function {fn.__name__}: {e}."
-                    )
+    def _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks):
+        """Execute all end callbacks for a function call."""
+        for callback in callbacks:
+            try:
+                _get_on_end_handler(callback, instance, fn)(
+                    call_id=call_id,
+                    outputs=results,
+                    exception=exception,
+                )
+            except Exception as e:
+                logger.warning(f"Error when applying callback {callback}'s end handler on function {fn.__name__}: {e}.")
 
-    return wrapper
+    def _get_active_callbacks(instance):
+        """Get combined global and instance-level callbacks."""
+        return dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(instance, *args, **kwargs):
+            callbacks = _get_active_callbacks(instance)
+            if not callbacks:
+                return await fn(instance, *args, **kwargs)
+
+            call_id = uuid.uuid4().hex
+
+            _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs)
+
+            # Active ID must be set right before the function is called, not before calling the callbacks.
+            parent_call_id = ACTIVE_CALL_ID.get()
+            ACTIVE_CALL_ID.set(call_id)
+
+            results = None
+            exception = None
+            try:
+                results = await fn(instance, *args, **kwargs)
+                return results
+            except Exception as e:
+                exception = e
+                raise exception
+            finally:
+                ACTIVE_CALL_ID.set(parent_call_id)
+                _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
+
+        return async_wrapper
+
+    else:
+
+        @functools.wraps(fn)
+        def sync_wrapper(instance, *args, **kwargs):
+            callbacks = _get_active_callbacks(instance)
+            if not callbacks:
+                return fn(instance, *args, **kwargs)
+
+            call_id = uuid.uuid4().hex
+
+            _execute_start_callbacks(instance, fn, call_id, callbacks, args, kwargs)
+
+            # Active ID must be set right before the function is called, not before calling the callbacks.
+            parent_call_id = ACTIVE_CALL_ID.get()
+            ACTIVE_CALL_ID.set(call_id)
+
+            results = None
+            exception = None
+            try:
+                results = fn(instance, *args, **kwargs)
+                return results
+            except Exception as e:
+                exception = e
+                raise exception
+            finally:
+                ACTIVE_CALL_ID.set(parent_call_id)
+                _execute_end_callbacks(instance, fn, call_id, results, exception, callbacks)
+
+        return sync_wrapper
 
 
 def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
     """Selects the appropriate on_start handler of the callback based on the instance and function name."""
     if isinstance(instance, dspy.LM):
         return callback.on_lm_start
+    elif isinstance(instance, dspy.Evaluate):
+        return callback.on_evaluate_start
 
     if isinstance(instance, dspy.Adapter):
         if fn.__name__ == "format":
@@ -299,6 +374,8 @@ def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> 
     """Selects the appropriate on_end handler of the callback based on the instance and function name."""
     if isinstance(instance, (dspy.LM)):
         return callback.on_lm_end
+    elif isinstance(instance, dspy.Evaluate):
+        return callback.on_evaluate_end
 
     if isinstance(instance, (dspy.Adapter)):
         if fn.__name__ == "format":

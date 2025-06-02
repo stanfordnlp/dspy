@@ -1,8 +1,13 @@
-import dspy
-import threading
-from dspy.utils.dummies import DummyLM
 import logging
+import os
+from litellm import ModelResponse, Message, Choices
+import threading
 from unittest.mock import patch
+
+import pytest
+
+import dspy
+from dspy.utils.dummies import DummyLM
 
 
 def test_deepcopy_basic():
@@ -110,6 +115,65 @@ def test_save_and_load_with_pkl(tmp_path):
     assert new_cot.predict.demos == compiled_cot.predict.demos
 
 
+def test_save_with_extra_modules(tmp_path):
+    import sys
+
+    # Create a temporary Python file with our custom module
+    custom_module_path = tmp_path / "custom_module.py"
+    with open(custom_module_path, "w") as f:
+        f.write("""
+import dspy
+
+class MyModule(dspy.Module):
+    def __init__(self):
+        self.cot = dspy.ChainOfThought(dspy.Signature("q -> a"))
+
+    def forward(self, q):
+        return self.cot(q=q)
+""")
+
+    # Add the tmp_path to Python path so we can import the module
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import custom_module
+
+        cot = custom_module.MyModule()
+
+        cot.save(tmp_path, save_program=True)
+        # Remove the custom module from sys.modules to simulate it not being available
+        sys.modules.pop("custom_module", None)
+        # Also remove it from sys.path
+        sys.path.remove(str(tmp_path))
+        del custom_module
+
+        # Test the loading fails without using `modules_to_serialize`
+        with pytest.raises(ModuleNotFoundError):
+            dspy.load(tmp_path)
+
+        sys.path.insert(0, str(tmp_path))
+        import custom_module
+
+        cot.save(
+            tmp_path,
+            modules_to_serialize=[custom_module],
+            save_program=True,
+        )
+
+        # Remove the custom module from sys.modules to simulate it not being available
+        sys.modules.pop("custom_module", None)
+        # Also remove it from sys.path
+        sys.path.remove(str(tmp_path))
+        del custom_module
+
+        loaded_module = dspy.load(tmp_path)
+        assert loaded_module.cot.predict.signature == cot.cot.predict.signature
+
+    finally:
+        # Only need to clean up sys.path
+        if str(tmp_path) in sys.path:
+            sys.path.remove(str(tmp_path))
+
+
 def test_load_with_version_mismatch(tmp_path):
     from dspy.primitives.module import logger
 
@@ -161,3 +225,214 @@ def test_load_with_version_mismatch(tmp_path):
         # Clean up: restore original level and remove handler
         logger.setLevel(original_level)
         logger.removeHandler(handler)
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
+def test_single_module_call_with_usage_tracker():
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+
+    predict = dspy.ChainOfThought("question -> answer")
+    output = predict(question="What is the capital of France?")
+
+    lm_usage = output.get_lm_usage()
+    assert len(lm_usage) == 1
+    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["total_tokens"] > 0
+
+    # Test no usage being tracked when cache is enabled
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=True), track_usage=True)
+    for _ in range(2):
+        output = predict(question="What is the capital of France?")
+
+    assert len(output.get_lm_usage()) == 0
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
+def test_multi_module_call_with_usage_tracker():
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict1 = dspy.ChainOfThought("question -> answer")
+            self.predict2 = dspy.ChainOfThought("question, answer -> score")
+
+        def __call__(self, question: str) -> str:
+            answer = self.predict1(question=question)
+            score = self.predict2(question=question, answer=answer)
+            return score
+
+    program = MyProgram()
+    output = program(question="What is the capital of France?")
+
+    lm_usage = output.get_lm_usage()
+    assert len(lm_usage) == 1
+    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
+    assert lm_usage["openai/gpt-4o-mini"]["total_tokens"] > 0
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
+def test_usage_tracker_in_parallel():
+    class MyProgram(dspy.Module):
+        def __init__(self, lm):
+            self.lm = lm
+            self.predict1 = dspy.ChainOfThought("question -> answer")
+            self.predict2 = dspy.ChainOfThought("question, answer -> score")
+
+        def __call__(self, question: str) -> str:
+            with dspy.settings.context(lm=self.lm):
+                answer = self.predict1(question=question)
+                score = self.predict2(question=question, answer=answer)
+                return score
+
+    dspy.settings.configure(track_usage=True)
+    program1 = MyProgram(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    program2 = MyProgram(lm=dspy.LM("openai/gpt-3.5-turbo", cache=False))
+
+    parallelizer = dspy.Parallel()
+
+    results = parallelizer(
+        [
+            (program1, {"question": "What is the meaning of life?"}),
+            (program2, {"question": "why did a chicken cross the kitchen?"}),
+        ]
+    )
+
+    assert results[0].get_lm_usage() is not None
+    assert results[1].get_lm_usage() is not None
+
+    assert results[0].get_lm_usage().keys() == set(["openai/gpt-4o-mini"])
+    assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
+
+
+def test_module_history():
+    class MyProgram(dspy.Module):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        def forward(self, question: str, **kwargs) -> str:
+            return self.cot(question=question)
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+            ],
+            model="openai/gpt-4o-mini",
+        )
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        program = MyProgram()
+        program(question="What is the capital of France?")
+
+        # Second call only call the submodule.
+        program.cot(question="What is the capital of France?")
+
+        # The LM history entity exists in all the ancestor callers.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        # The same history entity is shared across all the ancestor callers to reduce memory usage.
+        assert id(program.history[0]) == id(program.cot.history[0])
+
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+
+        dspy.settings.configure(disable_history=True)
+
+        program(question="What is the capital of France?")
+        # No history is recorded when history is disabled.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        dspy.settings.configure(disable_history=False)
+
+        program(question="What is the capital of France?")
+        # History is recorded again when history is enabled.
+        assert len(program.history) == 2
+        assert len(program.cot.history) == 3
+        assert len(program.cot.predict.history) == 3
+
+
+def test_module_history_with_concurrency():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        def forward(self, question: str, **kwargs) -> str:
+            return self.cot(question=question)
+
+    with patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'reasoning': 'N/A', 'answer': 'Holy crab!'}"))],
+            model="openai/gpt-4o-mini",
+        )
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        program = MyProgram()
+
+        parallelizer = dspy.Parallel()
+
+        parallelizer(
+            [
+                (program, {"question": "What is the meaning of life?"}),
+                (program, {"question": "why did a chicken cross the kitchen?"}),
+            ]
+        )
+        assert len(program.history) == 2
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+
+@pytest.mark.asyncio
+async def test_module_history_async():
+    class MyProgram(dspy.Module):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.cot = dspy.ChainOfThought("question -> answer")
+
+        async def aforward(self, question: str, **kwargs) -> str:
+            return await self.cot.acall(question=question)
+
+    with patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+            ],
+            model="openai/gpt-4o-mini",
+        )
+        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        program = MyProgram()
+        await program.acall(question="What is the capital of France?")
+
+        # Second call only call the submodule.
+        await program.cot.acall(question="What is the capital of France?")
+
+        # The LM history entity exists in all the ancestor callers.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        # The same history entity is shared across all the ancestor callers to reduce memory usage.
+        assert id(program.history[0]) == id(program.cot.history[0])
+
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+
+        dspy.settings.configure(disable_history=True)
+
+        await program.acall(question="What is the capital of France?")
+        # No history is recorded when history is disabled.
+        assert len(program.history) == 1
+        assert len(program.cot.history) == 2
+        assert len(program.cot.predict.history) == 2
+
+        dspy.settings.configure(disable_history=False)
+
+        await program.acall(question="What is the capital of France?")
+        # History is recorded again when history is enabled.
+        assert len(program.history) == 2
+        assert len(program.cot.history) == 3
+        assert len(program.cot.predict.history) == 3

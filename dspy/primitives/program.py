@@ -1,8 +1,13 @@
+from typing import Optional
+
 import magicattr
 
+from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
 from dspy.primitives.module import BaseModule
 from dspy.utils.callback import with_callbacks
+from dspy.utils.inspect_history import pretty_print_history
+from dspy.utils.usage_tracker import track_usage
 
 
 class ProgramMeta(type):
@@ -16,10 +21,38 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
         self._compiled = False
+        # LM calling history of the module.
+        self.history = []
 
     @with_callbacks
     def __call__(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
+        caller_modules = settings.caller_modules or []
+        caller_modules = list(caller_modules)
+        caller_modules.append(self)
+
+        with settings.context(caller_modules=caller_modules):
+            if settings.track_usage and settings.usage_tracker is None:
+                with track_usage() as usage_tracker:
+                    output = self.forward(*args, **kwargs)
+                output.set_lm_usage(usage_tracker.get_total_tokens())
+                return output
+
+            return self.forward(*args, **kwargs)
+
+    @with_callbacks
+    async def acall(self, *args, **kwargs):
+        caller_modules = settings.caller_modules or []
+        caller_modules = list(caller_modules)
+        caller_modules.append(self)
+
+        with settings.context(caller_modules=caller_modules):
+            if settings.track_usage and settings.usage_tracker is None:
+                with track_usage() as usage_tracker:
+                    output = await self.aforward(*args, **kwargs)
+                    output.set_lm_usage(usage_tracker.get_total_tokens())
+                    return output
+
+            return await self.aforward(*args, **kwargs)
 
     def named_predictors(self):
         from dspy.predict.predict import Predict
@@ -55,46 +88,23 @@ class Module(BaseModule, metaclass=ProgramMeta):
             set_attribute_by_name(self, name, func(predictor))
         return self
 
-    # def activate_assertions(self, handler=backtrack_handler, **handler_args):
-    #     """
-    #     Activates assertions for the module.
-    #     The default handler is the backtrack_handler.
-    #     """
-    #     assert_transform_module(self, handler, **handler_args)
-    #     return self
-
-    # def __deepcopy__(self, memo):
-    #     # memo is a dict of id's to copies already made during the current call
-    #     # Check if the object is already copied
-    #     if id(self) in memo:
-    #         return memo[id(self)]
-
-    #     print(f"Deep copying {self.__class__.__name__}...")
-
-    #     new_copy = copy.copy(self)
-    #     memo[id(self)] = new_copy
-
-    #     for k, v in self.__dict__.items():
-    #         print(f"Copying attribute {k} of type {type(v)}...")
-    #         setattr(new_copy, k, copy.deepcopy(v, memo))
-    #         print("Done")
-
-    #     return new_copy
+    def inspect_history(self, n: int = 1):
+        return pretty_print_history(self.history, n)
 
     def batch(
         self,
         examples,
-        num_threads: int = 32,
+        num_threads: Optional[int] = None,
         max_errors: int = 10,
         return_failed_examples: bool = False,
-        provide_traceback: bool = False,
+        provide_traceback: Optional[bool] = None,
         disable_progress_bar: bool = False,
     ):
         """
         Processes a list of dspy.Example instances in parallel using the Parallel module.
 
         :param examples: List of dspy.Example instances to process.
-        :param batch_size: Number of threads to use for parallel processing.
+        :param num_threads: Number of threads to use for parallel processing.
         :param max_errors: Maximum number of errors allowed before stopping execution.
         :param return_failed_examples: Whether to return failed examples and exceptions.
         :param provide_traceback: Whether to include traceback information in error logs.

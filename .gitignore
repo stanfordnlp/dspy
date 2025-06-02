@@ -63,3 +63,6 @@ docs/docs/**/*.json*
 *.index
 *.pkl
 *.tar.gz
+
+test_before_pypi/
+dspy/.internal_dspyai/dist/

@@ -1,12 +1,13 @@
 import random
 
 import tqdm
-from datasets import load_dataset
 
 
 class GSM8K:
     def __init__(self):
         self.do_shuffle = False
+
+        from datasets import load_dataset
 
         dataset = load_dataset("gsm8k", "main")
 
@@ -24,7 +25,7 @@ class GSM8K:
             gold_reasoning = " ".join(answer[:-2])
             answer = str(int(answer[-1].replace(",", "")))
 
-            official_train.append(dict(question=question, gold_reasoning=gold_reasoning, answer=answer))
+            official_train.append({"question": question, "gold_reasoning": gold_reasoning, "answer": answer})
 
         for example in tqdm.tqdm(hf_official_test):
             question = example["question"]
@@ -35,7 +36,7 @@ class GSM8K:
             gold_reasoning = " ".join(answer[:-2])
             answer = str(int(answer[-1].replace(",", "")))
 
-            official_test.append(dict(question=question, gold_reasoning=gold_reasoning, answer=answer))
+            official_test.append({"question": question, "gold_reasoning": gold_reasoning, "answer": answer})
 
         rng = random.Random(0)
         rng.shuffle(official_train)

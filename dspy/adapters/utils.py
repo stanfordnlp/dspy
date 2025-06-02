@@ -1,10 +1,16 @@
+import ast
+import enum
+import inspect
 import json
-from typing import Any, List, Union
+from collections.abc import Mapping
+from typing import Any, List, Literal, Union, get_args, get_origin
 
+import json_repair
+import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
-from .image_utils import Image, encode_image
+from dspy.signatures.utils import get_dspy_field_type
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -53,26 +59,48 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> U
 
     if assume_text:
         return string_value
-    elif isinstance(value, Image) or field_info.annotation == Image:
-        # This validation should happen somewhere else
-        # Safe to import PIL here because it's only imported when an image is actually being formatted
-        try:
-            import PIL
-        except ImportError:
-            raise ImportError("PIL is required to format images; Run `pip install pillow` to install it.")
-        image_value = value
-        if not isinstance(image_value, Image):
-            if isinstance(image_value, dict) and "url" in image_value:
-                image_value = image_value["url"]
-            elif isinstance(image_value, str):
-                image_value = encode_image(image_value)
-            elif isinstance(image_value, PIL.Image.Image):
-                image_value = encode_image(image_value)
-            assert isinstance(image_value, str)
-            image_value = Image(url=image_value)
-        return {"type": "image_url", "image_url": image_value.model_dump()}
     else:
         return {"type": "text", "text": string_value}
+
+
+def _get_json_schema(field_type):
+    def move_type_to_front(d):
+        # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
+        if isinstance(d, Mapping):
+            return {
+                k: move_type_to_front(v) for k, v in sorted(d.items(), key=lambda item: (item[0] != "type", item[0]))
+            }
+        elif isinstance(d, list):
+            return [move_type_to_front(item) for item in d]
+        return d
+
+    schema = pydantic.TypeAdapter(field_type).json_schema()
+    schema = move_type_to_front(schema)
+    return schema
+
+
+def translate_field_type(field_name, field_info):
+    field_type = field_info.annotation
+
+    if get_dspy_field_type(field_info) == "input" or field_type is str:
+        desc = ""
+    elif field_type is bool:
+        desc = "must be True or False"
+    elif field_type in (int, float):
+        desc = f"must be a single {field_type.__name__} value"
+    elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
+        desc = f"must be one of: {'; '.join(field_type.__members__)}"
+    elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
+        desc = (
+            # Strongly encourage the LM to avoid choosing values that don't appear in the
+            # literal or returning a value of the form 'Literal[<selected_value>]'
+            f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
+        )
+    else:
+        desc = f"must adhere to the JSON schema: {json.dumps(_get_json_schema(field_type), ensure_ascii=False)}"
+
+    desc = (" " * 8) + f"# note: the value you produce {desc}" if desc else ""
+    return f"{{{field_name}}}{desc}"
 
 
 def find_enum_member(enum, identifier):
@@ -103,6 +131,83 @@ def find_enum_member(enum, identifier):
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
 
+def parse_value(value, annotation):
+    if annotation is str:
+        return str(value)
+
+    if isinstance(annotation, enum.EnumMeta):
+        return find_enum_member(annotation, value)
+
+    origin = get_origin(annotation)
+
+    if origin is Literal:
+        allowed = get_args(annotation)
+        if value in allowed:
+            return value
+
+        if isinstance(value, str):
+            v = value.strip()
+            if v.startswith(("Literal[", "str[")) and v.endswith("]"):
+                v = v[v.find("[") + 1 : -1]
+            if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'":
+                v = v[1:-1]
+
+            if v in allowed:
+                return v
+
+        raise ValueError(f"{value!r} is not one of {allowed!r}")
+
+    if not isinstance(value, str):
+        return TypeAdapter(annotation).validate_python(value)
+
+    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
+    if candidate == "" and value != "":
+        try:
+            candidate = ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            candidate = value
+
+    try:
+        return TypeAdapter(annotation).validate_python(candidate)
+    except pydantic.ValidationError:
+        if origin is Union and type(None) in get_args(annotation) and str in get_args(annotation):
+            return str(candidate)
+        raise
+
+
+def get_annotation_name(annotation):
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is None:
+        if hasattr(annotation, "__name__"):
+            return annotation.__name__
+        else:
+            return str(annotation)
+
+    if origin is Literal:
+        args_str = ", ".join(
+            _quoted_string_for_literal_type_annotation(a) if isinstance(a, str) else get_annotation_name(a)
+            for a in args
+        )
+        return f"{get_annotation_name(origin)}[{args_str}]"
+    else:
+        args_str = ", ".join(get_annotation_name(a) for a in args)
+        return f"{get_annotation_name(origin)}[{args_str}]"
+
+
+def get_field_description_string(fields: dict) -> str:
+    field_descriptions = []
+    for idx, (k, v) in enumerate(fields.items()):
+        field_message = f"{idx + 1}. `{k}`"
+        field_message += f" ({get_annotation_name(v.annotation)})"
+        field_message += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
+        field_message += (
+            f"\nConstraints: {v.json_schema_extra['constraints']}" if v.json_schema_extra.get("constraints") else ""
+        )
+        field_descriptions.append(field_message)
+    return "\n".join(field_descriptions).strip()
+
+
 def _format_input_list_field_value(value: List[Any]) -> str:
     """
     Formats the value of an input field of type List[Any].
@@ -117,7 +222,7 @@ def _format_input_list_field_value(value: List[Any]) -> str:
     if len(value) == 1:
         return _format_blob(value[0])
 
-    return "\n".join([f"[{idx+1}] {_format_blob(txt)}" for idx, txt in enumerate(value)])
+    return "\n".join([f"[{idx + 1}] {_format_blob(txt)}" for idx, txt in enumerate(value)])
 
 
 def _format_blob(blob: str) -> str:
@@ -135,3 +240,25 @@ def _format_blob(blob: str) -> str:
 
     modified_blob = blob.replace("\n", "\n    ")
     return f"«««\n    {modified_blob}\n»»»"
+
+
+def _quoted_string_for_literal_type_annotation(s: str) -> str:
+    """
+    Return the specified string quoted for inclusion in a literal type annotation.
+    """
+    has_single = "'" in s
+    has_double = '"' in s
+
+    if has_single and not has_double:
+        # Only single quotes => enclose in double quotes
+        return f'"{s}"'
+    elif has_double and not has_single:
+        # Only double quotes => enclose in single quotes
+        return f"'{s}'"
+    elif has_single and has_double:
+        # Both => enclose in single quotes; escape each single quote with \'
+        escaped = s.replace("'", "\\'")
+        return f"'{escaped}'"
+    else:
+        # Neither => enclose in single quotes
+        return f"'{s}'"

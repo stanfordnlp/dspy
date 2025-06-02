@@ -4,7 +4,7 @@ from typing import Any, Dict, Union
 
 import numpy as np
 
-from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern, format_fields
+from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName, field_header_pattern
 from dspy.clients.lm import LM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
@@ -19,8 +19,7 @@ class DummyLM(LM):
     Mode 1: List of dictionaries
 
     If a list of dictionaries is provided, the dummy model will return the next dictionary
-    in the list for each request, formatted according to the `format_fields` function.
-    from the chat adapter.
+    in the list for each request, formatted according to the `format_field_with_value` function.
 
     Example:
 
@@ -41,7 +40,7 @@ class DummyLM(LM):
 
     If a dictionary of dictionaries is provided, the dummy model will return the value
     corresponding to the key which is contained with the final message of the prompt,
-    formatted according to the `format_fields` function from the chat adapter.
+    formatted according to the `format_field_with_value` function from the chat adapter.
 
     ```
     lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
@@ -95,7 +94,7 @@ class DummyLM(LM):
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         def format_answer_fields(field_names_and_values: Dict[str, Any]):
-            return format_fields(
+            return ChatAdapter().format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=OutputField()): value
                     for field_name, value in field_names_and_values.items()
@@ -122,13 +121,16 @@ class DummyLM(LM):
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-            entry = dict(prompt=prompt, messages=messages, kwargs=kwargs)
-            entry = dict(**entry, outputs=outputs, usage=0)
-            entry = dict(**entry, cost=0)
+            entry = {"prompt": prompt, "messages": messages, "kwargs": kwargs}
+            entry = {**entry, "outputs": outputs, "usage": 0}
+            entry = {**entry, "cost": 0}
             self.history.append(entry)
             self.update_global_history(entry)
 
         return outputs
+
+    async def acall(self, prompt=None, messages=None, **kwargs):
+        return self.__call__(prompt=prompt, messages=messages, **kwargs)
 
     def get_convo(self, index):
         """Get the prompt + answer from the ith message."""
@@ -139,7 +141,7 @@ def dummy_rm(passages=()) -> callable:
     if not passages:
 
         def inner(query: str, *, k: int, **kwargs):
-            assert False, "No passages defined"
+            raise ValueError("No passages defined")
 
         return inner
     max_length = max(map(len, passages)) + 100
@@ -151,8 +153,8 @@ def dummy_rm(passages=()) -> callable:
         query_vec = vectorizer([query])[0]
         scores = passage_vecs @ query_vec
         largest_idx = (-scores).argsort()[:k]
-        # return dspy.Prediction(passages=[passages[i] for i in largest_idx])
-        return [dotdict(dict(long_text=passages[i])) for i in largest_idx]
+
+        return [dotdict(long_text=passages[i]) for i in largest_idx]
 
     return inner
 

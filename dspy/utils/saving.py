@@ -3,17 +3,19 @@ import sys
 from pathlib import Path
 
 import cloudpickle
-import importlib_metadata
 import ujson
 
 logger = logging.getLogger(__name__)
 
 
 def get_dependency_versions():
-    cloudpickle_version = '.'.join(cloudpickle.__version__.split('.')[:2])
+    import dspy
+
+    cloudpickle_version = ".".join(cloudpickle.__version__.split(".")[:2])
+
     return {
         "python": f"{sys.version_info.major}.{sys.version_info.minor}",
-        "dspy": importlib_metadata.version("dspy"),
+        "dspy": dspy.__version__,
         "cloudpickle": cloudpickle_version,
     }
 
@@ -33,7 +35,7 @@ def load(path):
     if not path.exists():
         raise FileNotFoundError(f"The path '{path}' does not exist.")
 
-    with open(path / "metadata.json", "r") as f:
+    with open(path / "metadata.json") as f:
         metadata = ujson.load(f)
 
     dependency_versions = get_dependency_versions()

@@ -23,6 +23,15 @@ dspy.configure(lm=lm)
         dspy.configure(lm=lm)
         ```
 
+    === "Gemini (AI Studio)"
+        You can authenticate by setting the GEMINI_API_KEY env variable or passing `api_key` below.
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM('gemini/gemini-2.5-pro-preview-03-25', api_key='GEMINI_API_KEY')
+        dspy.configure(lm=lm)
+        ```
+
     === "Anthropic"
         You can authenticate by setting the ANTHROPIC_API_KEY env variable or passing `api_key` below.
 
@@ -77,14 +86,16 @@ dspy.configure(lm=lm)
         ```
 
     === "Other providers"
-        In DSPy, you can use any of the dozens of [LLM providers supported by LiteLLM](https://docs.litellm.ai/docs/providers). Simply follow their instructions for which `{PROVIDER}_API_KEY` to set and how to write pass the `{provider_name}/{model_name}` to the constructor.
+        In DSPy, you can use any of the dozens of [LLM providers supported by LiteLLM](https://docs.litellm.ai/docs/providers). Simply follow their instructions for which `{PROVIDER}_API_KEY` to set and how to write pass the `{provider_name}/{model_name}` to the constructor. 
 
         Some examples:
 
         - `anyscale/mistralai/Mistral-7B-Instruct-v0.1`, with `ANYSCALE_API_KEY`
         - `together_ai/togethercomputer/llama-2-70b-chat`, with `TOGETHERAI_API_KEY`
         - `sagemaker/<your-endpoint-name>`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION_NAME`
-        - `azure/<your_deployment_name>`, with `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, and the optional `AZURE_AD_TOKEN` and `AZURE_API_TYPE`
+        - `azure/<your_deployment_name>`, with `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, and the optional `AZURE_AD_TOKEN` and `AZURE_API_TYPE` as environment variables. If you are initiating external models without setting environment variables, use the following:
+        `lm = dspy.LM('azure/<your_deployment_name>', api_key = 'AZURE_API_KEY' , api_base = 'AZURE_API_BASE', api_version = 'AZURE_API_VERSION')`
+
 
         
         If your provider offers an OpenAI-compatible endpoint, just add an `openai/` prefix to your full model name.
@@ -94,6 +105,7 @@ dspy.configure(lm=lm)
         lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
         dspy.configure(lm=lm)
         ```
+If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
 
 ## Calling the LM directly.
 
@@ -170,7 +182,7 @@ lm.history[-1].keys()  # access the last call to the LM, with all metadata
 dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost'])
 ```
 
-### Advanced: Building customer LMs and writing your own Adapters.
+### Advanced: Building custom LMs and writing your own Adapters.
 
 Though rarely needed, you can write custom LMs by inheriting from `dspy.BaseLM`. Another advanced layer in the DSPy ecosystem is that of _adapters_, which sit between DSPy signatures and LMs. A future version of this guide will discuss these advanced features, though you likely don't need them.
 

@@ -3,10 +3,15 @@ import random
 from typing import Callable, List, Optional
 
 import dspy
-from dspy.clients.lm import LM
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
-from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune, prepare_student, set_missing_predictor_lms
+from dspy.teleprompt.bootstrap_finetune import (
+    BootstrapFinetune,
+    all_predictors_have_lms,
+    kill_lms,
+    launch_lms,
+    prepare_student,
+)
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -28,7 +33,7 @@ class BetterTogether(Teleprompter):
 
         # TODO: Note that the BetterTogether optimizer is meaningful when
         # BootstrapFinetune uses a metric to filter the training data before
-        # fine-tuning. However, one can also choose to run this optimizer with 
+        # fine-tuning. However, one can also choose to run this optimizer with
         # a BoostrapFinetune without a metric, say, if there aren't labels
         # available for the training data. Should this be noted somewhere?
         # TODO: We should re-consider if the metric should be required.
@@ -54,45 +59,49 @@ class BetterTogether(Teleprompter):
     ) -> Program:
         # TODO: We could record acc on a different valset to pick the best
         # strategy within the provided strategy
-        logger.info("[BetterTogether] Validating the strategy")
+        logger.info("Validating the strategy")
         parsed_strategy = strategy.lower().split(self.STRAT_SEP)
 
-        if not all([s in ["p", "w"] for s in parsed_strategy]):
+        if not all(s in ["p", "w"] for s in parsed_strategy):
             raise ValueError(
                 f"The strategy should be a sequence of 'p' and 'w' separated by '{self.STRAT_SEP}', but "
                 f"found: {strategy}"
             )
 
-        logger.info("[BetterTogether] Preparing the student program...")
+        logger.info("Preparing the student program...")
         # TODO: Prepare student returns student.reset_copy(), which is what gets
         # optimized. We should make this clear in the doc comments.
         student = prepare_student(student)
-        set_missing_predictor_lms(student)
+        all_predictors_have_lms(student)
 
         # Make a shallow copy of the trainset, so that we don't change the order
         # of the examples in the original trainset
         trainset = trainset[:]
-        logger.info("[BetterTogether] Compiling the student program...")
+        logger.info("Compiling the student program...")
         student = self._run_strategies(parsed_strategy, student, trainset, valset_ratio)
-        
-        logger.info("[BetterTogether] BetterTogether has finished compiling the student program")
+
+        logger.info("BetterTogether has finished compiling the student program")
         return student
-  
+
     def _run_strategies(self, parsed_strategy, student, trainset, valset_ratio) -> Program:
         # Keep track of all the partial strategies/programs in parsed_strategy
         # "" corresponds to the initial student program
         candidate_programs = []
         candidate_programs.append(("", student))
+        launched_flag = False
 
         for ind, step_code in enumerate(parsed_strategy):
             current_strategy = self.STRAT_SEP.join(parsed_strategy[:ind + 1])
             logger.info(
-                f"\n[BetterTogether] ########## Step {ind + 1} of {len(parsed_strategy)} - Strategy "
+                f"\n########## Step {ind + 1} of {len(parsed_strategy)} - Strategy "
                 f"'{current_strategy}' ##########"
             )
 
-            logger.info("[BetterTogether] Shuffling the trainset...")
+            logger.info("Shuffling the trainset...")
             self.rng.shuffle(trainset)
+            if not launched_flag:
+                launch_lms(student)
+                launched_flag = True
 
             # TODO: Should we reset or just deepcopy? How does resetting affect
             # the predictor LMs?
@@ -102,15 +111,19 @@ class BetterTogether(Teleprompter):
                 student = self._compile_prompt_optimizer(student, trainset, valset_ratio)
             elif step_code == "w":
                 student = self._compile_weight_optimizer(student, trainset)
+                launched_flag = False
 
             # Record the program corresponding to the current strategy
             candidate_programs.append((current_strategy, student))
 
+        if launched_flag:
+            kill_lms(student)
+
         student.candidate_programs = candidate_programs
         return student
-  
+
     def _compile_prompt_optimizer(self, student, trainset, valset_ratio) -> Program:
-        logger.info("[BetterTogether] Preparing for prompt optimization...")
+        logger.info("Preparing for prompt optimization...")
 
         # Sampling a validation set from the trainset for the prompt optimizer
         # We drop the hints for prompt optimization
@@ -119,9 +132,6 @@ class BetterTogether(Teleprompter):
         prompt_valset = trainset[:num_val]
         prompt_trainset = trainset[num_val:]
 
-        logger.info("[BetterTogether] Launching the program LMs for sampling...")
-        self._launch_lms(student)
-
         # TODO: To make this optimizer general, we need to ensure that all the
         # prompt optimizers are accepting a valset or encode a way to check if
         # a valset should be passed to an optimizer's compile method.
@@ -129,20 +139,17 @@ class BetterTogether(Teleprompter):
         # predictor.lm attributes. In particular,
         # BootstrapFewShotWithRandomSearch seems to be resetting these. We are
         # manually re-setting the LMs here to circumvent this issue, but we
-        # should consider adressing it in BFRS.
-        logger.info("[BetterTogether] Compiling the prompt optimizer...")
+        # should consider addressing it in BFRS.
+        logger.info("Compiling the prompt optimizer...")
         pred_lms = [pred.lm for pred in student.predictors()]
         student = self.prompt_optimizer.compile(student, trainset=prompt_trainset, valset=prompt_valset)
         for pred, lm in zip(student.predictors(), pred_lms):
             pred.lm = lm
 
-        logger.info("[BetterTogether] Killing the LMs used for sampling...")
-        self._kill_lms(student)
-
         return student
-    
+
     def _compile_weight_optimizer(self, student, trainset) -> Program:
-        logger.info("[BetterTogether] Preparing for weight optimization...")
+        logger.info("Preparing for weight optimization...")
 
         # Saving the LMs before compiling the weight optimizer
         original_lms = [pred.lm for pred in student.predictors()]
@@ -150,8 +157,8 @@ class BetterTogether(Teleprompter):
         # TODO: To make this optimizer general, we need to ensure that all the
         # prompt optimizers are accepting a valset or encode a way to check if
         # a valset should be passed to an optimizer's compile.
-        logger.info("[BetterTogether] Compiling the weight optimizer...")
-        student = self.weight_optimizer.compile(student, trainset=trainset)     
+        logger.info("Compiling the weight optimizer...")
+        student = self.weight_optimizer.compile(student, trainset=trainset)
 
         # Updating the train kwargs for the new LMs. This is needed because the
         # train_kwargs of the optimizer is configured for the original LMs.
@@ -161,21 +168,3 @@ class BetterTogether(Teleprompter):
             self.weight_optimizer.train_kwargs[new_lm] = original_params
 
         return student
-  
-    @staticmethod
-    def _get_unique_lms(program: Program) -> List[LM]:
-        lms = [pred.lm for pred in program.predictors()]
-        lms = list(set(lms))
-        return lms
-
-    @staticmethod
-    def _launch_lms(program: Program):
-        lms = BetterTogether._get_unique_lms(program)
-        for lm in lms:
-            lm.launch()
-  
-    @staticmethod
-    def _kill_lms(program: Program):
-        lms = BetterTogether._get_unique_lms(program)
-        for lm in lms:
-            lm.kill()

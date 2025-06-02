@@ -2,7 +2,6 @@ import random
 from collections.abc import Mapping
 from typing import List, Optional, Union
 
-from datasets import Dataset
 from rich import print as rprint
 from tqdm import tqdm, trange
 
@@ -43,18 +42,18 @@ class Synthesizer:
         if self.config.feedback_mode == "human":
             input_keys = examples.inputs().keys()
 
-            print("-"*75)
+            print("-" * 75)
             print_text = "[bold blue]Generated Data:[bold blue]\n[bold red]Inputs:[bold red]\n"
-            
+
             for key in input_keys:
                 print_text += f"\t[bold yellow]{key}[bold yellow]: [green]{examples[key]}[green]\n"
-            
+
             rprint(print_text)
             feedback = input("Provide feedback on the generated data: ")
-            print("-"*75)
+            print("-" * 75)
 
             return feedback
-        
+
         elif self.config.feedback_mode == "llm":
             feedback = self.get_feedback_on_generation(
                 synthetic_data=[examples],
@@ -144,16 +143,16 @@ class Synthesizer:
             task_description = ground_source.__doc__
             if task_description.startswith("Given the fields"):
                 task_description = self.understand_task(examples=ground_source.__doc__).explanation
-            
-            input_keys = {k:v.json_schema_extra["desc"] for k,v in ground_source.input_fields.items()}
-            output_keys = {k:v.json_schema_extra["desc"] for k,v in ground_source.output_fields.items()}
+
+            input_keys = {k: v.json_schema_extra["desc"] for k, v in ground_source.input_fields.items()}
+            output_keys = {k: v.json_schema_extra["desc"] for k, v in ground_source.output_fields.items()}
 
             return task_description, input_keys, output_keys
 
         elif isinstance(ground_source, list) and isinstance(ground_source[0], dspy.Example):
             task_description = self.explain_task(examples=ground_source).explanation
-            input_keys = {key:f"${{{key}}}" for key in ground_source[0].inputs()}
-            output_keys = {key:f"${{{key}}}" for key in ground_source[0].labels()}
+            input_keys = {key: f"${{{key}}}" for key in ground_source[0].inputs()}
+            output_keys = {key: f"${{{key}}}" for key in ground_source[0].labels()}
 
             return task_description, input_keys, output_keys
 
@@ -171,7 +170,7 @@ class Synthesizer:
 
         if self.config.num_example_for_optim:
             self.generate_input_data.__doc__ += INPUT_GENERATION_TASK_WITH_EXAMPLES_SUFFIX
-        
+
         if self.config.feedback_mode:
             self.generate_input_data.__doc__ += INPUT_GENERATION_TASK_WITH_FEEDBACK_SUFFIX
 
@@ -187,27 +186,28 @@ class Synthesizer:
         feedback = ""
 
         for idx in trange(0, num_data, batch_size, desc="Generating Synthetic Data"):
-            iter_temperature = 0.7+0.01*idx
+            iter_temperature = 0.7 + 0.01 * idx
             iter_seed = random.randint(0, 1000000)
 
             kwargs = {
                 "task_description": task_description,
                 "knowledge_seed": iter_seed,
-                "config": dict(temperature=iter_temperature, n=batch_size),
+                "config": {"temperature": iter_temperature, "n": batch_size},
             }
 
             if self.config.num_example_for_optim:
                 if not isinstance(ground_source, list):
-                    raise ValueError("Ground source must be a list of examples when `num_example_for_optim` is provided.")
+                    raise ValueError(
+                        "Ground source must be a list of examples when `num_example_for_optim` is provided."
+                    )
                 kwargs["ground_source"] = random.sample(ground_source, k=self.config.num_example_for_optim)
-            
+
             with dspy.context(lm=self.input_lm):
                 inputs = self.input_predictor(**kwargs)
 
-            input_kwargs = [{
-                key: getattr(completions, key)
-                for key in input_keys
-            } for completions in inputs.completions]
+            input_kwargs = [
+                {key: getattr(completions, key) for key in input_keys} for completions in inputs.completions
+            ]
 
             for kwargs in input_kwargs:
                 outputs = None
@@ -217,18 +217,15 @@ class Synthesizer:
                         outputs = self.config.output_teacher_module(**kwargs)
 
                     else:
-                        outputs = self.output_predictor(**kwargs, config=dict(temperature=iter_temperature))
+                        outputs = self.output_predictor(**kwargs, config={"temperature": iter_temperature})
 
-                output_kwargs = {
-                    key: getattr(outputs, key)
-                    for key in output_keys
-                }
+                output_kwargs = {key: getattr(outputs, key) for key in output_keys}
 
                 data.append(dspy.Example(**kwargs, **output_kwargs).with_inputs(*input_keys))
-            
+
             if self.config.feedback_mode and idx < self.config.num_example_for_feedback:
                 feedback = self._gather_feedback(data[-1])
-               
+
                 task_description = self.update_task_description(
                     task_description=task_description,
                     feedback=feedback,
@@ -238,8 +235,10 @@ class Synthesizer:
 
         return data
 
-    def export(self, data: List[dspy.Example], path: str, mode: str = None, **kwargs):
+    def export(self, data: List[dspy.Example], path: str, mode: Optional[str] = None, **kwargs):
         extension = mode or path.split(".")[-1]
+
+        from datasets import Dataset
 
         dataset = Dataset.from_list(
             [example.toDict() for example in data],

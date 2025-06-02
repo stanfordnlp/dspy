@@ -8,7 +8,7 @@ import requests
 import ujson
 
 from dspy.clients.provider import Provider, TrainingJob
-from dspy.clients.utils_finetune import DataFormat, get_finetune_directory
+from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory
 
 if TYPE_CHECKING:
     from databricks.sdk import WorkspaceClient
@@ -50,7 +50,7 @@ class DatabricksProvider(Provider):
     @staticmethod
     def deploy_finetuned_model(
         model: str,
-        data_format: Optional[DataFormat] = None,
+        data_format: Optional[TrainDataFormat] = None,
         databricks_host: Optional[str] = None,
         databricks_token: Optional[str] = None,
         deploy_timeout: int = 900,
@@ -148,11 +148,11 @@ class DatabricksProvider(Provider):
         num_retries = deploy_timeout // 60
         for _ in range(num_retries):
             try:
-                if data_format == DataFormat.chat:
+                if data_format == TrainDataFormat.CHAT:
                     client.chat.completions.create(
                         messages=[{"role": "user", "content": "hi"}], model=model_name, max_tokens=1
                     )
-                elif data_format == DataFormat.completion:
+                elif data_format == TrainDataFormat.COMPLETION:
                     client.completions.create(prompt="hi", model=model_name, max_tokens=1)
                 logger.info(f"Databricks model serving endpoint {model_name} is ready!")
                 return
@@ -169,24 +169,24 @@ class DatabricksProvider(Provider):
         job: TrainingJobDatabricks,
         model: str,
         train_data: List[Dict[str, Any]],
+        train_data_format: Optional[Union[TrainDataFormat, str]] = "chat",
         train_kwargs: Optional[Dict[str, Any]] = None,
-        data_format: Optional[Union[DataFormat, str]] = "chat",
     ) -> str:
-        if isinstance(data_format, str):
-            if data_format == "chat":
-                data_format = DataFormat.chat
-            elif data_format == "completion":
-                data_format = DataFormat.completion
+        if isinstance(train_data_format, str):
+            if train_data_format == "chat":
+                train_data_format = TrainDataFormat.CHAT
+            elif train_data_format == "completion":
+                train_data_format = TrainDataFormat.COMPLETION
             else:
                 raise ValueError(
-                    f"String `data_format` must be one of 'chat' or 'completion', but received: {data_format}."
+                    f"String `train_data_format` must be one of 'chat' or 'completion', but received: {train_data_format}."
                 )
 
         if "train_data_path" not in train_kwargs:
             raise ValueError("The `train_data_path` must be provided to finetune on Databricks.")
         # Add the file name to the directory path.
         train_kwargs["train_data_path"] = DatabricksProvider.upload_data(
-            train_data, train_kwargs["train_data_path"], data_format
+            train_data, train_kwargs["train_data_path"], train_data_format
         )
 
         try:
@@ -236,14 +236,14 @@ class DatabricksProvider(Provider):
         model_to_deploy = train_kwargs.get("register_to")
         job.endpoint_name = model_to_deploy.replace(".", "_")
         DatabricksProvider.deploy_finetuned_model(
-            model_to_deploy, data_format, databricks_host, databricks_token, deploy_timeout
+            model_to_deploy, train_data_format, databricks_host, databricks_token, deploy_timeout
         )
         job.launch_completed = True
         # The finetuned model name should be in the format: "databricks/<endpoint_name>".
         return f"databricks/{job.endpoint_name}"
 
     @staticmethod
-    def upload_data(train_data: List[Dict[str, Any]], databricks_unity_catalog_path: str, data_format: DataFormat):
+    def upload_data(train_data: List[Dict[str, Any]], databricks_unity_catalog_path: str, data_format: TrainDataFormat):
         logger.info("Uploading finetuning data to Databricks Unity Catalog...")
         file_path = _save_data_to_local_file(train_data, data_format)
 
@@ -303,7 +303,7 @@ def _create_directory_in_databricks_unity_catalog(w: "WorkspaceClient", databric
         logger.info(f"Successfully created directory {databricks_unity_catalog_path} in Databricks Unity Catalog!")
 
 
-def _save_data_to_local_file(train_data: List[Dict[str, Any]], data_format: DataFormat):
+def _save_data_to_local_file(train_data: List[Dict[str, Any]], data_format: TrainDataFormat):
     import uuid
 
     file_name = f"finetuning_{uuid.uuid4()}.jsonl"
@@ -313,9 +313,9 @@ def _save_data_to_local_file(train_data: List[Dict[str, Any]], data_format: Data
     file_path = os.path.abspath(file_path)
     with open(file_path, "w") as f:
         for item in train_data:
-            if data_format == DataFormat.chat:
+            if data_format == TrainDataFormat.CHAT:
                 _validate_chat_data(item)
-            elif data_format == DataFormat.completion:
+            elif data_format == TrainDataFormat.COMPLETION:
                 _validate_completion_data(item)
 
             f.write(ujson.dumps(item) + "\n")

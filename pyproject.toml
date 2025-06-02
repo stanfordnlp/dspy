@@ -3,192 +3,81 @@ requires = ["setuptools>=40.8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-# Do not add spaces around the '=' sign for any of the fields 
-# preceeded by a marker comment as it affects the publish workflow. 
+# Do not add spaces around the '=' sign for any of the fields
+# preceded by a marker comment as it affects the publish workflow.
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.6.0rc8"
+version="2.6.24"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
 license = { text = "MIT License" }
-requires-python = ">=3.9, <3.13"
+requires-python = ">=3.9, <3.14"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3", # removed 3.8
-    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3"
 ]
-# We have both project and tool.poetry.dependencies. Should we remove one?
-# tool.poetry.dependencies is a convenience thing for poetry users.
-# project dependencies function similarly to requirements.txt,
-# `pip install .` will pull from pyproject.toml dependencies
 dependencies = [
-    "backoff",
+    "backoff>=2.2",
     "joblib~=1.3",
-    "openai",
-    "pandas",
-    "regex",
-    "ujson",
-    "tqdm",
-    "datasets>=2.14.6,<3.0.0",
-    "requests",
-    "optuna",
-    "pydantic~=2.0",
-    "jinja2",
-    "magicattr~=0.1.6",
-    "litellm==1.55.3",
-    "diskcache",
-    "json-repair",
+    "openai>=0.28.1",
+    "pandas>=2.1.1",
+    "regex>=2023.10.3",
+    "ujson>=5.8.0",
+    "tqdm>=4.66.1",
+    "datasets>=2.14.6",
+    "requests>=2.31.0",
+    "optuna>=3.4.0",
+    "pydantic>=2.0",
+    "magicattr>=0.1.6",
+    "litellm>=1.60.3",
+    "diskcache>=5.6.0",
+    "json-repair>=0.30.0",
     "tenacity>=8.2.3",
     "anyio",
     "asyncer==0.0.8",
-    "cachetools",
-    "cloudpickle",
+    "cachetools>=5.5.0",
+    "cloudpickle>=3.0.0",
+    "rich>=13.7.1",
+    "numpy>=1.26.0,<2.2; python_version == '3.9'",
+    "numpy>=1.26.0; python_version >= '3.10'",
 ]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
-chromadb = ["chromadb~=0.4.14"]
-lancedb = ["lancedb>=0.11.0"]
-qdrant = ["qdrant-client>=1.11.1", "fastembed>=0.2.0"]
-marqo = ["marqo"]
-epsilla = ["pyepsilla~=0.3.7"]
-pinecone = ["pinecone-client~=2.2.4"]
 weaviate = ["weaviate-client~=4.5.4"]
-milvus = ["pymilvus~=2.3.7"]
 aws = ["boto3~=1.34.78"]
-docs = [
-    "sphinx>=4.3.0",
-    "furo>=2023.3.27",
-    "docutils<0.17",
-    "m2r2",
-    "myst-parser",
-    "myst-nb",
-    "sphinx-autobuild",
-    "sphinx_rtd_theme",
-    "autodoc_pydantic",
-    "sphinx-reredirects>=0.1.2",
-    "sphinx-automodapi==0.16.0",
+mcp = ["mcp; python_version >= '3.10'"]
+dev = [
+    "pytest>=6.2.5",
+    "pytest-mock>=3.12.0",
+    "pytest-asyncio>=0.26.0",
+    "ruff>=0.3.0",
+    "pre-commit>=3.7.0",
+    "pillow>=10.1.0",
+    "datamodel_code_generator>=0.26.3",
+    "build>=1.0.3",
+    "litellm>=1.60.3; sys_platform == 'win32'",
+    "litellm[proxy]>=1.60.3; sys_platform != 'win32'",
 ]
-dev = ["pytest>=6.2.5"]
-fastembed = ["fastembed>=0.2.0"]
+test_extras = [
+    "mcp; python_version >= '3.10'",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dspy", "dspy.*"]
+exclude = ["tests", "tests.*"]
+
+[tool.setuptools.package-data]
+dspy = ["primitives/*.js"]
 
 [project.urls]
 homepage = "https://github.com/stanfordnlp/dspy"
-
-[tool.poetry]
-name = "dspy"
-version = "2.0.8"
-description = "DSPy"
-authors = ["Omar Khattab <okhattab@stanford.edu>"]
-license = "MIT"
-readme = "README.md"
-homepage = "https://github.com/stanfordnlp/dspy"
-repository = "https://github.com/stanfordnlp/dspy"
-keywords = ["dspy", "ai", "language models", "llm", "openai"]
-
-# may be a bit much
-[tool.poetry.dependencies]
-python = ">=3.9,<3.13"
-pydantic = "^2.0"
-backoff = "^2.2"
-joblib = "^1.3"
-openai = ">=0.28.1,<2.0.0"
-pandas = "^2.1.1"
-regex = "^2023.10.3"
-ujson = "^5.8.0"
-tqdm = "^4.66.1"
-datasets = "^2.14.6"
-requests = "^2.31.0"
-optuna = "^3.4.0"
-anthropic = { version = ">=0.18.0,<1.0.0", optional = true }
-chromadb = { version = "^0.4.14", optional = true }
-lancedb = { version = "^0.11.0", optional = true }
-fastembed = { version = ">=0.2.0", optional = true }
-marqo = { version = "*", optional = true }
-pyepsilla = { version = "^0.3.7", optional = true }
-qdrant-client = { version = "^1.6.2", optional = true }
-pinecone-client = { version = "^2.2.4", optional = true }
-weaviate-client = { version = "^4.5.4", optional = true }
-pymilvus = { version = "^2.3.6", optional = true }
-boto3 = { version = "^1.34.78", optional = true }
-sphinx = { version = ">=4.3.0", optional = true }
-furo = { version = ">=2023.3.27", optional = true }
-docutils = { version = "<0.17", optional = true }
-m2r2 = { version = "*", optional = true }
-myst-parser = { version = "*", optional = true }
-myst-nb = { version = "*", optional = true }
-sphinx-autobuild = { version = "*", optional = true }
-sphinx_rtd_theme = { version = "*", optional = true }
-autodoc_pydantic = { version = "*", optional = true }
-sphinx-reredirects = { version = "^0.1.2", optional = true }
-sphinx-automodapi = { version = "0.16.0", optional = true }
-groq = { version = "^0.4.2", optional = true }
-rich = "^13.7.1"
-psycopg2 = { version = "^2.9.9", optional = true }
-pgvector = { version = "^0.2.5", optional = true }
-llama-index = { version = "^0.10.30", optional = true }
-jinja2 = "^3.1.3"
-magicattr = "^0.1.6"
-litellm = { version = "==1.55.3", extras = ["proxy"] }
-diskcache = "^5.6.0"
-json-repair = "^0.30.0"
-tenacity = ">=8.2.3"
-asyncer = "0.0.8"
-cachetools = "^5.5.0"
-cloudpickle = "^3.0.0"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.3"
-transformers = "^4.38.2"
-torch = "^2.2.1"
-pytest-mock = "^3.12.0"
-ruff = "^0.3.0"
-black = "^24.2.0"
-pre-commit = "^3.7.0"
-ipykernel = "^6.29.4"
-semver = "^3.0.2"
-pillow = "^10.1.0"
-litellm = { version = "^1.51.0", extras = ["proxy"] }
-
-[tool.poetry.extras]
-chromadb = ["chromadb"]
-lancedb = ["lancedb"]
-qdrant = ["qdrant-client", "fastembed"]
-marqo = ["marqo"]
-epsilla = ["pyepsilla"]
-pinecone = ["pinecone-client"]
-weaviate = ["weaviate-client"]
-milvus = ["pymilvus"]
-aws = ["boto3"]
-postgres = ["psycopg2", "pgvector"]
-docs = [
-    "sphinx",
-    "furo",
-    "docutils",
-    "m2r2",
-    "myst-parser",
-    "myst-nb",
-    "sphinx-autobuild",
-    "sphinx_rtd_theme",
-    "autodoc_pydantic",
-    "sphinx-reredirects",
-    "sphinx-automodapi",
-]
-fastembed = ["fastembed"]
-
-[tool.poetry.group.doc.dependencies]
-mkdocs = ">=1.5.3"
-mkdocs-material = ">=9.0.6"
-mkdocs-material-extensions = ">=1.3.1"
-mkdocs-gen-files = "^0.5.0"
-mkdocstrings-python = "^1.7.5"
-mkdocstrings = { extras = ["python"], version = ">=0.20.0" }
-mike = ">=2.0.0"
 
 [tool.coverage.run]
 branch = true
@@ -227,17 +116,14 @@ indent-width = 4
 target-version = "py39"
 
 [tool.ruff.lint]
-# Select a minimal set of rules
 select = [
     "F", # Pyflakes
     "E", # Pycodestyle
-    "TID252",  # Absolute imports
+    "TID252", # Absolute imports
 ]
 ignore = [
     "E501", # Line too long
-
 ]
-# Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []
 
