@@ -51,6 +51,7 @@ nav:
             - Use MCP in DSPy: tutorials/mcp/index.md
             - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
             - Saving and Loading: tutorials/saving/index.md
+            - Cache: tutorials/cache/index.md
             - Deployment: tutorials/deployment/index.md
             - Debugging & Observability: tutorials/observability/index.md
             - Tracking DSPy Optimizers: tutorials/optimizer_tracking/index.md
