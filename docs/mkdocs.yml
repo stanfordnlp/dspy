@@ -34,6 +34,7 @@ nav:
             - Classification: tutorials/classification/index.md
             - Multi-Hop RAG: tutorials/multihop_search/index.ipynb
             - Privacy-Conscious Delegation: tutorials/papillon/index.md
+            - Program Of Thought: tutorials/program_of_thought/index.ipynb
             - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
             - Audio: tutorials/audio/index.ipynb
         - Optimize AI Programs with DSPy:
