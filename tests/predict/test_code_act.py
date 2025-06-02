@@ -1,5 +1,6 @@
-import pytest
 import shutil
+
+import pytest
 
 import dspy
 from dspy import Signature

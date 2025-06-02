@@ -298,7 +298,7 @@ class GRPO(FinetuneTeleprompter):
         num_student_predictors = len(student.predictors())
 
         logging.info("Preparing the teacher program(s)... We will ensure that the provided programs have the same program structure as the student program.")
-        if isinstance(teacher, list) and len(teacher) == 0 or teacher is None:
+        if (isinstance(teacher, list) and len(teacher) == 0) or teacher is None:
             teacher = student
         teachers = teacher if isinstance(teacher, list) else [teacher]
         for t in teachers:

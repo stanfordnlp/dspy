@@ -5,8 +5,6 @@ import pydantic
 import pytest
 
 import dspy
-import pydantic
-import json
 
 
 @pytest.mark.parametrize(

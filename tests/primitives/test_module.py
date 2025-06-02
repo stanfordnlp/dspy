@@ -1,10 +1,10 @@
 import logging
 import os
-from litellm import ModelResponse, Message, Choices
 import threading
 from unittest.mock import patch
 
 import pytest
+from litellm import Choices, Message, ModelResponse
 
 import dspy
 from dspy.utils.dummies import DummyLM
