@@ -2,6 +2,9 @@
 draft: true
 ---
 
+!!! warning "This document is from Aug 2024. Since then, DSPy 2.5 and 2.6 were released, DSPy has grown considerably, and 3.0 is approaching! Content below is highly outdated."
+
+
 
 # Roadmap Sketch: DSPy 2.5+
 

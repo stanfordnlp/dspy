@@ -84,14 +84,14 @@ class LM(BaseLM):
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
 
-        # Match pattern: o[1,3] at the start, optionally followed by -mini and anything else
-        model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+        # Match pattern: o[1,3,4] at the start, optionally followed by -mini and anything else
+        model_pattern = re.match(r"^o([134])(?:-mini)?", model_family)
 
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
-            assert (
-                max_tokens >= 20_000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            assert max_tokens >= 20_000 and temperature == 1.0, (
+                "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -125,6 +125,15 @@ class LM(BaseLM):
 
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
+        return results
+
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        completion = alitellm_completion if self.model_type == "chat" else alitellm_text_completion
+
+        results = await completion(
+            request=dict(model=self.model, messages=messages, **kwargs),
+            num_retries=self.num_retries,
+        )
         return results
 
     def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
@@ -354,6 +363,51 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache={"n
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
     return litellm.text_completion(
+        cache=cache,
+        model=f"text-completion-openai/{model}",
+        api_key=api_key,
+        api_base=api_base,
+        prompt=prompt,
+        retry_policy=_get_litellm_retry_policy(num_retries),
+        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
+        # to completion()), the default value of max_retries is non-zero for certain providers, and
+        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
+        max_retries=0,
+        **request,
+    )
+
+
+async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}):
+    retry_kwargs = dict(
+        retry_policy=_get_litellm_retry_policy(num_retries),
+        retry_strategy="exponential_backoff_retry",
+        # In LiteLLM version 1.55.3 (the first version that supports retry_policy as an argument
+        # to completion()), the default value of max_retries is non-zero for certain providers, and
+        # max_retries is stacked on top of the retry_policy. To avoid this, we set max_retries=0
+        max_retries=0,
+    )
+
+    return await litellm.acompletion(
+        cache=cache,
+        **retry_kwargs,
+        **request,
+    )
+
+
+async def alitellm_text_completion(
+    request: Dict[str, Any], num_retries: int, cache={"no-cache": True, "no-store": True}
+):
+    model = request.pop("model").split("/", 1)
+    provider, model = model[0] if len(model) > 1 else "openai", model[-1]
+
+    # Use the API key and base from the request, or from the environment.
+    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
+    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
+
+    # Build the prompt from the messages.
+    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
+
+    return await litellm.atext_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,
