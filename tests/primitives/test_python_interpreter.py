@@ -81,16 +81,16 @@ def test_read_file_access_control(tmp_path):
     with open(testfile_path, "w") as f:
         f.write("test content")
 
-    with PythonInterpreter(enable_read=[str(testfile_path)]) as interpreter:
+    with PythonInterpreter(enable_read_paths=[str(testfile_path)]) as interpreter:
         code = (
             f"with open({repr(virtual_path)}, 'r') as f:\n"
             f"    data = f.read()\n"
             f"data"
         )
         result = interpreter.execute(code)
-        assert result == "test content", "Test file should be accessible with enable_read and specified file"
+        assert result == "test content", "Test file should be accessible with enable_read_paths and specified file"
 
-    with PythonInterpreter(enable_read=False) as interpreter:
+    with PythonInterpreter(enable_read_paths=False) as interpreter:
         code = (
             f"try:\n"
             f"    with open({repr(virtual_path)}, 'r') as f:\n"
@@ -100,13 +100,13 @@ def test_read_file_access_control(tmp_path):
             f"data"
         )
         result = interpreter.execute(code)
-        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be accessible without enable_read"
+        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be accessible without enable_read_paths"
 
 def test_enable_write_flag(tmp_path):
     testfile_path = tmp_path / "test_temp_output.txt"
     virtual_path = f"/sandbox/{testfile_path.name}"
 
-    with PythonInterpreter(enable_write=False) as interpreter:
+    with PythonInterpreter(enable_write_paths=False) as interpreter:
         code = (
             f"try:\n"
             f"    with open({repr(virtual_path)}, 'w') as f:\n"
@@ -117,16 +117,16 @@ def test_enable_write_flag(tmp_path):
             f"result"
         )
         result = interpreter.execute(code)
-        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be writable without allow-write"
+        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be writable without enable_write_paths"
 
-    with PythonInterpreter(enable_write=[str(testfile_path)]) as interpreter:
+    with PythonInterpreter(enable_write_paths=[str(testfile_path)]) as interpreter:
         code = (
             f"with open({repr(virtual_path)}, 'w') as f:\n"
             f"    f.write('allowed')\n"
             f"'ok'"
         )
         result = interpreter.execute(code)
-        assert result == "ok", "Test file should be writable with allow-write"
+        assert result == "ok", "Test file should be writable with enable_write_paths"
     assert testfile_path.exists()
     with open(testfile_path, "r") as f:
         assert f.read() == "allowed", "Test file outputs should match content written during execution"
@@ -152,4 +152,4 @@ def test_enable_net_flag():
             "resp.status"
         )
         result = interpreter.execute(code)
-        assert int(result) == 200, "Network access is permitted with --allow-net"
+        assert int(result) == 200, "Network access is permitted with enable_network_access"

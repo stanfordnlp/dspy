@@ -25,14 +25,14 @@ class PythonInterpreter:
     ```
     """
 
-    def __init__(self, deno_command: Optional[List[str]] = None, enable_read: Iterable[Union[PathLike, str]] = None, enable_env_vars: Iterable[str] = None, enable_network_access: Iterable[str] = None, enable_write: Iterable[Union[PathLike, str]] = None) -> None:
+    def __init__(self, deno_command: Optional[List[str]] = None, enable_read_paths: Optional[Union[bool, Iterable[Union[PathLike, str]]]] = None, enable_env_vars: Optional[Union[bool, Iterable[str]]] = None, enable_network_access: Optional[Union[bool, Iterable[str]]] = None, enable_write_paths: Optional[Union[bool, Iterable[Union[PathLike, str]]]] = None) -> None:
         if isinstance(deno_command, dict):
             deno_command = None  # no-op, just a guard in case someone passes a dict
 
-        self.enable_read = enable_read
+        self.enable_read_paths = enable_read_paths
         self.enable_env_vars = enable_env_vars
         self.enable_network_access = enable_network_access
-        self.enable_write = enable_write
+        self.enable_write_paths = enable_write_paths
         #TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         if deno_command:
@@ -41,41 +41,52 @@ class PythonInterpreter:
             permissions = {
                 'enable_env_vars': 'env',
                 'enable_network_access': 'net',
-                'enable_write': 'write',
+                'enable_write_paths': 'write',
             }
             args = ['deno', 'run', '--allow-read']
-            for attr, perm in permissions.items():
-                val = getattr(self, attr)
-                if not val:
-                    continue
-                if val is True:
-                    args.append(f'--allow-{perm}')
+            if self.enable_env_vars:
+                if self.enable_env_vars is True:
+                    args.append('--allow-env')
                 else:
-                    args.append(f"--allow-{perm}={','.join(str(x) for x in val)}")
+                    args.append(f"--allow-env={','.join(str(x) for x in self.enable_env_vars)}")
+
+            if self.enable_network_access:
+                if self.enable_network_access is True:
+                    args.append('--allow-net')
+                else:
+                    args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
+
+            if self.enable_write_paths:
+                if self.enable_write_paths is True:
+                    args.append('--allow-write')
+                else:
+                    args.append(f"--allow-write={','.join(str(x) for x in self.enable_write_paths)}")
+
             args.append(self._get_runner_path())
             self.deno_command = args
 
         self.deno_process = None
+        self._mounted_files = False
 
     def _get_runner_path(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         return os.path.join(current_dir, "runner.js")
 
     def _mount_files(self):
-        if getattr(self, "_mounted_files", False):
+        if self._mounted_files:
             return
         paths_to_mount = []
-        if self.enable_read:
-            paths_to_mount.extend(self.enable_read)
-        if self.enable_write:
-            paths_to_mount.extend(self.enable_write)
+        if self.enable_read_paths:
+            paths_to_mount.extend(self.enable_read_paths)
+        if self.enable_write_paths:
+            paths_to_mount.extend(self.enable_write_paths)
         if not paths_to_mount:
             return
         for path in paths_to_mount:
             if path in (None, ""):
                 continue
             if not os.path.exists(path):
-                if self.enable_write and path in self.enable_write:
+                if self.enable_write_paths and path in self.enable_write_paths:
                     open(path, "a").close()
                 else:
                     raise FileNotFoundError(f"Cannot mount non-existent file: {path}")
@@ -86,9 +97,9 @@ class PythonInterpreter:
         self._mounted_files = True
 
     def _sync_files(self):
-        if not self.enable_write:
+        if not self.enable_write_paths:
             return
-        for path in self.enable_write:
+        for path in self.enable_write_paths:
             virtual_path = f"/sandbox/{os.path.basename(path)}"
             sync_msg = json.dumps({
                 "sync_file": virtual_path,

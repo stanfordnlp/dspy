@@ -14,7 +14,7 @@ os.environ["${key}"] = """${value}"""
     `);
   }
 } catch (e) {
-
+  console.error("Error setting environment variables in Pyodide:", e);
 }
 
 for await (const line of readLines(Deno.stdin)) {
