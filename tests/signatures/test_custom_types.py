@@ -94,8 +94,7 @@ def test_recommended_patterns():
 def test_expected_failure():
     # InnerType DNE when not OuterContainer.InnerTypes, so this type shouldnt be resolved
     with pytest.raises(ValueError):
-        sig4 = Signature("input: str -> output: InnerType")
-        assert sig4.output_fields["output"].annotation == InnerType
+        Signature("input: str -> output: InnerType")
 
 def test_module_type_resolution():
     class TestModule(dspy.Module):
