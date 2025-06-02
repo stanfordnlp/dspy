@@ -285,10 +285,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def delete(cls, name) -> Type["Signature"]:
         fields = dict(cls.fields)
 
-        if name in fields:
-            del fields[name]  # noqa: RUF051
-        else:
-            raise ValueError(f"Field `{name}` not found in `{cls.__name__}`.")
+        fields.pop(name, None)
 
         return Signature(fields, cls.instructions)
 

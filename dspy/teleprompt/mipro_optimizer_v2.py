@@ -4,9 +4,8 @@ import select
 import sys
 import textwrap
 import time
-from typing import TYPE_CHECKING
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 
