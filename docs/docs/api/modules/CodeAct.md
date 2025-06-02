@@ -119,7 +119,7 @@ def secret_function():
 def passed_function():
     secret_function()
 
-dspy.CodeAct("question -> answer", tools=[age, secret_function])
+dspy.CodeAct("question -> answer", tools=[age, passed_function])
 ```
 
 Instead, the following example works since all necessary tool functions are passed to `CodeAct`:
