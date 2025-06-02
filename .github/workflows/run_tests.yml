@@ -74,6 +74,10 @@ jobs:
           args: check --fix-only
       - name: Run tests with pytest
         run: uv run -p .venv pytest tests/
+      - name: Install optional dependencies
+        run: uv sync -p .venv --extra dev --extra test_extras
+      - name: Run extra tests
+        run: uv run -p .venv pytest tests/ -m extra --extra
 
   build_package:
     name: Build Package

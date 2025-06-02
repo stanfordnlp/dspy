@@ -78,7 +78,7 @@ def is_url(string: str) -> bool:
     """Check if a string is a valid URL."""
     try:
         result = urlparse(string)
-        return all([result.scheme in ("http", "https"), result.netloc])
+        return all([result.scheme in ("http", "https", "gs"), result.netloc])
     except ValueError:
         return False
 

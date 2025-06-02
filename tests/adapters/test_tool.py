@@ -1,10 +1,12 @@
 import asyncio
 from typing import Any, Optional
 
+import dspy
 import pytest
 from pydantic import BaseModel
 
-from dspy.primitives.tool import Tool
+from dspy.adapters.types.tool import Tool
+from unittest import mock
 
 
 # Test fixtures
@@ -254,10 +256,14 @@ def test_tool_call_kwarg():
 
 
 def test_tool_str():
-    tool = Tool(dummy_function)
+    def add(x: int, y: int = 0) -> int:
+        """Add two integers."""
+        return x + y
+    
+    tool = Tool(add)
     assert (
         str(tool)
-        == "dummy_function, whose description is <desc>A dummy function for testing.        Args:          x: An integer parameter          y: A string parameter      </desc>. It takes arguments {'x': {'type': 'integer'}, 'y': {'type': 'string', 'default': 'hello'}} in JSON format."
+        == "add, whose description is <desc>Add two integers.</desc>. It takes arguments {'x': {'type': 'integer'}, 'y': {'type': 'integer', 'default': 0}}."
     )
 
 

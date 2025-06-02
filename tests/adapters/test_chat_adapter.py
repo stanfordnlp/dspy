@@ -97,6 +97,106 @@ async def test_chat_adapter_async_call():
     assert result == [{"answer": "Paris"}]
 
 
+def test_chat_adapter_with_pydantic_models():
+    """
+    This test verifies that ChatAdapter can handle different input and output field types, both basic and nested.
+    """
+
+    class DogClass(pydantic.BaseModel):
+        dog_breeds: list[str] = pydantic.Field(description="List of the breeds of dogs")
+        num_dogs: int = pydantic.Field(description="Number of dogs the owner has", ge=0, le=10)
+
+    class PetOwner(pydantic.BaseModel):
+        name: str = pydantic.Field(description="Name of the owner")
+        num_pets: int = pydantic.Field(description="Amount of pets the owner has", ge=0, le=100)
+        dogs: DogClass = pydantic.Field(description="Nested Pydantic class with dog specific information ")
+
+    class Answer(pydantic.BaseModel):
+        result: str
+        analysis: str
+
+    class TestSignature(dspy.Signature):
+        owner: PetOwner = dspy.InputField()
+        question: str = dspy.InputField()
+        output: Answer = dspy.OutputField()
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.completion") as mock_completion:
+        program(
+            owner=PetOwner(name="John", num_pets=5, dogs=DogClass(dog_breeds=["labrador", "chihuahua"], num_dogs=2)),
+            question="How many non-dog pets does John have?",
+        )
+
+    mock_completion.assert_called_once()
+    _, call_kwargs = mock_completion.call_args
+
+    system_content = call_kwargs["messages"][0]["content"]
+    user_content = call_kwargs["messages"][1]["content"]
+    assert "1. `owner` (PetOwner)" in system_content
+    assert "2. `question` (str)" in system_content
+    assert "1. `output` (Answer)" in system_content
+
+    assert "name" in user_content
+    assert "num_pets" in user_content
+    assert "dogs" in user_content
+    assert "dog_breeds" in user_content
+    assert "num_dogs" in user_content
+    assert "How many non-dog pets does John have?" in user_content
+
+
+def test_chat_adapter_signature_information():
+    """
+    This test ensures that the signature information sent to the LM follows an expected format.
+    """
+
+    class TestSignature(dspy.Signature):
+        input1: str = dspy.InputField(desc="String Input")
+        input2: int = dspy.InputField(desc="Integer Input")
+        output: str = dspy.OutputField(desc="String Output")
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.completion") as mock_completion:
+        program(input1="Test", input2=11)
+
+    mock_completion.assert_called_once()
+    _, call_kwargs = mock_completion.call_args
+
+    assert len(call_kwargs["messages"]) == 2
+    assert call_kwargs["messages"][0]["role"] == "system"
+    assert call_kwargs["messages"][1]["role"] == "user"
+
+    system_content = call_kwargs["messages"][0]["content"]
+    user_content = call_kwargs["messages"][1]["content"]
+
+    assert "1. `input1` (str)" in system_content
+    assert "2. `input2` (int)" in system_content
+    assert "1. `output` (str)" in system_content
+    assert "[[ ## input1 ## ]]\n{input1}" in system_content
+    assert "[[ ## input2 ## ]]\n{input2}" in system_content
+    assert "[[ ## output ## ]]\n{output}" in system_content
+    assert "[[ ## completed ## ]]" in system_content
+
+    assert "[[ ## input1 ## ]]" in user_content
+    assert "[[ ## input2 ## ]]" in user_content
+    assert "[[ ## output ## ]]" in user_content
+    assert "[[ ## completed ## ]]" in user_content
+
+
+def test_chat_adapter_exception_raised_on_failure():
+    """
+    This test ensures that on an error, ChatAdapter raises an explicit exception.
+    """
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+    invalid_completion = "{'output':'mismatched value'}"
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Adapter ChatAdapter failed to parse*"):
+        adapter.parse(signature, invalid_completion)
+
+
 def test_chat_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")
@@ -213,3 +313,40 @@ def test_chat_adapter_formats_image_with_few_shot_examples_with_nested_images():
 
     # The query image is formatted in the last user message
     assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]
+
+
+def test_chat_adapter_with_tool():
+    class MySignature(dspy.Signature):
+        """Answer question with the help of the tools"""
+
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        """Get the weather for a city"""
+        return f"The weather in {city} is sunny"
+
+    def get_population(country: str, year: int) -> str:
+        """Get the population for a country"""
+        return f"The population of {country} in {year} is 1000000"
+
+    tools = [dspy.Tool(get_weather), dspy.Tool(get_population)]
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(MySignature, [], {"question": "What is the weather in Tokyo?", "tools": tools})
+
+    assert len(messages) == 2
+
+    # The output field type description should be included in the system message even if the output field is nested
+    assert dspy.ToolCalls.description() in messages[0]["content"]
+
+    # The user message should include the question and the tools
+    assert "What is the weather in Tokyo?" in messages[1]["content"]
+    assert "get_weather" in messages[1]["content"]
+    assert "get_population" in messages[1]["content"]
+
+    # Tool arguments format should be included in the user message
+    assert "{'city': {'type': 'string'}}" in messages[1]["content"]
+    assert "{'country': {'type': 'string'}, 'year': {'type': 'integer'}}" in messages[1]["content"]
