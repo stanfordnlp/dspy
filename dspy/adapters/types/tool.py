@@ -210,9 +210,9 @@ class Tool(BaseType):
         ```python
         import asyncio
         import dspy
-        from langchain.tools import tool
+        from langchain.tools import tool as lc_tool
 
-        @tool
+        @lc_tool
         def add(x: int, y: int):
             "Add two numbers together."
             return x + y
