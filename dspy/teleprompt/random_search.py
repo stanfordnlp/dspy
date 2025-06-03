@@ -1,5 +1,6 @@
 import random
 
+import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -33,7 +34,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         max_rounds=1,
         num_candidate_programs=16,
         num_threads=None,
-        max_errors=10,
+        max_errors=None,
         stop_at_score=None,
         metric_threshold=None,
     ):
@@ -46,7 +47,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.metric_threshold = metric_threshold
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
-        self.max_errors = max_errors
+        self.max_errors = dspy.settings.max_errors if max_errors is None else max_errors
         self.num_candidate_sets = num_candidate_programs
         self.max_labeled_demos = max_labeled_demos
 
@@ -143,7 +144,9 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
         # To best program, attach all program candidates in decreasing average score
         best_program.candidate_programs = score_data
-        best_program.candidate_programs = sorted(best_program.candidate_programs, key=lambda x: x["score"], reverse=True)
+        best_program.candidate_programs = sorted(
+            best_program.candidate_programs, key=lambda x: x["score"], reverse=True
+        )
 
         print(f"{len(best_program.candidate_programs)} candidate programs found.")
 

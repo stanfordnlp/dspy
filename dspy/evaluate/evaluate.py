@@ -56,7 +56,7 @@ class Evaluate:
         num_threads: Optional[int] = None,
         display_progress: bool = False,
         display_table: Union[bool, int] = False,
-        max_errors: int = 5,
+        max_errors: Optional[int] = None,
         return_all_scores: bool = False,
         return_outputs: bool = False,
         provide_traceback: Optional[bool] = None,
@@ -71,7 +71,8 @@ class Evaluate:
             display_progress (bool): Whether to display progress during evaluation.
             display_table (Union[bool, int]): Whether to display the evaluation results in a table.
                 If a number is passed, the evaluation results will be truncated to that number before displayed.
-            max_errors (int): The maximum number of errors to allow before stopping evaluation.
+            max_errors (Optional[int]): The maximum number of errors to allow before
+                stopping evaluation. If ``None``, inherits from ``dspy.settings.max_errors``.
             return_all_scores (bool): Whether to return scores for every data record in `devset`.
             return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`.
             provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
@@ -82,7 +83,7 @@ class Evaluate:
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
-        self.max_errors = max_errors
+        self.max_errors = dspy.settings.max_errors if max_errors is None else max_errors
         self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback

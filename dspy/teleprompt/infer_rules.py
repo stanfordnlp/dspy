@@ -19,7 +19,9 @@ class InferRules(BootstrapFewShot):
         self.num_threads = num_threads
         self.rules_induction_program = RulesInductionProgram(num_rules, teacher_settings=teacher_settings)
         self.metric = kwargs.get("metric")
-        self.max_errors = kwargs.get("max_errors", 10)
+        self.max_errors = kwargs.get("max_errors", None)
+        if self.max_errors is None:
+            self.max_errors = dspy.settings.max_errors
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
         if valset is None:

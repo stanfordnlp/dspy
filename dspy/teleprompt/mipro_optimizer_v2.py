@@ -5,7 +5,8 @@ import sys
 import textwrap
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Tuple
+from typing import (TYPE_CHECKING, Any, Callable, Dict, List, Literal,
+                    Optional, Tuple)
 
 import numpy as np
 
@@ -13,16 +14,12 @@ import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.propose import GroundedProposer
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.utils import (
-    create_minibatch,
-    create_n_fewshot_demo_sets,
-    eval_candidate_program,
-    get_program_with_highest_avg_score,
-    get_signature,
-    print_full_program,
-    save_candidate_program,
-    set_signature,
-)
+from dspy.teleprompt.utils import (create_minibatch,
+                                   create_n_fewshot_demo_sets,
+                                   eval_candidate_program,
+                                   get_program_with_highest_avg_score,
+                                   get_signature, print_full_program,
+                                   save_candidate_program, set_signature)
 
 if TYPE_CHECKING:
     import optuna
@@ -60,7 +57,7 @@ class MIPROv2(Teleprompter):
         auto: Optional[Literal["light", "medium", "heavy"]] = "light",
         num_candidates: Optional[int] = None,
         num_threads: Optional[int] = None,
-        max_errors: int = 10,
+        max_errors: Optional[int] = None,
         seed: int = 9,
         init_temperature: float = 0.5,
         verbose: bool = False,
@@ -89,7 +86,7 @@ class MIPROv2(Teleprompter):
         self.prompt_model_total_calls = 0
         self.total_calls = 0
         self.num_threads = num_threads
-        self.max_errors = max_errors
+        self.max_errors = dspy.settings.max_errors if max_errors is None else max_errors
         self.metric_threshold = metric_threshold
         self.seed = seed
         self.rng = None
@@ -116,12 +113,13 @@ class MIPROv2(Teleprompter):
         requires_permission_to_run: bool = True,
         provide_traceback: Optional[bool] = None,
     ) -> Any:
-
         zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
 
         # If auto is None, and num_trials is not provided (but num_candidates is), raise an error that suggests a good num_trials value
         if self.auto is None and (self.num_candidates is not None and num_trials is None):
-            raise ValueError(f"If auto is None, num_trials must also be provided. Given num_candidates={self.num_candidates}, we'd recommend setting num_trials to ~{self._set_num_trials_from_num_candidates(student, zeroshot_opt, self.num_candidates)}.")
+            raise ValueError(
+                f"If auto is None, num_trials must also be provided. Given num_candidates={self.num_candidates}, we'd recommend setting num_trials to ~{self._set_num_trials_from_num_candidates(student, zeroshot_opt, self.num_candidates)}."
+            )
 
         # If auto is None, and num_candidates or num_trials is None, raise an error
         if self.auto is None and (self.num_candidates is None or num_trials is None):
@@ -129,7 +127,9 @@ class MIPROv2(Teleprompter):
 
         # If auto is provided, and either num_candidates or num_trials is not None, raise an error
         if self.auto is not None and (self.num_candidates is not None or num_trials is not None):
-            raise ValueError("If auto is not None, num_candidates and num_trials cannot be set, since they would be overrided by the auto settings. Please either set auto to None, or do not specify num_candidates and num_trials.")
+            raise ValueError(
+                "If auto is not None, num_candidates and num_trials cannot be set, since they would be overrided by the auto settings. Please either set auto to None, or do not specify num_candidates and num_trials."
+            )
 
         # Set random seeds
         seed = seed or self.seed
@@ -382,7 +382,7 @@ class MIPROv2(Teleprompter):
         """
         )
 
-        print(f"{user_message}\n{user_confirmation_message}\nDo you wish to continue? (y/n): ", end='', flush=True)
+        print(f"{user_message}\n{user_confirmation_message}\nDo you wish to continue? (y/n): ", end="", flush=True)
 
         # Wait for input with timeout
         start_time = time.time()
@@ -498,6 +498,7 @@ class MIPROv2(Teleprompter):
         seed: int,
     ) -> Optional[Any]:
         import optuna
+
         # Run optimization
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         logger.info("==> STEP 3: FINDING OPTIMAL PROMPT PARAMETERS <==")
@@ -507,7 +508,11 @@ class MIPROv2(Teleprompter):
 
         # Compute the adjusted total trials that we will run (including full evals)
         run_additional_full_eval_at_end = 1 if num_trials % minibatch_full_eval_steps != 0 else 0
-        adjusted_num_trials = int((num_trials + num_trials // minibatch_full_eval_steps + 1 + run_additional_full_eval_at_end) if minibatch else num_trials)
+        adjusted_num_trials = int(
+            (num_trials + num_trials // minibatch_full_eval_steps + 1 + run_additional_full_eval_at_end)
+            if minibatch
+            else num_trials
+        )
         logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
 
         default_score, _ = eval_candidate_program(
@@ -610,7 +615,9 @@ class MIPROv2(Teleprompter):
             )
 
             # If minibatch, perform full evaluation at intervals (and at the very end)
-            if minibatch and ((trial_num % (minibatch_full_eval_steps+1) == 0) or (trial_num == (adjusted_num_trials-1))):
+            if minibatch and (
+                (trial_num % (minibatch_full_eval_steps + 1) == 0) or (trial_num == (adjusted_num_trials - 1))
+            ):
                 best_score, best_program, total_eval_calls = self._perform_full_evaluation(
                     trial_num,
                     adjusted_num_trials,
@@ -759,6 +766,7 @@ class MIPROv2(Teleprompter):
 
     def _get_param_distributions(self, program, instruction_candidates, demo_candidates):
         from optuna.distributions import CategoricalDistribution
+
         param_distributions = {}
 
         for i in range(len(instruction_candidates)):
@@ -788,6 +796,7 @@ class MIPROv2(Teleprompter):
         demo_candidates: List,
     ):
         import optuna
+
         logger.info(f"===== Trial {trial_num + 1} / {adjusted_num_trials} - Full Evaluation =====")
 
         # Identify best program to evaluate fully

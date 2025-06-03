@@ -115,7 +115,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self,
         examples,
         num_threads: Optional[int] = None,
-        max_errors: int = 10,
+        max_errors: Optional[int] = None,
         return_failed_examples: bool = False,
         provide_traceback: Optional[bool] = None,
         disable_progress_bar: bool = False,
@@ -127,10 +127,11 @@ class Module(BaseModule, metaclass=ProgramMeta):
             examples: List of dspy.Example instances to process.
             num_threads: Number of threads to use for parallel processing.
             max_errors: Maximum number of errors allowed before stopping execution.
+                If ``None``, inherits from ``dspy.settings.max_errors``.
             return_failed_examples: Whether to return failed examples and exceptions.
             provide_traceback: Whether to include traceback information in error logs.
             disable_progress_bar: Whether to display the progress bar.
-            
+
         Returns:
             List of results, and optionally failed examples and exceptions.
         """
