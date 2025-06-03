@@ -276,6 +276,8 @@ class DatabricksRM(dspy.Retrieve):
                 columns=self.columns,
                 databricks_token=self.databricks_token,
                 databricks_endpoint=self.databricks_endpoint,
+                databricks_client_id=self.databricks_client_id,
+                databricks_client_secret=self.databricks_client_secret,
                 query_type=query_type,
                 query_text=query_text,
                 query_vector=query_vector,
@@ -446,6 +448,7 @@ class DatabricksRM(dspy.Retrieve):
 
         if databricks_client_id and databricks_client_secret:
             try:
+                print("Retrieving OAuth token using service principal authentication.")
                 databricks_token = _get_oauth_token(
                     index_name, databricks_endpoint, databricks_client_id, databricks_client_secret
                 )
