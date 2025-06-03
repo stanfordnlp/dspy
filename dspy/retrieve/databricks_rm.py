@@ -457,7 +457,10 @@ class DatabricksRM(dspy.Retrieve):
                 )
             except Exception as e:
                 raise ValueError(
-                    f"Failed to retrieve OAuth token. Please check your Databricks client ID and secret. Error: {e}"
+                    f"Failed to retrieve OAuth token. Please check your Databricks client ID and secret. \n"
+                    f"Error: {e} \n \n"
+                    f"NOTE: If you are experiencing a 401 error, be sure to check the permissions on the index that "
+                    f"you are trying to query. The service principal must have the select permission on the index."
                 )
 
         headers = {
