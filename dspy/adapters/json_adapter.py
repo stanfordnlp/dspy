@@ -206,11 +206,14 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
         default = field.default if hasattr(field, "default") else ...
         fields[name] = (annotation, default)
 
+    class DSPyBaseModel(pydantic.BaseModel):
+        model_config = pydantic.ConfigDict(extra="forbid")
+
     # Build the model with extra fields forbidden.
     pydantic_model = pydantic.create_model(
         "DSPyProgramOutputs",
+        __base__=DSPyBaseModel,
         **fields,
-        model_config={"extra": "forbid"},
     )
 
     # Generate the initial schema.
