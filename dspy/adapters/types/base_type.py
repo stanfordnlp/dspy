@@ -1,6 +1,5 @@
 import json
 import re
-import inspect
 from typing import Any, Union, get_args, get_origin
 
 import json_repair
