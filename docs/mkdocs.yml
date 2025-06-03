@@ -27,12 +27,14 @@ nav:
         - Tutorials Overview: tutorials/index.md
         - Build AI Programs with DSPy:
             - Overview: tutorials/build_ai_program/index.md
+            - Build AI Agents with DSPy: tutorials/customer_service_agent/index.ipynb
             - Retrieval-Augmented Generation (RAG): tutorials/rag/index.ipynb
             - Building RAG as Agent: tutorials/agents/index.ipynb
             - Entity Extraction: tutorials/entity_extraction/index.ipynb
             - Classification: tutorials/classification/index.md
             - Multi-Hop RAG: tutorials/multihop_search/index.ipynb
             - Privacy-Conscious Delegation: tutorials/papillon/index.md
+            - Program Of Thought: tutorials/program_of_thought/index.ipynb
             - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
             - Audio: tutorials/audio/index.ipynb
         - Optimize AI Programs with DSPy:
@@ -50,8 +52,10 @@ nav:
             - Use MCP in DSPy: tutorials/mcp/index.md
             - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
             - Saving and Loading: tutorials/saving/index.md
+            - Cache: tutorials/cache/index.md
             - Deployment: tutorials/deployment/index.md
             - Debugging & Observability: tutorials/observability/index.md
+            - Tracking DSPy Optimizers: tutorials/optimizer_tracking/index.md
             - Streaming: tutorials/streaming/index.md
             - Async: tutorials/async/index.md
     - DSPy in Production: production/index.md
@@ -84,6 +88,7 @@ nav:
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
             - ChainOfThoughtWithHint: api/modules/ChainOfThoughtWithHint.md
+            - CodeAct: api/modules/CodeAct.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md
             - Parallel: api/modules/Parallel.md
@@ -125,6 +130,7 @@ nav:
             - StatusMessageProvider: api/utils/StatusMessageProvider.md
             - StreamListener: api/utils/StreamListener.md
             - asyncify: api/utils/asyncify.md
+            - configure_cache: api/utils/configure_cache.md
             - disable_litellm_logging: api/utils/disable_litellm_logging.md
             - disable_logging: api/utils/disable_logging.md
             - enable_litellm_logging: api/utils/enable_litellm_logging.md

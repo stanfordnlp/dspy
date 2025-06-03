@@ -19,9 +19,9 @@ import ast
 import importlib
 import inspect
 import re
+import sys
 import types
 import typing
-import sys
 from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
@@ -71,34 +71,34 @@ class SignatureMeta(type(BaseModel)):
 
         # Get type references from caller frames by walking the stack
         found_types = {}
-        
+
         needed_types = set()
         dotted_types = {}
-        
+
         for type_name in type_names:
             parts = type_name.split('.')
             base_name = parts[0]
-            
+
             if base_name not in typing.__dict__ and base_name not in __builtins__:
                 if len(parts) > 1:
                     dotted_types[type_name] = base_name
                     needed_types.add(base_name)
                 else:
                     needed_types.add(type_name)
-        
+
         if not needed_types:
             return None
-            
+
         frame = None
         try:
             frame = sys._getframe(1)  # Start one level up (skip this function)
-            
+
             max_frames = 100
             frame_count = 0
-            
+
             while frame and needed_types and frame_count < max_frames:
                 frame_count += 1
-                
+
                 for type_name in list(needed_types):
                     if type_name in frame.f_locals:
                         found_types[type_name] = frame.f_locals[type_name]
@@ -106,13 +106,13 @@ class SignatureMeta(type(BaseModel)):
                     elif frame.f_globals and type_name in frame.f_globals:
                         found_types[type_name] = frame.f_globals[type_name]
                         needed_types.remove(type_name)
-                
+
                 # If we found all needed types, stop looking
                 if not needed_types:
                     break
-                    
+
                 frame = frame.f_back
-                
+
             if needed_types and frame_count >= max_frames:
                 import logging
                 logging.getLogger("dspy").warning(
@@ -132,7 +132,7 @@ class SignatureMeta(type(BaseModel)):
 
         return found_types or None
 
-    def __new__(mcs, signature_name, bases, namespace, **kwargs):  # noqa: N804
+    def __new__(mcs, signature_name, bases, namespace, **kwargs):
         # At this point, the orders have been swapped already.
         field_order = [name for name, value in namespace.items() if isinstance(value, FieldInfo)]
         # Set `str` as the default type for all fields
@@ -283,10 +283,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def delete(cls, name) -> Type["Signature"]:
         fields = dict(cls.fields)
 
-        if name in fields:
-            del fields[name]
-        else:
-            raise ValueError(f"Field `{name}` not found in `{cls.__name__}`.")
+        fields.pop(name, None)
 
         return Signature(fields, cls.instructions)
 
@@ -411,7 +408,7 @@ def make_signature(
     if custom_types:
         names = dict(typing.__dict__)
         names.update(custom_types)
-    
+
     fields = _parse_signature(signature, names) if isinstance(signature, str) else signature
 
     # Validate the fields, this is important because we sometimes forget the
@@ -549,15 +546,15 @@ def _parse_type_node(node, names=None) -> Any:
     if isinstance(node, ast.Attribute):
         base = _parse_type_node(node.value, names)
         attr_name = node.attr
-        
+
         if hasattr(base, attr_name):
             return getattr(base, attr_name)
-        
+
         if isinstance(node.value, ast.Name):
             full_name = f"{node.value.id}.{attr_name}"
             if full_name in names:
                 return names[full_name]
-        
+
         raise ValueError(f"Unknown attribute: {attr_name} on {base}")
 
     if isinstance(node, ast.Subscript):

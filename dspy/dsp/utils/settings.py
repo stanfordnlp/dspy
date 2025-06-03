@@ -24,9 +24,11 @@ DEFAULT_CONFIG = dotdict(
     track_usage=False,
     usage_tracker=None,
     caller_predict=None,
+    caller_modules=None,
     stream_listeners=[],
     provide_traceback=False,  # Whether to include traceback information in error logs.
     num_threads=8,  # Number of threads to use for parallel processing.
+    max_errors=10,  # Maximum errors before halting operations.
 )
 
 # Global base configuration and owner tracking

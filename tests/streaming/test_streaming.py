@@ -1,12 +1,12 @@
 import os
+from unittest import mock
+from unittest.mock import AsyncMock
 
 import pytest
+from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
 from dspy.streaming import StatusMessage, StatusMessageProvider, streaming_response
-from unittest import mock
-from unittest.mock import AsyncMock
-from litellm.types.utils import ModelResponseStream, StreamingChoices, Delta
 
 
 @pytest.mark.anyio
@@ -295,6 +295,7 @@ def test_sync_status_streaming():
 async def test_stream_listener_returns_correct_chunk_chat_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
+            super().__init__()
             self.predict1 = dspy.Predict("question->answer")
             self.predict2 = dspy.Predict("question, answer->judgement")
 

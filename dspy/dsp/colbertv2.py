@@ -151,7 +151,7 @@ class ColBERTv2RetrieverLocal:
 
         if kwargs.get("filtered_pids"):
             filtered_pids = kwargs.get("filtered_pids")
-            assert type(filtered_pids) == List[int], "The filtered pids should be a list of integers"
+            assert isinstance(filtered_pids, list) and all(isinstance(pid, int) for pid in filtered_pids), "The filtered pids should be a list of integers"
             device = "cuda" if torch.cuda.is_available() else "cpu"
             results = self.searcher.search(
                 query,

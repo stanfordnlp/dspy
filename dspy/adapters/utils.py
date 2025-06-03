@@ -10,6 +10,7 @@ import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
+from dspy.adapters.types.base_type import BaseType
 from dspy.signatures.utils import get_dspy_field_type
 
 
@@ -200,7 +201,14 @@ def get_field_description_string(fields: dict) -> str:
     for idx, (k, v) in enumerate(fields.items()):
         field_message = f"{idx + 1}. `{k}`"
         field_message += f" ({get_annotation_name(v.annotation)})"
-        field_message += f": {v.json_schema_extra['desc']}" if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
+        desc = v.json_schema_extra["desc"] if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
+
+        custom_types = BaseType.extract_custom_type_from_annotation(v.annotation)
+        for custom_type in custom_types:
+            if len(custom_type.description()) > 0:
+                desc += f"\n    Type description of {get_annotation_name(custom_type)}: {custom_type.description()}"
+
+        field_message += f": {desc}"
         field_message += (
             f"\nConstraints: {v.json_schema_extra['constraints']}" if v.json_schema_extra.get("constraints") else ""
         )
