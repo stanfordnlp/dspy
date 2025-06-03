@@ -43,7 +43,7 @@ class Refine(Module):
     def __init__(
         self,
         module: Module,
-        N: int,
+        N: int,  # noqa: N803
         reward_fn: Callable[[dict, Prediction], float],
         threshold: float,
         fail_count: Optional[int] = None,
@@ -120,7 +120,7 @@ class Refine(Module):
 
                         class WrapperAdapter(adapter.__class__):
                             def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-                                inputs["hint_"] = advice.get(signature2name[signature], "N/A")
+                                inputs["hint_"] = advice.get(signature2name[signature], "N/A")  # noqa: B023
                                 signature = signature.append(
                                     "hint_", InputField(desc="A hint to the module from an earlier run")
                                 )
@@ -145,10 +145,18 @@ class Refine(Module):
                 if idx == self.N - 1:
                     break
 
-                modules = dict(program_code=self.module_code, modules_defn=inspect_modules(mod))
-                trajectory = [dict(module_name=predictor2name[p], inputs=i, outputs=dict(o)) for p, i, o in trace]
-                trajectory = dict(program_inputs=kwargs, program_trajectory=trajectory, program_outputs=dict(outputs))
-                reward = dict(reward_code=self.reward_fn_code, target_threshold=self.threshold, reward_value=reward)
+                modules = {"program_code": self.module_code, "modules_defn": inspect_modules(mod)}
+                trajectory = [{"module_name": predictor2name[p], "inputs": i, "outputs": dict(o)} for p, i, o in trace]
+                trajectory = {
+                    "program_inputs": kwargs,
+                    "program_trajectory": trajectory,
+                    "program_outputs": dict(outputs),
+                }
+                reward = {
+                    "reward_code": self.reward_fn_code,
+                    "target_threshold": self.threshold,
+                    "reward_value": reward,
+                }
 
                 advise_kwargs = dict(**modules, **trajectory, **reward, module_names=module_names)
                 # advise_kwargs = {k: ujson.dumps(recursive_mask(v), indent=2) for k, v in advise_kwargs.items()}
@@ -174,7 +182,7 @@ def inspect_modules(program):
     separator = "-" * 80
     output = [separator]
 
-    for idx, (name, predictor) in enumerate(program.named_predictors()):
+    for _, (name, predictor) in enumerate(program.named_predictors()):
         signature = predictor.signature
         instructions = textwrap.dedent(signature.instructions)
         instructions = ("\n" + "\t" * 2).join([""] + instructions.splitlines())

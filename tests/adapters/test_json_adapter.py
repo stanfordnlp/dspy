@@ -2,7 +2,7 @@ from unittest import mock
 
 import pydantic
 import pytest
-from pydantic import create_model
+from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
 
@@ -42,11 +42,6 @@ def test_json_adapter_passes_structured_output_when_supported_by_model():
     assert response_format is not None
     assert issubclass(response_format, pydantic.BaseModel)
     assert response_format.model_fields.keys() == {"output1", "output2", "output3", "output4_unannotated"}
-    # for field_name in response_format.model_fields:
-    #     assert dict(response_format.model_fields[field_name].__repr_args__()) == clean_schema_extra(
-    #         field_name=field_name,
-    #         field_info=TestSignature.output_fields[field_name],
-    #     )
 
     # Configure DSPy to use a model from a fake provider that doesn't support structured outputs
     dspy.configure(lm=dspy.LM(model="fakeprovider/fakemodel"), adapter=dspy.JSONAdapter())
@@ -110,3 +105,317 @@ async def test_json_adapter_async_call():
     lm = dspy.utils.DummyLM([{"answer": "Paris"}])
     result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
+
+
+def test_json_adapter_on_pydantic_model():
+    from litellm.utils import Choices, Message, ModelResponse
+
+    class User(pydantic.BaseModel):
+        id: int
+        name: str
+        email: str
+
+    class Answer(pydantic.BaseModel):
+        analysis: str
+        result: str
+
+    class TestSignature(dspy.Signature):
+        user: User = dspy.InputField(desc="The user who asks the question")
+        question: str = dspy.InputField(desc="Question the user asks")
+        answer: Answer = dspy.OutputField(desc="Answer to this question")
+
+    program = dspy.Predict(TestSignature)
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter())
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}"
+                    )
+                )
+            ],
+            model="openai/gpt4o",
+        )
+        result = program(
+            user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
+        )
+
+        # Check that litellm.completion was called exactly once
+        mock_completion.assert_called_once()
+
+        _, call_kwargs = mock_completion.call_args
+        # Assert that there are exactly 2 messages (system + user)
+        assert len(call_kwargs["messages"]) == 2
+
+        assert call_kwargs["messages"][0]["role"] == "system"
+        content = call_kwargs["messages"][0]["content"]
+        assert content is not None
+
+        # Assert that system prompt includes correct input field descriptions
+        expected_input_fields = (
+            "1. `user` (User): The user who asks the question\n2. `question` (str): Question the user asks\n"
+        )
+        assert expected_input_fields in content
+
+        # Assert that system prompt includes correct output field description
+        expected_output_fields = "1. `answer` (Answer): Answer to this question\n"
+        assert expected_output_fields in content
+
+        # Assert that system prompt includes input formatting structure
+        expected_input_structure = "[[ ## user ## ]]\n{user}\n\n[[ ## question ## ]]\n{question}\n\n"
+        assert expected_input_structure in content
+
+        # Assert that system prompt includes output formatting structure
+        expected_output_structure = (
+            "Outputs will be a JSON object with the following fields.\n\n{\n  "
+            '"answer": "{answer}        # note: the value you produce must adhere to the JSON schema: '
+            '{\\"type\\": \\"object\\", \\"properties\\": {\\"analysis\\": {\\"type\\": \\"string\\", \\"title\\": '
+            '\\"Analysis\\"}, \\"result\\": {\\"type\\": \\"string\\", \\"title\\": \\"Result\\"}}, \\"required\\": '
+            '[\\"analysis\\", \\"result\\"], \\"title\\": \\"Answer\\"}"\n}'
+        )
+        assert expected_output_structure in content
+
+        assert call_kwargs["messages"][1]["role"] == "user"
+        user_message_content = call_kwargs["messages"][1]["content"]
+        assert user_message_content is not None
+
+        # Assert that the user input data is formatted correctly
+        expected_input_data = (
+            '[[ ## user ## ]]\n{"id": 5, "name": "name_test", "email": "email_test"}\n\n[[ ## question ## ]]\n'
+            "What is the capital of France?\n\n"
+        )
+        assert expected_input_data in user_message_content
+
+        # Assert that the adapter output has expected fields and values
+        assert result.answer.analysis == "Paris is the captial of France"
+        assert result.answer.result == "Paris"
+
+
+def test_json_adapter_parse_raise_error_on_mismatch_fields():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.JSONAdapter()
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="{'answer1': 'Paris'}")),
+            ],
+            model="openai/gpt4o",
+        )
+        lm = dspy.LM(model="openai/gpt-4o-mini")
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
+            adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+    assert e.value.adapter_name == "JSONAdapter"
+    assert e.value.signature == signature
+    assert e.value.lm_response == "{'answer1': 'Paris'}"
+    assert e.value.parsed_result == {}
+
+    assert str(e.value) == (
+        "Adapter JSONAdapter failed to parse the LM response. \n\n"
+        "LM Response: {'answer1': 'Paris'} \n\n"
+        "Expected to find output fields in the LM response: [answer] \n\n"
+        "Actual output fields parsed from the LM response: [] \n\n"
+    )
+
+
+def test_json_adapter_formats_image():
+    # Test basic image formatting
+    image = dspy.Image(url="https://example.com/image.jpg")
+
+    class MySignature(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"image": image})
+
+    assert len(messages) == 2
+    user_message_content = messages[1]["content"]
+    assert user_message_content is not None
+
+    # The message should have 3 chunks of types: text, image_url, text
+    assert len(user_message_content) == 3
+    assert user_message_content[0]["type"] == "text"
+    assert user_message_content[2]["type"] == "text"
+
+    # Assert that the image is formatted correctly
+    expected_image_content = {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+    assert expected_image_content in user_message_content
+
+
+def test_json_adapter_formats_image_with_few_shot_examples():
+    class MySignature(dspy.Signature):
+        image: dspy.Image = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+
+    demos = [
+        dspy.Example(
+            image=dspy.Image(url="https://example.com/image1.jpg"),
+            text="This is a test image",
+        ),
+        dspy.Example(
+            image=dspy.Image(url="https://example.com/image2.jpg"),
+            text="This is another test image",
+        ),
+    ]
+    messages = adapter.format(MySignature, demos, {"image": dspy.Image(url="https://example.com/image3.jpg")})
+
+    # 1 system message, 2 few shot examples (1 user and assistant message for each example), 1 user message
+    assert len(messages) == 6
+
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}} in messages[1]["content"]
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}} in messages[3]["content"]
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}} in messages[5]["content"]
+
+
+def test_json_adapter_formats_image_with_nested_images():
+    class ImageWrapper(pydantic.BaseModel):
+        images: list[dspy.Image]
+        tag: list[str]
+
+    class MySignature(dspy.Signature):
+        image: ImageWrapper = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    image1 = dspy.Image(url="https://example.com/image1.jpg")
+    image2 = dspy.Image(url="https://example.com/image2.jpg")
+    image3 = dspy.Image(url="https://example.com/image3.jpg")
+
+    image_wrapper = ImageWrapper(images=[image1, image2, image3], tag=["test", "example"])
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"image": image_wrapper})
+
+    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
+    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
+    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
+
+    assert expected_image1_content in messages[1]["content"]
+    assert expected_image2_content in messages[1]["content"]
+    assert expected_image3_content in messages[1]["content"]
+
+
+def test_json_adapter_formats_image_with_few_shot_examples_with_nested_images():
+    class ImageWrapper(pydantic.BaseModel):
+        images: list[dspy.Image]
+        tag: list[str]
+
+    class MySignature(dspy.Signature):
+        image: ImageWrapper = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    image1 = dspy.Image(url="https://example.com/image1.jpg")
+    image2 = dspy.Image(url="https://example.com/image2.jpg")
+    image3 = dspy.Image(url="https://example.com/image3.jpg")
+
+    image_wrapper = ImageWrapper(images=[image1, image2, image3], tag=["test", "example"])
+    demos = [
+        dspy.Example(
+            image=image_wrapper,
+            text="This is a test image",
+        ),
+    ]
+
+    image_wrapper_2 = ImageWrapper(images=[dspy.Image(url="https://example.com/image4.jpg")], tag=["test", "example"])
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, demos, {"image": image_wrapper_2})
+
+    assert len(messages) == 4
+
+    # Image information in the few-shot example's user message
+    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
+    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
+    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
+    assert expected_image1_content in messages[1]["content"]
+    assert expected_image2_content in messages[1]["content"]
+    assert expected_image3_content in messages[1]["content"]
+
+    # The query image is formatted in the last user message
+    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]
+
+
+def test_json_adapter_with_tool():
+    class MySignature(dspy.Signature):
+        """Answer question with the help of the tools"""
+
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        """Get the weather for a city"""
+        return f"The weather in {city} is sunny"
+
+    def get_population(country: str, year: int) -> str:
+        """Get the population for a country"""
+        return f"The population of {country} in {year} is 1000000"
+
+    tools = [dspy.Tool(get_weather), dspy.Tool(get_population)]
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"question": "What is the weather in Tokyo?", "tools": tools})
+
+    assert len(messages) == 2
+
+    # The output field type description should be included in the system message even if the output field is nested
+    assert dspy.ToolCalls.description() in messages[0]["content"]
+
+    # The user message should include the question and the tools
+    assert "What is the weather in Tokyo?" in messages[1]["content"]
+    assert "get_weather" in messages[1]["content"]
+    assert "get_population" in messages[1]["content"]
+
+    # Tool arguments format should be included in the user message
+    assert "{'city': {'type': 'string'}}" in messages[1]["content"]
+    assert "{'country': {'type': 'string'}, 'year': {'type': 'integer'}}" in messages[1]["content"]
+
+    with mock.patch("litellm.completion") as mock_completion:
+        lm = dspy.LM(model="openai/gpt-4o-mini")
+        adapter(lm, {}, MySignature, [], {"question": "What is the weather in Tokyo?", "tools": tools})
+
+    mock_completion.assert_called_once()
+    _, call_kwargs = mock_completion.call_args
+
+    # Assert tool calls are included in the `tools` arg
+    assert len(call_kwargs["tools"]) > 0
+    assert call_kwargs["tools"][0] == {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the weather for a city",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                    },
+                },
+                "required": ["city"],
+            },
+        },
+    }
+    assert call_kwargs["tools"][1] == {
+        "type": "function",
+        "function": {
+            "name": "get_population",
+            "description": "Get the population for a country",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "country": {
+                        "type": "string",
+                    },
+                    "year": {
+                        "type": "integer",
+                    },
+                },
+                "required": ["country", "year"],
+            },
+        },
+    }

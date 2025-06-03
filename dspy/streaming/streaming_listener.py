@@ -1,10 +1,13 @@
 import re
 from collections import defaultdict
 from queue import Queue
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from litellm import ModelResponseStream
 
+from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.json_adapter import JSONAdapter
+from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
 
 if TYPE_CHECKING:
@@ -14,7 +17,7 @@ if TYPE_CHECKING:
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
 
-    def __init__(self, signature_field_name: str, predict: Any = None, predict_name: str = None):
+    def __init__(self, signature_field_name: str, predict: Any = None, predict_name: Optional[str] = None):
         """
         Args:
             signature_field_name: The name of the field to listen to.
@@ -33,10 +36,35 @@ class StreamListener:
         self.stream_end = False
         self.cache_hit = False
 
-        self.start_identifier = f"[[ ## {self.signature_field_name} ## ]]"
-        self.end_identifier = re.compile(r"\[\[ ## (\w+) ## \]\]")
+        self.json_adapter_start_identifier = f'"{self.signature_field_name}":'
+        self.json_adapter_end_identifier = re.compile(r"\w*\"(,|\s*})")
+
+        self.chat_adapter_start_identifier = f"[[ ## {self.signature_field_name} ## ]]"
+        self.chat_adapter_end_identifier = re.compile(r"\[\[ ## (\w+) ## \]\]")
+
+    def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> str:
+        for i in range(len(concat_message)):
+            if start_identifier.startswith(concat_message[len(concat_message) - i - 1 :]):
+                return True
+        return False
 
     def receive(self, chunk: ModelResponseStream):
+        if isinstance(settings.adapter, JSONAdapter):
+            start_identifier = self.json_adapter_start_identifier
+            end_identifier = self.json_adapter_end_identifier
+
+            start_indicator = "{"
+        elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
+            start_identifier = self.chat_adapter_start_identifier
+            end_identifier = self.chat_adapter_end_identifier
+
+            start_indicator = "["
+        else:
+            raise ValueError(
+                f"Unsupported adapter for streaming: {settings.adapter}, please use either ChatAdapter or "
+                "JSONAdapter for streaming purposes."
+            )
+
         if self.stream_end:
             return
 
@@ -47,18 +75,23 @@ class StreamListener:
         except Exception:
             return
 
-        if chunk_message and self.start_identifier in chunk_message:
+        if chunk_message and start_identifier in chunk_message:
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
-            # directly end the stream listening.
-            self.cache_hit = True
-            self.stream_start = True
-            self.stream_end = True
-            return
+            # directly end the stream listening. In some models like gemini, each stream chunk can be multiple
+            # tokens, so it's posible that response only has one chunk, we also fall back to this logic.
+            message_after_start_identifier = chunk_message[
+                chunk_message.find(start_identifier) + len(start_identifier) :
+            ]
+            if re.search(end_identifier, message_after_start_identifier):
+                self.cache_hit = True
+                self.stream_start = True
+                self.stream_end = True
+                return
 
-        if len(self.field_start_queue) == 0 and "[[" in chunk_message:
-            # We look for the pattern "[[ ## {self.signature_field_name} ## ]]" to identify the start
-            # of the stream of our target field. Once "[[" is found, we start checking the next tokens
-            # to see if they match our expected identifier.
+        if len(self.field_start_queue) == 0 and not self.stream_start and start_indicator in chunk_message:
+            # We look for the pattern of start_identifier, i.e., "[[ ## {self.signature_field_name} ## ]]" for
+            # ChatAdapter to identify the start of the stream of our target field. Once the start_indicator, i.e., "[["
+            # for ChatAdapter, is found, we start checking the next tokens
             self.field_start_queue.append(chunk_message)
             return
 
@@ -67,28 +100,38 @@ class StreamListener:
             # tokens no longer match our expected identifier.
             self.field_start_queue.append(chunk_message)
             concat_message = "".join(self.field_start_queue).strip()
-            start_token_index = concat_message.find("[[")
-            concat_message = concat_message[start_token_index:]
-            if self.start_identifier == concat_message:
+
+            if start_identifier in concat_message:
                 # We have a full identifier, we can start the stream.
                 self.stream_start = True
-            elif self.start_identifier.startswith(concat_message):
-                # The concanated tokens still match our expected identifier, we keep listening.
+                self.field_start_queue = []
+                # Keep the part after the start_identifier from the concat_message, we need to write it to the buffer.
+                value_start_index = concat_message.find(start_identifier) + len(start_identifier)
+                chunk_message = concat_message[value_start_index:].lstrip()
+                if isinstance(settings.adapter, JSONAdapter) and chunk_message.startswith('"'):
+                    # For JSONAdapter, we need to remove the leading ". We cannot do this with the start_identifier
+                    # because there could be a few splitters between ':' and '"', e.g., '"name": "value"'.
+                    chunk_message = chunk_message[1:]
+
+            elif self._buffered_message_end_with_start_identifier(concat_message, start_identifier):
+                # If the buffered message ends with part of the start_identifier, we can start the stream.
                 return
             else:
                 # Doesn't match the expected identifier, reset the queue.
                 self.field_start_queue = []
-        elif self.stream_start:
+                return
+
+        if self.stream_start:
             # The stream is started, we keep returning the token until we see the start of the next field.
             token = None
             self.field_end_queue.put(chunk_message)
             if self.field_end_queue.qsize() > 10:
-                # We keep the last 10 tokens in the buffer to check if they form a valid identifier for
-                # "[[ ## {next_field_name} ## ]]" to identify the end of the current field. In most cases
-                # 10 tokens are enough to cover "[[ ## {next_field_name} ## ]]".
+                # We keep the last 10 tokens in the buffer to check if they form a valid identifier for end_identifier,
+                # i.e., "[[ ## {next_field_name} ## ]]" for ChatAdapter to identify the end of the current field.
+                # In most cases 10 tokens are enough to cover the end_identifier for all adapters.
                 token = self.field_end_queue.get()
             concat_message = "".join(self.field_end_queue.queue).strip()
-            if re.search(self.end_identifier, concat_message):
+            if re.search(end_identifier, concat_message):
                 # The next field is identified, we can end the stream and flush out all tokens in the buffer.
                 self.stream_end = True
                 last_token = self.flush()
@@ -103,12 +146,25 @@ class StreamListener:
 
         This method is called to flush out the last a few tokens when the stream is ended. These tokens
         are in the buffer because we don't directly yield the tokens received by the stream listener
-        with the purpose to not yield the tokens "[[ ## ... ## ]]".
+        with the purpose to not yield the end_identifier tokens, e.g., "[[ ## ... ## ]]" for ChatAdapter.
         """
         last_tokens = "".join(self.field_end_queue.queue)
         self.field_end_queue = Queue()
-        start_token_index = last_tokens.find("[[")
-        return last_tokens[:start_token_index]
+        if isinstance(settings.adapter, JSONAdapter):
+            match = re.search(r'",|"\s*}', last_tokens)
+            if match:
+                boundary_index = match.start()
+            else:
+                boundary_index = len(last_tokens)
+            return last_tokens[:boundary_index]
+        elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
+            boundary_index = last_tokens.find("[[")
+            return last_tokens[:boundary_index]
+        else:
+            raise ValueError(
+                f"Unsupported adapter for streaming: {settings.adapter}, please use either ChatAdapter or "
+                "JSONAdapter for streaming purposes."
+            )
 
 
 def find_predictor_for_stream_listeners(program: "Module", stream_listeners: List[StreamListener]):
@@ -148,6 +204,7 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: Lis
     predict_id_to_listener = defaultdict(list)
     for listener in stream_listeners:
         if listener.predict:
+            predict_id_to_listener[id(listener.predict)].append(listener)
             continue
         if listener.signature_field_name not in field_name_to_named_predictor:
             raise ValueError(

@@ -1,15 +1,15 @@
 import datetime
 import uuid
-from abc import ABC
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
+from dspy.utils.inspect_history import pretty_print_history
 
 MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 
 
-class BaseLM(ABC):
+class BaseLM:
     """Base class for handling LLM calls.
 
     Most users can directly use the `dspy.LM` class, which is a subclass of `BaseLM`. Users can also implement their
@@ -49,16 +49,21 @@ class BaseLM(ABC):
         self.history = []
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
-        if kwargs.get("logprobs"):
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
-                }
-                for c in response.choices
-            ]
-        else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response.choices]
+        merged_kwargs = {**self.kwargs, **kwargs}
+
+        outputs = []
+        for c in response.choices:
+            output = {}
+            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+            if merged_kwargs.get("logprobs"):
+                output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+            if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
+                output["tool_calls"] = c.message.tool_calls
+            outputs.append(output)
+
+        if all(len(output) == 1 for output in outputs):
+            # Return a list if every output only has "text" key
+            outputs = [output["text"] for output in outputs]
 
         if settings.disable_history:
             return outputs
@@ -81,6 +86,9 @@ class BaseLM(ABC):
         }
         self.history.append(entry)
         self.update_global_history(entry)
+        caller_modules = settings.caller_modules or []
+        for module in caller_modules:
+            module.history.append(entry)
         return outputs
 
     @with_callbacks
@@ -90,6 +98,7 @@ class BaseLM(ABC):
 
         return outputs
 
+    @with_callbacks
     async def acall(self, prompt=None, messages=None, **kwargs):
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
@@ -128,7 +137,7 @@ class BaseLM(ABC):
         return new_instance
 
     def inspect_history(self, n: int = 1):
-        _inspect_history(self.history, n)
+        return inspect_history(self.history, n)
 
     def update_global_history(self, entry):
         if settings.disable_history:
@@ -140,58 +149,6 @@ class BaseLM(ABC):
         GLOBAL_HISTORY.append(entry)
 
 
-def _green(text: str, end: str = "\n"):
-    return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
-
-
-def _red(text: str, end: str = "\n"):
-    return "\x1b[31m" + str(text) + "\x1b[0m" + end
-
-
-def _blue(text: str, end: str = "\n"):
-    return "\x1b[34m" + str(text) + "\x1b[0m" + end
-
-
-def _inspect_history(history, n: int = 1):
-    """Prints the last n prompts and their completions."""
-
-    for item in history[-n:]:
-        messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
-        outputs = item["outputs"]
-        timestamp = item.get("timestamp", "Unknown time")
-
-        print("\n\n\n")
-        print("\x1b[34m" + f"[{timestamp}]" + "\x1b[0m" + "\n")
-
-        for msg in messages:
-            print(_red(f"{msg['role'].capitalize()} message:"))
-            if isinstance(msg["content"], str):
-                print(msg["content"].strip())
-            else:
-                if isinstance(msg["content"], list):
-                    for c in msg["content"]:
-                        if c["type"] == "text":
-                            print(c["text"].strip())
-                        elif c["type"] == "image_url":
-                            image_str = ""
-                            if "base64" in c["image_url"].get("url", ""):
-                                len_base64 = len(c["image_url"]["url"].split("base64,")[1])
-                                image_str = f"<{c['image_url']['url'].split('base64,')[0]}base64,<IMAGE BASE 64 ENCODED({str(len_base64)})>"
-                            else:
-                                image_str = f"<image_url: {c['image_url']['url']}>"
-                            print(_blue(image_str.strip()))
-            print("\n")
-
-        print(_red("Response:"))
-        print(_green(outputs[0].strip()))
-
-        if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs) - 1} other completions)"
-            print(_red(choices_text, end=""))
-
-    print("\n\n\n")
-
-
 def inspect_history(n: int = 1):
     """The global history shared across all LMs."""
-    return _inspect_history(GLOBAL_HISTORY, n)
+    return pretty_print_history(GLOBAL_HISTORY, n)

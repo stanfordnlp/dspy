@@ -5,6 +5,7 @@ import os
 import random
 import shutil
 import sys
+
 import numpy as np
 
 try:
@@ -404,7 +405,7 @@ def old_getfile(object):
     if inspect.ismodule(object):
         if getattr(object, '__file__', None):
             return object.__file__
-        raise TypeError('{!r} is a built-in module'.format(object))
+        raise TypeError(f'{object!r} is a built-in module')
     if inspect.isclass(object):
         if hasattr(object, '__module__'):
             module = sys.modules.get(object.__module__)
@@ -412,7 +413,7 @@ def old_getfile(object):
                 return module.__file__
             if object.__module__ == '__main__':
                 raise OSError('source code not available')
-        raise TypeError('{!r} is a built-in class'.format(object))
+        raise TypeError(f'{object!r} is a built-in class')
     if inspect.ismethod(object):
         object = object.__func__
     if inspect.isfunction(object):
@@ -424,21 +425,20 @@ def old_getfile(object):
     if inspect.iscode(object):
         return object.co_filename
     raise TypeError('module, class, method, function, traceback, frame, or '
-                    'code object was expected, got {}'.format(
-                    type(object).__name__))
+                    f'code object was expected, got {type(object).__name__}')
 
 def new_getfile(object):
     if not inspect.isclass(object):
         return old_getfile(object)
-    
+
     # Lookup by parent module (as in current inspect)
     if hasattr(object, '__module__'):
         object_ = sys.modules.get(object.__module__)
         if hasattr(object_, '__file__'):
             return object_.__file__
-    
+
     # If parent module is __main__, lookup by methods (NEW)
-    for name, member in inspect.getmembers(object):
+    for _, member in inspect.getmembers(object):
         if inspect.isfunction(member) and object.__qualname__ + '.' + member.__name__ == member.__qualname__:
             return inspect.getfile(member)
     raise TypeError(f'Source for {object!r} not found')

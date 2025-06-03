@@ -1,6 +1,6 @@
 import random
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, List, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import dspy
 from dspy.datasets.dataset import Dataset
@@ -18,7 +18,7 @@ class DataLoader(Dataset):
         dataset_name: str,
         *args,
         input_keys: Tuple[str] = (),
-        fields: Tuple[str] = None,
+        fields: Optional[Tuple[str]] = None,
         **kwargs,
     ) -> Union[Mapping[str, List[dspy.Example]], List[dspy.Example]]:
         if fields and not isinstance(fields, tuple):
@@ -60,7 +60,12 @@ class DataLoader(Dataset):
                     for row in dataset
                 ]
 
-    def from_csv(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+    def from_csv(
+        self,
+        file_path: str,
+        fields: Optional[List[str]] = None,
+        input_keys: Tuple[str] = (),
+    ) -> List[dspy.Example]:
         from datasets import load_dataset
 
         dataset = load_dataset("csv", data_files=file_path)["train"]
@@ -73,7 +78,7 @@ class DataLoader(Dataset):
     def from_pandas(
         self,
         df: "pd.DataFrame",
-        fields: list[str] = None,
+        fields: Optional[List[str]] = None,
         input_keys: tuple[str] = (),
     ) -> list[dspy.Example]:
         if fields is None:
@@ -83,7 +88,12 @@ class DataLoader(Dataset):
             dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for _, row in df.iterrows()
         ]
 
-    def from_json(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+    def from_json(
+        self,
+        file_path: str,
+        fields: Optional[List[str]] = None,
+        input_keys: Tuple[str] = (),
+    ) -> List[dspy.Example]:
         from datasets import load_dataset
 
         dataset = load_dataset("json", data_files=file_path)["train"]
@@ -93,7 +103,12 @@ class DataLoader(Dataset):
 
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
-    def from_parquet(self, file_path: str, fields: List[str] = None, input_keys: Tuple[str] = ()) -> List[dspy.Example]:
+    def from_parquet(
+        self,
+        file_path: str,
+        fields: Optional[List[str]] = None,
+        input_keys: Tuple[str] = (),
+    ) -> List[dspy.Example]:
         from datasets import load_dataset
 
         dataset = load_dataset("parquet", data_files=file_path)["train"]
@@ -101,7 +116,7 @@ class DataLoader(Dataset):
         if not fields:
             fields = list(dataset.features)
 
-        return [dspy.Example({field: row[field] for field in fields}).with_inputs(input_keys) for row in dataset]
+        return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_rm(self, num_samples: int, fields: List[str], input_keys: List[str]) -> List[dspy.Example]:
         try:
@@ -138,8 +153,8 @@ class DataLoader(Dataset):
         self,
         dataset: List[dspy.Example],
         train_size: Union[int, float] = 0.75,
-        test_size: Union[int, float] = None,
-        random_state: int = None,
+        test_size: Optional[Union[int, float]] = None,
+        random_state: Optional[int] = None,
     ) -> Mapping[str, List[dspy.Example]]:
         if random_state is not None:
             random.seed(random_state)
