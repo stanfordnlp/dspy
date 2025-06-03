@@ -9,13 +9,9 @@ import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
-from dspy.adapters.utils import (
-    format_field_value,
-    get_annotation_name,
-    parse_value,
-    serialize_for_json,
-    translate_field_type,
-)
+from dspy.adapters.utils import (format_field_value, get_annotation_name,
+                                 parse_value, serialize_for_json,
+                                 translate_field_type)
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.exceptions import AdapterParseError
@@ -132,19 +128,22 @@ class JSONAdapter(ChatAdapter):
         return self.format_field_with_value(fields_with_values, role="assistant")
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
-        pattern = r"\{(?:[^{}]|(?R))*\}"
+        pattern = r"(\{(?:[^{}]|(?R))*\}|\[(?:[^\[\]]|(?R))*\])"
         match = regex.search(pattern, completion, regex.DOTALL)
         if match:
             completion = match.group(0)
         fields = json_repair.loads(completion)
-
         if not isinstance(fields, dict):
-            raise AdapterParseError(
-                adapter_name="JSONAdapter",
-                signature=signature,
-                lm_response=completion,
-                message="LM response cannot be serialized to a JSON object.",
-            )
+            if isinstance(fields, list) and len(signature.output_fields) == 1:
+                field_name = next(iter(signature.output_fields.keys()))
+                fields = {field_name: fields}
+            else:
+                raise AdapterParseError(
+                    adapter_name="JSONAdapter",
+                    signature=signature,
+                    lm_response=completion,
+                    message="LM response cannot be serialized to a JSON object.",
+                )
 
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
@@ -216,12 +215,23 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
         default = field.default if hasattr(field, "default") else ...
         fields[name] = (annotation, default)
 
-    # Build the model with extra fields forbidden.
-    pydantic_model = pydantic.create_model(
-        "DSPyProgramOutputs",
-        **fields,
-        __config__=type("Config", (), {"extra": "forbid"}),
-    )
+    # Build the model with extra fields forbidden. Pydantic v1 expects a Config
+    # class while v2 expects a ConfigDict, so we detect the version and pass the
+    # appropriate object.
+    if pydantic.version.VERSION.startswith("2"):
+        config = pydantic.ConfigDict(extra="forbid")  # pragma: no cover - v2 only
+        pydantic_model = pydantic.create_model(
+            "DSPyProgramOutputs",
+            **fields,
+            __config__=config,
+        )
+    else:
+        config_cls = type("Config", (pydantic.BaseConfig,), {"extra": "forbid"})
+        pydantic_model = pydantic.create_model(
+            "DSPyProgramOutputs",
+            **fields,
+            __config__=config_cls,
+        )
 
     # Generate the initial schema.
     schema = pydantic_model.model_json_schema()
