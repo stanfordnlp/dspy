@@ -58,7 +58,7 @@ def test_json_adapter_falls_back_when_structured_outputs_fails():
         input1: str = dspy.InputField()
         output1: str = dspy.OutputField(desc="String output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.side_effect = [Exception("Bad structured outputs!"), mock_completion.return_value]
