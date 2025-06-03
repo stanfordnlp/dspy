@@ -86,7 +86,7 @@ class MIPROv2(Teleprompter):
         self.prompt_model_total_calls = 0
         self.total_calls = 0
         self.num_threads = num_threads
-        self.max_errors = dspy.settings.max_errors if max_errors is None else max_errors
+        self.max_errors = max_errors
         self.metric_threshold = metric_threshold
         self.seed = seed
         self.rng = None
@@ -113,6 +113,11 @@ class MIPROv2(Teleprompter):
         requires_permission_to_run: bool = True,
         provide_traceback: Optional[bool] = None,
     ) -> Any:
+        effective_max_errors = (
+            self.max_errors
+            if self.max_errors is not None
+            else dspy.settings.max_errors
+        )
         zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
 
         # If auto is None, and num_trials is not provided (but num_candidates is), raise an error that suggests a good num_trials value
@@ -175,7 +180,7 @@ class MIPROv2(Teleprompter):
             devset=valset,
             metric=self.metric,
             num_threads=self.num_threads,
-            max_errors=self.max_errors,
+            max_errors=effective_max_errors,
             display_table=False,
             display_progress=True,
             provide_traceback=provide_traceback,
@@ -418,7 +423,7 @@ class MIPROv2(Teleprompter):
                     BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_bootstrapped_demos
                 ),
                 metric=self.metric,
-                max_errors=self.max_errors,
+                max_errors=effective_max_errors,
                 teacher=teacher,
                 teacher_settings=self.teacher_settings,
                 seed=seed,

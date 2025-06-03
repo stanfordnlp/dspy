@@ -47,7 +47,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.metric_threshold = metric_threshold
         self.min_num_samples = 1
         self.max_num_samples = max_bootstrapped_demos
-        self.max_errors = dspy.settings.max_errors if max_errors is None else max_errors
+        self.max_errors = max_errors
         self.num_candidate_sets = num_candidate_programs
         self.max_labeled_demos = max_labeled_demos
 
@@ -57,6 +57,12 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
+
+        effective_max_errors = (
+            self.max_errors
+            if self.max_errors is not None
+            else dspy.settings.max_errors
+        )
 
         scores = []
         all_subscores = []
@@ -86,7 +92,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     max_labeled_demos=self.max_labeled_demos,
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
-                    max_errors=self.max_errors,
+                    max_errors=effective_max_errors,
                 )
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -103,7 +109,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     max_labeled_demos=self.max_labeled_demos,
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
-                    max_errors=self.max_errors,
+                    max_errors=effective_max_errors,
                 )
 
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
@@ -112,7 +118,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 devset=self.valset,
                 metric=self.metric,
                 num_threads=self.num_threads,
-                max_errors=self.max_errors,
+                max_errors=effective_max_errors,
                 display_table=False,
                 display_progress=True,
             )

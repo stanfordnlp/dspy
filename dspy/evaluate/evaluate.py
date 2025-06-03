@@ -83,7 +83,7 @@ class Evaluate:
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
-        self.max_errors = dspy.settings.max_errors if max_errors is None else max_errors
+        self.max_errors = max_errors
         self.return_all_scores = return_all_scores
         self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
@@ -152,7 +152,11 @@ class Evaluate:
         executor = ParallelExecutor(
             num_threads=num_threads,
             disable_progress_bar=not display_progress,
-            max_errors=self.max_errors,
+            max_errors=(
+                self.max_errors
+                if self.max_errors is not None
+                else dspy.settings.max_errors
+            ),
             provide_traceback=self.provide_traceback,
             compare_results=True,
         )

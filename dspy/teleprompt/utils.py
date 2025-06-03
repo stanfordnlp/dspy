@@ -354,6 +354,7 @@ def create_n_fewshot_demo_sets(
     This function is copied from random_search.py, and creates fewshot examples in the same way that random search does.
     This allows us to take advantage of using the same fewshot examples when we use the same random seed in our optimizers.
     """
+    max_errors = dspy.settings.max_errors if max_errors is None else max_errors
     demo_candidates = {}
 
     # Account for confusing way this is set up, where we add in 3 more candidate sets to the N specified
