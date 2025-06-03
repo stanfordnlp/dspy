@@ -9,8 +9,12 @@ import requests
 import dspy
 from dspy.primitives.prediction import Prediction
 
-_databricks_sdk_installed = find_spec("databricks.sdk") is not None
+_databricks_sdk_installed = False
 
+try:
+    _databricks_sdk_installed = find_spec("databricks.sdk") is not None
+except ModuleNotFoundError:
+    _databricks_sdk_installed = False
 
 @dataclass
 class Document:
@@ -137,11 +141,10 @@ class DatabricksRM(dspy.Retrieve):
             databricks_client_id if databricks_client_id is not None else os.environ.get("DATABRICKS_CLIENT_ID")
         )
         self.databricks_client_secret = (
-            databricks_client_secret
-            if databricks_client_secret is not None
-            else os.environ.get("DATABRICKS_CLIENT_SECRET")
+            databricks_client_secret if databricks_client_secret is not None else os.environ.get("DATABRICKS_CLIENT_SECRET")
         )
-        if not _databricks_sdk_installed and (self.databricks_token, self.databricks_endpoint).count(None) > 0:
+        if not _databricks_sdk_installed and ((self.databricks_token, self.databricks_endpoint).count(None) > 0
+                and (self.databricks_client_id, self.databricks_client_secret).count(None) > 0):
             raise ValueError(
                 "To retrieve documents with Databricks Vector Search, you must install the"
                 " databricks-sdk Python library, supply the databricks_token and"
@@ -276,6 +279,8 @@ class DatabricksRM(dspy.Retrieve):
                 columns=self.columns,
                 databricks_token=self.databricks_token,
                 databricks_endpoint=self.databricks_endpoint,
+                databricks_client_id=self.databricks_client_id,
+                databricks_client_secret=self.databricks_client_secret,
                 query_type=query_type,
                 query_text=query_text,
                 query_vector=query_vector,
@@ -446,6 +451,7 @@ class DatabricksRM(dspy.Retrieve):
 
         if databricks_client_id and databricks_client_secret:
             try:
+                print("Retrieving OAuth token using service principal authentication.")
                 databricks_token = _get_oauth_token(
                     index_name, databricks_endpoint, databricks_client_id, databricks_client_secret
                 )
