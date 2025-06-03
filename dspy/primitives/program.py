@@ -123,12 +123,16 @@ class Module(BaseModule, metaclass=ProgramMeta):
         """
         Processes a list of dspy.Example instances in parallel using the Parallel module.
 
-        :param examples: List of dspy.Example instances to process.
-        :param num_threads: Number of threads to use for parallel processing.
-        :param max_errors: Maximum number of errors allowed before stopping execution.
-        :param return_failed_examples: Whether to return failed examples and exceptions.
-        :param provide_traceback: Whether to include traceback information in error logs.
-        :return: List of results, and optionally failed examples and exceptions.
+        Args:
+            examples: List of dspy.Example instances to process.
+            num_threads: Number of threads to use for parallel processing.
+            max_errors: Maximum number of errors allowed before stopping execution.
+            return_failed_examples: Whether to return failed examples and exceptions.
+            provide_traceback: Whether to include traceback information in error logs.
+            disable_progress_bar: Whether to display the progress bar.
+            
+        Returns:
+            List of results, and optionally failed examples and exceptions.
         """
         # Create a list of execution pairs (self, example)
         exec_pairs = [(self, example.inputs()) for example in examples]
