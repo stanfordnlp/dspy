@@ -1,10 +1,9 @@
+
 import pydantic
 import pytest
-from typing import List, Dict, Any
 
 import dspy
 from dspy import Signature
-from dspy.utils.dummies import DummyLM
 
 
 def test_basic_custom_type_resolution():
@@ -18,7 +17,7 @@ def test_basic_custom_type_resolution():
         custom_types={"CustomType": CustomType}
     )
     assert explicit_sig.input_fields["input"].annotation == CustomType
-    
+
     # Custom types can also be auto-resolved from caller's scope
     auto_sig = Signature("input: CustomType -> output: str")
     assert auto_sig.input_fields["input"].annotation == CustomType
@@ -29,7 +28,7 @@ def test_type_alias_for_nested_types():
     class Container:
         class NestedType(pydantic.BaseModel):
             value: str
-    
+
     NestedType = Container.NestedType
     alias_sig = Signature("input: str -> output: NestedType")
     assert alias_sig.output_fields["output"].annotation == Container.NestedType
@@ -66,18 +65,18 @@ class OuterContainer:
 
 def test_recommended_patterns():
     """Test recommended patterns for working with custom types in signatures."""
-    
+
     # PATTERN 1: Local type with auto-resolution
     class LocalType(pydantic.BaseModel):
         value: str
-    
+
     sig1 = Signature("input: str -> output: LocalType")
     assert sig1.output_fields["output"].annotation == LocalType
-    
+
     # PATTERN 2: Module-level type with auto-resolution
     sig2 = Signature("input: str -> output: GlobalCustomType")
     assert sig2.output_fields["output"].annotation == GlobalCustomType
-    
+
     # PATTERN 3: Nested type with dot notation
     sig3 = Signature("input: str -> output: OuterContainer.InnerType")
     assert sig3.output_fields["output"].annotation == OuterContainer.InnerType
@@ -94,8 +93,7 @@ def test_recommended_patterns():
 def test_expected_failure():
     # InnerType DNE when not OuterContainer.InnerTypes, so this type shouldnt be resolved
     with pytest.raises(ValueError):
-        sig4 = Signature("input: str -> output: InnerType")
-        assert sig4.output_fields["output"].annotation == InnerType
+        Signature("input: str -> output: InnerType")
 
 def test_module_type_resolution():
     class TestModule(dspy.Module):

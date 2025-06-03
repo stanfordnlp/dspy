@@ -2,6 +2,7 @@ from dspy.predict.aggregation import majority
 from dspy.predict.best_of_n import BestOfN
 from dspy.predict.chain_of_thought import ChainOfThought
 from dspy.predict.chain_of_thought_with_hint import ChainOfThoughtWithHint
+from dspy.predict.code_act import CodeAct
 from dspy.predict.knn import KNN
 from dspy.predict.multi_chain_comparison import MultiChainComparison
 from dspy.predict.parallel import Parallel
@@ -15,6 +16,7 @@ __all__ = [
     "BestOfN",
     "ChainOfThought",
     "ChainOfThoughtWithHint",
+    "CodeAct",
     "KNN",
     "MultiChainComparison",
     "Predict",

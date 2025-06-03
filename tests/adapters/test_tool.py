@@ -4,7 +4,7 @@ from typing import Any, Optional
 import pytest
 from pydantic import BaseModel
 
-from dspy.primitives.tool import Tool
+from dspy.adapters.types.tool import Tool
 
 
 # Test fixtures
@@ -257,11 +257,11 @@ def test_tool_str():
     def add(x: int, y: int = 0) -> int:
         """Add two integers."""
         return x + y
-    
+
     tool = Tool(add)
     assert (
         str(tool)
-        == "add, whose description is <desc>Add two integers.</desc>. It takes arguments {'x': {'type': 'integer'}, 'y': {'type': 'integer', 'default': 0}} in JSON format."
+        == "add, whose description is <desc>Add two integers.</desc>. It takes arguments {'x': {'type': 'integer'}, 'y': {'type': 'integer', 'default': 0}}."
     )
 
 
