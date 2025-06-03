@@ -1,6 +1,6 @@
+import inspect
 import json
 import re
-import inspect
 from typing import Any, Union, get_args, get_origin
 
 import json_repair
@@ -42,18 +42,16 @@ class BaseType(pydantic.BaseModel):
         This is used to extract all custom types from the annotation of a field, while the annotation can
         have arbitrary level of nesting. For example, we detect `Tool` is in `list[dict[str, Tool]]`.
         """
-        # Direct match. Some typing constructs (like `typing.Any`, `TypeAlias`,
-        # or weird internals) may pass `isinstance(..., type)` but are not
-        # valid classes for `issubclass`. We defensively guard against this by
+        # Direct match. Some typing constructs (like `typing.Any`, `TypeAlias`, or weird internals) may pass
+        # `isinstance(..., type)` but are not valid classes for `issubclass`. We defensively guard against this by
         # using `inspect.isclass` and wrapping the call in a try/except block.
         try:
-            if inspect.isclass(annotation) and issubclass(annotation, cls):
+            if isinstance(annotation, type) and issubclass(annotation, cls):
                 return [annotation]
         except TypeError:
-            # `issubclass` can raise `TypeError` if the argument is not actually
-            # a class (even if `inspect.isclass` thought otherwise). In these
-            # cases we just ignore the annotation.
-            return []
+            # `issubclass` can raise `TypeError` if the argument is not actually a class (even if `inspect.isclass`
+            # thought otherwise). In these cases we ignore this check.
+            pass
 
         origin = get_origin(annotation)
         if origin is None:
