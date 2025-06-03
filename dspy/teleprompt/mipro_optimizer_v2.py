@@ -414,6 +414,10 @@ class MIPROv2(Teleprompter):
         zeroshot = self.max_bootstrapped_demos == 0 and self.max_labeled_demos == 0
 
         try:
+            effective_max_errors = (
+                self.max_errors if self.max_errors is not None else dspy.settings.max_errors
+            )
+
             demo_candidates = create_n_fewshot_demo_sets(
                 student=program,
                 num_candidate_sets=self.num_fewshot_candidates,
