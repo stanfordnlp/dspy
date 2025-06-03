@@ -4,8 +4,6 @@ import copy
 import threading
 from contextlib import contextmanager
 
-from IPython import get_ipython
-
 from dspy.dsp.utils.utils import dotdict
 
 DEFAULT_CONFIG = dotdict(
@@ -127,12 +125,15 @@ class Settings:
             # We are in an async task. Now check for IPython and allow calling `configure` from IPython.
             in_ipython = False
             try:
+                from IPython import get_ipython
+
                 # get_ipython is a global injected by IPython environments.
                 # We check its existence and type to be more robust.
                 shell = get_ipython()
                 if shell is not None and "InteractiveShell" in shell.__class__.__name__:
                     in_ipython = True
-            except NameError:
+            except Exception:
+                # If `IPython` is not installed or `get_ipython` failed, we are not in an IPython environment.
                 in_ipython = False
 
             if not in_ipython:
