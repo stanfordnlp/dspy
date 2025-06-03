@@ -1,7 +1,7 @@
 import logging
 import inspect
 
-from typing import Callable, Union, Type
+from typing import Callable, Union, Type, Optional
 from inspect import Signature
 
 import dspy
@@ -18,7 +18,7 @@ class CodeAct(ReAct, ProgramOfThought):
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
     """
 
-    def __init__(self, signature: Union[str, Type[Signature]], tools: list[Callable], max_iters: int = 5):
+    def __init__(self, signature: Union[str, Type[Signature]], tools: list[Callable], max_iters: int = 5, interpreter: Optional[PythonInterpreter] = None):
         """
         Initializes the CodeAct class with the specified model, temperature, and max tokens.
 
@@ -26,7 +26,7 @@ class CodeAct(ReAct, ProgramOfThought):
             signature (Union[str, Type[Signature]]): The signature of the module.
             tools (list[Callable]): The tool callables to be used. CodeAct only accepts functions and not callable objects.
             max_iters (int): The maximum number of iterations to generate the answer.
-        
+            interpreter: PythonInterpreter instance to use. If None, a new one is instantiated.
         Example:
 
             ```python
@@ -68,7 +68,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.codeact = dspy.Predict(codeact_signature)
         self.extractor = dspy.ChainOfThought(extract_signature)
         # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = PythonInterpreter()
+        self.interpreter = interpreter if interpreter is not None else PythonInterpreter()
     
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []

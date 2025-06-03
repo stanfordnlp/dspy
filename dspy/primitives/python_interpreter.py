@@ -25,7 +25,24 @@ class PythonInterpreter:
     ```
     """
 
-    def __init__(self, deno_command: Optional[List[str]] = None, enable_read_paths: Optional[Union[bool, Iterable[Union[PathLike, str]]]] = None, enable_env_vars: Optional[Union[bool, Iterable[str]]] = None, enable_network_access: Optional[Union[bool, Iterable[str]]] = None, enable_write_paths: Optional[Union[bool, Iterable[Union[PathLike, str]]]] = None) -> None:
+    def __init__(
+        self,
+        deno_command: Optional[List[str]] = None,
+        enable_read_paths: Optional[Iterable[Union[PathLike, str]]] = None,
+        enable_env_vars: Optional[Iterable[str]] = None,
+        enable_network_access: Optional[Iterable[str]] = None,
+        enable_write_paths: Optional[Iterable[Union[PathLike, str]]] = None,
+        sync_files: bool = True,
+    ) -> None:
+        """
+        Args:
+            deno_command: command list to launch Deno.
+            enable_read_paths: Files or directories to allow reading from in the sandbox.
+            enable_env_vars: Environment variable names to allow in the sandbox.
+            enable_network_access: Domains or IPs to allow network access in the sandbox.
+            enable_write_paths: Files or directories to allow writing to in the sandbox.
+            sync_files: If set, syncs changes within the sandbox back to original files after execution.
+        """
         if isinstance(deno_command, dict):
             deno_command = None  # no-op, just a guard in case someone passes a dict
 
@@ -33,36 +50,28 @@ class PythonInterpreter:
         self.enable_env_vars = enable_env_vars
         self.enable_network_access = enable_network_access
         self.enable_write_paths = enable_write_paths
+        self.sync_files = sync_files
         #TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            permissions = {
-                'enable_env_vars': 'env',
-                'enable_network_access': 'net',
-                'enable_write_paths': 'write',
-            }
             args = ['deno', 'run', '--allow-read']
+            self._env_arg  = ""
             if self.enable_env_vars:
-                if self.enable_env_vars is True:
-                    args.append('--allow-env')
-                else:
-                    args.append(f"--allow-env={','.join(str(x) for x in self.enable_env_vars)}")
-
+                user_vars = [str(v).strip() for v in self.enable_env_vars]
+                args.append("--allow-env=" + ",".join(user_vars))
+                self._env_arg = ",".join(user_vars)
             if self.enable_network_access:
-                if self.enable_network_access is True:
-                    args.append('--allow-net')
-                else:
-                    args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
-
+                args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
             if self.enable_write_paths:
-                if self.enable_write_paths is True:
-                    args.append('--allow-write')
-                else:
-                    args.append(f"--allow-write={','.join(str(x) for x in self.enable_write_paths)}")
-
+                args.append(f"--allow-write={','.join(str(x) for x in self.enable_write_paths)}")
+                
             args.append(self._get_runner_path())
+
+            #For runner.js to load in env vars
+            if self._env_arg:
+                args.append(self._env_arg)
             self.deno_command = args
 
         self.deno_process = None
@@ -97,7 +106,7 @@ class PythonInterpreter:
         self._mounted_files = True
 
     def _sync_files(self):
-        if not self.enable_write_paths:
+        if not self.enable_write_paths or not self.sync_files:
             return
         for path in self.enable_write_paths:
             virtual_path = f"/sandbox/{os.path.basename(path)}"

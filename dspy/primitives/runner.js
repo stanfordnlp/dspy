@@ -5,13 +5,16 @@ import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
 const pyodide = await pyodideModule.loadPyodide();
 
-
 try {
-  for (const [key, value] of Object.entries(Deno.env.toObject())) {
-    pyodide.runPython(`
+  const env_vars = (Deno.args[0] ?? "").split(",").filter(Boolean);
+  for (const key of env_vars) {
+    const val = Deno.env.get(key);
+    if (val !== undefined) {
+      pyodide.runPython(`
 import os
-os.environ["${key}"] = """${value}"""
-    `);
+os.environ[${JSON.stringify(key)}] = ${JSON.stringify(val)}
+      `);
+    }
   }
 } catch (e) {
   console.error("Error setting environment variables in Pyodide:", e);
