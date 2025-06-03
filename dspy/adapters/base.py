@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
+
 class Adapter:
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
         self.callbacks = callbacks or []

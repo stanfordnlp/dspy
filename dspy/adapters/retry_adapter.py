@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_MAX_RETRY_ERROR = ValueError("Failed to parse LM outputs for maximum retries.")
+
 class RetryAdapter(Adapter):
     """
     RetryAdapter is an adapter that retries the execution of another adapter for
@@ -71,7 +73,7 @@ class RetryAdapter(Adapter):
         )
         outputs.extend(values)
 
-        if len(outputs) == n_completion:
+        if len(outputs) >= n_completion:
             return outputs
         
         lm_kwargs["n"] = n_completion - len(outputs)
@@ -84,7 +86,7 @@ class RetryAdapter(Adapter):
                 demos,
                 inputs,
             )[0])
-            if len(outputs) == n_completion:
+            if len(outputs) >= n_completion:
                 return outputs
         
         # Retry the main adapter with previous response for `max_retries` times
@@ -110,17 +112,19 @@ class RetryAdapter(Adapter):
             inputs["error_message"] = str(parse_failures[0][1])
         
         # raise the last error
-        raise ValueError("Failed to parse LM outputs for maximum retries.") from parse_failures[0][1]
+        if parse_failures:
+            raise _MAX_RETRY_ERROR from parse_failures[0][1]
+        raise _MAX_RETRY_ERROR
     
     def _call_adapter(
-            self, 
-            adapter: Adapter, 
-            lm: "LM",
-            lm_kwargs: dict[str, Any],
-            signature: Type[Signature],
-            demos: list[dict[str, Any]],
-            inputs: dict[str, Any],
-        ):
+        self, 
+        adapter: Adapter, 
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ):
         values = []
         parse_failures = []
         messages = adapter.format(signature=signature, demos=demos, inputs=inputs)

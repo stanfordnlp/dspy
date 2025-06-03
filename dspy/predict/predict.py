@@ -3,7 +3,7 @@ import random
 
 from pydantic import BaseModel
 
-from dspy.adapters import DEFAULT_ADAPTER
+from dspy.adapters import DEFAULT_ADAPTER, ChatAdapter
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
