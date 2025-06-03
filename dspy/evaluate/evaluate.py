@@ -57,8 +57,6 @@ class Evaluate:
         display_progress: bool = False,
         display_table: Union[bool, int] = False,
         max_errors: int = 5,
-        return_all_scores: bool = False,
-        return_outputs: bool = False,
         provide_traceback: Optional[bool] = None,
         failure_score: float = 0.0,
         **kwargs,
@@ -72,8 +70,6 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table.
                 If a number is passed, the evaluation results will be truncated to that number before displayed.
             max_errors (int): The maximum number of errors to allow before stopping evaluation.
-            return_all_scores (bool): Whether to return scores for every data record in `devset`.
-            return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`.
             provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
         """
@@ -83,8 +79,6 @@ class Evaluate:
         self.display_progress = display_progress
         self.display_table = display_table
         self.max_errors = max_errors
-        self.return_all_scores = return_all_scores
-        self.return_outputs = return_outputs
         self.provide_traceback = provide_traceback
         self.failure_score = failure_score
 
@@ -97,8 +91,6 @@ class Evaluate:
         num_threads: Optional[int] = None,
         display_progress: Optional[bool] = None,
         display_table: Optional[Union[bool, int]] = None,
-        return_all_scores: Optional[bool] = None,
-        return_outputs: Optional[bool] = None,
         callback_metadata: Optional[dict[str, Any]] = None,
     ):
         """
@@ -112,36 +104,20 @@ class Evaluate:
                 `self.display_progress`.
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
-            return_all_scores (bool): Whether to return scores for every data record in `devset`. if not provided,
-                use `self.return_all_scores`.
-            return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`. if not
-                provided, use `self.return_outputs`.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
 
         Returns:
-            The evaluation results are returned in different formats based on the flags:
-
-            - Base return: A float percentage score (e.g., 67.30) representing overall performance
-
-            - With `return_all_scores=True`:
-                Returns (overall_score, individual_scores) where individual_scores is a list of
-                float scores for each example in devset
-
-            - With `return_outputs=True`:
-                Returns (overall_score, result_triples) where result_triples is a list of
-                (example, prediction, score) tuples for each example in devset
-
-            - With both flags=True:
-                Returns (overall_score, result_triples, individual_scores)
-
+            The evaluation results are returned as a dspy.Prediction object containing the following attributes:
+            
+            - score: A float percentage score (e.g., 67.30) representing overall performance
+            
+            - results: a list of (example, prediction, score) tuples for each example in devset
         """
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
         display_table = display_table if display_table is not None else self.display_table
-        return_all_scores = return_all_scores if return_all_scores is not None else self.return_all_scores
-        return_outputs = return_outputs if return_outputs is not None else self.return_outputs
 
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
@@ -184,15 +160,11 @@ class Evaluate:
             result_df = self._construct_result_table(results, metric_name)
 
             self._display_result_table(result_df, display_table, metric_name)
-
-        if return_all_scores and return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results, [score for *_, score in results]
-        if return_all_scores:
-            return round(100 * ncorrect / ntotal, 2), [score for *_, score in results]
-        if return_outputs:
-            return round(100 * ncorrect / ntotal, 2), results
-
-        return round(100 * ncorrect / ntotal, 2)
+        
+        return dspy.Prediction(
+            score=round(100 * ncorrect / ntotal, 2),
+            results=results,
+        )
 
     def _construct_result_table(
         self, results: list[Tuple[dspy.Example, dspy.Example, Any]], metric_name: str
