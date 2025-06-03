@@ -5,6 +5,8 @@
     handler: python
     options:
         members:
+            - description
+            - extract_custom_type_from_annotation
             - format
             - from_PIL
             - from_file

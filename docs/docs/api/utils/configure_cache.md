@@ -1,6 +1,5 @@
 # dspy.configure_cache
 
-
 <!-- START_API_REF -->
 ::: dspy.configure_cache
     handler: python
