@@ -183,6 +183,7 @@ class DatabricksRM(dspy.Retrieve):
         if self.docs_id_column_name == "metadata":
             docs_dict = json.loads(item["metadata"])
             return docs_dict["document_id"]
+
         return item[self.docs_id_column_name]
 
     def _get_extra_columns(self, item: Dict[str, Any]) -> Dict[str, Any]:
@@ -198,11 +199,13 @@ class DatabricksRM(dspy.Retrieve):
             for k, v in item.items()
             if k not in [self.docs_id_column_name, self.text_column_name, self.docs_uri_column_name]
         }
+
         if self.docs_id_column_name == "metadata":
             extra_columns = {
                 **extra_columns,
                 **{"metadata": {k: v for k, v in json.loads(item["metadata"]).items() if k != "document_id"}},
             }
+
         return extra_columns
 
     def forward(
@@ -251,6 +254,7 @@ class DatabricksRM(dspy.Retrieve):
             raise ValueError("Query must be a string or a list of floats.")
 
         if _databricks_sdk_installed:
+            print("Using the Databricks SDK to query the Vector Search Index.")
             results = self._query_via_databricks_sdk(
                 index_name=self.databricks_index_name,
                 k=self.k,
@@ -265,6 +269,7 @@ class DatabricksRM(dspy.Retrieve):
                 filters_json=filters_json or self.filters_json,
             )
         else:
+            print("Using the REST API to query the Vector Search Index.")
             results = self._query_via_requests(
                 index_name=self.databricks_index_name,
                 k=self.k,
@@ -313,6 +318,7 @@ class DatabricksRM(dspy.Retrieve):
                 ).to_dict()
                 for doc in sorted_docs
             ]
+
         else:
             # Returning the prediction
             return Prediction(
@@ -351,8 +357,10 @@ class DatabricksRM(dspy.Retrieve):
             filters_json (Optional[str]): JSON string representing additional query filters.
             databricks_token (str): Databricks authentication token. If not specified,
                 the token is resolved from the current environment.
-            databricks_endpoint (str): Databricks index endpoint url. If not specified,
-                the endpoint is resolved from the current environment.
+            databricks_endpoint (Optional[str]): The URL of the Databricks Workspace containing
+                the Vector Search Index. Defaults to the value of the ``DATABRICKS_HOST``
+                environment variable. If unspecified, the Databricks SDK is used to identify the
+                endpoint based on the current environment.
             databricks_client_id (str): Databricks service principal id. If not specified,
                 the token is resolved from the current environment (DATABRICKS_CLIENT_ID).
             databricks_client_secret (str): Databricks service principal secret. If not specified,
@@ -400,6 +408,8 @@ class DatabricksRM(dspy.Retrieve):
         columns: List[str],
         databricks_token: str,
         databricks_endpoint: str,
+        databricks_client_id: Optional[str],
+        databricks_client_secret: Optional[str],
         query_type: str,
         query_text: Optional[str],
         query_vector: Optional[List[float]],
@@ -413,7 +423,14 @@ class DatabricksRM(dspy.Retrieve):
             k (int): Number of relevant documents to retrieve.
             columns (List[str]): Column names to include in response.
             databricks_token (str): Databricks authentication token.
-            databricks_endpoint (str): Databricks index endpoint url.
+            databricks_endpoint (Optional[str]): The URL of the Databricks Workspace containing
+                the Vector Search Index. Defaults to the value of the ``DATABRICKS_HOST``
+                environment variable. If unspecified, the Databricks SDK is used to identify the
+                endpoint based on the current environment.
+            databricks_client_id (str): Databricks service principal id. If not specified,
+                the token is resolved from the current environment (DATABRICKS_CLIENT_ID).
+            databricks_client_secret (str): Databricks service principal secret. If not specified,
+                the endpoint is resolved from the current environment (DATABRICKS_CLIENT_SECRET).
             query_text (Optional[str]): Text query for which to find relevant documents. Exactly
                 one of query_text or query_vector must be specified.
             query_vector (Optional[List[float]]): Numeric query vector for which to find relevant
@@ -423,30 +440,96 @@ class DatabricksRM(dspy.Retrieve):
         Returns:
             Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
         """
+
         if (query_text, query_vector).count(None) != 1:
             raise ValueError("Exactly one of query_text or query_vector must be specified.")
+
+        if databricks_client_id and databricks_client_secret:
+            try:
+                databricks_token = _get_oauth_token(
+                    index_name, databricks_endpoint, databricks_client_id, databricks_client_secret
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to retrieve OAuth token. Please check your Databricks client ID and secret. Error: {e}"
+                )
 
         headers = {
             "Authorization": f"Bearer {databricks_token}",
             "Content-Type": "application/json",
         }
+
         payload = {
             "columns": columns,
             "num_results": k,
             "query_type": query_type,
         }
+
         if filters_json is not None:
             payload["filters_json"] = filters_json
         if query_text is not None:
             payload["query_text"] = query_text
         elif query_vector is not None:
             payload["query_vector"] = query_vector
+
         response = requests.post(
             f"{databricks_endpoint}/api/2.0/vector-search/indexes/{index_name}/query",
             json=payload,
             headers=headers,
         )
+
         results = response.json()
         if "error_code" in results:
             raise Exception(f"ERROR: {results['error_code']} -- {results['message']}")
         return results
+
+def _get_oauth_token(
+    index_name: str,
+    databricks_endpoint: str,
+    databricks_client_id: str,
+    databricks_client_secret: str,
+) -> str:
+    """
+    Get OAuth token for Databricks service principal authentication.
+
+    Args:
+        index_name (str): Name of the Databricks vector search index to query
+        databricks_endpoint (Optional[str]): The URL of the Databricks Workspace containing
+            the Vector Search Index. Defaults to the value of the ``DATABRICKS_HOST``
+            environment variable. If unspecified, the Databricks SDK is used to identify the
+            endpoint based on the current environment.
+        databricks_client_id (str): Databricks service principal id. If not specified,
+            the token is resolved from the current environment (DATABRICKS_CLIENT_ID).
+        databricks_client_secret (str): Databricks service principal secret. If not specified,
+            the endpoint is resolved from the current environment (DATABRICKS_CLIENT_SECRET).
+
+    Returns:
+        str: OAuth token.
+    """
+
+    authorization_details = {
+        "type": "unity_catalog_permission",
+        "securable_type": "table",
+        "securable_object_name": index_name,
+        "operation": "ReadVectorIndex"
+    }
+
+    authorization_details_list = [authorization_details]
+
+    token_url = f"{databricks_endpoint}/oidc/v1/token"
+
+    data = {
+        'grant_type': 'client_credentials',
+        'scope': 'all-apis',
+        'authorization_details': json.dumps(authorization_details_list)
+    }
+
+    response = requests.post(
+        token_url,
+        auth=(databricks_client_id, databricks_client_secret),
+        data=data,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'}
+    )
+
+    response.raise_for_status()
+    return response.json()['access_token']
