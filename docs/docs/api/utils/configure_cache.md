@@ -1,14 +1,10 @@
-# dspy.Tool
+# dspy.configure_cache
+
 
 <!-- START_API_REF -->
-::: dspy.Tool
+::: dspy.configure_cache
     handler: python
     options:
-        members:
-            - __call__
-            - acall
-            - from_mcp_tool
-            - from_langchain
         show_source: true
         show_root_heading: true
         heading_level: 2

@@ -1,15 +1,14 @@
-import logging
 import inspect
-
 from typing import Callable, Union, Type, Optional
+import logging
 from inspect import Signature
 
 import dspy
-from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.tool import Tool
-from dspy.signatures.signature import ensure_signature
-from dspy.predict.react import ReAct
+from dspy.adapters.types.tool import Tool
 from dspy.predict.program_of_thought import ProgramOfThought
+from dspy.predict.react import ReAct
+from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.signatures.signature import ensure_signature
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,6 @@ class CodeAct(ReAct, ProgramOfThought):
             max_iters (int): The maximum number of iterations to generate the answer.
             interpreter: PythonInterpreter instance to use. If None, a new one is instantiated.
         Example:
-
             ```python
             from dspy.predict import CodeAct
             def factorial(n):
@@ -42,6 +40,7 @@ class CodeAct(ReAct, ProgramOfThought):
         """
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
+        self.history = []
 
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         if any(
@@ -69,7 +68,6 @@ class CodeAct(ReAct, ProgramOfThought):
         self.extractor = dspy.ChainOfThought(extract_signature)
         # It will raises exception when dspy cannot find available deno instance by now.
         self.interpreter = interpreter if interpreter is not None else PythonInterpreter()
-    
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []
         inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
@@ -86,14 +84,14 @@ class CodeAct(ReAct, ProgramOfThought):
 
         for idx, tool in enumerate(tools.values()):
             instructions.append(f"({idx + 1}) {tool}")
-        
+
         return instructions
 
     def forward(self, **kwargs):
         # Define the tool funcitons in the interpreter
         for tool in self.tools.values():
             self.interpreter(inspect.getsource(tool.func))
-        
+
         trajectory = {}
         max_iters = kwargs.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
@@ -112,7 +110,7 @@ class CodeAct(ReAct, ProgramOfThought):
                 trajectory[f"code_output_{idx}"] = output
             else:
                 trajectory[f"observation_{idx}"] = f"Failed to execute the generated code: {error}"
-            
+
             if code_data.finished:
                 break
 

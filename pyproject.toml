@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.6.24"
+version="2.6.25"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -52,6 +52,7 @@ anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 aws = ["boto3~=1.34.78"]
 mcp = ["mcp; python_version >= '3.10'"]
+langchain = ["langchain_core"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
@@ -66,6 +67,7 @@ dev = [
 ]
 test_extras = [
     "mcp; python_version >= '3.10'",
+    "langchain_core",
 ]
 
 [tool.setuptools.packages.find]
