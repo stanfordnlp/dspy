@@ -204,6 +204,21 @@ class Tool(BaseType):
 
         Returns:
             A Tool object.
+
+        Example:
+        ```python
+        from langchain.tools import tool
+        import dspy
+
+        @tool
+        def add(x: int, y: int):
+            "Add two numbers together."
+            return x + y
+
+        tool = dspy.Tool.from_langchain(add)
+        print(await tool.acall(x=1, y=2))
+        # 3
+        ```
         """
         from dspy.utils.langchain_tool import convert_langchain_tool
 
