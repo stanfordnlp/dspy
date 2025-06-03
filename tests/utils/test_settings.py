@@ -5,6 +5,7 @@ from unittest import mock
 import pytest
 import asyncio
 import time
+import anyio
 
 
 def test_basic_dspy_settings():
@@ -29,8 +30,9 @@ def test_forbid_configure_call_in_child_thread():
 async def test_forbid_configure_call_in_async_function():
     with pytest.raises(
         RuntimeError,
-        match=r"dspy.settings.configure\(\.\.\.\) cannot be called from*",
+        match=r"dspy.settings.configure\(\.\.\.\) cannot be called a second time from*",
     ):
+        dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
         dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
 
     with dspy.context(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[]):
@@ -108,7 +110,6 @@ def test_dspy_context_with_dspy_parallel():
 
 @pytest.mark.asyncio
 async def test_dspy_context_with_async_task_group():
-
     class MyModule(dspy.Module):
         def __init__(self):
             self.predict = dspy.Predict("question -> answer")
@@ -134,14 +135,17 @@ async def test_dspy_context_with_async_task_group():
                 choices=[Choices(message=Message(content="[[ ## answer ## ]]\nParis"))],
                 model="openai/gpt-4o-mini",
             )
-            tasks = []
-            async with asyncio.TaskGroup() as tg:
-                tasks.append(tg.create_task(module.acall(question="What is the capital of France?")))
-                tasks.append(tg.create_task(module.acall(question="What is the capital of France?")))
-                tasks.append(tg.create_task(module.acall(question="What is the capital of Germany?")))
-                tasks.append(tg.create_task(module.acall(question="What is the capital of Germany?")))
 
-            results = await asyncio.gather(*tasks)
+            # Define the coroutines to be run
+            coroutines = [
+                module.acall(question="What is the capital of France?"),
+                module.acall(question="What is the capital of France?"),
+                module.acall(question="What is the capital of Germany?"),
+                module.acall(question="What is the capital of Germany?"),
+            ]
+
+            # Run them concurrently and gather results
+            results = await asyncio.gather(*coroutines)
 
         assert results[0].answer == "Paris"
         assert results[1].answer == "Paris"

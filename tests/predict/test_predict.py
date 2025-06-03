@@ -558,14 +558,13 @@ async def test_lm_usage_with_async():
                 usage={"total_tokens": 10},
             ),
         ):
-            tasks = []
-            async with asyncio.TaskGroup() as tg:
-                tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
-                tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
-                tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
-                tasks.append(tg.create_task(program.acall(question="What is the capital of France?")))
-
-            results = await asyncio.gather(*tasks)
+            coroutines = [
+                program.acall(question="What is the capital of France?"),
+                program.acall(question="What is the capital of France?"),
+                program.acall(question="What is the capital of France?"),
+                program.acall(question="What is the capital of France?"),
+            ]
+            results = await asyncio.gather(*coroutines)
             assert results[0].answer == "Paris"
             assert results[1].answer == "Paris"
             assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
