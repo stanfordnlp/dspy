@@ -107,11 +107,20 @@ class Settings:
     def config(self):
         return self.copy()
 
-    def configure(self, **kwargs):
+    def _ensure_configure_allowed(self):
         global main_thread_config, config_owner_thread_id
         current_thread_id = threading.get_ident()
 
-        # Check if we're actually running in an async task.
+        if config_owner_thread_id is None:
+            # First `configure` call is always allowed.
+            config_owner_thread_id = current_thread_id
+            return
+
+        if config_owner_thread_id != current_thread_id:
+            # Disallow a second `configure` calls from other threads.
+            raise RuntimeError("dspy.settings can only be changed by the thread that initially configured it.")
+
+        # Async task doesn't allow a second `configure` call, must use dspy.context(...) instead.
         is_async_task = False
         try:
             if asyncio.current_task() is not None:
@@ -121,32 +130,32 @@ class Settings:
             # or asyncio module itself is not fully functional in this specific sub-thread context.
             is_async_task = False
 
-        if is_async_task:
-            # We are in an async task. Now check for IPython and allow calling `configure` from IPython.
+        if not is_async_task:
+            return
+
+        # We are in an async task. Now check for IPython and allow calling `configure` from IPython.
+        in_ipython = False
+        try:
+            from IPython import get_ipython
+
+            # get_ipython is a global injected by IPython environments.
+            # We check its existence and type to be more robust.
+            shell = get_ipython()
+            if shell is not None and "InteractiveShell" in shell.__class__.__name__:
+                in_ipython = True
+        except Exception:
+            # If `IPython` is not installed or `get_ipython` failed, we are not in an IPython environment.
             in_ipython = False
-            try:
-                from IPython import get_ipython
 
-                # get_ipython is a global injected by IPython environments.
-                # We check its existence and type to be more robust.
-                shell = get_ipython()
-                if shell is not None and "InteractiveShell" in shell.__class__.__name__:
-                    in_ipython = True
-            except Exception:
-                # If `IPython` is not installed or `get_ipython` failed, we are not in an IPython environment.
-                in_ipython = False
+        if not in_ipython:
+            raise RuntimeError(
+                "dspy.settings.configure(...) cannot be called a second time from an async task. Use "
+                "`dspy.context(...)` instead."
+            )
 
-            if not in_ipython:
-                raise RuntimeError(
-                    "dspy.settings.configure(...) cannot be called from an async task. Use `dspy.context(...)` instead."
-                )
-
-        with self.lock:
-            # First configuration: establish ownership. If ownership established, only that thread can configure.
-            if config_owner_thread_id in [None, current_thread_id]:
-                config_owner_thread_id = current_thread_id
-            else:
-                raise RuntimeError("dspy.settings can only be changed by the thread that initially configured it.")
+    def configure(self, **kwargs):
+        # If no exception is raised, the `configure` call is allowed.
+        self._ensure_configure_allowed()
 
         # Update global config
         for k, v in kwargs.items():
