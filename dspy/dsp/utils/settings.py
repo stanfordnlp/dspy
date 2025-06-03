@@ -4,6 +4,8 @@ import copy
 import threading
 from contextlib import contextmanager
 
+from IPython import get_ipython
+
 from dspy.dsp.utils.utils import dotdict
 
 DEFAULT_CONFIG = dotdict(
@@ -111,18 +113,32 @@ class Settings:
         global main_thread_config, config_owner_thread_id
         current_thread_id = threading.get_ident()
 
-        # Check if we're actually running in an async task
+        # Check if we're actually running in an async task.
+        is_async_task = False
         try:
             if asyncio.current_task() is not None:
+                is_async_task = True
+        except RuntimeError:
+            # This exception (e.g., "no current task") means we are not in an async loop/task,
+            # or asyncio module itself is not fully functional in this specific sub-thread context.
+            is_async_task = False
+
+        if is_async_task:
+            # We are in an async task. Now check for IPython and allow calling `configure` from IPython.
+            in_ipython = False
+            try:
+                # get_ipython is a global injected by IPython environments.
+                # We check its existence and type to be more robust.
+                shell = get_ipython()
+                if shell is not None and "InteractiveShell" in shell.__class__.__name__:
+                    in_ipython = True
+            except NameError:
+                in_ipython = False
+
+            if not in_ipython:
                 raise RuntimeError(
                     "dspy.settings.configure(...) cannot be called from an async task. Use `dspy.context(...)` instead."
                 )
-        except RuntimeError as e:
-            # We're not in an async context, which is what we want
-            if e.args[0].startswith(
-                "dspy.settings.configure(...) cannot be called from an async task. Use `dspy.context(...)` instead."
-            ):
-                raise e
 
         with self.lock:
             # First configuration: establish ownership. If ownership established, only that thread can configure.
