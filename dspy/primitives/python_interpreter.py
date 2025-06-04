@@ -2,7 +2,7 @@ import json
 import os
 import subprocess
 from types import TracebackType
-from typing import Any, Dict, List, Optional, Iterable, Union
+from typing import Any, Dict, List, Optional, Union
 from os import PathLike
 
 
@@ -28,30 +28,30 @@ class PythonInterpreter:
     def __init__(
         self,
         deno_command: Optional[List[str]] = None,
-        enable_read_paths: Optional[Iterable[Union[PathLike, str]]] = None,
-        enable_env_vars: Optional[Iterable[str]] = None,
-        enable_network_access: Optional[Iterable[str]] = None,
-        enable_write_paths: Optional[Iterable[Union[PathLike, str]]] = None,
+        enable_read_paths: Optional[List[Union[PathLike, str]]] = None,
+        enable_write_paths: Optional[List[Union[PathLike, str]]] = None,
+        enable_env_vars: Optional[List[str]] = None,
+        enable_network_access: Optional[List[str]] = None,
         sync_files: bool = True,
     ) -> None:
         """
         Args:
             deno_command: command list to launch Deno.
             enable_read_paths: Files or directories to allow reading from in the sandbox.
+            enable_write_paths: Files or directories to allow writing to in the sandbox.
             enable_env_vars: Environment variable names to allow in the sandbox.
             enable_network_access: Domains or IPs to allow network access in the sandbox.
-            enable_write_paths: Files or directories to allow writing to in the sandbox.
             sync_files: If set, syncs changes within the sandbox back to original files after execution.
         """
         if isinstance(deno_command, dict):
             deno_command = None  # no-op, just a guard in case someone passes a dict
 
-        self.enable_read_paths = enable_read_paths
-        self.enable_env_vars = enable_env_vars
-        self.enable_network_access = enable_network_access
-        self.enable_write_paths = enable_write_paths
+        self.enable_read_paths = enable_read_paths or []
+        self.enable_write_paths = enable_write_paths or []
+        self.enable_env_vars = enable_env_vars or []
+        self.enable_network_access = enable_network_access or []
         self.sync_files = sync_files
-        #TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
+        # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         if deno_command:
             self.deno_command = list(deno_command)
@@ -69,7 +69,7 @@ class PythonInterpreter:
                 
             args.append(self._get_runner_path())
 
-            #For runner.js to load in env vars
+            # For runner.js to load in env vars
             if self._env_arg:
                 args.append(self._env_arg)
             self.deno_command = args
@@ -92,7 +92,7 @@ class PythonInterpreter:
         if not paths_to_mount:
             return
         for path in paths_to_mount:
-            if path in (None, ""):
+            if not path:
                 continue
             if not os.path.exists(path):
                 if self.enable_write_paths and path in self.enable_write_paths:
@@ -127,7 +127,7 @@ class PythonInterpreter:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    env = os.environ.copy()
+                    env=os.environ.copy()
                 )
             except FileNotFoundError as e:
                 install_instructions = (

@@ -60,7 +60,7 @@ class ProgramOfThought(Module):
             ),
         )
         # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter if interpreter is not None else PythonInterpreter()
+        self.interpreter = interpreter or PythonInterpreter()
 
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)

@@ -68,7 +68,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.codeact = dspy.Predict(codeact_signature)
         self.extractor = dspy.ChainOfThought(extract_signature)
         # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter if interpreter is not None else PythonInterpreter()
+        self.interpreter = interpreter or PythonInterpreter()
     
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []
