@@ -37,30 +37,29 @@ def sample_dspy_image_no_download():
     return dspy.Image.from_url("https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg", download=False)
 
 
-def count_messages_with_image_url_pattern(messages):
-    pattern = {"type": "image_url", "image_url": {"url": lambda x: isinstance(x, str)}}
+def count_messages_with_input_image_pattern(messages):
+    pattern = {"type": "input_image", "image_url": lambda x: isinstance(x, str)}
+
+    def check_pattern(obj, pattern):
+        if isinstance(pattern, dict):
+            if not isinstance(obj, dict):
+                return False
+            return all(k in obj and check_pattern(obj[k], v) for k, v in pattern.items())
+        if callable(pattern):
+            return pattern(obj)
+        return obj == pattern
+
+    def count_patterns(obj, pattern):
+        count = 0
+        if check_pattern(obj, pattern):
+            count += 1
+        if isinstance(obj, dict):
+            count += sum(count_patterns(v, pattern) for v in obj.values())
+        if isinstance(obj, (list, tuple)):
+            count += sum(count_patterns(v, pattern) for v in obj)
+        return count
 
     try:
-
-        def check_pattern(obj, pattern):
-            if isinstance(pattern, dict):
-                if not isinstance(obj, dict):
-                    return False
-                return all(k in obj and check_pattern(obj[k], v) for k, v in pattern.items())
-            if callable(pattern):
-                return pattern(obj)
-            return obj == pattern
-
-        def count_patterns(obj, pattern):
-            count = 0
-            if check_pattern(obj, pattern):
-                count += 1
-            if isinstance(obj, dict):
-                count += sum(count_patterns(v, pattern) for v in obj.values())
-            if isinstance(obj, (list, tuple)):
-                count += sum(count_patterns(v, pattern) for v in obj)
-            return count
-
         return count_patterns(messages, pattern)
     except Exception:
         return 0
@@ -123,7 +122,7 @@ def test_basic_image_operations(test_case):
     # Check result based on output field name
     output_field = next(f for f in ["probabilities", "generated_code", "bboxes", "captions"] if hasattr(result, f))
     assert getattr(result, output_field) == test_case["expected"][test_case["key_output"]]
-    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 1
+    assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == 1
 
 
 @pytest.mark.parametrize(
@@ -157,7 +156,7 @@ def test_image_input_formats(
 
     result = predictor(image=actual_input, class_labels=["dog", "cat", "bird"])
     assert result.probabilities == expected["probabilities"]
-    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 1
+    assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == 1
 
 
 def test_predictor_save_load(sample_url, sample_pil_image):
@@ -178,7 +177,7 @@ def test_predictor_save_load(sample_url, sample_pil_image):
         loaded_predictor.load(temp_file.name)
 
     loaded_predictor(image=dspy.Image.from_url("https://example.com/dog.jpg"))
-    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 2
+    assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == 2
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
 
@@ -209,7 +208,7 @@ def test_save_load_complex_default_types():
 
     result = loaded_predictor(**examples[0].inputs())
     assert result.caption == "A list of images"
-    assert str(lm.history[-1]["messages"]).count("'url'") == 4
+    assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == 4
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
 
@@ -281,7 +280,7 @@ def test_save_load_complex_types(test_case):
         assert getattr(result, key) == value
 
     # Verify correct number of image URLs in messages
-    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == test_case["expected_image_urls"]
+    assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == test_case["expected_image_urls"]
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
 
@@ -322,7 +321,7 @@ def test_save_load_pydantic_model():
 
     # Verify output matches expected
     assert result.output == "Multiple photos"
-    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 4
+    assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == 4
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
 
@@ -336,7 +335,7 @@ def test_optional_image_field():
     predictor, lm = setup_predictor(OptionalImageSignature, {"output": "Hello"})
     result = predictor(image=None)
     assert result.output == "Hello"
-    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 0
+    assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == 0
 
 
 def test_pdf_url_support():
@@ -359,7 +358,7 @@ def test_pdf_url_support():
     result = predictor(document=pdf_image)
 
     assert result.summary == "This is a dummy PDF"
-    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 1
+    assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == 1
 
     # Ensure the URL was properly expanded in messages
     messages_str = str(lm.history[-1]["messages"])
@@ -437,7 +436,7 @@ def test_pdf_from_file():
         result = predictor(document=pdf_image)
 
         assert result.summary == "This is a PDF from file"
-        assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 1
+        assert count_messages_with_input_image_pattern(lm.history[-1]["messages"]) == 1
     finally:
         # Clean up the temporary file
         try:
@@ -451,13 +450,31 @@ def test_image_repr():
     url_image = dspy.Image.from_url("https://example.com/dog.jpg", download=False)
     assert str(url_image) == (
         "<<CUSTOM-TYPE-START-IDENTIFIER>>"
-        "[{'type': 'image_url', 'image_url': {'url': 'https://example.com/dog.jpg'}}]"
+        "[{'type': 'input_image', 'image_url': 'https://example.com/dog.jpg'}]"
         "<<CUSTOM-TYPE-END-IDENTIFIER>>"
     )
     assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
     pil_image = dspy.Image.from_PIL(sample_pil)
-    assert str(pil_image).startswith("<<CUSTOM-TYPE-START-IDENTIFIER>>[{'type': 'image_url',")
+    assert str(pil_image).startswith("<<CUSTOM-TYPE-START-IDENTIFIER>>[{'type': 'input_image',")
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
     assert "base64" in str(pil_image)
+
+def test_image_as_output_field(sample_dspy_image_download):
+    """Test dspy.Image as an output field."""
+
+    class GenImageSignature(dspy.Signature):
+        description: str = dspy.InputField()
+        image: dspy.Image = dspy.OutputField(desc="Generated image")
+
+    img_b64 = sample_dspy_image_download.url.split(",")[-1]
+    expected_output = {"image": {"result": img_b64}}
+
+    predictor, lm = setup_predictor(GenImageSignature, expected_output)
+
+    result = predictor(description="Generate a great dane image")
+
+    assert isinstance(result.image, dspy.Image)
+    assert result.image.url.startswith("data:image/")
+    assert img_b64 in result.image.url

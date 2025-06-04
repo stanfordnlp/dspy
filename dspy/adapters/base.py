@@ -1,9 +1,12 @@
+import logging
 from typing import TYPE_CHECKING, Any, Optional, Type
 
-from dspy.adapters.types import History
+from dspy.adapters.types import BaseType, History
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -22,20 +25,41 @@ class Adapter:
 
     def _call_post_process(self, outputs: list[dict[str, Any]], signature: Type[Signature]) -> list[dict[str, Any]]:
         values = []
+        output_field_name, field_info = next(iter(signature.output_fields.items()))
+        annotation = field_info.annotation
 
         for output in outputs:
             output_logprobs = None
-
             if isinstance(output, dict):
-                output, output_logprobs = output["text"], output["logprobs"]
-
-            value = self.parse(signature, output)
+                if "text" in output:
+                    output, output_logprobs = output["text"], output.get("logprobs")
+                elif "content" in output:
+                    output_content = output["content"]
+                    if isinstance(output_content, list) and output_content and "text" in output_content[0]:
+                        output = output_content[0]["text"]
+                    else:
+                        output = ""
+                    output_logprobs = None
+                else:
+                    output = str(output)
+                    output_logprobs = None
+            try:
+                if issubclass(annotation, BaseType):
+                    try:
+                        parsed = annotation.parse(output)
+                        value = {output_field_name: parsed}
+                    except Exception as e:
+                        logger.warning(f"Output is not of expected annotation field '{output_field_name}': {e}")
+                        continue
+                else:
+                    value = self.parse(signature, output)
+            except TypeError:
+                value = self.parse(signature, output)
 
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs
-
             values.append(value)
-
+    
         return values
 
     def __call__(
@@ -47,6 +71,13 @@ class Adapter:
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         inputs = self.format(signature, demos, inputs)
+
+        if getattr(lm, "model_type", None) == "responses":
+            for msg in inputs:
+                if msg["role"] == "user" and isinstance(msg["content"], list):
+                    for block in msg["content"]:
+                        if block.get("type") == "text":
+                            block["type"] = "input_text"
 
         outputs = lm(messages=inputs, **lm_kwargs)
         return self._call_post_process(outputs, signature)

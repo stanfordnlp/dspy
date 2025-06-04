@@ -41,10 +41,26 @@ def pretty_print_history(history, n: int = 1):
                             else:
                                 image_str = f"<image_url: {c['image_url']['url']}>"
                             print(_blue(image_str.strip()))
+                        elif c["type"] == "input_audio":
+                            audio_format = c["input_audio"]["format"]
+                            len_audio = len(c["input_audio"]["data"])
+                            audio_str = f"<audio format='{audio_format}' base64-encoded, length={len_audio}>"
+                            print(_blue(audio_str.strip()))
             print("\n")
 
         print(_red("Response:"))
-        print(_green(outputs[0].strip()))
+        out = outputs[0]
+        if isinstance(out, str):
+            print(_green(out.strip()))
+        elif hasattr(out, "result") and isinstance(out.result, str):
+            b64 = out.result
+            if b64.startswith("data:"):
+                head, b64data = b64.split(",", 1)
+                print(_green(f"<Image output: {head}base64,<IMAGE_BASE_64_ENCODED({len(b64data)})>>"))
+            else:
+                print(_green(f"<Image output: base64,<IMAGE_BASE_64_ENCODED({len(b64)})>>"))
+        else:
+            print(_green(f"<Non-string output: {repr(out)}>"))
 
         if len(outputs) > 1:
             choices_text = f" \t (and {len(outputs) - 1} other completions)"

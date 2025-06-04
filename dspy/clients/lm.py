@@ -29,7 +29,7 @@ class LM(BaseLM):
     def __init__(
         self,
         model: str,
-        model_type: Literal["chat", "text"] = "chat",
+        model_type: Literal["chat", "text", "responses"] = "chat",
         temperature: float = 0.0,
         max_tokens: int = 4000,
         cache: bool = True,
@@ -120,8 +120,15 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
+        
 
-        completion = litellm_completion if self.model_type == "chat" else litellm_text_completion
+        if self.model_type == "chat":
+            completion = litellm_completion
+        elif self.model_type == "text":
+            completion = litellm_text_completion
+        elif self.model_type == "responses":
+            completion = litellm_responses_completion
+ 
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache, enable_memory_cache)
 
         results = completion(
@@ -129,15 +136,25 @@ class LM(BaseLM):
             num_retries=self.num_retries,
             cache=litellm_cache_args,
         )
+        if self.model_type != "responses":
+            if any(c.finish_reason == "length" for c in results["choices"]):
+                logger.warning(
+                    f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                    "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
+                    "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
+                    f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
+                    " if the reason for truncation is repetition."
+                )
+        else:
+            if results.get("truncation") == "enabled":
+                logger.warning(
+                    f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                    "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
+                    "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
+                    f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
+                    " if the reason for truncation is repetition."
+                )
 
-        if any(c.finish_reason == "length" for c in results["choices"]):
-            logger.warning(
-                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
-                "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
-                "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
-                f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
-                " if the reason for truncation is repetition."
-            )
 
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
@@ -151,7 +168,12 @@ class LM(BaseLM):
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
 
-        completion = alitellm_completion if self.model_type == "chat" else alitellm_text_completion
+        if self.model_type == "chat":
+            completion = alitellm_completion
+        elif self.model_type == "text":
+            completion = alitellm_text_completion
+        elif self.model_type == "responses":
+            completion = alitellm_responses_completion
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache, enable_memory_cache)
 
         results = await completion(
@@ -160,14 +182,24 @@ class LM(BaseLM):
             cache=litellm_cache_args,
         )
 
-        if any(c.finish_reason == "length" for c in results["choices"]):
-            logger.warning(
-                f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
-                "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
-                "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
-                f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
-                " if the reason for truncation is repetition."
-            )
+        if self.model_type != "responses":
+            if any(c.finish_reason == "length" for c in results["choices"]):
+                logger.warning(
+                    f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                    "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
+                    "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
+                    f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
+                    " if the reason for truncation is repetition."
+                )
+        else:
+            if results.get("truncation") == "enabled":
+                logger.warning(
+                    f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
+                    "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
+                    "To avoid truncation, consider passing a larger max_tokens when setting up dspy.LM. "
+                    f"You may also consider increasing the temperature (currently {self.kwargs['temperature']}) "
+                    " if the reason for truncation is repetition."
+                )
 
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
@@ -369,6 +401,44 @@ async def alitellm_text_completion(request: Dict[str, Any], num_retries: int, ca
         api_key=api_key,
         api_base=api_base,
         prompt=prompt,
+        num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
+        **request,
+    )
+
+def litellm_responses_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
+    if "messages" in request:
+        content_blocks = []
+        for msg in request.pop("messages"):
+            c = msg.get("content")
+            if isinstance(c, str):
+                content_blocks.append({"type": "input_text", "text": c})
+            elif isinstance(c, list):
+                content_blocks.extend(c)
+        request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+    
+    return litellm.responses(
+        cache=cache,
+        num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
+        **request,
+    )
+
+
+async def alitellm_responses_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+    cache = cache or {"no-cache": True, "no-store": True}
+    if "messages" in request:
+        content_blocks = []
+        for msg in request.pop("messages"):
+            c = msg.get("content")
+            if isinstance(c, str):
+                content_blocks.append({"type": "input_text", "text": c})
+            elif isinstance(c, list):
+                content_blocks.extend(c)
+        request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+    return await litellm.aresponses(
+        cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
         **request,

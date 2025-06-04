@@ -6,6 +6,7 @@ import litellm
 import pydantic
 import pytest
 from litellm.utils import Choices, Message, ModelResponse
+from litellm.types.llms.openai import ResponsesAPIResponse, ResponseAPIUsage
 from openai import RateLimitError
 
 import dspy
@@ -125,7 +126,7 @@ def test_text_lms_can_be_queried(litellm_test_server):
 def test_lm_calls_support_callables(litellm_test_server):
     api_base, _ = litellm_test_server
 
-    with mock.patch("litellm.completion", autospec=True, wraps=litellm.completion) as spy_completion:
+    with mock.patch("litellm.completion", autospec=True, wraps=litellm.completion) as dspy_completion:
 
         def azure_ad_token_provider(*args, **kwargs):
             return None
@@ -140,8 +141,8 @@ def test_lm_calls_support_callables(litellm_test_server):
 
         lm_with_callable("Query")
 
-        spy_completion.assert_called_once()
-        call_args = spy_completion.call_args.kwargs
+        dspy_completion.assert_called_once()
+        call_args = dspy_completion.call_args.kwargs
         assert call_args["model"] == "openai/dspy-test-model"
         assert call_args["api_base"] == api_base
         assert call_args["api_key"] == "fakekey"
@@ -374,3 +375,64 @@ async def test_async_lm_call_with_cache(tmp_path):
         assert mock_alitellm_completion.call_count == 2
 
     dspy.cache = original_cache
+
+def make_response(output_blocks, *, model="openai/dspy-test-model", tools=None):
+    return ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details=None,
+        instructions=None,
+        model=model,
+        object="response",
+        output=output_blocks,
+        metadata = {},
+        parallel_tool_calls=bool(tools),
+        temperature=1.0,
+        tool_choice="auto",
+        tools=tools or [],
+        top_p=1.0,
+        max_output_tokens=None,
+        previous_response_id=None,
+        reasoning=None,
+        status="completed",
+        text=None,
+        truncation="disabled",
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        user=None,
+    )
+
+
+def test_responses_lms_can_be_queried(litellm_test_server):
+    api_base, _ = litellm_test_server
+    expected_text = "This is a test answer from responses API."
+
+    api_response = make_response(
+        output_blocks=[
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {"type": "output_text", "text": expected_text, "annotations": []}
+                ],
+            }
+        ]
+    )
+
+    with mock.patch("litellm.responses", autospec=True) as dspy_responses:
+        dspy_responses.return_value = api_response
+
+        lm = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base=api_base,
+            api_key="fakekey",
+            model_type="responses",
+            cache=False,
+            cache_in_memory=False,
+        )
+        assert lm("openai query") == [expected_text]
+
+        dspy_responses.assert_called_once()
+        assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"

@@ -33,8 +33,29 @@ class Image(BaseType):
             image_url = encode_image(self.url)
         except Exception as e:
             raise ValueError(f"Failed to format image for DSPy: {e}")
-        return [{"type": "image_url", "image_url": {"url": image_url}}]
+        if isinstance(image_url, str):
+            return [{"type": "input_image", "image_url": image_url}]
+        else:
+            return [{"type": "input_image", "image_url": {"url": image_url}}]
 
+    @classmethod
+    def parse(cls, raw: Any) -> "Image":
+        if isinstance(raw, dict):
+            if "result" in raw:
+                b64 = raw["result"]
+            else:
+                raise TypeError("Input for parsing is missing 'result'")
+        elif hasattr(raw, "result"):
+            b64 = getattr(raw, "result")
+        elif hasattr(raw, "data"):
+            b64 = raw.data[0].b64_json
+        elif isinstance(raw, str):
+            b64 = raw
+        else:
+            raise TypeError(f"Unsupported type {type(raw)} for Image.parse")
+        uri = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
+        return cls(url=uri)
+    
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, values):

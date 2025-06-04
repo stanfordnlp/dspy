@@ -219,7 +219,7 @@ def test_chat_adapter_formats_image():
     assert user_message_content[2]["type"] == "text"
 
     # Assert that the image is formatted correctly
-    expected_image_content = {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+    expected_image_content = {"type": "input_image", "image_url": "https://example.com/image.jpg"}
     assert expected_image_content in user_message_content
 
 
@@ -245,9 +245,10 @@ def test_chat_adapter_formats_image_with_few_shot_examples():
     # 1 system message, 2 few shot examples (1 user and assistant message for each example), 1 user message
     assert len(messages) == 6
 
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}} in messages[1]["content"]
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}} in messages[3]["content"]
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}} in messages[5]["content"]
+    assert {"type": "input_image", "image_url": "https://example.com/image1.jpg"} in messages[1]["content"]
+    assert {"type": "input_image", "image_url": "https://example.com/image2.jpg"} in messages[3]["content"]
+    assert {"type": "input_image", "image_url": "https://example.com/image3.jpg"} in messages[5]["content"]
+
 
 
 def test_chat_adapter_formats_image_with_nested_images():
@@ -268,9 +269,11 @@ def test_chat_adapter_formats_image_with_nested_images():
     adapter = dspy.ChatAdapter()
     messages = adapter.format(MySignature, [], {"image": image_wrapper})
 
-    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
-    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
-    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
+    expected_image1_content = {"type": "input_image", "image_url": "https://example.com/image1.jpg"}
+    expected_image2_content = {"type": "input_image", "image_url": "https://example.com/image2.jpg"}
+    expected_image3_content = {"type": "input_image", "image_url": "https://example.com/image3.jpg"}
+
+
 
     assert expected_image1_content in messages[1]["content"]
     assert expected_image2_content in messages[1]["content"]
@@ -305,12 +308,14 @@ def test_chat_adapter_formats_image_with_few_shot_examples_with_nested_images():
     assert len(messages) == 4
 
     # Image information in the few-shot example's user message
-    expected_image1_content = {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}}
-    expected_image2_content = {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}}
-    expected_image3_content = {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}}
+    expected_image1_content = {"type": "input_image", "image_url": "https://example.com/image1.jpg"}
+    expected_image2_content = {"type": "input_image", "image_url": "https://example.com/image2.jpg"}
+    expected_image3_content = {"type": "input_image", "image_url": "https://example.com/image3.jpg"}
+
+
     assert expected_image1_content in messages[1]["content"]
     assert expected_image2_content in messages[1]["content"]
     assert expected_image3_content in messages[1]["content"]
 
     # The query image is formatted in the last user message
-    assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]
+    assert {"type": "input_image", "image_url": "https://example.com/image4.jpg"} in messages[-1]["content"]

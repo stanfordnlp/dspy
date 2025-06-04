@@ -28,6 +28,10 @@ class BaseType(pydantic.BaseModel):
 
     def format(self) -> list[dict[str, Any]]:
         raise NotImplementedError
+    
+    @classmethod
+    def parse(cls, raw: Any) -> "BaseType":
+        return cls(**raw)
 
     @pydantic.model_serializer()
     def serialize_model(self):

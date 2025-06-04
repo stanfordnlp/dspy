@@ -50,7 +50,20 @@ class BaseLM:
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
-        if merged_kwargs.get("logprobs"):
+        if hasattr(response, "output") or (isinstance(response, dict) and "output" in response):
+            output_items = response.output if hasattr(response, "output") else response["output"]
+            output_items = list(output_items)
+            if any(not (hasattr(item, "content") or (isinstance(item, dict) and "content" in item)) for item in output_items):
+                outputs = output_items
+            else:
+                outputs = []
+                for item in output_items:
+                    content_list = item.get("content", []) if isinstance(item, dict) else getattr(item, "content", [])
+                    for c in content_list:
+                        if (isinstance(c, dict) and c.get("type") == "output_text") or (hasattr(c, "type") and getattr(c, "type", None) == "output_text"):
+                            text_val = c.get("text") if isinstance(c, dict) else getattr(c, "text", "")
+                            outputs.append(text_val)
+        elif merged_kwargs.get("logprobs"):
             outputs = [
                 {
                     "text": c.message.content if hasattr(c, "message") else c["text"],
@@ -133,7 +146,7 @@ class BaseLM:
         return new_instance
 
     def inspect_history(self, n: int = 1):
-        return inspect_history(self.history, n)
+        return pretty_print_history(self.history, n)
 
     def update_global_history(self, entry):
         if settings.disable_history:
