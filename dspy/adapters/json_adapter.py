@@ -219,8 +219,8 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
     # Build the model with extra fields forbidden.
     pydantic_model = pydantic.create_model(
         "DSPyProgramOutputs",
+        __config__=pydantic.ConfigDict(extra="forbid"),
         **fields,
-        __config__=type("Config", (), {"extra": "forbid"}),
     )
 
     # Generate the initial schema.

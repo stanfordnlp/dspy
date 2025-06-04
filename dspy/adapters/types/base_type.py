@@ -41,9 +41,13 @@ class BaseType(pydantic.BaseModel):
         This is used to extract all custom types from the annotation of a field, while the annotation can
         have arbitrary level of nesting. For example, we detect `Tool` is in `list[dict[str, Tool]]`.
         """
-        # Direct match
-        if isinstance(annotation, type) and issubclass(annotation, cls):
-            return [annotation]
+        # Direct match. Nested type like `list[dict[str, Event]]` passes `isinstance(annotation, type)` in python 3.10
+        # while fails in python 3.11. To accomodate users using python 3.10, we need to capture the error and ignore it.
+        try:
+            if isinstance(annotation, type) and issubclass(annotation, cls):
+                return [annotation]
+        except TypeError:
+            pass
 
         origin = get_origin(annotation)
         if origin is None:

@@ -137,7 +137,7 @@ class BaseLM:
         return new_instance
 
     def inspect_history(self, n: int = 1):
-        return inspect_history(self.history, n)
+        return pretty_print_history(self.history, n)
 
     def update_global_history(self, entry):
         if settings.disable_history:
