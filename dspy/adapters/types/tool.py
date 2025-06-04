@@ -206,17 +206,23 @@ class Tool(BaseType):
             A Tool object.
 
         Example:
-        ```python
-        from langchain.tools import tool
-        import dspy
 
-        @tool
+        ```python
+        import asyncio
+        import dspy
+        from langchain.tools import tool as lc_tool
+
+        @lc_tool
         def add(x: int, y: int):
             "Add two numbers together."
             return x + y
 
-        tool = dspy.Tool.from_langchain(add)
-        print(await tool.acall(x=1, y=2))
+        dspy_tool = dspy.Tool.from_langchain(add)
+
+        async def run_tool():
+            return await dspy_tool.acall(x=1, y=2)
+
+        print(asyncio.run(run_tool()))
         # 3
         ```
         """

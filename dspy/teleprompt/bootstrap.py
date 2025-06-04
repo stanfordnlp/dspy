@@ -43,7 +43,7 @@ class BootstrapFewShot(Teleprompter):
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
-        max_errors=5,
+        max_errors=None,
     ):
         """A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
         These demos come from a combination of labeled examples in the training set, and bootstrapped demos.
@@ -62,7 +62,8 @@ class BootstrapFewShot(Teleprompter):
                 Defaults to 16.
             max_rounds (int): Number of iterations to attempt generating the required bootstrap
                 examples. If unsuccessful after `max_rounds`, the program ends. Defaults to 1.
-            max_errors (int): Maximum number of errors until program ends. Defaults to 5.
+            max_errors (Optional[int]): Maximum number of errors until program ends.
+                If ``None``, inherits from ``dspy.settings.max_errors``.
         """
         self.metric = metric
         self.metric_threshold = metric_threshold
@@ -210,7 +211,12 @@ class BootstrapFewShot(Teleprompter):
             with self.error_lock:
                 self.error_count += 1
                 current_error_count = self.error_count
-            if current_error_count >= self.max_errors:
+            effective_max_errors = (
+                self.max_errors
+                if self.max_errors is not None
+                else dspy.settings.max_errors
+            )
+            if current_error_count >= effective_max_errors:
                 raise e
             logger.error(f"Failed to run or to evaluate example {example} with {self.metric} due to {e}.")
 
