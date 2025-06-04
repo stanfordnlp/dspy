@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 import pytest
 from litellm import Choices, Message, ModelResponse
+from litellm.types.utils import Usage
+import asyncio
 
 import dspy
 from dspy.utils.dummies import DummyLM
@@ -305,6 +307,54 @@ def test_usage_tracker_in_parallel():
 
     assert results[0].get_lm_usage().keys() == set(["openai/gpt-4o-mini"])
     assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
+
+
+@pytest.mark.asyncio
+async def test_usage_tracker_async_parallel():
+    program = dspy.Predict("question -> answer")
+
+    with patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+            usage=Usage(
+                **{
+                    "prompt_tokens": 1117,
+                    "completion_tokens": 46,
+                    "total_tokens": 1163,
+                    "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
+                    "completion_tokens_details": {
+                        "reasoning_tokens": 0,
+                        "audio_tokens": 0,
+                        "accepted_prediction_tokens": 0,
+                        "rejected_prediction_tokens": 0,
+                    },
+                },
+            ),
+            model="openai/gpt-4o-mini",
+        )
+
+        coroutines = [
+            program.acall(question="What is the capital of France?"),
+            program.acall(question="What is the capital of France?"),
+            program.acall(question="What is the capital of France?"),
+            program.acall(question="What is the capital of France?"),
+        ]
+        with dspy.settings.context(
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
+        ):
+            results = await asyncio.gather(*coroutines)
+
+        assert results[0].get_lm_usage() is not None
+        assert results[1].get_lm_usage() is not None
+
+        lm_usage0 = results[0].get_lm_usage()["openai/gpt-4o-mini"]
+        lm_usage1 = results[1].get_lm_usage()["openai/gpt-4o-mini"]
+        assert lm_usage0["prompt_tokens"] == 1117
+        assert lm_usage1["prompt_tokens"] == 1117
+        assert lm_usage0["completion_tokens"] == 46
+        assert lm_usage1["completion_tokens"] == 46
+        assert lm_usage0["total_tokens"] == 1163
+        assert lm_usage1["total_tokens"] == 1163
 
 
 def test_module_history():
