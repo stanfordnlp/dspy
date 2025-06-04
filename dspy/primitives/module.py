@@ -218,8 +218,8 @@ class BaseModule:
                     f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy program, "
                     "or consider using state-only saving by setting `save_program=False`."
                 )
-            with open(path / "metadata.json", "w") as f:
-                ujson.dump(metadata, f, indent=2)
+            with open(path / "metadata.json", "w", encoding="utf-8") as f:
+                ujson.dump(metadata, f, indent=2, ensure_ascii=False)
 
             return
 
@@ -227,8 +227,8 @@ class BaseModule:
         state["metadata"] = metadata
         if path.suffix == ".json":
             try:
-                with open(path, "w") as f:
-                    f.write(ujson.dumps(state, indent=2))
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(ujson.dumps(state, indent=2 , ensure_ascii=False))
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to save state to {path} with error: {e}. Your DSPy program may contain non "

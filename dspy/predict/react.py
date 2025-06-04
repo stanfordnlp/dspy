@@ -4,8 +4,8 @@ from typing import Any, Callable, Literal
 from litellm import ContextWindowExceededError
 
 import dspy
+from dspy.adapters.types.tool import Tool
 from dspy.primitives.program import Module
-from dspy.primitives.tool import Tool
 from dspy.signatures.signature import ensure_signature
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ class ReAct(Module):
         """
         `tools` is either a list of functions, callable classes, or `dspy.Tool` instances.
         """
-
+        super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
