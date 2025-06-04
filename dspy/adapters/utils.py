@@ -90,7 +90,8 @@ def translate_field_type(field_name, field_info):
     elif field_type in (int, float):
         desc = f"must be a single {field_type.__name__} value"
     elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
-        desc = f"must be one of: {'; '.join(field_type.__members__)}"
+        enum_vals = '; '.join(str(member.value) for member in field_type)
+        desc = f"must be one of: {enum_vals}"
     elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
         desc = (
             # Strongly encourage the LM to avoid choosing values that don't appear in the
