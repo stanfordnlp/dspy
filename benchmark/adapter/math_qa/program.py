@@ -45,7 +45,7 @@ Running benchmarking, this may take a while...
 ========================================
 """)
 
-    return {"score": score, "time_taken": time_taken}
+    return {"score": score}
 
 
 def dspy_cot_chat_adapter(dataset, model, num_threads=1):
@@ -107,7 +107,7 @@ Running benchmarking, this may take a while...
 - Time taken: {time_taken:.2f} seconds
 ========================================
 """)
-    return {"scores": score, "time_taken": time_taken}
+    return {"score": score}
 
 
 def vanilla_sdk(dataset, model, num_threads=1):
