@@ -70,5 +70,3 @@ def configure_dspy_loggers(root_module_name):
             logger.removeHandler(existing_handler)
 
     logger.addHandler(handler)
-
-    return logger
