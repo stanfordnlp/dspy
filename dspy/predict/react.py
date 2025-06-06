@@ -17,13 +17,13 @@ if TYPE_CHECKING:
 class ReAct(Module):
     def __init__(self, signature: Type["Signature"], tools: list[Callable], max_iters: Optional[int] = 5):
         """
-        ReAct stands for Reasoning and Acting, which is a popular paradigm for building tool calling agents. Basically
-        it provides the LLM with a list of tools, an uses the LLM to reason about the current situation and decide if
-        it should call a tool to collect more information or finish the task.
+        ReAct stands for "Reasoning and Acting," a popular paradigm for building tool-using agents.
+        In this approach, the language model is provided with a list of tools and is responsible
+        for reasoning about the current situation. The model decides whether to call a tool to gather more
+        information or to finish the task based on its reasoning process.
 
         Args:
-            signature (dspy.Signature): The signature of the module, which defines the input and output of the react
-                module.
+            signature: The signature of the module, which defines the input and output of the react module.
             tools (list[Callable]): A list of functions, callable classes, or `dspy.Tool` instances.
             max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 5.
 
