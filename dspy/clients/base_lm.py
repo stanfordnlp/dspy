@@ -136,8 +136,8 @@ class BaseLM:
 
         return new_instance
 
-    def inspect_history(self, n: int = 1):
-        return pretty_print_history(self.history, n)
+    def inspect_history(self, n: int = 1, verbose: int = 0):
+        return pretty_print_history(self.history, n=n, verbose=verbose)
 
     def update_global_history(self, entry):
         if settings.disable_history:
@@ -151,4 +151,4 @@ class BaseLM:
 
 def inspect_history(n: int = 1):
     """The global history shared across all LMs."""
-    return pretty_print_history(GLOBAL_HISTORY, n)
+    return pretty_print_history(GLOBAL_HISTORY, n=n, verbose=verbose)
