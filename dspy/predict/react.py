@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, Literal, Type
 
 from litellm import ContextWindowExceededError
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class ReAct(Module):
-    def __init__(self, signature: Type["Signature"], tools: list[Callable], max_iters: Optional[int] = 5):
+    def __init__(self, signature: Type["Signature"], tools: list[Callable], max_iters: int = 5):
         """
         ReAct stands for "Reasoning and Acting," a popular paradigm for building tool-using agents.
         In this approach, the language model is provided with a list of tools and is responsible
