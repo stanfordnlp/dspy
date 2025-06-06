@@ -31,19 +31,10 @@ jobs:
           uv venv .venv
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv sync --dev -p .venv
+        run: uv sync --dev -p .venv --extra dev
       - name: Ruff Fix Attempt
         id: ruff_fix
-        uses: chartboost/ruff-action@v1
-        with:
-          args: check --fix-only --diff --exit-non-zero-on-fix
-        continue-on-error: true
-      - name: Fail Workflow if Ruff Fix Failed
-        if: steps.ruff_fix.outcome == 'failure'
-        run: |
-          echo "Ruff fix failed, failing the workflow."
-          echo "Please run 'ruff check . --fix-only' locally and push the changes."
-          exit 1
+        run: ruff check --fix-only --diff --exit-non-zero-on-fix
 
   test:
     name: Run Tests
