@@ -1,9 +1,9 @@
 import json
 import os
 import subprocess
+from os import PathLike
 from types import TracebackType
 from typing import Any, Dict, List, Optional, Union
-from os import PathLike
 
 
 class InterpreterError(RuntimeError):
@@ -66,7 +66,7 @@ class PythonInterpreter:
                 args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
             if self.enable_write_paths:
                 args.append(f"--allow-write={','.join(str(x) for x in self.enable_write_paths)}")
-                
+
             args.append(self._get_runner_path())
 
             # For runner.js to load in env vars
