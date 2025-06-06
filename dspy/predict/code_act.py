@@ -1,7 +1,7 @@
 import inspect
-from typing import Callable, Union, Type, Optional
 import logging
 from inspect import Signature
+from typing import Callable, Optional, Type, Union
 
 import dspy
 from dspy.adapters.types.tool import Tool
@@ -68,7 +68,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.extractor = dspy.ChainOfThought(extract_signature)
         # It will raises exception when dspy cannot find available deno instance by now.
         self.interpreter = interpreter or PythonInterpreter()
-    
+
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []
         inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])

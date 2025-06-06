@@ -1,7 +1,9 @@
+import os
 import random
 import shutil
-import os
+
 import pytest
+
 from dspy.primitives.python_interpreter import InterpreterError, PythonInterpreter
 
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
@@ -60,7 +62,7 @@ def test_final_answer_trick():
 
         # They should maintain the same order
         assert result == ["The result is", token], "The returned results are differ, `final_answer` trick doesn't work"
-    
+
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
 
@@ -84,7 +86,7 @@ def test_read_file_access_control(tmp_path):
 
     with PythonInterpreter(enable_read_paths=[str(testfile_path)]) as interpreter:
         code = (
-            f"with open({repr(virtual_path)}, 'r') as f:\n"
+            f"with open({virtual_path!r}, 'r') as f:\n"
             f"    data = f.read()\n"
             f"data"
         )
@@ -94,7 +96,7 @@ def test_read_file_access_control(tmp_path):
     with PythonInterpreter(enable_read_paths=None) as interpreter:
         code = (
             f"try:\n"
-            f"    with open({repr(virtual_path)}, 'r') as f:\n"
+            f"    with open({virtual_path!r}, 'r') as f:\n"
             f"        data = f.read()\n"
             f"except Exception as e:\n"
             f"    data = str(e)\n"
@@ -110,7 +112,7 @@ def test_enable_write_flag(tmp_path):
     with PythonInterpreter(enable_write_paths=None) as interpreter:
         code = (
             f"try:\n"
-            f"    with open({repr(virtual_path)}, 'w') as f:\n"
+            f"    with open({virtual_path!r}, 'w') as f:\n"
             f"        f.write('blocked')\n"
             f"    result = 'wrote'\n"
             f"except Exception as e:\n"
@@ -122,27 +124,27 @@ def test_enable_write_flag(tmp_path):
 
     with PythonInterpreter(enable_write_paths=[str(testfile_path)]) as interpreter:
         code = (
-            f"with open({repr(virtual_path)}, 'w') as f:\n"
+            f"with open({virtual_path!r}, 'w') as f:\n"
             f"    f.write('allowed')\n"
             f"'ok'"
         )
         result = interpreter.execute(code)
         assert result == "ok", "Test file should be writable with enable_write_paths"
     assert testfile_path.exists()
-    with open(testfile_path, "r") as f:
+    with open(testfile_path) as f:
         assert f.read() == "allowed", "Test file outputs should match content written during execution"
-    
+
     with open(testfile_path, "w") as f:
         f.write("original_content")
     with PythonInterpreter(enable_write_paths=[str(testfile_path)], sync_files=False) as interpreter:
         code = (
-            f"with open({repr(virtual_path)}, 'w') as f:\n"
+            f"with open({virtual_path!r}, 'w') as f:\n"
             f"    f.write('should_not_sync')\n"
             f"'done_no_sync'"
         )
         result = interpreter.execute(code)
         assert result == "done_no_sync"
-    with open(testfile_path, "r") as f:
+    with open(testfile_path) as f:
         assert f.read() == "original_content", "File should not be changed when sync_files is False"
 
 
@@ -153,7 +155,7 @@ def test_enable_net_flag():
     with PythonInterpreter(enable_network_access=None) as interpreter:
         code = (
             "import js\n"
-            f"resp = await js.fetch({repr(test_url)})\n"
+            f"resp = await js.fetch({test_url!r})\n"
             "resp.status"
         )
         with pytest.raises(InterpreterError, match="PythonError"):
@@ -162,7 +164,7 @@ def test_enable_net_flag():
     with PythonInterpreter(enable_network_access=["example.com"]) as interpreter:
         code = (
             "import js\n"
-            f"resp = await js.fetch({repr(test_url)})\n"
+            f"resp = await js.fetch({test_url!r})\n"
             "resp.status"
         )
         result = interpreter.execute(code)

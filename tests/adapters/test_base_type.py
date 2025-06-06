@@ -1,6 +1,8 @@
-import dspy
 from typing import Optional
+
 import pydantic
+
+import dspy
 
 
 def test_basic_extract_custom_type_from_annotation():
