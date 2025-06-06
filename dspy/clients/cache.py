@@ -30,7 +30,7 @@ class Cache:
         disk_cache_dir: str,
         disk_size_limit_bytes: Optional[int] = 1024 * 1024 * 10,
         memory_max_entries: Optional[int] = 1000000,
-        
+
     ):
         """
         Args:
