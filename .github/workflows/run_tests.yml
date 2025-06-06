@@ -32,9 +32,18 @@ jobs:
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
         run: uv sync --dev -p .venv --extra dev
-      - name: Ruff Fix Attempt
-        id: ruff_fix
-        run: ruff check --fix-only --diff --exit-non-zero-on-fix
+      - name: Ruff Check
+        run: |
+          ruff check --fix-only --diff --exit-non-zero-on-fix || (
+            echo ""
+            echo "❌ Ruff found issues that can be fixed automatically."
+            echo "💡 To fix them locally, run:"
+            echo ""
+            echo "    pre-commit run --all-files"
+            echo ""
+            echo "Then commit and push the changes."
+            exit 1
+          )
 
   test:
     name: Run Tests
