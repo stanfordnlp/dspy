@@ -6,6 +6,7 @@ from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.adapters.types.base_type import BaseType
+from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import with_callbacks
 
 if TYPE_CHECKING:
@@ -160,12 +161,26 @@ class Tool(BaseType):
             },
         }
 
+    def _run_async_in_sync(self, coroutine):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coroutine)
+
+        return loop.run_until_complete(coroutine)
+
     @with_callbacks
     def __call__(self, **kwargs):
         parsed_kwargs = self._validate_and_parse_args(**kwargs)
         result = self.func(**parsed_kwargs)
         if asyncio.iscoroutine(result):
-            raise ValueError("You are calling `__call__` on an async tool, please use `acall` instead.")
+            if settings.allow_tool_async_sync_conversion:
+                return self._run_async_in_sync(result)
+            else:
+                raise ValueError(
+                    "You are calling `__call__` on an async tool, please use `acall` instead or set "
+                    "`allow_async=True` to run the async tool in sync mode."
+                )
         return result
 
     @with_callbacks
