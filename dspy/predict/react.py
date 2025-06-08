@@ -18,9 +18,10 @@ class ReAct(Module):
     def __init__(self, signature: Type["Signature"], tools: list[Callable], max_iters: int = 5):
         """
         ReAct stands for "Reasoning and Acting," a popular paradigm for building tool-using agents.
-        In this approach, the language model is provided with a list of tools and is responsible
-        for reasoning about the current situation. The model decides whether to call a tool to gather more
-        information or to finish the task based on its reasoning process.
+        In this approach, the language model is iteratively provided with a list of tools and has
+        to reason about the current situation. The model decides whether to call a tool to gather more
+        information or to finish the task based on its reasoning process. The DSPy version of ReAct is
+        generalized to work over any signature, thanks to signature polymorphism.
 
         Args:
             signature: The signature of the module, which defines the input and output of the react module.
@@ -30,23 +31,11 @@ class ReAct(Module):
         Example:
 
         ```python
-        import dspy
-        import os
-
-        os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
-
-        from dspy.primitives import Tool
-
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-
         def get_weather(city: str) -> str:
             return f"The weather in {city} is sunny."
 
         react = dspy.ReAct(signature="question->answer", tools=[get_weather])
-
         pred = react(question="What is the weather in Tokyo?")
-
-        print(pred)
         ```
         """
         super().__init__()
