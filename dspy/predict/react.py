@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class ReAct(Module):
-    def __init__(self, signature: Type["Signature"], tools: list[Callable], max_iters: int = 5):
+    def __init__(self, signature: Type["Signature"], tools: list[Callable], max_iters: int = 10):
         """
         ReAct stands for "Reasoning and Acting," a popular paradigm for building tool-using agents.
         In this approach, the language model is iteratively provided with a list of tools and has
@@ -25,8 +25,8 @@ class ReAct(Module):
 
         Args:
             signature: The signature of the module, which defines the input and output of the react module.
-            tools (list[Callable]): A list of functions, callable classes, or `dspy.Tool` instances.
-            max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 5.
+            tools (list[Callable]): A list of functions, callable objects, or `dspy.Tool` instances.
+            max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 10.
 
         Example:
 
