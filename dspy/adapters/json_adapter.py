@@ -63,18 +63,19 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            if dspy.settings.log_json_fallbacks:
-                logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
-            try:
-                lm_kwargs["response_format"] = {"type": "json_object"}
-                return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-            except ValueError as ve:
-                raise ve
-            except Exception as e:
-                raise RuntimeError(
-                    "Both structured output format and JSON mode failed. Please choose a model that supports "
-                    f"`response_format` argument. Original error: {e}"
-                ) from e
+            # if dspy.settings.log_json_fallbacks:
+            #     logger.warning(f"Failed to use structured output format. Falling back to JSON mode. Error: {e}")
+            # try:
+            #     lm_kwargs["response_format"] = {"type": "json_object"}
+            #     return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            # except ValueError as ve:
+            #     raise ve
+            # except Exception as e:
+            #     raise RuntimeError(
+            #         "Both structured output format and JSON mode failed. Please choose a model that supports "
+            #         f"`response_format` argument. Original error: {e}"
+            #     ) from e
+            raise e
 
     def format_field_structure(self, signature: Type[Signature]) -> str:
         parts = []
