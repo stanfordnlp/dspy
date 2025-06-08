@@ -5,6 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from dspy.adapters.types.tool import Tool
+import dspy
 
 
 # Test fixtures
@@ -363,3 +364,14 @@ async def test_async_concurrent_calls():
     # Check that it ran concurrently (should take ~0.1s, not ~0.5s)
     # We use 0.3s as threshold to account for some overhead
     assert end_time - start_time < 0.3
+
+
+def test_async_tool_call_in_sync_mode():
+    tool = Tool(async_dummy_function)
+    with dspy.context(allow_tool_async_sync_conversion=False):
+        with pytest.raises(ValueError):
+            result = tool(x=1, y="hello")
+
+    with dspy.context(allow_tool_async_sync_conversion=True):
+        result = tool(x=1, y="hello")
+        assert result == "hello 1"
