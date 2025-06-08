@@ -12,7 +12,7 @@ from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.program import Program
-from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, assert_structural_equivalency, bootstrap_trace_data, FailedPrediction
+from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, assert_structural_equivalency, get_unique_lms, bootstrap_trace_data, FailedPrediction
 from dspy.clients.provider import ReinforceJob
 
 
@@ -31,6 +31,7 @@ class GRPO(FinetuneTeleprompter):
         num_threads: int = 6,
         num_train_steps: int = 100,
         seed: int = 0,
+        sampling_temperature: float = 0.9,
         num_dspy_examples_per_grpo_step: int = 1,
         num_rollouts_per_grpo_step: int = 1,
         use_train_as_val: bool = False,
@@ -51,7 +52,8 @@ class GRPO(FinetuneTeleprompter):
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
         self.num_train_steps = num_train_steps
-        self.rng = random.Random(seed)
+        self.seed = seed
+        self.sampling_temperature = sampling_temperature
         self.num_dspy_examples_per_grpo_step = num_dspy_examples_per_grpo_step
         self.num_rollouts_per_grpo_step = num_rollouts_per_grpo_step
         self.use_train_as_val = use_train_as_val
@@ -60,6 +62,9 @@ class GRPO(FinetuneTeleprompter):
         self.failure_score = failure_score
         self.format_failure_score = format_failure_score
         self.checkpoint_on_validation_improvement = checkpoint_on_validation_improvement
+
+        if self.sampling_temperature < 0.1:  # todo check
+            logger.warning(f"Sampling temperature of {self.sampling_temperature} is smaller than 0.1 -- this might lead to low diversity. Consider using higher sampling temperatures.")
 
         self.grpo_group_size = grpo_group_size
         if grpo_group_size is not None:
@@ -81,6 +86,7 @@ class GRPO(FinetuneTeleprompter):
             assert variably_invoked_predictor_fill_strategy in ['randint', 'max'], "variably_invoked_predictor_fill_strategy must be either 'randint' or 'max'"
         self.variably_invoked_predictor_fill_strategy = variably_invoked_predictor_fill_strategy
 
+        self.rng = random.Random(seed)
         self.shuffled_trainset_ids = []
         self.epoch = -1
         self.id_freqs = Counter()
@@ -419,10 +425,10 @@ class GRPO(FinetuneTeleprompter):
         # We will disable the LM cache for all programs (student and teachers)
         # These will be reverted to their original state at the end of the
         # training
-        lm_cache_dict = {}
-        disable_lm_cache(program=student, lm_cache_dict=lm_cache_dict)
-        for t in teachers:
-            disable_lm_cache(program=t, lm_cache_dict=lm_cache_dict)
+        original_cache_dict = {}
+        unique_lms = set(get_unique_lms(student) + sum([get_unique_lms(t) for t in teachers], []))
+        for lm in unique_lms:
+            original_cache_dict[lm] = modify_lm_attribute(lm=lm, target_attr='cache', target_val=False)
 
         # Update train_kwargs
         for pred in student.predictors():
@@ -434,6 +440,9 @@ class GRPO(FinetuneTeleprompter):
                 train_kwargs["num_generations"] = self.grpo_group_size
             else:
                 train_kwargs["num_generations"] = self.num_rollouts_per_grpo_step
+
+            # This ensures that inference and training uses the same temperature
+            train_kwargs["temperature"] = self.sampling_temperature
 
             self.train_kwargs[pred.lm] = train_kwargs
 
@@ -638,6 +647,9 @@ class GRPO(FinetuneTeleprompter):
             #   LM.
             logger.info("Invoking GRPO training step...")
             for (lm, data_key), job in grpo_training_jobs.items():
+                # Record the original temperatures, and assign the sampling temperature
+                original_temperature = modify_lm_attribute(lm=lm, target_attr="kwargs_temperature", target_val=self.sampling_temperature)
+
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
                 new_train_data: List[GRPOGroup] = []
                 for group in train_data:
@@ -656,6 +668,8 @@ class GRPO(FinetuneTeleprompter):
                         assert len(group) == self.grpo_group_size, f"Number of completions {len(group)} does not match the expected number grpo_group_size={self.grpo_group_size}"
 
                     new_train_data.append(group)
+                # Restore the original temperature
+                modify_lm_attribute(lm=lm, target_attr='kwargs_temperature', target_val=original_temperature)
 
                 job.step(train_data=new_train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
 
@@ -684,9 +698,8 @@ class GRPO(FinetuneTeleprompter):
         logger.debug("Killed the LM. Now recovering the LM cache...")
         
         # Revert cache states to their initial values
-        recover_lm_cache(program=student, lm_cache_dict=lm_cache_dict)
-        for t in teachers:
-            recover_lm_cache(program=t, lm_cache_dict=lm_cache_dict)
+        for lm, target_val in original_cache_dict.items():
+            modify_lm_attribute(lm=lm, target_attr='cache', target_val=target_val)
 
         if self.model_name_val_scores is not None and len(self.model_name_val_scores) > 0:
             # Find the lm_names with the highest validation score
@@ -703,24 +716,13 @@ class GRPO(FinetuneTeleprompter):
         student._compiled = True
         return student
 
-def disable_lm_cache(program: Program, lm_cache_dict: dict):
-    """Disable the LM cache for all predictors in the program."""
-    for pred in program.predictors():
-        if not pred.lm:
-            raise ValueError(f"Cannot disable cache: predictor {pred} does not have an LM set.")
-        if pred.lm not in lm_cache_dict:  # Check to avoid overwriting the cache
-            lm_cache_dict[pred.lm] = pred.lm.cache
-        pred.lm.cache = False
 
-
-def recover_lm_cache(program: Program, lm_cache_dict: dict):
-    """Recover the LM caches for all predictors in the program to their original state."""
-    for pred in program.predictors():
-        if pred.lm in lm_cache_dict:
-            pred.lm.cache = lm_cache_dict[pred.lm]
-        else:
-            # We do not expect this branch to execute at all since all the LMs
-            # are modified in place and no new LMs are created during training.
-            # However, we do not complain if this happens since this is a
-            # relatively minor feature. We default the LM cache to True.
-            pred.lm.cache = True
+def modify_lm_attribute(lm, target_attr, target_val):
+    if target_attr.startswith("kwargs"):
+        plain_target_attr = target_attr.split("kwargs_")[1]
+        original_val = lm.kwargs[plain_target_attr]
+        lm.kwargs[plain_target_attr] = target_val
+    else:
+        original_val = getattr(lm, target_attr)
+        setattr(lm, target_attr, target_val)
+    return original_val
