@@ -244,6 +244,9 @@ def test_chat_adapter_formats_image_with_few_shot_examples():
     # 1 system message, 2 few shot examples (1 user and assistant message for each example), 1 user message
     assert len(messages) == 6
 
+    assert "[[ ## completed ## ]]\n" in messages[2]["content"]
+    assert "[[ ## completed ## ]]\n" in messages[4]["content"]
+
     assert {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}} in messages[1]["content"]
     assert {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}} in messages[3]["content"]
     assert {"type": "image_url", "image_url": {"url": "https://example.com/image3.jpg"}} in messages[5]["content"]
@@ -350,3 +353,26 @@ def test_chat_adapter_with_tool():
     # Tool arguments format should be included in the user message
     assert "{'city': {'type': 'string'}}" in messages[1]["content"]
     assert "{'country': {'type': 'string'}, 'year': {'type': 'integer'}}" in messages[1]["content"]
+
+
+def test_chat_adapter_formats_conversation_history():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {"question": "What is the capital of France?", "answer": "Paris"},
+            {"question": "What is the capital of Germany?", "answer": "Berlin"},
+        ]
+    )
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(MySignature, [], {"question": "What is the capital of France?", "history": history})
+
+    assert len(messages) == 6
+    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?"
+    assert messages[2]["content"] == "[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]\n"
+    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
+    assert messages[4]["content"] == "[[ ## answer ## ]]\nBerlin\n\n[[ ## completed ## ]]\n"
