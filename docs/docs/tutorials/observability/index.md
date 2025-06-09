@@ -14,27 +14,36 @@ We'll start by creating a simple ReAct agent that uses ColBERTv2's Wikipedia dat
 
 ```python
 import dspy
-from dspy.datasets import HotPotQA
+import os
 
-lm = dspy.LM('openai/gpt-4o-mini')
-colbert = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
-dspy.configure(lm=lm, rm=colbert)
+os.environ["OPENAI_API_KEY"] = "{your_openai_api_key}"
 
-agent = dspy.ReAct("question -> answer", tools=[dspy.Retrieve(k=1)])
+lm = dspy.LM("openai/gpt-4o-mini")
+colbert = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
+dspy.configure(lm=lm)
+
+
+def retrieve(query: str):
+    """Retrieve top 3 relevant information from ColBert"""
+    results = colbert(query, k=3)
+    return [x["text"] for x in results]
+
+
+agent = dspy.ReAct("question -> answer", tools=[retrieve], max_iters=3)
 ```
 
 Now, let's ask the agent a simple question:
 
 ```python
-prediction = agent(question="Which baseball team does Shohei Ohtani play for?")
+prediction = agent(question="Which baseball team does Shohei Ohtani play for in June 2025?")
 print(prediction.answer)
 ```
 
 ```
-Shohei Ohtani plays for the Los Angeles Angels.
+Shohei Ohtani is expected to play for the Hokkaido Nippon-Ham Fighters in June 2025, based on the available information.
 ```
 
-Oh, this is incorrect. He no longer plays for the Angels; he moved to the Dodgers and won the World Series in 2024! Let's debug the program and explore potential fixes.
+Oh, this is incorrect. He no longer plays for the Hokkaido Nippon-Ham Fighters; he moved to the Dodgers and won the World Series in 2024! Let's debug the program and explore potential fixes.
 
 ## Using ``inspect_history``
 
@@ -57,13 +66,16 @@ Your input fields are:
 
 Response:
 
-[[ ## Thought_5 ## ]]
-The search results continue to be unhelpful and do not provide the current team for Shohei Ohtani in Major League Baseball. I need to conclude that he plays for the Los Angeles Angels based on prior knowledge, as the searches have not yielded updated information.
+Response:
 
-[[ ## Action_5 ## ]]
-Finish[Los Angeles Angels] 
+[[ ## reasoning ## ]]
+The search for information regarding Shohei Ohtani's team in June 2025 did not yield any specific results. The retrieved data consistently mentioned that he plays for the Hokkaido Nippon-Ham Fighters, but there was no indication of any changes or updates regarding his team for the specified date. Given the lack of information, it is reasonable to conclude that he may still be with the Hokkaido Nippon-Ham Fighters unless there are future developments that are not captured in the current data.
+
+[[ ## answer ## ]]
+Shohei Ohtani is expected to play for the Hokkaido Nippon-Ham Fighters in June 2025, based on the available information.
 
 [[ ## completed ## ]]
+
 ```
 The log reveals that the agent could not retrieve helpful information from the search tool. However, what exactly did the retriever return? While useful, `inspect_history` has some limitations:
 
@@ -81,40 +93,73 @@ The log reveals that the agent could not retrieve helpful information from the s
 pip install -U mlflow>=2.18.0
 ```
 
+After installation, spin up your server via the command below.
+
+```
+# It is highly recommended to use SQL store when using MLflow tracing
+mlflow server --backend-store-uri sqlite:///mydb.sqlite
+```
+
+If you don't specify a different port via `--port` flag, you MLflow server will be hosted at port 5000.
+
+Now let's change our code snippet to enable MLflow tracing. We need to:
+
+- Tell MLflow where the server is hosted.
+- Apply `mlflow.autolog()` so that DSPy tracing is automatically captured.
+
+The full code is as below, now let's run it again!
+
 ```python
+import dspy
+import os
 import mlflow
 
-mlflow.dspy.autolog()
+os.environ["OPENAI_API_KEY"] = "{your_openai_api_key}"
 
-# This is optional. Create an MLflow Experiment to store and organize your traces.
+# Tell MLflow about the server URI.
+mlflow.set_tracking_uri("http://127.0.0.1:5000")
+# Create a unique name for your experiment.
 mlflow.set_experiment("DSPy")
+
+lm = dspy.LM("openai/gpt-4o-mini")
+colbert = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
+dspy.configure(lm=lm)
+
+
+def retrieve(query: str):
+    """Retrieve top 3 relevant information from ColBert"""
+    results = colbert(query, k=3)
+    return [x["text"] for x in results]
+
+
+agent = dspy.ReAct("question -> answer", tools=[retrieve], max_iters=3)
+print(agent(question="Which baseball team does Shohei Ohtani play for?"))
 ```
 
-Now you're all set! Let's run your agent again:
+
+MLflow automatically generates a **trace** for each prediction and records it within your experiment. To explore these traces visually, open `http://127.0.0.1:5000/`
+in your browser, then select the experiment you just created and navigate to the Traces tab:
+
+![MLflow Trace UI](./mlflow_trace_ui.png)
+
+Click on the most recent trace to view its detailed breakdown:
+
+![MLflow Trace View](./mlflow_trace_view.png)
+
+Here, you can examine the input and output of every step in your workflow. For example, the screenshot above shows the `retrieve` function's input and output. By inspecting the retriever's output, you can see that it returned outdated information, which is not sufficient to determine which team Shohei Ohtani plays for in June 2025. You can also inspect
+other steps, e.g, anguage model's input, output, and configuration.
+
+To address the issue of outdated information, you can replace the `retrieve` function with a web search tool powered by [Tavily search](https://www.tavily.com/).
 
 ```python
-agent(question="Which baseball team does Shohei Ohtani play for?")
-```
-
-MLflow automatically generates a **trace** for the prediction and records it in the experiment. To explore traces visually, launch the MLflow UI by the following command and access it in your browser:
-
-```bash
-mlflow ui --port 5000
-```
-
-![DSPy MLflow Tracing](./dspy-tracing.gif)
-
-From the retriever step output, you can observe that it returned outdated information; indicating Shohei Ohtani was still playing in the Japanese league and the final answer was based on the LLM's prior knowledge! We should update the dataset or add additional tools to ensure access to the latest information.
-
-!!! info Learn more about MLflow
-
-    MLflow is an end-to-end LLMOps platform that offers extensive features like experiment tracking, evaluation, and deployment. To learn more about DSPy and MLflow integration, visit [this tutorial](../deployment/#deploying-with-mlflow).
-
-For example, we can add a web search capability to the agent, using the [Tavily](https://tavily.com/) web search API.
-
-```python
-from dspy.predict.react import Tool
 from tavily import TavilyClient
+import dspy
+import mlflow
+
+# Tell MLflow about the server URI.
+mlflow.set_tracking_uri("http://127.0.0.1:5000")
+# Create a unique name for your experiment.
+mlflow.set_experiment("DSPy")
 
 search_client = TavilyClient(api_key="<YOUR_TAVILY_API_KEY>")
 
@@ -123,7 +168,7 @@ def web_search(query: str) -> list[str]:
     response = search_client.search(query)
     return [r["content"] for r in response["results"]]
 
-agent = dspy.ReAct("question -> answer", tools=[Tool(web_search)])
+agent = dspy.ReAct("question -> answer", tools=[web_search])
 
 prediction = agent(question="Which baseball team does Shohei Ohtani play for?")
 print(agent.answer)
@@ -132,6 +177,20 @@ print(agent.answer)
 ```
 Los Angeles Dodgers
 ```
+
+Below is a GIF demonstrating how to navigate through the MLflow UI:
+
+![MLflow Trace UI Navigation](./mlflow_trace_ui_navigation.gif)
+
+
+For a complete guide on how to use MLflow tracing, please refer to
+the [MLflow Tracing Guide](https://mlflow.org/docs/3.0.0rc0/tracing).
+
+
+
+!!! info Learn more about MLflow
+
+    MLflow is an end-to-end LLMOps platform that offers extensive features like experiment tracking, evaluation, and deployment. To learn more about DSPy and MLflow integration, visit [this tutorial](../deployment/#deploying-with-mlflow).
 
 
 ## Building a Custom Logging Solution
@@ -145,7 +204,7 @@ Sometimes, you may want to implement a custom logging solution. For instance, yo
 |`on_adapter_format_start` / `on_adapter_format_end`| Triggered when a `dspy.Adapter` subclass formats the input prompt. |
 |`on_adapter_parse_start` / `on_adapter_parse_end`| Triggered when a `dspy.Adapter` subclass postprocess the output text from an LM. |
 
-Here’s an example of custom callback that logs the intermediate steps of a ReAct agent:
+Here's an example of custom callback that logs the intermediate steps of a ReAct agent:
 
 ```python
 import dspy
@@ -183,4 +242,4 @@ dspy.configure(callbacks=[AgentLoggingCallback()])
 
 !!! info Handling Inputs and Outputs in Callbacks
 
-    Be cautious when working with input or output data in callbacks. Mutating them in-place can modify the original data passed to the program, potentially leading to unexpected behavior. To avoid this, it’s strongly recommended to create a copy of the data before performing any operations that may alter it.
+    Be cautious when working with input or output data in callbacks. Mutating them in-place can modify the original data passed to the program, potentially leading to unexpected behavior. To avoid this, it's strongly recommended to create a copy of the data before performing any operations that may alter it.
