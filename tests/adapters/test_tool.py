@@ -4,8 +4,8 @@ from typing import Any, Optional
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.types.tool import Tool
 import dspy
+from dspy.adapters.types.tool import Tool
 
 
 # Test fixtures
