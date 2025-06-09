@@ -99,7 +99,7 @@ class StreamListener:
             # We keep appending the tokens to the queue until we have a full identifier or the concanated
             # tokens no longer match our expected identifier.
             self.field_start_queue.append(chunk_message)
-            concat_message = "".join(self.field_start_queue).strip()
+            concat_message = "".join(self.field_start_queue).lstrip()
 
             if start_identifier in concat_message:
                 # We have a full identifier, we can start the stream.
