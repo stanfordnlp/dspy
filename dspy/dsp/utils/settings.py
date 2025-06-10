@@ -142,9 +142,7 @@ class Settings:
 
             # get_ipython is a global injected by IPython environments.
             # We check its existence and type to be more robust.
-            shell = get_ipython()
-            if shell is not None and "InteractiveShell" in shell.__class__.__name__:
-                in_ipython = True
+            in_ipython = get_ipython() is not None
         except Exception:
             # If `IPython` is not installed or `get_ipython` failed, we are not in an IPython environment.
             in_ipython = False
