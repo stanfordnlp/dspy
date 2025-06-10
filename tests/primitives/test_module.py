@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import threading
@@ -6,7 +7,6 @@ from unittest.mock import patch
 import pytest
 from litellm import Choices, Message, ModelResponse
 from litellm.types.utils import Usage
-import asyncio
 
 import dspy
 from dspy.utils.dummies import DummyLM

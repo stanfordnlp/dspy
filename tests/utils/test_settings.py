@@ -1,11 +1,12 @@
-import dspy
-from concurrent.futures import ThreadPoolExecutor
-from litellm import ModelResponse, Choices, Message
-from unittest import mock
-import pytest
 import asyncio
 import time
-import anyio
+from concurrent.futures import ThreadPoolExecutor
+from unittest import mock
+
+import pytest
+from litellm import Choices, Message, ModelResponse
+
+import dspy
 
 
 def test_basic_dspy_settings():
