@@ -1,9 +1,9 @@
-import pytest
 import pydantic
-from dspy.utils.dummies import DummyLM
+import pytest
+
 import dspy
-from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.adapters.chat_adapter import FieldInfoWithName
+from dspy.adapters.xml_adapter import XMLAdapter
 
 
 def test_xml_adapter_format_and_parse_basic():
