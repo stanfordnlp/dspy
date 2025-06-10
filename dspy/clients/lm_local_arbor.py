@@ -47,7 +47,6 @@ class ArborTrainingJob(TrainingJob):
 
 class ArborReinforceJob(ReinforceJob):
     DEFAULT_TRAIN_KWARGS = {  # noqa: RUF012
-        "update_interval": 10,
         "temperature": 0.9,
         "beta": 0.04,
         "num_iterations": 1,
@@ -85,7 +84,6 @@ class ArborReinforceJob(ReinforceJob):
     def initialize(self):
         # TODO(GRPO Team): Set provider job ID
         num_generations = self.train_kwargs.get("num_generations")
-        update_interval = self.train_kwargs.get("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
         temperature = self.train_kwargs.get("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
         beta = self.train_kwargs.get("beta", self.DEFAULT_TRAIN_KWARGS["beta"])
         num_iterations = self.train_kwargs.get("num_iterations", self.DEFAULT_TRAIN_KWARGS["num_iterations"])
@@ -125,7 +123,6 @@ class ArborReinforceJob(ReinforceJob):
             "model": finetune_model,
             "suffix": suffix,
             "num_generations": num_generations,
-            "update_interval": update_interval,
             "temperature": temperature,
             "beta": beta,
             "num_iterations": num_iterations,
@@ -161,7 +158,7 @@ class ArborReinforceJob(ReinforceJob):
         # api_key = self.lm.kwargs["api_key"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
-        data = {"model": finetune_model, "update_inference_model": True, "batch": train_group}
+        data = {"model": finetune_model, "batch": train_group}
         url = f"{api_base}fine_tuning/grpo/step"
         headers = {"Content-Type": "application/json"}
         response = requests.post(url, headers=headers, json=data)
@@ -185,18 +182,6 @@ class ArborReinforceJob(ReinforceJob):
         ), f"GRPO only supports the GRPO_CHAT data format. Got {train_data_format} instead."
         for group in train_data:
             self._run_grpo_step_one_group(group, train_data_format)
-
-    def update_model(self):
-        api_base = self.lm.kwargs["api_base"]
-
-        url = f"{api_base}fine_tuning/grpo/update_model"
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(url, headers=headers)
-        assert response.status_code == 200, f"Failed to update model: {response.text}"
-
-        response = response.json()
-        current_model = response["current_model"]
-        self.lm.model = ArborProvider._add_provider_prefix(current_model)
 
     def save_checkpoint(self, checkpoint_name: str, score: Optional[float] = None):
         api_base = self.lm.kwargs["api_base"]
@@ -254,9 +239,6 @@ class ArborProvider(Provider):
     @staticmethod
     def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
         model = ArborProvider._remove_provider_prefix(lm.model)
-        # TODO: Handle this on the server side
-        if model.startswith("huggingface/"):
-            model = model[len("huggingface/") :]
 
         api_base = lm.kwargs["api_base"]
 

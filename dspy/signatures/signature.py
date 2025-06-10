@@ -41,7 +41,7 @@ class SignatureMeta(type(BaseModel)):
     def __call__(cls, *args, **kwargs):
         if cls is Signature:
             # We don't create an actual Signature instance, instead, we create a new Signature class.
-            custom_types = kwargs.pop('custom_types', None)
+            custom_types = kwargs.pop("custom_types", None)
 
             if custom_types is None and args and isinstance(args[0], str):
                 custom_types = cls._detect_custom_types_from_caller(args[0])
@@ -52,19 +52,19 @@ class SignatureMeta(type(BaseModel)):
     @staticmethod
     def _detect_custom_types_from_caller(signature_str):
         """Detect custom types from the caller's frame based on the signature string.
-        
+
         Note: This method relies on Python's frame introspection which has some limitations:
         1. May not work in all Python implementations (e.g., compiled with optimizations)
         2. Looks up a limited number of frames in the call stack
         3. Cannot find types that are imported but not in the caller's namespace
-        
-        For more reliable custom type resolution, explicitly provide types using the 
+
+        For more reliable custom type resolution, explicitly provide types using the
         `custom_types` parameter when creating a Signature.
         """
 
         # Extract potential type names from the signature string, including dotted names
         # Match both simple types like 'MyType' and dotted names like 'Module.Type'
-        type_pattern = r':\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)'
+        type_pattern = r":\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"
         type_names = re.findall(type_pattern, signature_str)
         if not type_names:
             return None
@@ -76,7 +76,7 @@ class SignatureMeta(type(BaseModel)):
         dotted_types = {}
 
         for type_name in type_names:
-            parts = type_name.split('.')
+            parts = type_name.split(".")
             base_name = parts[0]
 
             if base_name not in typing.__dict__ and base_name not in __builtins__:
@@ -115,6 +115,7 @@ class SignatureMeta(type(BaseModel)):
 
             if needed_types and frame_count >= max_frames:
                 import logging
+
                 logging.getLogger("dspy").warning(
                     f"Reached maximum frame search depth ({max_frames}) while looking for types: {needed_types}. "
                     "Consider providing custom_types explicitly to Signature."
@@ -122,6 +123,7 @@ class SignatureMeta(type(BaseModel)):
         except (AttributeError, ValueError):
             # Handle environments where frame introspection is not available
             import logging
+
             logging.getLogger("dspy").debug(
                 "Frame introspection failed while trying to resolve custom types. "
                 "Consider providing custom_types explicitly to Signature."
@@ -395,11 +397,11 @@ def make_signature(
         "question": (str, InputField()),
         "answer": (str, OutputField())
     })
-    
+
     # Using custom types
     class MyType:
         pass
-    
+
     sig3 = make_signature("input: MyType -> output", custom_types={"MyType": MyType})
     ```
     """

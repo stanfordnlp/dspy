@@ -5,8 +5,7 @@ import sys
 import textwrap
 import time
 from collections import defaultdict
-from typing import (TYPE_CHECKING, Any, Callable, Dict, List, Literal,
-                    Optional, Tuple)
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 
@@ -14,12 +13,16 @@ import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.propose import GroundedProposer
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.utils import (create_minibatch,
-                                   create_n_fewshot_demo_sets,
-                                   eval_candidate_program,
-                                   get_program_with_highest_avg_score,
-                                   get_signature, print_full_program,
-                                   save_candidate_program, set_signature)
+from dspy.teleprompt.utils import (
+    create_minibatch,
+    create_n_fewshot_demo_sets,
+    eval_candidate_program,
+    get_program_with_highest_avg_score,
+    get_signature,
+    print_full_program,
+    save_candidate_program,
+    set_signature,
+)
 
 if TYPE_CHECKING:
     import optuna

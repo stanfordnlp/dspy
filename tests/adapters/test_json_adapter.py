@@ -419,3 +419,26 @@ def test_json_adapter_with_tool():
             },
         },
     }
+
+
+def test_json_adapter_formats_conversation_history():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {"question": "What is the capital of France?", "answer": "Paris"},
+            {"question": "What is the capital of Germany?", "answer": "Berlin"},
+        ]
+    )
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"question": "What is the capital of France?", "history": history})
+
+    assert len(messages) == 6
+    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?"
+    assert messages[2]["content"] == '{\n  "answer": "Paris"\n}'
+    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
+    assert messages[4]["content"] == '{\n  "answer": "Berlin"\n}'

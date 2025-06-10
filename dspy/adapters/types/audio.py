@@ -44,10 +44,10 @@ class Audio(BaseType):
     @classmethod
     def validate_input(cls, values: Any) -> Any:
         """
-        Validate input for Audio, expecting 'data' and 'format' keys in dictionary.
+        Validate input for Audio, expecting 'data' and 'audio_format' keys in dictionary.
         """
         if isinstance(values, cls):
-            return {"data": values.data, "format": values.format}
+            return {"data": values.data, "audio_format": values.audio_format}
         return encode_audio(values)
 
     @classmethod
@@ -62,7 +62,7 @@ class Audio(BaseType):
             raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
         audio_format = mime_type.split("/")[1]
         encoded_data = base64.b64encode(response.content).decode("utf-8")
-        return cls(data=encoded_data, format=audio_format)
+        return cls(data=encoded_data, audio_format=audio_format)
 
     @classmethod
     def from_file(cls, file_path: str) -> "Audio":
@@ -81,7 +81,7 @@ class Audio(BaseType):
 
         audio_format = mime_type.split("/")[1]
         encoded_data = base64.b64encode(file_data).decode("utf-8")
-        return cls(data=encoded_data, format=audio_format)
+        return cls(data=encoded_data, audio_format=audio_format)
 
     @classmethod
     def from_array(
@@ -102,44 +102,44 @@ class Audio(BaseType):
             subtype="PCM_16",
         )
         encoded_data = base64.b64encode(byte_buffer.getvalue()).decode("utf-8")
-        return cls(data=encoded_data, format=format)
+        return cls(data=encoded_data, audio_format=format)
 
     def __str__(self) -> str:
         return self.serialize_model()
 
     def __repr__(self) -> str:
         length = len(self.data)
-        return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, format='{self.audio_format}')"
+        return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, audio_format='{self.audio_format}')"
 
 def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
     """
-    Encode audio to a dict with 'data' and 'format'.
+    Encode audio to a dict with 'data' and 'audio_format'.
     
     Accepts: local file path, URL, data URI, dict, Audio instance, numpy array, or bytes (with known format).
     """
-    if isinstance(audio, dict) and "data" in audio and "format" in audio:
+    if isinstance(audio, dict) and "data" in audio and "audio_format" in audio:
         return audio
     elif isinstance(audio, Audio):
-        return {"data": audio.data, "format": audio.format}
+        return {"data": audio.data, "audio_format": audio.audio_format}
     elif isinstance(audio, str) and audio.startswith("data:audio/"):
         try:
             header, b64data = audio.split(",", 1)
             mime = header.split(";")[0].split(":")[1]
             audio_format = mime.split("/")[1]
-            return {"data": b64data, "format": audio_format}
+            return {"data": b64data, "audio_format": audio_format}
         except Exception as e:
             raise ValueError(f"Malformed audio data URI: {e}")
     elif isinstance(audio, str) and os.path.isfile(audio):
         a = Audio.from_file(audio)
-        return {"data": a.data, "format": a.format}
+        return {"data": a.data, "audio_format": a.audio_format}
     elif isinstance(audio, str) and audio.startswith("http"):
         a = Audio.from_url(audio)
-        return {"data": a.data, "format": a.format}
+        return {"data": a.data, "audio_format": a.audio_format}
     elif SF_AVAILABLE and hasattr(audio, "shape"):
         a = Audio.from_array(audio, sampling_rate=sampling_rate, format=format)
-        return {"data": a.data, "format": a.format}
+        return {"data": a.data, "audio_format": a.audio_format}
     elif isinstance(audio, bytes):
         encoded = base64.b64encode(audio).decode("utf-8")
-        return {"data": encoded, "format": format}
+        return {"data": encoded, "audio_format": format}
     else:
         raise ValueError(f"Unsupported type for encode_audio: {type(audio)}")
