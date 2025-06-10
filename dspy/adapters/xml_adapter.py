@@ -3,7 +3,6 @@ from typing import Any, Dict, Optional, Type
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import format_field_value
-from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 
@@ -35,7 +34,7 @@ class XMLAdapter(ChatAdapter):
                 fields[name] = content
         # Cast values using base class parse_value helper
         for k, v in fields.items():
-            fields[k] = self._parse_field_value(signature.output_fields[k], v, completion)
+            fields[k] = self._parse_field_value(signature.output_fields[k], v, completion, signature)
         if fields.keys() != signature.output_fields.keys():
             from dspy.utils.exceptions import AdapterParseError
 
@@ -47,8 +46,9 @@ class XMLAdapter(ChatAdapter):
             )
         return fields
 
-    def _parse_field_value(self, field_info, raw, completion):
+    def _parse_field_value(self, field_info, raw, completion, signature):
         from dspy.adapters.utils import parse_value
+
         try:
             return parse_value(raw, field_info.annotation)
         except Exception as e:
@@ -56,8 +56,7 @@ class XMLAdapter(ChatAdapter):
 
             raise AdapterParseError(
                 adapter_name="XMLAdapter",
-                signature=None,
+                signature=signature,
                 lm_response=completion,
                 message=f"Failed to parse field {field_info} with value {raw}: {e}",
             )
-
