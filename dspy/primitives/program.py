@@ -2,7 +2,7 @@ from typing import Optional
 
 import magicattr
 
-from dspy.dsp.utils.settings import settings
+from dspy.dsp.utils.settings import settings, thread_local_overrides
 from dspy.predict.parallel import Parallel
 from dspy.primitives.module import BaseModule
 from dspy.utils.callback import with_callbacks
@@ -51,7 +51,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         caller_modules.append(self)
 
         with settings.context(caller_modules=caller_modules):
-            if settings.track_usage and settings.usage_tracker is None:
+            if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
                     output = self.forward(*args, **kwargs)
                 output.set_lm_usage(usage_tracker.get_total_tokens())
@@ -66,7 +66,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         caller_modules.append(self)
 
         with settings.context(caller_modules=caller_modules):
-            if settings.track_usage and settings.usage_tracker is None:
+            if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
                     output = await self.aforward(*args, **kwargs)
                     output.set_lm_usage(usage_tracker.get_total_tokens())
