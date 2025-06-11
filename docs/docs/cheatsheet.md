@@ -271,7 +271,7 @@ your_dspy_program_compiled = labeled_fewshot_optimizer.compile(student = your_ds
 ```python
 from dspy.teleprompt import BootstrapFewShot
 
-fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5)
+fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=10)
 
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
@@ -281,7 +281,7 @@ your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_progr
 ```python
 from dspy.teleprompt import BootstrapFewShot
 
-fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=5, teacher_settings=dict(lm=gpt4))
+fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=10, teacher_settings=dict(lm=gpt4))
 
 your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```

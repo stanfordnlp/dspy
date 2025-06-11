@@ -1,6 +1,6 @@
 import random
 
-from .teleprompt import Teleprompter
+from dspy.teleprompt.teleprompt import Teleprompter
 
 
 class LabeledFewShot(Teleprompter):

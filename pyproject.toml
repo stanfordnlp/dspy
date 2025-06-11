@@ -8,12 +8,12 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="2.6.18"
+version="2.6.27"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
 license = { text = "MIT License" }
-requires-python = ">=3.9, <3.13"
+requires-python = ">=3.9, <3.14"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -24,7 +24,7 @@ classifiers = [
 dependencies = [
     "backoff>=2.2",
     "joblib~=1.3",
-    "openai>=0.28.1,<=1.61.0",
+    "openai>=0.28.1",
     "pandas>=2.1.1",
     "regex>=2023.10.3",
     "ujson>=5.8.0",
@@ -51,9 +51,12 @@ dependencies = [
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 aws = ["boto3~=1.34.78"]
+mcp = ["mcp; python_version >= '3.10'"]
+langchain = ["langchain_core"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
+    "pytest-asyncio>=0.26.0",
     "ruff>=0.3.0",
     "pre-commit>=3.7.0",
     "pillow>=10.1.0",
@@ -61,6 +64,10 @@ dev = [
     "build>=1.0.3",
     "litellm>=1.60.3; sys_platform == 'win32'",
     "litellm[proxy]>=1.60.3; sys_platform != 'win32'",
+]
+test_extras = [
+    "mcp; python_version >= '3.10'",
+    "langchain_core",
 ]
 
 [tool.setuptools.packages.find]
@@ -106,27 +113,69 @@ exclude_lines = [
 ]
 
 [tool.ruff]
+include = ["dspy/**/*.py", "tests/**/*.py"]
+exclude = [
+  "dspy/__metadata__.py",
+  "dspy/retrieve/*.py",
+  "tests/reliability/*.py",
+  "tests/retrieve/*.py",
+]
+
+
 line-length = 120
 indent-width = 4
 target-version = "py39"
 
 [tool.ruff.lint]
 select = [
-    "F", # Pyflakes
-    "E", # Pycodestyle
-    "TID252", # Absolute imports
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "RUF", # ruff-specific rules
 ]
+
 ignore = [
-    "E501", # Line too long
+    "B027",  # Allow non-abstract empty methods in abstract base classes
+    "FBT003",# Allow boolean positional values in function calls
+    "C901",  # Ignore complexity checking
+    "E501",  # Ignore line length errors (handled by formatter)
+    "UP006", # Allow python typing modules
+    "UP035", # Allow python typing modules
+    "RUF005", # Allow using + operator to concatenate collections
+    "B904", # Allow raise custom exceptions in except blocks
+    "F403", # Allow wildcard imports
+    "E721", # Allow using == to compare with type
+    "UP031", # Allow percent format
+    "RUF022", # Allow unsorted __all__ value
 ]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.format]
 docstring-code-format = false
+quote-style = "double"
 indent-style = "space"
+skip-magic-trailing-comma = false
 line-ending = "auto"
 
+[tool.ruff.lint.isort]
+known-first-party = ["dspy"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
 [tool.ruff.lint.per-file-ignores]
-"**/{tests,testing,docs}/*" = ["ALL"]
-"**__init__.py" = ["ALL"]
+"tests/**/*.py" = [
+    "S101",    # Allow assert statements in tests
+    "TID252",  # Allow relative imports in tests
+    "ARG001",  # Allow unused arguments in tests (like pytest fixtures)
+]
+"__init__.py" = ["F401"]  # Init files can be empty
+"dspy/__init__.py" = ["I001", "E402", "F405"]

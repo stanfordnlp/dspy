@@ -1,5 +1,7 @@
-from typing import Optional, Any
-from dspy.primitives import Module, Example
+from typing import Any, Optional
+
+from dspy.primitives import Example, Module
+
 
 class Teleprompter:
     def __init__(self):
@@ -14,12 +16,12 @@ class Teleprompter:
             trainset: The training set to use for optimization.
             teacher: The teacher program to use for optimization.
             valset: The validation set to use for optimization.
-        
+
         Returns:
             The optimized student program.
         """
         raise NotImplementedError
-    
+
     def get_params(self) -> dict[str, Any]:
         """
         Get the parameters of the teleprompter.

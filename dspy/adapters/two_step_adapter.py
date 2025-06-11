@@ -1,14 +1,17 @@
-from typing import Any, Type
+from typing import Any, Optional, Type
+
+import json_repair
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.types import ToolCalls
 from dspy.adapters.utils import get_field_description_string
 from dspy.clients import LM
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
 
 """
-NOTE/TODO/FIMXE:
+NOTE/TODO/FIXME:
 
 The main issue below is that the second step's signature is entirely created on the fly and is invoked with a chat
 adapter explicitly constructed with no demonstrations. This means that it cannot "learn" or get optimized.
@@ -115,11 +118,16 @@ class TwoStepAdapter(Adapter):
 
         values = []
 
+        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
         for output in outputs:
             output_logprobs = None
+            tool_calls = None
+            text = output
 
             if isinstance(output, dict):
-                output, output_logprobs = output["text"], output["logprobs"]
+                text = output["text"]
+                output_logprobs = output.get("logprobs")
+                tool_calls = output.get("tool_calls")
 
             try:
                 # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
@@ -128,12 +136,22 @@ class TwoStepAdapter(Adapter):
                     lm_kwargs={},
                     signature=extractor_signature,
                     demos=[],
-                    inputs={"text": output},
+                    inputs={"text": text},
                 )
                 value = value[0]
 
             except Exception as e:
                 raise ValueError(f"Failed to parse response from the original completion: {output}") from e
+
+            if tool_calls and tool_call_output_field_name:
+                tool_calls = [
+                    {
+                        "name": v["function"]["name"],
+                        "args": json_repair.loads(v["function"]["arguments"]),
+                    }
+                    for v in tool_calls
+                ]
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs
@@ -175,7 +193,7 @@ class TwoStepAdapter(Adapter):
         self,
         signature: Type[Signature],
         outputs: dict[str, Any],
-        missing_field_message: str = None,
+        missing_field_message: Optional[str] = None,
     ) -> str:
         parts = []
 

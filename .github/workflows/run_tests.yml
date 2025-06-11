@@ -31,26 +31,26 @@ jobs:
           uv venv .venv
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv sync --dev -p .venv
-      - name: Ruff Fix Attempt
-        id: ruff_fix
-        uses: chartboost/ruff-action@v1
-        with:
-          args: check --fix-only --diff --exit-non-zero-on-fix
-        continue-on-error: true
-      - name: Fail Workflow if Ruff Fix Failed
-        if: steps.ruff_fix.outcome == 'failure'
+        run: uv sync --dev -p .venv --extra dev
+      - name: Ruff Check
         run: |
-          echo "Ruff fix failed, failing the workflow."
-          echo "Please run 'ruff check . --fix-only' locally and push the changes."
-          exit 1
+          ruff check --fix-only --diff --exit-non-zero-on-fix || (
+            echo ""
+            echo "❌ Ruff found issues that can be fixed automatically."
+            echo "💡 To fix them locally, run:"
+            echo ""
+            echo "    pre-commit run --all-files"
+            echo ""
+            echo "Then commit and push the changes."
+            exit 1
+          )
 
   test:
     name: Run Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -83,13 +83,17 @@ jobs:
           args: check --fix-only
       - name: Run tests with pytest
         run: uv run -p .venv pytest tests/
+      - name: Install optional dependencies
+        run: uv sync -p .venv --extra dev --extra test_extras
+      - name: Run extra tests
+        run: uv run -p .venv pytest tests/ -m extra --extra
 
   build_package:
     name: Build Package
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

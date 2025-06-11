@@ -1,6 +1,6 @@
 import logging
 import types
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Union, Tuple
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -25,7 +25,7 @@ except ImportError:
         """
         print(obj)
 
-    def HTML(x: str) -> str:
+    def HTML(x: str) -> str:  # noqa: N802
         """
         Obtain the HTML representation of the specified string.
         """
@@ -44,9 +44,10 @@ logger = logging.getLogger(__name__)
 class Evaluate:
     """DSPy Evaluate class.
 
-    This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and 
+    This class is used to evaluate the performance of a DSPy program. Users need to provide a evaluation dataset and
     a metric function in order to use this class. This class supports parallel evaluation on the provided dataset.
     """
+
     def __init__(
         self,
         *,
@@ -55,7 +56,7 @@ class Evaluate:
         num_threads: Optional[int] = None,
         display_progress: bool = False,
         display_table: Union[bool, int] = False,
-        max_errors: int = 5,
+        max_errors: Optional[int] = None,
         return_all_scores: bool = False,
         return_outputs: bool = False,
         provide_traceback: Optional[bool] = None,
@@ -68,9 +69,10 @@ class Evaluate:
             metric (Callable): The metric function to use for evaluation.
             num_threads (Optional[int]): The number of threads to use for parallel evaluation.
             display_progress (bool): Whether to display progress during evaluation.
-            display_table (Union[bool, int]): Whether to display the evaluation results in a table. 
-                If a number is passed, the evaluation results will be truncated to that number before displayed. 
-            max_errors (int): The maximum number of errors to allow before stopping evaluation.
+            display_table (Union[bool, int]): Whether to display the evaluation results in a table.
+                If a number is passed, the evaluation results will be truncated to that number before displayed.
+            max_errors (Optional[int]): The maximum number of errors to allow before
+                stopping evaluation. If ``None``, inherits from ``dspy.settings.max_errors``.
             return_all_scores (bool): Whether to return scores for every data record in `devset`.
             return_outputs (bool): Whether to return the dspy program's outputs for every data in `devset`.
             provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
@@ -119,15 +121,15 @@ class Evaluate:
 
         Returns:
             The evaluation results are returned in different formats based on the flags:
-            
+
             - Base return: A float percentage score (e.g., 67.30) representing overall performance
-            
+
             - With `return_all_scores=True`:
-                Returns (overall_score, individual_scores) where individual_scores is a list of 
+                Returns (overall_score, individual_scores) where individual_scores is a list of
                 float scores for each example in devset
-            
+
             - With `return_outputs=True`:
-                Returns (overall_score, result_triples) where result_triples is a list of 
+                Returns (overall_score, result_triples) where result_triples is a list of
                 (example, prediction, score) tuples for each example in devset
 
             - With both flags=True:
@@ -150,7 +152,11 @@ class Evaluate:
         executor = ParallelExecutor(
             num_threads=num_threads,
             disable_progress_bar=not display_progress,
-            max_errors=self.max_errors,
+            max_errors=(
+                self.max_errors
+                if self.max_errors is not None
+                else dspy.settings.max_errors
+            ),
             provide_traceback=self.provide_traceback,
             compare_results=True,
         )
@@ -181,7 +187,7 @@ class Evaluate:
             metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
             # Construct a pandas DataFrame from the results
             result_df = self._construct_result_table(results, metric_name)
-            
+
             self._display_result_table(result_df, display_table, metric_name)
 
         if return_all_scores and return_outputs:
@@ -192,9 +198,10 @@ class Evaluate:
             return round(100 * ncorrect / ntotal, 2), results
 
         return round(100 * ncorrect / ntotal, 2)
-    
 
-    def _construct_result_table(self, results: list[Tuple[dspy.Example, dspy.Example, Any]], metric_name: str) -> "pd.DataFrame":
+    def _construct_result_table(
+        self, results: list[Tuple[dspy.Example, dspy.Example, Any]], metric_name: str
+    ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
         Let's not try to change the name of this method as it may be patched by external tracing tools.
@@ -202,11 +209,12 @@ class Evaluate:
         Args:
             results: The list of results to construct the result DataFrame from.
             metric_name: The name of the metric used for evaluation.
-        
+
         Returns:
             The constructed pandas DataFrame.
         """
         import pandas as pd
+
         data = [
             (
                 merge_dicts(example, prediction) | {"correct": score}
@@ -222,14 +230,13 @@ class Evaluate:
 
         return result_df.rename(columns={"correct": metric_name})
 
-
     def _display_result_table(self, result_df: "pd.DataFrame", display_table: Union[bool, int], metric_name: str):
         """
         Display the specified result DataFrame in a table format.
 
         Args:
             result_df: The result DataFrame to display.
-            display_table: Whether to display the evaluation results in a table. 
+            display_table: Whether to display the evaluation results in a table.
                 If a number is passed, the evaluation results will be truncated to that number before displayed.
             metric_name: The name of the metric used for evaluation.
         """
@@ -262,7 +269,7 @@ class Evaluate:
 def prediction_is_dictlike(prediction):
     # Downstream logic for displaying dictionary-like predictions depends solely on the predictions
     # having a method called `items()` for iterating through key/value pairs
-    return hasattr(prediction, "items") and callable(getattr(prediction, "items"))
+    return hasattr(prediction, "items") and callable(prediction.items)
 
 
 def merge_dicts(d1, d2) -> dict:

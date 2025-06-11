@@ -1,16 +1,16 @@
 import threading
-from typing import Any, List, Tuple, Optional
+from typing import Any, List, Optional, Tuple
 
+from dspy.dsp.utils.settings import settings
 from dspy.primitives.example import Example
 from dspy.utils.parallelizer import ParallelExecutor
-from dspy.dsp.utils.settings import settings
 
 
 class Parallel:
     def __init__(
         self,
         num_threads: Optional[int] = None,
-        max_errors: int = 10,
+        max_errors: Optional[int] = None,
         access_examples: bool = True,
         return_failed_examples: bool = False,
         provide_traceback: Optional[bool] = None,
@@ -18,7 +18,7 @@ class Parallel:
     ):
         super().__init__()
         self.num_threads = num_threads or settings.num_threads
-        self.max_errors = max_errors
+        self.max_errors = settings.max_errors if max_errors is None else max_errors
         self.access_examples = access_examples
         self.return_failed_examples = return_failed_examples
         self.provide_traceback = provide_traceback

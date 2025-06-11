@@ -53,7 +53,7 @@ jobs:
         run: |
           source test_before_testpypi/bin/activate
           # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest
+          pip install dist/*.whl pytest pytest-asyncio
           pytest tests/metadata/test_metadata.py tests/predict
           deactivate
       # Publish to test-PyPI
@@ -100,7 +100,7 @@ jobs:
         run: |
           source test_before_pypi/bin/activate
           # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest
+          pip install dist/*.whl pytest pytest-asyncio
           pytest tests/metadata/test_metadata.py tests/predict
           deactivate
           rm -r test_before_pypi

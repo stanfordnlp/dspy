@@ -1,6 +1,5 @@
 import json
 import os
-import time
 from typing import AsyncIterator, Iterator
 
 import litellm
@@ -47,6 +46,7 @@ def _get_mock_llm_response(request_kwargs):
     return litellm.completion(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": "Hello world"}],
+        usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
         mock_response="Hi!",
     )
 
@@ -71,7 +71,7 @@ def _append_request_to_log_file(completion_kwargs):
     log_file_path = os.environ.get(LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR)
     if log_file_path is None:
         raise ValueError(
-            f"Server logs file path is not defined! Please set the path using the"
+            "Server logs file path is not defined! Please set the path using the"
             + f" {LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR} environment variable."
         )
 

@@ -17,7 +17,7 @@ class ParallelExecutor:
     def __init__(
         self,
         num_threads=None,
-        max_errors=5,
+        max_errors=None,
         disable_progress_bar=False,
         provide_traceback=None,
         compare_results=False,
@@ -31,7 +31,7 @@ class ParallelExecutor:
         from dspy.dsp.utils.settings import settings
 
         self.num_threads = num_threads or settings.num_threads
-        self.max_errors = max_errors
+        self.max_errors = settings.max_errors if max_errors is None else max_errors
         self.disable_progress_bar = disable_progress_bar
         self.provide_traceback = provide_traceback if provide_traceback is not None else settings.provide_traceback
         self.compare_results = compare_results
@@ -61,7 +61,7 @@ class ParallelExecutor:
                 if self.provide_traceback:
                     logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
                 else:
-                    logger.error(f"Error for {item}: {e}. " "Set `provide_traceback=True` for traceback.")
+                    logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
                 return None
 
         return safe_func

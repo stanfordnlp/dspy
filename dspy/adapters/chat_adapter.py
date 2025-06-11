@@ -16,6 +16,7 @@ from dspy.adapters.utils import (
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
+from dspy.utils.exceptions import AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -140,12 +141,14 @@ class ChatAdapter(Adapter):
         outputs: dict[str, Any],
         missing_field_message=None,
     ) -> str:
-        return self.format_field_with_value(
+        assistant_message_content = self.format_field_with_value(
             {
                 FieldInfoWithName(name=k, info=v): outputs.get(k, missing_field_message)
                 for k, v in signature.output_fields.items()
             },
         )
+        assistant_message_content += "\n\n[[ ## completed ## ]]\n"
+        return assistant_message_content
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
         sections = [(None, [])]
@@ -168,11 +171,19 @@ class ChatAdapter(Adapter):
                 try:
                     fields[k] = parse_value(v, signature.output_fields[k].annotation)
                 except Exception as e:
-                    raise ValueError(
-                        f"Error parsing field {k}: {e}.\n\n\t\tOn attempting to parse the value\n```\n{v}\n```"
+                    raise AdapterParseError(
+                        adapter_name="ChatAdapter",
+                        signature=signature,
+                        lm_response=completion,
+                        message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
                     )
         if fields.keys() != signature.output_fields.keys():
-            raise ValueError(f"Expected {signature.output_fields.keys()} but got {fields.keys()}")
+            raise AdapterParseError(
+                adapter_name="ChatAdapter",
+                signature=signature,
+                lm_response=completion,
+                parsed_result=fields,
+            )
 
         return fields
 
@@ -216,6 +227,6 @@ class ChatAdapter(Adapter):
         assistant_message_content = self.format_assistant_message_content(  # returns a string, without the role
             signature=signature, outputs=outputs
         )
-        assistant_message = dict(role="assistant", content=assistant_message_content)
+        assistant_message = {"role": "assistant", "content": assistant_message_content}
         messages = system_user_messages + [assistant_message]
-        return dict(messages=messages)
+        return {"messages": messages}

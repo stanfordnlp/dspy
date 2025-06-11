@@ -1,4 +1,5 @@
 import pytest
+
 import dspy
 from dspy.teleprompt import Ensemble
 
@@ -46,9 +47,7 @@ def test_ensemble_with_size_limitation():
     ensembled_program = ensemble.compile(programs)
 
     outputs = ensembled_program()
-    assert (
-        len(outputs) == ensemble_size
-    ), "Ensemble did not respect the specified size limitation"
+    assert len(outputs) == ensemble_size, "Ensemble did not respect the specified size limitation"
 
 
 def test_ensemble_deterministic_behavior():

@@ -1,6 +1,10 @@
+import asyncio
+import contextvars
 import logging
+import threading
 from asyncio import iscoroutinefunction
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, List, Optional
+from queue import Queue
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator, List, Optional
 
 import litellm
 import ujson
@@ -25,6 +29,8 @@ def streamify(
     status_message_provider: Optional[StatusMessageProvider] = None,
     stream_listeners: Optional[List[StreamListener]] = None,
     include_final_prediction_in_output_stream: bool = True,
+    is_async_program: bool = False,
+    async_streaming: bool = True,
 ) -> Callable[[Any, Any], Awaitable[Any]]:
     """
     Wrap a DSPy program so that it streams its outputs incrementally, rather than returning them
@@ -43,6 +49,10 @@ def streamify(
             useful when `stream_listeners` is provided. If `False`, the final prediction will not be included in the
             output stream. When the program hit cache, or no listeners captured anything, the final prediction will
             still be included in the output stream even if this is `False`.
+        is_async_program: Whether the program is async. If `False`, the program will be wrapped with `asyncify`,
+            otherwise the program will be called with `acall`.
+        async_streaming: Whether to return an async generator or a sync generator. If `False`, the streaming will be
+            converted to a sync generator.
 
     Returns:
         A function that takes the same arguments as the original program, but returns an async
@@ -146,7 +156,9 @@ def streamify(
     else:
         predict_id_to_listener = {}
 
-    if not iscoroutinefunction(program):
+    if is_async_program:
+        program = program.acall
+    elif not iscoroutinefunction(program):
         program = asyncify(program)
 
     callbacks = settings.callbacks
@@ -160,7 +172,7 @@ def streamify(
 
         await stream.send(prediction)
 
-    async def streamer(*args, **kwargs):
+    async def async_streamer(*args, **kwargs):
         send_stream, receive_stream = create_memory_object_stream(16)
         async with create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)
@@ -192,7 +204,55 @@ def streamify(
                         yield value
                     return
 
-    return streamer
+    if async_streaming:
+        return async_streamer
+    else:
+
+        def sync_streamer(*args, **kwargs):
+            output = async_streamer(*args, **kwargs)
+            return apply_sync_streaming(output)
+
+        return sync_streamer
+
+
+def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
+    """Convert the async streaming generator to a sync generator."""
+    queue = Queue()  # Queue to hold items from the async generator
+    stop_sentinel = object()  # Sentinel to signal the generator is complete
+
+    # To propagate prediction request ID context to the child thread
+    context = contextvars.copy_context()
+    from dspy.dsp.utils.settings import thread_local_overrides
+
+    parent_overrides = thread_local_overrides.overrides.copy()
+
+    def producer():
+        """Runs in a background thread to fetch items asynchronously."""
+
+        original_overrides = thread_local_overrides.overrides
+        thread_local_overrides.overrides = parent_overrides.copy()
+
+        async def runner():
+            try:
+                async for item in async_generator:
+                    queue.put(item)
+            finally:
+                # Signal completion
+                queue.put(stop_sentinel)
+
+        context.run(asyncio.run, runner())
+        thread_local_overrides.overrides = original_overrides
+
+    # Start the producer in a background thread
+    thread = threading.Thread(target=producer, daemon=True)
+    thread.start()
+
+    # Consume items from the queue
+    while True:
+        item = queue.get()  # Block until an item is available
+        if item is stop_sentinel:
+            break
+        yield item
 
 
 async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
@@ -207,7 +267,7 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
     """
     async for value in streamer:
         if isinstance(value, Prediction):
-            data = {"prediction": {k: v for k, v in value.items(include_dspy=False)}}
+            data = {"prediction": dict(value.items(include_dspy=False))}
             yield f"data: {ujson.dumps(data)}\n\n"
         elif isinstance(value, litellm.ModelResponseStream):
             data = {"chunk": value.json()}

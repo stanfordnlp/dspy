@@ -1,10 +1,12 @@
 # dspy.JSONAdapter
 
+<!-- START_API_REF -->
 ::: dspy.JSONAdapter
     handler: python
     options:
         members:
             - __call__
+            - acall
             - format
             - format_assistant_message_content
             - format_conversation_history
@@ -25,3 +27,4 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+<!-- END_API_REF -->

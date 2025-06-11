@@ -14,7 +14,6 @@ DEFAULT_CONFIG = dotdict(
     bypass_suggest=False,
     assert_failures=0,
     suggest_failures=0,
-    experimental=False,
     backoff_time=10,
     callbacks=[],
     async_max_workers=8,
@@ -23,9 +22,13 @@ DEFAULT_CONFIG = dotdict(
     track_usage=False,
     usage_tracker=None,
     caller_predict=None,
+    caller_modules=None,
     stream_listeners=[],
-    provide_traceback=False, # Whether to include traceback information in error logs.
-    num_threads=8, # Number of threads to use for parallel processing.
+    provide_traceback=False,  # Whether to include traceback information in error logs.
+    num_threads=8,  # Number of threads to use for parallel processing.
+    max_errors=10,  # Maximum errors before halting operations.
+    # If true, async tools can be called in sync mode by getting converted to sync.
+    allow_tool_async_sync_conversion=False,
 )
 
 # Global base configuration and owner tracking
