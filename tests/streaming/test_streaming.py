@@ -229,6 +229,36 @@ async def test_stream_listener_json_adapter():
     assert all_chunks[-1].signature_field_name == "judgement"
 
 
+@pytest.mark.anyio
+async def test_streaming_handles_space_correctly():
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter())
+    my_program = dspy.Predict("question->answer")
+    program = dspy.streamify(
+        my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
+    )
+
+    async def gpt_4o_mini_stream(*args, **kwargs):
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
+        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="How "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="are "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="you "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="doing?"))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+        )
+
+    with mock.patch("litellm.acompletion", side_effect=gpt_4o_mini_stream):
+        output = program(question="What is the capital of France?")
+        all_chunks = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StreamResponse):
+                all_chunks.append(value)
+
+    assert all_chunks[0].chunk == "How are you doing?"
+
+
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
 def test_sync_streaming():
     class MyProgram(dspy.Module):
