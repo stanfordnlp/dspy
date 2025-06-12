@@ -203,6 +203,8 @@ Sometimes, you may want to implement a custom logging solution. For instance, yo
 |`on_lm_start` / `on_lm_end` | Triggered when a `dspy.LM` subclass is invoked. |
 |`on_adapter_format_start` / `on_adapter_format_end`| Triggered when a `dspy.Adapter` subclass formats the input prompt. |
 |`on_adapter_parse_start` / `on_adapter_parse_end`| Triggered when a `dspy.Adapter` subclass postprocess the output text from an LM. |
+|`on_tool_start` / `on_tool_end` | Triggered when a `dspy.Tool` subclass is invoked. |
+|`on_evaluate_start` / `on_evaluate_end` | Triggered when a `dspy.Evaluate` instance is invoked. |
 
 Here's an example of custom callback that logs the intermediate steps of a ReAct agent:
 
