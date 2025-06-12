@@ -231,7 +231,6 @@ async def test_stream_listener_json_adapter():
 
 @pytest.mark.anyio
 async def test_streaming_handles_space_correctly():
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter())
     my_program = dspy.Predict("question->answer")
     program = dspy.streamify(
         my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
@@ -250,11 +249,12 @@ async def test_streaming_handles_space_correctly():
         )
 
     with mock.patch("litellm.acompletion", side_effect=gpt_4o_mini_stream):
-        output = program(question="What is the capital of France?")
-        all_chunks = []
-        async for value in output:
-            if isinstance(value, dspy.streaming.StreamResponse):
-                all_chunks.append(value)
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="What is the capital of France?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
 
     assert all_chunks[0].chunk == "How are you doing?"
 
