@@ -1,4 +1,5 @@
-- [Build AI Agents with DSPy](/tutorials/customer_service_agent/)
+- [Building AI Agents with DSPy](/tutorials/customer_service_agent/)
+- [Building AI Applications by Customizing DSPy Modules](/tutorials/custom_module/)
 - [Retrieval-Augmented Generation (RAG)](/tutorials/rag/)
 - [Building RAG as Agent](/tutorials/agents/)
 - [Entity Extraction](/tutorials/entity_extraction/)
