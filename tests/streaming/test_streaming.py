@@ -50,7 +50,7 @@ async def test_streaming_response_yields_expected_response_chunks(litellm_test_s
         api_key="fakekey",
         cache=False,
     )
-    with dspy.context(lm=lm):
+    with dspy.context(lm=lm, adapter=dspy.JSONAdapter()):
 
         class TestSignature(dspy.Signature):
             input_text: str = dspy.InputField()

@@ -2,7 +2,6 @@ import re
 import textwrap
 from typing import Any, Dict, NamedTuple, Optional, Type
 
-from litellm import ContextWindowExceededError
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
@@ -13,7 +12,6 @@ from dspy.adapters.utils import (
     parse_value,
     translate_field_type,
 )
-from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
@@ -29,26 +27,6 @@ class FieldInfoWithName(NamedTuple):
 class ChatAdapter(Adapter):
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
         super().__init__(callbacks)
-
-    def __call__(
-        self,
-        lm: LM,
-        lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
-        demos: list[dict[str, Any]],
-        inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        try:
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
-            # fallback to JSONAdapter
-            from dspy.adapters.json_adapter import JSONAdapter
-
-            if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
-                # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
-                # adapter.
-                raise e
-            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: Type[Signature]) -> str:
         return (
