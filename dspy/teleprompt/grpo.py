@@ -432,8 +432,7 @@ class GRPO(FinetuneTeleprompter):
 
         # Update train_kwargs
         for pred in student.predictors():
-            train_kwargs = self.train_kwargs[pred.lm]
-            train_kwargs = {} if train_kwargs is None else train_kwargs
+            train_kwargs = pred.lm.train_kwargs or self.train_kwargs[pred.lm] or {}
 
             if self.grpo_group_size is not None:
                 assert self.grpo_group_size <= self.num_rollouts_per_grpo_step, f"grpo_group_size {self.grpo_group_size} is greater than the number of generations {self.num_rollouts_per_grpo_step}"
@@ -465,6 +464,7 @@ class GRPO(FinetuneTeleprompter):
             job_key = (pred.lm, data_key)
             if job_key not in grpo_training_jobs:
                 train_kwargs = self.train_kwargs[pred.lm]
+                logger.info(f"Using the train_kwargs: {train_kwargs}")
                 job = pred.lm.reinforce(train_kwargs=train_kwargs)
                 grpo_training_jobs[job_key] = job
         
