@@ -2,6 +2,9 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import random
+
+import numpy as np
+
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 from dspy.adapters.base import Adapter
