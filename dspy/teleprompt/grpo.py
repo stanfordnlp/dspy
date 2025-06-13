@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 tokenizers = {}
 
-def initialize_wandb(wandb_api_key: str = None, wandb_run_dir: str = None, project_name: str = "grpo", run_name: str = None):
+def initialize_wandb(wandb_api_key: str = None, project_name: str = "grpo", run_name: str = "default_run_name"):
     try:
         import wandb
         if wandb_api_key:
@@ -37,7 +37,6 @@ def initialize_wandb(wandb_api_key: str = None, wandb_run_dir: str = None, proje
     
     wandb_run = wandb.init(
         project=project_name,
-        dir=wandb_run_dir,
         name=run_name,
     )
     return wandb_run
@@ -130,11 +129,6 @@ class GRPO(FinetuneTeleprompter):
         self.wandb_project_name = wandb_project_name
         self.wandb_run = None
         self.wandb_warning_logged = False
-
-        if self.use_wandb:
-            assert self.wandb_api_key is not None, "wandb_api_key must be set when use_wandb is True."
-            assert self.wandb_run_name is not None, "wandb_run_name must be set when use_wandb is True."
-            assert self.wandb_project_name is not None, "wandb_project_name must be set when use_wandb is True."
     
     def create_full_config_dict(self, train_kwargs: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -878,6 +872,9 @@ class GRPO(FinetuneTeleprompter):
                 step_idx=train_step_idx,
                 grpo_training_jobs=grpo_training_jobs,
             )
+        
+        if self.use_wandb:
+            self.wandb_run.finish()
 
         logger.info("Done with the iterations! Retrieving the final model(s)...")
         for (lm, data_key), job in grpo_training_jobs.items():
