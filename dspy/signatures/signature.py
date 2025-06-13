@@ -17,6 +17,29 @@ For compatibility with the legacy dsp format, you can use the signature_to_templ
 
 import ast
 import importlib
+
+
+# Whitelist of allowed modules for secure importing
+ALLOWED_MODULES = {
+    'dspy.primitives',
+    'dspy.predict',
+    'dspy.retrieve',
+    'dspy.signatures',
+    'dspy.teleprompt',
+    'dspy.utils',
+    'typing',
+    'collections',
+    'functools',
+    'inspect',
+    'copy'
+}
+
+def secure_import_module(module_name):
+    """Securely import a module from the whitelist."""
+    if module_name not in ALLOWED_MODULES:
+        raise ValueError(f'Module {module_name} is not in the allowed modules list')
+    return secure_import_module(module_name)
+
 import inspect
 import re
 import sys
@@ -525,7 +548,7 @@ def _parse_type_node(node, names=None) -> Any:
         # Attempt to import a module with this name dynamically
         # This allows handling of module-based annotations like `dspy.Image`.
         try:
-            mod = importlib.import_module(type_name)
+            mod = secure_import_module(type_name)
             names[type_name] = mod
             return mod
         except ImportError:
