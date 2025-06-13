@@ -14,7 +14,7 @@ from dspy.teleprompt.infer_rules import InferRules
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.teleprompt_optuna import BootstrapFewShotWithOptuna
 from dspy.teleprompt.vanilla import LabeledFewShot
-from dspy.teleprompt.gepa.gepa import GEPA
+# from dspy.teleprompt.gepa.gepa import GEPA
 
 __all__ = [
     "AvatarOptimizer",
@@ -30,5 +30,5 @@ __all__ = [
     "LabeledFewShot",
     "InferRules",
     "SIMBA",
-    "GEPA",
+    # "GEPA",
 ]
