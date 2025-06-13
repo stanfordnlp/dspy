@@ -2,6 +2,9 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import random
+
+import numpy as np
+
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 from dspy.adapters.base import Adapter
@@ -19,6 +22,24 @@ from dspy.clients.provider import ReinforceJob
 logger = logging.getLogger(__name__)
 
 tokenizers = {}
+
+def initialize_wandb(wandb_api_key: str = None, project_name: str = "grpo", run_name: str = "default_run_name"):
+    try:
+        import wandb
+        if wandb_api_key:
+            wandb.login(key=wandb_api_key, verify=True)
+        else:
+            wandb.login()
+    except ImportError:
+        raise ImportError("wandb is not installed. Please install it or set use_wandb=False.")
+    except Exception as e:
+        raise RuntimeError(f"Error logging into wandb: {e}")
+    
+    wandb_run = wandb.init(
+        project=project_name,
+        name=run_name,
+    )
+    return wandb_run
 
 class GRPO(FinetuneTeleprompter):
     def __init__(
@@ -43,7 +64,11 @@ class GRPO(FinetuneTeleprompter):
         variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
         grpo_group_size: Union[int, None] = None,
         checkpoint_on_validation_improvement: bool = True,
-        max_context_length: int = None
+        max_context_length: int = None,
+        use_wandb: bool = False,
+        wandb_api_key: str = None,
+        wandb_run_name: str = None,
+        wandb_project_name: str = "grpo",
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -97,6 +122,41 @@ class GRPO(FinetuneTeleprompter):
 
         self.max_context_length = max_context_length
         self.tokenizer = None
+
+        self.use_wandb = use_wandb
+        self.wandb_api_key = wandb_api_key
+        self.wandb_run_name = wandb_run_name
+        self.wandb_project_name = wandb_project_name
+        self.wandb_run = None
+        self.wandb_warning_logged = False
+    
+    def create_full_config_dict(self, train_kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "train_kwargs": train_kwargs,
+            "adapter": str(self.adapter),
+            "exclude_demos": self.exclude_demos,
+            "num_train_steps": self.num_train_steps,
+            "seed": self.seed,
+            "sampling_temperature": self.sampling_temperature,
+            "num_dspy_examples_per_grpo_step": self.num_dspy_examples_per_grpo_step,
+            "num_rollouts_per_grpo_step": self.num_rollouts_per_grpo_step,
+            "use_train_as_val": self.use_train_as_val,
+            "num_steps_for_val": self.num_steps_for_val,
+            "failure_score": self.failure_score,
+            "format_failure_score": self.format_failure_score,
+            "max_context_length": self.max_context_length,
+            "variably_invoked_predictor_grouping_mode": self.variably_invoked_predictor_grouping_mode,
+            "variably_invoked_predictor_fill_strategy": self.variably_invoked_predictor_fill_strategy,
+            "grpo_group_size": self.grpo_group_size,
+        }
+
+    def wandb_log(self, *args, **kwargs):
+        if self.use_wandb:
+            self.wandb_run.log(*args, **kwargs)
+        else:
+            if not self.wandb_warning_logged:
+                logger.warning("Wandb is not used. Please set use_wandb=True to use wandb.")
+                self.wandb_warning_logged = True
 
     def validate_trace_data_and_log_issues(
         self,
@@ -172,6 +232,11 @@ class GRPO(FinetuneTeleprompter):
                     logger.info(f"Student program training set score after training step {step_idx + 1}/{self.num_train_steps}: {trainset_agg}")
                     logger.info(f"Student program validation set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_agg}")
                 
+                self.wandb_log({
+                    "trainset_score": trainset_agg,
+                    "valset_score": valset_agg,
+                }, step=step_idx)
+
                 score = valset_agg
             else:
                 if step_idx == -1:
@@ -195,6 +260,11 @@ class GRPO(FinetuneTeleprompter):
                     logger.info(f"Student program validation set score before training loop: {valset_evaluation[0]}")
                 else:
                     logger.info(f"Student program validation set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+                
+                self.wandb_log({
+                    "valset_score": valset_evaluation[0],
+                }, step=step_idx)
+
                 score = valset_evaluation[0]
         else:
             # No validation set provided by user
@@ -222,6 +292,11 @@ class GRPO(FinetuneTeleprompter):
                     logger.info(f"Student program training set score before training loop: {valset_evaluation[0]}")
                 else:
                     logger.info(f"Student program training set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+                
+                self.wandb_log({
+                    "trainset_score": valset_evaluation[0],
+                }, step=step_idx)
+
                 score = valset_evaluation[0]
             else:
                 # No valset provided, and not using train as val
@@ -231,9 +306,15 @@ class GRPO(FinetuneTeleprompter):
         
         if score is not None:
             self.model_name_val_scores[step_idx] = score
+
+            self.wandb_log({
+                "tracked_score": score,
+            }, step=step_idx)
+
             if self.best_model_step_idx is None or score > self.model_name_val_scores[self.best_model_step_idx]:
                 self.best_model_step_idx = step_idx
                 logger.info(f"New best score on validation set: {score} at step {step_idx + 1}/{self.num_train_steps}")
+
                 if self.checkpoint_on_validation_improvement and grpo_training_jobs is not None:
                     logger.info(f"Checkpoint the model at step {step_idx + 1}/{self.num_train_steps}")
                     checkpoint_model_paths = {}
@@ -242,6 +323,11 @@ class GRPO(FinetuneTeleprompter):
                         checkpoint_model_paths[job_key] = job.checkpoints[job.last_checkpoint]['model_path']
                         logger.info(f"Checkpoint model path: {checkpoint_model_paths[job_key]}")
                     self.best_model_details = checkpoint_model_paths
+            
+            self.wandb_log({
+                "best_tracked_score_so_far": self.model_name_val_scores[self.best_model_step_idx],
+                "best_tracked_score_step_idx": self.best_model_step_idx,
+            }, step=step_idx)
 
     def update_shuffled_trainset(self, original_trainset):
         self.shuffled_trainset_ids = list(range(len(original_trainset)))
@@ -267,10 +353,22 @@ class GRPO(FinetuneTeleprompter):
             curr_epoch = 0
         else:
             curr_epoch = base_idx // len(self.shuffled_trainset_ids)
+        
+        self.wandb_log({
+            "frontend_epoch": curr_epoch,
+        }, step=train_step_idx)
+
         if curr_epoch > self.epoch:
             logger.info(f"Updating shuffled trainset for epoch {curr_epoch}...")
             self.epoch = curr_epoch
             self.update_shuffled_trainset(original_trainset)
+            self.wandb_log({
+                "shuffled_trainset_updated": True,
+            }, step=train_step_idx)
+        else:
+            self.wandb_log({
+                "shuffled_trainset_updated": False,
+            }, step=train_step_idx)
 
         assert len(self.shuffled_trainset_ids) >= self.num_dspy_examples_per_grpo_step, f"Shuffled trainset length {len(self.shuffled_trainset_ids)} is less than num_dspy_examples_per_grpo_step {self.num_dspy_examples_per_grpo_step}"
         assert len(self.shuffled_trainset_ids) % self.num_dspy_examples_per_grpo_step == 0, f"Shuffled trainset length {len(self.shuffled_trainset_ids)} is not divisible by num_dspy_examples_per_grpo_step {self.num_dspy_examples_per_grpo_step}"
@@ -343,6 +441,13 @@ class GRPO(FinetuneTeleprompter):
         num_gens_per_teacher: Optional[List[int]] = None,
         **kwargs,
     ) -> Program:
+        if self.use_wandb:
+            self.wandb_run = initialize_wandb(
+                wandb_api_key=self.wandb_api_key,
+                project_name=self.wandb_project_name,
+                run_name=self.wandb_run_name,
+            )
+
         logger.info("Starting the GRPO compilation process... The LM(s) for the student program will be updated in place at the end of the training.")
         logger.info("Validating the inputs...")
 
@@ -465,6 +570,13 @@ class GRPO(FinetuneTeleprompter):
             if job_key not in grpo_training_jobs:
                 train_kwargs = self.train_kwargs[pred.lm]
                 logger.info(f"Using the train_kwargs: {train_kwargs}")
+
+                train_kwargs["wandb_kwargs"] = {
+                    "project": self.wandb_project_name,
+                    "name": self.wandb_run_name,
+                    "config": self.create_full_config_dict(train_kwargs),
+                }
+
                 job = pred.lm.reinforce(train_kwargs=train_kwargs)
                 grpo_training_jobs[job_key] = job
         
@@ -479,6 +591,23 @@ class GRPO(FinetuneTeleprompter):
 
         logger.info("Starting the GRPO training loop...")
         for train_step_idx in range(self.num_train_steps):
+
+            per_predictor_stats = [{
+                "num_examples_skipped": 0,
+                "num_examples_with_missing_rollouts": 0,
+                "num_missing_rollouts": 0,
+                "number_of_invocation_min": float('inf'),
+                "number_of_invocation_max": 0,
+                "num_groups_formed": 0,
+                "num_format_failure_examples": 0,
+                "num_datapoints_skipped_due_to_max_context_length": 0,
+                "num_groups_with_missing_rollouts": 0,
+                "num_missing_rollouts_global": 0,
+                "num_groups_with_no_diversity": 0,
+                "max_token_seq_len": 0,
+            } for pred_id in range(num_student_predictors)]
+
+
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps}...")
 
             subsample_training_dataset = self.select_training_sample_and_update_shuffled_trainset(
@@ -507,6 +636,23 @@ class GRPO(FinetuneTeleprompter):
                 teacher_pred_signature_hash_to_ind=teacher_pred_signature_hash_to_ind,
             )
 
+            example_id_to_scores = [[sample["score"] for teacher_ind, teacher_data in example_data for sample in teacher_data] for example_ind, example_data in enumerate(trace_data)]
+            score_mean = np.mean(sum(example_id_to_scores, []))
+            score_std = np.mean([np.std(example_id_to_scores[i]) for i in range(len(example_id_to_scores))])
+            self.wandb_log({
+                "train_score_mean": score_mean,
+                "train_score_std": score_std,
+            }, step=train_step_idx)
+
+            teacher_id_to_scores = [[sample["score"] for example_ind, example_data in enumerate(trace_data) for sample in example_data[teacher_ind]] for teacher_ind, teacher in enumerate(teachers)]
+            teacher_id_to_score_mean = [np.mean(teacher_id_to_scores[i]) for i in range(len(teacher_id_to_scores))]
+            teacher_id_to_num_generations = [len(teacher_id_to_scores[i]) for i in range(len(teacher_id_to_scores))]
+            for teacher_ind in range(len(teachers)):
+                self.wandb_log({
+                    f"teacher_{teacher_ind}_score_mean": teacher_id_to_score_mean[teacher_ind],
+                    f"teacher_{teacher_ind}_num_generations": teacher_id_to_num_generations[teacher_ind],
+                }, step=train_step_idx)
+
             logger.info("Preparing the training data batch from bootstrapped examples for GRPO...")
             # Now, we need to prepare batches of data to be sent for training
             # Shape of train_batch_per_predictor: List[num_student_predictors -> List[ ]]
@@ -531,14 +677,22 @@ class GRPO(FinetuneTeleprompter):
 
                     if len(predictor_example_invocations) == 0:
                         logger.warning(f"Skipping example {example_ind} for predictor {pred_id} as it has no invocations. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
+                        per_predictor_stats[pred_id]["num_examples_skipped"] += 1
                         continue
                     elif len(predictor_example_invocations) != self.num_rollouts_per_grpo_step:
                         logger.warning(f"Number of predictor example invocations {len(predictor_example_invocations)} does not match the expected batch size {self.num_rollouts_per_grpo_step}. This is likely due to all examples in the training set input, resulting in the model generating output not following the dspy response format.")
+                        per_predictor_stats[pred_id]["num_examples_with_missing_rollouts"] += 1
+                        per_predictor_stats[pred_id]["num_missing_rollouts"] += (self.num_rollouts_per_grpo_step - len(predictor_example_invocations))
 
                     min_len = min([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
+
+                    per_predictor_stats[pred_id]["number_of_invocation_min"] = min(per_predictor_stats[pred_id]["number_of_invocation_min"], min_len)
+                    per_predictor_stats[pred_id]["number_of_invocation_max"] = max(per_predictor_stats[pred_id]["number_of_invocation_max"], max_len)
+
                     if min_len == 0:
                         logger.warning(f"Skipping example {example_ind} for predictor {pred_id} as it has no invocations.")
+                        per_predictor_stats[pred_id]["num_examples_skipped"] += 1
                         continue
 
                     if self.variably_invoked_predictor_grouping_mode == 'truncate':
@@ -557,6 +711,7 @@ class GRPO(FinetuneTeleprompter):
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
 
                     example_training_data: List[GRPOGroup] = [[] for _ in range(max_len)]
+                    per_predictor_stats[pred_id]["num_groups_formed"] += max_len
 
                     for group_idx in range(max_len):
                         for rollout_idx in range(len(predictor_example_invocations)):
@@ -592,6 +747,7 @@ class GRPO(FinetuneTeleprompter):
                                     "reward": float(score),
                                 })
                                 logger.warning(f"Adding a format failure example to the training data for predictor {pred_id} and example {example_ind}.")
+                                per_predictor_stats[pred_id]["num_format_failure_examples"] += 1
                             else:
                                 all_messages = adapter.format_finetune_data(
                                     signature=predictor.signature,
@@ -612,23 +768,37 @@ class GRPO(FinetuneTeleprompter):
                                 })
                             
                             if self.max_context_length is not None:
-                                if self.token_seq_len(example_training_data[group_idx][-1]['messages'] + [example_training_data[group_idx][-1]['completion']]) > self.max_context_length:
+                                token_seq_len = self.token_seq_len(example_training_data[group_idx][-1]['messages'] + [example_training_data[group_idx][-1]['completion']])
+                                per_predictor_stats[pred_id]["max_token_seq_len"] = max(per_predictor_stats[pred_id]["max_token_seq_len"], token_seq_len)
+                                if token_seq_len > self.max_context_length:
                                     logger.warning(f"Skipping example {example_ind} for predictor {pred_id} as it exceeds the max context length {self.max_context_length}.")
+                                    per_predictor_stats[pred_id]["num_datapoints_skipped_due_to_max_context_length"] += 1
                                     example_training_data[group_idx] = example_training_data[group_idx][:-1]
                     
                     train_batch_per_predictor[pred_id].extend(example_training_data)
             
             if len(sum(train_batch_per_predictor, [])) == 0:
                 logger.warning("No training data found for this training step. This means that the model did not generate valid formatted responses for any of the examples in the training set. This is a critical error. Please check the model and the training set.")
+                self.wandb_log({
+                    "no_training_data_found": True,
+                }, step=train_step_idx)
                 continue
+            else:
+                self.wandb_log({
+                    "no_training_data_found": False,
+                }, step=train_step_idx)
 
-            for predictor_train_batch in train_batch_per_predictor:
+            for pred_id, predictor_train_batch in enumerate(train_batch_per_predictor):
+                per_predictor_stats[pred_id]["num_groups_formed"] = len(predictor_train_batch)
                 for grpo_train_group in predictor_train_batch:
                     if len(grpo_train_group) != self.num_rollouts_per_grpo_step:
                         logger.warning(f"Number of completions {len(grpo_train_group)} does not match the expected number num_rollouts_per_grpo_step={self.num_rollouts_per_grpo_step}")
+                        per_predictor_stats[pred_id]["num_groups_with_missing_rollouts"] += 1
+                        per_predictor_stats[pred_id]["num_missing_rollouts_global"] += (self.num_rollouts_per_grpo_step - len(grpo_train_group))
                         assert len(grpo_train_group) <= self.num_rollouts_per_grpo_step, f"Number of completions {len(grpo_train_group)} is greater than the expected number num_rollouts_per_grpo_step={self.num_rollouts_per_grpo_step}"
                     if len(set(map(repr, grpo_train_group))) < 2:
                         # TODO(GRPO Team): How can we avoid this warning?
+                        per_predictor_stats[pred_id]["num_groups_with_no_diversity"] += 1
                         logger.warning(f"GRPOGroup has no diversity. This could be due to low temperature, or low number of rollouts, or the cache could be enabled inadvertently. The GRPOGroup is {grpo_train_group}.")
 
             # We now run the GRPO step. Notes:
@@ -672,14 +842,28 @@ class GRPO(FinetuneTeleprompter):
                 modify_lm_attribute(lm=lm, target_attr='kwargs_temperature', target_val=original_temperature)
 
                 job.step(train_data=new_train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
+            
+            updating_model = False
 
             for (lm, data_key), job in grpo_training_jobs.items():
                 if (train_step_idx + 1) % self.train_kwargs[lm]["update_interval"] == 0 and train_step_idx != 0:
                     logger.info(f"Current train step is {train_step_idx + 1}. Updating the model...")
                     job.update_model()
+                    updating_model = True
+            
+            self.wandb_log({
+                "updating_model": updating_model,
+            }, step=train_step_idx)
+
+            for pred_id in range(num_student_predictors):
+                pred_metrics = {k + "_pred_" + str(pred_id):v for k, v in per_predictor_stats[pred_id].items()}
+                self.wandb_log(pred_metrics, step=train_step_idx)
+            
+            aggregate_metrics_across_all_preds = {k + "_aggregate": sum(per_predictor_stats[pred_id][k] for pred_id in range(num_student_predictors)) if k != "max_token_seq_len" else max(per_predictor_stats[pred_id][k] for pred_id in range(num_student_predictors)) for k in per_predictor_stats[0].keys()}
+            self.wandb_log(aggregate_metrics_across_all_preds, step=train_step_idx)
 
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
-            
+
             self.report_validation_metrics(
                 student=student,
                 trainset=trainset,
@@ -688,6 +872,9 @@ class GRPO(FinetuneTeleprompter):
                 step_idx=train_step_idx,
                 grpo_training_jobs=grpo_training_jobs,
             )
+        
+        if self.use_wandb:
+            self.wandb_run.finish()
 
         logger.info("Done with the iterations! Retrieving the final model(s)...")
         for (lm, data_key), job in grpo_training_jobs.items():

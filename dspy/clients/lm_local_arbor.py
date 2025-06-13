@@ -87,31 +87,6 @@ class ArborReinforceJob(ReinforceJob):
     def initialize(self):
         # TODO(GRPO Team): Set provider job ID
         train_kwargs = {**self.train_kwargs}
-        num_generations = train_kwargs.pop("num_generations")
-        update_interval = train_kwargs.pop("update_interval", self.DEFAULT_TRAIN_KWARGS["update_interval"])
-        temperature = train_kwargs.pop("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
-        beta = train_kwargs.pop("beta", self.DEFAULT_TRAIN_KWARGS["beta"])
-        num_iterations = train_kwargs.pop("num_iterations", self.DEFAULT_TRAIN_KWARGS["num_iterations"])
-        per_device_train_batch_size = train_kwargs.pop("per_device_train_batch_size", self.DEFAULT_TRAIN_KWARGS["per_device_train_batch_size"])
-        learning_rate = train_kwargs.pop("learning_rate", self.DEFAULT_TRAIN_KWARGS["learning_rate"])
-        gradient_accumulation_steps = train_kwargs.pop("gradient_accumulation_steps", self.DEFAULT_TRAIN_KWARGS["gradient_accumulation_steps"])
-        gradient_checkpointing = train_kwargs.pop("gradient_checkpointing", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing"])
-        lr_scheduler_type = train_kwargs.pop("lr_scheduler_type", self.DEFAULT_TRAIN_KWARGS["lr_scheduler_type"])
-        max_prompt_length = train_kwargs.pop("max_prompt_length", self.DEFAULT_TRAIN_KWARGS["max_prompt_length"])
-        max_completion_length = train_kwargs.pop("max_completion_length", self.DEFAULT_TRAIN_KWARGS["max_completion_length"])
-        bf16 = train_kwargs.pop("bf16", self.DEFAULT_TRAIN_KWARGS["bf16"])
-        scale_rewards = train_kwargs.pop("scale_rewards", self.DEFAULT_TRAIN_KWARGS["scale_rewards"])
-        gradient_checkpointing_kwargs = train_kwargs.pop("gradient_checkpointing_kwargs", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing_kwargs"])
-        max_grad_norm = train_kwargs.pop("max_grad_norm", self.DEFAULT_TRAIN_KWARGS["max_grad_norm"])
-        report_to = train_kwargs.pop("report_to", self.DEFAULT_TRAIN_KWARGS["report_to"])
-        log_completions = train_kwargs.pop("log_completions", self.DEFAULT_TRAIN_KWARGS["log_completions"])
-        logging_steps = train_kwargs.pop("logging_steps", self.DEFAULT_TRAIN_KWARGS["logging_steps"])
-        max_context_length = train_kwargs.pop("max_context_length", self.DEFAULT_TRAIN_KWARGS["max_context_length"])
-        lora = train_kwargs.pop("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
-        generation_batch_size = train_kwargs.pop("generation_batch_size", self.DEFAULT_TRAIN_KWARGS["generation_batch_size"])
-
-        assert len(train_kwargs) == 0, f"Unknown training kwargs: {train_kwargs}"
-
         api_base = self.lm.kwargs["api_base"]
 
         suffix = "dspy"
@@ -119,29 +94,21 @@ class ArborReinforceJob(ReinforceJob):
         data = {
             'model': finetune_model,
             'suffix': suffix,
-            'num_generations': num_generations,
-            'update_interval': update_interval,
-            'temperature': temperature,
-            'beta': beta,
-            'num_iterations': num_iterations,
-            'per_device_train_batch_size': per_device_train_batch_size,
-            'learning_rate': learning_rate,
-            'gradient_accumulation_steps': gradient_accumulation_steps,
-            'gradient_checkpointing': gradient_checkpointing,
-            'lr_scheduler_type': lr_scheduler_type,
-            'max_prompt_length': max_prompt_length,
-            'max_completion_length': max_completion_length,
-            'bf16': bf16,
-            'scale_rewards': scale_rewards,
-            'gradient_checkpointing_kwargs': gradient_checkpointing_kwargs,
-            'max_grad_norm': max_grad_norm,
-            'report_to': report_to,
-            'log_completions': log_completions,
-            'logging_steps': logging_steps,
-            'max_context_length': max_context_length,
-            'lora': lora,
-            'generation_batch_size': generation_batch_size,
         }
+
+        # Fill in missing defaults for train_kwargs
+        defaults = self.DEFAULT_TRAIN_KWARGS
+        for k, v in defaults.items():
+            if k not in train_kwargs:
+                train_kwargs[k] = v
+
+        # Check that required arguments are present, else raise a clear error
+        if "num_generations" not in train_kwargs:
+            raise ValueError("Missing required train_kwargs: 'num_generations'")
+
+        # Add all training kwargs to the data payload
+        data.update(train_kwargs)
+
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
         response = requests.post(
