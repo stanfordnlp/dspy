@@ -818,7 +818,8 @@ class GRPO(FinetuneTeleprompter):
             logger.info("Invoking GRPO training step...")
             for (lm, data_key), job in grpo_training_jobs.items():
                 # Record the original temperatures, and assign the sampling temperature
-                original_temperature = modify_lm_attribute(lm=lm, target_attr="kwargs_temperature", target_val=self.sampling_temperature)
+                original_temperature = modify_lm_attribute(lm=lm, target_attr="kwargs_temperature", target_val=self.sampling_temperature)temperature
+                original_num_retries = modify_lm_attribute(lm=lm, target_attr="num_retries", target_val=0)
 
                 train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key]
                 new_train_data: List[GRPOGroup] = []
@@ -840,6 +841,7 @@ class GRPO(FinetuneTeleprompter):
                     new_train_data.append(group)
                 # Restore the original temperature
                 modify_lm_attribute(lm=lm, target_attr='kwargs_temperature', target_val=original_temperature)
+                modify_lm_attribute(lm=lm, target_attr='num_retries', target_val=original_num_retries)
 
                 job.step(train_data=new_train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
             
