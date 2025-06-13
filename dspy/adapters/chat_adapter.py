@@ -151,32 +151,40 @@ class ChatAdapter(Adapter):
         return assistant_message_content
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
-        sections = [(None, [])]
-
-        for line in completion.splitlines():
-            match = field_header_pattern.match(line.strip())
-            if match:
-                # If the header pattern is found, split the rest of the line as content
-                header = match.group(1)
-                remaining_content = line[match.end() :].strip()
-                sections.append((header, [remaining_content] if remaining_content else []))
-            else:
-                sections[-1][1].append(line)
-
-        sections = [(k, "\n".join(v).strip()) for k, v in sections]
+        # Find all field header matches in the entire completion text
+        matches = list(field_header_pattern.finditer(completion))
 
         fields = {}
-        for k, v in sections:
-            if (k not in fields) and (k in signature.output_fields):
+
+        for i, match in enumerate(matches):
+            field_name = match.group(1)
+            start_pos = match.end()
+
+            # Find the end position (start of next header or end of text)
+            if i + 1 < len(matches):
+                end_pos = matches[i + 1].start()
+            else:
+                end_pos = len(completion)
+
+            # Extract content between this header and the next (or end of text)
+            field_content = completion[start_pos:end_pos].strip()
+
+            # Remove any trailing field headers from the content
+            # This handles cases where content might have accidentally included the next header
+            field_content = field_header_pattern.sub("", field_content).strip()
+
+            # Only process fields that are in the expected output fields
+            if field_name in signature.output_fields and field_name not in fields:
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                    fields[field_name] = parse_value(field_content, signature.output_fields[field_name].annotation)
                 except Exception as e:
                     raise AdapterParseError(
                         adapter_name="ChatAdapter",
                         signature=signature,
                         lm_response=completion,
-                        message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
+                        message=f"Failed to parse field {field_name} with value {field_content} from the LM response. Error message: {e}",
                     )
+
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
                 adapter_name="ChatAdapter",
