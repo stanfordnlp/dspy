@@ -259,6 +259,13 @@ def generate_md_docs_submodule(module_path: str, output_dir: Path, objects_proce
         return
 
     try:
+        # Validate module name to prevent arbitrary code execution
+        allowed_prefixes = ["dspy", "typing", "collections", "functools", "inspect", "__builtin__", "builtins"]
+        if not any(module_path.startswith(prefix) for prefix in allowed_prefixes):
+            raise ValueError(f"Module {module_path} is not in the allowed list")
+        # Sanitize module name to prevent path traversal
+        if ".." in module_path or "/" in module_path:
+            raise ValueError(f"Invalid module name: {module_path}")
         module = importlib.import_module(module_path)
     except ImportError:
         print(f"Skipping {module_path} due to import error")
