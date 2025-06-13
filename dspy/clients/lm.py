@@ -37,6 +37,7 @@ class LM(BaseLM):
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 3,
         provider: Optional[Provider] = None,
+        reasoning_model: Optional[bool] = None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
         train_kwargs: Optional[dict[str, Any]] = None,
@@ -51,6 +52,7 @@ class LM(BaseLM):
             model_type: The type of the model, either ``"chat"`` or ``"text"``.
             temperature: The sampling temperature to use when generating responses.
             max_tokens: The maximum number of tokens to generate per response.
+            reasoning_model: Whether the model is a reasoning model.
             cache: Whether to cache the model responses for reuse to improve performance
                    and reduce costs.
             cache_in_memory (deprecated): To enable additional caching with LRU in memory.
@@ -71,6 +73,7 @@ class LM(BaseLM):
         self.callbacks = callbacks or []
         self.history = []
         self.num_retries = num_retries
+        self.reasoning_model = reasoning_model if reasoning_model is not None else litellm.supports_reasoning(model)
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
