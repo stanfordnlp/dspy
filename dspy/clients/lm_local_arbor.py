@@ -86,29 +86,23 @@ class ArborReinforceJob(ReinforceJob):
 
     def initialize(self):
         # TODO(GRPO Team): Set provider job ID
-        train_kwargs = {**self.train_kwargs}
-        api_base = self.lm.kwargs["api_base"]
-
-        suffix = "dspy"
-        finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
-        data = {
-            'model': finetune_model,
-            'suffix': suffix,
-        }
-
         # Fill in missing defaults for train_kwargs
-        defaults = self.DEFAULT_TRAIN_KWARGS
-        for k, v in defaults.items():
-            if k not in train_kwargs:
-                train_kwargs[k] = v
+        train_kwargs = {**self.DEFAULT_TRAIN_KWARGS, **self.train_kwargs}
 
         # Check that required arguments are present, else raise a clear error
         if "num_generations" not in train_kwargs:
             raise ValueError("Missing required train_kwargs: 'num_generations'")
 
         # Add all training kwargs to the data payload
-        data.update(train_kwargs)
+        finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
+        suffix = "dspy"
+        data = {
+            'model': finetune_model,
+            'suffix': suffix,
+            **train_kwargs,
+        }
 
+        api_base = self.lm.kwargs["api_base"]
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {'Content-Type': 'application/json'}
         response = requests.post(
