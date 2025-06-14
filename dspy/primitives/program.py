@@ -111,8 +111,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
             set_attribute_by_name(self, name, func(predictor))
         return self
 
-    def inspect_history(self, n: int = 1):
-        return pretty_print_history(self.history, n)
+    def inspect_history(self, n: int = 1, verbose: int = 0):
+        return pretty_print_history(self.history, n=n, verbose=verbose)
 
     def batch(
         self,
