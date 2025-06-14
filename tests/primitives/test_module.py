@@ -489,3 +489,25 @@ async def test_module_history_async():
         assert len(program.history) == 2
         assert len(program.cot.history) == 3
         assert len(program.cot.predict.history) == 3
+
+
+def test_forward_direct_call_warning(capsys):
+    class TestModule(dspy.Module):
+        def forward(self, x):
+            return x
+
+    module = TestModule()
+    module.forward("test")
+    captured = capsys.readouterr()
+    assert "Calling TestModule.forward() directly is discouraged" in captured.err
+
+
+def test_forward_through_call_no_warning(capsys):
+    class TestModule(dspy.Module):
+        def forward(self, x):
+            return x
+
+    module = TestModule()
+    module(x="test")
+    captured = capsys.readouterr()
+    assert "Calling TestModule.forward() directly is discouraged" not in captured.err
