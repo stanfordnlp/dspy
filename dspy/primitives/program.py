@@ -1,6 +1,8 @@
 from typing import Optional
 
 import magicattr
+import inspect
+import logging
 
 from dspy.dsp.utils.settings import settings, thread_local_overrides
 from dspy.predict.parallel import Parallel
@@ -9,6 +11,7 @@ from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 from dspy.utils.usage_tracker import track_usage
 
+logger = logging.getLogger(__name__)
 
 class ProgramMeta(type):
     """Metaclass ensuring every ``dspy.Module`` instance is properly initialised."""
@@ -154,6 +157,20 @@ class Module(BaseModule, metaclass=ProgramMeta):
         else:
             results = parallel_executor.forward(exec_pairs)
             return results
+    
+    def __getattribute__(self, name):
+        attr = super().__getattribute__(name)
+        
+        if name == 'forward' and callable(attr):
+            # Check if forward iscalled through __call__
+            stack = inspect.stack()
+            called_via_call = len(stack) > 1 and stack[1].function == '__call__'
+            
+            if not called_via_call:
+                logger.warning(f"Calling {self.__class__.__name__}.forward() directly is discouraged. "
+                               f"Use {self.__class__.__name__}() instead.")
+        
+        return attr
 
 
 def set_attribute_by_name(obj, name, value):
