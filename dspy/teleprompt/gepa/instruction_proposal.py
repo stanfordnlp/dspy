@@ -165,7 +165,7 @@ class ProposeNewInstructionModule:
                     history_key_name = input_key
             
             if contains_history:
-                s += f"### Context\n"
+                s += "### Context\n"
                 s += "```json\n"
                 for i, message in enumerate(sample['inputs'][history_key_name].messages):
                     s += f"  {i}: {message}\n"

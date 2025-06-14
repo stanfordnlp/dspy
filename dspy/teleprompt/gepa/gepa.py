@@ -19,7 +19,6 @@ from .gepa_utils import (
     idxmax,
     select_next_candidate_to_update,
     capture_module_trace_with_feedback,
-    run_simba_on_one_program_and_update_gepa_state,
     log_detailed_metrics_after_discovering_new_program,
     initialize_gepa_state,
     initialize_wandb,

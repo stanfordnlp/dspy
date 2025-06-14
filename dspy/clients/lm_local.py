@@ -318,7 +318,6 @@ def get_free_port() -> int:
     Return a randomly selected free TCP port on localhost from a selection of 3-4 ports.
     """
     import random
-    import socket
     ports = []
     for _ in range(random.randint(5, 10)):
         try:

@@ -2,7 +2,6 @@ import re
 import textwrap
 from typing import Any, Dict, NamedTuple, Optional, Type
 
-from litellm import ContextWindowExceededError
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter

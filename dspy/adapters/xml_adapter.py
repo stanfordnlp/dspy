@@ -3,7 +3,6 @@ from typing import Any, Dict, Optional, Type
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import format_field_value
-from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 

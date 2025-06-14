@@ -8,7 +8,6 @@ import pydantic
 import regex
 from pydantic.fields import FieldInfo
 
-import dspy
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import (
     format_field_value,
