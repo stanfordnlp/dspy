@@ -582,6 +582,28 @@ def test_positional_arguments():
     )
 
 
+def test_error_message_on_invalid_lm_setup():
+    # No LM is loaded.
+    with pytest.raises(ValueError, match="No LM is loaded"):
+        Predict("question -> answer")(question="Why did a chicken cross the kitchen?")
+
+    # LM is a string.
+    dspy.configure(lm="openai/gpt-4o-mini")
+    with pytest.raises(ValueError) as e:
+        Predict("question -> answer")(question="Why did a chicken cross the kitchen?")
+
+    assert "LM must be an instance of `dspy.BaseLM`, not a string." in str(e.value)
+
+    def dummy_lm():
+        pass
+
+    # LM is not an instance of dspy.BaseLM.
+    dspy.configure(lm=dummy_lm)
+    with pytest.raises(ValueError) as e:
+        Predict("question -> answer")(question="Why did a chicken cross the kitchen?")
+    assert "LM must be an instance of `dspy.BaseLM`, not <class 'function'>." in str(e.value)
+
+
 @pytest.mark.parametrize("adapter_type", ["chat", "json"])
 def test_field_constraints(adapter_type):
     class SpyLM(dspy.LM):
