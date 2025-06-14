@@ -131,8 +131,9 @@ class GRPO(FinetuneTeleprompter):
         self.wandb_warning_logged = False
     
     def create_full_config_dict(self, train_kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        from copy import deepcopy
         return {
-            "train_kwargs": train_kwargs,
+            "train_kwargs": deepcopy(train_kwargs),
             "adapter": str(self.adapter),
             "exclude_demos": self.exclude_demos,
             "num_train_steps": self.num_train_steps,
