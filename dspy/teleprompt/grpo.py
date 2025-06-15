@@ -153,6 +153,8 @@ class GRPO(FinetuneTeleprompter):
 
     def wandb_log(self, *args, **kwargs):
         if self.use_wandb:
+            if "step" in kwargs and kwargs["step"]:
+                kwargs["step"] += 1
             self.wandb_run.log(*args, **kwargs)
         else:
             if not self.wandb_warning_logged:
@@ -637,7 +639,7 @@ class GRPO(FinetuneTeleprompter):
                 teacher_pred_signature_hash_to_ind=teacher_pred_signature_hash_to_ind,
             )
 
-            example_id_to_scores = [[sample["score"] for teacher_ind, teacher_data in example_data for sample in teacher_data] for example_ind, example_data in enumerate(trace_data)]
+            example_id_to_scores = [[sample["score"] for teacher_ind, teacher_data in enumerate(example_data) for sample in teacher_data] for example_ind, example_data in enumerate(trace_data)]
             score_mean = np.mean(sum(example_id_to_scores, []))
             score_std = np.mean([np.std(example_id_to_scores[i]) for i in range(len(example_id_to_scores))])
             self.wandb_log({
