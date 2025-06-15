@@ -4,9 +4,9 @@ from .predict import Module
 
 
 class ChainOfThoughtWithHint(Module):
-    def __init__(self, signature, rationale_type=None, **config):
+    def __init__(self, signature, rationale_field_type=None, **config):
         self.signature = dspy.ensure_signature(signature)
-        self.module = dspy.ChainOfThought(signature, rationale_type=rationale_type, **config)
+        self.module = dspy.ChainOfThought(signature, rationale_field_type=rationale_field_type, **config)
 
     def forward(self, **kwargs):
         if kwargs.get("hint"):
