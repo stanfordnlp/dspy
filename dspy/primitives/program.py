@@ -13,6 +13,7 @@ from dspy.utils.usage_tracker import track_usage
 
 logger = logging.getLogger(__name__)
 
+
 class ProgramMeta(type):
     """Metaclass ensuring every ``dspy.Module`` instance is properly initialised."""
 
@@ -161,14 +162,16 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __getattribute__(self, name):
         attr = super().__getattribute__(name)
 
-        if name == 'forward' and callable(attr):
-            # Check if forward iscalled through __call__
+        if name == "forward" and callable(attr):
+            # Check if forward is called through __call__ or directly
             stack = inspect.stack()
-            called_via_call = len(stack) > 1 and stack[1].function == '__call__'
+            forward_called_directly = len(stack) <= 1 or stack[1].function != "__call__"
 
-            if not called_via_call:
-                logger.warning(f"Calling {self.__class__.__name__}.forward() directly is discouraged. "
-                               f"Use {self.__class__.__name__}() instead.")
+            if forward_called_directly:
+                logger.warning(
+                    f"Calling {self.__class__.__name__}.forward() directly is discouraged. "
+                    f"Please use {self.__class__.__name__}() instead."
+                )
 
         return attr
 
