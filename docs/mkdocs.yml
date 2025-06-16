@@ -88,7 +88,6 @@ nav:
         - Modules:
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
-            - ChainOfThoughtWithHint: api/modules/ChainOfThoughtWithHint.md
             - CodeAct: api/modules/CodeAct.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md

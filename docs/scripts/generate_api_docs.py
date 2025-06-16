@@ -36,7 +36,6 @@ API_MAPPING = {
         dspy.ReAct,
         dspy.ProgramOfThought,
         dspy.MultiChainComparison,
-        dspy.ChainOfThoughtWithHint,
         dspy.Parallel,
         dspy.BestOfN,
         dspy.Refine,

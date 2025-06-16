@@ -358,6 +358,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         For a complete RAG example that you can run, start this [tutorial](/tutorials/rag/). It improves the quality of a RAG system over a subset of StackExchange communities by 10% relative gain.
 
     === "Optimizing weights for Classification"
+        <!-- TODO: Clean example without ChainOfThoughtWithHint. The example is not runnable in the latest DSPy -->
         This is a minimal but fully runnable example of setting up a `dspy.ChainOfThought` module that classifies
         short texts into one of 77 banking labels and then using `dspy.BootstrapFinetune` with 2000 text-label pairs
         from the `Banking77` to finetune the weights of GPT-4o-mini for this task. We use the variant
