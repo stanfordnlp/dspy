@@ -96,13 +96,7 @@ class Cache:
         params = {k: transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
-    def get(self, request: Dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> Any:
-        try:
-            key = self.cache_key(request, ignored_args_for_cache_key)
-        except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
-            return None
-
+    def get(self, key: str) -> Any:
         if self.enable_memory_cache and key in self.memory_cache:
             with self._lock:
                 response = self.memory_cache[key]
@@ -123,17 +117,10 @@ class Cache:
 
     def put(
         self,
-        request: Dict[str, Any],
+        key: str,
         value: Any,
-        ignored_args_for_cache_key: Optional[list[str]] = None,
         enable_memory_cache: bool = True,
     ) -> None:
-        try:
-            key = self.cache_key(request, ignored_args_for_cache_key)
-        except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
-            return
-
         if self.enable_memory_cache and enable_memory_cache:
             with self._lock:
                 self.memory_cache[key] = value
@@ -222,17 +209,23 @@ def request_cache(
 
             cache = dspy.cache
             modified_request = process_request(args, kwargs)
+            try:
+                key = cache.cache_key(modified_request, ignored_args_for_cache_key)
+            except Exception:
+                logger.debug(f"Failed to generate cache key for request: {request}")
+                key = None
 
-            # Retrieve from cache if available
-            cached_result = cache.get(modified_request, ignored_args_for_cache_key)
-
-            if cached_result is not None:
-                return cached_result
+            if key:
+                # Retrieve from cache if available
+                cached_result = cache.get(key)
+                if cached_result is not None:
+                    return cached_result
 
             # Otherwise, compute and store the result
             result = fn(*args, **kwargs)
-            # `enable_memory_cache` can be provided at call time to avoid indefinite growth.
-            cache.put(modified_request, result, ignored_args_for_cache_key, enable_memory_cache)
+            if key:
+                # `enable_memory_cache` can be provided at call time to avoid indefinite growth.
+                cache.put(key, result, enable_memory_cache)
 
             return result
 
