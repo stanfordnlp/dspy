@@ -35,7 +35,6 @@ class BaseModule:
             if isinstance(param_value, Parameter):
                 if id(param_value) not in visited:
                     visited.add(id(param_value))
-                    param_name = postprocess_parameter_name(param_name, param_value)
                     named_parameters.append((param_name, param_value))
 
             elif isinstance(param_value, dspy.Module):
@@ -81,8 +80,6 @@ class BaseModule:
         seen = {id(self)}
 
         def add_to_queue(name, item):
-            name = postprocess_parameter_name(name, item)
-
             if id(item) not in seen:
                 seen.add(id(item))
                 queue.append((name, item))
@@ -271,18 +268,3 @@ class BaseModule:
                     "saving environment."
                 )
         self.load_state(state)
-
-
-def postprocess_parameter_name(name, value):
-    return name
-    # # For ChainOfThought backward compatibility, remove ending ._predict if it's there
-    # if name.endswith("._predict"):
-    #     name = name[:-9]
-
-    # if name.endswith(".self"):
-    #     name = name[:-5]
-
-    # if name == "_predict":
-    #     return "self"
-
-    # return name
