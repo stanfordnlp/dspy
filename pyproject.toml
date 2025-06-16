@@ -179,4 +179,8 @@ ban-relative-imports = "all"
     "ARG001",  # Allow unused arguments in tests (like pytest fixtures)
 ]
 "__init__.py" = ["F401"]  # Init files can be empty
-"dspy/__init__.py" = ["I001", "E402", "F405"]
+"dspy/__init__.py" = [
+    "I001",  # Allow unsorted or unformatted imports (isort)
+    "E402",  # Allow imports not at the top of the file (needed for certain __init__ patterns)
+    "F405",  # Allow undefined names from wildcard imports (common in __init__ files)
+]
