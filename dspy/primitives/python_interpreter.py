@@ -56,7 +56,7 @@ class PythonInterpreter:
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            args = ['deno', 'run', '--allow-read']
+            args = ["deno", "run", "--allow-read"]
             self._env_arg  = ""
             if self.enable_env_vars:
                 user_vars = [str(v).strip() for v in self.enable_env_vars]

@@ -40,8 +40,8 @@ class GRPO(FinetuneTeleprompter):
         report_train_scores: bool = False,
         failure_score: float = 0,
         format_failure_score: float = -1,
-        variably_invoked_predictor_grouping_mode: Union[Literal['truncate'], Literal['fill'], Literal['ragged']] = 'truncate',
-        variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
+        variably_invoked_predictor_grouping_mode: Union[Literal["truncate"], Literal["fill"], Literal["ragged"]] = "truncate",
+        variably_invoked_predictor_fill_strategy: Optional[Union[Literal["randint"], Literal["max"]]] = None,
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -70,9 +70,9 @@ class GRPO(FinetuneTeleprompter):
         # The backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_grpo_step * num_predictors) per training set if multitask is True
         # If multitask is False, the backend will be called with a batch of (num_dspy_examples_per_grpo_step * num_rollouts_per_grpo_step) per training job
         self.variably_invoked_predictor_grouping_mode = variably_invoked_predictor_grouping_mode
-        if variably_invoked_predictor_grouping_mode == 'fill':
+        if variably_invoked_predictor_grouping_mode == "fill":
             assert variably_invoked_predictor_fill_strategy is not None, "variably_invoked_predictor_fill_strategy must be set when variably_invoked_predictor_grouping_mode is 'fill'"
-            assert variably_invoked_predictor_fill_strategy in ['randint', 'max'], "variably_invoked_predictor_fill_strategy must be either 'randint' or 'max'"
+            assert variably_invoked_predictor_fill_strategy in ["randint", "max"], "variably_invoked_predictor_fill_strategy must be either 'randint' or 'max'"
         self.variably_invoked_predictor_fill_strategy = variably_invoked_predictor_fill_strategy
 
         self.shuffled_trainset_ids = []
@@ -374,7 +374,7 @@ class GRPO(FinetuneTeleprompter):
                     format_failure_score=self.format_failure_score,
                 )
                 for data_dict in round_data:
-                    example_ind_in_subsample = data_dict['example_ind'] % len(subsample_training_dataset)
+                    example_ind_in_subsample = data_dict["example_ind"] % len(subsample_training_dataset)
                     data_dict["example_ind"] = example_ind_in_subsample
                     trace_data[example_ind_in_subsample][tind].append(data_dict)
 
@@ -425,10 +425,10 @@ class GRPO(FinetuneTeleprompter):
                         logger.warning(f"Skipping example {example_ind} for predictor {pred_id} as it has no invocations.")
                         continue
 
-                    if self.variably_invoked_predictor_grouping_mode == 'truncate':
+                    if self.variably_invoked_predictor_grouping_mode == "truncate":
                         predictor_example_invocations = [invocation[:min_len] for invocation in predictor_example_invocations]
-                    elif self.variably_invoked_predictor_grouping_mode == 'fill':
-                        if self.variably_invoked_predictor_fill_strategy == 'randint':
+                    elif self.variably_invoked_predictor_grouping_mode == "fill":
+                        if self.variably_invoked_predictor_fill_strategy == "randint":
                             selector = lambda l: self.rng.choice(l) # noqa: E731, E741
                         else:
                             selector = lambda l: l[-1] # noqa: E731, E741
@@ -437,7 +437,7 @@ class GRPO(FinetuneTeleprompter):
                             for invocation in predictor_example_invocations
                         ]
                     else:
-                        assert self.variably_invoked_predictor_grouping_mode == 'ragged', f"Unknown variably invoked predictor grouping mode {self.variably_invoked_predictor_grouping_mode}"
+                        assert self.variably_invoked_predictor_grouping_mode == "ragged", f"Unknown variably invoked predictor grouping mode {self.variably_invoked_predictor_grouping_mode}"
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
 
                     example_training_data: List[GRPOGroup] = [[] for _ in range(max_len)]
@@ -481,7 +481,7 @@ class GRPO(FinetuneTeleprompter):
                                     inputs=trace_instance[1],
                                     outputs=trace_instance[2],
                                     demos=[] # TODO: Add support for demos
-                                )['messages']
+                                )["messages"]
 
                                 assert all_messages[:-1] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {all_messages[:-1]}"
 

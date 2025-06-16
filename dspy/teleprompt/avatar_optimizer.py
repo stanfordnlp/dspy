@@ -187,7 +187,7 @@ class AvatarOptimizer(Teleprompter):
         best_score = -999 if self.optimize_for == "max" else 999
 
         for i in range(self.max_iters):
-            print(20*'=')
+            print(20*"=")
             print(f"Iteration {i+1}/{self.max_iters}")
 
             score, pos_inputs, neg_inputs = self._get_pos_neg_results(best_actor, trainset)

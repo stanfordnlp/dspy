@@ -36,7 +36,7 @@ def order_input_keys_in_string(unordered_repr):
         # Extracting the keys from the match
         keys_str = match.group(1)
         # Splitting the keys, stripping extra spaces, and sorting them
-        keys = sorted(key.strip() for key in keys_str.split(','))
+        keys = sorted(key.strip() for key in keys_str.split(","))
         # Formatting the sorted keys back into the expected structure
         return f"input_keys={{{', '.join(keys)}}}"
 

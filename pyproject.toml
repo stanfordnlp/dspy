@@ -137,6 +137,7 @@ select = [
     "UP",  # pyupgrade
     "N",   # pep8-naming
     "RUF", # ruff-specific rules
+    "Q",   # flake8-quotes
 ]
 
 ignore = [

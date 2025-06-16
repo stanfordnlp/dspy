@@ -39,8 +39,8 @@ def test_codeact_code_generation():
     res = program(question="What is 1+1?")
     assert res.answer == "2"
     assert res.trajectory == {
-        'code_output_0': '"2\\n"',
-        'generated_code_0': 'result = add(1,1)\nprint(result)',
+        "code_output_0": '"2\\n"',
+        "generated_code_0": "result = add(1,1)\nprint(result)",
     }
     assert program.interpreter.deno_process is None
 
@@ -72,8 +72,8 @@ def test_codeact_support_multiple_fields():
     assert res.maximum == "6"
     assert res.minimum == "2"
     assert res.trajectory == {
-        'code_output_0': '"{\'maximum\': 6.0, \'minimum\': 2.0}\\n"',
-        'generated_code_0': "result = extract_maximum_minimum('2, 3, 5, 6')\nprint(result)",
+        "code_output_0": '"{\'maximum\': 6.0, \'minimum\': 2.0}\\n"',
+        "generated_code_0": "result = extract_maximum_minimum('2, 3, 5, 6')\nprint(result)",
     }
     assert program.interpreter.deno_process is None
 
@@ -100,10 +100,10 @@ def test_codeact_code_parse_failure():
     res = program(question="What is 1+1?")
     assert res.answer == "2"
     assert res.trajectory == {
-        'generated_code_0': 'parse(error',
-        'observation_0': 'Failed to execute the generated code: Invalid Python syntax. message: ',
-        'generated_code_1': 'result = add(1,1)\nprint(result)',
-        'code_output_1': '"2\\n"',
+        "generated_code_0": "parse(error",
+        "observation_0": "Failed to execute the generated code: Invalid Python syntax. message: ",
+        "generated_code_1": "result = add(1,1)\nprint(result)",
+        "code_output_1": '"2\\n"',
     }
     assert program.interpreter.deno_process is None
 
@@ -130,10 +130,10 @@ def test_codeact_code_execution_failure():
     res = program(question="What is 1+1?")
     assert res.answer == "2"
     assert res.trajectory == {
-        'generated_code_0': 'unknown+1',
-        'observation_0': 'Failed to execute the generated code: NameError: ["name \'unknown\' is not defined"]',
-        'generated_code_1': 'result = add(1,1)\nprint(result)',
-        'code_output_1': '"2\\n"',
+        "generated_code_0": "unknown+1",
+        "observation_0": 'Failed to execute the generated code: NameError: ["name \'unknown\' is not defined"]',
+        "generated_code_1": "result = add(1,1)\nprint(result)",
+        "code_output_1": '"2\\n"',
     }
     assert program.interpreter.deno_process is None
 
