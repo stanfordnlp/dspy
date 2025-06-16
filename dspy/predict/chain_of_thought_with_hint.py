@@ -5,6 +5,31 @@ from .predict import Module
 
 class ChainOfThoughtWithHint(Module):
     def __init__(self, signature, rationale_field_type=None, **config):
+        """
+
+        A module that reasons step by step in order to predict the output of a task, with optional hint support.
+
+        
+
+        This module extends ChainOfThought by allowing an optional "hint" parameter that can be provided
+
+        during inference to guide the reasoning process.
+
+        
+
+        Args:
+
+        signature (Type[dspy.Signature]): The signature of the module.
+
+        rationale_field (Optional[Union[dspy.OutputField, pydantic.fields.FieldInfo]]): The field that will contain the reasoning.
+
+        rationale_field_type (Type): The type of the rationale field.
+
+        hint: The hint to provide to the module.
+
+        **config: The configuration for the module.
+
+        """
         self.signature = dspy.ensure_signature(signature)
         self.module = dspy.ChainOfThought(signature, rationale_field_type=rationale_field_type, **config)
 
