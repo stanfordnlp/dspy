@@ -18,7 +18,6 @@ from dspy.dsp.colbertv2 import ColBERTv2
 from dspy.clients import DSPY_CACHE
 from dspy.__metadata__ import __name__, __version__, __description__, __url__, __author__, __author_email__
 
-# Configure logging
 configure_dspy_loggers(__name__)
 
 # Singleton definitions and aliasing
