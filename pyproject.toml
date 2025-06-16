@@ -116,9 +116,7 @@ exclude_lines = [
 include = ["dspy/**/*.py", "tests/**/*.py"]
 exclude = [
   "dspy/__metadata__.py",
-  "dspy/retrieve/*.py",
   "tests/reliability/*.py",
-  "tests/retrieve/*.py",
 ]
 
 
