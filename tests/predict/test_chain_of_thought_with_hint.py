@@ -1,9 +1,7 @@
-import textwrap
 
 import dspy
 from dspy import ChainOfThoughtWithHint
 from dspy.utils import DummyLM
-
 
 # def test_cot_with_no_hint():
 #     lm = DummyLM([{"rationale": "find the number after 1", "answer": "2"}])
