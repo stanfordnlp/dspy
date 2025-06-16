@@ -235,15 +235,22 @@ def request_cache(
 
             cache = dspy.cache
             modified_request = process_request(args, kwargs)
+            try:
+                key = cache.cache_key(modified_request, ignored_args_for_cache_key)
+            except Exception:
+                logger.debug(f"Failed to generate cache key for request: {request}")
+                key = None
 
-            # Retrieve from cache if available
-            cached_result = cache.get(modified_request, ignored_args_for_cache_key)
-            if cached_result is not None:
-                return cached_result
+            if key:
+                # Retrieve from cache if available
+                cached_result = cache.get(key)
+                if cached_result is not None:
+                    return cached_result
 
             # Otherwise, compute and store the result
             result = await fn(*args, **kwargs)
-            cache.put(modified_request, result, ignored_args_for_cache_key, enable_memory_cache)
+            if key:
+                cache.put(key, result, enable_memory_cache)
 
             return result
 
