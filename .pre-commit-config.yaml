@@ -13,7 +13,7 @@ repos:
         language: system
         types_or: [python, pyi]
         files: ^(dspy|tests)/.*\.py$
-        exclude: ^(dspy/__metadata__\.py|dspy/retrieve/.*\.py|tests/reliability/.*\.py|tests/retrieve/.*\.py)$
+        exclude: ^(dspy/__metadata__\.py|tests/reliability/.*\.py)$
         args: [check, --fix-only]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
