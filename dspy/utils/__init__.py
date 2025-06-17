@@ -1,9 +1,12 @@
+import os
+
+import requests
+
+from dspy.streaming.messages import StatusMessage, StatusMessageProvider
+from dspy.utils import exceptions
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.dummies import DummyLM, DummyVectorizer, dummy_rm
-from dspy.utils.streaming import StatusMessage, StatusMessageProvider, streamify
-
-import os
-import requests
+from dspy.utils.inspect_history import pretty_print_history
 
 
 def download(url):
@@ -20,6 +23,7 @@ def download(url):
 
 __all__ = [
     "download",
+    "exceptions",
     "BaseCallback",
     "with_callbacks",
     "DummyLM",
@@ -27,5 +31,5 @@ __all__ = [
     "dummy_rm",
     "StatusMessage",
     "StatusMessageProvider",
-    "streamify",
+    "pretty_print_history",
 ]

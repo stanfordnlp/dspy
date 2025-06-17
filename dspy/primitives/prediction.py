@@ -26,7 +26,7 @@ class Prediction(Example):
         return obj
 
     def __repr__(self):
-        store_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._store.items())
+        store_repr = ",\n    ".join(f"{k}={v!r}" for k, v in self._store.items())
 
         if self._completions is None or len(self._completions) == 1:
             return f"Prediction(\n    {store_repr}\n)"
@@ -97,14 +97,14 @@ class Prediction(Example):
         elif isinstance(other, Prediction):
             return self.__float__() >= float(other)
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
-    
+
     def __eq__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() == other
         elif isinstance(other, Prediction):
             return self.__float__() == float(other)
         else:
-            # we should return False when Prediction is compared with other types 
+            # we should return False when Prediction is compared with other types
             return False
 
     @property
@@ -161,7 +161,7 @@ class Completions:
         return key in self._completions
 
     def __repr__(self):
-        items_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._completions.items())
+        items_repr = ",\n    ".join(f"{k}={v!r}" for k, v in self._completions.items())
         return f"Completions(\n    {items_repr}\n)"
 
     def __str__(self):

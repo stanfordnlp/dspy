@@ -1,5 +1,6 @@
 from dspy.teleprompt.teleprompt import Teleprompter
 
+
 class DummyTeleprompter(Teleprompter):
     def __init__(self, param1: int, param2: str):
         super().__init__()

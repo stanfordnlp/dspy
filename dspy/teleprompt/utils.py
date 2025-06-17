@@ -5,6 +5,7 @@ import os
 import random
 import shutil
 import sys
+
 import numpy as np
 
 try:
@@ -23,6 +24,7 @@ This file consists of helper functions for our variety of optimizers.
 ### OPTIMIZER TRAINING UTILS ###
 
 logger = logging.getLogger(__name__)
+
 
 def create_minibatch(trainset, batch_size=50, rng=None):
     """Create a minibatch from the trainset."""
@@ -61,8 +63,15 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
         # TODO: Handle this better, as -ve scores are possible
         return dspy.Prediction(score=0.0, results=[])
 
+
 def eval_candidate_program_with_pruning(
-    trial, trial_logs, trainset, candidate_program, evaluate, trial_num, batch_size=100,
+    trial,
+    trial_logs,
+    trainset,
+    candidate_program,
+    evaluate,
+    trial_num,
+    batch_size=100,
 ):
     """Evaluation of candidate_program with pruning implemented"""
 
@@ -76,7 +85,9 @@ def eval_candidate_program_with_pruning(
         end_index = min((i + 1) * batch_size, len(trainset))
         split_trainset = trainset[start_index:end_index]
         split_score = evaluate(
-            candidate_program, devset=split_trainset, display_table=0,
+            candidate_program,
+            devset=split_trainset,
+            display_table=0,
         )
         print(f"{i}st split score: {split_score}")
         total_eval_size += len(split_trainset)
@@ -133,7 +144,12 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
 
 
 def calculate_last_n_proposed_quality(
-    base_program, trial_logs, evaluate, trainset, devset, n,
+    base_program,
+    trial_logs,
+    evaluate,
+    trainset,
+    devset,
+    n,
 ):
     """
     Calculate the average and best quality of the last n programs proposed. This is useful for seeing if our proposals
@@ -173,7 +189,10 @@ def calculate_last_n_proposed_quality(
 
 
 def get_task_model_history_for_full_example(
-    candidate_program, task_model, devset, evaluate,
+    candidate_program,
+    task_model,
+    devset,
+    evaluate,
 ):
     """Get a full trace of the task model's history for a given candidate program."""
     _ = evaluate(candidate_program, devset=devset[:1])
@@ -247,6 +266,7 @@ def setup_logging(log_dir):
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
+
 def get_token_usage(model) -> tuple[int, int]:
     """
     Extract total input tokens and output tokens from a model's interaction history.
@@ -279,10 +299,7 @@ def log_token_usage(trial_logs, trial_num, model_dict):
 
     for model_name, model in model_dict.items():
         in_tokens, out_tokens = get_token_usage(model)
-        token_usage_dict[model_name] = {
-            "total_input_tokens": in_tokens,
-            "total_output_tokens": out_tokens
-        }
+        token_usage_dict[model_name] = {"total_input_tokens": in_tokens, "total_output_tokens": out_tokens}
 
     # Store token usage info in trial logs
     trial_logs[trial_num]["token_usage"] = token_usage_dict
@@ -290,11 +307,13 @@ def log_token_usage(trial_logs, trial_num, model_dict):
 
 ### OTHER UTILS ###
 
+
 def get_prompt_model(prompt_model):
     if prompt_model:
         return prompt_model
     else:
         return dspy.settings.lm
+
 
 def get_signature(predictor):
     assert hasattr(predictor, "signature")
@@ -314,7 +333,7 @@ def create_n_fewshot_demo_sets(
     max_bootstrapped_demos,
     metric,
     teacher_settings,
-    max_errors=10,
+    max_errors=None,
     max_rounds=1,
     labeled_sample=True,
     min_num_samples=1,
@@ -322,12 +341,13 @@ def create_n_fewshot_demo_sets(
     teacher=None,
     include_non_bootstrapped=True,
     seed=0,
-    rng=None
+    rng=None,
 ):
     """
     This function is copied from random_search.py, and creates fewshot examples in the same way that random search does.
     This allows us to take advantage of using the same fewshot examples when we use the same random seed in our optimizers.
     """
+    max_errors = dspy.settings.max_errors if max_errors is None else max_errors
     demo_candidates = {}
 
     # Account for confusing way this is set up, where we add in 3 more candidate sets to the N specified
@@ -341,8 +361,7 @@ def create_n_fewshot_demo_sets(
 
     # Go through and create each candidate set
     for seed in range(-3, num_candidate_sets):
-
-        print(f"Bootstrapping set {seed+4}/{num_candidate_sets+3}")
+        print(f"Bootstrapping set {seed + 4}/{num_candidate_sets + 3}")
 
         trainset_copy = list(trainset)
 
@@ -350,15 +369,13 @@ def create_n_fewshot_demo_sets(
             # zero-shot
             program2 = student.reset_copy()
 
-        elif (
-            seed == -2
-            and max_labeled_demos > 0
-            and include_non_bootstrapped
-        ):
+        elif seed == -2 and max_labeled_demos > 0 and include_non_bootstrapped:
             # labels only
             teleprompter = LabeledFewShot(k=max_labeled_demos)
             program2 = teleprompter.compile(
-                student, trainset=trainset_copy, sample=labeled_sample,
+                student,
+                trainset=trainset_copy,
+                sample=labeled_sample,
             )
 
         elif seed == -1:
@@ -389,7 +406,9 @@ def create_n_fewshot_demo_sets(
             )
 
             program2 = teleprompter.compile(
-                student, teacher=teacher, trainset=trainset_copy,
+                student,
+                teacher=teacher,
+                trainset=trainset_copy,
             )
 
         for i, _ in enumerate(student.predictors()):
@@ -397,20 +416,21 @@ def create_n_fewshot_demo_sets(
 
     return demo_candidates
 
+
 def old_getfile(object):
     """Work out which source or compiled file an object was defined in."""
     if inspect.ismodule(object):
-        if getattr(object, '__file__', None):
+        if getattr(object, "__file__", None):
             return object.__file__
-        raise TypeError('{!r} is a built-in module'.format(object))
+        raise TypeError(f"{object!r} is a built-in module")
     if inspect.isclass(object):
-        if hasattr(object, '__module__'):
+        if hasattr(object, "__module__"):
             module = sys.modules.get(object.__module__)
-            if getattr(module, '__file__', None):
+            if getattr(module, "__file__", None):
                 return module.__file__
-            if object.__module__ == '__main__':
-                raise OSError('source code not available')
-        raise TypeError('{!r} is a built-in class'.format(object))
+            if object.__module__ == "__main__":
+                raise OSError("source code not available")
+        raise TypeError(f"{object!r} is a built-in class")
     if inspect.ismethod(object):
         object = object.__func__
     if inspect.isfunction(object):
@@ -421,24 +441,26 @@ def old_getfile(object):
         object = object.f_code
     if inspect.iscode(object):
         return object.co_filename
-    raise TypeError('module, class, method, function, traceback, frame, or '
-                    'code object was expected, got {}'.format(
-                    type(object).__name__))
+    raise TypeError(
+        f"module, class, method, function, traceback, frame, or code object was expected, got {type(object).__name__}"
+    )
+
 
 def new_getfile(object):
     if not inspect.isclass(object):
         return old_getfile(object)
-    
+
     # Lookup by parent module (as in current inspect)
-    if hasattr(object, '__module__'):
+    if hasattr(object, "__module__"):
         object_ = sys.modules.get(object.__module__)
-        if hasattr(object_, '__file__'):
+        if hasattr(object_, "__file__"):
             return object_.__file__
-    
+
     # If parent module is __main__, lookup by methods (NEW)
-    for name, member in inspect.getmembers(object):
-        if inspect.isfunction(member) and object.__qualname__ + '.' + member.__name__ == member.__qualname__:
+    for _, member in inspect.getmembers(object):
+        if inspect.isfunction(member) and object.__qualname__ + "." + member.__name__ == member.__qualname__:
             return inspect.getfile(member)
-    raise TypeError(f'Source for {object!r} not found')
+    raise TypeError(f"Source for {object!r} not found")
+
 
 inspect.getfile = new_getfile

@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 class ParallelExecutor:
     def __init__(
         self,
-        num_threads,
-        max_errors=5,
+        num_threads=None,
+        max_errors=None,
         disable_progress_bar=False,
-        provide_traceback=False,
+        provide_traceback=None,
         compare_results=False,
         timeout=120,
         straggler_limit=3,
@@ -28,11 +28,12 @@ class ParallelExecutor:
         Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1.
         Handles also straggler timeouts.
         """
+        from dspy.dsp.utils.settings import settings
 
-        self.num_threads = num_threads
-        self.max_errors = max_errors
+        self.num_threads = num_threads or settings.num_threads
+        self.max_errors = settings.max_errors if max_errors is None else max_errors
         self.disable_progress_bar = disable_progress_bar
-        self.provide_traceback = provide_traceback
+        self.provide_traceback = provide_traceback if provide_traceback is not None else settings.provide_traceback
         self.compare_results = compare_results
         self.timeout = timeout
         self.straggler_limit = straggler_limit
@@ -60,7 +61,7 @@ class ParallelExecutor:
                 if self.provide_traceback:
                     logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
                 else:
-                    logger.error(f"Error for {item}: {e}. " "Set `provide_traceback=True` for traceback.")
+                    logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
                 return None
 
         return safe_func
@@ -85,8 +86,8 @@ class ParallelExecutor:
             # Apply parent's thread-local overrides
             from dspy.dsp.utils.settings import thread_local_overrides
 
-            original = thread_local_overrides.overrides
-            thread_local_overrides.overrides = parent_overrides.copy()
+            original = thread_local_overrides.get()
+            token = thread_local_overrides.set({**original, **parent_overrides.copy()})
             if parent_overrides.get("usage_tracker"):
                 # Usage tracker needs to be deep copied across threads so that each thread tracks its own usage
                 thread_local_overrides.overrides["usage_tracker"] = copy.deepcopy(parent_overrides["usage_tracker"])
@@ -94,7 +95,7 @@ class ParallelExecutor:
             try:
                 return index, function(item)
             finally:
-                thread_local_overrides.overrides = original
+                thread_local_overrides.reset(token)
 
         # Handle Ctrl-C in the main thread
         @contextlib.contextmanager
@@ -120,7 +121,7 @@ class ParallelExecutor:
             with interrupt_manager():
                 from dspy.dsp.utils.settings import thread_local_overrides
 
-                parent_overrides = thread_local_overrides.overrides.copy()
+                parent_overrides = thread_local_overrides.get().copy()
 
                 futures_map = {}
                 futures_set = set()

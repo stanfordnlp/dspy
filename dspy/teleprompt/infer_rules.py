@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class InferRules(BootstrapFewShot):
-    def __init__(self, num_candidates=10, num_rules=10, num_threads=8, teacher_settings=None, **kwargs):
+    def __init__(self, num_candidates=10, num_rules=10, num_threads=None, teacher_settings=None, **kwargs):
         super().__init__(teacher_settings=teacher_settings, **kwargs)
 
         self.num_candidates = num_candidates
@@ -19,7 +19,7 @@ class InferRules(BootstrapFewShot):
         self.num_threads = num_threads
         self.rules_induction_program = RulesInductionProgram(num_rules, teacher_settings=teacher_settings)
         self.metric = kwargs.get("metric")
-        self.max_errors = kwargs.get("max_errors", 10)
+        self.max_errors = kwargs.get("max_errors")
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
         if valset is None:
@@ -109,11 +109,14 @@ class InferRules(BootstrapFewShot):
         ]
 
     def evaluate_program(self, program, dataset):
+        effective_max_errors = (
+            self.max_errors if self.max_errors is not None else dspy.settings.max_errors
+        )
         evaluate = Evaluate(
             devset=dataset,
             metric=self.metric,
             num_threads=self.num_threads,
-            max_errors=self.max_errors,
+            max_errors=effective_max_errors,
             display_table=False,
             display_progress=True,
         )

@@ -104,5 +104,5 @@ class Example:
             del copied[key]
         return copied
 
-    def toDict(self):
+    def toDict(self):  # noqa: N802
         return self._store.copy()
