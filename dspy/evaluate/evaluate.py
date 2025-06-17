@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 import tqdm
 
 import dspy
+from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
 from dspy.utils.parallelizer import ParallelExecutor
 
@@ -41,7 +42,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class EvaluationResult(dspy.Prediction):
+class EvaluationResult(Prediction):
     """
     A class that represents the result of an evaluation.
     It is a subclass of `dspy.Prediction` that contains the following fields
@@ -49,8 +50,11 @@ class EvaluationResult(dspy.Prediction):
     - score: An float value (e.g., 67.30) representing the overall performance
     - results: a list of (example, prediction, score) tuples for each example in devset
     """
+    def __init__(self, score: float, results: list[Tuple["dspy.Example", "dspy.Example", Any]]):
+        super().__init__(score=score, results=results)
+
     def __repr__(self):
-        return f"EvaluationResult(score={self.score}, results=`{len(self.results)} results`)"
+        return f"EvaluationResult(score={self.score}, results=<list of {len(self.results)} results>)"
 
 
 class Evaluate:

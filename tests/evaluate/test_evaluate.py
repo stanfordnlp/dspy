@@ -254,4 +254,4 @@ def test_evaluate_callback():
 
 def test_evaluation_result_repr():
     result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])
-    assert repr(result) == "EvaluationResult(score=100.0, results=`1 results`)"
+    assert repr(result) == "EvaluationResult(score=100.0, results=<list of 1 results>)"
