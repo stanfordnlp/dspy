@@ -82,9 +82,9 @@ nav:
             - SemanticF1: api/evaluation/SemanticF1.md
             - answer_exact_match: api/evaluation/answer_exact_match.md
             - answer_passage_match: api/evaluation/answer_passage_match.md
-        - Models:
-            - Embedder: api/models/Embedder.md
-            - LM: api/models/LM.md
+        - Clients:
+            - Embedder: api/clients/Embedder.md
+            - LM: api/clients/LM.md
         - Modules:
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
