@@ -117,7 +117,7 @@ def precision_score(prediction, ground_truth):
 
 def _passage_match(passages: list[str], answers: list[str]) -> bool:
     """Returns True if any of the passages contains the answer."""
-    from dspy.dsp.utils import DPR_normalize, has_answer, normalize_text
+    from dspy.dsp.utils import DPR_normalize, has_answer
 
     def passage_has_answers(passage: str, answers: list[str]) -> bool:
         """Returns True if the passage contains the answer."""

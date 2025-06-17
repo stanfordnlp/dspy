@@ -200,7 +200,7 @@ class Evaluate:
         return round(100 * ncorrect / ntotal, 2)
 
     def _construct_result_table(
-        self, results: list[Tuple[dspy.Example, dspy.Example, Any]], metric_name: str
+        self, results: list[Tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
     ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
