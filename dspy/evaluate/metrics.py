@@ -105,7 +105,7 @@ def precision_score(prediction, ground_truth):
 
     if len(prediction_tokens) == len(ground_truth_tokens) == 0:
         # Unlike most tasks, QReCC and SQuAD-2.0 assign 1.0 in this edge case. We don't for uniformity.
-        print_message("\n#> F1 Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n")
+        print_message("\n#> Precision Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n")
 
     if num_same == 0:
         return 0
