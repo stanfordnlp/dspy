@@ -11,7 +11,7 @@ from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
 
 if TYPE_CHECKING:
-    from dspy.primitives.program import Module
+    from dspy.primitives.modules import Module
 
 
 class StreamListener:

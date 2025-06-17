@@ -4,7 +4,7 @@ from typing import Callable, List, Optional
 
 import dspy
 from dspy.primitives.example import Example
-from dspy.primitives.module import Module
+from dspy.primitives.modules import Module
 from dspy.teleprompt.bootstrap_finetune import (
     BootstrapFinetune,
     all_predictors_have_lms,

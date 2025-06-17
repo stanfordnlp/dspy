@@ -4,7 +4,7 @@ import asyncer
 from anyio import CapacityLimiter
 
 if TYPE_CHECKING:
-    from dspy.primitives.program import Module
+    from dspy.primitives.modules import Module
 
 _limiter = None
 
