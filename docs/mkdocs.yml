@@ -94,7 +94,6 @@ nav:
             - MultiChainComparison: api/modules/MultiChainComparison.md
             - Parallel: api/modules/Parallel.md
             - Predict: api/modules/Predict.md
-            - Program: api/modules/Program.md
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
             - Refine: api/modules/Refine.md

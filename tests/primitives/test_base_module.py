@@ -177,7 +177,7 @@ class MyModule(dspy.Module):
 
 
 def test_load_with_version_mismatch(tmp_path):
-    from dspy.primitives.module import logger
+    from dspy.primitives.base_module import logger
 
     # Mock versions during save
     save_versions = {"python": "3.9", "dspy": "2.4.0", "cloudpickle": "2.0"}
@@ -205,11 +205,11 @@ def test_load_with_version_mismatch(tmp_path):
     try:
         save_path = tmp_path / "program.pkl"
         # Mock version during save
-        with patch("dspy.primitives.module.get_dependency_versions", return_value=save_versions):
+        with patch("dspy.primitives.base_module.get_dependency_versions", return_value=save_versions):
             predict.save(save_path)
 
         # Mock version during load
-        with patch("dspy.primitives.module.get_dependency_versions", return_value=load_versions):
+        with patch("dspy.primitives.base_module.get_dependency_versions", return_value=load_versions):
             loaded_predict = dspy.Predict("question->answer")
             loaded_predict.load(save_path)
 
