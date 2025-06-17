@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 import dspy
-from dspy.evaluate.evaluate import Evaluate
+from dspy.evaluate.evaluate import Evaluate, EvaluationResult
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
 from dspy.utils.callback import BaseCallback
@@ -251,3 +251,7 @@ def test_evaluate_callback():
     assert callback.start_call_count == 1
     assert callback.end_call_outputs == 100.0
     assert callback.end_call_count == 1
+
+def test_evaluation_result_repr():
+    result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])
+    assert repr(result) == "EvaluationResult(score=100.0, results=`1 results`)"

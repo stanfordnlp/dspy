@@ -41,6 +41,18 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class EvaluationResult(dspy.Prediction):
+    """
+    A class that represents the result of an evaluation.
+    It is a subclass of `dspy.Prediction` that contains the following fields
+
+    - score: An float value (e.g., 67.30) representing the overall performance
+    - results: a list of (example, prediction, score) tuples for each example in devset
+    """
+    def __repr__(self):
+        return f"EvaluationResult(score={self.score}, results=`{len(self.results)} results`)"
+
+
 class Evaluate:
     """DSPy Evaluate class.
 
@@ -93,7 +105,7 @@ class Evaluate:
         display_progress: Optional[bool] = None,
         display_table: Optional[Union[bool, int]] = None,
         callback_metadata: Optional[dict[str, Any]] = None,
-    ):
+    ) -> EvaluationResult:
         """
         Args:
             program (dspy.Module): The DSPy program to evaluate.
@@ -108,7 +120,7 @@ class Evaluate:
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
 
         Returns:
-            The evaluation results are returned as a dspy.Prediction object containing the following attributes:
+            The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
             
             - score: A float percentage score (e.g., 67.30) representing overall performance
             
@@ -166,7 +178,7 @@ class Evaluate:
 
             self._display_result_table(result_df, display_table, metric_name)
 
-        return dspy.Prediction(
+        return EvaluationResult(
             score=round(100 * ncorrect / ntotal, 2),
             results=results,
         )
