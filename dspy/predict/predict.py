@@ -8,8 +8,8 @@ from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
+from dspy.primitives.modules import Module
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.program import Module
 from dspy.signatures.signature import ensure_signature
 
 logger = logging.getLogger(__name__)

@@ -10,7 +10,7 @@ from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
-from dspy.primitives.program import Program
+from dspy.primitives.modules import Module
 from dspy.teleprompt.bootstrap_finetune import (
     FailedPrediction,
     FinetuneTeleprompter,
@@ -239,12 +239,12 @@ class GRPO(FinetuneTeleprompter):
 
     def compile(
         self,
-        student: Program,
+        student: Module,
         trainset: List[Example],
-        teacher: Optional[Union[Program, List[Program]]] = None,
+        teacher: Optional[Union[Module, List[Module]]] = None,
         valset: Optional[List[Example]] = None,
         **kwargs,
-    ) -> Program:
+    ) -> Module:
         logger.info("Starting the GRPO compilation process... The LM(s) for the student program will be updated in place at the end of the training.")
         logger.info("Validating the inputs...")
 
@@ -562,7 +562,7 @@ class GRPO(FinetuneTeleprompter):
         return student
 
 
-def disable_lm_cache(program: Program, lm_cache_dict: dict):
+def disable_lm_cache(program: Module, lm_cache_dict: dict):
     """Disable the LM cache for all predictors in the program."""
     for pred in program.predictors():
         if not pred.lm:
@@ -572,7 +572,7 @@ def disable_lm_cache(program: Program, lm_cache_dict: dict):
         pred.lm.cache = False
 
 
-def recover_lm_cache(program: Program, lm_cache_dict: dict):
+def recover_lm_cache(program: Module, lm_cache_dict: dict):
     """Recover the LM caches for all predictors in the program to their original state."""
     for pred in program.predictors():
         if pred.lm in lm_cache_dict:

@@ -5,7 +5,7 @@ from litellm import ContextWindowExceededError
 
 import dspy
 from dspy.adapters.types.tool import Tool
-from dspy.primitives.program import Module
+from dspy.primitives.modules import Module
 from dspy.signatures.signature import ensure_signature
 
 logger = logging.getLogger(__name__)

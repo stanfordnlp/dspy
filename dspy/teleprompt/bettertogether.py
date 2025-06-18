@@ -4,7 +4,7 @@ from typing import Callable, List, Optional
 
 import dspy
 from dspy.primitives.example import Example
-from dspy.primitives.program import Program
+from dspy.primitives.modules import Module
 from dspy.teleprompt.bootstrap_finetune import (
     BootstrapFinetune,
     all_predictors_have_lms,
@@ -52,11 +52,11 @@ class BetterTogether(Teleprompter):
 
     def compile(
         self,
-        student: Program,
+        student: Module,
         trainset: List[Example],
         strategy: str = "p -> w -> p",
         valset_ratio = 0.1,
-    ) -> Program:
+    ) -> Module:
         # TODO: We could record acc on a different valset to pick the best
         # strategy within the provided strategy
         logger.info("Validating the strategy")
@@ -83,7 +83,7 @@ class BetterTogether(Teleprompter):
         logger.info("BetterTogether has finished compiling the student program")
         return student
 
-    def _run_strategies(self, parsed_strategy, student, trainset, valset_ratio) -> Program:
+    def _run_strategies(self, parsed_strategy, student, trainset, valset_ratio) -> Module:
         # Keep track of all the partial strategies/programs in parsed_strategy
         # "" corresponds to the initial student program
         candidate_programs = []
@@ -122,7 +122,7 @@ class BetterTogether(Teleprompter):
         student.candidate_programs = candidate_programs
         return student
 
-    def _compile_prompt_optimizer(self, student, trainset, valset_ratio) -> Program:
+    def _compile_prompt_optimizer(self, student, trainset, valset_ratio) -> Module:
         logger.info("Preparing for prompt optimization...")
 
         # Sampling a validation set from the trainset for the prompt optimizer
@@ -148,7 +148,7 @@ class BetterTogether(Teleprompter):
 
         return student
 
-    def _compile_weight_optimizer(self, student, trainset) -> Program:
+    def _compile_weight_optimizer(self, student, trainset) -> Module:
         logger.info("Preparing for weight optimization...")
 
         # Saving the LMs before compiling the weight optimizer

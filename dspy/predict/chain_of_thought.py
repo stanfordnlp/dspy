@@ -3,7 +3,7 @@ from typing import Optional, Type, Union
 from pydantic.fields import FieldInfo
 
 import dspy
-from dspy.primitives.program import Module
+from dspy.primitives.modules import Module
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, ensure_signature
 

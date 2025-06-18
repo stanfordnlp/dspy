@@ -1,3 +1,4 @@
+# TODO: Rename to module.py
 import inspect
 import logging
 from typing import Optional
@@ -6,7 +7,7 @@ import magicattr
 
 from dspy.dsp.utils.settings import settings, thread_local_overrides
 from dspy.predict.parallel import Parallel
-from dspy.primitives.module import BaseModule
+from dspy.primitives.base_module import BaseModule
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 from dspy.utils.usage_tracker import track_usage
@@ -178,6 +179,3 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
 def set_attribute_by_name(obj, name, value):
     magicattr.set(obj, name, value)
-
-
-Program = Module

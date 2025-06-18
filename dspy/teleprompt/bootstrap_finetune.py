@@ -12,7 +12,7 @@ from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
-from dspy.primitives.program import Program
+from dspy.primitives.modules import Module
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.exceptions import AdapterParseError
 
@@ -60,8 +60,8 @@ class BootstrapFinetune(FinetuneTeleprompter):
         self.num_threads = num_threads
 
     def compile(
-        self, student: Program, trainset: List[Example], teacher: Optional[Union[Program, List[Program]]] = None
-    ) -> Program:
+        self, student: Module, trainset: List[Example], teacher: Optional[Union[Module, List[Module]]] = None
+    ) -> Module:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
         # environments.
@@ -215,7 +215,7 @@ class FailedPrediction:
 
 
 def bootstrap_trace_data(
-    program: Program,
+    program: Module,
     dataset: List[Example],
     metric: Optional[Callable] = None,
     num_threads: Optional[int] = None,
@@ -343,12 +343,12 @@ def bootstrap_trace_data(
 # Note: Shared below are useful functions for preparing student/teacher programs
 # Similar methods are implemented separately and used by other DSPy
 # teleprompters. These can be moved to shared locations.
-def all_predictors_have_lms(program: Program) -> bool:
+def all_predictors_have_lms(program: Module) -> bool:
     """Return True if all predictors in the program have an LM set."""
     return all(pred.lm for pred in program.predictors())
 
 
-def copy_program_with_lms(program: Program) -> Program:
+def copy_program_with_lms(program: Module) -> Module:
     pred_lms = [pred.lm for pred in program.predictors()]
     program = program.deepcopy()
     for ind, pred in enumerate(program.predictors()):
@@ -356,7 +356,7 @@ def copy_program_with_lms(program: Program) -> Program:
     return program
 
 
-def prepare_student(student: Program) -> Program:
+def prepare_student(student: Module) -> Module:
     if getattr(student, "_compiled", False):
         raise ValueError("The student program should not be compiled.")
 
@@ -368,7 +368,7 @@ def prepare_student(student: Program) -> Program:
     return student
 
 
-def prepare_teacher(student: Program, teacher: Optional[Program] = None) -> Program:
+def prepare_teacher(student: Module, teacher: Optional[Module] = None) -> Module:
     if teacher is None:
         return student
 
@@ -382,8 +382,8 @@ def prepare_teacher(student: Program, teacher: Optional[Program] = None) -> Prog
 
 
 def assert_structural_equivalency(program1: object, program2: object):
-    assert isinstance(program1, Program)
-    assert isinstance(program2, Program)
+    assert isinstance(program1, Module)
+    assert isinstance(program2, Module)
 
     num1 = len(program1.predictors())
     num2 = len(program2.predictors())
@@ -398,7 +398,7 @@ def assert_structural_equivalency(program1: object, program2: object):
         assert isinstance(pred2, Predict)
 
 
-def assert_no_shared_predictor(program1: Program, program2: Program):
+def assert_no_shared_predictor(program1: Module, program2: Module):
     id_to_name1 = {id(p): n for n, p in program1.named_predictors()}
     id_to_name2 = {id(p): n for n, p in program2.named_predictors()}
     shared_ids = set(id_to_name1.keys()) & set(id_to_name2.keys())
@@ -408,18 +408,18 @@ def assert_no_shared_predictor(program1: Program, program2: Program):
     assert not shared_ids, err
 
 
-def get_unique_lms(program: Program) -> List[LM]:
+def get_unique_lms(program: Module) -> List[LM]:
     lms = [pred.lm for pred in program.predictors()]
     return list(set(lms))
 
 
-def launch_lms(program: Program):
+def launch_lms(program: Module):
     lms = get_unique_lms(program)
     for lm in lms:
         lm.launch()
 
 
-def kill_lms(program: Program):
+def kill_lms(program: Module):
     lms = get_unique_lms(program)
     for lm in lms:
         lm.kill()

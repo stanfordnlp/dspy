@@ -21,7 +21,7 @@ from dspy.utils.asyncify import asyncify
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from dspy.primitives.program import Module
+    from dspy.primitives.modules import Module
 
 
 def streamify(
