@@ -59,6 +59,8 @@ class BaseLM:
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
                 output["tool_calls"] = c.message.tool_calls
+            if hasattr(c, "message") and hasattr(c.message, "reasoning_content"):
+                output["reasoning_content"] = c.message.reasoning_content
             outputs.append(output)
 
         if all(len(output) == 1 for output in outputs):

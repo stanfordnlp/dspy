@@ -849,7 +849,7 @@ requires-dist = [
     { name = "anyio" },
     { name = "asyncer", specifier = "==0.0.8" },
     { name = "backoff", specifier = ">=2.2" },
-    { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34.0" },
+    { name = "boto3", marker = "extra == 'aws'", specifier = "~=1.34.34" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.3" },
     { name = "cachetools", specifier = ">=5.5.0" },
     { name = "cloudpickle", specifier = ">=3.0.0" },
@@ -860,9 +860,9 @@ requires-dist = [
     { name = "json-repair", specifier = ">=0.30.0" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
     { name = "langchain-core", marker = "extra == 'test-extras'" },
-    { name = "litellm", specifier = ">=1.64.0" },
-    { name = "litellm", marker = "sys_platform == 'win32' and extra == 'dev'", specifier = ">=1.64.0" },
-    { name = "litellm", extras = ["proxy"], marker = "sys_platform != 'win32' and extra == 'dev'", specifier = ">=1.64.0" },
+    { name = "litellm", specifier = ">=1.72.4" },
+    { name = "litellm", marker = "sys_platform == 'win32' and extra == 'dev'", specifier = ">=1.72.4" },
+    { name = "litellm", extras = ["proxy"], marker = "sys_platform != 'win32' and extra == 'dev'", specifier = ">=1.72.4" },
     { name = "magicattr", specifier = ">=0.1.6" },
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'mcp'" },
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'test-extras'" },
@@ -907,7 +907,7 @@ name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -1648,7 +1648,7 @@ wheels = [
 
 [[package]]
 name = "litellm"
-version = "1.72.6"
+version = "1.72.6.post1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1664,9 +1664,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/15/df75f278fd998f6d6900f692b9de2fba2814b316c123c99072a813668aac/litellm-1.72.6.tar.gz", hash = "sha256:4e5c7e4273b09b765302d2faaec30f77b42255c0055b427b55ea02b8092b8582", size = 8393603, upload-time = "2025-06-14T21:43:11.023Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/49/673d6e95c086c578f48803d46583c64a89b60b6c22a2757e600d1eadd63a/litellm-1.72.6.post1.tar.gz", hash = "sha256:cc03455bfae17c4226e70bc0e8ac7c889fc577b4832fbb6bc5bd8bc5a2ab02f9", size = 8398642, upload-time = "2025-06-18T03:53:14.777Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/c9/4aae0b77632279eef9716dbcb98edd8b36c08a9da070e2470ca9c410c0f8/litellm-1.72.6-py3-none-any.whl", hash = "sha256:e0ae98d25db4910e78b1a0a604f24c0d6875f6cdea02426b264a45d4fbdb8c46", size = 8302810, upload-time = "2025-06-14T21:43:08.628Z" },
+    { url = "https://files.pythonhosted.org/packages/18/d9/d6cbfe107e240a2206e34197f76ab73e0bc8312970b61b56452351da11aa/litellm-1.72.6.post1-py3-none-any.whl", hash = "sha256:94abba480b3e1c9f05ed75f908e8fb0d5fe1bd5304868bd435f99fbdfcdb4c88", size = 8305823, upload-time = "2025-06-18T03:53:12.747Z" },
 ]
 
 [package.optional-dependencies]
@@ -2930,7 +2930,7 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "8.4.0"
+version = "8.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -2941,9 +2941,9 @@ dependencies = [
     { name = "pygments" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/aa/405082ce2749be5398045152251ac69c0f3578c7077efc53431303af97ce/pytest-8.4.0.tar.gz", hash = "sha256:14d920b48472ea0dbf68e45b96cd1ffda4705f33307dcc86c676c1b5104838a6", size = 1515232, upload-time = "2025-06-02T17:36:30.03Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/08/ba/45911d754e8eba3d5a841a5ce61a65a685ff1798421ac054f85aa8747dfb/pytest-8.4.1.tar.gz", hash = "sha256:7c67fd69174877359ed9371ec3af8a3d2b04741818c51e5e99cc1742251fa93c", size = 1517714, upload-time = "2025-06-18T05:48:06.109Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/de/afa024cbe022b1b318a3d224125aa24939e99b4ff6f22e0ba639a2eaee47/pytest-8.4.0-py3-none-any.whl", hash = "sha256:f40f825768ad76c0977cbacdf1fd37c6f7a468e460ea6a0636078f8972d4517e", size = 363797, upload-time = "2025-06-02T17:36:27.859Z" },
+    { url = "https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl", hash = "sha256:539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7", size = 365474, upload-time = "2025-06-18T05:48:03.955Z" },
 ]
 
 [[package]]
