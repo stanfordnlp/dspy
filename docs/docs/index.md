@@ -23,7 +23,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 !!! info "Getting Started I: Install DSPy and set up your LM"
 
     ```bash
-    > pip install -U dspy datasets
+    > pip install -U dspy
     ```
 
     === "OpenAI"
@@ -313,7 +313,13 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 !!! info "Getting Started III: Optimizing the LM prompts or weights in DSPy programs"
     A typical simple optimization run costs on the order of $2 USD and takes around 20 minutes, but be careful when running optimizers with very large LMs or very large datasets.
     Optimization can cost as little as a few cents or up to tens of dollars, depending on your LM, dataset, and configuration.
-    
+
+    Examples below rely on HuggingFace/datasets, you can install it by the command below.
+
+    ```bash
+    > pip install -U datasets
+    ```
+
     === "Optimizing prompts for a ReAct agent"
         This is a minimal but fully runnable example of setting up a `dspy.ReAct` agent that answers questions via
         search from Wikipedia and then optimizing it using `dspy.MIPROv2` in the cheap `light` mode on 500
