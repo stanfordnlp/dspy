@@ -10,6 +10,7 @@ from dspy.primitives.base_module import BaseModule
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 from dspy.utils.usage_tracker import track_usage
+from dspy.primitives.example import Example
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def batch(
         self,
-        examples,
+        examples: list[Example],
         num_threads: Optional[int] = None,
         max_errors: Optional[int] = None,
         return_failed_examples: bool = False,

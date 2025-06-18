@@ -79,13 +79,13 @@ That being said, here's the general guidance on getting started:
 
 - If you have **very few examples** (around 10), start with `BootstrapFewShot`.
 - If you have **more data** (50 examples or more), try  `BootstrapFewShotWithRandomSearch`.
-- If you prefer to do **instruction optimization only** (i.e. you want to keep your prompt 0-shot), use `MIPROv2` [configured for 0-shot optimization to optimize](/deep-dive/optimizers/miprov2#optimizing-instructions-only-with-miprov2-0-shot). 
+- If you prefer to do **instruction optimization only** (i.e. you want to keep your prompt 0-shot), use `MIPROv2` [configured for 0-shot optimization to optimize](/api/optimizers/MIPROv2#optimizing-instructions-only-with-miprov2-0-shot). 
 - If you’re willing to use more inference calls to perform **longer optimization runs** (e.g. 40 trials or more), and have enough data (e.g. 200 examples or more to prevent overfitting) then try `MIPROv2`. 
 - If you have been able to use one of these with a large LM (e.g., 7B parameters or above) and need a very **efficient program**, finetune a small LM for your task with `BootstrapFinetune`.
 
 ## How do I use an optimizer?
 
-They all share this general interface, with some differences in the keyword arguments (hyperparameters). Detailed documentation for key optimizers can be found [here](/deep-dive/optimizers/vfrs), and a full list can be found [here](https://dspy.ai/api/optimizers/BetterTogether/).
+They all share this general interface, with some differences in the keyword arguments (hyperparameters). Detailed documentation for key optimizers can be found [here](/api/optimizers/vfrs), and a full list can be found [here](https://dspy.ai/api/optimizers/BetterTogether/).
 
 Let's see this with the most common one, `BootstrapFewShotWithRandomSearch`.
 

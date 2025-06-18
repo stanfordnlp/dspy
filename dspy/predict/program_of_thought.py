@@ -27,7 +27,7 @@ class ProgramOfThought(Module):
     ```
     """
 
-    def __init__(self, signature: Union[str, Type[Signature]], max_iters=3, interpreter: Optional[PythonInterpreter] = None):
+    def __init__(self, signature: Union[str, Type[Signature]], max_iters: int = 3, interpreter: Optional[PythonInterpreter] = None):
         """
         Args:
             signature: The signature of the module.

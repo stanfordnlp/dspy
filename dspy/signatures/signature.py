@@ -248,7 +248,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(cls.fields, instructions)
 
     @classmethod
-    def with_updated_fields(cls, name, type_=None, **kwargs) -> Type["Signature"]:
+    def with_updated_fields(cls, name: str, type_: Optional[Type] = None, **kwargs: dict[str, Any]) -> Type["Signature"]:
         """Create a new Signature class with the updated field information.
 
         Returns a new Signature class with the field, name, updated
@@ -257,7 +257,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         Args:
             name: The name of the field to update.
             type_: The new type of the field.
-            **kwargs: The new values for the field.
+            kwargs: The new values for the field.
 
         Returns:
             A new Signature class (not an instance) with the updated field information.

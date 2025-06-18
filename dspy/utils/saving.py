@@ -1,9 +1,13 @@
+from typing import TYPE_CHECKING
 import logging
 import sys
 from pathlib import Path
 
 import cloudpickle
 import ujson
+
+if TYPE_CHECKING:
+    from dspy.primitives.module import Module
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +24,7 @@ def get_dependency_versions():
     }
 
 
-def load(path):
+def load(path: str) -> "Module":
     """Load saved DSPy model.
 
     This method is used to load a saved DSPy model with `save_program=True`, i.e., the model is saved with cloudpickle.
