@@ -157,3 +157,75 @@ def test_track_usage_context_manager():
     assert "openai/gpt-4o-mini" in total_usage
     assert len(total_usage.keys()) == 1
     assert isinstance(total_usage["openai/gpt-4o-mini"], dict)
+
+
+def test_merge_usage_entries_with_new_keys():
+    """Ensure merging usage entries preserves unseen keys."""
+    tracker = UsageTracker()
+
+    tracker.add_usage("model-x", {"prompt_tokens": 5})
+    tracker.add_usage("model-x", {"completion_tokens": 2})
+
+    total_usage = tracker.get_total_tokens()
+
+    assert total_usage["model-x"]["prompt_tokens"] == 5
+    assert total_usage["model-x"]["completion_tokens"] == 2
+
+
+def test_merge_usage_entries_with_none_values():
+    """Test tracking usage across multiple models."""
+    tracker = UsageTracker()
+
+    # Add usage entries for different models
+    usage_entries = [
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "prompt_tokens": 1117,
+                "completion_tokens": 46,
+                "total_tokens": 1163,
+                "prompt_tokens_details": None,
+                "completion_tokens_details": {},
+            },
+        },
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "prompt_tokens": 800,
+                "completion_tokens": 100,
+                "total_tokens": 900,
+                "prompt_tokens_details": {"cached_tokens": 50, "audio_tokens": 50},
+                "completion_tokens_details": None,
+            },
+        },
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "prompt_tokens": 800,
+                "completion_tokens": 100,
+                "total_tokens": 900,
+                "prompt_tokens_details": None,
+                "completion_tokens_details": {
+                    "reasoning_tokens": 1,
+                    "audio_tokens": 1,
+                    "accepted_prediction_tokens": 1,
+                    "rejected_prediction_tokens": 1,
+                },
+            },
+        },
+    ]
+
+    for entry in usage_entries:
+        tracker.add_usage(entry["model"], entry["usage"])
+
+    total_usage = tracker.get_total_tokens()
+
+    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 2717
+    assert total_usage["gpt-4o-mini"]["completion_tokens"] == 246
+    assert total_usage["gpt-4o-mini"]["total_tokens"] == 2963
+    assert total_usage["gpt-4o-mini"]["prompt_tokens_details"]["cached_tokens"] == 50
+    assert total_usage["gpt-4o-mini"]["prompt_tokens_details"]["audio_tokens"] == 50
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["reasoning_tokens"] == 1
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["audio_tokens"] == 1
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["accepted_prediction_tokens"] == 1
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["rejected_prediction_tokens"] == 1

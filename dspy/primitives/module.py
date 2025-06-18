@@ -35,7 +35,6 @@ class BaseModule:
             if isinstance(param_value, Parameter):
                 if id(param_value) not in visited:
                     visited.add(id(param_value))
-                    param_name = postprocess_parameter_name(param_name, param_value)
                     named_parameters.append((param_name, param_value))
 
             elif isinstance(param_value, dspy.Module):
@@ -81,8 +80,6 @@ class BaseModule:
         seen = {id(self)}
 
         def add_to_queue(name, item):
-            name = postprocess_parameter_name(name, item)
-
             if id(item) not in seen:
                 seen.add(id(item))
                 queue.append((name, item))
@@ -163,7 +160,7 @@ class BaseModule:
         for name, param in self.named_parameters():
             param.load_state(state[name])
 
-    def save(self, path, save_program=False):
+    def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
 
         Save the module to a directory or a file. There are two modes:
@@ -171,6 +168,12 @@ class BaseModule:
             the file extension.
         - `save_program=True`: Save the whole module to a directory via cloudpickle, which contains both the state and
             architecture of the model.
+
+        If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization 
+        with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize the module by value rather 
+        than by reference, ensuring the module is fully preserved along with the saved program. This is useful 
+        when you have custom modules that need to be serialized alongside your program. If None, then no modules 
+        will be registered for serialization.
 
         We also save the dependency versions, so that the loaded model can check if there is a version mismatch on
         critical dependencies or DSPy version.
@@ -180,6 +183,9 @@ class BaseModule:
                 and a directory when `save_program=True`.
             save_program (bool): If True, save the whole module to a directory via cloudpickle, otherwise only save
                 the state.
+            modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
+                If None, then no modules will be registered for serialization.
+
         """
         metadata = {}
         metadata["dependency_versions"] = get_dependency_versions()
@@ -198,6 +204,10 @@ class BaseModule:
                 path.mkdir(parents=True)
 
             try:
+                modules_to_serialize = modules_to_serialize or []
+                for module in modules_to_serialize:
+                    cloudpickle.register_pickle_by_value(module)
+
                 with open(path / "program.pkl", "wb") as f:
                     cloudpickle.dump(self, f)
             except Exception as e:
@@ -205,8 +215,8 @@ class BaseModule:
                     f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy program, "
                     "or consider using state-only saving by setting `save_program=False`."
                 )
-            with open(path / "metadata.json", "w") as f:
-                ujson.dump(metadata, f, indent=2)
+            with open(path / "metadata.json", "w", encoding="utf-8") as f:
+                ujson.dump(metadata, f, indent=2, ensure_ascii=False)
 
             return
 
@@ -214,8 +224,8 @@ class BaseModule:
         state["metadata"] = metadata
         if path.suffix == ".json":
             try:
-                with open(path, "w") as f:
-                    f.write(ujson.dumps(state, indent=2))
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(ujson.dumps(state, indent=2 , ensure_ascii=False))
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to save state to {path} with error: {e}. Your DSPy program may contain non "
@@ -258,18 +268,3 @@ class BaseModule:
                     "saving environment."
                 )
         self.load_state(state)
-
-
-def postprocess_parameter_name(name, value):
-    return name
-    # # For ChainOfThought backward compatibility, remove ending ._predict if it's there
-    # if name.endswith("._predict"):
-    #     name = name[:-9]
-
-    # if name.endswith(".self"):
-    #     name = name[:-5]
-
-    # if name == "_predict":
-    #     return "self"
-
-    # return name

@@ -14,6 +14,7 @@
             - forward
             - get_config
             - get_lm
+            - inspect_history
             - load
             - load_state
             - map_named_predictors

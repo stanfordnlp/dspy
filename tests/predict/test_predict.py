@@ -1,5 +1,8 @@
+import asyncio
 import copy
 import enum
+import time
+import types
 from datetime import datetime
 from unittest.mock import patch
 
@@ -506,6 +509,69 @@ def test_lm_usage():
         assert result.get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
 
 
+def test_lm_usage_with_parallel():
+    program = Predict("question -> answer")
+
+    def program_wrapper(question):
+        # Sleep to make it possible to cause a race condition
+        time.sleep(0.5)
+        return program(question=question)
+
+    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    with patch(
+        "dspy.clients.lm.litellm_completion",
+        return_value=ModelResponse(
+            choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+            usage={"total_tokens": 10},
+        ),
+    ):
+        parallelizer = dspy.Parallel()
+        input_pairs = [
+            (program_wrapper, {"question": "What is the capital of France?"}),
+            (program_wrapper, {"question": "What is the capital of France?"}),
+        ]
+        results = parallelizer(input_pairs)
+        assert results[0].answer == "Paris"
+        assert results[1].answer == "Paris"
+        assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+        assert results[1].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+
+
+@pytest.mark.asyncio
+async def test_lm_usage_with_async():
+    program = Predict("question -> answer")
+
+    original_aforward = program.aforward
+
+    async def patched_aforward(self, **kwargs):
+        await asyncio.sleep(1)
+        return await original_aforward(**kwargs)
+
+    program.aforward = types.MethodType(patched_aforward, program)
+
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True):
+        with patch(
+            "litellm.acompletion",
+            return_value=ModelResponse(
+                choices=[{"message": {"content": "[[ ## answer ## ]]\nParis"}}],
+                usage={"total_tokens": 10},
+            ),
+        ):
+            coroutines = [
+                program.acall(question="What is the capital of France?"),
+                program.acall(question="What is the capital of France?"),
+                program.acall(question="What is the capital of France?"),
+                program.acall(question="What is the capital of France?"),
+            ]
+            results = await asyncio.gather(*coroutines)
+            assert results[0].answer == "Paris"
+            assert results[1].answer == "Paris"
+            assert results[0].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+            assert results[1].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+            assert results[2].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+            assert results[3].get_lm_usage()["openai/gpt-4o-mini"]["total_tokens"] == 10
+
+
 def test_positional_arguments():
     program = Predict("question -> answer")
     with pytest.raises(ValueError) as e:
@@ -514,6 +580,28 @@ def test_positional_arguments():
         "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments that match "
         "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
     )
+
+
+def test_error_message_on_invalid_lm_setup():
+    # No LM is loaded.
+    with pytest.raises(ValueError, match="No LM is loaded"):
+        Predict("question -> answer")(question="Why did a chicken cross the kitchen?")
+
+    # LM is a string.
+    dspy.configure(lm="openai/gpt-4o-mini")
+    with pytest.raises(ValueError) as e:
+        Predict("question -> answer")(question="Why did a chicken cross the kitchen?")
+
+    assert "LM must be an instance of `dspy.BaseLM`, not a string." in str(e.value)
+
+    def dummy_lm():
+        pass
+
+    # LM is not an instance of dspy.BaseLM.
+    dspy.configure(lm=dummy_lm)
+    with pytest.raises(ValueError) as e:
+        Predict("question -> answer")(question="Why did a chicken cross the kitchen?")
+    assert "LM must be an instance of `dspy.BaseLM`, not <class 'function'>." in str(e.value)
 
 
 @pytest.mark.parametrize("adapter_type", ["chat", "json"])
@@ -569,9 +657,9 @@ def test_field_constraints(adapter_type):
 @pytest.mark.asyncio
 async def test_async_predict():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]))
-    result = await program.acall(question="What is the capital of France?")
-    assert result.answer == "Paris"
+    with dspy.context(lm=DummyLM([{"answer": "Paris"}])):
+        result = await program.acall(question="What is the capital of France?")
+        assert result.answer == "Paris"
 
 
 def test_predicted_outputs_piped_from_predict_to_lm_call():

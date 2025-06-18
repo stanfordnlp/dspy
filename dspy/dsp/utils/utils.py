@@ -66,17 +66,6 @@ def batch(group, bsize, provide_offset=False):
     return
 
 
-# class dotdict(dict):
-#     """
-#     dot.notation access to dictionary attributes
-#     Credit: derek73 @ https://stackoverflow.com/questions/2352181
-#     """
-
-#     __getattr__ = dict.__getitem__
-#     __setattr__ = dict.__setitem__
-#     __delattr__ = dict.__delitem__
-
-
 class dotdict(dict):  # noqa: N801
     def __getattr__(self, key):
         if key.startswith("__") and key.endswith("__"):
@@ -110,8 +99,6 @@ class dotdict_lax(dict):  # noqa: N801
 
 
 def flatten(data_list):
-    # return [x for y in L for x in y]
-
     result = []
     for child_list in data_list:
         result += child_list

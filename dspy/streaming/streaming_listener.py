@@ -99,7 +99,7 @@ class StreamListener:
             # We keep appending the tokens to the queue until we have a full identifier or the concanated
             # tokens no longer match our expected identifier.
             self.field_start_queue.append(chunk_message)
-            concat_message = "".join(self.field_start_queue).strip()
+            concat_message = "".join(self.field_start_queue)
 
             if start_identifier in concat_message:
                 # We have a full identifier, we can start the stream.
@@ -113,8 +113,9 @@ class StreamListener:
                     # because there could be a few splitters between ':' and '"', e.g., '"name": "value"'.
                     chunk_message = chunk_message[1:]
 
-            elif self._buffered_message_end_with_start_identifier(concat_message, start_identifier):
-                # If the buffered message ends with part of the start_identifier, we can start the stream.
+            elif self._buffered_message_end_with_start_identifier(concat_message.strip(), start_identifier):
+                # If the buffered message ends with part of the start_identifier, we keep looking for the
+                # start_identifier from the token stream.
                 return
             else:
                 # Doesn't match the expected identifier, reset the queue.
@@ -193,7 +194,7 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: Lis
                     "predictor to use for streaming. Please specify the predictor to listen to."
                 )
 
-            if field_info.annotation != str:
+            if field_info.annotation is not str:
                 raise ValueError(
                     f"Stream listener can only be applied to string output field, but your field {field_name} is of "
                     f"type {field_info.annotation}."

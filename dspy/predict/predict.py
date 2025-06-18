@@ -99,7 +99,22 @@ class Predict(Module, Parameter):
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or settings.lm
-        assert isinstance(lm, BaseLM), "No LM is loaded."
+
+        if lm is None:
+            raise ValueError(
+                "No LM is loaded. Please configure the LM using `dspy.configure(lm=dspy.LM(...))`. e.g, "
+                "`dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))`"
+            )
+
+        if isinstance(lm, str):
+            # Many users mistakenly use `dspy.configure(lm="openai/gpt-4o-mini")` instead of
+            # `dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))`, so we are providing a specific error message.
+            raise ValueError(
+                f"LM must be an instance of `dspy.BaseLM`, not a string. Instead of using a string like "
+                f"'dspy.configure(lm=\"{lm}\")', please configure the LM like 'dspy.configure(lm=dspy.LM(\"{lm}\"))'"
+            )
+        elif not isinstance(lm, BaseLM):
+            raise ValueError(f"LM must be an instance of `dspy.BaseLM`, not {type(lm)}. Received `lm={lm}`.")
 
         # If temperature is unset or <=0.15, and n > 1, set temperature to 0.7 to keep randomness.
         temperature = config.get("temperature") or lm.kwargs.get("temperature")

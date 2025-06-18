@@ -58,7 +58,7 @@ def test_json_adapter_falls_back_when_structured_outputs_fails():
         input1: str = dspy.InputField()
         output1: str = dspy.OutputField(desc="String output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.side_effect = [Exception("Bad structured outputs!"), mock_completion.return_value]
@@ -337,3 +337,108 @@ def test_json_adapter_formats_image_with_few_shot_examples_with_nested_images():
 
     # The query image is formatted in the last user message
     assert {"type": "image_url", "image_url": {"url": "https://example.com/image4.jpg"}} in messages[-1]["content"]
+
+
+def test_json_adapter_with_tool():
+    class MySignature(dspy.Signature):
+        """Answer question with the help of the tools"""
+
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        """Get the weather for a city"""
+        return f"The weather in {city} is sunny"
+
+    def get_population(country: str, year: int) -> str:
+        """Get the population for a country"""
+        return f"The population of {country} in {year} is 1000000"
+
+    tools = [dspy.Tool(get_weather), dspy.Tool(get_population)]
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"question": "What is the weather in Tokyo?", "tools": tools})
+
+    assert len(messages) == 2
+
+    # The output field type description should be included in the system message even if the output field is nested
+    assert dspy.ToolCalls.description() in messages[0]["content"]
+
+    # The user message should include the question and the tools
+    assert "What is the weather in Tokyo?" in messages[1]["content"]
+    assert "get_weather" in messages[1]["content"]
+    assert "get_population" in messages[1]["content"]
+
+    # Tool arguments format should be included in the user message
+    assert "{'city': {'type': 'string'}}" in messages[1]["content"]
+    assert "{'country': {'type': 'string'}, 'year': {'type': 'integer'}}" in messages[1]["content"]
+
+    with mock.patch("litellm.completion") as mock_completion:
+        lm = dspy.LM(model="openai/gpt-4o-mini")
+        adapter(lm, {}, MySignature, [], {"question": "What is the weather in Tokyo?", "tools": tools})
+
+    mock_completion.assert_called_once()
+    _, call_kwargs = mock_completion.call_args
+
+    # Assert tool calls are included in the `tools` arg
+    assert len(call_kwargs["tools"]) > 0
+    assert call_kwargs["tools"][0] == {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the weather for a city",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                    },
+                },
+                "required": ["city"],
+            },
+        },
+    }
+    assert call_kwargs["tools"][1] == {
+        "type": "function",
+        "function": {
+            "name": "get_population",
+            "description": "Get the population for a country",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "country": {
+                        "type": "string",
+                    },
+                    "year": {
+                        "type": "integer",
+                    },
+                },
+                "required": ["country", "year"],
+            },
+        },
+    }
+
+
+def test_json_adapter_formats_conversation_history():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            {"question": "What is the capital of France?", "answer": "Paris"},
+            {"question": "What is the capital of Germany?", "answer": "Berlin"},
+        ]
+    )
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"question": "What is the capital of France?", "history": history})
+
+    assert len(messages) == 6
+    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?"
+    assert messages[2]["content"] == '{\n  "answer": "Paris"\n}'
+    assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
+    assert messages[4]["content"] == '{\n  "answer": "Berlin"\n}'

@@ -50,16 +50,20 @@ class BaseLM:
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
-        if merged_kwargs.get("logprobs"):
-            outputs = [
-                {
-                    "text": c.message.content if hasattr(c, "message") else c["text"],
-                    "logprobs": c.logprobs if hasattr(c, "logprobs") else c["logprobs"],
-                }
-                for c in response.choices
-            ]
-        else:
-            outputs = [c.message.content if hasattr(c, "message") else c["text"] for c in response.choices]
+
+        outputs = []
+        for c in response.choices:
+            output = {}
+            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+            if merged_kwargs.get("logprobs"):
+                output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+            if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
+                output["tool_calls"] = c.message.tool_calls
+            outputs.append(output)
+
+        if all(len(output) == 1 for output in outputs):
+            # Return a list if every output only has "text" key
+            outputs = [output["text"] for output in outputs]
 
         if settings.disable_history:
             return outputs
@@ -133,7 +137,7 @@ class BaseLM:
         return new_instance
 
     def inspect_history(self, n: int = 1):
-        return inspect_history(self.history, n)
+        return pretty_print_history(self.history, n)
 
     def update_global_history(self, entry):
         if settings.disable_history:

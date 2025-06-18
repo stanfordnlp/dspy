@@ -1,12 +1,12 @@
 import os
+from unittest import mock
+from unittest.mock import AsyncMock
 
 import pytest
+from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
 from dspy.streaming import StatusMessage, StatusMessageProvider, streaming_response
-from unittest import mock
-from unittest.mock import AsyncMock
-from litellm.types.utils import ModelResponseStream, StreamingChoices, Delta
 
 
 @pytest.mark.anyio
@@ -142,8 +142,6 @@ async def test_stream_listener_chat_adapter():
             judgement = self.predict2(question=x, answer=answer, **kwargs)
             return judgement
 
-    # Turn off the cache to ensure the stream is produced.
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
     my_program = MyProgram()
     program = dspy.streamify(
         my_program,
@@ -153,11 +151,13 @@ async def test_stream_listener_chat_adapter():
         ],
         include_final_prediction_in_output_stream=False,
     )
-    output = program(x="why did a chicken cross the kitchen?")
-    all_chunks = []
-    async for value in output:
-        if isinstance(value, dspy.streaming.StreamResponse):
-            all_chunks.append(value)
+    # Turn off the cache to ensure the stream is produced.
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+        output = program(x="why did a chicken cross the kitchen?")
+        all_chunks = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StreamResponse):
+                all_chunks.append(value)
 
     assert all_chunks[0].predict_name == "predict1"
     assert all_chunks[0].signature_field_name == "answer"
@@ -205,8 +205,6 @@ async def test_stream_listener_json_adapter():
             judgement = self.predict2(question=x, answer=answer, **kwargs)
             return judgement
 
-    # Turn off the cache to ensure the stream is produced.
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
     my_program = MyProgram()
     program = dspy.streamify(
         my_program,
@@ -216,17 +214,49 @@ async def test_stream_listener_json_adapter():
         ],
         include_final_prediction_in_output_stream=False,
     )
-    output = program(x="why did a chicken cross the kitchen?")
-    all_chunks = []
-    async for value in output:
-        if isinstance(value, dspy.streaming.StreamResponse):
-            all_chunks.append(value)
+    # Turn off the cache to ensure the stream is produced.
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+        output = program(x="why did a chicken cross the kitchen?")
+        all_chunks = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StreamResponse):
+                all_chunks.append(value)
 
     assert all_chunks[0].predict_name == "predict1"
     assert all_chunks[0].signature_field_name == "answer"
 
     assert all_chunks[-1].predict_name == "predict2"
     assert all_chunks[-1].signature_field_name == "judgement"
+
+
+@pytest.mark.anyio
+async def test_streaming_handles_space_correctly():
+    my_program = dspy.Predict("question->answer")
+    program = dspy.streamify(
+        my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
+    )
+
+    async def gpt_4o_mini_stream(*args, **kwargs):
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
+        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="How "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="are "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="you "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="doing?"))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+        )
+
+    with mock.patch("litellm.acompletion", side_effect=gpt_4o_mini_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="What is the capital of France?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+
+    assert all_chunks[0].chunk == "How are you doing?"
 
 
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
@@ -241,8 +271,6 @@ def test_sync_streaming():
             judgement = self.predict2(question=x, answer=answer, **kwargs)
             return judgement
 
-    # Turn off the cache to ensure the stream is produced.
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
     my_program = MyProgram()
     program = dspy.streamify(
         my_program,
@@ -253,11 +281,13 @@ def test_sync_streaming():
         include_final_prediction_in_output_stream=False,
         async_streaming=False,
     )
-    output = program(x="why did a chicken cross the kitchen?")
-    all_chunks = []
-    for value in output:
-        if isinstance(value, dspy.streaming.StreamResponse):
-            all_chunks.append(value)
+    # Turn off the cache to ensure the stream is produced.
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+        output = program(x="why did a chicken cross the kitchen?")
+        all_chunks = []
+        for value in output:
+            if isinstance(value, dspy.streaming.StreamResponse):
+                all_chunks.append(value)
 
     assert all_chunks[0].predict_name == "predict1"
     assert all_chunks[0].signature_field_name == "answer"
@@ -351,8 +381,6 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
 
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
-
     stream_generators = [gpt_4o_mini_stream_1, gpt_4o_mini_stream_2]
 
     async def completion_side_effect(*args, **kwargs):
@@ -366,11 +394,12 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
                 dspy.streaming.StreamListener(signature_field_name="judgement"),
             ],
         )
-        output = program(question="why did a chicken cross the kitchen?")
-        all_chunks = []
-        async for value in output:
-            if isinstance(value, dspy.streaming.StreamResponse):
-                all_chunks.append(value)
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            output = program(question="why did a chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
 
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
@@ -405,8 +434,6 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
             answer = self.predict1(question=question, **kwargs).answer
             judgement = self.predict2(question=question, answer=answer, **kwargs)
             return judgement
-
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
     async def gpt_4o_mini_stream_1(*args, **kwargs):
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
@@ -463,11 +490,12 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
                 dspy.streaming.StreamListener(signature_field_name="judgement"),
             ],
         )
-        output = program(question="why did a chicken cross the kitchen?")
-        all_chunks = []
-        async for value in output:
-            if isinstance(value, dspy.streaming.StreamResponse):
-                all_chunks.append(value)
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+            output = program(question="why did a chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
 
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
@@ -498,8 +526,6 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
             answer = self.predict1(question=question, **kwargs).answer
             judgement = self.predict2(question=question, answer=answer, **kwargs)
             return judgement
-
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter())
 
     async def gemini_stream_1(*args, **kwargs):
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
@@ -542,11 +568,12 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
                 dspy.streaming.StreamListener(signature_field_name="judgement"),
             ],
         )
-        output = program(question="why did a chicken cross the kitchen?")
-        all_chunks = []
-        async for value in output:
-            if isinstance(value, dspy.streaming.StreamResponse):
-                all_chunks.append(value)
+        with dspy.context(lm=dspy.LM("gemini/gemini-2.5-flash", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="why did a chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
 
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
@@ -572,8 +599,6 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
             answer = self.predict1(question=question, **kwargs).answer
             judgement = self.predict2(question=question, answer=answer, **kwargs)
             return judgement
-
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
     async def gemini_stream_1(*args, **kwargs):
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="{\n"))])
@@ -610,11 +635,12 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
                 dspy.streaming.StreamListener(signature_field_name="judgement"),
             ],
         )
-        output = program(question="why did a chicken cross the kitchen?")
-        all_chunks = []
-        async for value in output:
-            if isinstance(value, dspy.streaming.StreamResponse):
-                all_chunks.append(value)
+        with dspy.context(lm=dspy.LM("gemini/gemini-2.5-flash", cache=False), adapter=dspy.JSONAdapter()):
+            output = program(question="why did a chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
 
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"

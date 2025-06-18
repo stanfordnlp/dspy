@@ -141,12 +141,14 @@ class ChatAdapter(Adapter):
         outputs: dict[str, Any],
         missing_field_message=None,
     ) -> str:
-        return self.format_field_with_value(
+        assistant_message_content = self.format_field_with_value(
             {
                 FieldInfoWithName(name=k, info=v): outputs.get(k, missing_field_message)
                 for k, v in signature.output_fields.items()
             },
         )
+        assistant_message_content += "\n\n[[ ## completed ## ]]\n"
+        return assistant_message_content
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
         sections = [(None, [])]

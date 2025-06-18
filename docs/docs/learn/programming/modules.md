@@ -245,6 +245,13 @@ class Hop(dspy.Module):
         return dspy.Prediction(notes=notes, titles=list(set(titles)))
 ```
 
+Then you can create a instance of the custom module class `Hop`, then invoke it by the `__call__` method:
+
+```
+hop = Hop()
+print(hop(claim="Stephen Curry is the best 3 pointer shooter ever in the human history"))
+```
+
 ## How do I track LM usage?
 
 !!! note "Version Requirement"

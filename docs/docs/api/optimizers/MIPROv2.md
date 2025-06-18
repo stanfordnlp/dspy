@@ -42,6 +42,7 @@ teleprompter = MIPROv2(
 
 # Optimize program
 print(f"Optimizing program with MIPROv2...")
+gsm8k = GSM8K()
 optimized_program = teleprompter.compile(
     dspy.ChainOfThought("question -> answer"),
     trainset=gsm8k.train,

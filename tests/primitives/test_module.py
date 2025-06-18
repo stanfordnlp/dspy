@@ -1,10 +1,12 @@
+import asyncio
 import logging
 import os
-from litellm import ModelResponse, Message, Choices
 import threading
 from unittest.mock import patch
 
 import pytest
+from litellm import Choices, Message, ModelResponse
+from litellm.types.utils import Usage
 
 import dspy
 from dspy.utils.dummies import DummyLM
@@ -114,6 +116,65 @@ def test_save_and_load_with_pkl(tmp_path):
 
     assert str(new_cot.predict.signature) == str(compiled_cot.predict.signature)
     assert new_cot.predict.demos == compiled_cot.predict.demos
+
+
+def test_save_with_extra_modules(tmp_path):
+    import sys
+
+    # Create a temporary Python file with our custom module
+    custom_module_path = tmp_path / "custom_module.py"
+    with open(custom_module_path, "w") as f:
+        f.write("""
+import dspy
+
+class MyModule(dspy.Module):
+    def __init__(self):
+        self.cot = dspy.ChainOfThought(dspy.Signature("q -> a"))
+
+    def forward(self, q):
+        return self.cot(q=q)
+""")
+
+    # Add the tmp_path to Python path so we can import the module
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import custom_module
+
+        cot = custom_module.MyModule()
+
+        cot.save(tmp_path, save_program=True)
+        # Remove the custom module from sys.modules to simulate it not being available
+        sys.modules.pop("custom_module", None)
+        # Also remove it from sys.path
+        sys.path.remove(str(tmp_path))
+        del custom_module
+
+        # Test the loading fails without using `modules_to_serialize`
+        with pytest.raises(ModuleNotFoundError):
+            dspy.load(tmp_path)
+
+        sys.path.insert(0, str(tmp_path))
+        import custom_module
+
+        cot.save(
+            tmp_path,
+            modules_to_serialize=[custom_module],
+            save_program=True,
+        )
+
+        # Remove the custom module from sys.modules to simulate it not being available
+        sys.modules.pop("custom_module", None)
+        # Also remove it from sys.path
+        sys.path.remove(str(tmp_path))
+        del custom_module
+
+        loaded_module = dspy.load(tmp_path)
+        assert loaded_module.cot.predict.signature == cot.cot.predict.signature
+
+    finally:
+        # Only need to clean up sys.path
+        if str(tmp_path) in sys.path:
+            sys.path.remove(str(tmp_path))
 
 
 def test_load_with_version_mismatch(tmp_path):
@@ -249,6 +310,54 @@ def test_usage_tracker_in_parallel():
     assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
 
 
+@pytest.mark.asyncio
+async def test_usage_tracker_async_parallel():
+    program = dspy.Predict("question -> answer")
+
+    with patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+            usage=Usage(
+                **{
+                    "prompt_tokens": 1117,
+                    "completion_tokens": 46,
+                    "total_tokens": 1163,
+                    "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
+                    "completion_tokens_details": {
+                        "reasoning_tokens": 0,
+                        "audio_tokens": 0,
+                        "accepted_prediction_tokens": 0,
+                        "rejected_prediction_tokens": 0,
+                    },
+                },
+            ),
+            model="openai/gpt-4o-mini",
+        )
+
+        coroutines = [
+            program.acall(question="What is the capital of France?"),
+            program.acall(question="What is the capital of France?"),
+            program.acall(question="What is the capital of France?"),
+            program.acall(question="What is the capital of France?"),
+        ]
+        with dspy.settings.context(
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
+        ):
+            results = await asyncio.gather(*coroutines)
+
+        assert results[0].get_lm_usage() is not None
+        assert results[1].get_lm_usage() is not None
+
+        lm_usage0 = results[0].get_lm_usage()["openai/gpt-4o-mini"]
+        lm_usage1 = results[1].get_lm_usage()["openai/gpt-4o-mini"]
+        assert lm_usage0["prompt_tokens"] == 1117
+        assert lm_usage1["prompt_tokens"] == 1117
+        assert lm_usage0["completion_tokens"] == 46
+        assert lm_usage1["completion_tokens"] == 46
+        assert lm_usage0["total_tokens"] == 1163
+        assert lm_usage1["total_tokens"] == 1163
+
+
 def test_module_history():
     class MyProgram(dspy.Module):
         def __init__(self, **kwargs):
@@ -346,12 +455,12 @@ async def test_module_history_async():
             ],
             model="openai/gpt-4o-mini",
         )
-        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
-        await program.acall(question="What is the capital of France?")
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+            await program.acall(question="What is the capital of France?")
 
-        # Second call only call the submodule.
-        await program.cot.acall(question="What is the capital of France?")
+            # Second call only call the submodule.
+            await program.cot.acall(question="What is the capital of France?")
 
         # The LM history entity exists in all the ancestor callers.
         assert len(program.history) == 1
@@ -363,18 +472,43 @@ async def test_module_history_async():
 
         assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
 
-        dspy.settings.configure(disable_history=True)
+        with dspy.context(
+            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+        ):
+            await program.acall(question="What is the capital of France?")
 
-        await program.acall(question="What is the capital of France?")
         # No history is recorded when history is disabled.
         assert len(program.history) == 1
         assert len(program.cot.history) == 2
         assert len(program.cot.predict.history) == 2
 
-        dspy.settings.configure(disable_history=False)
-
-        await program.acall(question="What is the capital of France?")
+        with dspy.context(
+            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+        ):
+            await program.acall(question="What is the capital of France?")
         # History is recorded again when history is enabled.
         assert len(program.history) == 2
         assert len(program.cot.history) == 3
         assert len(program.cot.predict.history) == 3
+
+
+def test_forward_direct_call_warning(capsys):
+    class TestModule(dspy.Module):
+        def forward(self, x):
+            return x
+
+    module = TestModule()
+    module.forward("test")
+    captured = capsys.readouterr()
+    assert "Calling TestModule.forward() directly is discouraged" in captured.err
+
+
+def test_forward_through_call_no_warning(capsys):
+    class TestModule(dspy.Module):
+        def forward(self, x):
+            return x
+
+    module = TestModule()
+    module(x="test")
+    captured = capsys.readouterr()
+    assert "Calling TestModule.forward() directly is discouraged" not in captured.err
