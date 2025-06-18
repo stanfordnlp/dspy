@@ -28,7 +28,7 @@ jobs:
           mkdocs build
 
   update-docs-subtree:
-    if: github.event_name == 'push' && github.repository == 'stanfordnlp/dspy'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
