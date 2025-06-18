@@ -49,7 +49,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('databricks/databricks-meta-llama-3-1-70b-instruct')
+        lm = dspy.LM('databricks/databricks-llama-4-maverick')
         dspy.configure(lm=lm)
         ```
 
