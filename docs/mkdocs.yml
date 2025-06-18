@@ -146,6 +146,7 @@ theme:
         - navigation.tabs
         - navigation.path
         - navigation.indexes
+        - navigation.expand
         - toc.follow
         - navigation.top
         - search.suggest
