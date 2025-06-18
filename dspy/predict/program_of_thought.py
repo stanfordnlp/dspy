@@ -4,7 +4,7 @@ import re
 from typing import Optional, Type, Union
 
 import dspy
-from dspy.primitives.modules import Module
+from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
 

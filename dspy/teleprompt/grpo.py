@@ -10,7 +10,7 @@ from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
-from dspy.primitives.modules import Module
+from dspy.primitives.module import Module
 from dspy.teleprompt.bootstrap_finetune import (
     FailedPrediction,
     FinetuneTeleprompter,
