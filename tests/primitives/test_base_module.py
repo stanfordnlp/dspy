@@ -73,6 +73,7 @@ def test_save_and_load_with_json(tmp_path):
     assert new_model.predict.demos[0] == model.predict.demos[0].toDict()
 
 
+@pytest.mark.extra
 def test_save_and_load_with_pkl(tmp_path):
     import datetime
 
