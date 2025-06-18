@@ -1,4 +1,3 @@
-# TODO: Rename to module.py
 import inspect
 import logging
 from typing import Optional
