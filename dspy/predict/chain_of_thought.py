@@ -23,7 +23,7 @@ class ChainOfThought(Module):
             signature (Type[dspy.Signature]): The signature of the module.
             rationale_field (Optional[Union[dspy.OutputField, pydantic.fields.FieldInfo]]): The field that will contain the reasoning.
             rationale_field_type (Type): The type of the rationale field.
-            config: The configuration for the module.
+            **config: The configuration for the module.
         """
         super().__init__()
         signature = ensure_signature(signature)

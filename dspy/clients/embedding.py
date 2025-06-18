@@ -30,7 +30,7 @@ class Embedder:
             model.
         batch_size (int, optional): The default batch size for processing inputs in batches. Defaults to 200.
         caching (bool, optional): Whether to cache the embedding response when using a hosted model. Defaults to True.
-        kwargs: Additional default keyword arguments to pass to the embedding model.
+        **kwargs: Additional default keyword arguments to pass to the embedding model.
 
     Examples:
         Example 1: Using a hosted model.

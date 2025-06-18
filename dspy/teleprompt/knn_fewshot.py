@@ -19,7 +19,7 @@ class KNNFewShot(Teleprompter):
             k: The number of nearest neighbors to attach to the student model.
             trainset: The training set to use for few-shot prompting.
             vectorizer: The `Embedder` to use for vectorization
-            few_shot_bootstrap_args: Additional arguments for the `BootstrapFewShot` optimizer.
+            **few_shot_bootstrap_args: Additional arguments for the `BootstrapFewShot` optimizer.
 
         Example:
             ```python
