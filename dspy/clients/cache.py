@@ -96,7 +96,13 @@ class Cache:
         params = {k: transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
-    def get(self, key: str) -> Any:
+    def get(self, request: Dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> Any:
+        try:
+            key = self.cache_key(request, ignored_args_for_cache_key)
+        except Exception:
+            logger.debug(f"Failed to generate cache key for request: {request}")
+            return None
+
         if self.enable_memory_cache and key in self.memory_cache:
             with self._lock:
                 response = self.memory_cache[key]
@@ -117,10 +123,17 @@ class Cache:
 
     def put(
         self,
-        key: str,
+        request: Dict[str, Any],
         value: Any,
+        ignored_args_for_cache_key: Optional[list[str]] = None,
         enable_memory_cache: bool = True,
     ) -> None:
+        try:
+            key = self.cache_key(request, ignored_args_for_cache_key)
+        except Exception:
+            logger.debug(f"Failed to generate cache key for request: {request}")
+            return
+
         if self.enable_memory_cache and enable_memory_cache:
             with self._lock:
                 self.memory_cache[key] = value
@@ -209,23 +222,19 @@ def request_cache(
 
             cache = dspy.cache
             modified_request = process_request(args, kwargs)
-            try:
-                key = cache.cache_key(modified_request, ignored_args_for_cache_key)
-            except Exception:
-                logger.debug(f"Failed to generate cache key for request: {request}")
-                key = None
 
-            if key:
-                # Retrieve from cache if available
-                cached_result = cache.get(key)
-                if cached_result is not None:
-                    return cached_result
+            # Retrieve from cache if available
+            cached_result = cache.get(modified_request, ignored_args_for_cache_key)
+
+            if cached_result is not None:
+                return cached_result
 
             # Otherwise, compute and store the result
+            # first, make a copy of original request to compute identical cache key in `put` in case litellm changes request values
+            original_request = copy.deepcopy(modified_request)
             result = fn(*args, **kwargs)
-            if key:
-                # `enable_memory_cache` can be provided at call time to avoid indefinite growth.
-                cache.put(key, result, enable_memory_cache)
+            # `enable_memory_cache` can be provided at call time to avoid indefinite growth.
+            cache.put(original_request, result, ignored_args_for_cache_key, enable_memory_cache)
 
             return result
 
@@ -235,22 +244,17 @@ def request_cache(
 
             cache = dspy.cache
             modified_request = process_request(args, kwargs)
-            try:
-                key = cache.cache_key(modified_request, ignored_args_for_cache_key)
-            except Exception:
-                logger.debug(f"Failed to generate cache key for request: {request}")
-                key = None
 
-            if key:
-                # Retrieve from cache if available
-                cached_result = cache.get(key)
-                if cached_result is not None:
-                    return cached_result
+            # Retrieve from cache if available
+            cached_result = cache.get(modified_request, ignored_args_for_cache_key)
+            if cached_result is not None:
+                return cached_result
 
             # Otherwise, compute and store the result
+            # first, make a copy of original request to compute identical cache key in `put` in case litellm changes request values
+            original_request = copy.deepcopy(modified_request)
             result = await fn(*args, **kwargs)
-            if key:
-                cache.put(key, result, enable_memory_cache)
+            cache.put(original_request, result, ignored_args_for_cache_key, enable_memory_cache)
 
             return result
 
