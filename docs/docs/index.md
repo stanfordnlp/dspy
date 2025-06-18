@@ -53,6 +53,15 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
         dspy.configure(lm=lm)
         ```
 
+    === "Gemini"
+        You can authenticate by setting the GEMINI_API_KEY env variable or passing `api_key` below.
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM('gemini/gemini-2.5-flash', api_key='YOUR_GEMINI_API_KEY')
+        dspy.configure(lm=lm)
+        ```
+
     === "Local LMs on your laptop"
           First, install [Ollama](https://github.com/ollama/ollama) and launch its server with your LM.
 
