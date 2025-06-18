@@ -230,7 +230,7 @@ def request_cache(
 
             # Otherwise, compute and store the result
             # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
-            original_request = dict(modified_request)
+            original_request = copy.deepcopy(modified_request)
             result = fn(*args, **kwargs)
             # `enable_memory_cache` can be provided at call time to avoid indefinite growth.
             cache.put(original_request, result, ignored_args_for_cache_key, enable_memory_cache)
@@ -251,7 +251,7 @@ def request_cache(
 
             # Otherwise, compute and store the result
             # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
-            original_request = dict(modified_request)
+            original_request = copy.deepcopy(modified_request)
             result = await fn(*args, **kwargs)
             cache.put(original_request, result, ignored_args_for_cache_key, enable_memory_cache)
 
