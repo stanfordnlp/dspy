@@ -1,4 +1,4 @@
-from dspy.dsp.utils import normalize_text
+from dspy.evaluate import normalize_text
 from dspy.predict.aggregation import majority
 from dspy.primitives.prediction import Completions, Prediction
 
