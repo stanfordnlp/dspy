@@ -1,6 +1,7 @@
-import pytest
 import tempfile
 import uuid
+
+import pytest
 
 from dspy import Example
 from dspy.datasets.dataset import Dataset

@@ -1,6 +1,6 @@
+import importlib
 import logging
 import types
-import importlib
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:

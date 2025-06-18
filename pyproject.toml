@@ -45,11 +45,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-optimize = [
-    "datasets>=2.14.6",
-    "pandas>=2.1.1",
-    "optuna>=3.4.0",
-]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 aws = ["boto3~=1.34.78"]

@@ -1,6 +1,7 @@
 import logging
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 import dspy
 from dspy.utils import DummyLM
