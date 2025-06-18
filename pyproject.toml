@@ -29,6 +29,7 @@ dependencies = [
     "ujson>=5.8.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
+    "optuna>=3.4.0",
     "pydantic>=2.0",
     "magicattr>=0.1.6",
     "litellm>=1.64.0",
