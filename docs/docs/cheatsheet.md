@@ -145,17 +145,6 @@ question='What is the color of the sky?'
 pred = generate_answer(question=question)
 ```
 
-### dspy.ChainOfThoughtwithHint
-
-```python
-generate_answer = dspy.ChainOfThoughtWithHint(BasicQA)
-
-# Call the predictor on a particular input alongside a hint.
-question='What is the color of the sky?'
-hint = "It's what you often see during a sunny day."
-pred = generate_answer(question=question, hint=hint)
-```
-
 ### dspy.ProgramOfThought
 
 ```python
