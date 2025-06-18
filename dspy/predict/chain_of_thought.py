@@ -1,4 +1,4 @@
-from typing import Optional, Type, Union
+from typing import Any, Optional, Type, Union
 
 from pydantic.fields import FieldInfo
 
@@ -14,7 +14,7 @@ class ChainOfThought(Module):
         signature: Type[Signature],
         rationale_field: Optional[Union[OutputField, FieldInfo]] = None,
         rationale_field_type: Type = str,
-        **config,
+        **config: dict[str, Any],
     ):
         """
         A module that reasons step by step in order to predict the output of a task.

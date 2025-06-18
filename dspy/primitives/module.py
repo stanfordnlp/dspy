@@ -7,6 +7,7 @@ import magicattr
 from dspy.dsp.utils.settings import settings, thread_local_overrides
 from dspy.predict.parallel import Parallel
 from dspy.primitives.base_module import BaseModule
+from dspy.primitives.example import Example
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 from dspy.utils.usage_tracker import track_usage
@@ -117,7 +118,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     def batch(
         self,
-        examples,
+        examples: list[Example],
         num_threads: Optional[int] = None,
         max_errors: Optional[int] = None,
         return_failed_examples: bool = False,

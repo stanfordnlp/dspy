@@ -36,7 +36,7 @@ class LM(BaseLM):
         cache_in_memory: bool = True,
         callbacks: Optional[List[BaseCallback]] = None,
         num_retries: int = 3,
-        provider=None,
+        provider: Optional[Provider] = None,
         finetuning_model: Optional[str] = None,
         launch_kwargs: Optional[dict[str, Any]] = None,
         train_kwargs: Optional[dict[str, Any]] = None,

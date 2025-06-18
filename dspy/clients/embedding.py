@@ -1,3 +1,5 @@
+from typing import Any, Callable, Optional, Union
+
 import litellm
 import numpy as np
 
@@ -74,7 +76,7 @@ class Embedder:
         ```
     """
 
-    def __init__(self, model, batch_size=200, caching=True, **kwargs):
+    def __init__(self, model: Union[str, Callable], batch_size: int = 200, caching: bool = True, **kwargs: dict[str, Any]):
         self.model = model
         self.batch_size = batch_size
         self.caching = caching
@@ -108,7 +110,7 @@ class Embedder:
         else:
             return np.array(embeddings, dtype=np.float32)
 
-    def __call__(self, inputs, batch_size=None, caching=None, **kwargs):
+    def __call__(self, inputs: Union[str, list[str]], batch_size: Optional[int] = None, caching: Optional[bool] = None, **kwargs: dict[str, Any]) -> np.ndarray:
         """Compute embeddings for the given inputs.
 
         Args:
@@ -117,7 +119,7 @@ class Embedder:
                 during initialization.
             caching (bool, optional): Whether to cache the embedding response when using a hosted model. If None,
                 defaults to the caching setting from initialization.
-            **kwargs: Additional keyword arguments to pass to the embedding model. These will override the default
+            kwargs: Additional keyword arguments to pass to the embedding model. These will override the default
                 kwargs provided during initialization.
 
         Returns:

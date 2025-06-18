@@ -47,14 +47,14 @@ class Predict(Module, Parameter):
         state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
-    def load_state(self, state):
+    def load_state(self, state: dict) -> "Predict":
         """Load the saved state of a `Predict` object.
 
         Args:
-            state (dict): The saved state of a `Predict` object.
+            state: The saved state of a `Predict` object.
 
         Returns:
-            self: Returns self to allow method chaining
+            Self to allow method chaining.
         """
         excluded_keys = ["signature", "extended_signature", "lm"]
         for name, value in state.items():
