@@ -155,12 +155,15 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         ```python linenums="1"
         import random
         from typing import Literal
-        from dspy.datasets import DataLoader
+
         from datasets import load_dataset
 
+        import dspy
+        from dspy.datasets import DataLoader
+
         # Load the Banking77 dataset.
-        CLASSES = load_dataset("PolyAI/banking77", split="train", trust_remote_code=True).features['label'].names
-        kwargs = dict(fields=("text", "label"), input_keys=("text",), split="train", trust_remote_code=True)
+        CLASSES = load_dataset("PolyAI/banking77", split="train", trust_remote_code=True).features["label"].names
+        kwargs = {"fields": ("text", "label"), "input_keys": ("text",), "split": "train", "trust_remote_code": True}
 
         # Load the first 2000 examples from the dataset, and assign a hint to each *training* example.
         trainset = [
