@@ -30,6 +30,28 @@ class ChatAdapter(Adapter):
     def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
         super().__init__(callbacks)
 
+    def _call_common(
+        self,
+        lm,
+        lm_kwargs,
+        signature,
+        demos,
+        inputs,
+        call_fn,
+        is_async=False,
+    ):
+        try:
+            return call_fn(lm, lm_kwargs, signature, demos, inputs)
+        except Exception as e:
+            from dspy.adapters.json_adapter import JSONAdapter
+
+            if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
+                raise e
+            if is_async:
+                return JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
+            else:
+                return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+
     def __call__(
         self,
         lm: LM,
@@ -38,17 +60,17 @@ class ChatAdapter(Adapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        try:
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception as e:
-            # fallback to JSONAdapter
-            from dspy.adapters.json_adapter import JSONAdapter
+        return self._call_common(lm, lm_kwargs, signature, demos, inputs, super().__call__, is_async=False)
 
-            if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
-                # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
-                # adapter.
-                raise e
-            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+    async def acall(
+        self,
+        lm: LM,
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return await self._call_common(lm, lm_kwargs, signature, demos, inputs, super().acall, is_async=True)
 
     def format_field_description(self, signature: Type[Signature]) -> str:
         return (

@@ -37,6 +37,42 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
+    def _call_common(
+        self,
+        lm,
+        lm_kwargs,
+        signature,
+        demos,
+        inputs,
+        call_fn,
+    ):
+        provider = lm.model.split("/", 1)[0] or "openai"
+        params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
+
+        if not params or "response_format" not in params:
+            return call_fn(lm, lm_kwargs, signature, demos, inputs)
+
+        if _has_open_ended_mapping(signature):
+            lm_kwargs["response_format"] = {"type": "json_object"}
+            return call_fn(lm, lm_kwargs, signature, demos, inputs)
+
+        try:
+            structured_output_model = _get_structured_outputs_response_format(signature)
+            lm_kwargs["response_format"] = structured_output_model
+            return call_fn(lm, lm_kwargs, signature, demos, inputs)
+        except Exception:
+            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+            try:
+                lm_kwargs["response_format"] = {"type": "json_object"}
+                return call_fn(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterParseError as e:
+                raise e
+            except Exception as e:
+                raise RuntimeError(
+                    "Both structured output format and JSON mode failed. Please choose a model that supports "
+                    f"`response_format` argument. Original error: {e}"
+                ) from e
+
     def __call__(
         self,
         lm: LM,
@@ -45,37 +81,17 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        provider = lm.model.split("/", 1)[0] or "openai"
-        params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
+        return self._call_common(lm, lm_kwargs, signature, demos, inputs, super().__call__)
 
-        # If response_format is not supported, use basic call
-        if not params or "response_format" not in params:
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-
-        # Check early for open-ended mapping types before trying structured outputs.
-        if _has_open_ended_mapping(signature):
-            lm_kwargs["response_format"] = {"type": "json_object"}
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-
-        # Try structured output first, fall back to basic JSON if it fails.
-        try:
-            structured_output_model = _get_structured_outputs_response_format(signature)
-            lm_kwargs["response_format"] = structured_output_model
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception:
-            logger.warning("Failed to use structured output format, falling back to JSON mode.")
-            try:
-                lm_kwargs["response_format"] = {"type": "json_object"}
-                return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-            except AdapterParseError as e:
-                # On AdapterParseError, we raise the original error.
-                raise e
-            except Exception as e:
-                # On any other error, we raise a RuntimeError with the original error message.
-                raise RuntimeError(
-                    "Both structured output format and JSON mode failed. Please choose a model that supports "
-                    f"`response_format` argument. Original error: {e}"
-                ) from e
+    async def acall(
+        self,
+        lm: LM,
+        lm_kwargs: dict[str, Any],
+        signature: Type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return await self._call_common(lm, lm_kwargs, signature, demos, inputs, super().acall)
 
     def _call_preprocess(
         self,
