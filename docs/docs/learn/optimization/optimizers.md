@@ -150,13 +150,6 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         For a complete RAG example that you can run, start this [tutorial](/tutorials/rag/). It improves the quality of a RAG system over a subset of StackExchange communities from 53% to 61%.
 
     === "Optimizing weights for Classification"
-        <!-- TODO(Hangzhi): Clean example without ChainOfThoughtWithHint. The example is not runnable in the latest DSPy -->
-        This is a minimal but fully runnable example of setting up a `dspy.ChainOfThought` module that classifies
-        short texts into one of 77 banking labels and then using `dspy.BootstrapFinetune` with 2000 text-label pairs
-        from the `Banking77` to finetune the weights of GPT-4o-mini for this task. We use the variant
-        `dspy.ChainOfThoughtWithHint`, which takes an optional `hint` at bootstrapping time, to maximize the utility of
-        the training data. Naturally, hints are not available at test time. More can be found in this [tutorial](/tutorials/classification_finetuning/).
-
         <details><summary>Click to show dataset setup code.</summary>
 
         ```python linenums="1"
@@ -180,11 +173,11 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
 
         ```python linenums="1"
         import dspy
-        dspy.configure(lm=dspy.LM('gpt-4o-mini-2024-07-18'))
-        
+        dspy.configure(lm=dspy.LM('openai/gpt-4o-mini-2024-07-18'))
+
         # Define the DSPy module for classification. It will use the hint at training time, if available.
-        signature = dspy.Signature("text -> label").with_updated_fields('label', type_=Literal[tuple(CLASSES)])
-        classify = dspy.ChainOfThoughtWithHint(signature)
+        signature = dspy.Signature("text, hint -> label").with_updated_fields('label', type_=Literal[tuple(CLASSES)])
+        classify = dspy.ChainOfThought(signature)
 
         # Optimize via BootstrapFinetune.
         optimizer = dspy.BootstrapFinetune(metric=(lambda x, y, trace=None: x.label == y.label), num_threads=24)
