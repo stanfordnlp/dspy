@@ -1,6 +1,8 @@
 import logging
 from unittest.mock import patch
 
+import pytest
+
 import dspy
 from dspy.utils import DummyLM
 
@@ -55,6 +57,7 @@ def test_save_model_with_custom_signature(tmp_path):
     assert predict.signature == loaded_predict.signature
 
 
+@pytest.mark.extra
 def test_save_compiled_model(tmp_path):
     predict = dspy.Predict("question->answer")
     dspy.settings.configure(lm=DummyLM([{"answer": "blue"}, {"answer": "white"}] * 10))

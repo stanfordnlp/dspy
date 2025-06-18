@@ -23,7 +23,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 !!! info "Getting Started I: Install DSPy and set up your LM"
 
     ```bash
-    > pip install -U dspy
+    > pip install -U dspy datasets
     ```
 
     === "OpenAI"
