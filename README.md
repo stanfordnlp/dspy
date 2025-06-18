@@ -26,7 +26,7 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
 ## Installation
 
-Basic installation:
+
 ```bash
 pip install dspy
 ```
