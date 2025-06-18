@@ -1,3 +1,4 @@
+import importlib
 import logging
 import random
 import select
@@ -93,6 +94,9 @@ class MIPROv2(Teleprompter):
         self.metric_threshold = metric_threshold
         self.seed = seed
         self.rng = None
+
+        if importlib.util.find_spec("optuna") is None:
+            raise ImportError("optuna is not installed. Please install it via `pip install optuna`.")
 
     def compile(
         self,
