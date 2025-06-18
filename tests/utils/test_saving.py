@@ -110,7 +110,7 @@ def test_load_with_version_mismatch(tmp_path):
 
     try:
         # Mock version during save
-        with patch("dspy.primitives.module.get_dependency_versions", return_value=save_versions):
+        with patch("dspy.primitives.base_module.get_dependency_versions", return_value=save_versions):
             predict.save(tmp_path, save_program=True)
 
         # Mock version during load
