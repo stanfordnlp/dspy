@@ -11,7 +11,7 @@ from dspy.signatures.signature import Signature, ensure_signature
 class ChainOfThought(Module):
     def __init__(
         self,
-        signature: Type[Signature],
+        signature: Union[str, Type[Signature]],
         rationale_field: Optional[Union[OutputField, FieldInfo]] = None,
         rationale_field_type: Type = str,
         **config: dict[str, Any],

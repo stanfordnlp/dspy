@@ -1,6 +1,5 @@
 import inspect
 import logging
-from inspect import Signature
 from typing import Callable, Optional, Type, Union
 
 import dspy
@@ -8,7 +7,7 @@ from dspy.adapters.types.tool import Tool
 from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.signatures.signature import ensure_signature
+from dspy.signatures.signature import Signature, ensure_signature
 
 logger = logging.getLogger(__name__)
 
