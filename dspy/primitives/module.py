@@ -7,10 +7,10 @@ import magicattr
 from dspy.dsp.utils.settings import settings, thread_local_overrides
 from dspy.predict.parallel import Parallel
 from dspy.primitives.base_module import BaseModule
+from dspy.primitives.example import Example
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 from dspy.utils.usage_tracker import track_usage
-from dspy.primitives.example import Example
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,5 @@
-from typing import Callable, Union, Optional, Any
+from typing import Any, Callable, Optional, Union
+
 import litellm
 import numpy as np
 
@@ -73,7 +74,7 @@ class Embedder:
 
         assert embeddings.shape == (2, 10)
         ```
-    """ 
+    """
 
     def __init__(self, model: Union[str, Callable], batch_size: int = 200, caching: bool = True, **kwargs: dict[str, Any]):
         self.model = model
