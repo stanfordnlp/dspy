@@ -98,7 +98,6 @@ class Prediction(Example):
             return self.__float__() >= float(other)
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
 
-
     @property
     def completions(self):
         return self._completions
