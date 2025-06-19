@@ -14,9 +14,10 @@ from dspy.clients.utils_finetune import TrainDataFormat, GRPOGroup
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
-from dspy.primitives.program import Program
+from dspy.primitives.program import Module, Program
 from dspy.teleprompt.bootstrap_finetune import FinetuneTeleprompter, all_predictors_have_lms, assert_structural_equivalency, get_unique_lms, bootstrap_trace_data, FailedPrediction
 from dspy.clients.provider import ReinforceJob
+from dspy.predict.refine import Refine
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,14 @@ def initialize_wandb(wandb_api_key: str = None, project_name: str = "grpo", run_
         name=run_name,
     )
     return wandb_run
+
+# TODO: This is very convoluted, because of the way dspy.Refine is implemented.
+class RefineProgramWrapper(Module):
+    def __init__(self, program: Module):
+        self.program = program
+    
+    def forward(self, example):
+        return self.program(**example.inputs())
 
 class GRPO(FinetuneTeleprompter):
     def __init__(
@@ -68,6 +77,11 @@ class GRPO(FinetuneTeleprompter):
         use_wandb: bool = False,
         wandb_api_key: str = None,
         wandb_run_name: str = None,
+        use_refine: bool = False,
+        refine_metric: Optional[Callable[[Example, Any], float]] = None,
+        refine_strategy: Literal['on_all_group_failure'] = 'on_all_group_failure',
+        refine_N: int = 5,
+        refine_threshold: float = 1.0,
         wandb_project_name: str = "grpo",
     ):
         super().__init__(train_kwargs=train_kwargs)
@@ -87,6 +101,18 @@ class GRPO(FinetuneTeleprompter):
         self.failure_score = failure_score
         self.format_failure_score = format_failure_score
         self.checkpoint_on_validation_improvement = checkpoint_on_validation_improvement
+
+        self.use_refine = use_refine
+        self.refine_metric = refine_metric
+        self.refine_strategy = refine_strategy
+        self.refine_N = refine_N
+        self.refine_threshold = refine_threshold
+
+        if use_refine:
+            assert refine_metric is not None, "refine_metric must be provided if use_refine is True."
+            assert refine_strategy in ['on_all_group_failure'], "refine_strategy must be 'on_all_group_failure' for GRPO."
+            assert refine_N > 0, "refine_N must be greater than 0."
+            assert refine_threshold is not None, "refine_threshold must be provided if use_refine is True."
 
         if self.sampling_temperature < 0.1:  # todo check
             logger.warning(f"Sampling temperature of {self.sampling_temperature} is smaller than 0.1 -- this might lead to low diversity. Consider using higher sampling temperatures.")
@@ -624,6 +650,64 @@ class GRPO(FinetuneTeleprompter):
                 subsample_training_dataset=subsample_training_dataset,
                 num_gens_per_teacher=num_gens_per_teacher,
             )
+
+            if self.use_refine:
+                def all_example_data_score_leq_threshold(example_data, threshold):
+                    return all([sample['score'] <= threshold for teacher_ind, teacher_data in enumerate(example_data) for sample in teacher_data])
+                
+                example_ids_to_be_refined = [
+                    example_ind
+                    for example_ind, example_data in enumerate(trace_data) if all_example_data_score_leq_threshold(example_data, self.failure_score)
+                ]
+                
+                if len(example_ids_to_be_refined) > 0:
+                    logger.info(f"Refining {len(example_ids_to_be_refined)} examples with scores less than or equal to the failure score {self.failure_score}...")
+                    self.wandb_log({
+                        "num_examples_to_refine": len(example_ids_to_be_refined),
+                    }, step=train_step_idx)
+                    def refine_metric(example, pred):
+                        assert "example" in example
+                        return self.refine_metric(example["example"], pred)
+
+                    # Select teachers weighted by their number of generations
+                    teacher_id_to_use = self.rng.choice([teacher_ind for teacher_ind, teacher in enumerate(teachers) for _ in range(num_gens_per_teacher[teacher_ind])])
+                    logger.info(f"Using teacher {teacher_id_to_use} for refinement...")
+                    self.wandb_log({
+                        "refine_teacher_id": teacher_id_to_use,
+                    }, step=train_step_idx)
+                    teacher_to_use = teachers[teacher_id_to_use]
+                    refined_teacher = RefineProgramWrapper(teacher_to_use)
+                    refined_teacher = Refine(refined_teacher, reward_fn=refine_metric, N=self.refine_N, threshold=self.refine_threshold)
+                    refined_training_set = [Example(example=subsample_training_dataset[i]).with_inputs("example") for i in example_ids_to_be_refined]
+                    new_trace_data = self.bootstrap_data(
+                        teachers=[refined_teacher],
+                        subsample_training_dataset=refined_training_set,
+                        num_gens_per_teacher=[1]
+                    )
+
+                    group_mean_score_before_refinement = np.mean([sample["score"] for example_ind, example_data in enumerate(trace_data) for sample in example_data[teacher_id_to_use]])
+
+                    for example_ind, example_data in zip(example_ids_to_be_refined, new_trace_data):
+                        assert len(example_data) == 1, f"Expected only one teacher data for example {example_ind}, but got {len(example_data)}"
+                        for teacher_ind, teacher_data in zip([teacher_id_to_use], example_data):
+                            assert len(teacher_data) == 1, f"Expected only one data for teacher {teacher_ind} for example {example_ind}, but got {len(teacher_data)}"
+                            sample = teacher_data[0]
+
+                            sample["example"] = subsample_training_dataset[example_ind]
+                            sample["example_ind"] = example_ind
+                            sample["trace"] = [t for t in sample["trace"] if hash(t[0].signature) in [hash(pred.signature) for pred in teachers[teacher_ind].predictors()]]
+                            assert len(sample["trace"])
+
+                            # We will replace any 1 random data point of trace_data with this new data
+                            ll = len(trace_data[example_ind][teacher_ind])
+                            trace_data[example_ind][teacher_ind][self.rng.randint(0, ll-1)] = sample
+                    
+                    group_mean_score_after_refinement = np.mean([sample["score"] for example_ind, example_data in enumerate(trace_data) for sample in example_data[teacher_id_to_use]])
+                    self.wandb_log({
+                        "group_mean_score_before_refinement": group_mean_score_before_refinement,
+                        "group_mean_score_after_refinement": group_mean_score_after_refinement,
+                        "refinement_score_improvement": group_mean_score_after_refinement - group_mean_score_before_refinement,
+                    }, step=train_step_idx)
 
             # The trace_data for examples with FailedPrediction cases will have the signature at index 0, instead of the predictor
             # We need to replace the signature with the predictor
