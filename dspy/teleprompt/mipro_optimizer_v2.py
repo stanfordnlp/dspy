@@ -527,9 +527,7 @@ class MIPROv2(Teleprompter):
         )
         logger.info(f"== Trial {1} / {adjusted_num_trials} - Full Evaluation of Default Program ==")
 
-        default_score, _ = eval_candidate_program(
-            len(valset), valset, program, evaluate, self.rng, return_all_scores=True
-        )
+        default_score = eval_candidate_program(len(valset), valset, program, evaluate, self.rng).score
         logger.info(f"Default program score: {default_score}\n")
 
         trial_logs = {}
@@ -579,7 +577,7 @@ class MIPROv2(Teleprompter):
 
             # Evaluate the candidate program (on minibatch if minibatch=True)
             batch_size = minibatch_size if minibatch else len(valset)
-            score = eval_candidate_program(batch_size, valset, candidate_program, evaluate, self.rng)
+            score = eval_candidate_program(batch_size, valset, candidate_program, evaluate, self.rng).score
             total_eval_calls += batch_size
 
             # Update best score and program
@@ -816,7 +814,7 @@ class MIPROv2(Teleprompter):
             param_score_dict, fully_evaled_param_combos
         )
         logger.info(f"Doing full eval on next top averaging program (Avg Score: {mean_score}) from minibatch trials...")
-        full_eval_score = eval_candidate_program(len(valset), valset, highest_mean_program, evaluate, self.rng)
+        full_eval_score = eval_candidate_program(len(valset), valset, highest_mean_program, evaluate, self.rng).score
         score_data.append({"score": full_eval_score, "program": highest_mean_program, "full_eval": True})
 
         # Log full eval as a trial so that optuna can learn from the new results

@@ -123,7 +123,9 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 display_progress=True,
             )
 
-            score, subscores = evaluate(program, return_all_scores=True)
+            result = evaluate(program)
+
+            score, subscores = result.score, [output[2] for output in result.results]
 
             all_subscores.append(subscores)
 

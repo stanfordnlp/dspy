@@ -123,8 +123,6 @@ class GRPO(FinetuneTeleprompter):
                     devset=valset + trainset,
                     num_threads=self.num_threads,
                     display_progress=True,
-                    return_all_scores=True,
-                    return_outputs=False,
                     provide_traceback=False,  # TODO(check with team)
                     max_errors=len(valset)*10,  # TODO(check with team)
                     failure_score=self.failure_score
@@ -134,8 +132,8 @@ class GRPO(FinetuneTeleprompter):
                 else:
                     logger.info(f"Evaluating the student program on the validation set after training step {step_idx + 1}/{self.num_train_steps}")
                 valset_evaluation = valset_evaluator(student, metric=self.metric)
-                trainset_scores = valset_evaluation[1][len(valset):]
-                valset_scores = valset_evaluation[1][:len(valset)]
+                trainset_scores = [r[-1] for r in valset_evaluation.results[len(valset):]]
+                valset_scores = [r[-1] for r in valset_evaluation.results[:len(valset)]]
                 trainset_agg = sum(trainset_scores) / len(trainset_scores)
                 valset_agg = sum(valset_scores) / len(valset_scores)
                 if step_idx == -1:
@@ -151,8 +149,6 @@ class GRPO(FinetuneTeleprompter):
                     devset=valset,
                     num_threads=self.num_threads,
                     display_progress=True,
-                    return_all_scores=True,
-                    return_outputs=False,
                     provide_traceback=False,  # TODO(check with team)
                     max_errors=len(valset)*10,  # TODO(check with team)
                     failure_score=self.failure_score
@@ -163,9 +159,9 @@ class GRPO(FinetuneTeleprompter):
                     logger.info(f"Evaluating the student program on the validation set after training step {step_idx + 1}/{self.num_train_steps}")
                 valset_evaluation = valset_evaluator(student, metric=self.metric)
                 if step_idx == -1:
-                    logger.info(f"Student program validation set score before training loop: {valset_evaluation[0]}")
+                    logger.info(f"Student program validation set score before training loop: {valset_evaluation.score}")
                 else:
-                    logger.info(f"Student program validation set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+                    logger.info(f"Student program validation set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation.score}")
         else:
             # No validation set provided by user
             if self.report_train_scores:
@@ -177,8 +173,6 @@ class GRPO(FinetuneTeleprompter):
                     devset=trainset,
                     num_threads=self.num_threads,
                     display_progress=True,
-                    return_all_scores=True,
-                    return_outputs=False,
                     provide_traceback=False,  # TODO(check with team)
                     max_errors=len(trainset)*10,  # TODO(check with team)
                     failure_score=self.failure_score
@@ -189,9 +183,9 @@ class GRPO(FinetuneTeleprompter):
                     logger.info(f"Evaluating the student program on the validation set after training step {step_idx + 1}/{self.num_train_steps}")
                 valset_evaluation = valset_evaluator(student, metric=self.metric)
                 if step_idx == -1:
-                    logger.info(f"Student program training set score before training loop: {valset_evaluation[0]}")
+                    logger.info(f"Student program training set score before training loop: {valset_evaluation.score}")
                 else:
-                    logger.info(f"Student program training set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation[0]}")
+                    logger.info(f"Student program training set score after training step {step_idx + 1}/{self.num_train_steps}: {valset_evaluation.score}")
             else:
                 # No valset provided, and not using train as val
                 assert not self.use_train_as_val, "If report_train_scores is False, use_train_as_val must be False."

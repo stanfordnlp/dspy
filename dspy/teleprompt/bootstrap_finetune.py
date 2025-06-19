@@ -231,7 +231,6 @@ def bootstrap_trace_data(
         devset=dataset,
         num_threads=num_threads,
         display_progress=True,
-        return_outputs=True,
         provide_traceback=False,  # TODO(check with team)
         max_errors=len(dataset) * 10,  # TODO(check with team)
         failure_score=failure_score,
@@ -290,10 +289,10 @@ def bootstrap_trace_data(
 
                 return failed_pred, trace
 
-    _, outputs = evaluator(wrapped_program, metric=wrapped_metric)
+    results = evaluator(wrapped_program, metric=wrapped_metric).results
 
     data = []
-    for example_ind, (example, prediction, score) in enumerate(outputs):
+    for example_ind, (example, prediction, score) in enumerate(results):
         try:
             prediction, trace = prediction
         except ValueError as ve:
