@@ -49,7 +49,11 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('databricks/databricks-meta-llama-3-1-70b-instruct')
+        lm = dspy.LM(
+            'databricks/databricks-llama-4-maverick',
+            api_key="YOUR_DATABRICKS_ACCESS_TOKEN",
+            api_base="YOUR_DATABRICKS_WORKSPACE_URL",  # e.g.: https://dbc-64bf4923-e39e.cloud.databricks.com/serving-endpoints
+        )
         dspy.configure(lm=lm)
         ```
 
