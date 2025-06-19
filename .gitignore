@@ -58,6 +58,7 @@ assertion.log
 /.devcontainer/.personalization.sh
 
 .mypy_cache
+CLAUDE.local.md
 dummy.csv
 docs/docs/**/*.json*
 *.index
