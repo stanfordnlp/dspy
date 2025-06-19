@@ -52,7 +52,7 @@ def test_evaluate_call():
         display_progress=False,
     )
     score = ev(program)
-    assert score == 100.0
+    assert score.score == 100.0
 
 
 def test_construct_result_df():
@@ -90,8 +90,8 @@ def test_multithread_evaluate_call():
         display_progress=False,
         num_threads=2,
     )
-    score = ev(program)
-    assert score == 100.0
+    result = ev(program)
+    assert result.score == 100.0
 
 
 def test_multi_thread_evaluate_call_cancelled(monkeypatch):
@@ -128,11 +128,10 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
             display_progress=False,
             num_threads=2,
         )
-        score = ev(program)
-        assert score == 100.0
+        ev(program)
 
 
-def test_evaluate_call_bad():
+def test_evaluate_call_wrong_answer():
     dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
@@ -141,8 +140,8 @@ def test_evaluate_call_bad():
         metric=answer_exact_match,
         display_progress=False,
     )
-    score = ev(program)
-    assert score == 0.0
+    result = ev(program)
+    assert result.score == 0.0
 
 
 @pytest.mark.parametrize(
@@ -245,11 +244,11 @@ def test_evaluate_callback():
         metric=answer_exact_match,
         display_progress=False,
     )
-    score = ev(program)
-    assert score == 100.0
+    result = ev(program)
+    assert result.score == 100.0
     assert callback.start_call_inputs["program"] == program
     assert callback.start_call_count == 1
-    assert callback.end_call_outputs == 100.0
+    assert callback.end_call_outputs.score == 100.0
     assert callback.end_call_count == 1
 
 def test_evaluation_result_repr():
