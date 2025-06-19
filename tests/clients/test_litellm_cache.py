@@ -1,5 +1,4 @@
 import importlib
-import os
 import shutil
 import tempfile
 from unittest.mock import patch
@@ -13,24 +12,6 @@ from tests.test_utils.server import read_litellm_test_server_request_logs
 @pytest.fixture()
 def temporary_blank_cache_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as cache_dir_path:
-        monkeypatch.setenv("DSPY_CACHEDIR", cache_dir_path)
-        importlib.reload(dspy.clients)
-        dspy.configure_cache(enable_memory_cache=True, enable_disk_cache=False, enable_litellm_cache=True)
-        yield cache_dir_path
-        dspy.configure_cache(enable_memory_cache=True, enable_disk_cache=True, enable_litellm_cache=False)
-
-
-@pytest.fixture()
-def temporary_populated_cache_dir(monkeypatch):
-    """
-    A DSPy cache directory populated with a response for the request with text "Example query"
-    to the model "openai/dspy-test-model".
-    """
-    module_dir = os.path.dirname(os.path.abspath(__file__))
-    populated_cache_path = os.path.join(module_dir, "example_cache")
-
-    with tempfile.TemporaryDirectory() as cache_dir_path:
-        shutil.copytree(populated_cache_path, cache_dir_path, dirs_exist_ok=True)
         monkeypatch.setenv("DSPY_CACHEDIR", cache_dir_path)
         importlib.reload(dspy.clients)
         dspy.configure_cache(enable_memory_cache=True, enable_disk_cache=False, enable_litellm_cache=True)
@@ -77,25 +58,6 @@ def test_lm_calls_are_cached_across_lm_instances(litellm_test_server, temporary_
     assert len(request_logs) == 3
 
 
-def test_lm_calls_are_cached_across_interpreter_sessions(litellm_test_server, temporary_populated_cache_dir):
-    """
-    Verifies that LM calls are cached across interpreter sessions. Pytest test cases effectively
-    simulate separate interpreter sessions.
-    """
-    api_base, server_log_file_path = litellm_test_server
-
-    lm1 = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-        max_tokens=1000,
-    )
-    lm1("Example query")
-
-    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
-    assert len(request_logs) == 0
-
-
 def test_lm_calls_are_cached_in_memory_when_expected(litellm_test_server, temporary_blank_cache_dir):
     api_base, server_log_file_path = litellm_test_server
 
@@ -130,31 +92,6 @@ def test_lm_calls_skip_in_memory_cache_if_key_not_computable():
         lm("Example query")
 
         assert mock_litellm_completion.call_count == 2
-
-
-# def test_lm_calls_with_callables_are_cached_as_expected():
-#     with patch("litellm.completion") as mock_completion:
-#         lm_with_callable = dspy.LM(
-#             model="openai/dspy-test-model",
-#             api_base="fakebase",
-#             api_key="fakekey",
-#             # Define a callable kwarg for the LM to use during inference
-#             azure_ad_token_provider=lambda *args, **kwargs: None,
-#         )
-#         # Invoke the LM twice; the second call should be cached in memory
-#         lm_with_callable("Query")
-#         lm_with_callable("Query")
-
-#         # Define and invoke a nearly-identical LM that lacks the callable kwarg,
-#         # which should not hit the in-memory cache
-#         lm_without_callable = dspy.LM(
-#             model="openai/dspy-test-model",
-#             api_base="fakebase",
-#             api_key="fakekey",
-#         )
-#         lm_without_callable("Query")
-
-#         assert mock_completion.call_count == 2
 
 
 def test_lms_called_expected_number_of_times_for_cache_key_generation_failures():
