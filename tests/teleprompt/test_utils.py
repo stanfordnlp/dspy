@@ -49,4 +49,4 @@ def test_eval_candidate_program_failure():
 
     result = eval_candidate_program(batch_size, trainset, candidate_program, evaluate)
 
-    assert result == 0.0
+    assert result.score == 0.0
