@@ -132,8 +132,8 @@ class GRPO(FinetuneTeleprompter):
                 else:
                     logger.info(f"Evaluating the student program on the validation set after training step {step_idx + 1}/{self.num_train_steps}")
                 valset_evaluation = valset_evaluator(student, metric=self.metric)
-                trainset_scores = valset_evaluation[1][len(valset):]
-                valset_scores = valset_evaluation[1][:len(valset)]
+                trainset_scores = [r[-1] for r in valset_evaluation.results[len(valset):]]
+                valset_scores = [r[-1] for r in valset_evaluation.results[:len(valset)]]
                 trainset_agg = sum(trainset_scores) / len(trainset_scores)
                 valset_agg = sum(valset_scores) / len(valset_scores)
                 if step_idx == -1:
