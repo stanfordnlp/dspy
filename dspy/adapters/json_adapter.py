@@ -22,6 +22,11 @@ from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
+ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE = (
+    "Both structured output format and JSON mode failed. Please choose a model that supports "
+    "`response_format` argument. Original error: {}"
+)
+
 
 def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     """
@@ -37,15 +42,8 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
-    def _call_common(
-        self,
-        lm,
-        lm_kwargs,
-        signature,
-        demos,
-        inputs,
-        call_fn,
-    ):
+    def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
+        """Common call logic to be used for both sync and async calls."""
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
 
@@ -56,23 +54,6 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
-        try:
-            structured_output_model = _get_structured_outputs_response_format(signature)
-            lm_kwargs["response_format"] = structured_output_model
-            return call_fn(lm, lm_kwargs, signature, demos, inputs)
-        except Exception:
-            logger.warning("Failed to use structured output format, falling back to JSON mode.")
-            try:
-                lm_kwargs["response_format"] = {"type": "json_object"}
-                return call_fn(lm, lm_kwargs, signature, demos, inputs)
-            except AdapterParseError as e:
-                raise e
-            except Exception as e:
-                raise RuntimeError(
-                    "Both structured output format and JSON mode failed. Please choose a model that supports "
-                    f"`response_format` argument. Original error: {e}"
-                ) from e
-
     def __call__(
         self,
         lm: LM,
@@ -81,7 +62,23 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        return self._call_common(lm, lm_kwargs, signature, demos, inputs, super().__call__)
+        result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().__call__)
+        if result:
+            return result
+
+        try:
+            structured_output_model = _get_structured_outputs_response_format(signature)
+            lm_kwargs["response_format"] = structured_output_model
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+        except Exception:
+            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+            try:
+                lm_kwargs["response_format"] = {"type": "json_object"}
+                return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterParseError as e:
+                raise e
+            except Exception as e:
+                raise RuntimeError(ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE.format(e)) from e
 
     async def acall(
         self,
@@ -91,7 +88,23 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        return await self._call_common(lm, lm_kwargs, signature, demos, inputs, super().acall)
+        result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().acall)
+        if result:
+            return await result
+
+        try:
+            structured_output_model = _get_structured_outputs_response_format(signature)
+            lm_kwargs["response_format"] = structured_output_model
+            return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+        except Exception:
+            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+            try:
+                lm_kwargs["response_format"] = {"type": "json_object"}
+                return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+            except AdapterParseError as e:
+                raise e
+            except Exception as e:
+                raise RuntimeError(ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE.format(e)) from e
 
     def _call_preprocess(
         self,

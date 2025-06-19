@@ -5,6 +5,7 @@ import pytest
 from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
+from dspy.adapters.json_adapter import ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE
 
 
 def test_json_adapter_passes_structured_output_when_supported_by_model():
@@ -442,3 +443,186 @@ def test_json_adapter_formats_conversation_history():
     assert messages[2]["content"] == '{\n  "answer": "Paris"\n}'
     assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
     assert messages[4]["content"] == '{\n  "answer": "Berlin"\n}'
+
+
+@pytest.mark.asyncio
+async def test_json_adapter_on_pydantic_model_async():
+    from litellm.utils import Choices, Message, ModelResponse
+
+    class User(pydantic.BaseModel):
+        id: int
+        name: str
+        email: str
+
+    class Answer(pydantic.BaseModel):
+        analysis: str
+        result: str
+
+    class TestSignature(dspy.Signature):
+        user: User = dspy.InputField(desc="The user who asks the question")
+        question: str = dspy.InputField(desc="Question the user asks")
+        answer: Answer = dspy.OutputField(desc="Answer to this question")
+
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.acompletion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}"
+                    )
+                )
+            ],
+            model="openai/gpt4o",
+        )
+
+        with dspy.context(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter()):
+            result = await program.acall(
+                user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
+            )
+
+        # Check that litellm.acompletion was called exactly once
+        mock_completion.assert_called_once()
+
+        _, call_kwargs = mock_completion.call_args
+        # Assert that there are exactly 2 messages (system + user)
+        assert len(call_kwargs["messages"]) == 2
+
+        assert call_kwargs["messages"][0]["role"] == "system"
+        content = call_kwargs["messages"][0]["content"]
+        assert content is not None
+
+        # Assert that system prompt includes correct input field descriptions
+        expected_input_fields = (
+            "1. `user` (User): The user who asks the question\n2. `question` (str): Question the user asks\n"
+        )
+        assert expected_input_fields in content
+
+        # Assert that system prompt includes correct output field description
+        expected_output_fields = "1. `answer` (Answer): Answer to this question\n"
+        assert expected_output_fields in content
+
+        # Assert that system prompt includes input formatting structure
+        expected_input_structure = "[[ ## user ## ]]\n{user}\n\n[[ ## question ## ]]\n{question}\n\n"
+        assert expected_input_structure in content
+
+        # Assert that system prompt includes output formatting structure
+        expected_output_structure = (
+            "Outputs will be a JSON object with the following fields.\n\n{\n  "
+            '"answer": "{answer}        # note: the value you produce must adhere to the JSON schema: '
+            '{\\"type\\": \\"object\\", \\"properties\\": {\\"analysis\\": {\\"type\\": \\"string\\", \\"title\\": '
+            '\\"Analysis\\"}, \\"result\\": {\\"type\\": \\"string\\", \\"title\\": \\"Result\\"}}, \\"required\\": '
+            '[\\"analysis\\", \\"result\\"], \\"title\\": \\"Answer\\"}"\n}'
+        )
+        assert expected_output_structure in content
+
+        assert call_kwargs["messages"][1]["role"] == "user"
+        user_message_content = call_kwargs["messages"][1]["content"]
+        assert user_message_content is not None
+
+        # Assert that the user input data is formatted correctly
+        expected_input_data = (
+            '[[ ## user ## ]]\n{"id": 5, "name": "name_test", "email": "email_test"}\n\n[[ ## question ## ]]\n'
+            "What is the capital of France?\n\n"
+        )
+        assert expected_input_data in user_message_content
+
+        # Assert that the adapter output has expected fields and values
+        assert result.answer.analysis == "Paris is the captial of France"
+        assert result.answer.result == "Paris"
+
+
+def test_json_adapter_fallback_to_json_mode_on_structured_output_failure():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="String output field")
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.completion") as mock_completion:
+        # First call raises error to simulate structured output failure, second call returns a valid response
+        mock_completion.side_effect = [
+            RuntimeError("Structured output failed!"),
+            ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))]),
+        ]
+
+        result = program(question="Dummy question!")
+        # The parse should succeed on the second call
+        assert mock_completion.call_count == 2
+        assert result.answer == "Test output"
+
+        # The first call should have tried structured output
+        _, first_call_kwargs = mock_completion.call_args_list[0]
+        assert issubclass(first_call_kwargs.get("response_format"), pydantic.BaseModel)
+
+        # The second call should have used JSON mode
+        _, second_call_kwargs = mock_completion.call_args_list[1]
+        assert second_call_kwargs.get("response_format") == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_json_adapter_fallback_to_json_mode_on_structured_output_failure_async():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="String output field")
+
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.acompletion") as mock_acompletion:
+        # First call raises error to simulate structured output failure, second call returns a valid response
+        mock_acompletion.side_effect = [
+            RuntimeError("Structured output failed!"),
+            ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))]),
+        ]
+
+        with dspy.context(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+            result = await program.acall(question="Dummy question!")
+        # The parse should succeed on the second call
+        assert mock_acompletion.call_count == 2
+        assert result.answer == "Test output"
+
+        # The first call should have tried structured output
+        _, first_call_kwargs = mock_acompletion.call_args_list[0]
+        assert issubclass(first_call_kwargs.get("response_format"), pydantic.BaseModel)
+
+        # The second call should have used JSON mode
+        _, second_call_kwargs = mock_acompletion.call_args_list[1]
+        assert second_call_kwargs.get("response_format") == {"type": "json_object"}
+
+
+def test_error_message_on_json_adapter_failure():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="String output field")
+
+    program = dspy.Predict(TestSignature)
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.side_effect = RuntimeError("Failed!")
+
+        with pytest.raises(RuntimeError) as error:
+            program(question="Dummy question!")
+
+        assert ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE[:50] in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_error_message_on_json_adapter_failure_async():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="String output field")
+
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.acompletion") as mock_acompletion:
+        mock_acompletion.side_effect = RuntimeError("Failed!")
+
+        with dspy.context(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+            with pytest.raises(RuntimeError) as error:
+                await program.acall(question="Dummy question!")
+
+        assert ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE[:50] in str(error.value)
