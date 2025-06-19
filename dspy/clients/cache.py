@@ -30,7 +30,6 @@ class Cache:
         disk_cache_dir: str,
         disk_size_limit_bytes: Optional[int] = 1024 * 1024 * 10,
         memory_max_entries: Optional[int] = 1000000,
-
     ):
         """
         Args:
@@ -230,9 +229,11 @@ def request_cache(
                 return cached_result
 
             # Otherwise, compute and store the result
+            # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
+            original_request = copy.deepcopy(modified_request)
             result = fn(*args, **kwargs)
             # `enable_memory_cache` can be provided at call time to avoid indefinite growth.
-            cache.put(modified_request, result, ignored_args_for_cache_key, enable_memory_cache)
+            cache.put(original_request, result, ignored_args_for_cache_key, enable_memory_cache)
 
             return result
 
@@ -249,8 +250,10 @@ def request_cache(
                 return cached_result
 
             # Otherwise, compute and store the result
+            # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
+            original_request = copy.deepcopy(modified_request)
             result = await fn(*args, **kwargs)
-            cache.put(modified_request, result, ignored_args_for_cache_key, enable_memory_cache)
+            cache.put(original_request, result, ignored_args_for_cache_key, enable_memory_cache)
 
             return result
 
