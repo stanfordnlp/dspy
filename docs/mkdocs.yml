@@ -59,6 +59,8 @@ nav:
             - Tracking DSPy Optimizers: tutorials/optimizer_tracking/index.md
             - Streaming: tutorials/streaming/index.md
             - Async: tutorials/async/index.md
+        - Real-World Examples:
+            - Generating llms.txt: tutorials/llms_txt_generation/index.md
     - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
