@@ -2,6 +2,8 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from asyncer import syncify
+
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 
@@ -21,36 +23,13 @@ class StatusMessage:
 
 
 def sync_send_to_stream(stream, message):
-    """Send message to stream in a sync context, regardless of whether the caller is async or not."""
-    # Try to get current event loop, create one if none exists
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        # "There is no current event loop in thread" error
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    """Send message to stream channel in a sync context, using syncify to avoid blocking."""
 
-    # If we're in an async context
-    if loop.is_running():
-        # In an async context, we need to use an approach that doesn't block
-        # Create a new thread and run a new event loop there
-        import concurrent.futures
+    async def _send():
+        await stream.send(message)
 
-        def run_async_in_new_loop():
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            try:
-                return new_loop.run_until_complete(stream.send(message))
-            finally:
-                new_loop.close()
-
-        # Run the function in a separate thread
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(run_async_in_new_loop)
-            return future.result()  # This shouldn't hang now
-    else:
-        # We're in a sync context, use run_until_complete
-        return loop.run_until_complete(stream.send(message))
+    # Use syncify to run the async send in a background thread/event loop
+    return syncify(_send)()
 
 
 class StatusMessageProvider:
@@ -96,6 +75,30 @@ class StatusMessageProvider:
     def lm_end_status_message(self, outputs: Any):
         """Status message after a `dspy.LM` is called."""
         pass
+
+
+def sync_peek_receive_stream(receive_stream, timeout=1.0):
+    async def _peek():
+        try:
+            return await asyncio.wait_for(receive_stream.receive(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return None
+
+    try:
+        return asyncio.run(_peek())
+    except RuntimeError:
+        # If already in an event loop (e.g., in Jupyter), use a new loop in a thread
+        import threading
+
+        result = {}
+
+        def run():
+            result["value"] = asyncio.run(_peek())
+
+        t = threading.Thread(target=run)
+        t.start()
+        t.join()
+        return result["value"]
 
 
 class StatusStreamingCallback(BaseCallback):

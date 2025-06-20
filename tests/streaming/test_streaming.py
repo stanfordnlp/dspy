@@ -1,4 +1,5 @@
 import os
+import time
 from unittest import mock
 from unittest.mock import AsyncMock
 
@@ -649,3 +650,32 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
         assert all_chunks[1].predict_name == "predict2"
         assert all_chunks[1].signature_field_name == "judgement"
         assert all_chunks[1].chunk == "The answer provides a humorous and relevant punchline to the classic joke setup."
+
+
+@pytest.mark.anyio
+async def test_status_message_non_blocking():
+    def dummy_tool():
+        time.sleep(1)
+        return "dummy_tool_output"
+
+    class MyProgram(dspy.Module):
+        def forward(self, question, **kwargs):
+            dspy.Tool(dummy_tool)()
+            return dspy.Prediction(answer="dummy_tool_output")
+
+    program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider())
+
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+
+    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
+        output = program(question="why did a chicken cross the kitchen?")
+        timestamps = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StatusMessage):
+                timestamps.append(time.time())
+
+    # timestamps[0]: tool start message
+    # timestamps[1]: tool end message
+    # There should be ~1 second delay between the tool start and end messages because we explicitly sleep for 1 second
+    # in the tool.
+    assert timestamps[1] - timestamps[0] >= 1
