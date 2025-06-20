@@ -21,7 +21,7 @@ By the end of this tutorial, you'll have a DSPy-powered email processing system 
 ## Installation and Setup
 
 ```bash
-pip install dspy datasets pandas email-validator
+pip install dspy
 ```
 
 ## Step 1: Define Our Data Structures
