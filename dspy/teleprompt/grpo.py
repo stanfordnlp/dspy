@@ -667,6 +667,7 @@ class GRPO(FinetuneTeleprompter):
                 ]
                 
                 if len(example_ids_to_be_refined) > 0:
+                    num_refine_parse_failures = 0
                     logger.info(f"Refining {len(example_ids_to_be_refined)} examples with scores less than or equal to the failure score {self.failure_score}...")
                     self.wandb_log({
                         "num_examples_to_refine": len(example_ids_to_be_refined),
@@ -689,10 +690,15 @@ class GRPO(FinetuneTeleprompter):
                     )
 
                     group_mean_score_before_refinement = np.mean([sample["score"] for example_ind, example_data in enumerate(trace_data) for sample in example_data[teacher_id_to_use]])
+                    group_std_before_refinement = np.std([sample["score"] for example_ind, example_data in enumerate(trace_data) for sample in example_data[teacher_id_to_use]])
 
                     for example_ind, example_data in zip(example_ids_to_be_refined, new_trace_data):
                         assert len(example_data) == 1, f"Expected only one teacher data for example {example_ind}, but got {len(example_data)}"
                         for teacher_ind, teacher_data in zip([teacher_id_to_use], example_data):
+                            if len(teacher_data) == 0:
+                                logger.warning(f"No refine data found for teacher {teacher_ind} for example {example_ind}. This is likely a parse failure in the dspy.Refine program, instead of an error in the actual program.")
+                                num_refine_parse_failures += 1
+                                continue
                             assert len(teacher_data) == 1, f"Expected only one data for teacher {teacher_ind} for example {example_ind}, but got {len(teacher_data)}"
                             sample = teacher_data[0]
 
@@ -705,11 +711,19 @@ class GRPO(FinetuneTeleprompter):
                             ll = len(trace_data[example_ind][teacher_ind])
                             trace_data[example_ind][teacher_ind][self.rng.randint(0, ll-1)] = sample
                     
+                    self.wandb_log({
+                        "num_refine_parse_failures": num_refine_parse_failures,
+                    }, step=train_step_idx)
+                    
                     group_mean_score_after_refinement = np.mean([sample["score"] for example_ind, example_data in enumerate(trace_data) for sample in example_data[teacher_id_to_use]])
+                    group_std_after_refinement = np.std([sample["score"] for example_ind, example_data in enumerate(trace_data) for sample in example_data[teacher_id_to_use]])
                     self.wandb_log({
                         "group_mean_score_before_refinement": group_mean_score_before_refinement,
                         "group_mean_score_after_refinement": group_mean_score_after_refinement,
                         "refinement_score_improvement": group_mean_score_after_refinement - group_mean_score_before_refinement,
+                        "group_std_before_refinement": group_std_before_refinement,
+                        "group_std_after_refinement": group_std_after_refinement,
+                        "refinement_std_improvement": group_std_after_refinement - group_std_before_refinement
                     }, step=train_step_idx)
 
             # The trace_data for examples with FailedPrediction cases will have the signature at index 0, instead of the predictor

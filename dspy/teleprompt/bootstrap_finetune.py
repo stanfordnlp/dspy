@@ -254,7 +254,12 @@ def bootstrap_trace_data(
                         if pred.signature == failed_signature:
                             found_pred = pred
                             break
-                    assert found_pred is not None, "Failed to find the predictor for the failed signature"
+                    # assert found_pred is not None, "Failed to find the predictor for the failed signature"
+                    # TODO(Lakshya): This issue was found when using refine with GRPO. If the refinement predictor (not the original program) fails to parse the output, then we aren't able to find the predictor for the failed signature.
+                    # Currently, for GRPO, we are making the decision that failed parses for refine should not make it into the GRPO group data.
+                    if found_pred is None:
+                        logger.warning(f"Failed to find the predictor for the signature which had a parse failure: {failed_signature}. This is likely due to you running an auxiliary program like dspy.Refine that hides some predictors. This format failure will NOT be captured in the trace, and will be ignored.")
+                        raise ve
 
                     trace = dspy.settings.trace.copy()
                     # Trace is Tuple[signature, inputs, prediction outputs]
