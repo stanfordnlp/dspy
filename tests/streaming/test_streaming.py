@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from unittest import mock
@@ -665,14 +666,41 @@ async def test_status_message_non_blocking():
 
     program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider())
 
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            output = program(question="why did a chicken cross the kitchen?")
+            timestamps = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StatusMessage):
+                    timestamps.append(time.time())
+
+    # timestamps[0]: tool start message
+    # timestamps[1]: tool end message
+    # There should be ~1 second delay between the tool start and end messages because we explicitly sleep for 1 second
+    # in the tool.
+    assert timestamps[1] - timestamps[0] >= 1
+
+
+@pytest.mark.anyio
+async def test_status_message_non_blocking_async_program():
+    async def dummy_tool():
+        await asyncio.sleep(1)
+        return "dummy_tool_output"
+
+    class MyProgram(dspy.Module):
+        async def aforward(self, question, **kwargs):
+            await dspy.Tool(dummy_tool).acall()
+            return dspy.Prediction(answer="dummy_tool_output")
+
+    program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider(), is_async_program=True)
 
     with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
-        output = program(question="why did a chicken cross the kitchen?")
-        timestamps = []
-        async for value in output:
-            if isinstance(value, dspy.streaming.StatusMessage):
-                timestamps.append(time.time())
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            output = program(question="why did a chicken cross the kitchen?")
+            timestamps = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StatusMessage):
+                    timestamps.append(time.time())
 
     # timestamps[0]: tool start message
     # timestamps[1]: tool end message

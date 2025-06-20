@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -23,13 +24,29 @@ class StatusMessage:
 
 
 def sync_send_to_stream(stream, message):
-    """Send message to stream channel in a sync context, using syncify to avoid blocking."""
+    """Send message to stream in a sync context, regardless of event loop state."""
 
     async def _send():
         await stream.send(message)
 
-    # Use syncify to run the async send in a background thread/event loop
-    return syncify(_send)()
+    try:
+        asyncio.get_running_loop()
+
+        # If we're in an event loop, offload to a new thread with its own event loop
+        def run_in_new_loop():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return new_loop.run_until_complete(_send())
+            finally:
+                new_loop.close()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_in_new_loop)
+            return future.result()
+    except RuntimeError:
+        # Not in an event loop, safe to use a new event loop in this thread
+        return syncify(_send)()
 
 
 class StatusMessageProvider:
@@ -75,30 +92,6 @@ class StatusMessageProvider:
     def lm_end_status_message(self, outputs: Any):
         """Status message after a `dspy.LM` is called."""
         pass
-
-
-def sync_peek_receive_stream(receive_stream, timeout=1.0):
-    async def _peek():
-        try:
-            return await asyncio.wait_for(receive_stream.receive(), timeout=timeout)
-        except asyncio.TimeoutError:
-            return None
-
-    try:
-        return asyncio.run(_peek())
-    except RuntimeError:
-        # If already in an event loop (e.g., in Jupyter), use a new loop in a thread
-        import threading
-
-        result = {}
-
-        def run():
-            result["value"] = asyncio.run(_peek())
-
-        t = threading.Thread(target=run)
-        t.start()
-        t.join()
-        return result["value"]
 
 
 class StatusStreamingCallback(BaseCallback):
