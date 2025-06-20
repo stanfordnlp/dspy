@@ -1,6 +1,6 @@
 # Financial Analysis with DSPy ReAct and Yahoo Finance News
 
-This tutorial shows how to build a financial analysis agent using DSPy ReAct with LangChain's Yahoo Finance News tool for real-time market analysis.
+This tutorial shows how to build a financial analysis agent using DSPy ReAct with [LangChain's Yahoo Finance News tool](https://python.langchain.com/docs/integrations/tools/yahoo_finance_news/) for real-time market analysis.
 
 ## What You'll Build
 
