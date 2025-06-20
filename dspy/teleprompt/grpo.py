@@ -432,6 +432,7 @@ class GRPO(FinetuneTeleprompter):
         teachers: List[Program],
         subsample_training_dataset: List[Example],
         num_gens_per_teacher: List[int],
+        metric_fn: Callable[[Example, Any], float]
     ) -> List[List[List[Dict[str, Any]]]]:
         def teacher_round_data(tind: int) -> List[Dict[str, Any]]:
             teacher = teachers[tind]
@@ -439,7 +440,7 @@ class GRPO(FinetuneTeleprompter):
             round_data = bootstrap_trace_data(
                 program=teacher,
                 dataset=subsample_training_dataset_repeated,
-                metric=self.metric,
+                metric=metric_fn,
                 num_threads=self.num_threads,
                 raise_on_error=False, # TODO(GRPO Team): This should be True, once the dspy format issue is fixed
                 capture_failed_parses=True,
@@ -460,6 +461,10 @@ class GRPO(FinetuneTeleprompter):
                     trace_data[example_ind_in_subsample][tind].append(data_dict)
 
         return trace_data
+
+    def refine_metric_wrapper(self, example: Example, prediction: Any) -> Dict[Literal["score", "feedback"], Any]:
+        assert "example" in example
+        return self.refine_metric(example["example"], prediction)
 
     def compile(
         self,
@@ -649,6 +654,7 @@ class GRPO(FinetuneTeleprompter):
                 teachers=teachers,
                 subsample_training_dataset=subsample_training_dataset,
                 num_gens_per_teacher=num_gens_per_teacher,
+                metric_fn=self.metric
             )
 
             if self.use_refine:
@@ -665,9 +671,6 @@ class GRPO(FinetuneTeleprompter):
                     self.wandb_log({
                         "num_examples_to_refine": len(example_ids_to_be_refined),
                     }, step=train_step_idx)
-                    def refine_metric(example, pred):
-                        assert "example" in example
-                        return self.refine_metric(example["example"], pred)
 
                     # Select teachers weighted by their number of generations
                     teacher_id_to_use = self.rng.choice([teacher_ind for teacher_ind, teacher in enumerate(teachers) for _ in range(num_gens_per_teacher[teacher_ind])])
@@ -676,13 +679,13 @@ class GRPO(FinetuneTeleprompter):
                         "refine_teacher_id": teacher_id_to_use,
                     }, step=train_step_idx)
                     teacher_to_use = teachers[teacher_id_to_use]
-                    refined_teacher = RefineProgramWrapper(teacher_to_use)
-                    refined_teacher = Refine(refined_teacher, reward_fn=refine_metric, N=self.refine_N, threshold=self.refine_threshold)
+                    refined_teacher = Refine(RefineProgramWrapper(teacher_to_use), reward_fn=self.refine_metric_wrapper, N=self.refine_N, threshold=self.refine_threshold)
                     refined_training_set = [Example(example=subsample_training_dataset[i]).with_inputs("example") for i in example_ids_to_be_refined]
                     new_trace_data = self.bootstrap_data(
                         teachers=[refined_teacher],
                         subsample_training_dataset=refined_training_set,
-                        num_gens_per_teacher=[1]
+                        num_gens_per_teacher=[1],
+                        metric_fn=lambda example, prediction, *args, **kwargs: self.refine_metric_wrapper(example, prediction)['score']
                     )
 
                     group_mean_score_before_refinement = np.mean([sample["score"] for example_ind, example_data in enumerate(trace_data) for sample in example_data[teacher_id_to_use]])
