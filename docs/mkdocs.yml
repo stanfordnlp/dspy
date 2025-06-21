@@ -65,6 +65,8 @@ nav:
     - Community:
         - Community Resources: community/community-resources.md
         - Use Cases: community/use-cases.md
+        - Why DSPy?: why-dspy.md
+        - Design Principles: design-principles.md
         - Roadmap: roadmap.md
         - Contributing: community/how-to-contribute.md
     - FAQ:
