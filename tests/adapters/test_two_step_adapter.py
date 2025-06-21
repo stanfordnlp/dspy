@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 
 import dspy
+from dspy.utils.dummies import DummyLM
 
 
 def test_two_step_adapter_call():
@@ -142,18 +143,8 @@ def test_two_step_adapter_parse():
         confidence: float = dspy.OutputField(desc="Confidence score")
 
     first_response = "main LM response"
-
-    mock_extraction_lm = mock.MagicMock(spec=dspy.LM)
-    mock_extraction_lm.return_value = [
-        """
-        {
-            "tags": ["AI", "deep learning", "neural networks"],
-            "confidence": 0.87
-        }
-    """
-    ]
-    mock_extraction_lm.kwargs = {"temperature": 1.0}
-    mock_extraction_lm.model = "openai/gpt-4o"
+    
+    mock_extraction_lm = DummyLM([{"tags": ["AI", "deep learning", "neural networks"], "confidence": 0.87}])
     adapter = dspy.TwoStepAdapter(mock_extraction_lm)
     dspy.configure(adapter=adapter, lm=mock_extraction_lm)
 

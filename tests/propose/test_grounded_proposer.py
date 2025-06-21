@@ -15,7 +15,7 @@ from dspy.utils.dummies import DummyLM
 )
 def test_propose_instructions_for_program(demo_candidates):
     # Set large numner here so that lm always returns the same response
-    prompt_model = DummyLM([{"proposed_instruction": "instruction"}] * 10)
+    prompt_model = DummyLM([{"observations": ""}, {"summary": ""}, {"program_description": ""}, {"module_description": ""}, {"proposed_instruction": "instruction"}])
     program = Predict("question -> answer")
     trainset = []
 
@@ -37,7 +37,7 @@ def test_propose_instructions_for_program(demo_candidates):
     ],
 )
 def test_propose_instruction_for_predictor(demo_candidates):
-    prompt_model = DummyLM([{"proposed_instruction": "instruction"}] * 10)
+    prompt_model = DummyLM([{"observations": ""}, {"summary": ""}, {"program_description": ""}, {"module_description": ""}, {"proposed_instruction": "instruction"}])
     program = Predict("question -> answer")
 
     proposer = GroundedProposer(prompt_model=prompt_model, program=program, trainset=[], verbose=False)

@@ -1,3 +1,4 @@
+from typing import Type
 import ast
 import enum
 import inspect
@@ -12,6 +13,8 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.types.base_type import BaseType
 from dspy.signatures.utils import get_dspy_field_type
+from dspy.signatures.field import InputField
+from dspy.signatures.signature import Signature
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -271,3 +274,11 @@ def _quoted_string_for_literal_type_annotation(s: str) -> str:
     else:
         # Neither => enclose in single quotes
         return f"'{s}'"
+
+def create_signature_for_retry(signature: Type[Signature]):
+    signature = signature.append("previous_response", InputField(
+        desc="Previous response with format errors. You should avoid the same type of error as the previous response.",
+    )).append("error_message", InputField(
+        desc="Error message for the previous response.",
+    ))
+    return signature

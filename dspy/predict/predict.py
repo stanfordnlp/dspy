@@ -4,7 +4,7 @@ from typing import Optional, Type, Union
 
 from pydantic import BaseModel
 
-from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters import DEFAULT_ADAPTER, ChatAdapter
 from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
@@ -164,7 +164,7 @@ class Predict(Module, Parameter):
     def forward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
-        adapter = settings.adapter or ChatAdapter()
+        adapter = settings.adapter or DEFAULT_ADAPTER
 
         if self._should_stream():
             with settings.context(caller_predict=self):
