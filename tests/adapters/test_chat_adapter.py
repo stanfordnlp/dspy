@@ -3,6 +3,7 @@ from unittest import mock
 
 import pydantic
 import pytest
+from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
 
@@ -376,3 +377,48 @@ def test_chat_adapter_formats_conversation_history():
     assert messages[2]["content"] == "[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]\n"
     assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
     assert messages[4]["content"] == "[[ ## answer ## ]]\nBerlin\n\n[[ ## completed ## ]]\n"
+
+
+def test_chat_adapter_fallback_to_json_adapter_on_exception():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        # Mock returning a response compatible with JSONAdapter but not ChatAdapter
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+            model="openai/gpt-4o-mini",
+        )
+
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+            adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+            mock_json_adapter_call.assert_called_once()
+
+        # The parse should succeed
+        result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+        assert result == [{"answer": "Paris"}]
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_fallback_to_json_adapter_on_exception_async():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.acompletion") as mock_completion:
+        # Mock returning a response compatible with JSONAdapter but not ChatAdapter
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+            model="openai/gpt-4o-mini",
+        )
+
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.acall") as mock_json_adapter_acall:
+            await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
+            mock_json_adapter_acall.assert_called_once()
+
+        # The parse should succeed
+        result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
+        assert result == [{"answer": "Paris"}]

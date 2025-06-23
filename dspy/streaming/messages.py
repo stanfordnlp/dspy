@@ -1,6 +1,9 @@
 import asyncio
+import concurrent.futures
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
+
+from asyncer import syncify
 
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
@@ -21,36 +24,29 @@ class StatusMessage:
 
 
 def sync_send_to_stream(stream, message):
-    """Send message to stream in a sync context, regardless of whether the caller is async or not."""
-    # Try to get current event loop, create one if none exists
+    """Send message to stream in a sync context, regardless of event loop state."""
+
+    async def _send():
+        await stream.send(message)
+
     try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        # "There is no current event loop in thread" error
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        asyncio.get_running_loop()
 
-    # If we're in an async context
-    if loop.is_running():
-        # In an async context, we need to use an approach that doesn't block
-        # Create a new thread and run a new event loop there
-        import concurrent.futures
-
-        def run_async_in_new_loop():
+        # If we're in an event loop, offload to a new thread with its own event loop
+        def run_in_new_loop():
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
             try:
-                return new_loop.run_until_complete(stream.send(message))
+                return new_loop.run_until_complete(_send())
             finally:
                 new_loop.close()
 
-        # Run the function in a separate thread
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(run_async_in_new_loop)
-            return future.result()  # This shouldn't hang now
-    else:
-        # We're in a sync context, use run_until_complete
-        return loop.run_until_complete(stream.send(message))
+            future = executor.submit(run_in_new_loop)
+            return future.result()
+    except RuntimeError:
+        # Not in an event loop, safe to use a new event loop in this thread
+        return syncify(_send)()
 
 
 class StatusMessageProvider:
