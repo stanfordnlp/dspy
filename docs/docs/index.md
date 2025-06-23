@@ -31,16 +31,16 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('openai/gpt-4o-mini', api_key='YOUR_OPENAI_API_KEY')
+        lm = dspy.LM("openai/gpt-4o-mini", api_key="YOUR_OPENAI_API_KEY")
         dspy.configure(lm=lm)
         ```
 
     === "Anthropic"
-        You can authenticate by setting the ANTHROPIC_API_KEY env variable or passing `api_key` below.
+        You can authenticate by setting the `ANTHROPIC_API_KEY` env variable or passing `api_key` below.
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('anthropic/claude-3-opus-20240229', api_key='YOUR_ANTHROPIC_API_KEY')
+        lm = dspy.LM("anthropic/claude-3-opus-20240229", api_key="YOUR_ANTHROPIC_API_KEY")
         dspy.configure(lm=lm)
         ```
 
@@ -50,7 +50,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
         ```python linenums="1"
         import dspy
         lm = dspy.LM(
-            'databricks/databricks-llama-4-maverick',
+            "databricks/databricks-llama-4-maverick",
             api_key="YOUR_DATABRICKS_ACCESS_TOKEN",
             api_base="YOUR_DATABRICKS_WORKSPACE_URL",  # e.g.: https://dbc-64bf4923-e39e.cloud.databricks.com/serving-endpoints
         )
@@ -58,11 +58,11 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
         ```
 
     === "Gemini"
-        You can authenticate by setting the GEMINI_API_KEY env variable or passing `api_key` below.
+        You can authenticate by setting the `GEMINI_API_KEY` env variable or passing `api_key` below.
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('gemini/gemini-2.5-flash', api_key='YOUR_GEMINI_API_KEY')
+        lm = dspy.LM("gemini/gemini-2.5-flash", api_key="YOUR_GEMINI_API_KEY")
         dspy.configure(lm=lm)
         ```
 
@@ -78,7 +78,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('ollama_chat/llama3.2', api_base='http://localhost:11434', api_key='')
+        lm = dspy.LM("ollama_chat/llama3.2", api_base="http://localhost:11434", api_key="")
         dspy.configure(lm=lm)
         ```
 
@@ -99,7 +99,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
           ```python linenums="1"
           lm = dspy.LM("openai/meta-llama/Llama-3.1-8B-Instruct",
                        api_base="http://localhost:7501/v1",  # ensure this points to your port
-                       api_key="local", model_type='chat')
+                       api_key="local", model_type="chat")
           dspy.configure(lm=lm)
           ```
 
@@ -118,7 +118,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
+        lm = dspy.LM("openai/your-model-name", api_key="PROVIDER_API_KEY", api_base="YOUR_PROVIDER_URL")
         dspy.configure(lm=lm)
         ```
 
@@ -161,10 +161,10 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
         ```python linenums="1"       
         def search_wikipedia(query: str) -> list[str]:
-            results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
-            return [x['text'] for x in results]
+            results = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")(query, k=3)
+            return [x["text"] for x in results]
         
-        rag = dspy.ChainOfThought('context, question -> response')
+        rag = dspy.ChainOfThought("context, question -> response")
 
         question = "What's the name of the castle that David Gregory inherited?"
         rag(context=search_wikipedia(question), question=question)
@@ -187,7 +187,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
             """Classify sentiment of a given sentence."""
             
             sentence: str = dspy.InputField()
-            sentiment: Literal['positive', 'negative', 'neutral'] = dspy.OutputField()
+            sentiment: Literal["positive", "negative", "neutral"] = dspy.OutputField()
             confidence: float = dspy.OutputField()
 
         classify = dspy.Predict(Classify)
@@ -239,8 +239,8 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
             return dspy.PythonInterpreter({}).execute(expression)
 
         def search_wikipedia(query: str):
-            results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
-            return [x['text'] for x in results]
+            results = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")(query, k=3)
+            return [x["text"] for x in results]
 
         react = dspy.ReAct("question -> answer: float", tools=[evaluate_math, search_wikipedia])
 
@@ -311,14 +311,14 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
 ??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
 
-    Standard prompts conflate interface (“what should the LM do?”) with implementation (“how do we tell it to do that?”). DSPy isolates the former as _signatures_ so we can infer the latter or learn it from data — in the context of a bigger program.
+    Standard prompts conflate interface ("what should the LM do?") with implementation ("how do we tell it to do that?"). DSPy isolates the former as _signatures_ so we can infer the latter or learn it from data — in the context of a bigger program.
     
     Even before you start using optimizers, DSPy's modules allow you to script effective LM systems as ergonomic, portable _code_. Across many tasks and LMs, we maintain _signature test suites_ that assess the reliability of the built-in DSPy adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
 
 
 ## 2) **Optimizers** tune the prompts and weights of your AI modules.
 
-DSPy provides you with the tools to compile high-level code with natural language annotations into the low-level computations, prompts, or weight updates that align your LM with your program’s structure and metrics. If you change your code or your metrics, you can simply re-compile accordingly.
+DSPy provides you with the tools to compile high-level code with natural language annotations into the low-level computations, prompts, or weight updates that align your LM with your program's structure and metrics. If you change your code or your metrics, you can simply re-compile accordingly.
 
 Given a few tens or hundreds of representative _inputs_ of your task and a _metric_ that can measure the quality of your system's outputs, you can use a DSPy optimizer. Different optimizers in DSPy work by **synthesizing good few-shot examples** for every module, like `dspy.BootstrapRS`,<sup>[1](https://arxiv.org/abs/2310.03714)</sup> **proposing and intelligently exploring better natural-language instructions** for every prompt, like `dspy.MIPROv2`,<sup>[2](https://arxiv.org/abs/2406.11695)</sup> and **building datasets for your modules and using them to finetune the LM weights** in your system, like `dspy.BootstrapFinetune`.<sup>[3](https://arxiv.org/abs/2407.10930)</sup>
 
@@ -342,11 +342,11 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         import dspy
         from dspy.datasets import HotPotQA
 
-        dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
         def search_wikipedia(query: str) -> list[str]:
-            results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
-            return [x['text'] for x in results]
+            results = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")(query, k=3)
+            return [x["text"] for x in results]
 
         trainset = [x.with_inputs('question') for x in HotPotQA(train_seed=2024, train_size=500).train]
         react = dspy.ReAct("question -> answer", tools=[search_wikipedia])
@@ -364,7 +364,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         class RAG(dspy.Module):
             def __init__(self, num_docs=5):
                 self.num_docs = num_docs
-                self.respond = dspy.ChainOfThought('context, question -> response')
+                self.respond = dspy.ChainOfThought("context, question -> response")
 
             def forward(self, question):
                 context = search(question, k=self.num_docs)   # defined in tutorial linked below
@@ -403,10 +403,10 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
         ```python linenums="1"
         import dspy
-        dspy.configure(lm=dspy.LM('openai/gpt-4o-mini-2024-07-18'))
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini-2024-07-18"))
 
         # Define the DSPy module for classification. It will use the hint at training time, if available.
-        signature = dspy.Signature("text, hint -> label").with_updated_fields('label', type_=Literal[tuple(CLASSES)])
+        signature = dspy.Signature("text, hint -> label").with_updated_fields("label", type_=Literal[tuple(CLASSES)])
         classify = dspy.ChainOfThought(signature)
 
         # Optimize via BootstrapFinetune.
