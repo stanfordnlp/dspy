@@ -83,7 +83,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             data_pred_ind = None if self.multitask else pred_ind
             lm = pred.lm or settings.lm
             training_key = (lm, data_pred_ind)
-            
+
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(
                     trace_data=trace_data, lm=lm, pred_ind=data_pred_ind
