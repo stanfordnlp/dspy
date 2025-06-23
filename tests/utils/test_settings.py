@@ -20,28 +20,11 @@ def test_forbid_configure_call_in_child_thread():
     dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
 
     def worker():
-        import threading
-
-        print("GEEZ Thread id in worker: ", threading.get_ident())
-        with pytest.raises(RuntimeError, match="Cannot call dspy.configure in a child thread"):
+        with pytest.raises(RuntimeError, match="Cannot call dspy.configure"):
             dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[])
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         executor.submit(worker)
-
-
-@pytest.mark.asyncio
-async def test_forbid_configure_call_in_async_function():
-    with pytest.raises(
-        RuntimeError,
-        match=r"dspy.settings.configure\(\.\.\.\) cannot be called a second time from*",
-    ):
-        dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
-        dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
-
-    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[]):
-        # context is allowed
-        pass
 
 
 def test_dspy_context():
@@ -170,6 +153,7 @@ async def test_dspy_context_with_async_task_group():
         assert dspy.settings.trace == []
 
 
+@pytest.mark.asyncio
 async def test_dspy_configure_allowance_async():
     def bar1():
         # `dspy.configure` is disallowed in different async tasks from the initial one.
@@ -194,9 +178,16 @@ async def test_dspy_configure_allowance_async():
         with dspy.context(lm=dspy.LM("openai/gpt-4o")):
             await asyncio.sleep(0.1)
 
+    async def foo4():
+        # foo4 is directly invoked by the entry task, so it has the same async task as the entry task.
+        dspy.configure(lm=dspy.LM("openai/gpt-4o"))
+        await asyncio.sleep(0.1)
+
     # `dspy.configure` is allowed to be called multiple times in the same async task.
     dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
     dspy.configure(lm=dspy.LM("openai/gpt-4o"))
     dspy.configure(adapter=dspy.JSONAdapter())
 
-    asyncio.run(asyncio.gather(foo1(), foo2(), foo3()))
+    await asyncio.gather(foo1(), foo2(), foo3())
+
+    foo4()

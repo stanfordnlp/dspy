@@ -109,8 +109,6 @@ class Settings:
         global main_thread_config, config_owner_thread_id, config_owner_async_task
         current_thread_id = threading.get_ident()
 
-        print("GEEZ Thread id in configure: ", current_thread_id)
-
         if config_owner_thread_id is None:
             # First `configure` call assigns the owner thread id.
             config_owner_thread_id = current_thread_id
