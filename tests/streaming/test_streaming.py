@@ -388,7 +388,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
     async def completion_side_effect(*args, **kwargs):
         return stream_generators.pop(0)()  # return new async generator instance
 
-    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect) as mock_completion:
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -484,7 +484,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
 
     with mock.patch(
         "litellm.acompletion", new_callable=AsyncMock, side_effect=[gpt_4o_mini_stream_1(), gpt_4o_mini_stream_2()]
-    ):
+    ) as mock_completion:
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[

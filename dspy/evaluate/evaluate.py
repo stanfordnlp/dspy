@@ -126,9 +126,9 @@ class Evaluate:
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
-
+            
             - score: A float percentage score (e.g., 67.30) representing overall performance
-
+            
             - results: a list of (example, prediction, score) tuples for each example in devset
         """
         metric = metric if metric is not None else self.metric
