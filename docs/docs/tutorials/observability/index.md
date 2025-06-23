@@ -105,7 +105,7 @@ If you don't specify a different port via `--port` flag, you MLflow server will 
 Now let's change our code snippet to enable MLflow tracing. We need to:
 
 - Tell MLflow where the server is hosted.
-- Apply `mlflow.autolog()` so that DSPy tracing is automatically captured.
+- Apply `mlflow.dspy.autolog()` so that DSPy tracing is automatically captured.
 
 The full code is as below, now let's run it again!
 
@@ -120,6 +120,8 @@ os.environ["OPENAI_API_KEY"] = "{your_openai_api_key}"
 mlflow.set_tracking_uri("http://127.0.0.1:5000")
 # Create a unique name for your experiment.
 mlflow.set_experiment("DSPy")
+# Automatically log all DSPy calls to MLflow.
+mlflow.dspy.autolog()
 
 lm = dspy.LM("openai/gpt-4o-mini")
 colbert = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
