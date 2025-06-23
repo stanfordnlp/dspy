@@ -20,6 +20,9 @@ def test_forbid_configure_call_in_child_thread():
     dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
 
     def worker():
+        import threading
+
+        print("GEEZ Thread id in worker: ", threading.get_ident())
         with pytest.raises(RuntimeError, match="Cannot call dspy.configure in a child thread"):
             dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[])
 
@@ -165,3 +168,35 @@ async def test_dspy_context_with_async_task_group():
         # The main thread is not affected by the context
         assert dspy.settings.lm.model == "openai/gpt-4.1"
         assert dspy.settings.trace == []
+
+
+async def test_dspy_configure_allowance_async():
+    def bar1():
+        # `dspy.configure` is disallowed in different async tasks from the initial one.
+        # In this case, foo1 (async) calls bar1 (sync), and bar1 uses the async task from foo1.
+        with pytest.raises(RuntimeError) as e:
+            dspy.configure(lm=dspy.LM("openai/gpt-4o"))
+        assert "dspy.settings.configure(...) can only be called from the same async" in str(e.value)
+
+    async def foo1():
+        bar1()
+        await asyncio.sleep(0.1)
+
+    async def foo2():
+        # `dspy.configure` is disallowed in different async tasks from the initial one.
+        with pytest.raises(RuntimeError) as e:
+            dspy.configure(lm=dspy.LM("openai/gpt-4o"))
+        assert "dspy.settings.configure(...) can only be called from the same async" in str(e.value)
+        await asyncio.sleep(0.1)
+
+    async def foo3():
+        # `dspy.context` is allowed in different async tasks from the initial one.
+        with dspy.context(lm=dspy.LM("openai/gpt-4o")):
+            await asyncio.sleep(0.1)
+
+    # `dspy.configure` is allowed to be called multiple times in the same async task.
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"))
+    dspy.configure(adapter=dspy.JSONAdapter())
+
+    asyncio.run(asyncio.gather(foo1(), foo2(), foo3()))

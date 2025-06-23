@@ -31,6 +31,7 @@ DEFAULT_CONFIG = dotdict(
 # Global base configuration and owner tracking
 main_thread_config = copy.deepcopy(DEFAULT_CONFIG)
 config_owner_thread_id = None
+config_owner_async_task = None
 
 # Global lock for settings configuration
 global_lock = threading.Lock()
@@ -105,13 +106,14 @@ class Settings:
         return self.copy()
 
     def _ensure_configure_allowed(self):
-        global main_thread_config, config_owner_thread_id
+        global main_thread_config, config_owner_thread_id, config_owner_async_task
         current_thread_id = threading.get_ident()
 
+        print("GEEZ Thread id in configure: ", current_thread_id)
+
         if config_owner_thread_id is None:
-            # First `configure` call is always allowed.
+            # First `configure` call assigns the owner thread id.
             config_owner_thread_id = current_thread_id
-            return
 
         if config_owner_thread_id != current_thread_id:
             # Disallow a second `configure` calls from other threads.
@@ -130,6 +132,11 @@ class Settings:
         if not is_async_task:
             return
 
+        if config_owner_async_task is None:
+            # First `configure` call assigns the owner async task.
+            config_owner_async_task = asyncio.current_task()
+            return
+
         # We are in an async task. Now check for IPython and allow calling `configure` from IPython.
         in_ipython = False
         try:
@@ -142,10 +149,10 @@ class Settings:
             # If `IPython` is not installed or `get_ipython` failed, we are not in an IPython environment.
             in_ipython = False
 
-        if not in_ipython:
+        if not in_ipython and config_owner_async_task != asyncio.current_task():
             raise RuntimeError(
-                "dspy.settings.configure(...) cannot be called a second time from an async task. Use "
-                "`dspy.context(...)` instead."
+                "dspy.settings.configure(...) can only be called from the same async task that called it first. Please "
+                "use `dspy.context(...)` in other async tasks instead."
             )
 
     def configure(self, **kwargs):
