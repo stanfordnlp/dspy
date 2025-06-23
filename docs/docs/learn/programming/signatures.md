@@ -49,7 +49,7 @@ toxicity = dspy.Predict(
 sentence = "it's a charming and often affecting journey."  # example from the SST-2 dataset.
 
 classify = dspy.Predict('sentence -> sentiment: bool')  # we'll see an example with Literal[] later
-classify(sentence=sentence).sentiment
+print(classify(sentence=sentence).sentiment)
 ```
 **Output:**
 ```text
