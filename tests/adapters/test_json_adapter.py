@@ -5,7 +5,6 @@ import pytest
 from litellm.utils import Choices, Message, ModelResponse
 
 import dspy
-from dspy.adapters.json_adapter import ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE
 
 
 def test_json_adapter_passes_structured_output_when_supported_by_model():
@@ -616,12 +615,18 @@ def test_error_message_on_json_adapter_failure():
     dspy.configure(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
 
     with mock.patch("litellm.completion") as mock_completion:
-        mock_completion.side_effect = RuntimeError("Failed!")
+        mock_completion.side_effect = RuntimeError("RuntimeError!")
 
         with pytest.raises(RuntimeError) as error:
             program(question="Dummy question!")
 
-        assert ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE[:50] in str(error.value)
+        assert "RuntimeError!" in str(error.value)
+
+        mock_completion.side_effect = ValueError("ValueError!")
+        with pytest.raises(ValueError) as error:
+            program(question="Dummy question!")
+
+        assert "ValueError!" in str(error.value)
 
 
 @pytest.mark.asyncio
@@ -633,10 +638,15 @@ async def test_error_message_on_json_adapter_failure_async():
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.acompletion") as mock_acompletion:
-        mock_acompletion.side_effect = RuntimeError("Failed!")
-
         with dspy.context(lm=dspy.LM(model="openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+            mock_acompletion.side_effect = RuntimeError("RuntimeError!")
             with pytest.raises(RuntimeError) as error:
                 await program.acall(question="Dummy question!")
 
-        assert ERROR_MESSAGE_ON_JSON_ADAPTER_FAILURE[:50] in str(error.value)
+            assert "RuntimeError!" in str(error.value)
+
+            mock_acompletion.side_effect = ValueError("ValueError!")
+            with pytest.raises(ValueError) as error:
+                await program.acall(question="Dummy question!")
+
+            assert "ValueError!" in str(error.value)
