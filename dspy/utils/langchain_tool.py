@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 def convert_langchain_tool(tool: "BaseTool") -> Tool:
     """Build a DSPy tool from a LangChain tool.
-    
+
     This function converts a LangChain tool (either created with @tool decorator
     or by subclassing BaseTool) into a DSPy Tool.
 

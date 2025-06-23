@@ -169,10 +169,10 @@ class BaseModule:
         - `save_program=True`: Save the whole module to a directory via cloudpickle, which contains both the state and
             architecture of the model.
 
-        If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization 
-        with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize the module by value rather 
-        than by reference, ensuring the module is fully preserved along with the saved program. This is useful 
-        when you have custom modules that need to be serialized alongside your program. If None, then no modules 
+        If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization
+        with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize the module by value rather
+        than by reference, ensuring the module is fully preserved along with the saved program. This is useful
+        when you have custom modules that need to be serialized alongside your program. If None, then no modules
         will be registered for serialization.
 
         We also save the dependency versions, so that the loaded model can check if there is a version mismatch on

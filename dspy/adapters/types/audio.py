@@ -114,7 +114,7 @@ class Audio(BaseType):
 def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
     """
     Encode audio to a dict with 'data' and 'audio_format'.
-    
+
     Accepts: local file path, URL, data URI, dict, Audio instance, numpy array, or bytes (with known format).
     """
     if isinstance(audio, dict) and "data" in audio and "audio_format" in audio:

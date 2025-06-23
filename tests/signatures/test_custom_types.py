@@ -29,7 +29,6 @@ def test_type_alias_for_nested_types():
         class NestedType(pydantic.BaseModel):
             value: str
 
-    NestedType = Container.NestedType
     alias_sig = Signature("input: str -> output: NestedType")
     assert alias_sig.output_fields["output"].annotation == Container.NestedType
 

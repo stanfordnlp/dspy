@@ -21,7 +21,7 @@ def test_bootstrap_finetune_initialization():
     # Initialize BootstrapFinetune with a dummy metric and minimal setup
     bootstrap = BootstrapFinetune(metric=simple_metric)
     assert bootstrap.metric == simple_metric, "Metric not correctly initialized"
-    assert bootstrap.multitask == True, "Multitask should default to True"
+    assert bootstrap.multitask, "Multitask should default to True"
 
 
 class SimpleModule(dspy.Module):
@@ -44,7 +44,6 @@ def test_compile_with_predict_instances_no_explicit_lm():
     teacher = SimpleModule("input -> output")
 
     lm = DummyLM(["Initial thoughts", "Finish[blue]"])
-    original_lm = dspy.settings.lm
     dspy.settings.configure(lm=lm)
 
     # Verify that the predictor doesn't have an explicit LM
