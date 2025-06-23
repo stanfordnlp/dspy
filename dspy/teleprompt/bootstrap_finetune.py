@@ -83,6 +83,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             data_pred_ind = None if self.multitask else pred_ind
             lm = pred.lm or settings.lm
             training_key = (lm, data_pred_ind)
+            
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(
                     trace_data=trace_data, lm=lm, pred_ind=data_pred_ind
@@ -115,7 +116,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         logger.info("Updating the student program with the fine-tuned LMs...")
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
-            training_key = (pred.lm, data_pred_ind)
+            training_key = (pred.lm or settings.lm, data_pred_ind)
             finetuned_lm = key_to_lm[training_key]
             if isinstance(finetuned_lm, Exception):
                 raise RuntimeError(f"Finetuned LM for predictor {pred_ind} failed.") from finetuned_lm
