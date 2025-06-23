@@ -60,6 +60,7 @@ nav:
             - Streaming: tutorials/streaming/index.md
             - Async: tutorials/async/index.md
         - Real-World Examples:
+            - Overview: tutorials/real_world_examples/index.md
             - Generating llms.txt: tutorials/llms_txt_generation/index.md
             - Memory-Enabled ReAct Agents: tutorials/mem0_react_agent/index.md
             - Financial Analysis with Yahoo Finance: tutorials/yahoo_finance_react/index.md
