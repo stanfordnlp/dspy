@@ -2,6 +2,17 @@ from dspy.primitives.example import Example
 
 
 class Prediction(Example):
+    """A prediction object that contains the output of a DSPy module.
+    
+    Prediction inherits from Example and supports comparison operations (==, <, >, <=, >=)
+    for Predictions with a 'score' field. The comparison operations compare the 'score'
+    values as floats. For equality comparison, Predictions are equal if their underlying
+    data stores are equal (inherited from Example).
+    
+    Arithmetic operations (+, /, etc.) are also supported for Predictions with a 'score'
+    field, operating on the score value.
+    """
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
