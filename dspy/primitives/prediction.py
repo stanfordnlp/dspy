@@ -12,7 +12,7 @@ class Prediction(Example):
     Arithmetic operations (+, /, etc.) are also supported for Predictions with a 'score'
     field, operating on the score value.
     """
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
