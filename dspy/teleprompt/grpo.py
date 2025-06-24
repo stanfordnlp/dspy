@@ -69,6 +69,7 @@ class GRPO(FinetuneTeleprompter):
         report_train_scores: bool = False,
         failure_score: float = 0,
         format_failure_score: float = -1,
+        exclude_all_other_traces_on_format_failure: bool = True,
         variably_invoked_predictor_grouping_mode: Union[Literal['truncate'], Literal['fill'], Literal['ragged']] = 'truncate',
         variably_invoked_predictor_fill_strategy: Optional[Union[Literal['randint'], Literal['max']]] = None,
         grpo_group_size: Union[int, None] = None,
@@ -79,7 +80,9 @@ class GRPO(FinetuneTeleprompter):
         wandb_run_name: str = None,
         use_refine: bool = False,
         refine_metric: Optional[Callable[[Example, Any], float]] = None,
-        refine_strategy: Literal['on_all_group_failure'] = 'on_all_group_failure',
+        refine_strategy: Literal['on_all_group_failure', 'on_all_group_failure_and_std_below_threshold'] = 'on_all_group_failure',
+        refine_std_threshold_percentile: float = 20,
+        refine_std_threshold_interval: int = 50,
         refine_N: int = 5,
         refine_threshold: float = 1.0,
         wandb_project_name: str = "grpo",
@@ -107,12 +110,21 @@ class GRPO(FinetuneTeleprompter):
         self.refine_strategy = refine_strategy
         self.refine_N = refine_N
         self.refine_threshold = refine_threshold
+        self.refine_std_threshold_percentile = refine_std_threshold_percentile
+        self.refine_std_threshold_interval = refine_std_threshold_interval
+
+        self.exclude_all_other_traces_on_format_failure = exclude_all_other_traces_on_format_failure
 
         if use_refine:
             assert refine_metric is not None, "refine_metric must be provided if use_refine is True."
-            assert refine_strategy in ['on_all_group_failure'], "refine_strategy must be 'on_all_group_failure' for GRPO."
+            assert refine_strategy in ['on_all_group_failure', 'on_all_group_failure_and_std_below_threshold'], "refine_strategy must be 'on_all_group_failure' 'on_all_group_failure_and_std_below_threshold' for GRPO."
             assert refine_N > 0, "refine_N must be greater than 0."
             assert refine_threshold is not None, "refine_threshold must be provided if use_refine is True."
+        
+        if self.refine_strategy == 'on_all_group_failure_and_std_below_threshold':
+            assert refine_std_threshold_percentile is not None, "refine_std_threshold_percentile must be provided if refine_strategy is 'on_all_group_failure_and_std_below_threshold'."
+            assert refine_std_threshold_interval is not None, "refine_std_threshold_interval must be provided if refine_strategy is 'on_all_group_failure_and_std_below_threshold'."
+            assert 0 < refine_std_threshold_percentile < 100, "refine_std_threshold_percentile must be between 0 and 100."
 
         if self.sampling_temperature < 0.1:  # todo check
             logger.warning(f"Sampling temperature of {self.sampling_temperature} is smaller than 0.1 -- this might lead to low diversity. Consider using higher sampling temperatures.")
@@ -623,6 +635,8 @@ class GRPO(FinetuneTeleprompter):
             grpo_training_jobs=grpo_training_jobs,
         )
 
+        train_example_score_std_over_time = []
+
         logger.info("Starting the GRPO training loop...")
         for train_step_idx in range(self.num_train_steps):
 
@@ -660,12 +674,32 @@ class GRPO(FinetuneTeleprompter):
             if self.use_refine:
                 def all_example_data_score_leq_threshold(example_data, threshold):
                     return all([sample['score'] <= threshold for teacher_ind, teacher_data in enumerate(example_data) for sample in teacher_data])
-                
-                example_ids_to_be_refined = [
-                    example_ind
-                    for example_ind, example_data in enumerate(trace_data) if all_example_data_score_leq_threshold(example_data, self.failure_score)
-                ]
-                
+
+                if self.refine_strategy == 'on_all_group_failure':
+                    example_ids_to_be_refined = [
+                        example_ind
+                        for example_ind, example_data in enumerate(trace_data) if all_example_data_score_leq_threshold(example_data, self.failure_score)
+                    ]
+                elif self.refine_strategy == 'on_all_group_failure_and_std_below_threshold':
+                    example_ids_to_be_refined = [
+                        example_ind
+                        for example_ind, example_data in enumerate(trace_data) if all_example_data_score_leq_threshold(example_data, self.failure_score)
+                    ]
+
+                    if len(train_example_score_std_over_time) > self.refine_std_threshold_interval:
+                        std_threshold = np.quantile(
+                            train_example_score_std_over_time[-self.refine_std_threshold_interval:],
+                            self.refine_std_threshold_percentile/100
+                        )
+                        example_ids_to_be_refined_new = [
+                            example_ind
+                            for example_ind, example_data in enumerate(trace_data) if np.std([sample['score'] for teacher_ind, teacher_data in enumerate(example_data) for sample in teacher_data]) <= std_threshold
+                        ]
+
+                        example_ids_to_be_refined = list(set(example_ids_to_be_refined + example_ids_to_be_refined_new))
+                else:
+                    assert False, f"Unknown refine strategy {self.refine_strategy}. Please use 'on_all_group_failure' or 'on_all_group_failure_and_std_below_threshold'."
+
                 if len(example_ids_to_be_refined) > 0:
                     num_refine_parse_failures = 0
                     logger.info(f"Refining {len(example_ids_to_be_refined)} examples with scores less than or equal to the failure score {self.failure_score}...")
@@ -742,7 +776,9 @@ class GRPO(FinetuneTeleprompter):
 
             example_id_to_scores = [[sample["score"] for teacher_ind, teacher_data in enumerate(example_data) for sample in teacher_data] for example_ind, example_data in enumerate(trace_data)]
             score_mean = np.mean(sum(example_id_to_scores, []))
-            score_std = np.mean([np.std(example_id_to_scores[i]) for i in range(len(example_id_to_scores))])
+            example_id_to_std = [np.std(example_id_to_scores[i]) for i in range(len(example_id_to_scores))]
+            train_example_score_std_over_time.extend(example_id_to_std)
+            score_std = np.mean(example_id_to_std)
             self.wandb_log({
                 "train_score_mean": score_mean,
                 "train_score_std": score_std,
@@ -775,8 +811,15 @@ class GRPO(FinetuneTeleprompter):
                             # sample['prediction'] is module_level prediction
                             assert sample["example_ind"] == example_ind, f"Example index {sample['example_ind']} does not match the expected index {example_ind}"
 
-                            trace_instances_for_current_pred = [(*t, sample["score"], teacher_ind) for t in sample["trace"] if hash(t[0].signature) == hash(teachers[teacher_ind].predictors()[pred_id].signature)]
-                            
+                            if not self.exclude_all_other_traces_on_format_failure:
+                                trace_instances_for_current_pred = [(*t, sample["score"], teacher_ind) for t in sample["trace"] if hash(t[0].signature) == hash(teachers[teacher_ind].predictors()[pred_id].signature)]
+                            else:
+                                is_format_failure = isinstance(sample["prediction"], FailedPrediction)
+                                if is_format_failure:
+                                    trace_instances_for_current_pred = [(*t, sample["score"], teacher_ind) for t in sample["trace"] if hash(t[0].signature) == hash(teachers[teacher_ind].predictors()[pred_id].signature) and isinstance(t[2], FailedPrediction)]
+                                else:
+                                    trace_instances_for_current_pred = [(*t, sample["score"], teacher_ind) for t in sample["trace"] if hash(t[0].signature) == hash(teachers[teacher_ind].predictors()[pred_id].signature)]
+
                             predictor_example_invocations.append(trace_instances_for_current_pred)
 
                     if len(predictor_example_invocations) == 0:
