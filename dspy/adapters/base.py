@@ -56,11 +56,10 @@ class Adapter:
 
                 lm_kwargs["tools"] = litellm_tools
 
-                import pdb
-
-                pdb.set_trace()
-
                 signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
+                signature_for_native_function_calling = signature_for_native_function_calling.delete(
+                    tool_call_input_field_name
+                )
 
                 return signature_for_native_function_calling
 
@@ -91,10 +90,6 @@ class Adapter:
                 value = {}
                 for field_name in signature.output_fields.keys():
                     value[field_name] = None
-
-            import pdb
-
-            pdb.set_trace()
             if tool_calls and tool_call_output_field_name:
                 tool_calls = [
                     {
