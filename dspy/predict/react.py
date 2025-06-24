@@ -1,10 +1,10 @@
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Literal, Type
+from typing import TYPE_CHECKING, Any, Callable, Type
 
 from litellm import ContextWindowExceededError
 
 import dspy
-from dspy.adapters.types.tool import Tool
+from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
 
@@ -53,10 +53,10 @@ class ReAct(Module):
             [
                 f"You are an Agent. In each episode, you will be given the fields {inputs} as input. And you can see your past trajectory so far.",
                 f"Your goal is to use one or more of the supplied tools to collect any necessary information for producing {outputs}.\n",
-                "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.",
+                "To do this, you will interleave next_thought and tool_calls in each turn, and also when finishing the task.",
                 "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
                 "When writing next_thought, you may reason about the current situation and plan for future steps.",
-                "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
+                "When selecting the tool_calls, the tool must be one of the tool provided in tools\n",
             ]
         )
 
@@ -67,16 +67,16 @@ class ReAct(Module):
             args={},
         )
 
-        for idx, tool in enumerate(tools.values()):
-            instr.append(f"({idx + 1}) {tool}")
-        instr.append("When providing `next_tool_args`, the value inside the field must be in JSON format")
+        # for idx, tool in enumerate(tools.values()):
+        #     instr.append(f"({idx + 1}) {tool}")
+        # instr.append("When providing `next_tool_args`, the value inside the field must be in JSON format")
 
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
             .append("trajectory", dspy.InputField(), type_=str)
+            .append("tools", dspy.InputField(), type_=list[Tool])
             .append("next_thought", dspy.OutputField(), type_=str)
-            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
-            .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
+            .append("tool_calls", dspy.OutputField(), type_=ToolCalls)
         )
 
         fallback_signature = dspy.Signature(
@@ -104,15 +104,17 @@ class ReAct(Module):
                 break
 
             trajectory[f"thought_{idx}"] = pred.next_thought
-            trajectory[f"tool_name_{idx}"] = pred.next_tool_name
-            trajectory[f"tool_args_{idx}"] = pred.next_tool_args
+            trajectory[f"tool_calls_{idx}"] = pred.tool_calls
+            trajectory[f"observation_{idx}"] = []
 
-            try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
-            except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+            tool_names = [tool_call.name for tool_call in pred.tool_calls.tool_calls]
+            for tool_call in pred.tool_calls.tool_calls:
+                try:
+                    trajectory[f"observation_{idx}"].append(self.tools[tool_call.name](**tool_call.args))
+                except Exception as err:
+                    trajectory[f"observation_{idx}"].append(f"Execution error in {tool_call.name}: {_fmt_exc(err)}")
 
-            if pred.next_tool_name == "finish":
+            if "finish" in tool_names or len(tool_names) == 0:
                 break
 
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
@@ -149,6 +151,7 @@ class ReAct(Module):
                 return module(
                     **input_args,
                     trajectory=self._format_trajectory(trajectory),
+                    tools=list(self.tools.values()),
                 )
             except ContextWindowExceededError:
                 logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
