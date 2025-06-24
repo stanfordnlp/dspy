@@ -31,7 +31,7 @@ def test_cot_skips_with_reasoning_model():
     dspy.settings.configure(lm=lm)
     signature = dspy.Signature("question -> answer")
     predict = ChainOfThought(signature)
-    assert list(predict.predict_reasoning.signature.output_fields.keys()) == [
+    assert list(predict.predict.signature.output_fields.keys()) == [
         "answer",
     ]
     assert predict(question="What is 1+1?").answer == "2"
