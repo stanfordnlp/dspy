@@ -23,3 +23,13 @@ Create conversational agents with persistent memory using DSPy ReAct and Mem0 in
 Develop financial analysis agents that fetch real-time market data, analyze news sentiment, and provide investment insights using LangChain tool integration.
 
 **Key Concepts:** Tool integration, financial data, real-time analysis
+
+### 🔄 [Automated Code Generation from Documentation](../sample_code_generation/index.md)
+Build a system that automatically fetches documentation from URLs and generates working code examples for any library using DSPy's intelligent analysis.
+
+**Key Concepts:** Web scraping, documentation parsing, automated learning, code generation
+
+### 🎮 [Building a Creative Text-Based AI Game](../ai_text_game/index.md)
+Create an interactive text-based adventure game with dynamic storytelling, AI-powered NPCs, and adaptive gameplay using DSPy's modular programming approach.
+
+**Key Concepts:** Interactive storytelling, game state management, character progression, AI-driven narratives
