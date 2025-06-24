@@ -5,6 +5,7 @@ This tutorial demonstrates how to create an interactive text-based adventure gam
 ## What You'll Build
 
 An intelligent text-based adventure game featuring:
+
 - Dynamic story generation and branching narratives
 - AI-powered character interactions and dialogue
 - Adaptive gameplay that responds to player choices
