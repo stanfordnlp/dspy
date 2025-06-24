@@ -84,3 +84,17 @@ class ChainOfThought(Module):
             _ = self.predict
             state = self.__dict__.copy()
         return state
+
+    def named_parameters(self):
+        """Override to ensure the predict property is cached and included in named parameters."""
+        # Force evaluation of the cached_property if not already done
+        # This ensures it gets stored in __dict__ and picked up by the base implementation
+        if "predict" not in self.__dict__:
+            try:
+                _ = self.predict  # This triggers the cached_property
+            except Exception:
+                # If accessing predict fails for any reason, continue without it
+                pass
+
+        # Now call the base implementation which will include the cached predict
+        return super().named_parameters()
