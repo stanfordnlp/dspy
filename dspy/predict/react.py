@@ -3,10 +3,14 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Type
 
 from litellm import ContextWindowExceededError
 
-import dspy
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types.tool import Tool
+from dspy.dsp.utils.settings import settings
+from dspy.predict.chain_of_thought import ChainOfThought
+from dspy.predict.predict import Predict
 from dspy.primitives.module import Module
-from dspy.signatures.signature import ensure_signature
+from dspy.primitives.prediction import Prediction
+from dspy.signatures.signature import InputField, OutputField, Signature, ensure_signature
 
 logger = logging.getLogger(__name__)
 
@@ -72,25 +76,25 @@ class ReAct(Module):
         instr.append("When providing `next_tool_args`, the value inside the field must be in JSON format")
 
         react_signature = (
-            dspy.Signature({**signature.input_fields}, "\n".join(instr))
-            .append("trajectory", dspy.InputField(), type_=str)
-            .append("next_thought", dspy.OutputField(), type_=str)
-            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
-            .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
+            Signature({**signature.input_fields}, "\n".join(instr))
+            .append("trajectory", InputField(), type_=str)
+            .append("next_thought", OutputField(), type_=str)
+            .append("next_tool_name", OutputField(), type_=Literal[tuple(tools.keys())])
+            .append("next_tool_args", OutputField(), type_=dict[str, Any])
         )
 
-        fallback_signature = dspy.Signature(
+        fallback_signature = Signature(
             {**signature.input_fields, **signature.output_fields},
             signature.instructions,
-        ).append("trajectory", dspy.InputField(), type_=str)
+        ).append("trajectory", InputField(), type_=str)
 
         self.tools = tools
-        self.react = dspy.Predict(react_signature)
-        self.extract = dspy.ChainOfThought(fallback_signature)
+        self.react = Predict(react_signature)
+        self.extract = ChainOfThought(fallback_signature)
 
     def _format_trajectory(self, trajectory: dict[str, Any]):
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
-        trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
+        adapter = settings.adapter or ChatAdapter()
+        trajectory_signature = Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
@@ -116,7 +120,7 @@ class ReAct(Module):
                 break
 
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        return dspy.Prediction(trajectory=trajectory, **extract)
+        return Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
         trajectory = {}
@@ -141,7 +145,7 @@ class ReAct(Module):
                 break
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        return dspy.Prediction(trajectory=trajectory, **extract)
+        return Prediction(trajectory=trajectory, **extract)
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         for _ in range(3):
