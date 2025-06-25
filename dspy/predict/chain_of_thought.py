@@ -12,7 +12,7 @@ class ChainOfThought(Module):
     def __init__(
         self,
         signature: str | Type[Signature],
-        rationale_field: OutputField | FieldInfo | None = None,
+        rationale_field: FieldInfo | None = None,
         rationale_field_type: Type = str,
         **config: dict[str, Any],
     ):
