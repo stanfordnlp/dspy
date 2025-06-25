@@ -315,7 +315,7 @@ print("\n\n🎯 Generating Streamlit Examples:")
 streamlit_examples = generate_examples_for_library(streamlit_info, "Streamlit")
 ```
 
-## Step 4: Generic Library Learning Function
+## Step 4: Interactive Library Learning Function
 
 ```python
 def learn_any_library(library_name: str, documentation_urls: List[str], use_cases: List[str] = None):
@@ -364,118 +364,287 @@ def learn_any_library(library_name: str, documentation_urls: List[str], use_case
         print(f"❌ Error learning {library_name}: {e}")
         return None
 
-# Example usage with different libraries
-libraries_to_learn = [
-    {
-        "name": "Plotly",
-        "urls": [
-            "https://plotly.com/python/getting-started/",
-            "https://plotly.com/python/basic-charts/"
-        ],
-        "use_cases": [
-            "Create a simple line chart",
-            "Build an interactive dashboard",
-            "Advanced styling and customization"
-        ]
-    },
-    {
-        "name": "Rich",
-        "urls": [
-            "https://rich.readthedocs.io/en/stable/introduction.html",
-            "https://rich.readthedocs.io/en/stable/console.html",
-            "https://rich.readthedocs.io/en/stable/text.html"
-        ],
-        "use_cases": [
-            "Basic console output with styling",
-            "Create progress bars and tables",
-            "Build complex terminal interfaces"
-        ]
-    }
-]
-
-# Learn multiple libraries
-learned_libraries = {}
-
-for lib_config in libraries_to_learn:
-    print(f"\n{'='*60}")
-    print(f"Learning {lib_config['name']}...")
-    print(f"{'='*60}")
+def interactive_learning_session():
+    """Interactive session for learning libraries with user input."""
     
-    result = learn_any_library(
-        library_name=lib_config['name'],
-        documentation_urls=lib_config['urls'],
-        use_cases=lib_config['use_cases']
-    )
+    print("🎯 Welcome to the Interactive Library Learning System!")
+    print("This system will help you learn any Python library from its documentation.\n")
     
-    if result:
-        learned_libraries[lib_config['name']] = result
-        print(f"✅ Successfully learned {lib_config['name']}!")
-    else:
-        print(f"❌ Failed to learn {lib_config['name']}")
+    learned_libraries = {}
+    
+    while True:
+        print("\n" + "="*60)
+        print("🚀 LIBRARY LEARNING SESSION")
+        print("="*60)
+        
+        # Get library name from user
+        library_name = input("\n📚 Enter the library name you want to learn (or 'quit' to exit): ").strip()
+        
+        if library_name.lower() in ['quit', 'exit', 'q']:
+            print("\n👋 Thanks for using the Interactive Library Learning System!")
+            break
+        
+        if not library_name:
+            print("❌ Please enter a valid library name.")
+            continue
+        
+        # Get documentation URLs
+        print(f"\n🔗 Enter documentation URLs for {library_name} (one per line, empty line to finish):")
+        urls = []
+        while True:
+            url = input("  URL: ").strip()
+            if not url:
+                break
+            if not url.startswith(('http://', 'https://')):
+                print("    ⚠️  Please enter a valid URL starting with http:// or https://")
+                continue
+            urls.append(url)
+        
+        if not urls:
+            print("❌ No valid URLs provided. Skipping this library.")
+            continue
+        
+        # Get custom use cases from user
+        print(f"\n🎯 Define use cases for {library_name} (optional, press Enter for defaults):")
+        print("   Default use cases will be: Basic setup, Common operations, Advanced usage")
+        
+        user_wants_custom = input("   Do you want to define custom use cases? (y/n): ").strip().lower()
+        
+        use_cases = None
+        if user_wants_custom in ['y', 'yes']:
+            print("   Enter your use cases (one per line, empty line to finish):")
+            use_cases = []
+            while True:
+                use_case = input("     Use case: ").strip()
+                if not use_case:
+                    break
+                use_cases.append(use_case)
+            
+            if not use_cases:
+                print("   No custom use cases provided, using defaults.")
+                use_cases = None
+        
+        # Learn the library
+        print(f"\n🚀 Starting learning process for {library_name}...")
+        result = learn_any_library(library_name, urls, use_cases)
+        
+        if result:
+            learned_libraries[library_name] = result
+            print(f"\n✅ Successfully learned {library_name}!")
+            
+            # Show summary
+            print(f"\n📊 Learning Summary for {library_name}:")
+            print(f"   • Core concepts: {len(result['library_info']['core_concepts'])} identified")
+            print(f"   • Common patterns: {len(result['library_info']['patterns'])} found")
+            print(f"   • Examples generated: {len(result['examples'])}")
+            
+            # Ask if user wants to see examples
+            show_examples = input(f"\n👀 Do you want to see the generated examples for {library_name}? (y/n): ").strip().lower()
+            
+            if show_examples in ['y', 'yes']:
+                for i, example in enumerate(result['examples'], 1):
+                    print(f"\n{'─'*50}")
+                    print(f"📝 Example {i}: {example['use_case']}")
+                    print(f"{'─'*50}")
+                    
+                    print("\n💻 Generated Code:")
+                    print("```python")
+                    print(example['code'])
+                    print("```")
+                    
+                    print(f"\n📦 Required Imports:")
+                    for imp in example['imports']:
+                        print(f"  • {imp}")
+                    
+                    print(f"\n📝 Explanation:")
+                    print(example['explanation'])
+                    
+                    print(f"\n✅ Best Practices:")
+                    for practice in example['best_practices']:
+                        print(f"  • {practice}")
+                    
+                    # Ask if user wants to see the next example
+                    if i < len(result['examples']):
+                        continue_viewing = input(f"\nContinue to next example? (y/n): ").strip().lower()
+                        if continue_viewing not in ['y', 'yes']:
+                            break
+            
+            # Offer to save results
+            save_results = input(f"\n💾 Save learning results for {library_name} to file? (y/n): ").strip().lower()
+            
+            if save_results in ['y', 'yes']:
+                filename = input(f"   Enter filename (default: {library_name.lower()}_learning.json): ").strip()
+                if not filename:
+                    filename = f"{library_name.lower()}_learning.json"
+                
+                try:
+                    import json
+                    with open(filename, 'w') as f:
+                        json.dump(result, f, indent=2, default=str)
+                    print(f"   ✅ Results saved to {filename}")
+                except Exception as e:
+                    print(f"   ❌ Error saving file: {e}")
+        
+        else:
+            print(f"❌ Failed to learn {library_name}")
+        
+        # Ask if user wants to learn another library
+        print(f"\n📚 Libraries learned so far: {list(learned_libraries.keys())}")
+        continue_learning = input("\n🔄 Do you want to learn another library? (y/n): ").strip().lower()
+        
+        if continue_learning not in ['y', 'yes']:
+            break
+    
+    # Final summary
+    if learned_libraries:
+        print(f"\n🎉 Session Summary:")
+        print(f"Successfully learned {len(learned_libraries)} libraries:")
+        for lib_name, info in learned_libraries.items():
+            print(f"  • {lib_name}: {len(info['examples'])} examples generated")
+    
+    return learned_libraries
+
+# Example: Run interactive learning session
+if __name__ == "__main__":
+    # Run interactive session
+    learned_libraries = interactive_learning_session()
 ```
 
 ## Example Output
 
-When you run the automated learning system, you'll see:
+When you run the interactive learning system, you'll see:
 
-**Documentation Fetching:**
+**Interactive Session Start:**
 ```
+🎯 Welcome to the Interactive Library Learning System!
+This system will help you learn any Python library from its documentation.
+
+============================================================
+🚀 LIBRARY LEARNING SESSION
+============================================================
+
+📚 Enter the library name you want to learn (or 'quit' to exit): FastAPI
+
+🔗 Enter documentation URLs for FastAPI (one per line, empty line to finish):
+  URL: https://fastapi.tiangolo.com/
+  URL: https://fastapi.tiangolo.com/tutorial/first-steps/
+  URL: https://fastapi.tiangolo.com/tutorial/path-params/
+  URL: 
+
+🎯 Define use cases for FastAPI (optional, press Enter for defaults):
+   Default use cases will be: Basic setup, Common operations, Advanced usage
+   Do you want to define custom use cases? (y/n): y
+   Enter your use cases (one per line, empty line to finish):
+     Use case: Create a REST API with authentication
+     Use case: Build a file upload endpoint
+     Use case: Add database integration with SQLAlchemy
+     Use case: 
+```
+
+**Documentation Processing:**
+```
+🚀 Starting learning process for FastAPI...
 🚀 Starting automated learning for FastAPI...
-Documentation sources: 4 URLs
+Documentation sources: 3 URLs
 📡 Fetching: https://fastapi.tiangolo.com/ (attempt 1)
 📡 Fetching: https://fastapi.tiangolo.com/tutorial/first-steps/ (attempt 1)
 📡 Fetching: https://fastapi.tiangolo.com/tutorial/path-params/ (attempt 1)
-📚 Learning about FastAPI from 4 URLs...
+📚 Learning about FastAPI from 3 URLs...
 
 🔍 Library Analysis Results for FastAPI:
-Sources: 4 successful fetches
+Sources: 3 successful fetches
 Core Concepts: ['FastAPI app', 'path operations', 'dependencies', 'request/response models']
 Common Patterns: ['app = FastAPI()', 'decorator-based routing', 'Pydantic models']
 Key Methods: ['FastAPI()', '@app.get()', '@app.post()', 'uvicorn.run()']
 Installation: pip install fastapi uvicorn
 ```
 
-**Generated Code Example:**
-```python
-📝 Generating example 1/3: Basic setup and hello world example
+**Code Generation:**
+```
+📝 Generating example 1/3: Create a REST API with authentication
+
+✅ Successfully learned FastAPI!
+
+📊 Learning Summary for FastAPI:
+   • Core concepts: 4 identified
+   • Common patterns: 3 found
+   • Examples generated: 3
+
+👀 Do you want to see the generated examples for FastAPI? (y/n): y
+
+──────────────────────────────────────────────────
+📝 Example 1: Create a REST API with authentication
+──────────────────────────────────────────────────
 
 💻 Generated Code:
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import uvicorn
-from typing import Dict, Optional
+from typing import Dict
+import jwt
+from datetime import datetime, timedelta
 
-# Create FastAPI instance
-app = FastAPI(
-    title="My API",
-    description="A simple FastAPI example",
-    version="1.0.0"
-)
+app = FastAPI(title="Authenticated API", version="1.0.0")
+security = HTTPBearer()
 
-@app.get("/")
-async def read_root() -> Dict[str, str]:
-    """Root endpoint returning a welcome message."""
-    return {"message": "Hello World from FastAPI!"}
+# Secret key for JWT (use environment variable in production)
+SECRET_KEY = "your-secret-key-here"
+ALGORITHM = "HS256"
 
-@app.get("/health")
-async def health_check() -> Dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "healthy"}
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return username
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@app.post("/login")
+async def login(username: str, password: str) -> Dict[str, str]:
+    # In production, verify against database
+    if username == "admin" and password == "secret":
+        token_data = {"sub": username, "exp": datetime.utcnow() + timedelta(hours=24)}
+        token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+        return {"access_token": token, "token_type": "bearer"}
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@app.get("/protected")
+async def protected_route(current_user: str = Depends(verify_token)) -> Dict[str, str]:
+    return {"message": f"Hello {current_user}! This is a protected route."}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 📦 Required Imports:
-  • pip install fastapi uvicorn
-  • from fastapi import FastAPI
-  • import uvicorn
+  • pip install fastapi uvicorn python-jose[cryptography]
+  • from fastapi import FastAPI, Depends, HTTPException, status
+  • from fastapi.security import HTTPBearer
+  • import jwt
 
 📝 Explanation:
-This example creates a basic FastAPI application with two endpoints...
+This example creates a FastAPI application with JWT-based authentication. It includes a login endpoint that returns a JWT token and a protected route that requires authentication...
 
 ✅ Best Practices:
-  • Use async/await for better performance
-  • Include proper type hints
-  • Add documentation metadata to FastAPI instance
+  • Use environment variables for secret keys
+  • Implement proper password hashing in production
+  • Add token expiration and refresh logic
+  • Include proper error handling
+
+Continue to next example? (y/n): n
+
+💾 Save learning results for FastAPI to file? (y/n): y
+   Enter filename (default: fastapi_learning.json): 
+   ✅ Results saved to fastapi_learning.json
+
+📚 Libraries learned so far: ['FastAPI']
+
+🔄 Do you want to learn another library? (y/n): n
+
+🎉 Session Summary:
+Successfully learned 1 libraries:
+  • FastAPI: 3 examples generated
 ```
 
 
@@ -486,5 +655,6 @@ This example creates a basic FastAPI application with two endpoints...
 - **Community Examples**: Aggregate examples from Stack Overflow and forums
 - **Version Comparison**: Track API changes across library versions
 - **Testing Generation**: Automatically create unit tests for generated code
+- **Page Crawling**: Automatically crawl documentation pages to actively understand the usage
 
 This tutorial demonstrates how DSPy can automate the entire process of learning unfamiliar libraries from their documentation, making it valuable for rapid technology adoption and exploration.
