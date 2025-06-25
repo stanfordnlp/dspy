@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 import dspy
-from dspy.adapters.types.tool import Tool
+from dspy.adapters.types.tool import Tool, ToolCalls
 
 
 # Test fixtures
@@ -375,3 +375,71 @@ def test_async_tool_call_in_sync_mode():
     with dspy.context(allow_tool_async_sync_conversion=True):
         result = tool(x=1, y="hello")
         assert result == "hello 1"
+
+
+TOOL_CALL_TEST_CASES = [
+    ([], [{"type": "tool_calls", "tool_calls": []}]),
+    (
+        [{"name": "search", "args": {"query": "hello"}}],
+        [{
+            "type": "tool_calls",
+            "tool_calls": [{
+                "type": "function",
+                "function": {"name": "search", "arguments": {"query": "hello"}}
+            }]
+        }],
+    ),
+    (
+        [
+            {"name": "search", "args": {"query": "hello"}},
+            {"name": "translate", "args": {"text": "world", "lang": "fr"}}
+        ],
+        [{
+            "type": "tool_calls",
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {"name": "search", "arguments": {"query": "hello"}}
+                },
+                {
+                    "type": "function",
+                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}}
+                }
+            ]
+        }],
+    ),
+    (
+        [{"name": "get_time", "args": {}}],
+        [{
+            "type": "tool_calls",
+            "tool_calls": [{
+                "type": "function",
+                "function": {"name": "get_time", "arguments": {}}
+            }]
+        }],
+    ),
+]
+
+
+@pytest.mark.parametrize("tool_calls_data,expected", TOOL_CALL_TEST_CASES)
+def test_tool_calls_format_basic(tool_calls_data, expected):
+    """Test ToolCalls.format with various basic scenarios."""
+    tool_calls_list = [ToolCalls.ToolCall(**data) for data in tool_calls_data]
+    tool_calls = ToolCalls(tool_calls=tool_calls_list)
+    result = tool_calls.format()
+
+    assert result == expected
+
+def test_tool_calls_format_from_dict_list():
+    """Test format works with ToolCalls created from from_dict_list."""
+    tool_calls_dicts = [
+        {"name": "search", "args": {"query": "hello"}},
+        {"name": "translate", "args": {"text": "world", "lang": "fr"}}
+    ]
+
+    tool_calls = ToolCalls.from_dict_list(tool_calls_dicts)
+    result = tool_calls.format()
+
+    assert len(result[0]["tool_calls"]) == 2
+    assert result[0]["tool_calls"][0]["function"]["name"] == "search"
+    assert result[0]["tool_calls"][1]["function"]["name"] == "translate"

@@ -291,6 +291,23 @@ class ToolCalls(BaseType):
             "Arguments must be provided in JSON format."
         )
 
+    def format(self) -> list[dict[str, Any]]:
+        # The tool_call field is compatible with OpenAI's tool calls schema.
+        return [
+            {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.name,
+                            "arguments": tool_call.args,
+                        },
+                    } for tool_call in self.tool_calls
+                ],
+            }
+        ]
+
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
     """Recursively resolve json model schema, expanding all references."""
