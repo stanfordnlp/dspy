@@ -4,7 +4,6 @@ from pydantic.fields import FieldInfo
 
 import dspy
 from dspy.primitives.module import Module
-from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, ensure_signature
 
 
