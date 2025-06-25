@@ -65,6 +65,7 @@ nav:
             - Memory-Enabled ReAct Agents: tutorials/mem0_react_agent/index.md
             - Financial Analysis with Yahoo Finance: tutorials/yahoo_finance_react/index.md
             - Email Information Extraction: tutorials/email_extraction/index.md
+            - Code Generation for Unfamiliar Libraries: tutorials/sample_code_generation/index.md
             - Building a Creative Text-Based AI Game: tutorials/ai_text_game/index.md
     - DSPy in Production: production/index.md
     - Community:
