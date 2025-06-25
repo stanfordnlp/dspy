@@ -580,6 +580,18 @@ def _parse_type_node(node, names=None) -> Any:
 
         return base_type[arg_types]
 
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        # Handle PEP 604: int | None, str | float, etc.
+        left = _parse_type_node(node.left, names)
+        right = _parse_type_node(node.right, names)
+
+        # Optional[X] is Union[X, NoneType]
+        if right is type(None):
+            return typing.Optional[left]
+        if left is type(None):
+            return typing.Optional[right]
+        return typing.Union[left, right]
+
     if isinstance(node, ast.Tuple):
         return tuple(_parse_type_node(elt, names) for elt in node.elts)
 
