@@ -183,10 +183,9 @@ def streamify(
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
                     else:
-                        # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
+                        # We are receiving a chunk from the LM's response stream, delgate it to the listeners to
                         # determine if we should yield a value to the user.
                         output = None
-
                         for listener in predict_id_to_listener[value.predict_id]:
                             # There should be at most one listener provides a return value.
                             output = listener.receive(value) or output
