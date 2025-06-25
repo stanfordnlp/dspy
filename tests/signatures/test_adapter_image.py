@@ -1,7 +1,7 @@
 import os
 import tempfile
 from io import BytesIO
-from typing import List, Optional
+from typing import List
 
 import pydantic
 import pytest
@@ -290,7 +290,7 @@ def test_save_load_pydantic_model():
 
     class ImageModel(pydantic.BaseModel):
         image: dspy.Image
-        image_list: Optional[List[dspy.Image]] = None
+        image_list: List[dspy.Image] | None = None
         output: str
 
     class PydanticSignature(dspy.Signature):
@@ -330,7 +330,7 @@ def test_optional_image_field():
     """Test that optional image fields are not required"""
 
     class OptionalImageSignature(dspy.Signature):
-        image: Optional[dspy.Image] = dspy.InputField()
+        image: dspy.Image | None = dspy.InputField()
         output: str = dspy.OutputField()
 
     predictor, lm = setup_predictor(OptionalImageSignature, {"output": "Hello"})

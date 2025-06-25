@@ -2,7 +2,7 @@ import json
 import os
 from dataclasses import dataclass
 from importlib.util import find_spec
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 
 import requests
 
@@ -84,15 +84,15 @@ class DatabricksRM(dspy.Retrieve):
     def __init__(
         self,
         databricks_index_name: str,
-        databricks_endpoint: Optional[str] = None,
-        databricks_token: Optional[str] = None,
-        databricks_client_id: Optional[str] = None,
-        databricks_client_secret: Optional[str] = None,
-        columns: Optional[List[str]] = None,
-        filters_json: Optional[str] = None,
+        databricks_endpoint: str | None = None,
+        databricks_token: str | None = None,
+        databricks_client_id: str | None = None,
+        databricks_client_secret: str | None = None,
+        columns: List[str] | None = None,
+        filters_json: str | None = None,
         k: int = 3,
         docs_id_column_name: str = "id",
-        docs_uri_column_name: Optional[str] = None,
+        docs_uri_column_name: str | None = None,
         text_column_name: str = "text",
         use_with_databricks_agent_framework: bool = False,
     ):
@@ -207,10 +207,10 @@ class DatabricksRM(dspy.Retrieve):
 
     def forward(
         self,
-        query: Union[str, List[float]],
+        query: str | List[float],
         query_type: str = "ANN",
-        filters_json: Optional[str] = None,
-    ) -> Union[dspy.Prediction, List[Dict[str, Any]]]:
+        filters_json: str | None = None,
+    ) -> dspy.Prediction | List[Dict[str, Any]]:
         """
         Retrieve documents from a Databricks Mosaic AI Vector Search Index that are relevant to the
         specified query.
@@ -293,7 +293,7 @@ class DatabricksRM(dspy.Retrieve):
         if "data_array" in results["result"]:
             for _, data_row in enumerate(results["result"]["data_array"]):
                 item = {}
-                for col_name, val in zip(col_names, data_row):
+                for col_name, val in zip(col_names, data_row, strict=False):
                     item[col_name] = val
                 items += [item]
 
@@ -328,13 +328,13 @@ class DatabricksRM(dspy.Retrieve):
         k: int,
         columns: List[str],
         query_type: str,
-        query_text: Optional[str],
-        query_vector: Optional[List[float]],
-        databricks_token: Optional[str],
-        databricks_endpoint: Optional[str],
-        databricks_client_id: Optional[str],
-        databricks_client_secret: Optional[str],
-        filters_json: Optional[str],
+        query_text: str | None,
+        query_vector: List[float] | None,
+        databricks_token: str | None,
+        databricks_endpoint: str | None,
+        databricks_client_id: str | None,
+        databricks_client_secret: str | None,
+        filters_json: str | None,
     ) -> Dict[str, Any]:
         """
         Query a Databricks Vector Search Index via the Databricks SDK.
@@ -401,9 +401,9 @@ class DatabricksRM(dspy.Retrieve):
         databricks_token: str,
         databricks_endpoint: str,
         query_type: str,
-        query_text: Optional[str],
-        query_vector: Optional[List[float]],
-        filters_json: Optional[str],
+        query_text: str | None,
+        query_vector: List[float] | None,
+        filters_json: str | None,
     ) -> Dict[str, Any]:
         """
         Query a Databricks Vector Search Index via the Python requests library.

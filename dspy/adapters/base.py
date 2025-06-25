@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, Optional, Type, get_origin
+from typing import TYPE_CHECKING, Any, Type, get_origin
 
 import json_repair
 import litellm
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class Adapter:
-    def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
+    def __init__(self, callbacks: list[BaseCallback] | None = None):
         self.callbacks = callbacks or []
 
     def __init_subclass__(cls, **kwargs) -> None:
@@ -281,7 +281,7 @@ class Adapter:
         self,
         signature: Type[Signature],
         outputs: dict[str, Any],
-        missing_field_message: Optional[str] = None,
+        missing_field_message: str | None = None,
     ) -> str:
         """Format the assistant message content.
 

@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, Any, Dict, List, TypedDict
 
 import openai
 import requests
@@ -151,7 +151,7 @@ class ArborReinforceJob(ReinforceJob):
         # self.provider_job_id = response.json().get("job_id")  # TODO: To be updated
 
     def _run_grpo_step_one_group(
-        self, train_group: GRPOGroup, train_data_format: Optional[Union[TrainDataFormat, str]] = None
+        self, train_group: GRPOGroup, train_data_format: TrainDataFormat | str | None = None
     ):
         # TODO: Check that the data follows the intended format
         api_base = self.lm.kwargs["api_base"]
@@ -168,7 +168,7 @@ class ArborReinforceJob(ReinforceJob):
         current_model = response["current_model"]
         self.lm.model = ArborProvider._add_provider_prefix(current_model)
 
-    def step(self, train_data: List[GRPOGroup], train_data_format: Optional[Union[TrainDataFormat, str]]):
+    def step(self, train_data: List[GRPOGroup], train_data_format: TrainDataFormat | str | None):
         # Note: TrainDataFormat specifies the format for the inner most dict.
         # Because we run GRPO at the group level, train_data will be a list of
         # groups, where each group is a list of GRPOChatData. Our teleprompters
@@ -183,7 +183,7 @@ class ArborReinforceJob(ReinforceJob):
         for group in train_data:
             self._run_grpo_step_one_group(group, train_data_format)
 
-    def save_checkpoint(self, checkpoint_name: str, score: Optional[float] = None):
+    def save_checkpoint(self, checkpoint_name: str, score: float | None = None):
         api_base = self.lm.kwargs["api_base"]
         url = f"{api_base}fine_tuning/grpo/checkpoint"
         headers = {"Content-Type": "application/json"}
@@ -237,7 +237,7 @@ class ArborProvider(Provider):
         self.ReinforceJob = ArborReinforceJob
 
     @staticmethod
-    def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
+    def launch(lm: "LM", launch_kwargs: Dict[str, Any] | None = None):
         model = ArborProvider._remove_provider_prefix(lm.model)
 
         api_base = lm.kwargs["api_base"]
@@ -253,7 +253,7 @@ class ArborProvider(Provider):
         print(f"Inference server for model {model} launched successfully")
 
     @staticmethod
-    def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(lm: "LM", launch_kwargs: Dict[str, Any] | None = None):
         api_base = lm.kwargs["api_base"]
 
         response = requests.post(
@@ -296,8 +296,8 @@ class ArborProvider(Provider):
         job: ArborTrainingJob,
         model: str,
         train_data: List[Dict[str, Any]],
-        train_data_format: Optional[TrainDataFormat],
-        train_kwargs: Optional[Dict[str, Any]] = None,
+        train_data_format: TrainDataFormat | None,
+        train_kwargs: Dict[str, Any] | None = None,
     ) -> str:
         # TODO: We want to re-factor finetune so that it takes in an LM.
         # Until then, we use the following to get the api information. The

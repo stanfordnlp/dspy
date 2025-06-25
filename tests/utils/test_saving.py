@@ -33,7 +33,7 @@ def test_save_custom_model(tmp_path):
     assert isinstance(loaded_model, CustomModel)
 
     assert len(model.predictors()) == len(loaded_model.predictors())
-    for predictor, loaded_predictor in zip(model.predictors(), loaded_model.predictors()):
+    for predictor, loaded_predictor in zip(model.predictors(), loaded_model.predictors(), strict=False):
         assert predictor.signature == loaded_predictor.signature
 
 

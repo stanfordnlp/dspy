@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class FinetuneTeleprompter(Teleprompter):
     def __init__(
         self,
-        train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
+        train_kwargs: Dict[str, Any] | Dict[LM, Dict[str, Any]] | None = None,
     ):
         self.train_kwargs: Dict[LM, Any] = self.convert_to_lm_dict(train_kwargs or {})
 
@@ -38,12 +38,12 @@ class FinetuneTeleprompter(Teleprompter):
 class BootstrapFinetune(FinetuneTeleprompter):
     def __init__(
         self,
-        metric: Optional[Callable] = None,
+        metric: Callable | None = None,
         multitask: bool = True,
-        train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
-        adapter: Optional[Union[Adapter, Dict[LM, Adapter]]] = None,
+        train_kwargs: Dict[str, Any] | Dict[LM, Dict[str, Any]] | None = None,
+        adapter: Adapter | Dict[LM, Adapter] | None = None,
         exclude_demos: bool = False,
-        num_threads: Optional[int] = None,
+        num_threads: int | None = None,
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -60,7 +60,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         self.num_threads = num_threads
 
     def compile(
-        self, student: Module, trainset: List[Example], teacher: Optional[Union[Module, List[Module]]] = None
+        self, student: Module, trainset: List[Example], teacher: Module | List[Module] | None = None
     ) -> Module:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
@@ -160,7 +160,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         return key_to_lm
 
-    def _prepare_finetune_data(self, trace_data: List[Dict[str, Any]], lm: LM, pred_ind: Optional[int] = None):
+    def _prepare_finetune_data(self, trace_data: List[Dict[str, Any]], lm: LM, pred_ind: int | None = None):
         # TODO(nit) Log dataset details/size; make logs nicer
         if self.metric:
             logger.info(f"Collected data for {len(trace_data)} examples")
@@ -211,14 +211,14 @@ def build_call_data_from_trace(
 @dataclass
 class FailedPrediction:
     completion_text: str
-    format_reward: Union[float, None] = None
+    format_reward: float | None = None
 
 
 def bootstrap_trace_data(
     program: Module,
     dataset: List[Example],
-    metric: Optional[Callable] = None,
-    num_threads: Optional[int] = None,
+    metric: Callable | None = None,
+    num_threads: int | None = None,
     raise_on_error=True,
     capture_failed_parses=False,
     failure_score: float = 0,
@@ -367,7 +367,7 @@ def prepare_student(student: Module) -> Module:
     return student
 
 
-def prepare_teacher(student: Module, teacher: Optional[Module] = None) -> Module:
+def prepare_teacher(student: Module, teacher: Module | None = None) -> Module:
     if teacher is None:
         return student
 
@@ -389,7 +389,7 @@ def assert_structural_equivalency(program1: object, program2: object):
     err = f"Structurally equivalent programs must have the the number of predictors. The number of predictors for the two modules do not match: {num1} != {num2}"
     assert num1 == num2, err
 
-    pzip = zip(program1.named_predictors(), program2.named_predictors())
+    pzip = zip(program1.named_predictors(), program2.named_predictors(), strict=False)
     for ind, ((name1, pred1), (name2, pred2)) in enumerate(pzip):
         err = f"Program predictor names must match at  corresponding indices for structural equivalency. The predictor names for the programs do not match at index {ind}: '{name1}' != '{name2}'"
         assert name1 == name2, err

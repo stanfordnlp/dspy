@@ -120,7 +120,7 @@ def zipstar(data_list, lazy=False):
     if width < 100:
         return [[elem[idx] for elem in data_list] for idx in range(width)]
 
-    zipped_data = zip(*data_list)
+    zipped_data = zip(*data_list, strict=False)
 
     return zipped_data if lazy else list(zipped_data)
 
@@ -128,7 +128,7 @@ def zipstar(data_list, lazy=False):
 def zip_first(list1, list2):
     length = len(list1) if type(list1) in [tuple, list] else None
 
-    zipped_data = list(zip(list1, list2))
+    zipped_data = list(zip(list1, list2, strict=False))
 
     assert length in [None, len(zipped_data)], "zip_first() failure: length differs!"
 

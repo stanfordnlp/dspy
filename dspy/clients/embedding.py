@@ -1,4 +1,4 @@
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable
 
 import litellm
 import numpy as np
@@ -76,7 +76,7 @@ class Embedder:
         ```
     """
 
-    def __init__(self, model: Union[str, Callable], batch_size: int = 200, caching: bool = True, **kwargs: dict[str, Any]):
+    def __init__(self, model: str | Callable, batch_size: int = 200, caching: bool = True, **kwargs: dict[str, Any]):
         self.model = model
         self.batch_size = batch_size
         self.caching = caching
@@ -110,7 +110,7 @@ class Embedder:
         else:
             return np.array(embeddings, dtype=np.float32)
 
-    def __call__(self, inputs: Union[str, list[str]], batch_size: Optional[int] = None, caching: Optional[bool] = None, **kwargs: dict[str, Any]) -> np.ndarray:
+    def __call__(self, inputs: str | list[str], batch_size: int | None = None, caching: bool | None = None, **kwargs: dict[str, Any]) -> np.ndarray:
         """Compute embeddings for the given inputs.
 
         Args:

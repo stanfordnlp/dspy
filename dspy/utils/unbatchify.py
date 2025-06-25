@@ -67,7 +67,7 @@ class Unbatchify:
             if batch:
                 try:
                     outputs = self.batch_fn(batch)
-                    for output, future in zip(outputs, futures):
+                    for output, future in zip(outputs, futures, strict=False):
                         future.set_result(output)
                 except Exception as e:
                     for future in futures:

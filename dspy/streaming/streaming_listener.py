@@ -1,7 +1,7 @@
 import re
 from collections import defaultdict
 from queue import Queue
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, List
 
 from litellm import ModelResponseStream
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
 
-    def __init__(self, signature_field_name: str, predict: Any = None, predict_name: Optional[str] = None):
+    def __init__(self, signature_field_name: str, predict: Any = None, predict_name: str | None = None):
         """
         Args:
             signature_field_name: The name of the field to listen to.

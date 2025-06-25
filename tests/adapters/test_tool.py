@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from pydantic import BaseModel
@@ -38,19 +38,19 @@ class Address(BaseModel):
 
 class ContactInfo(BaseModel):
     email: str
-    phone: Optional[str] = None
+    phone: str | None = None
     addresses: list[Address]
 
 
 class UserProfile(BaseModel):
     user_id: int
     name: str
-    age: Optional[int] = None
+    age: int | None = None
     contact: ContactInfo
     tags: list[str] = []
 
 
-def complex_dummy_function(profile: UserProfile, priority: int, notes: Optional[str] = None) -> dict[str, Any]:
+def complex_dummy_function(profile: UserProfile, priority: int, notes: str | None = None) -> dict[str, Any]:
     """Process user profile with complex nested structure.
 
     Args:
@@ -89,7 +89,7 @@ async def async_dummy_with_pydantic(model: DummyModel) -> str:
 
 
 async def async_complex_dummy_function(
-    profile: UserProfile, priority: int, notes: Optional[str] = None
+    profile: UserProfile, priority: int, notes: str | None = None
 ) -> dict[str, Any]:
     """Process user profile with complex nested structure asynchronously.
 

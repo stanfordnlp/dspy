@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Union
+from typing import Any, List
 
 import requests
 
@@ -14,7 +14,7 @@ class ColBERTv2:
     def __init__(
         self,
         url: str = "http://0.0.0.0",
-        port: Optional[Union[str, int]] = None,
+        port: str | int | None = None,
         post_requests: bool = False,
     ):
         self.post_requests = post_requests
@@ -25,7 +25,7 @@ class ColBERTv2:
         query: str,
         k: int = 10,
         simplify: bool = False,
-    ) -> Union[list[str], list[dotdict]]:
+    ) -> list[str] | list[dotdict]:
         if self.post_requests:
             topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k)
         else:
@@ -165,7 +165,7 @@ class ColBERTv2RetrieverLocal:
         else:
             searcher_results = self.searcher.search(query, k=k)
         results = []
-        for pid, rank, score in zip(*searcher_results):  # noqa: B007
+        for pid, rank, score in zip(*searcher_results, strict=False):  # noqa: B007
             results.append(dotdict({"long_text": self.searcher.collection[pid], "score": score, "pid": pid}))
         return results
 
@@ -192,7 +192,7 @@ class ColBERTv2RerankerLocal:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
 
-    def forward(self, query: str, passages: Optional[List[str]] = None):
+    def forward(self, query: str, passages: List[str] | None = None):
         assert len(passages) > 0, "Passages should not be empty"
 
         import numpy as np

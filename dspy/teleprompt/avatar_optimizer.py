@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Tuple
 
 from pydantic import BaseModel
 from tqdm import tqdm
@@ -16,7 +16,7 @@ DEFAULT_MAX_EXAMPLES = 10
 class EvalResult(BaseModel):
     example: dict
     score: float
-    actions: Optional[List[ActionOutput]] = None
+    actions: List[ActionOutput] | None = None
 
 
 class Comparator(dspy.Signature):
@@ -79,8 +79,8 @@ class AvatarOptimizer(Teleprompter):
         max_iters: int = 10,
         lower_bound: int = 0,
         upper_bound: int = 1,
-        max_positive_inputs: Optional[int] = None,
-        max_negative_inputs: Optional[int] = None,
+        max_positive_inputs: int | None = None,
+        max_negative_inputs: int | None = None,
         optimize_for: str = "max",
     ):
         assert metric is not None, "`metric` argument cannot be None. Please provide a metric function."

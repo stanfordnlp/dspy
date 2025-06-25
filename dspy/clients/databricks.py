@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List
 
 import requests
 import ujson
@@ -50,9 +50,9 @@ class DatabricksProvider(Provider):
     @staticmethod
     def deploy_finetuned_model(
         model: str,
-        data_format: Optional[TrainDataFormat] = None,
-        databricks_host: Optional[str] = None,
-        databricks_token: Optional[str] = None,
+        data_format: TrainDataFormat | None = None,
+        databricks_host: str | None = None,
+        databricks_token: str | None = None,
         deploy_timeout: int = 900,
     ):
         workspace_client = _get_workspace_client()
@@ -169,8 +169,8 @@ class DatabricksProvider(Provider):
         job: TrainingJobDatabricks,
         model: str,
         train_data: List[Dict[str, Any]],
-        train_data_format: Optional[Union[TrainDataFormat, str]] = "chat",
-        train_kwargs: Optional[Dict[str, Any]] = None,
+        train_data_format: TrainDataFormat | str | None = "chat",
+        train_kwargs: Dict[str, Any] | None = None,
     ) -> str:
         if isinstance(train_data_format, str):
             if train_data_format == "chat":

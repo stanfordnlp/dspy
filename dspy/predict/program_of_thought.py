@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import Optional, Type, Union
+from typing import Type
 
 import dspy
 from dspy.primitives.module import Module
@@ -27,7 +27,7 @@ class ProgramOfThought(Module):
     ```
     """
 
-    def __init__(self, signature: Union[str, Type[Signature]], max_iters: int = 3, interpreter: Optional[PythonInterpreter] = None):
+    def __init__(self, signature: str | Type[Signature], max_iters: int = 3, interpreter: PythonInterpreter | None = None):
         """
         Args:
             signature: The signature of the module.

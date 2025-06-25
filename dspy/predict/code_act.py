@@ -1,6 +1,6 @@
 import inspect
 import logging
-from typing import Callable, Optional, Type, Union
+from typing import Callable, Type
 
 import dspy
 from dspy.adapters.types.tool import Tool
@@ -16,7 +16,7 @@ class CodeAct(ReAct, ProgramOfThought):
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
     """
 
-    def __init__(self, signature: Union[str, Type[Signature]], tools: list[Callable], max_iters: int = 5, interpreter: Optional[PythonInterpreter] = None):
+    def __init__(self, signature: str | Type[Signature], tools: list[Callable], max_iters: int = 5, interpreter: PythonInterpreter | None = None):
         """
         Initializes the CodeAct class with the specified model, temperature, and max tokens.
 

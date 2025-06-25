@@ -1,7 +1,7 @@
 import logging
 import random
 import threading
-from typing import Dict, Optional
+from typing import Dict
 
 import tqdm
 
@@ -39,7 +39,7 @@ class BootstrapFewShot(Teleprompter):
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings: Optional[Dict] = None,
+        teacher_settings: Dict | None = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -112,7 +112,7 @@ class BootstrapFewShot(Teleprompter):
             teacher.predictors(),
         ), "Student and teacher must have the same number of predictors."
 
-        for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(), teacher.named_predictors()):
+        for (name1, predictor1), (name2, predictor2) in zip(student.named_predictors(), teacher.named_predictors(), strict=False):
             assert name1 == name2, "Student and teacher must have the same program structure."
             if hasattr(predictor1.signature, "equals"):
                 assert predictor1.signature.equals(

@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Type
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import format_field_value
@@ -8,7 +8,7 @@ from dspy.utils.callback import BaseCallback
 
 
 class XMLAdapter(ChatAdapter):
-    def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
+    def __init__(self, callbacks: list[BaseCallback] | None = None):
         super().__init__(callbacks)
         self.field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
 

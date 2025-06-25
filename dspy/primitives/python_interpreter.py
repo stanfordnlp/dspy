@@ -3,7 +3,7 @@ import os
 import subprocess
 from os import PathLike
 from types import TracebackType
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 
 
 class InterpreterError(RuntimeError):
@@ -27,11 +27,11 @@ class PythonInterpreter:
 
     def __init__(
         self,
-        deno_command: Optional[List[str]] = None,
-        enable_read_paths: Optional[List[Union[PathLike, str]]] = None,
-        enable_write_paths: Optional[List[Union[PathLike, str]]] = None,
-        enable_env_vars: Optional[List[str]] = None,
-        enable_network_access: Optional[List[str]] = None,
+        deno_command: List[str] | None = None,
+        enable_read_paths: List[PathLike | str] | None = None,
+        enable_write_paths: List[PathLike | str] | None = None,
+        enable_env_vars: List[str] | None = None,
+        enable_network_access: List[str] | None = None,
         sync_files: bool = True,
     ) -> None:
         """
@@ -167,7 +167,7 @@ class PythonInterpreter:
     def execute(
         self,
         code: str,
-        variables: Optional[Dict[str, Any]] = None,
+        variables: Dict[str, Any] | None = None,
     ) -> Any:
         variables = variables or {}
         code = self._inject_variables(code, variables)
@@ -222,16 +222,16 @@ class PythonInterpreter:
     # All exception fields are ignored and the runtime will automatically re-raise the exception
     def __exit__(
         self,
-        _exc_type: Optional[type[BaseException]],
-        _exc_val: Optional[BaseException],
-        _exc_tb: Optional[TracebackType],
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None,
     ):
         self.shutdown()
 
     def __call__(
         self,
         code: str,
-        variables: Optional[Dict[str, Any]] = None,
+        variables: Dict[str, Any] | None = None,
     ) -> Any:
         return self.execute(code, variables)
 

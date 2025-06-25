@@ -1,7 +1,7 @@
 import asyncio
 import concurrent.futures
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from asyncer import syncify
 
@@ -95,7 +95,7 @@ class StatusMessageProvider:
 
 
 class StatusStreamingCallback(BaseCallback):
-    def __init__(self, status_message_provider: Optional[StatusMessageProvider] = None):
+    def __init__(self, status_message_provider: StatusMessageProvider | None = None):
         self.status_message_provider = status_message_provider or StatusMessageProvider()
 
     def on_tool_start(
@@ -115,8 +115,8 @@ class StatusStreamingCallback(BaseCallback):
     def on_tool_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: Dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         stream = settings.send_stream
         if stream is None or outputs == "Completed.":
@@ -143,8 +143,8 @@ class StatusStreamingCallback(BaseCallback):
     def on_lm_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: Dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         stream = settings.send_stream
         if stream is None:
@@ -171,8 +171,8 @@ class StatusStreamingCallback(BaseCallback):
     def on_module_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: Dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         stream = settings.send_stream
         if stream is None:
