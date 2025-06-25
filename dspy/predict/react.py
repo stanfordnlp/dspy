@@ -106,8 +106,8 @@ class ReAct(Module):
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
                 break
 
-            trajectory[f"thought_{idx}"] = pred.next_thought
-            trajectory[f"tool_calls_{idx}"] = pred.tool_calls
+            # trajectory[f"thought_{idx}"] = pred.next_thought
+            trajectory[f"tool_calls_{idx}"] = str(pred.tool_calls)
             trajectory[f"observation_{idx}"] = []
 
             tool_calls = [] if pred.tool_calls is None else pred.tool_calls.tool_calls

@@ -50,7 +50,8 @@ class JSONAdapter(ChatAdapter):
         if not params or "response_format" not in params:
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
-        if _has_open_ended_mapping(signature):
+        has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
+        if _has_open_ended_mapping(signature) or (self.use_native_function_calling and has_tool_calls):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
