@@ -207,7 +207,10 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: Lis
         if listener.predict:
             predict_id_to_listener[id(listener.predict)].append(listener)
             continue
-        if listener.signature_field_name not in field_name_to_named_predictor:
+        if (
+            listener.signature_field_name not in field_name_to_named_predictor
+            or field_name_to_named_predictor[listener.signature_field_name] is None
+        ):
             raise ValueError(
                 f"Signature field {listener.signature_field_name} is not a field of any predictor in the program, "
                 "cannot automatically determine which predictor to use for streaming. Please verify your field name or "

@@ -23,3 +23,15 @@ async def test_async_chain_of_thought():
         program = ChainOfThought("question -> answer")
         result = await program.acall(question="What is 1+1?")
         assert result.answer == "2"
+
+
+def test_cot_skips_with_reasoning_model():
+    lm = DummyLM([{"answer": "2"}])
+    lm.reasoning_model = True
+    dspy.settings.configure(lm=lm)
+    signature = dspy.Signature("question -> answer")
+    predict = ChainOfThought(signature)
+    assert list(predict.predict.signature.output_fields.keys()) == [
+        "answer",
+    ]
+    assert predict(question="What is 1+1?").answer == "2"
