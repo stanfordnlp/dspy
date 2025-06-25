@@ -28,3 +28,8 @@ Develop financial analysis agents that fetch real-time market data, analyze news
 Build a system that automatically fetches documentation from URLs and generates working code examples for any library using DSPy's intelligent analysis.
 
 **Key Concepts:** Web scraping, documentation parsing, automated learning, code generation
+
+### 🎮 [Building a Creative Text-Based AI Game](../ai_text_game/index.md)
+Create an interactive text-based adventure game with dynamic storytelling, AI-powered NPCs, and adaptive gameplay using DSPy's modular programming approach.
+
+**Key Concepts:** Interactive storytelling, game state management, character progression, AI-driven narratives
