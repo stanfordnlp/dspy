@@ -1,6 +1,6 @@
 from typing import Callable
 
-from dspy.dsp.utils.settings import context, settings
+from dspy.dsp.utils.settings import settings
 from dspy.predict.predict import Module, Prediction
 
 
@@ -63,7 +63,7 @@ class BestOfN(Module):
             mod.set_lm(lm_)
 
             try:
-                with context(trace=[]):
+                with settings.context(trace=[]):
                     pred = mod(**kwargs)
                     trace = settings.trace.copy()
 

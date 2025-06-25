@@ -12,7 +12,6 @@ from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
-from dspy.dsp.settings import settings
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 
