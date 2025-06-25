@@ -1,4 +1,3 @@
-from typing import Optional
 
 import pydantic
 
@@ -9,8 +8,8 @@ def test_basic_extract_custom_type_from_annotation():
     class Event(dspy.BaseType):
         event_name: str
         start_date_time: str
-        end_date_time: Optional[str]
-        location: Optional[str]
+        end_date_time: str | None
+        location: str | None
 
     class ExtractEvent(dspy.Signature):
         """Extract all events from the email content."""
@@ -35,8 +34,8 @@ def test_extract_custom_type_from_annotation_with_nested_type():
     class Event(dspy.BaseType):
         event_name: str
         start_date_time: str
-        end_date_time: Optional[str]
-        location: Optional[str]
+        end_date_time: str | None
+        location: str | None
 
     class EventIdentifier(dspy.BaseType):
         model_config = pydantic.ConfigDict(frozen=True)  # Make it hashable

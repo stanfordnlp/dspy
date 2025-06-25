@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable
 
 import dspy
 from dspy.predict.predict import Module, Prediction
@@ -11,7 +11,7 @@ class BestOfN(Module):
         N: int,  # noqa: N803
         reward_fn: Callable[[dict, Prediction], float],
         threshold: float,
-        fail_count: Optional[int] = None,
+        fail_count: int | None = None,
     ):
         """
         Runs a module up to `N` times with different temperatures and returns the best prediction

@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Tuple, Type, get_origin, get_type_hints
 
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -24,21 +24,21 @@ class Tool(BaseType):
     """
 
     func: Callable
-    name: Optional[str] = None
-    desc: Optional[str] = None
-    args: Optional[dict[str, Any]] = None
-    arg_types: Optional[dict[str, Any]] = None
-    arg_desc: Optional[dict[str, str]] = None
+    name: str | None = None
+    desc: str | None = None
+    args: dict[str, Any] | None = None
+    arg_types: dict[str, Any] | None = None
+    arg_desc: dict[str, str] | None = None
     has_kwargs: bool = False
 
     def __init__(
         self,
         func: Callable,
-        name: Optional[str] = None,
-        desc: Optional[str] = None,
-        args: Optional[dict[str, Any]] = None,
-        arg_types: Optional[dict[str, Any]] = None,
-        arg_desc: Optional[dict[str, str]] = None,
+        name: str | None = None,
+        desc: str | None = None,
+        args: dict[str, Any] | None = None,
+        arg_types: dict[str, Any] | None = None,
+        arg_desc: dict[str, str] | None = None,
     ):
         """Initialize the Tool class.
 
@@ -71,7 +71,7 @@ class Tool(BaseType):
         super().__init__(func=func, name=name, desc=desc, args=args, arg_types=arg_types, arg_desc=arg_desc)
         self._parse_function(func, arg_desc)
 
-    def _parse_function(self, func: Callable, arg_desc: Optional[dict[str, str]] = None):
+    def _parse_function(self, func: Callable, arg_desc: dict[str, str] | None = None):
         """Helper method that parses a function to extract the name, description, and args.
 
         This is a helper function that automatically infers the name, description, and args of the tool from the

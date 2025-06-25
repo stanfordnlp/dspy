@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 import dspy
 from dspy.primitives.example import Example
@@ -24,9 +24,9 @@ class BetterTogether(Teleprompter):
 
     def __init__(self,
         metric: Callable,
-        prompt_optimizer: Optional[Teleprompter] = None,
-        weight_optimizer: Optional[Teleprompter] = None,
-        seed: Optional[int] = None,
+        prompt_optimizer: Teleprompter | None = None,
+        weight_optimizer: Teleprompter | None = None,
+        seed: int | None = None,
       ):
         if not dspy.settings.experimental:
             raise ValueError("This is an experimental optimizer. Set `dspy.settings.experimental` to `True` to use it.")
@@ -143,7 +143,7 @@ class BetterTogether(Teleprompter):
         logger.info("Compiling the prompt optimizer...")
         pred_lms = [pred.lm for pred in student.predictors()]
         student = self.prompt_optimizer.compile(student, trainset=prompt_trainset, valset=prompt_valset)
-        for pred, lm in zip(student.predictors(), pred_lms):
+        for pred, lm in zip(student.predictors(), pred_lms, strict=False):
             pred.lm = lm
 
         return student
@@ -163,7 +163,7 @@ class BetterTogether(Teleprompter):
         # Updating the train kwargs for the new LMs. This is needed because the
         # train_kwargs of the optimizer is configured for the original LMs.
         new_lms = [pred.lm for pred in student.predictors()]
-        for original_lm, new_lm in zip(original_lms, new_lms):
+        for original_lm, new_lm in zip(original_lms, new_lms, strict=False):
             original_params = self.weight_optimizer.train_kwargs[original_lm]
             self.weight_optimizer.train_kwargs[new_lm] = original_params
 

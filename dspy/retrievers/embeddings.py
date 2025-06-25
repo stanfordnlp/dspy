@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any, List
 
 import numpy as np
 
@@ -13,7 +13,7 @@ class Embeddings:
         corpus: List[str],
         embedder,
         k: int = 5,
-        callbacks: Optional[List[Any]] = None,
+        callbacks: List[Any] | None = None,
         cache: bool = False,
         brute_force_threshold: int = 20_000,
         normalize: bool = True,

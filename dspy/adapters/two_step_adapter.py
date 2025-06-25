@@ -1,4 +1,4 @@
-from typing import Any, Optional, Type
+from typing import Any, Type
 
 import json_repair
 
@@ -193,7 +193,7 @@ class TwoStepAdapter(Adapter):
         self,
         signature: Type[Signature],
         outputs: dict[str, Any],
-        missing_field_message: Optional[str] = None,
+        missing_field_message: str | None = None,
     ) -> str:
         parts = []
 

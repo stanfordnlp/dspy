@@ -4,7 +4,7 @@ import logging
 import threading
 from functools import wraps
 from hashlib import sha256
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import cloudpickle
 import pydantic
@@ -28,8 +28,8 @@ class Cache:
         enable_disk_cache: bool,
         enable_memory_cache: bool,
         disk_cache_dir: str,
-        disk_size_limit_bytes: Optional[int] = 1024 * 1024 * 10,
-        memory_max_entries: Optional[int] = 1000000,
+        disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
+        memory_max_entries: int | None = 1000000,
     ):
         """
         Args:
@@ -62,7 +62,7 @@ class Cache:
         """Check if a key is in the cache."""
         return key in self.memory_cache or key in self.disk_cache
 
-    def cache_key(self, request: Dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
+    def cache_key(self, request: Dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> str:
         """
         Obtain a unique cache key for the given request dictionary by hashing its JSON
         representation. For request fields having types that are known to be JSON-incompatible,
@@ -95,7 +95,7 @@ class Cache:
         params = {k: transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
-    def get(self, request: Dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> Any:
+    def get(self, request: Dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
@@ -124,7 +124,7 @@ class Cache:
         self,
         request: Dict[str, Any],
         value: Any,
-        ignored_args_for_cache_key: Optional[list[str]] = None,
+        ignored_args_for_cache_key: list[str] | None = None,
         enable_memory_cache: bool = True,
     ) -> None:
         try:
@@ -169,11 +169,11 @@ class Cache:
 
 
 def request_cache(
-    cache_arg_name: Optional[str] = None,
-    ignored_args_for_cache_key: Optional[list[str]] = None,
+    cache_arg_name: str | None = None,
+    ignored_args_for_cache_key: list[str] | None = None,
     enable_memory_cache: bool = True,
     *,  # everything after this is keyword-only
-    maxsize: Optional[int] = None,  # legacy / no-op
+    maxsize: int | None = None,  # legacy / no-op
 ):
     """
     Decorator for applying caching to a function based on the request argument.

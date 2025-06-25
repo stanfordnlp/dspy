@@ -1,7 +1,7 @@
 import importlib
 import logging
 import types
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, List, Tuple
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -69,12 +69,12 @@ class Evaluate:
         self,
         *,
         devset: List["dspy.Example"],
-        metric: Optional[Callable] = None,
-        num_threads: Optional[int] = None,
+        metric: Callable | None = None,
+        num_threads: int | None = None,
         display_progress: bool = False,
-        display_table: Union[bool, int] = False,
-        max_errors: Optional[int] = None,
-        provide_traceback: Optional[bool] = None,
+        display_table: bool | int = False,
+        max_errors: int | None = None,
+        provide_traceback: bool | None = None,
         failure_score: float = 0.0,
         **kwargs,
     ):
@@ -104,12 +104,12 @@ class Evaluate:
     def __call__(
         self,
         program: "dspy.Module",
-        metric: Optional[Callable] = None,
-        devset: Optional[List["dspy.Example"]] = None,
-        num_threads: Optional[int] = None,
-        display_progress: Optional[bool] = None,
-        display_table: Optional[Union[bool, int]] = None,
-        callback_metadata: Optional[dict[str, Any]] = None,
+        metric: Callable | None = None,
+        devset: List["dspy.Example"] | None = None,
+        num_threads: int | None = None,
+        display_progress: bool | None = None,
+        display_table: bool | int | None = None,
+        callback_metadata: dict[str, Any] | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -170,7 +170,7 @@ class Evaluate:
         assert len(devset) == len(results)
 
         results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
-        results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results)]
+        results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
@@ -223,7 +223,7 @@ class Evaluate:
 
         return result_df.rename(columns={"correct": metric_name})
 
-    def _display_result_table(self, result_df: "pd.DataFrame", display_table: Union[bool, int], metric_name: str):
+    def _display_result_table(self, result_df: "pd.DataFrame", display_table: bool | int, metric_name: str):
         """
         Display the specified result DataFrame in a table format.
 
