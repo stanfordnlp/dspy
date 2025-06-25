@@ -707,3 +707,59 @@ async def test_status_message_non_blocking_async_program():
     # There should be ~1 second delay between the tool start and end messages because we explicitly sleep for 1 second
     # in the tool.
     assert timestamps[1] - timestamps[0] >= 1
+
+
+@pytest.mark.anyio
+async def test_stream_listener_allow_reuse():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question->answer")
+
+        def forward(self, question, **kwargs):
+            self.predict(question=question, **kwargs)
+            return self.predict(question=question, **kwargs)
+
+    program = dspy.streamify(
+        MyProgram(),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="answer", allow_reuse=True),
+        ],
+    )
+
+    async def gpt_4o_mini_stream(*args, **kwargs):
+        # Recorded streaming from openai/gpt-4o-mini
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="To"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" get"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" other"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" side"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="!"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
+
+    stream_generators = [gpt_4o_mini_stream, gpt_4o_mini_stream]
+
+    async def completion_side_effect(*args, **kwargs):
+        return stream_generators.pop(0)()  # return new async generator instance
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            output = program(question="why did a chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+
+    concat_message = "".join([chunk.chunk for chunk in all_chunks])
+    # The listener functions twice.
+    assert concat_message == "To get to the other side!To get to the other side!"

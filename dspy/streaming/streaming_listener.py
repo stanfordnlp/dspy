@@ -17,7 +17,13 @@ if TYPE_CHECKING:
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
 
-    def __init__(self, signature_field_name: str, predict: Any = None, predict_name: str | None = None):
+    def __init__(
+        self,
+        signature_field_name: str,
+        predict: Any = None,
+        predict_name: str | None = None,
+        allow_reuse: bool = False,
+    ):
         """
         Args:
             signature_field_name: The name of the field to listen to.
@@ -25,6 +31,8 @@ class StreamListener:
                 the predictor that has the `signature_field_name` in its signature.
             predict_name: The name of the predictor to listen to. If None, when calling `streamify()` it will
                 automatically look for the predictor that has the `signature_field_name` in its signature.
+            allow_reuse: If True, the stream listener can be reused for multiple streams. Please note that this could
+                hurt the performance because the same stream chunk is sent to multiple listeners.
         """
         self.signature_field_name = signature_field_name
         self.predict = predict
@@ -35,6 +43,7 @@ class StreamListener:
         self.stream_start = False
         self.stream_end = False
         self.cache_hit = False
+        self.allow_reuse = allow_reuse
 
         self.json_adapter_start_identifier = f'"{self.signature_field_name}":'
         self.json_adapter_end_identifier = re.compile(r"\w*\"(,|\s*})")
@@ -53,7 +62,7 @@ class StreamListener:
             start_identifier = self.json_adapter_start_identifier
             end_identifier = self.json_adapter_end_identifier
 
-            start_indicator = "{"
+            start_indicator = '"'
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
             start_identifier = self.chat_adapter_start_identifier
             end_identifier = self.chat_adapter_end_identifier
@@ -66,7 +75,15 @@ class StreamListener:
             )
 
         if self.stream_end:
-            return
+            if self.allow_reuse:
+                # Clear up the state for the next stream.
+                self.stream_end = False
+                self.cache_hit = False
+                self.field_start_queue = []
+                self.field_end_queue = Queue()
+                self.stream_start = False
+            else:
+                return
 
         try:
             chunk_message = chunk.choices[0].delta.content
