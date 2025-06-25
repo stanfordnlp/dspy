@@ -8,11 +8,11 @@ import litellm
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 
-import dspy
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
+from dspy.dsp.settings import settings
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 
@@ -83,9 +83,9 @@ class LM(BaseLM):
 
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
-            assert (
-                max_tokens >= 20_000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            assert max_tokens >= 20_000 and temperature == 1.0, (
+                "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -139,7 +139,7 @@ class LM(BaseLM):
                 " if the reason for truncation is repetition."
             )
 
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
+        if not getattr(results, "cache_hit", False) and settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
@@ -169,7 +169,7 @@ class LM(BaseLM):
                 " if the reason for truncation is repetition."
             )
 
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
+        if not getattr(results, "cache_hit", False) and settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
@@ -259,8 +259,8 @@ def _get_stream_completion_fn(
     cache_kwargs: Dict[str, Any],
     sync=True,
 ):
-    stream = dspy.settings.send_stream
-    caller_predict = dspy.settings.caller_predict
+    stream = settings.send_stream
+    caller_predict = settings.caller_predict
 
     if stream is None:
         return None
@@ -269,7 +269,7 @@ def _get_stream_completion_fn(
     stream = cast(MemoryObjectSendStream, stream)
     caller_predict_id = id(caller_predict) if caller_predict else None
 
-    if dspy.settings.track_usage:
+    if settings.track_usage:
         request["stream_options"] = {"include_usage": True}
 
     async def stream_completion(request: Dict[str, Any], cache_kwargs: Dict[str, Any]):

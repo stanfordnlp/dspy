@@ -2,8 +2,8 @@ import random
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, List, Tuple
 
-import dspy
 from dspy.datasets.dataset import Dataset
+from dspy.primitives.example import Example
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -20,7 +20,7 @@ class DataLoader(Dataset):
         input_keys: Tuple[str] = (),
         fields: Tuple[str] | None = None,
         **kwargs,
-    ) -> Mapping[str, List[dspy.Example]] | List[dspy.Example]:
+    ) -> Mapping[str, List[Example]] | List[Example]:
         if fields and not isinstance(fields, tuple):
             raise ValueError("Invalid fields provided. Please provide a tuple of fields.")
 
@@ -39,25 +39,22 @@ class DataLoader(Dataset):
             for split_name in dataset.keys():
                 if fields:
                     returned_split[split_name] = [
-                        dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys)
+                        Example({field: row[field] for field in fields}).with_inputs(*input_keys)
                         for row in dataset[split_name]
                     ]
                 else:
                     returned_split[split_name] = [
-                        dspy.Example({field: row[field] for field in row.keys()}).with_inputs(*input_keys)
+                        Example({field: row[field] for field in row.keys()}).with_inputs(*input_keys)
                         for row in dataset[split_name]
                     ]
 
             return returned_split
         except AttributeError:
             if fields:
-                return [
-                    dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset
-                ]
+                return [Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
             else:
                 return [
-                    dspy.Example({field: row[field] for field in row.keys()}).with_inputs(*input_keys)
-                    for row in dataset
+                    Example({field: row[field] for field in row.keys()}).with_inputs(*input_keys) for row in dataset
                 ]
 
     def from_csv(
@@ -65,7 +62,7 @@ class DataLoader(Dataset):
         file_path: str,
         fields: List[str] | None = None,
         input_keys: Tuple[str] = (),
-    ) -> List[dspy.Example]:
+    ) -> List[Example]:
         from datasets import load_dataset
 
         dataset = load_dataset("csv", data_files=file_path)["train"]
@@ -73,27 +70,25 @@ class DataLoader(Dataset):
         if not fields:
             fields = list(dataset.features)
 
-        return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
+        return [Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_pandas(
         self,
         df: "pd.DataFrame",
         fields: List[str] | None = None,
         input_keys: tuple[str] = (),
-    ) -> list[dspy.Example]:
+    ) -> list[Example]:
         if fields is None:
             fields = list(df.columns)
 
-        return [
-            dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for _, row in df.iterrows()
-        ]
+        return [Example({field: row[field] for field in fields}).with_inputs(*input_keys) for _, row in df.iterrows()]
 
     def from_json(
         self,
         file_path: str,
         fields: List[str] | None = None,
         input_keys: Tuple[str] = (),
-    ) -> List[dspy.Example]:
+    ) -> List[Example]:
         from datasets import load_dataset
 
         dataset = load_dataset("json", data_files=file_path)["train"]
@@ -101,14 +96,14 @@ class DataLoader(Dataset):
         if not fields:
             fields = list(dataset.features)
 
-        return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
+        return [Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_parquet(
         self,
         file_path: str,
         fields: List[str] | None = None,
         input_keys: Tuple[str] = (),
-    ) -> List[dspy.Example]:
+    ) -> List[Example]:
         from datasets import load_dataset
 
         dataset = load_dataset("parquet", data_files=file_path)["train"]
@@ -116,14 +111,14 @@ class DataLoader(Dataset):
         if not fields:
             fields = list(dataset.features)
 
-        return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
+        return [Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
-    def from_rm(self, num_samples: int, fields: List[str], input_keys: List[str]) -> List[dspy.Example]:
+    def from_rm(self, num_samples: int, fields: List[str], input_keys: List[str]) -> List[Example]:
         try:
             rm = dspy.settings.rm
             try:
                 return [
-                    dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys)
+                    Example({field: row[field] for field in fields}).with_inputs(*input_keys)
                     for row in rm.get_objects(num_samples=num_samples, fields=fields)
                 ]
             except AttributeError:
@@ -137,25 +132,23 @@ class DataLoader(Dataset):
 
     def sample(
         self,
-        dataset: List[dspy.Example],
+        dataset: List[Example],
         n: int,
         *args,
         **kwargs,
-    ) -> List[dspy.Example]:
+    ) -> List[Example]:
         if not isinstance(dataset, list):
-            raise ValueError(
-                f"Invalid dataset provided of type {type(dataset)}. Please provide a list of `dspy.Example`s."
-            )
+            raise ValueError(f"Invalid dataset provided of type {type(dataset)}. Please provide a list of `Example`s.")
 
         return random.sample(dataset, n, *args, **kwargs)
 
     def train_test_split(
         self,
-        dataset: List[dspy.Example],
+        dataset: List[Example],
         train_size: int | float = 0.75,
         test_size: int | float | None = None,
         random_state: int | None = None,
-    ) -> Mapping[str, List[dspy.Example]]:
+    ) -> Mapping[str, List[Example]]:
         if random_state is not None:
             random.seed(random_state)
 

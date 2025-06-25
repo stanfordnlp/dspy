@@ -1,12 +1,12 @@
 import random
 import re
 
+from dspy.primitives.example import Example
+
 
 class MATH:
     def __init__(self, subset):
         from datasets import load_dataset
-
-        import dspy
 
         ds = load_dataset("DigitalLearningGmbH/MATH-lighteval", subset)
 
@@ -14,7 +14,7 @@ class MATH:
         # LMs are trained on MATH's train. Makes no difference for gpt-4o-mini, but might for other models.
 
         dataset = [
-            dspy.Example(
+            Example(
                 question=example["problem"], reasoning=example["solution"], answer=extract_answer(example["solution"])
             ).with_inputs("question")
             for example in ds["test"]

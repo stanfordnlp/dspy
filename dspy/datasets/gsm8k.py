@@ -2,6 +2,8 @@ import random
 
 import tqdm
 
+from dspy.primitives.example import Example
+
 
 class GSM8K:
     def __init__(self):
@@ -48,11 +50,9 @@ class GSM8K:
         devset = official_train[200:500]
         testset = official_test[:]
 
-        import dspy
-
-        trainset = [dspy.Example(**x).with_inputs("question") for x in trainset]
-        devset = [dspy.Example(**x).with_inputs("question") for x in devset]
-        testset = [dspy.Example(**x).with_inputs("question") for x in testset]
+        trainset = [Example(**x).with_inputs("question") for x in trainset]
+        devset = [Example(**x).with_inputs("question") for x in devset]
+        testset = [Example(**x).with_inputs("question") for x in testset]
 
         self.train = trainset
         self.dev = devset

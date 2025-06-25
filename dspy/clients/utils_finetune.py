@@ -4,8 +4,8 @@ from typing import Any, Dict, List, Literal, TypedDict
 
 import ujson
 
-import dspy
 from dspy.adapters.base import Adapter
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.utils.caching import DSPY_CACHEDIR
 
 
@@ -44,7 +44,7 @@ GRPOGroup = List[GRPOChatData]
 
 
 def infer_data_format(adapter: Adapter) -> str:
-    if isinstance(adapter, dspy.ChatAdapter):
+    if isinstance(adapter, ChatAdapter):
         return TrainDataFormat.CHAT
     raise ValueError(f"Could not infer the data format for: {adapter}")
 
