@@ -54,10 +54,12 @@ class ReAct(Module):
                 f"You are an Agent. In each episode, you will be given the fields {inputs} as input. And you can see your past trajectory so far.",
                 f"Your goal is to use one or more of the supplied tools to collect any necessary information for producing {outputs}.\n",
                 "To do this, you will reason about the current situation to decide which tool to call next along with the arguments to pass to the tool.",
-                "Or finish the task.\n",
+                "Or finish the task.\n\n",
                 "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
                 "When writing next_thought, you may reason about the current situation and plan for future steps.",
-                "When selecting the tools to call, the tool must be one of the tools provided to you.\n",
+                "When selecting the tools to call, the tool must be one of the tools provided to you.\n\n",
+                "!!!If you decide a tool call is required, then you MUST IGNORE the output fields requirements, and just return the tool",
+                "call information.\n\n",
             ]
         )
 
@@ -68,8 +70,8 @@ class ReAct(Module):
             args={},
         )
 
-        # for idx, tool in enumerate(tools.values()):
-        #     instr.append(f"({idx + 1}) {tool}")
+        for idx, tool in enumerate(tools.values()):
+            instr.append(f"({idx + 1}) {tool}")
         # instr.append("When providing `next_tool_args`, the value inside the field must be in JSON format")
 
         react_signature = (
@@ -108,10 +110,11 @@ class ReAct(Module):
             trajectory[f"tool_calls_{idx}"] = pred.tool_calls
             trajectory[f"observation_{idx}"] = []
 
-            tool_names = [tool_call.name for tool_call in pred.tool_calls.tool_calls]
-            for tool_call in pred.tool_calls.tool_calls:
+            tool_calls = [] if pred.tool_calls is None else pred.tool_calls.tool_calls
+            tool_names = [tool_call.name for tool_call in tool_calls]
+            for tool_call in tool_calls:
                 try:
-                    trajectory[f"observation_{idx}"].append(self.tools[tool_call.name](**tool_call.args))
+                    trajectory[f"observation_{idx}"].append(f"{self.tools[tool_call.name](**tool_call.args)}")
                 except Exception as err:
                     trajectory[f"observation_{idx}"].append(f"Execution error in {tool_call.name}: {_fmt_exc(err)}")
 
