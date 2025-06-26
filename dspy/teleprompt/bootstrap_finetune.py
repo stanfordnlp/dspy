@@ -121,7 +121,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         logger.info("Updating the student program with the fine-tuned LMs...")
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
-            training_key = (pred.lm or settings.lm, data_pred_ind)
+            training_key = (pred.lm, data_pred_ind)
             finetuned_lm = key_to_lm[training_key]
             if isinstance(finetuned_lm, Exception):
                 raise RuntimeError(f"Finetuned LM for predictor {pred_ind} failed.") from finetuned_lm
@@ -294,6 +294,11 @@ def bootstrap_trace_data(
                         "Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting."
                     )
 
+                return failed_pred, trace
+            except Exception as e:
+                # Handle other exceptions (like RuntimeError from BuggyModule)
+                trace = dspy.settings.trace.copy()
+                failed_pred = FailedPrediction(completion_text=str(e), format_reward=format_failure_score)
                 return failed_pred, trace
 
     results = evaluator(wrapped_program, metric=wrapped_metric).results
