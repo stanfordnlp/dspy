@@ -81,7 +81,14 @@ class BootstrapFinetune(FinetuneTeleprompter):
         key_to_data = {}
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
+            if pred.lm is None:
+                raise ValueError(
+                    f"Predictor {pred_ind} does not have an LM assigned. "
+                    f"Please ensure the module's predictors have their LM set before fine-tuning. "
+                    f"You can set it using: your_module.set_lm(your_lm)"
+                )
             training_key = (pred.lm, data_pred_ind)
+
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(
                     trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind
@@ -287,6 +294,11 @@ def bootstrap_trace_data(
                         "Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting."
                     )
 
+                return failed_pred, trace
+            except Exception as e:
+                # Handle other exceptions (like RuntimeError from BuggyModule)
+                trace = dspy.settings.trace.copy()
+                failed_pred = FailedPrediction(completion_text=str(e), format_reward=format_failure_score)
                 return failed_pred, trace
 
     results = evaluator(wrapped_program, metric=wrapped_metric).results
