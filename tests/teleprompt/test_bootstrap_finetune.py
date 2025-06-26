@@ -37,7 +37,7 @@ class SimpleModule(dspy.Module):
 
 def test_error_handling_during_bootstrap():
     """Test error handling during the bootstrapping process."""
-    
+
     class BuggyModule(dspy.Module):
         def __init__(self, signature):
             super().__init__()
