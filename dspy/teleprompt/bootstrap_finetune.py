@@ -81,19 +81,24 @@ class BootstrapFinetune(FinetuneTeleprompter):
         key_to_data = {}
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
-            lm = pred.lm or settings.lm
-            training_key = (lm, data_pred_ind)
+            if pred.lm is None:
+                raise ValueError(
+                    f"Predictor {pred_ind} does not have an LM assigned. "
+                    f"Please ensure the module's predictors have their LM set before fine-tuning. "
+                    f"You can set it using: your_module.set_lm(your_lm)"
+                )
+            training_key = (pred.lm, data_pred_ind)
 
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(
-                    trace_data=trace_data, lm=lm, pred_ind=data_pred_ind
+                    trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind
                 )
-                logger.info(f"Using {len(train_data)} data points for fine-tuning the model: {lm.model}")
+                logger.info(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
                 finetune_kwargs = {
-                    "lm": lm,
+                    "lm": pred.lm,
                     "train_data": train_data,
                     "train_data_format": data_format,
-                    "train_kwargs": self.train_kwargs[lm],
+                    "train_kwargs": self.train_kwargs[pred.lm],
                 }
                 key_to_data[training_key] = finetune_kwargs
 

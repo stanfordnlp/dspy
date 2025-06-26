@@ -403,11 +403,12 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
         ```python linenums="1"
         import dspy
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini-2024-07-18"))
+        lm=dspy.LM('openai/gpt-4o-mini-2024-07-18')
 
         # Define the DSPy module for classification. It will use the hint at training time, if available.
         signature = dspy.Signature("text, hint -> label").with_updated_fields("label", type_=Literal[tuple(CLASSES)])
         classify = dspy.ChainOfThought(signature)
+        classify.set_lm(lm)
 
         # Optimize via BootstrapFinetune.
         optimizer = dspy.BootstrapFinetune(metric=(lambda x, y, trace=None: x.label == y.label), num_threads=24)
