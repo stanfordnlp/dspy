@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch
 
 import dspy
@@ -57,7 +56,7 @@ def test_error_handling_during_bootstrap():
 
     student = SimpleModule("input -> output")
     teacher = BuggyModule("input -> output")
-    
+
     # Set LM for the student module
     student.set_lm(lm)
     teacher.set_lm(lm)
@@ -67,13 +66,13 @@ def test_error_handling_during_bootstrap():
     )
 
     # Mock the fine-tuning process since DummyLM doesn't support it
-    with patch.object(bootstrap, 'finetune_lms') as mock_finetune:
+    with patch.object(bootstrap, "finetune_lms") as mock_finetune:
         mock_finetune.return_value = {(lm, None): lm}
-        
+
         # The bootstrap should complete successfully even with a buggy teacher
         # because we now handle exceptions gracefully
         compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
         assert compiled_student is not None, "Bootstrap should complete successfully despite teacher errors"
-        
+
         # Verify that fine-tuning was attempted (but with empty data due to the failed teacher)
         mock_finetune.assert_called_once()
