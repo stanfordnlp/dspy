@@ -63,7 +63,7 @@ These optimizers produce optimal instructions for the prompt and, in the case of
 
 This optimizer is used to fine-tune the underlying LLM(s).
 
-7. [**`BootstrapFinetune`**](/api/optimizers/BootstrapFinetune): Distills a prompt-based DSPy program into weight updates. The output is a DSPy program that has the same steps, but where each step is conducted by a finetuned model instead of a prompted LM.
+7. [**`BootstrapFinetune`**](/api/optimizers/BootstrapFinetune): Distills a prompt-based DSPy program into weight updates. The output is a DSPy program that has the same steps, but where each step is conducted by a finetuned model instead of a prompted LM. [See the classification fine-tuning tutorial](https://dspy.ai/tutorials/classification_finetuning/) for a complete example.
 
 
 ### Program Transformations
@@ -188,6 +188,8 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
         optimized = optimizer.compile(classify, trainset=trainset)
 
         optimized(text="What does a pending cash withdrawal mean?")
+        
+        # For a complete fine-tuning tutorial, see: https://dspy.ai/tutorials/classification_finetuning/
         ```
 
         **Possible Output (from the last line):**

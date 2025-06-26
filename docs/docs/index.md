@@ -415,6 +415,8 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         optimized = optimizer.compile(classify, trainset=trainset)
 
         optimized(text="What does a pending cash withdrawal mean?")
+        
+        # For a complete fine-tuning tutorial, see: https://dspy.ai/tutorials/classification_finetuning/
         ```
 
         **Possible Output (from the last line):**
