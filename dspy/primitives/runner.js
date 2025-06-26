@@ -147,7 +147,11 @@ sys.stderr = old_stderr
       // output += capturedStderr;
     } else {
       // If the code returned a real value, just return that
-      output = result;
+      try {
+        output = result.toJs();
+      } catch (e) {
+        output = result;
+      }
     }
 
     console.log(JSON.stringify({ output }));
