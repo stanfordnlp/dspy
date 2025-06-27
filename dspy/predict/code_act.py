@@ -1,3 +1,5 @@
+import asyncio
+import atexit
 import inspect
 import logging
 from typing import Callable, Type
@@ -10,6 +12,26 @@ from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.mcp_python_interpreter.client import PythonInterpreterClient as PythonInterpreter
 
 logger = logging.getLogger(__name__)
+
+
+def run_async(coro):
+    """
+    Run an async coroutine from a synchronous context.
+    If already in an event loop (e.g., Jupyter), use nest_asyncio to allow nested loops.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # If we're in a running event loop (e.g., Jupyter), use asyncio.create_task and run until done
+        import nest_asyncio
+
+        nest_asyncio.apply()
+        return asyncio.get_event_loop().run_until_complete(coro)
+    else:
+        return asyncio.run(coro)
 
 
 class CodeAct(ReAct, ProgramOfThought):
@@ -80,6 +102,9 @@ class CodeAct(ReAct, ProgramOfThought):
         self.interpreter = interpreter or PythonInterpreter()
         self.interpreter_initialized = False
 
+        # Register shutdown to atexit
+        atexit.register(self.shutdown)
+
     async def init_interpreter(self):
         await self.interpreter.connect_to_server()
         await self.interpreter.register_functions([tool.func for tool in self.tools.values()])
@@ -109,35 +134,7 @@ class CodeAct(ReAct, ProgramOfThought):
         return instructions
 
     def forward(self, **kwargs):
-        # Define the tool funcitons in the interpreter
-        for tool in self.tools.values():
-            self.interpreter(inspect.getsource(tool.func))
-
-        trajectory = {}
-        max_iters = kwargs.pop("max_iters", self.max_iters)
-        for idx in range(max_iters):
-            code_data = self.codeact(trajectory=trajectory, **kwargs)
-            output = None
-            code, error = self._parse_code(code_data)
-
-            if error:
-                trajectory[f"observation_{idx}"] = f"Failed to parse the generated code: {error}"
-                continue
-
-            trajectory[f"generated_code_{idx}"] = code
-            output, error = self._execute_code(code)
-
-            if not error:
-                trajectory[f"code_output_{idx}"] = output
-            else:
-                trajectory[f"observation_{idx}"] = f"Failed to execute the generated code: {error}"
-
-            if code_data.finished:
-                break
-
-        extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
-        self.interpreter.shutdown()
-        return dspy.Prediction(trajectory=trajectory, **extract)
+        return run_async(self.aforward(**kwargs))
 
     async def aforward(self, **kwargs):
         if not self.interpreter_initialized:
@@ -165,5 +162,7 @@ class CodeAct(ReAct, ProgramOfThought):
                 break
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
-        await self.interpreter.shutdown()
         return dspy.Prediction(trajectory=trajectory, **extract)
+
+    def shutdown(self):
+        run_async(self.interpreter.shutdown())
