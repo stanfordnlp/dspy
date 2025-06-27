@@ -348,7 +348,7 @@ finetune_program = your_dspy_program
 ckpt_path = "saved_checkpoint_path_from_finetuning"
 LM = dspy.HFModel(checkpoint=ckpt_path, model=model_to_finetune)
 
-for p in finetune_program.predictors():
+for p in finetune_program.predictors(return_trainable=False):
     p.lm = LM
     p.activated = False
 ```
