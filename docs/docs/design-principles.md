@@ -1,5 +1,7 @@
 # DSPy Philosophy and Design Principles
 
+> This document has been consolidated from discussions with the DSPy team, including [Omar Khattab](https://x.com/lateinteraction) and other core contributors, as well as from the official DSPy documentation, [twitter](https://x.com/DSPyOSS) and community insights.
+
 DSPy is built on a simple idea: building with LLMs should feel like programming, not guessing at prompts. Instead of crafting brittle prompt strings through trial-and-error, DSPy lets you write structured, modular code that describes what you want the AI to do.
 
 This approach brings core software engineering principles – modularity, abstraction, and clear contracts – to AI development. At its heart, DSPy can be thought of as "compiling declarative AI functions into LM calls, with Signatures, Modules, and Optimizers." It's like having a compiler for LLM-based programs.
@@ -140,7 +142,7 @@ DSPy brings the rigor of compilers and optimizers to what was previously an info
 
 DSPy anticipates a **paradigm shift** in how we build AI systems. As models become more central to applications, treating them as black boxes with handwritten prompts becomes *untenable*.
 
-We need what Andrej Karpathy called **"system prompt learning"** – giving LLMs ways to learn and refine their instructions over time, not just their internal weights. DSPy's focus on prompt optimization aligns with this vision. You can think of a DSPy program as a *"living" system prompt* that improves iteratively.
+We need **"system prompt learning"** – giving LLMs ways to learn and refine their instructions over time, not just their internal weights. DSPy's focus on prompt optimization aligns with this vision. You can think of a DSPy program as a *"living" system prompt* that improves iteratively.
 
 Because DSPy programs are **declarative and modular**, they're equipped to absorb advances. If a better prompting technique emerges, you can incorporate it by updating a module without redesigning your entire system. This is like how well-designed software can swap databases or libraries thanks to *abstraction boundaries*.
 
@@ -150,4 +152,6 @@ We can imagine a future where AI developers design **Signatures** and plug in **
 
 DSPy aims to bridge from today's prompt experiments to tomorrow's **rigorous discipline** of "LLM programming." The philosophy embraces structure and learning in a domain often approached ad-hoc. By raising the abstraction level – treating prompts and flows as code – we can build AI systems that are more *reliable*, *maintainable*, and *powerful*.
 
-This isn't just about making prompt engineering easier. It's laying groundwork for the **next generation** of AI software development, where humans and AI models collaborate through clear interfaces and continual improvement. The ultimate vision: making LLMs *first-class programmable entities* in our software stack.
+This isn't just about making prompt engineering easier. It's laying groundwork for the **next generation** of AI software development, where humans and AI models collaborate through clear interfaces and continual improvement. 
+
+The ultimate vision: making LLMs *first-class programmable entities* in our software stack.
