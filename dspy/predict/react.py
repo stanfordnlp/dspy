@@ -79,7 +79,7 @@ class ReAct(Module):
             .append("trajectory", dspy.InputField(), type_=str)
             .append("tools", dspy.InputField(), type_=list[Tool])
             .append("next_thought", dspy.OutputField(), type_=str)
-            .append("tool_calls", dspy.OutputField(), type_=ToolCalls)
+            .append("next_tool_calls", dspy.OutputField(), type_=ToolCalls)
         )
 
         fallback_signature = dspy.Signature(
@@ -106,11 +106,11 @@ class ReAct(Module):
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
                 break
 
-            # trajectory[f"thought_{idx}"] = pred.next_thought
-            trajectory[f"tool_calls_{idx}"] = str(pred.tool_calls)
+            trajectory[f"thought_{idx}"] = pred.next_thought
+            trajectory[f"tool_calls_{idx}"] = str(pred.next_tool_calls)
             trajectory[f"observation_{idx}"] = []
 
-            tool_calls = [] if pred.tool_calls is None else pred.tool_calls.tool_calls
+            tool_calls = [] if pred.next_tool_calls is None else pred.next_tool_calls.tool_calls
             tool_names = [tool_call.name for tool_call in tool_calls]
             for tool_call in tool_calls:
                 try:
