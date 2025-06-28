@@ -1,6 +1,6 @@
 # Why DSPy?
 
-> This document has been consolidated from discussions with the DSPy team, including [Omar Khattab](https://x.com/lateinteraction) and other core contributors, as well as from the official DSPy documentation, [twitter](https://x.com/DSPyOSS) and community insights.
+> This document has been consolidated from discussions with the DSPy team, including [Omar Khattab](https://x.com/lateinteraction) and other core contributors, as well as from the official DSPy documentation, [Twitter](https://x.com/DSPyOSS) and community insights.
 
 If you've built anything with LLMs, you've probably hit the wall: prompts that work great in testing break in production, small changes cascade into system failures, and every new model requires rewriting everything from scratch.
 
