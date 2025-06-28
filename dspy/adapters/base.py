@@ -57,6 +57,9 @@ class Adapter:
                 lm_kwargs["tools"] = litellm_tools
 
                 signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
+                signature_for_native_function_calling = signature_for_native_function_calling.delete(
+                    tool_call_input_field_name
+                )
 
                 return signature_for_native_function_calling
 
@@ -64,12 +67,13 @@ class Adapter:
 
     def _call_postprocess(
         self,
-        signature: Type[Signature],
+        processed_signature: Type[Signature],
+        original_signature: Type[Signature],
         outputs: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         values = []
 
-        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
+        tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
 
         for output in outputs:
             output_logprobs = None
@@ -82,10 +86,14 @@ class Adapter:
                 tool_calls = output.get("tool_calls")
 
             if text:
-                value = self.parse(signature, text)
+                value = self.parse(processed_signature, text)
+                for field_name in original_signature.output_fields.keys():
+                    if field_name not in value:
+                        # We need to set the field not present in the processed signature to None.
+                        value[field_name] = None
             else:
                 value = {}
-                for field_name in signature.output_fields.keys():
+                for field_name in original_signature.output_fields.keys():
                     value[field_name] = None
 
             if tool_calls and tool_call_output_field_name:
@@ -117,7 +125,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(signature, outputs)
+        return self._call_postprocess(processed_signature, signature, outputs)
 
     async def acall(
         self,
@@ -131,7 +139,11 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(signature, outputs)
+        return self._call_postprocess(
+            processed_signature=processed_signature,
+            original_signature=signature,
+            outputs=outputs,
+        )
 
     def format(
         self,

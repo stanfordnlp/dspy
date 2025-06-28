@@ -14,7 +14,7 @@ from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
-from dspy.utils.callback import BaseCallback
+from dspy.utils.callback import BaseCallback, with_callbacks
 
 from .base_lm import BaseLM
 
@@ -83,9 +83,9 @@ class LM(BaseLM):
 
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
-            assert (
-                max_tokens >= 20_000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            assert max_tokens >= 20_000 and temperature == 1.0, (
+                "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -113,6 +113,7 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
+    @with_callbacks
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
