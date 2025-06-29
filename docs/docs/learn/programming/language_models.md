@@ -152,7 +152,7 @@ with dspy.context(lm=dspy.LM('openai/gpt-3.5-turbo')):
 ```
 **Possible Output:**
 ```text
-GPT-4o: The number of floors in the castle David Gregory inherited cannot be determined with the information provided.
+GPT-4o-mini: The number of floors in the castle David Gregory inherited cannot be determined with the information provided.
 GPT-3.5-turbo: The castle David Gregory inherited has 7 floors.
 ```
 
