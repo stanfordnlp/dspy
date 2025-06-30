@@ -1,7 +1,7 @@
 # dspy.retrievers.Embeddings
 
 <!-- START_API_REF -->
-::: dspy.retrievers.Embeddings
+::: dspy.Embeddings
     handler: python
     options:
         members:
