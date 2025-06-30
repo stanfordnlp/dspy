@@ -25,6 +25,7 @@ class SIMBA(Teleprompter):
         num_threads=None,
         temperature_for_sampling=0.2,
         temperature_for_candidates=0.2,
+        proposer_lm=None,
     ):
         """
         Initializes SIMBA.
@@ -57,11 +58,12 @@ class SIMBA(Teleprompter):
 
         self.temperature_for_sampling = temperature_for_sampling
         self.temperature_for_candidates = temperature_for_candidates
+        self.proposer_lm = proposer_lm
 
         if self.max_demos > 0:
-            self.strategies = [append_a_demo(demo_input_field_maxlen), append_a_rule]
+            self.strategies = [append_a_demo(demo_input_field_maxlen), append_a_rule(proposer_lm=self.proposer_lm)]
         else:
-            self.strategies = [append_a_rule]
+            self.strategies = [append_a_rule(proposer_lm=self.proposer_lm)]
 
     def compile(self, student: dspy.Module, *, trainset: list[dspy.Example], seed: int = 0):
         # Basic checks
@@ -148,7 +150,7 @@ class SIMBA(Teleprompter):
 
             # We'll generate (program, model) pairs for the trajectory sampling.
             # Prepare distinct LMs (with different temperatures, etc.) from the baseline=programs[0].
-            models = prepare_models_for_resampling(programs[0], self.num_candidates)
+            models = prepare_models_for_resampling(programs[0], self.num_candidates, proposer_lm=self.proposer_lm)
             top_programs = top_k_plus_baseline(self.num_candidates)
 
             exec_pairs = []

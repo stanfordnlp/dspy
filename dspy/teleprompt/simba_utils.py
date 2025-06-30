@@ -12,11 +12,16 @@ from dspy.signatures import InputField, OutputField
 logger = logging.getLogger(__name__)
 
 
-def prepare_models_for_resampling(program: dspy.Module, n: int):
+def prepare_models_for_resampling(program: dspy.Module, n: int, proposer_lm=None):
     lm = program.get_lm() or dspy.settings.lm
     temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / n) for i in range(n)]
     temps = list(dict.fromkeys(temps))[:n]
-    return [lm.copy(temperature=t) for t in temps]
+    lms = [lm.copy(temperature=t) for t in temps]
+
+    if proposer_lm is not None:
+        lms = lms[:-1] + [proposer_lm.copy()]
+
+    return lms
 
 
 def wrap_program(program: dspy.Module, metric: Callable):
@@ -73,64 +78,71 @@ def append_a_demo(demo_input_field_maxlen):
 
     return append_a_demo_
 
+def append_a_rule(proposer_lm=None):
+    def append_a_rule_(bucket, system, **kwargs):
+        predictor2name = kwargs["predictor2name"]
+        batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
 
-def append_a_rule(bucket, system, **kwargs):
-    predictor2name = kwargs["predictor2name"]
-    batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
+        module_names = [name for name, _ in system.named_predictors()]
+        good, bad = bucket[0], bucket[-1]
+        example = good["example"]
 
-    module_names = [name for name, _ in system.named_predictors()]
-    good, bad = bucket[0], bucket[-1]
-    example = good["example"]
+        if good["score"] < batch_10p_score or bad["score"] > batch_90p_score:
+            logger.info(f"Skipping rule generation as good score {good['score']} is below the 10th percentile "
+                        f"*or* bad score {bad['score']} is above the 90th percentile.")
+            return False
 
-    if good["score"] < batch_10p_score or bad["score"] > batch_90p_score:
-        logger.info(f"Skipping rule generation as good score {good['score']} is below the 10th percentile "
-                    f"*or* bad score {bad['score']} is above the 90th percentile.")
-        return False
+        if good["score"] <= bad["score"]:
+            if good["score"] > batch_90p_score:
+                bad["trace"] = []
+                bad["score"] = "N/A"
+                bad["prediction"] = {"N/A": "Prediction not available"}
+            else:
+                good["trace"] = []
+                good["score"] = "N/A"
+                good["prediction"] = {"N/A": "Prediction not available"}
 
-    if good["score"] <= bad["score"]:
-        if good["score"] > batch_90p_score:
-            bad["trace"] = []
-            bad["score"] = "N/A"
-            bad["prediction"] = {"N/A": "Prediction not available"}
-        else:
-            good["trace"] = []
-            good["score"] = "N/A"
-            good["prediction"] = {"N/A": "Prediction not available"}
+        better_trajectory = [
+            {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
+            for p, i, o in good["trace"]
+        ]
+        worse_trajectory = [
+            {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
+            for p, i, o in bad["trace"]
+        ]
 
-    better_trajectory = [
-        {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
-        for p, i, o in good["trace"]
-    ]
-    worse_trajectory = [
-        {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
-        for p, i, o in bad["trace"]
-    ]
+        kwargs = {
+            "program_code": inspect.getsource(system.__class__),
+            "modules_defn": inspect_modules(system),
+            "program_inputs": {**example.inputs()},
+            "oracle_metadata": {**example.labels()},
+            "better_program_trajectory": better_trajectory,
+            "better_program_outputs": dict(good["prediction"]),
+            "worse_program_trajectory": worse_trajectory,
+            "worse_program_outputs": dict(bad["prediction"] or {}),
+            "worse_reward_value": bad["score"],
+            "better_reward_value": good["score"],
+            "module_names": module_names,
+        }
 
-    kwargs = {
-        "program_code": inspect.getsource(system.__class__),
-        "modules_defn": inspect_modules(system),
-        "program_inputs": {**example.inputs()},
-        "oracle_metadata": {**example.labels()},
-        "better_program_trajectory": better_trajectory,
-        "better_program_outputs": dict(good["prediction"]),
-        "worse_program_trajectory": worse_trajectory,
-        "worse_program_outputs": dict(bad["prediction"] or {}),
-        "worse_reward_value": bad["score"],
-        "better_reward_value": good["score"],
-        "module_names": module_names,
-    }
+        kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
+                for k, v in kwargs.items()}
+        produce_advice = dspy.Predict(OfferFeedback)
 
-    kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
-              for k, v in kwargs.items()}
-    advice = dspy.Predict(OfferFeedback)(**kwargs).module_advice
+        if proposer_lm is None:
+            produce_advice.set_lm(proposer_lm)
 
-    for name, predictor in system.named_predictors():
-        if name in advice:
-            logger.info(f"Advice for {name}: {advice[name]}")
-            instructions = predictor.signature.instructions + "\n\n" + advice[name]
-            predictor.signature = predictor.signature.with_instructions(instructions)
+        advice = produce_advice(**kwargs).module_advice
 
-    return True
+        for name, predictor in system.named_predictors():
+            if name in advice:
+                logger.info(f"Advice for {name}: {advice[name]}")
+                instructions = predictor.signature.instructions + "\n\n" + advice[name]
+                predictor.signature = predictor.signature.with_instructions(instructions)
+
+        return True
+
+    return append_a_rule_
 
 class OfferFeedback(dspy.Signature):
     """
