@@ -53,13 +53,10 @@ class ReAct(Module):
             [
                 f"You are an Agent. In each episode, you will be given the fields {inputs} as input. And you can see your past trajectory so far.",
                 f"Your goal is to use one or more of the supplied tools to collect any necessary information for producing {outputs}.\n",
-                "To do this, you will reason about the current situation to decide which tool to call next along with the arguments to pass to the tool.",
-                "Or finish the task.\n\n",
+                "To do this, you will interleave next_thought and next_tool_calls in each turn, and also when finishing the task.",
                 "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
                 "When writing next_thought, you may reason about the current situation and plan for future steps.",
-                "When selecting the tools to call, the tool must be one of the tools provided to you.\n\n",
-                "!!!If you decide a tool call is required, then you MUST IGNORE the output fields requirements, and just return the tool",
-                "call information.\n\n",
+                "When selecting the tools to call, the tool must be one of:\n",
             ]
         )
 
@@ -72,7 +69,7 @@ class ReAct(Module):
 
         for idx, tool in enumerate(tools.values()):
             instr.append(f"({idx + 1}) {tool}")
-        # instr.append("When providing `next_tool_args`, the value inside the field must be in JSON format")
+        instr.append("When providing `next_tool_calls`, the args value inside the field must be in JSON format")
 
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))

@@ -2,6 +2,7 @@ import asyncio
 import inspect
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, get_origin, get_type_hints
 
+import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
@@ -288,7 +289,7 @@ class ToolCalls(BaseType):
     def description(cls) -> str:
         return (
             "Tool calls information, including the name of the tools and the arguments to be passed to it. "
-            "Arguments must be provided in JSON format."
+            '`args` must be provided in JSON format, e.g., `{"arg1": "value1", "arg2": "value2"}`'
         )
 
     def format(self) -> list[dict[str, Any]]:
@@ -303,10 +304,15 @@ class ToolCalls(BaseType):
                             "name": tool_call.name,
                             "arguments": tool_call.args,
                         },
-                    } for tool_call in self.tool_calls
+                    }
+                    for tool_call in self.tool_calls
                 ],
             }
         ]
+
+    @pydantic.model_serializer()
+    def serialize_model(self):
+        return self.format()
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:

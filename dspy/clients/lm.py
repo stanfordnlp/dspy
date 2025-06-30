@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import threading
-from typing import Any, Dict, List, Literal, Optional, cast
+from typing import Any, Dict, List, Literal, cast
 
 import litellm
 from anyio.streams.memory import MemoryObjectSendStream
@@ -14,7 +14,7 @@ from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
-from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.callback import BaseCallback
 
 from .base_lm import BaseLM
 
@@ -34,12 +34,12 @@ class LM(BaseLM):
         max_tokens: int = 4000,
         cache: bool = True,
         cache_in_memory: bool = True,
-        callbacks: Optional[List[BaseCallback]] = None,
+        callbacks: List[BaseCallback] | None = None,
         num_retries: int = 3,
-        provider: Optional[Provider] = None,
-        finetuning_model: Optional[str] = None,
-        launch_kwargs: Optional[dict[str, Any]] = None,
-        train_kwargs: Optional[dict[str, Any]] = None,
+        provider: Provider | None = None,
+        finetuning_model: str | None = None,
+        launch_kwargs: dict[str, Any] | None = None,
+        train_kwargs: dict[str, Any] | None = None,
         **kwargs,
     ):
         """
@@ -83,9 +83,9 @@ class LM(BaseLM):
 
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
-            assert max_tokens >= 20_000 and temperature == 1.0, (
-                "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
-            )
+            assert (
+                max_tokens >= 20_000 and temperature == 1.0
+            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -113,7 +113,6 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    @with_callbacks
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
@@ -174,17 +173,17 @@ class LM(BaseLM):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
-    def launch(self, launch_kwargs: Optional[Dict[str, Any]] = None):
+    def launch(self, launch_kwargs: Dict[str, Any] | None = None):
         self.provider.launch(self, launch_kwargs)
 
-    def kill(self, launch_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(self, launch_kwargs: Dict[str, Any] | None = None):
         self.provider.kill(self, launch_kwargs)
 
     def finetune(
         self,
         train_data: List[Dict[str, Any]],
-        train_data_format: Optional[TrainDataFormat],
-        train_kwargs: Optional[Dict[str, Any]] = None,
+        train_data_format: TrainDataFormat | None,
+        train_kwargs: Dict[str, Any] | None = None,
     ) -> TrainingJob:
         from dspy import settings as settings
 
@@ -301,7 +300,7 @@ def _get_stream_completion_fn(
         return async_stream_completion
 
 
-def litellm_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+def litellm_completion(request: Dict[str, Any], num_retries: int, cache: Dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
@@ -315,7 +314,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache: Optiona
     return stream_completion()
 
 
-def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
@@ -341,7 +340,7 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Op
     )
 
 
-async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache: Dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
@@ -355,7 +354,7 @@ async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache: 
     return await stream_completion()
 
 
-async def alitellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Optional[Dict[str, Any]] = None):
+async def alitellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     model = request.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
