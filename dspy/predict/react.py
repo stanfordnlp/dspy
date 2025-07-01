@@ -132,15 +132,19 @@ class ReAct(Module):
                 break
 
             trajectory[f"thought_{idx}"] = pred.next_thought
-            trajectory[f"tool_name_{idx}"] = pred.next_tool_name
-            trajectory[f"tool_args_{idx}"] = pred.next_tool_args
+            trajectory[f"tool_calls_{idx}"] = str(pred.next_tool_calls)
+            trajectory[f"observation_{idx}"] = []
 
-            try:
-                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
-            except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+            tool_calls = [] if pred.next_tool_calls is None else pred.next_tool_calls.tool_calls
+            tool_names = [tool_call.name for tool_call in tool_calls]
+            for tool_call in tool_calls:
+                try:
+                    result = await self.tools[tool_call.name].acall(**tool_call.args)
+                    trajectory[f"observation_{idx}"].append(result)
+                except Exception as err:
+                    trajectory[f"observation_{idx}"].append(f"Execution error in {tool_call.name}: {_fmt_exc(err)}")
 
-            if pred.next_tool_name == "finish":
+            if "finish" in tool_names or len(tool_names) == 0:
                 break
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
