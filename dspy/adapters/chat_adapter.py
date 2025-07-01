@@ -1,6 +1,6 @@
 import re
 import textwrap
-from typing import Any, Dict, NamedTuple, Optional, Type
+from typing import Any, Dict, NamedTuple, Type
 
 from litellm import ContextWindowExceededError
 from pydantic.fields import FieldInfo
@@ -27,7 +27,7 @@ class FieldInfoWithName(NamedTuple):
 
 
 class ChatAdapter(Adapter):
-    def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
+    def __init__(self, callbacks: list[BaseCallback] | None = None):
         super().__init__(callbacks)
 
     def __call__(
@@ -41,7 +41,6 @@ class ChatAdapter(Adapter):
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            raise e
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 

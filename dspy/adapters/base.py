@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, Optional, Type, get_origin
+from typing import TYPE_CHECKING, Any, Type, get_origin
 
 import json_repair
 import litellm
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class Adapter:
-    def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
+    def __init__(self, callbacks: list[BaseCallback] | None = None):
         self.callbacks = callbacks or []
 
     def __init_subclass__(cls, **kwargs) -> None:
@@ -57,9 +57,6 @@ class Adapter:
                 lm_kwargs["tools"] = litellm_tools
 
                 signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
-                signature_for_native_function_calling = signature_for_native_function_calling.delete(
-                    tool_call_input_field_name
-                )
 
                 return signature_for_native_function_calling
 
@@ -67,13 +64,12 @@ class Adapter:
 
     def _call_postprocess(
         self,
-        processed_signature: Type[Signature],
-        original_signature: Type[Signature],
+        signature: Type[Signature],
         outputs: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         values = []
 
-        tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
+        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
 
         for output in outputs:
             output_logprobs = None
@@ -86,14 +82,10 @@ class Adapter:
                 tool_calls = output.get("tool_calls")
 
             if text:
-                value = self.parse(processed_signature, text)
-                for field_name in original_signature.output_fields.keys():
-                    if field_name not in value:
-                        # We need to set the field not present in the processed signature to None.
-                        value[field_name] = None
+                value = self.parse(signature, text)
             else:
                 value = {}
-                for field_name in original_signature.output_fields.keys():
+                for field_name in signature.output_fields.keys():
                     value[field_name] = None
 
             if tool_calls and tool_call_output_field_name:
@@ -125,7 +117,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs)
+        return self._call_postprocess(signature, outputs)
 
     async def acall(
         self,
@@ -139,11 +131,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(
-            processed_signature=processed_signature,
-            original_signature=signature,
-            outputs=outputs,
-        )
+        return self._call_postprocess(signature, outputs)
 
     def format(
         self,
@@ -293,7 +281,7 @@ class Adapter:
         self,
         signature: Type[Signature],
         outputs: dict[str, Any],
-        missing_field_message: Optional[str] = None,
+        missing_field_message: str | None = None,
     ) -> str:
         """Format the assistant message content.
 
