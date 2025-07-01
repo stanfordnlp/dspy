@@ -312,6 +312,7 @@ class ToolCalls(BaseType):
 
     @pydantic.model_serializer()
     def serialize_model(self):
+        """Override so that the ToolCalls are not formatted as a message array when using as inputs."""
         return self.format()
 
 
