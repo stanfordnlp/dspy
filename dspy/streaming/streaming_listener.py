@@ -67,16 +67,16 @@ class StreamListener:
             end_identifier = self.json_adapter_end_identifier
 
             start_indicator = '"'
-        elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
-            start_identifier = self.chat_adapter_start_identifier
-            end_identifier = self.chat_adapter_end_identifier
-
-            start_indicator = "["
         elif isinstance(settings.adapter, XMLAdapter):
             start_identifier = self.xml_adapter_start_identifier
             end_identifier = self.xml_adapter_end_identifier
 
             start_indicator = "<"
+        elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
+            start_identifier = self.chat_adapter_start_identifier
+            end_identifier = self.chat_adapter_end_identifier
+
+            start_indicator = "["
         else:
             raise ValueError(
                 f"Unsupported adapter for streaming: {settings.adapter}, please use either ChatAdapter, XMLAdapter or "
@@ -184,10 +184,14 @@ class StreamListener:
             else:
                 boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
+        elif isinstance(settings.adapter, XMLAdapter):
+            boundary_index = last_tokens.find(f"</{self.signature_field_name}>")
+            if boundary_index == -1:
+                boundary_index = len(last_tokens)
+            return last_tokens[:boundary_index]
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
             boundary_index = last_tokens.find("[[")
             return last_tokens[:boundary_index]
-        elif isinstance(settings.adapter, XMLAdapter):
             boundary_index = last_tokens.find(f"</{self.signature_field_name}>")
             if boundary_index == -1:
                 boundary_index = len(last_tokens)
