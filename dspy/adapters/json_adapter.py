@@ -9,6 +9,7 @@ import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
@@ -45,7 +46,8 @@ class JSONAdapter(ChatAdapter):
         if not params or "response_format" not in params:
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
-        if _has_open_ended_mapping(signature):
+        has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
+        if _has_open_ended_mapping(signature) or has_tool_calls:
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
