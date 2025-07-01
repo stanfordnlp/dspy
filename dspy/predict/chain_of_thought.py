@@ -1,18 +1,17 @@
-from typing import Any, Optional, Type, Union
+from typing import Any, Type
 
 from pydantic.fields import FieldInfo
 
 import dspy
 from dspy.primitives.module import Module
-from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, ensure_signature
 
 
 class ChainOfThought(Module):
     def __init__(
         self,
-        signature: Union[str, Type[Signature]],
-        rationale_field: Optional[Union[OutputField, FieldInfo]] = None,
+        signature: str | Type[Signature],
+        rationale_field: FieldInfo | None = None,
         rationale_field_type: Type = str,
         **config: dict[str, Any],
     ):

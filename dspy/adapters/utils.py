@@ -32,7 +32,7 @@ def serialize_for_json(value: Any) -> Any:
         return str(value)
 
 
-def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> Union[str, dict]:
+def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> str | dict:
     """
     Formats the value of the specified field according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself.

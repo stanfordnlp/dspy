@@ -23,7 +23,7 @@ def test_named_predictors():
     module = HopModule()
     named_preds = module.named_predictors()
     assert len(named_preds) == 2, "Should identify correct number of Predict instances"
-    names, preds = zip(*named_preds)
+    names, preds = zip(*named_preds, strict=False)
     assert "predict1" in names and "predict2" in names, "Named predictors should include 'predict1' and 'predict2'"
 
 
@@ -57,7 +57,7 @@ def test_nested_named_predictors():
     module = Hop2Module()
     named_preds = module.named_predictors()
     assert len(named_preds) == 2
-    names, _preds = zip(*named_preds)
+    names, _preds = zip(*named_preds, strict=False)
     assert "hop.predict1" in names
     assert "hop.predict2" in names
 

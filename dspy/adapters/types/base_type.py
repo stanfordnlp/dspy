@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, Union, get_args, get_origin
+from typing import Any, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -26,7 +26,7 @@ class BaseType(pydantic.BaseModel):
         ```
     """
 
-    def format(self) -> Union[list[dict[str, Any]], str]:
+    def format(self) -> list[dict[str, Any]] | str:
         raise NotImplementedError
 
     @classmethod

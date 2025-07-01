@@ -1,5 +1,5 @@
 import threading
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Tuple
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.example import Example
@@ -9,11 +9,11 @@ from dspy.utils.parallelizer import ParallelExecutor
 class Parallel:
     def __init__(
         self,
-        num_threads: Optional[int] = None,
-        max_errors: Optional[int] = None,
+        num_threads: int | None = None,
+        max_errors: int | None = None,
         access_examples: bool = True,
         return_failed_examples: bool = False,
-        provide_traceback: Optional[bool] = None,
+        provide_traceback: bool | None = None,
         disable_progress_bar: bool = False,
     ):
         super().__init__()
@@ -30,7 +30,7 @@ class Parallel:
         self.failed_examples = []
         self.exceptions = []
 
-    def forward(self, exec_pairs: List[Tuple[Any, Example]], num_threads: Optional[int] = None) -> List[Any]:
+    def forward(self, exec_pairs: List[Tuple[Any, Example]], num_threads: int | None = None) -> List[Any]:
         num_threads = num_threads if num_threads is not None else self.num_threads
 
         executor = ParallelExecutor(

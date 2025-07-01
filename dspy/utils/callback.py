@@ -3,7 +3,7 @@ import inspect
 import logging
 import uuid
 from contextvars import ContextVar
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 
 import dspy
 
@@ -81,8 +81,8 @@ class BaseCallback:
     def on_module_end(
         self,
         call_id: str,
-        outputs: Optional[Any],
-        exception: Optional[Exception] = None,
+        outputs: Any | None,
+        exception: Exception | None = None,
     ):
         """A handler triggered after forward() method of a module (subclass of dspy.Module) is executed.
 
@@ -113,8 +113,8 @@ class BaseCallback:
     def on_lm_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: Dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         """A handler triggered after __call__ method of dspy.LM instance is executed.
 
@@ -145,8 +145,8 @@ class BaseCallback:
     def on_adapter_format_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: Dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         """A handler triggered after format() method of an adapter (subclass of dspy.Adapter) is called..
 
@@ -177,8 +177,8 @@ class BaseCallback:
     def on_adapter_parse_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: Dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         """A handler triggered after parse() method of an adapter (subclass of dspy.Adapter) is called.
 
@@ -209,8 +209,8 @@ class BaseCallback:
     def on_tool_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: Dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         """A handler triggered after a tool is executed.
 
@@ -241,8 +241,8 @@ class BaseCallback:
     def on_evaluate_end(
         self,
         call_id: str,
-        outputs: Optional[Any],
-        exception: Optional[Exception] = None,
+        outputs: Any | None,
+        exception: Exception | None = None,
     ):
         """A handler triggered after evaluation is executed.
 

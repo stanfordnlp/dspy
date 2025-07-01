@@ -77,7 +77,7 @@ class COPRO(Teleprompter):
         self.track_stats = track_stats
 
     def _check_candidates_equal(self, candidate1, candidate2):
-        for p1, p2 in zip(candidate1["program"].predictors(), candidate2["program"].predictors()):
+        for p1, p2 in zip(candidate1["program"].predictors(), candidate2["program"].predictors(), strict=False):
             if self._get_signature(p1).instructions != self._get_signature(p2).instructions:
                 return False
             *_, p1_last_field = self._get_signature(p1).fields.values()
@@ -191,7 +191,7 @@ class COPRO(Teleprompter):
             latest_scores = []
 
             # Go through our module's predictors
-            for p_i, (p_old, p_new) in enumerate(zip(module.predictors(), module_clone.predictors())):
+            for p_i, (p_old, p_new) in enumerate(zip(module.predictors(), module_clone.predictors(), strict=False)):
                 candidates_ = latest_candidates[id(p_old)]  # Use the most recently generated candidates for evaluation
                 if len(module.predictors()) > 1:
                     # Unless our program has multiple predictors, in which case we need to reevaluate all prompts with

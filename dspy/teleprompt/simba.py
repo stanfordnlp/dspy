@@ -322,7 +322,7 @@ class SIMBA(Teleprompter):
 
         # Build sorted list of {"score", "program"} dicts
         assert len(scores) == len(candidate_programs)
-        candidate_data = [{"score": s, "program": p} for s, p in zip(scores, candidate_programs)]
+        candidate_data = [{"score": s, "program": p} for s, p in zip(scores, candidate_programs, strict=False)]
         candidate_data.sort(key=lambda x: x["score"], reverse=True)
 
         best_idx = scores.index(max(scores)) if scores else 0

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 from dspy.adapters.types.tool import Tool, convert_input_schema_to_tool_args
 
@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     import mcp
 
 
-def _convert_mcp_tool_result(call_tool_result: "mcp.types.CallToolResult") -> Union[str, list[Any]]:
+def _convert_mcp_tool_result(call_tool_result: "mcp.types.CallToolResult") -> str | list[Any]:
     from mcp.types import TextContent
 
     text_contents: list[TextContent] = []

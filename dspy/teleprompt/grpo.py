@@ -1,7 +1,7 @@
 import logging
 import random
 from collections import Counter
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Tuple
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 class GRPO(FinetuneTeleprompter):
     def __init__(
         self,
-        metric: Optional[Callable] = None,
+        metric: Callable | None = None,
         multitask: bool = True,
-        train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
-        adapter: Optional[Union[Adapter, Dict[LM, Adapter]]] = None,
+        train_kwargs: Dict[str, Any] | Dict[LM, Dict[str, Any]] | None = None,
+        adapter: Adapter | Dict[LM, Adapter] | None = None,
         exclude_demos: bool = False,
         num_threads: int = 6,
         num_train_steps: int = 100,
@@ -40,8 +40,8 @@ class GRPO(FinetuneTeleprompter):
         report_train_scores: bool = False,
         failure_score: float = 0,
         format_failure_score: float = -1,
-        variably_invoked_predictor_grouping_mode: Union[Literal["truncate"], Literal["fill"], Literal["ragged"]] = "truncate",
-        variably_invoked_predictor_fill_strategy: Optional[Union[Literal["randint"], Literal["max"]]] = None,
+        variably_invoked_predictor_grouping_mode: Literal["truncate"] | Literal["fill"] | Literal["ragged"] = "truncate",
+        variably_invoked_predictor_fill_strategy: Literal["randint"] | Literal["max"] | None = None,
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -235,8 +235,8 @@ class GRPO(FinetuneTeleprompter):
         self,
         student: Module,
         trainset: List[Example],
-        teacher: Optional[Union[Module, List[Module]]] = None,
-        valset: Optional[List[Example]] = None,
+        teacher: Module | List[Module] | None = None,
+        valset: List[Example] | None = None,
         **kwargs,
     ) -> Module:
         logger.info("Starting the GRPO compilation process... The LM(s) for the student program will be updated in place at the end of the training.")

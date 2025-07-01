@@ -1,6 +1,5 @@
 import inspect
 import logging
-from typing import Optional
 
 import magicattr
 
@@ -119,10 +118,10 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def batch(
         self,
         examples: list[Example],
-        num_threads: Optional[int] = None,
-        max_errors: Optional[int] = None,
+        num_threads: int | None = None,
+        max_errors: int | None = None,
         return_failed_examples: bool = False,
-        provide_traceback: Optional[bool] = None,
+        provide_traceback: bool | None = None,
         disable_progress_bar: bool = False,
     ):
         """

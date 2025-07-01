@@ -4,7 +4,7 @@ import logging
 import threading
 from asyncio import iscoroutinefunction
 from queue import Queue
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator, List
 
 import litellm
 import ujson
@@ -26,8 +26,8 @@ if TYPE_CHECKING:
 
 def streamify(
     program: "Module",
-    status_message_provider: Optional[StatusMessageProvider] = None,
-    stream_listeners: Optional[List[StreamListener]] = None,
+    status_message_provider: StatusMessageProvider | None = None,
+    stream_listeners: List[StreamListener] | None = None,
     include_final_prediction_in_output_stream: bool = True,
     is_async_program: bool = False,
     async_streaming: bool = True,
@@ -183,7 +183,7 @@ def streamify(
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
                     else:
-                        # We are receiving a chunk from the LM's response stream, delgate it to the listeners to
+                        # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
                         # determine if we should yield a value to the user.
                         output = None
                         for listener in predict_id_to_listener[value.predict_id]:

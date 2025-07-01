@@ -28,7 +28,7 @@ class Image(BaseType):
         "extra": "forbid",
     }
 
-    def format(self) -> Union[list[dict[str, Any]], str]:
+    def format(self) -> list[dict[str, Any]] | str:
         try:
             image_url = encode_image(self.url)
         except Exception as e:

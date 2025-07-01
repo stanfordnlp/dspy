@@ -1,5 +1,5 @@
 import random
-from typing import List, Optional, Union
+from typing import List
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
@@ -44,9 +44,9 @@ class Retrieve(Parameter):
     def forward(
         self,
         query: str,
-        k: Optional[int] = None,
+        k: int | None = None,
         **kwargs,
-    ) -> Union[List[str], Prediction, List[Prediction]]:
+    ) -> List[str] | Prediction | List[Prediction]:
         k = k if k is not None else self.k
 
         import dspy

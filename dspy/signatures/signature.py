@@ -23,7 +23,7 @@ import sys
 import types
 import typing
 from copy import deepcopy
-from typing import Any, Dict, Optional, Tuple, Type, Union
+from typing import Any, Dict, Tuple, Type
 
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -248,7 +248,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(cls.fields, instructions)
 
     @classmethod
-    def with_updated_fields(cls, name: str, type_: Optional[Type] = None, **kwargs: dict[str, Any]) -> Type["Signature"]:
+    def with_updated_fields(cls, name: str, type_: Type | None = None, **kwargs: dict[str, Any]) -> Type["Signature"]:
         """Create a new Signature class with the updated field information.
 
         Returns a new Signature class with the field, name, updated
@@ -290,7 +290,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields, cls.instructions)
 
     @classmethod
-    def insert(cls, index: int, name: str, field, type_: Optional[Type] = None) -> Type["Signature"]:
+    def insert(cls, index: int, name: str, field, type_: Type | None = None) -> Type["Signature"]:
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
@@ -348,14 +348,14 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
 
         signature_copy.instructions = state["instructions"]
-        for field, saved_field in zip(signature_copy.fields.values(), state["fields"]):
+        for field, saved_field in zip(signature_copy.fields.values(), state["fields"], strict=False):
             field.json_schema_extra["prefix"] = saved_field["prefix"]
             field.json_schema_extra["desc"] = saved_field["description"]
 
         return signature_copy
 
 
-def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
+def ensure_signature(signature: str | Type[Signature], instructions=None) -> Signature:
     if signature is None:
         return None
     if isinstance(signature, str):
@@ -366,10 +366,10 @@ def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) 
 
 
 def make_signature(
-    signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
-    instructions: Optional[str] = None,
+    signature: str | Dict[str, Tuple[type, FieldInfo]],
+    instructions: str | None = None,
     signature_name: str = "StringSignature",
-    custom_types: Optional[Dict[str, Type]] = None,
+    custom_types: Dict[str, Type] | None = None,
 ) -> Type[Signature]:
     """Create a new Signature subclass with the specified fields and instructions.
 
@@ -430,7 +430,7 @@ def make_signature(
         # program of thought and teleprompters, so we just silently default to string.
         if type_ is None:
             type_ = str
-        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm)):
+        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm, types.UnionType)):
             raise ValueError(f"Field types must be types, but received: {type_} of type {type(type_)}.")
         if not isinstance(field, FieldInfo):
             raise ValueError(f"Field values must be Field instances, but received: {field}.")
@@ -475,7 +475,7 @@ def _parse_field_string(field_string: str, names=None) -> Dict[str, str]:
     args = ast.parse(f"def f({field_string}): pass").body[0].args.args
     field_names = [arg.arg for arg in args]
     types = [str if arg.annotation is None else _parse_type_node(arg.annotation, names) for arg in args]
-    return zip(field_names, types)
+    return zip(field_names, types, strict=False)
 
 
 def _parse_type_node(node, names=None) -> Any:
@@ -580,6 +580,18 @@ def _parse_type_node(node, names=None) -> Any:
 
         return base_type[arg_types]
 
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        # Handle PEP 604: int | None, str | float, etc.
+        left = _parse_type_node(node.left, names)
+        right = _parse_type_node(node.right, names)
+
+        # Optional[X] is Union[X, NoneType]
+        if right is type(None):
+            return typing.Optional[left]
+        if left is type(None):
+            return typing.Optional[right]
+        return typing.Union[left, right]
+
     if isinstance(node, ast.Tuple):
         return tuple(_parse_type_node(elt, names) for elt in node.elts)
 
@@ -594,7 +606,7 @@ def _parse_type_node(node, names=None) -> Any:
                 values.append(kw.value.value)
             else:
                 values.append(_parse_type_node(kw.value, names))
-        return Field(**dict(zip(keys, values)))
+        return Field(**dict(zip(keys, values, strict=False)))
 
     raise ValueError(
         f"Failed to parse string-base Signature due to unhandled AST node type in annotation: {ast.dump(node)}. "
