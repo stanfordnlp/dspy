@@ -96,6 +96,7 @@ class ReAct(Module):
     def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+        dspy.settings.adapter.use_native_function_calling = False
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -124,6 +125,7 @@ class ReAct(Module):
     async def aforward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+        dspy.settings.adapter.use_native_function_calling = False
         for idx in range(max_iters):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
