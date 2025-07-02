@@ -437,6 +437,8 @@ def test_chat_adapter_toolcalls_native_function_calling():
     tools = [dspy.Tool(get_weather)]
 
     adapter = dspy.JSONAdapter(use_native_function_calling=True)
+
+    # Case 1: Tool calls are present in the response, while content is None.
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
@@ -471,3 +473,19 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
+
+    # Case 2: Tool calls are not present in the response, while content is present.
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+            model="openai/gpt-4o-mini",
+        )
+        result = adapter(
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            {},
+            MySignature,
+            [],
+            {"question": "What is the weather in Paris?", "tools": tools},
+        )
+        assert result[0]["answer"] == "Paris"
+        assert result[0]["tool_calls"] is None
