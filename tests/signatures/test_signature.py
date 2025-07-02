@@ -573,4 +573,3 @@ def test_pep604_union_type_with_custom_types():
     custom_obj = CustomType(value="test")
     pred = dspy.Predict(sig)(input=custom_obj)
     assert pred.output == "processed"
-
