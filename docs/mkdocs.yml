@@ -7,6 +7,7 @@ repo_name: stanfordnlp/dspy
 
 edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
+
 nav:
     - Get Started: index.md
     - Learn DSPy:
@@ -216,7 +217,7 @@ plugins:
                         show_warnings: false
                         html_meta: false
     - mkdocs-jupyter:
-        ignore_h1_titles: True
+        ignore_h1_titles: true
     - redirects:
         redirect_maps:
             # Redirect /intro/ to the main page

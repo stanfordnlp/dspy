@@ -1,4 +1,4 @@
-- [Math Reasoning](/tutorials/math/)
-- [Classification Finetuning](/tutorials/classification_finetuning/)
-- [Advanced Tool Use](/tutorials/tool_use/)
-- [Finetuning Agents](/tutorials/games/)
+- [Math Reasoning](../math/index.ipynb)
+- [Classification Finetuning](../classification_finetuning/index.ipynb)
+- [Advanced Tool Use](../tool_use/index.ipynb)
+- [Finetuning Agents](../games/index.ipynb)
