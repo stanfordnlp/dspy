@@ -650,3 +650,35 @@ async def test_error_message_on_json_adapter_failure_async():
                 await program.acall(question="Dummy question!")
 
             assert "ValueError!" in str(error.value)
+
+
+def test_json_adapter_toolcalls_no_native_function_calling():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    tools = [dspy.Tool(get_weather)]
+
+    # Patch _get_structured_outputs_response_format to track calls
+    with mock.patch("dspy.adapters.json_adapter._get_structured_outputs_response_format") as mock_structured:
+        # Patch litellm.completion to return a dummy response
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="{'answer': 'sunny', 'tool_calls': {'tool_calls': []}}"))],
+                model="openai/gpt-4o-mini",
+            )
+            adapter = dspy.JSONAdapter(use_native_function_calling=False)
+            lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+            adapter(lm, {}, MySignature, [], {"question": "What is the weather in Tokyo?", "tools": tools})
+
+        # _get_structured_outputs_response_format is not called because without using native function calling,
+        # JSONAdapter falls back to json mode for stable quality.
+        mock_structured.assert_not_called()
+        mock_completion.assert_called_once()
+        _, call_kwargs = mock_completion.call_args
+        assert call_kwargs["response_format"] == {"type": "json_object"}

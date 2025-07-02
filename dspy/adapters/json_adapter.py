@@ -19,6 +19,7 @@ from dspy.adapters.utils import (
 )
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature, SignatureMeta
+from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
@@ -38,9 +39,9 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
-    def __init__(self, enable_structured_output: bool = True, use_native_function_calling: bool = False, **kwargs):
-        super().__init__(**kwargs)
-        self.use_native_function_calling = use_native_function_calling
+    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
+        """JSONAdapter uses native function calling by default."""
+        super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
@@ -51,7 +52,7 @@ class JSONAdapter(ChatAdapter):
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
-        if _has_open_ended_mapping(signature) or (self.use_native_function_calling and has_tool_calls):
+        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
@@ -98,22 +99,6 @@ class JSONAdapter(ChatAdapter):
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             lm_kwargs["response_format"] = {"type": "json_object"}
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-
-    def _call_preprocess(
-        self,
-        lm: "LM",
-        lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
-        inputs: dict[str, Any],
-        use_native_function_calling: bool = True,
-    ) -> dict[str, Any]:
-        return super()._call_preprocess(
-            lm,
-            lm_kwargs,
-            signature,
-            inputs,
-            use_native_function_calling=self.use_native_function_calling,
-        )
 
     def format_field_structure(self, signature: Type[Signature]) -> str:
         parts = []
@@ -225,7 +210,7 @@ class JSONAdapter(ChatAdapter):
 
 def _get_structured_outputs_response_format(
     signature: SignatureMeta,
-    enable_native_function_calling: bool = True,
+    use_native_function_calling: bool = True,
 ) -> type[pydantic.BaseModel]:
     """
     Builds a Pydantic model from a DSPy signature's output_fields and ensures the generated JSON schema
@@ -247,7 +232,7 @@ def _get_structured_outputs_response_format(
     fields = {}
     for name, field in signature.output_fields.items():
         annotation = field.annotation
-        if enable_native_function_calling and annotation == ToolCalls:
+        if use_native_function_calling and annotation == ToolCalls:
             # Skip ToolCalls field if native function calling is enabled.
             continue
         default = field.default if hasattr(field, "default") else ...

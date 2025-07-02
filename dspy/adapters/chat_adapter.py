@@ -15,7 +15,6 @@ from dspy.adapters.utils import (
 )
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
-from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
@@ -27,9 +26,6 @@ class FieldInfoWithName(NamedTuple):
 
 
 class ChatAdapter(Adapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None):
-        super().__init__(callbacks)
-
     def __call__(
         self,
         lm: LM,

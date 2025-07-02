@@ -17,8 +17,9 @@ if TYPE_CHECKING:
 
 
 class Adapter:
-    def __init__(self, callbacks: list[BaseCallback] | None = None):
+    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False):
         self.callbacks = callbacks or []
+        self.use_native_function_calling = use_native_function_calling
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -33,9 +34,8 @@ class Adapter:
         lm_kwargs: dict[str, Any],
         signature: Type[Signature],
         inputs: dict[str, Any],
-        use_native_function_calling: bool = False,
     ) -> dict[str, Any]:
-        if use_native_function_calling:
+        if self.use_native_function_calling:
             tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
             tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
 
