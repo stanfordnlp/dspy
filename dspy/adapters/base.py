@@ -89,7 +89,7 @@ class Adapter:
                 value = self.parse(processed_signature, text)
                 for field_name in original_signature.output_fields.keys():
                     if field_name not in value:
-                        # We need to set the field not present in the processed signature to None.
+                        # We need to set the field not present in the processed signature to None for consistency.
                         value[field_name] = None
             else:
                 value = {}
@@ -139,11 +139,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(
-            processed_signature=processed_signature,
-            original_signature=signature,
-            outputs=outputs,
-        )
+        return self._call_postprocess(processed_signature, signature, outputs)
 
     def format(
         self,

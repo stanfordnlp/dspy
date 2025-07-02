@@ -127,9 +127,6 @@ class JSONAdapter(ChatAdapter):
                 else ""
             )
 
-        if self.use_native_function_calling:
-            return None
-
         message = "Respond with a JSON object in the following order of fields: "
         message += ", then ".join(f"`{f}`{type_info(v)}" for f, v in signature.output_fields.items())
         message += "."
