@@ -40,7 +40,7 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 class JSONAdapter(ChatAdapter):
     def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
-        """JSONAdapter uses native function calling by default."""
+        # JSONAdapter uses native function calling by default.
         super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
@@ -53,6 +53,8 @@ class JSONAdapter(ChatAdapter):
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
         if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls):
+            # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
+            # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
