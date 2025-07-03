@@ -48,6 +48,11 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - 11434:11434
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
@@ -81,11 +86,13 @@ jobs:
         uses: chartboost/ruff-action@v1
         with:
           args: check --fix-only
-      - name: Set LLM model
+      - name: Pull LLM
         run: |
-          echo "LLM_MODEL=${{ secrets.LLM_MODEL }}" >> $GITHUB_ENV
-          echo "DATABRICKS_API_BASE=${{ secrets.DATABRICKS_API_BASE }}" >> $GITHUB_ENV
-          echo "DATABRICKS_API_KEY=${{ secrets.DATABRICKS_API_KEY }}" >> $GITHUB_ENV
+          timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
+          curl -X POST http://localhost:11434/api/pull \
+            -H "Content-Type: application/json" \
+            -d '{"name": "llama3.2:1b"}'
+          echo "LLM_MODEL=ollama/llama3.2:1b" >> $GITHUB_ENV
       - name: Run tests with pytest
         run: uv run -p .venv pytest tests/
       - name: Install optional dependencies
