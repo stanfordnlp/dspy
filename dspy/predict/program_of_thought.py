@@ -5,8 +5,8 @@ from typing import Type
 
 import dspy
 from dspy.primitives.module import Module
-from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.mcp_python_interpreter.client import PythonInterpreterClient as PythonInterpreter
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,9 @@ class ProgramOfThought(Module):
     ```
     """
 
-    def __init__(self, signature: str | Type[Signature], max_iters: int = 3, interpreter: PythonInterpreter | None = None):
+    def __init__(
+        self, signature: str | Type[Signature], max_iters: int = 3, interpreter: PythonInterpreter | None = None
+    ):
         """
         Args:
             signature: The signature of the module.
@@ -61,6 +63,9 @@ class ProgramOfThought(Module):
         )
         # It will raises exception when dspy cannot find available deno instance by now.
         self.interpreter = interpreter or PythonInterpreter()
+
+    async def init_interpreter(self):
+        await self.interpreter.connect_to_server()
 
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
@@ -168,6 +173,16 @@ class ProgramOfThought(Module):
         try:
             # Since it's more complex structure now, just blindly use json to represents all.
             output = json.dumps(self.interpreter.execute(code))
+            return output, None
+        except Exception as e:
+            return None, str(e)
+
+    async def _aexecute_code(self, code):
+        if not code:
+            return None, "Error: Empty code before execution."
+
+        try:
+            output = await self.interpreter.execute(code)
             return output, None
         except Exception as e:
             return None, str(e)
