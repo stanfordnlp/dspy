@@ -1,3 +1,4 @@
+from types import UnionType
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pydantic
@@ -436,3 +437,139 @@ def test_custom_type_from_different_module():
     path_obj = Path("/test/path")
     pred = dspy.Predict(test_signature)(input=path_obj)
     assert pred.output == "/test/path"
+
+def test_pep604_union_type_inline():
+    sig = Signature(
+        "input1: str | None, input2: None | int -> output_union: int | str"
+    )
+
+    # input1 and input2 test that both 'T | None' and 'None | T' are interpreted as Optional types,
+    # regardless of the order of None in the union expression.
+
+    assert "input1" in sig.input_fields
+    input1_annotation = sig.input_fields["input1"].annotation
+    assert input1_annotation == Optional[str] or (
+        getattr(input1_annotation, "__origin__", None) is Union
+        and str in input1_annotation.__args__
+        and type(None) in input1_annotation.__args__
+    )
+
+    assert "input2" in sig.input_fields
+    input2_annotation = sig.input_fields["input2"].annotation
+    assert input2_annotation == Optional[int] or (
+        getattr(input2_annotation, "__origin__", None) is Union
+        and int in input2_annotation.__args__
+        and type(None) in input2_annotation.__args__
+    )
+
+    assert "output_union" in sig.output_fields
+    output_union_annotation = sig.output_fields["output_union"].annotation
+    assert (
+        getattr(output_union_annotation, "__origin__", None) is Union
+        and int in output_union_annotation.__args__
+        and str in output_union_annotation.__args__
+    )
+
+
+def test_pep604_union_type_inline_equivalence():
+    sig1 = Signature("input: str | None -> output: int | str")
+    sig2 = Signature("input: Optional[str] -> output: Union[int, str]")
+
+    # PEP 604 union types in inline signatures should be equivalent to Optional and Union types
+    assert sig1.equals(sig2)
+
+    # Check that the annotations are equivalent
+    assert sig1.input_fields["input"].annotation == sig2.input_fields["input"].annotation
+    assert sig1.output_fields["output"].annotation == sig2.output_fields["output"].annotation
+
+
+def test_pep604_union_type_inline_nested():
+    sig = Signature(
+        "input: str | (int | float) | None -> output: str"
+    )
+    assert "input" in sig.input_fields
+    input_annotation = sig.input_fields["input"].annotation
+
+    # Check for the correct union: Union[str, int, float, NoneType]
+    assert getattr(input_annotation, "__origin__", None) is Union
+    assert set(input_annotation.__args__) == {str, int, float, type(None)}
+
+
+def test_pep604_union_type_class_nested():
+    class Sig1(Signature):
+        input: str | (int | float) | None = InputField()
+        output: str = OutputField()
+
+    assert "input" in Sig1.input_fields
+    input_annotation = Sig1.input_fields["input"].annotation
+
+    # Check for the correct union: UnionType[str, int, float, NoneType]
+    assert isinstance(input_annotation, UnionType)
+    assert set(input_annotation.__args__) == {str, int, float, type(None)}
+
+
+def test_pep604_union_type_class_equivalence():
+    class Sig1(Signature):
+        input: str | None = InputField()
+        output: int | str = OutputField()
+
+    class Sig2(Signature):
+        input: Optional[str] = InputField()  # noqa: UP045
+        output: Union[int, str] = OutputField()  # noqa: UP007
+
+    # PEP 604 union types in class signatures should be equivalent to Optional and Union types
+    assert Sig1.equals(Sig2)
+
+    # Check that the annotations are equivalent
+    assert Sig1.input_fields["input"].annotation == Sig2.input_fields["input"].annotation
+    assert Sig1.output_fields["output"].annotation == Sig2.output_fields["output"].annotation
+
+    # Check that the pep604 annotations are of type UnionType
+    assert isinstance(Sig1.input_fields["input"].annotation, UnionType)
+    assert isinstance(Sig1.output_fields["output"].annotation, UnionType)
+
+
+def test_pep604_union_type_insert():
+    class PEP604Signature(Signature):
+        input: str | None = InputField()
+        output: int | str = OutputField()
+
+    # This test ensures that inserting a field into a signature with a PEP 604 UnionType works
+
+    # Insert a new input field at the start
+    NewSig = PEP604Signature.prepend("new_input", InputField(), float | int)
+    assert "new_input" in NewSig.input_fields
+
+    new_input_annotation = NewSig.input_fields["new_input"].annotation
+    assert isinstance(new_input_annotation, UnionType)
+    assert set(new_input_annotation.__args__) == {float, int}
+
+    # The original union type field should still be present and correct
+    input_annotation = NewSig.input_fields["input"].annotation
+    output_annotation = NewSig.output_fields["output"].annotation
+
+    assert isinstance(input_annotation, UnionType)
+    assert str in input_annotation.__args__ and type(None) in input_annotation.__args__
+
+    assert isinstance(output_annotation, UnionType)
+    assert set(output_annotation.__args__) == {int, str}
+
+
+def test_pep604_union_type_with_custom_types():
+    class CustomType(pydantic.BaseModel):
+        value: str
+
+    sig = Signature(
+        "input: CustomType | None -> output: int | str",
+        custom_types={"CustomType": CustomType}
+    )
+
+    assert sig.input_fields["input"].annotation == Union[CustomType, None]
+    assert sig.output_fields["output"].annotation == Union[int, str]
+
+    lm = DummyLM([{"output": "processed"}])
+    dspy.settings.configure(lm=lm)
+
+    custom_obj = CustomType(value="test")
+    pred = dspy.Predict(sig)(input=custom_obj)
+    assert pred.output == "processed"
