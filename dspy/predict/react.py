@@ -2,6 +2,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, Type
 
 from litellm import ContextWindowExceededError
+from pydantic import ValidationError
 
 import dspy
 from dspy.adapters.types.tool import Tool, ToolCalls
@@ -100,6 +101,13 @@ class ReAct(Module):
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+            except ValidationError as err:
+                trajectory[f"thought_{idx}"] = (
+                    "Encounter value when parsing the LM response, please try fixing based on the error message."
+                )
+                trajectory[f"tool_calls_{idx}"] = None
+                trajectory[f"observation_{idx}"] = [f"Error: {err}"]
+                continue
             except ValueError as err:
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
                 break
@@ -129,6 +137,13 @@ class ReAct(Module):
         for idx in range(max_iters):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
+            except ValidationError as err:
+                trajectory[f"thought_{idx}"] = (
+                    "Encounter value when parsing the LM response, please try fixing based on the error message."
+                )
+                trajectory[f"tool_calls_{idx}"] = None
+                trajectory[f"observation_{idx}"] = [f"Error: {err}"]
+                continue
             except ValueError as err:
                 logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
                 break
