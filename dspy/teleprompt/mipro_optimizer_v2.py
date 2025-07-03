@@ -397,7 +397,7 @@ class MIPROv2(Teleprompter):
             if sys.platform == "win32":
                 import msvcrt
                 if msvcrt.kbhit():
-                    user_input = msvcrt.getch().decode('utf-8').strip().lower()
+                    user_input = msvcrt.getch().decode("utf-8").strip().lower()
                     print(user_input)  # Echo the input
                     return user_input == "y"
             else:
