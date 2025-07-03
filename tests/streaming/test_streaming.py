@@ -1,5 +1,4 @@
 import asyncio
-import os
 import time
 from unittest import mock
 from unittest.mock import AsyncMock
@@ -131,9 +130,8 @@ async def test_custom_status_streaming():
         assert status_messages[2].message == "Predict starting!"
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
 @pytest.mark.anyio
-async def test_stream_listener_chat_adapter():
+async def test_stream_listener_chat_adapter(llm_model):
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
@@ -154,7 +152,7 @@ async def test_stream_listener_chat_adapter():
         include_final_prediction_in_output_stream=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+    with dspy.context(lm=dspy.LM(llm_model, cache=False)):
         output = program(x="why did a chicken cross the kitchen?")
         all_chunks = []
         async for value in output:
@@ -194,9 +192,8 @@ async def test_default_status_streaming_in_async_program():
     assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
 @pytest.mark.anyio
-async def test_stream_listener_json_adapter():
+async def test_stream_listener_json_adapter(llm_model):
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
@@ -217,7 +214,7 @@ async def test_stream_listener_json_adapter():
         include_final_prediction_in_output_stream=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+    with dspy.context(lm=dspy.LM(llm_model, cache=False), adapter=dspy.JSONAdapter()):
         output = program(x="why did a chicken cross the kitchen?")
         all_chunks = []
         async for value in output:
@@ -232,7 +229,7 @@ async def test_stream_listener_json_adapter():
 
 
 @pytest.mark.anyio
-async def test_streaming_handles_space_correctly():
+async def test_streaming_handles_space_correctly(llm_model):
     my_program = dspy.Predict("question->answer")
     program = dspy.streamify(
         my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
@@ -240,14 +237,14 @@ async def test_streaming_handles_space_correctly():
 
     async def gpt_4o_mini_stream(*args, **kwargs):
         yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
+            model=llm_model, choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
         )
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="How "))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="are "))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="you "))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="doing?"))])
+        yield ModelResponseStream(model=llm_model, choices=[StreamingChoices(delta=Delta(content="How "))])
+        yield ModelResponseStream(model=llm_model, choices=[StreamingChoices(delta=Delta(content="are "))])
+        yield ModelResponseStream(model=llm_model, choices=[StreamingChoices(delta=Delta(content="you "))])
+        yield ModelResponseStream(model=llm_model, choices=[StreamingChoices(delta=Delta(content="doing?"))])
         yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+            model=llm_model, choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
         )
 
     with mock.patch("litellm.acompletion", side_effect=gpt_4o_mini_stream):
@@ -261,8 +258,7 @@ async def test_streaming_handles_space_correctly():
     assert all_chunks[0].chunk == "How are you doing?"
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found in environment variables")
-def test_sync_streaming():
+def test_sync_streaming(llm_model):
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
@@ -284,7 +280,7 @@ def test_sync_streaming():
         async_streaming=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+    with dspy.context(lm=dspy.LM(llm_model, cache=False)):
         output = program(x="why did a chicken cross the kitchen?")
         all_chunks = []
         for value in output:

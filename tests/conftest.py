@@ -1,4 +1,5 @@
 import copy
+import os
 
 import pytest
 
@@ -49,3 +50,11 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if flag in item.keywords:
                 item.add_marker(skip_mark)
+
+
+@pytest.fixture
+def llm_model():
+    model = os.environ.get("LLM_MODEL", None)
+    if model is None:
+        pytest.skip("LLM_MODEL is not set in the environment variables")
+    return model

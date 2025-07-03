@@ -81,6 +81,11 @@ jobs:
         uses: chartboost/ruff-action@v1
         with:
           args: check --fix-only
+      - name: Set LLM model
+        run: |
+          echo "LLM_MODEL=${{ secrets.LLM_MODEL }}" >> $GITHUB_ENV
+          echo "DATABRICKS_API_BASE=${{ secrets.DATABRICKS_API_BASE }}" >> $GITHUB_ENV
+          echo "DATABRICKS_API_KEY=${{ secrets.DATABRICKS_API_KEY }}" >> $GITHUB_ENV
       - name: Run tests with pytest
         run: uv run -p .venv pytest tests/
       - name: Install optional dependencies
