@@ -1,6 +1,5 @@
 import logging
 import random
-import select
 import sys
 import textwrap
 import time
@@ -395,9 +394,17 @@ class MIPROv2(Teleprompter):
         # Wait for input with timeout
         start_time = time.time()
         while time.time() - start_time < 20:
-            if select.select([sys.stdin], [], [], 0.1)[0]:
-                user_input = sys.stdin.readline().strip().lower()
-                return user_input == "y"
+            if sys.platform == "win32":
+                import msvcrt
+                if msvcrt.kbhit():
+                    user_input = msvcrt.getch().decode('utf-8').strip().lower()
+                    print(user_input)  # Echo the input
+                    return user_input == "y"
+            else:
+                import select
+                if select.select([sys.stdin], [], [], 0.1)[0]:
+                    user_input = sys.stdin.readline().strip().lower()
+                    return user_input == "y"
             time.sleep(0.1)
 
         print("\nNo input received within 20 seconds. Proceeding with execution...")
