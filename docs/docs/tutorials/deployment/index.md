@@ -65,7 +65,7 @@ You can configure the async capacity using the new `async_max_workers` setting.
 
 ??? "Streaming, in DSPy 2.6.0+"
 
-    Streaming is also supported in DSPy 2.6.0+, available as a release candidate via `pip install -U --pre dspy`.
+    Streaming is also supported in DSPy 2.6.0+, which can be installed via `pip install -U dspy`.
 
     We can use `dspy.streamify` to convert the dspy program to a streaming mode. This is useful when you want to stream
     the intermediate outputs (i.e. O1-style reasoning) to the client before the final prediction is ready. This uses
