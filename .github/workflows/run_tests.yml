@@ -94,7 +94,7 @@ jobs:
             -d '{"name": "llama3.2:3b"}'
           echo "LLM_MODEL=ollama/llama3.2:3b" >> $GITHUB_ENV
       - name: Run tests with pytest
-        run: uv run -p .venv pytest tests/
+        run: uv run -p .venv pytest -vv --durations=3 tests/
       - name: Install optional dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
       - name: Run extra tests
