@@ -3,7 +3,7 @@ from unittest import mock
 
 import pydantic
 import pytest
-from litellm.utils import Choices, Message, ModelResponse
+from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 
 import dspy
 
@@ -422,3 +422,70 @@ async def test_chat_adapter_fallback_to_json_adapter_on_exception_async():
         # The parse should succeed
         result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
         assert result == [{"answer": "Paris"}]
+
+
+def test_chat_adapter_toolcalls_native_function_calling():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    tools = [dspy.Tool(get_weather)]
+
+    adapter = dspy.JSONAdapter(use_native_function_calling=True)
+
+    # Case 1: Tool calls are present in the response, while content is None.
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    finish_reason="tool_calls",
+                    index=0,
+                    message=Message(
+                        content=None,
+                        role="assistant",
+                        tool_calls=[
+                            ChatCompletionMessageToolCall(
+                                function=Function(arguments='{"city":"Paris"}', name="get_weather"),
+                                id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                                type="function",
+                            )
+                        ],
+                    ),
+                ),
+            ],
+            model="openai/gpt-4o-mini",
+        )
+        result = adapter(
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            {},
+            MySignature,
+            [],
+            {"question": "What is the weather in Paris?", "tools": tools},
+        )
+
+        assert result[0]["tool_calls"] == dspy.ToolCalls(
+            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+        )
+        # `answer` is not present, so we set it to None
+        assert result[0]["answer"] is None
+
+    # Case 2: Tool calls are not present in the response, while content is present.
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'answer': 'Paris'}"))],
+            model="openai/gpt-4o-mini",
+        )
+        result = adapter(
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            {},
+            MySignature,
+            [],
+            {"question": "What is the weather in Paris?", "tools": tools},
+        )
+        assert result[0]["answer"] == "Paris"
+        assert result[0]["tool_calls"] is None

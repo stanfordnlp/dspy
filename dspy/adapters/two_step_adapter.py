@@ -39,7 +39,8 @@ class TwoStepAdapter(Adapter):
     ```
     """
 
-    def __init__(self, extraction_model: LM):
+    def __init__(self, extraction_model: LM, **kwargs):
+        super().__init__(**kwargs)
         if not isinstance(extraction_model, LM):
             raise ValueError("extraction_model must be an instance of LM")
         self.extraction_model = extraction_model
