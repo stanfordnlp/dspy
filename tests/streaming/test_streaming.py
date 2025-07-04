@@ -130,6 +130,7 @@ async def test_custom_status_streaming():
         assert status_messages[2].message == "Predict starting!"
 
 
+@pytest.mark.llm_call
 @pytest.mark.anyio
 async def test_stream_listener_chat_adapter(llm_model):
     class MyProgram(dspy.Module):
@@ -192,6 +193,7 @@ async def test_default_status_streaming_in_async_program():
     assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
 
 
+@pytest.mark.llm_call
 @pytest.mark.anyio
 async def test_stream_listener_json_adapter(llm_model):
     class MyProgram(dspy.Module):
@@ -228,6 +230,7 @@ async def test_stream_listener_json_adapter(llm_model):
     assert all_chunks[-1].signature_field_name == "judgement"
 
 
+@pytest.mark.llm_call
 @pytest.mark.anyio
 async def test_streaming_handles_space_correctly(llm_model):
     my_program = dspy.Predict("question->answer")
@@ -258,6 +261,7 @@ async def test_streaming_handles_space_correctly(llm_model):
     assert all_chunks[0].chunk == "How are you doing?"
 
 
+@pytest.mark.llm_call
 def test_sync_streaming(llm_model):
     class MyProgram(dspy.Module):
         def __init__(self):

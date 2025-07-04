@@ -5,7 +5,7 @@ import pytest
 
 from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs  # noqa: F401
 
-SKIP_DEFAULT_FLAGS = ["reliability", "extra"]
+SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call"]
 
 
 @pytest.fixture(autouse=True)

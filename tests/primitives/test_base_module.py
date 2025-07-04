@@ -230,6 +230,7 @@ def test_load_with_version_mismatch(tmp_path):
         logger.removeHandler(handler)
 
 
+@pytest.mark.llm_call
 def test_single_module_call_with_usage_tracker(llm_model):
     dspy.settings.configure(lm=dspy.LM(llm_model, cache=False), track_usage=True)
 
@@ -250,6 +251,7 @@ def test_single_module_call_with_usage_tracker(llm_model):
     assert len(output.get_lm_usage()) == 0
 
 
+@pytest.mark.llm_call
 def test_multi_module_call_with_usage_tracker(llm_model):
     dspy.settings.configure(lm=dspy.LM(llm_model, cache=False), track_usage=True)
 

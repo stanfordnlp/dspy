@@ -48,11 +48,6 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    services:
-      ollama:
-        image: ollama/ollama:latest
-        ports:
-          - 11434:11434
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
@@ -94,11 +89,49 @@ jobs:
             -d '{"name": "llama3.2:3b"}'
           echo "LLM_MODEL=ollama/llama3.2:3b" >> $GITHUB_ENV
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv --durations=3 tests/
+        run: uv run -p .venv pytest -vv tests/
       - name: Install optional dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
       - name: Run extra tests
         run: uv run -p .venv pytest tests/ -m extra --extra
+  
+  llm_call_test:
+    name: Run Tests with Real LM
+    runs-on: ubuntu-latest
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - 11434:11434
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          uv sync --dev -p .venv --extra dev
+          uv pip list
+      - name: Pull LLM
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
+          curl -X POST http://localhost:11434/api/pull \
+            -H "Content-Type: application/json" \
+            -d '{"name": "llama3.2:3b"}'
+          echo "LLM_MODEL=ollama/llama3.2:3b" >> $GITHUB_ENV
+      - name: Run tests
+        run: uv run -p .venv pytest -m llm_call --llm_call -vv --duration=5 tests/
 
   build_package:
     name: Build Package
