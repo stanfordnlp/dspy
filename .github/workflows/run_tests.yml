@@ -81,13 +81,6 @@ jobs:
         uses: chartboost/ruff-action@v1
         with:
           args: check --fix-only
-      - name: Pull LLM
-        run: |
-          timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
-          curl -X POST http://localhost:11434/api/pull \
-            -H "Content-Type: application/json" \
-            -d '{"name": "llama3.2:3b"}'
-          echo "LLM_MODEL=ollama/llama3.2:3b" >> $GITHUB_ENV
       - name: Run tests with pytest
         run: uv run -p .venv pytest -vv tests/
       - name: Install optional dependencies
