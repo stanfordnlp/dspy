@@ -190,7 +190,7 @@ the [MLflow Tracing Guide](https://mlflow.org/docs/3.0.0rc0/tracing).
 
 !!! info Learn more about MLflow
 
-    MLflow is an end-to-end LLMOps platform that offers extensive features like experiment tracking, evaluation, and deployment. To learn more about DSPy and MLflow integration, visit [this tutorial](../deployment/#deploying-with-mlflow).
+    MLflow is an end-to-end LLMOps platform that offers extensive features like experiment tracking, evaluation, and deployment. To learn more about DSPy and MLflow integration, visit [this tutorial](../deployment/index.md#deploying-with-mlflow).
 
 
 ## Building a Custom Logging Solution
