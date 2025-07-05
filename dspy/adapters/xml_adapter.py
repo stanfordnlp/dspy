@@ -1,15 +1,18 @@
+import inspect
 import pydantic
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, Type, get_origin
+from typing import Any, Dict, Type, get_origin, get_args
+from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.adapters.utils import translate_field_type
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 from dspy.primitives.prediction import Prediction
 
 
 class XMLAdapter(ChatAdapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None):
+    def __init__(self, callbacks: list[BaseCallback] | None = None, ):
         super().__init__(callbacks)
 
     def format_field_with_value(self, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
@@ -17,9 +20,43 @@ class XMLAdapter(ChatAdapter):
             {field.name: field_value for field, field_value in fields_with_values.items()},
         )
 
+    def format_field_structure(self, signature: Type[Signature]) -> str:
+        """
+        Generate comprehensive instructions showing the XML format for both input and output fields.
+        This helps the language model understand the expected structure.
+        """
+        parts = []
+        parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
+
+        if signature.input_fields:
+            parts.append("Inputs will have the following structure:")
+            input_structure = self._generate_fields_xml_structure(signature.input_fields)
+            parts.append(input_structure)
+
+        parts.append("Outputs will have the following structure:")
+        output_structure = self._generate_fields_xml_structure(signature.output_fields)
+        parts.append(output_structure)
+
+        return "\n\n".join(parts).strip()
+
     def user_message_output_requirements(self, signature: Type[Signature]) -> str:
-        # TODO: Add a more detailed message that describes the expected output structure.
-        return "Respond with the corresponding output fields wrapped in XML tags."
+        """
+        Generate a concise reminder of the expected XML output structure for the language model.
+        """
+        if not signature.output_fields:
+            return "Respond with XML tags as specified."
+
+        # Generate compact schema representation
+        schemas = []
+        for field_name, field_info in signature.output_fields.items():
+            schema = self._generate_compact_xml_schema(field_name, field_info.annotation)
+            schemas.append(schema)
+
+        if len(schemas) == 1:
+            return f"Respond with XML in the following structure: {schemas[0]}"
+        else:
+            schema_list = ", ".join(schemas)
+            return f"Respond with XML containing the following structures: {schema_list}"
 
     def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
         if isinstance(completion, Prediction):
@@ -79,6 +116,120 @@ class XMLAdapter(ChatAdapter):
                 parsed_result=parsed_dict,
                 message=f"Pydantic validation failed: {e}",
             ) from e
+
+    def _generate_fields_xml_structure(self, fields: Dict[str, FieldInfo]) -> str:
+        """Generate XML structure representation for a collection of fields."""
+        if not fields:
+            return ""
+
+        structures = []
+        for field_name, field_info in fields.items():
+            structure = self._generate_xml_schema_structure(field_name, field_info.annotation)
+            structures.append(structure)
+
+        return "\n".join(structures)
+
+    def _generate_xml_schema_structure(self, field_name: str, field_annotation: Type, indent: int = 0) -> str:
+        """
+        Generate XML schema structure for a field, handling nested models recursively.
+        Returns properly indented XML showing the expected structure.
+        """
+        indent_str = "  " * indent
+
+        # Handle Pydantic models by showing their nested structure
+        if (inspect.isclass(field_annotation) and 
+            issubclass(field_annotation, pydantic.BaseModel) and 
+            hasattr(field_annotation, 'model_fields')):
+            
+            lines = [f"{indent_str}<{field_name}>"]
+            for sub_field_name, sub_field_info in field_annotation.model_fields.items():
+                sub_structure = self._generate_xml_schema_structure(
+                    sub_field_name, sub_field_info.annotation, indent + 1
+                )
+                lines.append(sub_structure)
+            lines.append(f"{indent_str}</{field_name}>")
+            return "\n".join(lines)
+
+        # Handle lists by showing repeated elements
+        elif get_origin(field_annotation) is list:
+            args = get_args(field_annotation)
+            if args:
+                item_type = args[0]
+                if (inspect.isclass(item_type) and 
+                    issubclass(item_type, pydantic.BaseModel) and 
+                    hasattr(item_type, 'model_fields')):
+                    # Show nested structure for Pydantic models in lists
+                    example = self._generate_xml_schema_structure(field_name, item_type, indent)
+                    return f"{example}\n{example}"
+                else:
+                    # Show simple repeated elements
+                    placeholder = self._get_type_placeholder(item_type)
+                    return f"{indent_str}<{field_name}>{placeholder}</{field_name}>\n{indent_str}<{field_name}>{placeholder}</{field_name}>"
+            else:
+                return f"{indent_str}<{field_name}>...</{field_name}>"
+
+        # Handle simple types with type-appropriate placeholders
+        else:
+            placeholder = self._get_type_placeholder_with_hint(field_annotation, field_name)
+            return f"{indent_str}<{field_name}>{placeholder}</{field_name}>"
+
+    def _get_type_placeholder_with_hint(self, type_annotation: Type, field_name: str) -> str:
+        """Get a placeholder value with type hint for a field."""
+        if type_annotation is str:
+            return f"{{{field_name}}}"
+        elif type_annotation is int:
+            return f"{{{field_name}}}  # must be a single int value"
+        elif type_annotation is float:
+            return f"{{{field_name}}}  # must be a single float value"
+        elif type_annotation is bool:
+            return f"{{{field_name}}}  # must be True or False"
+        else:
+            return f"{{{field_name}}}"
+
+    def _generate_compact_xml_schema(self, field_name: str, field_annotation: Type) -> str:
+        """
+        Generate a compact XML schema representation for user_message_output_requirements.
+        Returns a condensed format like: <person><name>...</name><age>...</age></person>
+        """
+        # Handle Pydantic models
+        if (inspect.isclass(field_annotation) and 
+            issubclass(field_annotation, pydantic.BaseModel) and 
+            hasattr(field_annotation, 'model_fields')):
+            
+            inner_elements = []
+            for sub_field_name, sub_field_info in field_annotation.model_fields.items():
+                sub_schema = self._generate_compact_xml_schema(sub_field_name, sub_field_info.annotation)
+                inner_elements.append(sub_schema)
+            
+            inner_content = "".join(inner_elements)
+            return f"<{field_name}>{inner_content}</{field_name}>"
+
+        # Handle lists
+        elif get_origin(field_annotation) is list:
+            args = get_args(field_annotation)
+            if args:
+                item_type = args[0]
+                item_schema = self._generate_compact_xml_schema(field_name, item_type)
+                return item_schema  # Lists are represented by repeated elements
+            else:
+                return f"<{field_name}>...</{field_name}>"
+
+        # Handle simple types
+        else:
+            return f"<{field_name}>...</{field_name}>"
+
+    def _get_type_placeholder(self, type_annotation: Type) -> str:
+        """Get a simple placeholder value for a type."""
+        if type_annotation is str:
+            return "..."
+        elif type_annotation is int:
+            return "0"
+        elif type_annotation is float:
+            return "0.0"
+        elif type_annotation is bool:
+            return "true"
+        else:
+            return "..."
 
     def _dict_to_xml(self, data: Any, root_tag: str = "output") -> str:
         def _recursive_serializer(obj):
