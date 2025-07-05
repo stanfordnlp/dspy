@@ -13,34 +13,34 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
 
 
 - Build AI Programs with DSPy
-    - [Building AI Agents with DSPy](/tutorials/customer_service_agent/)
-    - [Building AI Applications by Customizing DSPy Modules](/tutorials/custom_module/)
-    - [Retrieval-Augmented Generation (RAG)](/tutorials/rag/)
-    - [Building RAG as Agent](/tutorials/agents/)
-    - [Entity Extraction](/tutorials/entity_extraction/)
-    - [Classification](/tutorials/classification/)
-    - [Multi-Hop RAG](/tutorials/multihop_search/)
-    - [Privacy-Conscious Delegation](/tutorials/papillon/)
-    - [Program Of Thought](/tutorials/program_of_thought/)
-    - [Image Generation Prompt iteration](/tutorials/image_generation_prompting/)
-    - [Audio](/tutorials/audio/)
+    - [Building AI Agents with DSPy](customer_service_agent/index.ipynb)
+    - [Building AI Applications by Customizing DSPy Modules](custom_module/index.ipynb)
+    - [Retrieval-Augmented Generation (RAG)](rag/index.ipynb)
+    - [Building RAG as Agent](agents/index.ipynb)
+    - [Entity Extraction](entity_extraction/index.ipynb)
+    - [Classification](classification/index.md)
+    - [Multi-Hop RAG](multihop_search/index.ipynb)
+    - [Privacy-Conscious Delegation](papillon/index.md)
+    - [Program Of Thought](program_of_thought/index.ipynb)
+    - [Image Generation Prompt iteration](image_generation_prompting/index.ipynb)
+    - [Audio](audio/index.ipynb)
 
 
 - Optimize AI Programs with DSPy
-    - [Math Reasoning](/tutorials/math/)
-    - [Classification Finetuning](/tutorials/classification_finetuning/)
-    - [Advanced Tool Use](/tutorials/tool_use/)
-    - [Finetuning Agents](/tutorials/games/)
+    - [Math Reasoning](math/index.ipynb)
+    - [Classification Finetuning](classification_finetuning/index.ipynb)
+    - [Advanced Tool Use](tool_use/index.ipynb)
+    - [Finetuning Agents](games/index.ipynb)
 
 - Tools, Development, and Deployment
-    - [Use MCP in DSPy](/tutorials/mcp/)
-    - [Output Refinement](/tutorials/output_refinement/best-of-n-and-refine/)
-    - [Saving and Loading](/tutorials/saving/)
-    - [Cache](/tutorials/cache/)
-    - [Deployment](/tutorials/deployment/)
-    - [Debugging & Observability](/tutorials/observability/)
-    - [Tracking DSPy Optimizers](/tutorials/optimizer_tracking/)
-    - [Streaming](/tutorials/streaming/)
-    - [Async](/tutorials/async/)
+    - [Use MCP in DSPy](mcp/index.md)
+    - [Output Refinement](output_refinement/best-of-n-and-refine.md)
+    - [Saving and Loading](saving/index.md)
+    - [Cache](cache/index.md)
+    - [Deployment](deployment/index.md)
+    - [Debugging & Observability](observability/index.md)
+    - [Tracking DSPy Optimizers](optimizer_tracking/index.md)
+    - [Streaming](streaming/index.md)
+    - [Async](async/index.md)
 
 

@@ -8,7 +8,7 @@
 
     DSPy is deployed in production by many enterprises and startups. Explore real-world case studies.
 
-    [:octicons-arrow-right-24: Use Cases](../community/use-cases)
+    [:octicons-arrow-right-24: Use Cases](../community/use-cases.md)
 
 - :material-magnify-expand:{ .lg .middle } __Monitoring & Observability__
 
@@ -16,7 +16,7 @@
 
     Monitor your DSPy programs using **MLflow Tracing**, based on OpenTelemetry.
 
-    [:octicons-arrow-right-24: Set Up Observability](../tutorials/observability/#tracing)
+    [:octicons-arrow-right-24: Set Up Observability](../tutorials/observability/index.md#tracing)
 
 - :material-ab-testing: __Reproducibility__
 
@@ -32,7 +32,7 @@
 
     When it's time to productionize, deploy your application easily with DSPy's integration with MLflow Model Serving.
 
-    [:octicons-arrow-right-24: Deployment Guide](../tutorials/deployment)
+    [:octicons-arrow-right-24: Deployment Guide](../tutorials/deployment/index.md)
 
 - :material-arrow-up-right-bold: __Scalability__
 

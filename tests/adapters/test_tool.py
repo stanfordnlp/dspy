@@ -366,6 +366,7 @@ async def test_async_concurrent_calls():
     assert end_time - start_time < 0.3
 
 
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_async_tool_call_in_sync_mode():
     tool = Tool(async_dummy_function)
     with dspy.context(allow_tool_async_sync_conversion=False):
