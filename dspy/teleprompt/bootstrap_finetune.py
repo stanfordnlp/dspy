@@ -295,11 +295,6 @@ def bootstrap_trace_data(
                     )
 
                 return failed_pred, trace
-            except Exception as e:
-                # Handle other exceptions (like RuntimeError from BuggyModule)
-                trace = dspy.settings.trace.copy()
-                failed_pred = FailedPrediction(completion_text=str(e), format_reward=format_failure_score)
-                return failed_pred, trace
 
     results = evaluator(wrapped_program, metric=wrapped_metric).results
 
