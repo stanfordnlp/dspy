@@ -54,16 +54,16 @@ def test_compile_with_predict_instances():
     with patch.object(bootstrap, "finetune_lms") as mock_finetune:
         mock_finetune.return_value = {(lm, None): lm}
         compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
-        
+
         assert compiled_student is not None, "Failed to compile student"
         assert hasattr(compiled_student, "_compiled") and compiled_student._compiled, "Student compilation flag not set"
-    
+
         mock_finetune.assert_called_once()
 
 
 def test_error_handling_missing_lm():
     """Test error handling when predictor doesn't have an LM assigned."""
-    
+
     lm = DummyLM([{"output": "test"}])
     dspy.settings.configure(lm=lm)
 

@@ -514,7 +514,7 @@ def test_pep604_union_type_class_equivalence():
         output: int | str = OutputField()
 
     class Sig2(Signature):
-        input: Optional[str] = InputField()  # noqa: UP045
+        input: str | None = InputField()
         output: Union[int, str] = OutputField()  # noqa: UP007
 
     # PEP 604 union types in class signatures should be equivalent to Optional and Union types
