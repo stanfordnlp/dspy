@@ -5,7 +5,7 @@ from unittest import mock
 from unittest.mock import AsyncMock
 
 import pytest
-from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
+from litellm.types.utils import Choices, Delta, Message, ModelResponse, ModelResponseStream, StreamingChoices
 
 import dspy
 from dspy.streaming import StatusMessage, StatusMessageProvider, streaming_response
@@ -763,3 +763,162 @@ async def test_stream_listener_allow_reuse():
     concat_message = "".join([chunk.chunk for chunk in all_chunks])
     # The listener functions twice.
     assert concat_message == "To get to the other side!To get to the other side!"
+
+
+@pytest.mark.anyio
+async def test_nested_streaming_tool():
+    class MyNestedProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("topic -> joke")
+
+        async def aforward(self, topic, **kwargs):
+            return await self.predict.acall(topic=topic, **kwargs)
+
+    my_nested_program = MyNestedProgram()
+
+    async def joke_creation_tool(topic: str):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            [_, joke_2, _] = await asyncio.gather(*[
+                my_nested_program.acall(topic=topic, temperature=0.3),
+                my_nested_program.acall(topic=topic, temperature=0.5),
+                my_nested_program.acall(topic=topic, temperature=0.7),
+            ])
+            return joke_2
+
+    class MyProgramSignature(dspy.Signature):
+        question = dspy.InputField()
+        answer = dspy.OutputField()
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.agent = dspy.ReAct(MyProgramSignature, tools=[joke_creation_tool])
+
+        async def aforward(self, question, **kwargs):
+            return await self.agent.acall(question=question, **kwargs)
+
+    my_program = MyProgram()
+
+    async def gpt_4o_mini_stream(*args, **kwargs):
+        # Recorded streaming from openai/gpt-4o-mini
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" reasoning"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="I generated a joke"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" about a farm animal"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" using a joke creation tool."))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" The joke is light-hearted and"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" plays on the word 'moon'"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" with a pun related to cows, which"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" are common farm animals.\n\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" [["))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="Why"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" did"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" cow"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" go"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" outer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" space?"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" To"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" see"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" moooon!\n\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
+
+    with (
+        mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[
+            ModelResponse(model="gpt-4o-mini", choices=[
+                Choices(
+                    message=Message(
+                        role="assistant",
+                        content=(
+                            "[[ ## next_thought ## ]]\nI need to generate a joke about farm animals. "
+                            "This will require using the joke creation tool to get a suitable joke on that topic.\n\n"
+                            "[[ ## next_tool_name ## ]]\njoke_creation_tool\n\n"
+                            '[[ ## next_tool_args ## ]]\n{"topic":"farm animal"}\n\n'
+                            "[[ ## completed ## ]]"
+                        )
+                    )
+                )
+            ]),
+            ModelResponse(model="gpt-4o-mini", choices=[
+                Choices(
+                    message=Message(
+                        role="assistant",
+                        content=(
+                                "[[ ## joke ## ]]\nWhy did the cow sit in the rain? To watch mooovie!\n\n[[ ## completed ## ]]"
+                        )
+                    )
+                )
+            ]),
+            ModelResponse(model="gpt-4o-mini", choices=[
+                Choices(
+                    message=Message(
+                        role="assistant",
+                        content=(
+                            "[[ ## joke ## ]]\nWhy did the cow go to outer space? To see the moooon!\n\n[[ ## completed ## ]]"
+                        )
+                    )
+                )
+            ]),
+            ModelResponse(model="gpt-4o-mini", choices=[
+                Choices(
+                    message=Message(
+                        role="assistant",
+                        content=(
+                                "[[ ## joke ## ]]\nWhy side of the chicken has more feathers? The outside!\n\n[[ ## completed ## ]]"
+                        )
+                    )
+                )
+            ]),
+            ModelResponse(model="gpt-4o-mini", choices=[
+                Choices(
+                    message=Message(
+                        role="assistant",
+                        content=(
+                            "[[ ## next_thought ## ]]\nI have generated a joke about a farm animal: "
+                            '"Why did the cow go to outer space? To see the moooon!" Now I can finish the task as '
+                            "I have all the information needed.\n\n"
+                            "[[ ## next_tool_name ## ]]\nfinish\n\n[[ ## next_tool_args ## ]]\n{}\n\n"
+                            "[[ ## completed ## ]]"
+                        )
+                    )
+                )
+            ]),
+            gpt_4o_mini_stream()
+        ]),
+        dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    ):
+        program = dspy.streamify(
+            my_program,
+            stream_listeners=[
+                dspy.streaming.StreamListener(
+                    predict=my_program.agent.extract.predict,
+                    predict_name="agent_prediction",
+                    signature_field_name="answer"
+                )
+            ],
+            is_async_program=True
+        )
+
+        output = program(question="Can you tell me a joke about farm animal?")
+
+        all_chunks = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StreamResponse):
+                all_chunks.append(value)
+
+        concat_message = "".join([chunk.chunk for chunk in all_chunks])
+        # The listener functions twice.
+        assert concat_message == "Why did the cow go to outer space? To see the moooon!"

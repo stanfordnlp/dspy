@@ -182,7 +182,7 @@ def streamify(
                     if len(predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
-                    else:
+                    elif hasattr(value, "predict_id"):
                         # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
                         # determine if we should yield a value to the user.
                         output = None
