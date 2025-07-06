@@ -341,6 +341,20 @@ your_dspy_program_compiled = fewshot_optuna_optimizer.compile(student=your_dspy_
 
 Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer.
 
+
+### SIMBA
+
+SIMBA, which stands for Stochastic Introspective Mini-Batch Ascent, is a prompt optimizer that accepts arbitrary DSPy programs and proceeds in a sequence of mini-batches seeking to make incremental improvements to the prompt instructions or few-shot examples.
+
+```python
+from dspy.teleprompt import SIMBA
+
+simba = SIMBA(metric=your_defined_metric, max_steps=12, max_demos=10)
+
+optimized_program = simba.compile(student=your_dspy_program, trainset=trainset)
+```
+
+
 ## DSPy `Refine` and `BestofN`
 
 >`dspy.Suggest` and `dspy.Assert` are replaced by `dspy.Refine` and `dspy.BestofN` in DSPy 2.6.
