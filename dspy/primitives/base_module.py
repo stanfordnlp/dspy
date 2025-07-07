@@ -248,7 +248,7 @@ class BaseModule:
         path = Path(path)
 
         if path.suffix == ".json":
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 state = ujson.loads(f.read())
         elif path.suffix == ".pkl":
             with open(path, "rb") as f:
