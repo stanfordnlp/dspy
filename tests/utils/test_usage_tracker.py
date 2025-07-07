@@ -133,8 +133,8 @@ def test_track_usage_with_multiple_models():
     assert total_usage["gpt-3.5-turbo"]["total_tokens"] == 900
 
 
-def test_track_usage_context_manager(llm_model):
-    lm = dspy.LM(llm_model, cache=False)
+def test_track_usage_context_manager(lm_for_test):
+    lm = dspy.LM(lm_for_test, cache=False)
     dspy.settings.configure(lm=lm)
 
     predict = dspy.ChainOfThought("question -> answer")
@@ -143,12 +143,12 @@ def test_track_usage_context_manager(llm_model):
         predict(question="What is the capital of Italy?")
 
     assert len(tracker.usage_data) > 0
-    assert len(tracker.usage_data[llm_model]) == 2
+    assert len(tracker.usage_data[lm_for_test]) == 2
 
     total_usage = tracker.get_total_tokens()
-    assert llm_model in total_usage
+    assert lm_for_test in total_usage
     assert len(total_usage.keys()) == 1
-    assert isinstance(total_usage[llm_model], dict)
+    assert isinstance(total_usage[lm_for_test], dict)
 
 
 def test_merge_usage_entries_with_new_keys():

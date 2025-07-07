@@ -53,8 +53,8 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture
-def llm_model():
-    model = os.environ.get("LLM_MODEL", None)
+def lm_for_test():
+    model = os.environ.get("LM_FOR_TEST", None)
     if model is None:
-        pytest.skip("LLM_MODEL is not set in the environment variables")
+        pytest.skip("LM_FOR_TEST is not set in the environment variables")
     return model

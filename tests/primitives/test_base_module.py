@@ -231,20 +231,20 @@ def test_load_with_version_mismatch(tmp_path):
 
 
 @pytest.mark.llm_call
-def test_single_module_call_with_usage_tracker(llm_model):
-    dspy.settings.configure(lm=dspy.LM(llm_model, cache=False), track_usage=True)
+def test_single_module_call_with_usage_tracker(lm_for_test):
+    dspy.settings.configure(lm=dspy.LM(lm_for_test, cache=False), track_usage=True)
 
     predict = dspy.ChainOfThought("question -> answer")
     output = predict(question="What is the capital of France?")
 
     lm_usage = output.get_lm_usage()
     assert len(lm_usage) == 1
-    assert lm_usage[llm_model]["prompt_tokens"] > 0
-    assert lm_usage[llm_model]["completion_tokens"] > 0
-    assert lm_usage[llm_model]["total_tokens"] > 0
+    assert lm_usage[lm_for_test]["prompt_tokens"] > 0
+    assert lm_usage[lm_for_test]["completion_tokens"] > 0
+    assert lm_usage[lm_for_test]["total_tokens"] > 0
 
     # Test no usage being tracked when cache is enabled
-    dspy.settings.configure(lm=dspy.LM(llm_model, cache=True), track_usage=True)
+    dspy.settings.configure(lm=dspy.LM(lm_for_test, cache=True), track_usage=True)
     for _ in range(2):
         output = predict(question="What is the capital of France?")
 
@@ -252,8 +252,8 @@ def test_single_module_call_with_usage_tracker(llm_model):
 
 
 @pytest.mark.llm_call
-def test_multi_module_call_with_usage_tracker(llm_model):
-    dspy.settings.configure(lm=dspy.LM(llm_model, cache=False), track_usage=True)
+def test_multi_module_call_with_usage_tracker(lm_for_test):
+    dspy.settings.configure(lm=dspy.LM(lm_for_test, cache=False), track_usage=True)
 
     class MyProgram(dspy.Module):
         def __init__(self):
@@ -270,10 +270,10 @@ def test_multi_module_call_with_usage_tracker(llm_model):
 
     lm_usage = output.get_lm_usage()
     assert len(lm_usage) == 1
-    assert lm_usage[llm_model]["prompt_tokens"] > 0
-    assert lm_usage[llm_model]["prompt_tokens"] > 0
-    assert lm_usage[llm_model]["completion_tokens"] > 0
-    assert lm_usage[llm_model]["total_tokens"] > 0
+    assert lm_usage[lm_for_test]["prompt_tokens"] > 0
+    assert lm_usage[lm_for_test]["prompt_tokens"] > 0
+    assert lm_usage[lm_for_test]["completion_tokens"] > 0
+    assert lm_usage[lm_for_test]["total_tokens"] > 0
 
 
 # TODO: prepare second model for testing this unit test in ci

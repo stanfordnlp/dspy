@@ -132,7 +132,7 @@ async def test_custom_status_streaming():
 
 @pytest.mark.llm_call
 @pytest.mark.anyio
-async def test_stream_listener_chat_adapter(llm_model):
+async def test_stream_listener_chat_adapter(lm_for_test):
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
@@ -153,7 +153,7 @@ async def test_stream_listener_chat_adapter(llm_model):
         include_final_prediction_in_output_stream=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM(llm_model, cache=False)):
+    with dspy.context(lm=dspy.LM(lm_for_test, cache=False)):
         output = program(x="why did a chicken cross the kitchen?")
         all_chunks = []
         async for value in output:
@@ -195,7 +195,7 @@ async def test_default_status_streaming_in_async_program():
 
 @pytest.mark.llm_call
 @pytest.mark.anyio
-async def test_stream_listener_json_adapter(llm_model):
+async def test_stream_listener_json_adapter(lm_for_test):
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
@@ -216,7 +216,7 @@ async def test_stream_listener_json_adapter(llm_model):
         include_final_prediction_in_output_stream=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM(llm_model, cache=False), adapter=dspy.JSONAdapter()):
+    with dspy.context(lm=dspy.LM(lm_for_test, cache=False), adapter=dspy.JSONAdapter()):
         output = program(x="why did a chicken cross the kitchen?")
         all_chunks = []
         async for value in output:
@@ -230,9 +230,8 @@ async def test_stream_listener_json_adapter(llm_model):
     assert all_chunks[-1].signature_field_name == "judgement"
 
 
-@pytest.mark.llm_call
 @pytest.mark.anyio
-async def test_streaming_handles_space_correctly(llm_model):
+async def test_streaming_handles_space_correctly():
     my_program = dspy.Predict("question->answer")
     program = dspy.streamify(
         my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
@@ -240,14 +239,14 @@ async def test_streaming_handles_space_correctly(llm_model):
 
     async def gpt_4o_mini_stream(*args, **kwargs):
         yield ModelResponseStream(
-            model=llm_model, choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
         )
-        yield ModelResponseStream(model=llm_model, choices=[StreamingChoices(delta=Delta(content="How "))])
-        yield ModelResponseStream(model=llm_model, choices=[StreamingChoices(delta=Delta(content="are "))])
-        yield ModelResponseStream(model=llm_model, choices=[StreamingChoices(delta=Delta(content="you "))])
-        yield ModelResponseStream(model=llm_model, choices=[StreamingChoices(delta=Delta(content="doing?"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="How "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="are "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="you "))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="doing?"))])
         yield ModelResponseStream(
-            model=llm_model, choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
         )
 
     with mock.patch("litellm.acompletion", side_effect=gpt_4o_mini_stream):
@@ -262,7 +261,7 @@ async def test_streaming_handles_space_correctly(llm_model):
 
 
 @pytest.mark.llm_call
-def test_sync_streaming(llm_model):
+def test_sync_streaming(lm_for_test):
     class MyProgram(dspy.Module):
         def __init__(self):
             self.predict1 = dspy.Predict("question->answer")
@@ -284,7 +283,7 @@ def test_sync_streaming(llm_model):
         async_streaming=False,
     )
     # Turn off the cache to ensure the stream is produced.
-    with dspy.context(lm=dspy.LM(llm_model, cache=False)):
+    with dspy.context(lm=dspy.LM(lm_for_test, cache=False)):
         output = program(x="why did a chicken cross the kitchen?")
         all_chunks = []
         for value in output:

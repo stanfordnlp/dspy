@@ -122,7 +122,7 @@ jobs:
           curl -X POST http://localhost:11434/api/pull \
             -H "Content-Type: application/json" \
             -d '{"name": "llama3.2:3b"}'
-          echo "LLM_MODEL=ollama/llama3.2:3b" >> $GITHUB_ENV
+          echo "LM_FOR_TEST=ollama/llama3.2:3b" >> $GITHUB_ENV
       - name: Run tests
         run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
 
