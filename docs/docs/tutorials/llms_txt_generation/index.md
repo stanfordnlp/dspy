@@ -113,6 +113,8 @@ import requests
 import os
 from pathlib import Path
 
+os.environ["GITHUB_ACCESS_TOKEN"] = "<your_access_token>"
+
 def get_github_file_tree(repo_url):
     """Get repository file structure from GitHub API."""
     # Extract owner/repo from URL
@@ -120,7 +122,9 @@ def get_github_file_tree(repo_url):
     owner, repo = parts[-2], parts[-1]
     
     api_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/main?recursive=1"
-    response = requests.get(api_url)
+    response = requests.get(api_url, headers={
+        "Authorization": f"Bearer {os.environ.get('GITHUB_ACCESS_TOKEN')}"
+    })
     
     if response.status_code == 200:
         tree_data = response.json()
@@ -135,7 +139,9 @@ def get_github_file_content(repo_url, file_path):
     owner, repo = parts[-2], parts[-1]
     
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
-    response = requests.get(api_url)
+    response = requests.get(api_url, headers={
+        "Authorization": f"Bearer {os.environ.get('GITHUB_ACCESS_TOKEN')}"
+    })
     
     if response.status_code == 200:
         import base64
