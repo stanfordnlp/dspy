@@ -127,6 +127,7 @@ class PythonInterpreter:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    encoding="UTF-8",
                     env=os.environ.copy()
                 )
             except FileNotFoundError as e:
