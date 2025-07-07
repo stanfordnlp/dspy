@@ -21,7 +21,6 @@ class AI2ARC:
             raise ValueError("subset must be either 'challenge' or 'easy'")
 
         self.subset = subset
-        self.do_shuffle = False
 
         from datasets import load_dataset
 
@@ -101,9 +100,6 @@ def ai2_arc_metric(gold, pred, trace=None):
     for letter in ["A", "B", "C", "D"]:
         if f"({letter})" in pred_answer or f"{letter})" in pred_answer:
             return letter == gold_answer
-
-    if hasattr(gold, "answer_text"):
-        return pred_answer.lower() in gold.answer_text.lower()
 
     return False
 
