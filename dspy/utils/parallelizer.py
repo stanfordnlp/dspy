@@ -7,6 +7,7 @@ import threading
 import time
 import traceback
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from functools import wraps
 
 import tqdm
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 def _with_otel_context(otel_context):
     """Decorator to attach OpenTelemetry context to a function."""
     def decorator(func):
+        @wraps(func)
         def wrapper(*args, **kwargs):
             ctx_token = None
             if otel_context:
