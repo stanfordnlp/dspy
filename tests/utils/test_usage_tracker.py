@@ -1,7 +1,3 @@
-import os
-
-import pytest
-
 import dspy
 from dspy.utils.usage_tracker import UsageTracker, track_usage
 
@@ -137,12 +133,8 @@ def test_track_usage_with_multiple_models():
     assert total_usage["gpt-3.5-turbo"]["total_tokens"] == 900
 
 
-@pytest.mark.skipif(
-    not os.getenv("OPENAI_API_KEY"),
-    reason="Skip the test if OPENAI_API_KEY is not set.",
-)
-def test_track_usage_context_manager():
-    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+def test_track_usage_context_manager(lm_for_test):
+    lm = dspy.LM(lm_for_test, cache=False)
     dspy.settings.configure(lm=lm)
 
     predict = dspy.ChainOfThought("question -> answer")
@@ -151,12 +143,12 @@ def test_track_usage_context_manager():
         predict(question="What is the capital of Italy?")
 
     assert len(tracker.usage_data) > 0
-    assert len(tracker.usage_data["openai/gpt-4o-mini"]) == 2
+    assert len(tracker.usage_data[lm_for_test]) == 2
 
     total_usage = tracker.get_total_tokens()
-    assert "openai/gpt-4o-mini" in total_usage
+    assert lm_for_test in total_usage
     assert len(total_usage.keys()) == 1
-    assert isinstance(total_usage["openai/gpt-4o-mini"], dict)
+    assert isinstance(total_usage[lm_for_test], dict)
 
 
 def test_merge_usage_entries_with_new_keys():
