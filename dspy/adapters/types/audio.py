@@ -7,7 +7,7 @@ from typing import Any, Union
 import pydantic
 import requests
 
-from dspy.adapters.types.base_type import BaseType
+from dspy.adapters.types.base_type import Type
 
 try:
     import soundfile as sf
@@ -17,7 +17,7 @@ except ImportError:
     SF_AVAILABLE = False
 
 
-class Audio(BaseType):
+class Audio(Type):
     data: str
     audio_format: str
 

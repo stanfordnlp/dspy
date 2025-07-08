@@ -9,7 +9,7 @@ CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
 CUSTOM_TYPE_END_IDENTIFIER = "<<CUSTOM-TYPE-END-IDENTIFIER>>"
 
 
-class BaseType(pydantic.BaseModel):
+class Type(pydantic.BaseModel):
     """Base class to support creating custom types for DSPy signatures.
 
     This is the parent class of DSPy custom types, e.g, dspy.Image. Subclasses must implement the `format` method to
@@ -18,7 +18,7 @@ class BaseType(pydantic.BaseModel):
     Example:
 
         ```python
-        class Image(BaseType):
+        class Image(Type):
             url: str
 
             def format(self) -> list[dict[str, Any]]:
@@ -85,7 +85,7 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
 
     This is implemented by finding the `<<CUSTOM-TYPE-START-IDENTIFIER>>` and `<<CUSTOM-TYPE-END-IDENTIFIER>>`
     in the user message content and splitting the content around them. The `<<CUSTOM-TYPE-START-IDENTIFIER>>`
-    and `<<CUSTOM-TYPE-END-IDENTIFIER>>` are the reserved identifiers for the custom types as in `dspy.BaseType`.
+    and `<<CUSTOM-TYPE-END-IDENTIFIER>>` are the reserved identifiers for the custom types as in `dspy.Type`.
 
     Args:
         messages: a list of messages sent to the LM. The format is the same as [OpenAI API's messages
