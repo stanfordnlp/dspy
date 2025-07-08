@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import pydantic
 import requests
 
-from dspy.adapters.types.base_type import BaseType
+from dspy.adapters.types.base_type import Type
 
 try:
     from PIL import Image as PILImage
@@ -18,7 +18,7 @@ except ImportError:
     PIL_AVAILABLE = False
 
 
-class Image(BaseType):
+class Image(Type):
     url: str
 
     model_config = {
