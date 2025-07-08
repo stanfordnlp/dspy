@@ -14,6 +14,8 @@ from dspy.streaming.messages import StreamResponse
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
 
+ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
+
 
 class StreamListener:
     """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
@@ -46,14 +48,23 @@ class StreamListener:
         self.cache_hit = False
         self.allow_reuse = allow_reuse
 
-        self.json_adapter_start_identifier = f'"{self.signature_field_name}":'
-        self.json_adapter_end_identifier = re.compile(r"\w*\"(,|\s*})")
-
-        self.chat_adapter_start_identifier = f"[[ ## {self.signature_field_name} ## ]]"
-        self.chat_adapter_end_identifier = re.compile(r"\[\[ ## (\w+) ## \]\]")
-
-        self.xml_adapter_start_identifier = f"<{self.signature_field_name}>"
-        self.xml_adapter_end_identifier = re.compile(rf"</{self.signature_field_name}>")
+        self.adapter_identifiers = {
+            "ChatAdapter": {
+                "start_identifier": f"[[ ## {self.signature_field_name} ## ]]",
+                "end_identifier": re.compile(r"\[\[ ## (\w+) ## \]\]"),
+                "start_indicator": "[",
+            },
+            "JSONAdapter": {
+                "start_identifier": f'"{self.signature_field_name}":',
+                "end_identifier": re.compile(r"\w*\"(,|\s*})"),
+                "start_indicator": '"',
+            },
+            "XMLAdapter": {
+                "start_identifier": f"<{self.signature_field_name}>",
+                "end_identifier": re.compile(rf"</{self.signature_field_name}>"),
+                "start_indicator": "<",
+            },
+        }
 
     def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> str:
         for i in range(len(concat_message)):
@@ -62,26 +73,15 @@ class StreamListener:
         return False
 
     def receive(self, chunk: ModelResponseStream):
-        if isinstance(settings.adapter, JSONAdapter):
-            start_identifier = self.json_adapter_start_identifier
-            end_identifier = self.json_adapter_end_identifier
-
-            start_indicator = '"'
-        elif isinstance(settings.adapter, XMLAdapter):
-            start_identifier = self.xml_adapter_start_identifier
-            end_identifier = self.xml_adapter_end_identifier
-
-            start_indicator = "<"
-        elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
-            start_identifier = self.chat_adapter_start_identifier
-            end_identifier = self.chat_adapter_end_identifier
-
-            start_indicator = "["
-        else:
+        adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"
+        if adapter_name not in self.adapter_identifiers:
             raise ValueError(
-                f"Unsupported adapter for streaming: {settings.adapter}, please use either ChatAdapter, XMLAdapter or "
-                "JSONAdapter for streaming purposes."
+                f"Unsupported adapter for streaming: {adapter_name}, please use one of the following adapters: "
+                f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
+        start_identifier = self.adapter_identifiers[adapter_name]["start_identifier"]
+        end_identifier = self.adapter_identifiers[adapter_name]["end_identifier"]
+        start_indicator = self.adapter_identifiers[adapter_name]["start_indicator"]
 
         if self.stream_end:
             if self.allow_reuse:
@@ -192,14 +192,10 @@ class StreamListener:
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
             boundary_index = last_tokens.find("[[")
             return last_tokens[:boundary_index]
-            boundary_index = last_tokens.find(f"</{self.signature_field_name}>")
-            if boundary_index == -1:
-                boundary_index = len(last_tokens)
-            return last_tokens[:boundary_index]
         else:
             raise ValueError(
-                f"Unsupported adapter for streaming: {settings.adapter}, please use either ChatAdapter, XMLAdapter or "
-                "JSONAdapter for streaming purposes."
+                f"Unsupported adapter for streaming: {settings.adapter}, please use one of the following adapters: "
+                f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
 
 
