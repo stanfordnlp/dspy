@@ -32,9 +32,9 @@ class AI2ARC:
         except Exception as e:
             raise RuntimeError(f"Failed to load {config_name} from {dataset_name}: {e}")
 
-        official_train = self._process_split(hf_dataset["train"]) if "train" in hf_dataset else []
-        official_dev = self._process_split(hf_dataset["validation"]) if "validation" in hf_dataset else []
-        official_test = self._process_split(hf_dataset["test"]) if "test" in hf_dataset else []
+        official_train = self._process_split(hf_dataset["train"])
+        official_dev = self._process_split(hf_dataset["validation"])
+        official_test = self._process_split(hf_dataset["test"])
 
         self.train = [dspy.Example(**x).with_inputs("question", "choices") for x in official_train]
         self.dev = [dspy.Example(**x).with_inputs("question", "choices") for x in official_dev]
@@ -91,8 +91,8 @@ def ai2_arc_metric(gold, pred, trace=None):
     Returns:
         bool: True if prediction matches gold answer
     """
-    pred_answer = str(pred.answer).strip().upper()
-    gold_answer = str(gold.answer).strip().upper()
+    pred_answer = _parse_arc_answer(pred.answer)
+    gold_answer = _parse_arc_answer(gold.answer)
 
     if len(pred_answer) == 1 and pred_answer in ["A", "B", "C", "D"]:
         return pred_answer == gold_answer
@@ -104,7 +104,7 @@ def ai2_arc_metric(gold, pred, trace=None):
     return False
 
 
-def parse_arc_answer(answer_text):
+def _parse_arc_answer(answer_text):
     """Parse answer from model output to extract the letter choice.
     
     Args:
@@ -113,7 +113,7 @@ def parse_arc_answer(answer_text):
     Returns:
         str: Extracted answer letter (A, B, C, or D), or the original text if not found
     """
-    answer_text = str(answer_text).strip()
+    answer_text = str(answer_text).strip().upper()
 
     patterns = [
         r"\(([ABCD])\)",  # (A), (B), etc.
@@ -134,14 +134,3 @@ def parse_arc_answer(answer_text):
         return first_char
 
     return answer_text
-
-
-# Convenience functions for loading specific subsets
-def ARC_Challenge():
-    """Load the ARC-Challenge subset."""
-    return AI2ARC(subset="challenge")
-
-
-def ARC_Easy():
-    """Load the ARC-Easy subset."""
-    return AI2ARC(subset="easy")
