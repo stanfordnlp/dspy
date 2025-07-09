@@ -387,7 +387,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
     async def completion_side_effect(*args, **kwargs):
         return stream_generators.pop(0)()  # return new async generator instance
 
-    with mock.patch("litellm.acompletion", side_effect=completion_side_effect) as mock_completion:
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -483,7 +483,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
 
     with mock.patch(
         "litellm.acompletion", new_callable=AsyncMock, side_effect=[gpt_4o_mini_stream_1(), gpt_4o_mini_stream_2()]
-    ) as mock_completion:
+    ):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -762,3 +762,78 @@ async def test_stream_listener_allow_reuse():
     concat_message = "".join([chunk.chunk for chunk in all_chunks])
     # The listener functions twice.
     assert concat_message == "To get to the other side!To get to the other side!"
+
+@pytest.mark.anyio
+async def test_stream_listener_returns_correct_chunk_xml_adapter():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict1 = dspy.Predict("question->answer")
+            self.predict2 = dspy.Predict("question,answer->judgement")
+
+        def forward(self, question, **kwargs):
+            answer = self.predict1(question=question, **kwargs).answer
+            judgement = self.predict2(question=question, answer=answer, **kwargs)
+            return judgement
+
+    async def xml_stream_1(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="To"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" get"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" other"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" side"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="!"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="/answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="completed"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
+
+    async def xml_stream_2(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="judgement"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="The"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" is"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" humorous"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="."))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="/judgement"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="completed"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
+
+    stream_generators = [xml_stream_1, xml_stream_2]
+
+    async def completion_side_effect(*args, **kwargs):
+        return stream_generators.pop(0)()
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        program = dspy.streamify(
+            MyProgram(),
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="answer"),
+                dspy.streaming.StreamListener(signature_field_name="judgement"),
+            ],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.XMLAdapter()):
+            output = program(question="why did a chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+
+    assert all_chunks[0].predict_name == "predict1"
+    assert all_chunks[0].signature_field_name == "answer"
+    assert all_chunks[0].chunk == "To get to the other side!"
+
+    assert all_chunks[1].predict_name == "predict2"
+    assert all_chunks[1].signature_field_name == "judgement"
+    assert all_chunks[1].chunk == "The answer is humorous."
