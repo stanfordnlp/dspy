@@ -1,14 +1,14 @@
 import inspect
-import pydantic
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, Type, get_origin, get_args
+from typing import Any, Dict, Type, get_args, get_origin
+
+import pydantic
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
-from dspy.adapters.utils import translate_field_type
+from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
-from dspy.primitives.prediction import Prediction
 
 
 class XMLAdapter(ChatAdapter):
@@ -137,10 +137,10 @@ class XMLAdapter(ChatAdapter):
         indent_str = "  " * indent
 
         # Handle Pydantic models by showing their nested structure
-        if (inspect.isclass(field_annotation) and 
-            issubclass(field_annotation, pydantic.BaseModel) and 
-            hasattr(field_annotation, 'model_fields')):
-            
+        if (inspect.isclass(field_annotation) and
+            issubclass(field_annotation, pydantic.BaseModel) and
+            hasattr(field_annotation, "model_fields")):
+
             lines = [f"{indent_str}<{field_name}>"]
             for sub_field_name, sub_field_info in field_annotation.model_fields.items():
                 sub_structure = self._generate_xml_schema_structure(
@@ -155,9 +155,9 @@ class XMLAdapter(ChatAdapter):
             args = get_args(field_annotation)
             if args:
                 item_type = args[0]
-                if (inspect.isclass(item_type) and 
-                    issubclass(item_type, pydantic.BaseModel) and 
-                    hasattr(item_type, 'model_fields')):
+                if (inspect.isclass(item_type) and
+                    issubclass(item_type, pydantic.BaseModel) and
+                    hasattr(item_type, "model_fields")):
                     # Show nested structure for Pydantic models in lists
                     example = self._generate_xml_schema_structure(field_name, item_type, indent)
                     return f"{example}\n{example}"
@@ -192,15 +192,15 @@ class XMLAdapter(ChatAdapter):
         Returns a condensed format like: <person><name>...</name><age>...</age></person>
         """
         # Handle Pydantic models
-        if (inspect.isclass(field_annotation) and 
-            issubclass(field_annotation, pydantic.BaseModel) and 
-            hasattr(field_annotation, 'model_fields')):
-            
+        if (inspect.isclass(field_annotation) and
+            issubclass(field_annotation, pydantic.BaseModel) and
+            hasattr(field_annotation, "model_fields")):
+
             inner_elements = []
             for sub_field_name, sub_field_info in field_annotation.model_fields.items():
                 sub_schema = self._generate_compact_xml_schema(sub_field_name, sub_field_info.annotation)
                 inner_elements.append(sub_schema)
-            
+
             inner_content = "".join(inner_elements)
             return f"<{field_name}>{inner_content}</{field_name}>"
 
@@ -234,7 +234,7 @@ class XMLAdapter(ChatAdapter):
     def _dict_to_xml(self, data: Any, root_tag: str = "output") -> str:
         def _recursive_serializer(obj):
             if isinstance(obj, pydantic.BaseModel):
-                if hasattr(obj, 'model_dump'):
+                if hasattr(obj, "model_dump"):
                     return obj.model_dump()
                 return obj.dict()  # Fallback for Pydantic v1
             if isinstance(obj, dict):

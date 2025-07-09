@@ -1,5 +1,6 @@
 import pydantic
 import pytest
+
 import dspy
 from dspy.adapters.chat_adapter import FieldInfoWithName
 from dspy.adapters.xml_adapter import XMLAdapter
@@ -103,7 +104,7 @@ def test_xml_adapter_formats_true_nested_xml():
         FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): InnerModel(value=5, label="foo")
     }
     xml = adapter.format_field_with_value(fields_with_values)
-    
+
     # The output should be a true nested XML string
     expected_xml = "<result><value>5</value><label>foo</label></result>"
     assert xml.strip() == expected_xml.strip()
@@ -118,7 +119,7 @@ def test_xml_adapter_handles_lists_as_repeated_tags():
         items: list[Item] = dspy.OutputField()
 
     adapter = XMLAdapter()
-    
+
     # Test parsing repeated tags into a list
     completion = """
 <items>
@@ -141,7 +142,7 @@ def test_xml_adapter_handles_lists_as_repeated_tags():
     items = [Item(name="x", score=3.3), Item(name="y", score=4.4)]
     fields_with_values = {FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): items}
     xml = adapter.format_field_with_value(fields_with_values)
-    
+
     expected_xml = "<items><name>x</name><score>3.3</score></items><items><name>y</name><score>4.4</score></items>"
     assert xml.strip() == expected_xml.strip()
 
@@ -170,7 +171,7 @@ def test_format_and_parse_deeply_nested_model():
     adapter = XMLAdapter()
     data = Middle(inner=Inner(text="deep"), num=123)
     fields_with_values = {FieldInfoWithName(name="middle", info=TestSignature.output_fields["middle"]): data}
-    
+
     # Test formatting
     xml = adapter.format_field_with_value(fields_with_values)
     expected_xml = "<middle><inner><text>deep</text></inner><num>123</num></middle>"
@@ -188,7 +189,7 @@ def test_format_and_parse_empty_list():
         items: list[str] = dspy.OutputField()
 
     adapter = XMLAdapter()
-    
+
     # Test formatting
     fields_with_values = {FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): []}
     xml = adapter.format_field_with_value(fields_with_values)
