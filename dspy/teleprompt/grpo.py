@@ -743,8 +743,11 @@ class GRPO(FinetuneTeleprompter):
 
                             # We will replace any 1 random data point of trace_data with this new data
                             ll = len(trace_data[example_ind][teacher_ind])
-                            trace_data[example_ind][teacher_ind][self.rng.randint(0, ll-1)] = sample
-                    
+                            if ll > 0:
+                                trace_data[example_ind][teacher_ind][self.rng.randint(0, ll-1)] = sample
+                            else:
+                                trace_data[example_ind][teacher_ind].append(sample)
+
                     self.wandb_log({
                         "num_refine_parse_failures": num_refine_parse_failures,
                     }, step=train_step_idx)
