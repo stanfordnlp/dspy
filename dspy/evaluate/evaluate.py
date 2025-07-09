@@ -222,7 +222,7 @@ class Evaluate:
         num_threads: int,
     ):
         queue = asyncio.Queue()
-        results = [None for _ in range(len(devset))]
+        results = [None] * len(devset)
         for i, example in enumerate(devset):
             await queue.put((i, example))
 
