@@ -245,11 +245,12 @@ class BootstrapFewShot(Teleprompter):
 
             # Update the traces
             for name, demos in name2traces.items():
-                from datasets.fingerprint import Hasher
 
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:
+                    from datasets.fingerprint import Hasher
+
                     rng = random.Random(Hasher.hash(tuple(demos)))
                     demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]
                 self.name2traces[name].extend(demos)
