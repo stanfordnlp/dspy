@@ -35,6 +35,11 @@ class Code(Type):
     Example 2: dspy.Code as input type in code analysis:
 
     ```python
+    import dspy
+    import inspect
+
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
     class CodeAnalysis(dspy.Signature):
         '''Analyze the time complexity of the function.'''
 
@@ -51,9 +56,6 @@ class Code(Type):
         for i in x:
             time.sleep(i)
             print(i)
-
-
-    import inspect
 
     result = predict(code=inspect.getsource(sleepsort))
     print(result.result)
