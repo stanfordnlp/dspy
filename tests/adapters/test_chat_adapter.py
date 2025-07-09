@@ -356,6 +356,48 @@ def test_chat_adapter_with_tool():
     assert "{'country': {'type': 'string'}, 'year': {'type': 'integer'}}" in messages[1]["content"]
 
 
+def test_chat_adapter_with_code():
+    # Test with code as input field
+    class CodeAnalysis(dspy.Signature):
+        """Analyze the time complexity of the code"""
+
+        code: dspy.Code = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(CodeAnalysis, [], {"code": "print('Hello, world!')"})
+
+    assert len(messages) == 2
+
+    # The output field type description should be included in the system message even if the output field is nested
+    assert dspy.Code.description() in messages[0]["content"]
+
+    # The user message should include the question and the tools
+    assert "print('Hello, world!')" in messages[1]["content"]
+
+    # Test with code as output field
+    class CodeGeneration(dspy.Signature):
+        """Generate code to answer the question"""
+
+        question: str = dspy.InputField()
+        code: dspy.Code = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content='[[ ## code ## ]]\nprint("Hello, world!")'))],
+            model="openai/gpt-4o-mini",
+        )
+        result = adapter(
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            {},
+            CodeGeneration,
+            [],
+            {"question": "Write a python program to print 'Hello, world!'"},
+        )
+        assert result[0]["code"].code == 'print("Hello, world!")'
+
+
 def test_chat_adapter_formats_conversation_history():
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
