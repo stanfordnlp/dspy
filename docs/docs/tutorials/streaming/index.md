@@ -329,7 +329,7 @@ class MyStatusMessageProvider(dspy.streaming.StatusMessageProvider):
     def tool_start_status_message(self, instance, inputs):
         return f"Calling Tool {instance.name} with inputs {inputs}..."
 
-    def tool_end_status_message(self, instance, outputs):
+    def tool_end_status_message(self, outputs):
         return f"Tool finished with output: {outputs}!"
 
 
@@ -341,6 +341,7 @@ stream_listeners = [
 stream_predict = dspy.streamify(
     predict,
     stream_listeners=stream_listeners,
+    status_message_provider=MyStatusMessageProvider(),
 )
 
 
