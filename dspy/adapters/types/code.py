@@ -1,7 +1,8 @@
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 import pydantic
+from pydantic import create_model
 
 from dspy.adapters.types.base_type import Type
 
@@ -23,7 +24,7 @@ class Code(Type):
         '''Generate python code to answer the question.'''
 
         question: str = dspy.InputField(description="The question to answer")
-        code: dspy.Code = dspy.OutputField(description="The code to execute")
+        code: dspy.Code["java"] = dspy.OutputField(description="The code to execute")
 
 
     predict = dspy.Predict(CodeGeneration)
@@ -43,7 +44,7 @@ class Code(Type):
     class CodeAnalysis(dspy.Signature):
         '''Analyze the time complexity of the function.'''
 
-        code: dspy.Code = dspy.InputField(description="The function to analyze")
+        code: dspy.Code["python"] = dspy.InputField(description="The function to analyze")
         result: str = dspy.OutputField(description="The time complexity of the function")
 
 
@@ -64,6 +65,8 @@ class Code(Type):
 
     code: str
 
+    language: ClassVar[str] = "python"
+
     def format(self):
         return f"{self.code}"
 
@@ -76,7 +79,8 @@ class Code(Type):
     def description(cls) -> str:
         return (
             "Code represented in a string, specified in the `code` field. If this is an output field, the code "
-            "should follow the markdown code block format, e.g. \n```python\n{code}\n``` or \n```cpp\n{code}\n```."
+            "should follow the markdown code block format, e.g. \n```python\n{code}\n``` or \n```cpp\n{code}\n```"
+            f"\nProgramming language: {cls.language}"
         )
 
     @pydantic.model_validator(mode="before")
@@ -115,3 +119,13 @@ def _filter_code(code: str) -> str:
         return match.group(1).strip()
     # Fallback case
     return code
+
+
+# Patch __class_getitem__ directly on the class to support dspy.Code["python"] syntax
+def _code_class_getitem(cls, language):
+    code_with_language_cls = create_model(f"{cls.__name__}_{language}", __base__=cls)
+    code_with_language_cls.language = language
+    return code_with_language_cls
+
+
+Code.__class_getitem__ = classmethod(_code_class_getitem)

@@ -8,18 +8,18 @@ import dspy
 
 def test_code_validate_input():
     # Create a `dspy.Code` instance with valid code.
-    code = dspy.Code(code="print('Hello, world!')")
+    code = dspy.Code["python"](code="print('Hello, world!')")
     assert code.code == "print('Hello, world!')"
 
     with pytest.raises(ValueError):
         # Try to create a `dspy.Code` instance with invalid type.
-        dspy.Code(code=123)
+        dspy.Code["python"](code=123)
 
     def foo(x):
         return x + 1
 
     code_source = inspect.getsource(foo)
-    code = dspy.Code(code=code_source)
+    code = dspy.Code["python"](code=code_source)
 
     assert code.code == code_source
 
@@ -31,6 +31,18 @@ def test_code_in_nested_type():
     code = dspy.Code(code="print('Hello, world!')")
     wrapper = Wrapper(code=code)
     assert wrapper.code.code == "print('Hello, world!')"
+
+
+def test_code_with_language():
+    java_code = dspy.Code["java"](code="System.out.println('Hello, world!');")
+    assert java_code.code == "System.out.println('Hello, world!');"
+    assert java_code.language == "java"
+    assert "Programming language: java" in dspy.Code.description()
+
+    cpp_code = dspy.Code["cpp"](code="std::cout << 'Hello, world!' << std::endl;")
+    assert cpp_code.code == "std::cout << 'Hello, world!' << std::endl;"
+    assert cpp_code.language == "cpp"
+    assert "Programming language: cpp" in dspy.Code.description()
 
 
 def test_code_parses_from_dirty_code():
