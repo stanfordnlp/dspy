@@ -37,12 +37,12 @@ def test_code_with_language():
     java_code = dspy.Code["java"](code="System.out.println('Hello, world!');")
     assert java_code.code == "System.out.println('Hello, world!');"
     assert java_code.language == "java"
-    assert "Programming language: java" in dspy.Code.description()
+    assert "Programming language: java" in java_code.description()
 
     cpp_code = dspy.Code["cpp"](code="std::cout << 'Hello, world!' << std::endl;")
     assert cpp_code.code == "std::cout << 'Hello, world!' << std::endl;"
     assert cpp_code.language == "cpp"
-    assert "Programming language: cpp" in dspy.Code.description()
+    assert "Programming language: cpp" in cpp_code.description()
 
 
 def test_code_parses_from_dirty_code():

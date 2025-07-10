@@ -79,7 +79,7 @@ class Code(Type):
     def description(cls) -> str:
         return (
             "Code represented in a string, specified in the `code` field. If this is an output field, the code "
-            "should follow the markdown code block format, e.g. \n```python\n{code}\n``` or \n```cpp\n{code}\n```"
+            "field should follow the markdown code block format, e.g. \n```python\n{code}\n``` or \n```cpp\n{code}\n```"
             f"\nProgramming language: {cls.language}"
         )
 
