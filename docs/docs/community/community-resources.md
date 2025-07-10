@@ -44,6 +44,15 @@ This is the list of tutorials and blog posts on DSPy. If you would like to add y
 | **Monitoring & Tracing DSPy with Langtrace** | [Link](https://langtrace.ai/blog/announcing-dspy-support-in-langtrace) |
 | **Teaching chat models to solve chess puzzles using DSPy + Finetuning** | [Link](https://raw.sh/posts/chess_puzzles) |
 | **Build Self-Improving AI Agents with DSPy (No Code)** | [Link](https://www.youtube.com/watch?v=UY8OsMlV21Y) |
+| **DSPy 3.0 and DSPy at Databricks** | [Link](https://www.youtube.com/watch?v=grIuzesOwwU) |
+| **Context Engineering with DSPy** | [Link](https://www.youtube.com/watch?v=1I9PoXzvWcs) |
+
+### Slides
+
+| **Name** | **Link** |
+|---|---|
+| **Context Engineering with DSPy** | [Link](https://docs.google.com/presentation/d/1ydssF387l1LsJ14z41_HUqsJwU77tKZJNGnAWPsw-1I/edit?usp=sharing) |
+
 
 ### Podcasts
 
