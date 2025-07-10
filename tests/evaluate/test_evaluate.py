@@ -153,11 +153,11 @@ def test_evaluate_call_wrong_answer():
         # Create programs that do not return dictionary-like objects because Evaluate()
         # has failed for such cases in the past
         (
-            lambda text: Predict("text: str -> entities: List[str]")(text=text).entities,
+            lambda text: Predict("text: str -> entities: list[str]")(text=text).entities,
             dspy.Example(text="United States", entities=["United States"]).with_inputs("text"),
         ),
         (
-            lambda text: Predict("text: str -> entities: List[Dict[str, str]]")(text=text).entities,
+            lambda text: Predict("text: str -> entities: list[dict[str, str]]")(text=text).entities,
             dspy.Example(text="United States", entities=[{"name": "United States", "type": "location"}]).with_inputs(
                 "text"
             ),

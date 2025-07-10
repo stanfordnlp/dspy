@@ -1,7 +1,6 @@
 import logging
 import random
 import threading
-from typing import Dict
 
 import tqdm
 
@@ -39,7 +38,7 @@ class BootstrapFewShot(Teleprompter):
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings: Dict | None = None,
+        teacher_settings: dict | None = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,

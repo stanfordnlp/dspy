@@ -1,7 +1,7 @@
 import re
 from collections import defaultdict
 from queue import Queue
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 from litellm import ModelResponseStream
 
@@ -199,7 +199,7 @@ class StreamListener:
             )
 
 
-def find_predictor_for_stream_listeners(program: "Module", stream_listeners: List[StreamListener]):
+def find_predictor_for_stream_listeners(program: "Module", stream_listeners: list[StreamListener]):
     """Find the predictor for each stream listener.
 
     This is a utility function to automatically find the predictor for each stream listener. It is used when some

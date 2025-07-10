@@ -51,8 +51,8 @@ class Player:
     health: int = 100
     level: int = 1
     experience: int = 0
-    inventory: List[str] = field(default_factory=list)
-    skills: Dict[str, int] = field(default_factory=lambda: {
+    inventory: list[str] = field(default_factory=list)
+    skills: dict[str, int] = field(default_factory=lambda: {
         "strength": 10,
         "intelligence": 10,
         "charisma": 10,
@@ -80,10 +80,10 @@ class Player:
 class GameContext:
     current_location: str = "Village Square"
     story_progress: int = 0
-    visited_locations: List[str] = field(default_factory=list)
-    npcs_met: List[str] = field(default_factory=list)
-    completed_quests: List[str] = field(default_factory=list)
-    game_flags: Dict[str, bool] = field(default_factory=dict)
+    visited_locations: list[str] = field(default_factory=list)
+    npcs_met: list[str] = field(default_factory=list)
+    completed_quests: list[str] = field(default_factory=list)
+    game_flags: dict[str, bool] = field(default_factory=dict)
     
     def add_flag(self, flag: str, value: bool = True):
         self.game_flags[flag] = value
@@ -176,9 +176,9 @@ class StoryGenerator(dspy.Signature):
     recent_actions: str = dspy.InputField(desc="Player's recent actions")
     
     scene_description: str = dspy.OutputField(desc="Vivid description of current scene")
-    available_actions: List[str] = dspy.OutputField(desc="List of possible player actions")
-    npcs_present: List[str] = dspy.OutputField(desc="NPCs present in this location")
-    items_available: List[str] = dspy.OutputField(desc="Items that can be found or interacted with")
+    available_actions: list[str] = dspy.OutputField(desc="List of possible player actions")
+    npcs_present: list[str] = dspy.OutputField(desc="NPCs present in this location")
+    items_available: list[str] = dspy.OutputField(desc="Items that can be found or interacted with")
 
 class DialogueGenerator(dspy.Signature):
     """Generate NPC dialogue and responses."""
@@ -201,8 +201,8 @@ class ActionResolver(dspy.Signature):
     
     success: bool = dspy.OutputField(desc="Whether the action succeeded")
     outcome_description: str = dspy.OutputField(desc="Description of what happened")
-    stat_changes: Dict[str, int] = dspy.OutputField(desc="Changes to player stats")
-    items_gained: List[str] = dspy.OutputField(desc="Items gained from this action")
+    stat_changes: dict[str, int] = dspy.OutputField(desc="Changes to player stats")
+    items_gained: list[str] = dspy.OutputField(desc="Items gained from this action")
     experience_gained: int = dspy.OutputField(desc="Experience points gained")
 
 class GameAI(dspy.Module):
@@ -333,7 +333,7 @@ def display_location(context: GameContext, scene: Dict):
     
     console.print(Panel(location_panel.strip(), title="Current Location", style="cyan"))
 
-def display_actions(actions: List[str]):
+def display_actions(actions: list[str]):
     """Display available actions."""
     action_text = "\n".join([f"{i+1}. {action}" for i, action in enumerate(actions)])
     console.print(Panel(action_text, title="Available Actions", style="yellow"))

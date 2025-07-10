@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import time
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any
 
 import requests
 import ujson
@@ -168,9 +168,9 @@ class DatabricksProvider(Provider):
     def finetune(
         job: TrainingJobDatabricks,
         model: str,
-        train_data: List[Dict[str, Any]],
+        train_data: list[dict[str, Any]],
         train_data_format: TrainDataFormat | str | None = "chat",
-        train_kwargs: Dict[str, Any] | None = None,
+        train_kwargs: dict[str, Any] | None = None,
     ) -> str:
         if isinstance(train_data_format, str):
             if train_data_format == "chat":
@@ -243,7 +243,7 @@ class DatabricksProvider(Provider):
         return f"databricks/{job.endpoint_name}"
 
     @staticmethod
-    def upload_data(train_data: List[Dict[str, Any]], databricks_unity_catalog_path: str, data_format: TrainDataFormat):
+    def upload_data(train_data: list[dict[str, Any]], databricks_unity_catalog_path: str, data_format: TrainDataFormat):
         logger.info("Uploading finetuning data to Databricks Unity Catalog...")
         file_path = _save_data_to_local_file(train_data, data_format)
 
@@ -303,7 +303,7 @@ def _create_directory_in_databricks_unity_catalog(w: "WorkspaceClient", databric
         logger.info(f"Successfully created directory {databricks_unity_catalog_path} in Databricks Unity Catalog!")
 
 
-def _save_data_to_local_file(train_data: List[Dict[str, Any]], data_format: TrainDataFormat):
+def _save_data_to_local_file(train_data: list[dict[str, Any]], data_format: TrainDataFormat):
     import uuid
 
     file_name = f"finetuning_{uuid.uuid4()}.jsonl"
@@ -322,7 +322,7 @@ def _save_data_to_local_file(train_data: List[Dict[str, Any]], data_format: Trai
     return file_path
 
 
-def _validate_chat_data(data: Dict[str, Any]):
+def _validate_chat_data(data: dict[str, Any]):
     if "messages" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'messages' key when `task=CHAT_COMPLETION`, but "
@@ -344,7 +344,7 @@ def _validate_chat_data(data: Dict[str, Any]):
             )
 
 
-def _validate_completion_data(data: Dict[str, Any]):
+def _validate_completion_data(data: dict[str, Any]):
     if "prompt" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'prompt' key when `task=INSTRUCTION_FINETUNE`, but "

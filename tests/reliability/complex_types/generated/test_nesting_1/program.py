@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field
 
 class ResultLevel5(BaseModel):
     outputField1: bool = Field(..., description="A boolean field indicating success or failure")
-    outputField2: List[str] = Field(..., description="An array of strings representing messages")
+    outputField2: list[str] = Field(..., description="An array of strings representing messages")
 
 
 class ResultLevel4(BaseModel):

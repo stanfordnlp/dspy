@@ -1,6 +1,6 @@
 import re
 import textwrap
-from typing import Any, Dict, NamedTuple, Type
+from typing import Any, NamedTuple
 
 from litellm import ContextWindowExceededError
 from pydantic.fields import FieldInfo
@@ -30,7 +30,7 @@ class ChatAdapter(Adapter):
         self,
         lm: LM,
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -50,7 +50,7 @@ class ChatAdapter(Adapter):
         self,
         lm: LM,
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -66,13 +66,13 @@ class ChatAdapter(Adapter):
                 raise e
             return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
 
-    def format_field_description(self, signature: Type[Signature]) -> str:
+    def format_field_description(self, signature: type[Signature]) -> str:
         return (
             f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
             f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
         )
 
-    def format_field_structure(self, signature: Type[Signature]) -> str:
+    def format_field_structure(self, signature: type[Signature]) -> str:
         """
         `ChatAdapter` requires input and output fields to be in their own sections, with section header using markers
         `[[ ## field_name ## ]]`. An arbitrary field `completed` ([[ ## completed ## ]]) is added to the end of the
@@ -81,7 +81,7 @@ class ChatAdapter(Adapter):
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo]):
+        def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
             return self.format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
@@ -94,14 +94,14 @@ class ChatAdapter(Adapter):
         parts.append("[[ ## completed ## ]]\n")
         return "\n\n".join(parts).strip()
 
-    def format_task_description(self, signature: Type[Signature]) -> str:
+    def format_task_description(self, signature: type[Signature]) -> str:
         instructions = textwrap.dedent(signature.instructions)
         objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
         return f"In adhering to this structure, your objective is: {objective}"
 
     def format_user_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
@@ -122,7 +122,7 @@ class ChatAdapter(Adapter):
         messages.append(suffix)
         return "\n\n".join(messages).strip()
 
-    def user_message_output_requirements(self, signature: Type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str:
         """Returns a simplified format reminder for the language model.
 
         In chat-based interactions, language models may lose track of the required output format
@@ -153,7 +153,7 @@ class ChatAdapter(Adapter):
 
     def format_assistant_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         outputs: dict[str, Any],
         missing_field_message=None,
     ) -> str:
@@ -166,7 +166,7 @@ class ChatAdapter(Adapter):
         assistant_message_content += "\n\n[[ ## completed ## ]]\n"
         return assistant_message_content
 
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+    def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         sections = [(None, [])]
 
         for line in completion.splitlines():
@@ -203,7 +203,7 @@ class ChatAdapter(Adapter):
 
         return fields
 
-    def format_field_with_value(self, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
+    def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         """
         Formats the values of the specified fields according to the field's DSPy type (input or output),
         annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
@@ -225,7 +225,7 @@ class ChatAdapter(Adapter):
 
     def format_finetune_data(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
         outputs: dict[str, Any],

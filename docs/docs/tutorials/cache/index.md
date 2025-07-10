@@ -89,15 +89,15 @@ class CustomCache(dspy.clients.Cache):
     def __init__(self, **kwargs):
         {write your own constructor}
 
-    def cache_key(self, request: Dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
+    def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
         {write your logic of computing cache key}
 
-    def get(self, request: Dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> Any:
+    def get(self, request: dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> Any:
         {write your cache read logic}
 
     def put(
         self,
-        request: Dict[str, Any],
+        request: dict[str, Any],
         value: Any,
         ignored_args_for_cache_key: Optional[list[str]] = None,
         enable_memory_cache: bool = True,
@@ -118,7 +118,7 @@ Let's illustrate this with a practical example. Suppose we want the cache key co
 ```python
 class CustomCache(dspy.clients.Cache):
 
-    def cache_key(self, request: Dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
+    def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
         messages = request.get("messages", [])
         return sha256(ujson.dumps(messages, sort_keys=True).encode()).hexdigest()
 
@@ -164,7 +164,7 @@ dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 class CustomCache(dspy.clients.Cache):
 
-    def cache_key(self, request: Dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
+    def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
         messages = request.get("messages", [])
         return sha256(ujson.dumps(messages, sort_keys=True).encode()).hexdigest()
 

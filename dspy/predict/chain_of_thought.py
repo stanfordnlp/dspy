@@ -1,4 +1,4 @@
-from typing import Any, Type
+from typing import Any
 
 from pydantic.fields import FieldInfo
 
@@ -10,9 +10,9 @@ from dspy.signatures.signature import Signature, ensure_signature
 class ChainOfThought(Module):
     def __init__(
         self,
-        signature: str | Type[Signature],
+        signature: str | type[Signature],
         rationale_field: FieldInfo | None = None,
-        rationale_field_type: Type = str,
+        rationale_field_type: type = str,
         **config: dict[str, Any],
     ):
         """
