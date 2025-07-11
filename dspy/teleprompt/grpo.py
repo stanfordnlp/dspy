@@ -741,7 +741,14 @@ class GRPO(FinetuneTeleprompter):
                             sample["trace"] = [t for t in sample["trace"] if hash(t[0].signature) in [hash(pred.signature) for pred in teachers[teacher_ind].predictors()]]
                             # assert len(sample["trace"]) # TODO(Lakshya): Find out why this assert is triggered
                             if len(sample["trace"]) == 0:
-                                logger.warning(f"[DEBUG] No trace data found for teacher {teacher_ind} for example {example_ind} while refining. Investigate this.")
+                                debug_data = dict(
+                                    teachers=[refined_teacher],
+                                    subsample_training_dataset=refined_training_set,
+                                    num_gens_per_teacher=[1],
+                                    metric_fn=lambda example, prediction, *args, **kwargs: self.refine_metric_wrapper(example, prediction)['score']
+                                )
+                                debug_data = str(debug_data)
+                                logger.warning(f"[DEBUG] No trace data found for teacher {teacher_ind} for example {example_ind} while refining. Investigate this. Detailed data for call to bootstrap: {debug_data}")
                                 num_refine_parse_failures += 1
                                 continue
 
