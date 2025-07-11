@@ -188,6 +188,67 @@ Final output:  Prediction(
 )
 ```
 
+### Streaming the Same Field Multiple Times (as in dspy.ReAct)
+
+By default, a `StreamListener` automatically closes itself after completing a single streaming session.
+This design helps prevent performance issues, since every token is broadcast to all configured stream listeners,
+and having too many active listeners can introduce significant overhead.
+
+However, in scenarios where a DSPy module is used repeatedly in a loop—such as with `dspy.ReAct` — you may want to stream
+the same field from each prediction, every time it is used. To enable this behavior, set allow_reuse=True when creating
+your `StreamListener`. See the example below:
+
+```python
+import asyncio
+
+import dspy
+
+lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+dspy.settings.configure(lm=lm)
+
+
+def fetch_user_info(user_name: str):
+    """Get user information like name, birthday, etc."""
+    return {
+        "name": user_name,
+        "birthday": "2009-05-16",
+    }
+
+
+def get_sports_news(year: int):
+    """Get sports news for a given year."""
+    if year == 2009:
+        return "Usane Bolt broke the world record in the 100m race."
+    return None
+
+
+react = dspy.ReAct("question->answer", tools=[fetch_user_info, get_sports_news])
+
+stream_listeners = [
+    # dspy.ReAct has a built-in output field called "next_thought".
+    dspy.streaming.StreamListener(signature_field_name="next_thought", allow_reuse=True),
+]
+stream_react = dspy.streamify(react, stream_listeners=stream_listeners)
+
+
+async def read_output_stream():
+    output = stream_react(question="What sports news happened in the year Adam was born?")
+    return_value = None
+    async for chunk in output:
+        if isinstance(chunk, dspy.streaming.StreamResponse):
+            print(chunk)
+        elif isinstance(chunk, dspy.Prediction):
+            return_value = chunk
+    return return_value
+
+
+print(asyncio.run(read_output_stream()))
+```
+
+In this example, by setting `allow_reuse=True` in the StreamListener, you ensure that streaming for "next_thought" is
+available for every iteration, not just the first. When you run this code, you will see the streaming tokens for `next_thought`
+output each time the field is produced.
+
 #### Handling Duplicate Field Names
 
 When streaming fields with the same name from different modules, specify both the `predict` and `predict_name` in the `StreamListener`:
