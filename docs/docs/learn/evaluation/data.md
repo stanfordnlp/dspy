@@ -72,7 +72,7 @@ print("Example object with Non-Input fields only:", non_input_key_only)
 
 **Output**
 ```
-Example object with Input fields only: Example({'article': 'This is an article.'}) (input_keys=None)
+Example object with Input fields only: Example({'article': 'This is an article.'}) (input_keys={'article'})
 Example object with Non-Input fields only: Example({'summary': 'This is a summary.'}) (input_keys=None)
 ```
 
