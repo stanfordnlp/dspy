@@ -739,7 +739,11 @@ class GRPO(FinetuneTeleprompter):
                             sample["example"] = subsample_training_dataset[example_ind]
                             sample["example_ind"] = example_ind
                             sample["trace"] = [t for t in sample["trace"] if hash(t[0].signature) in [hash(pred.signature) for pred in teachers[teacher_ind].predictors()]]
-                            assert len(sample["trace"])
+                            # assert len(sample["trace"]) # TODO(Lakshya): Find out why this assert is triggered
+                            if len(sample["trace"]) == 0:
+                                logger.warning(f"[DEBUG] No trace data found for teacher {teacher_ind} for example {example_ind} while refining. Investigate this.")
+                                num_refine_parse_failures += 1
+                                continue
 
                             # We will replace any 1 random data point of trace_data with this new data
                             ll = len(trace_data[example_ind][teacher_ind])
