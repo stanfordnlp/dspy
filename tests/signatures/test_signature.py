@@ -255,7 +255,7 @@ def test_typed_signatures_basic_types():
 
 def test_typed_signatures_generics():
     sig = Signature(
-        "input_list: list[int], input_dict: dict[str, float] -> output_tuple: Tuple[str, int]")
+        "input_list: list[int], input_dict: dict[str, float] -> output_tuple: tuple[str, int]")
     assert "input_list" in sig.input_fields
     assert sig.input_fields["input_list"].annotation == list[int]
     assert "input_dict" in sig.input_fields
