@@ -1,3 +1,4 @@
+import asyncio
 import signal
 import threading
 from unittest.mock import patch
@@ -57,6 +58,7 @@ def test_evaluate_call():
 @pytest.mark.extra
 def test_construct_result_df():
     import pandas as pd
+
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     ev = Evaluate(
         devset=devset,
@@ -253,6 +255,36 @@ def test_evaluate_callback():
     assert callback.end_call_outputs.score == 100.0
     assert callback.end_call_count == 1
 
+
 def test_evaluation_result_repr():
     result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])
     assert repr(result) == "EvaluationResult(score=100.0, results=<list of 1 results>)"
+
+
+@pytest.mark.asyncio
+async def test_async_evaluate_call():
+    class MyProgram(dspy.Module):
+        async def acall(self, question):
+            # Simulate network delay
+            await asyncio.sleep(0.05)
+            # Just echo the input as the prediction
+            return dspy.Prediction(answer=question)
+
+    def dummy_metric(gold, pred, traces=None):
+        return gold.answer == pred.answer
+
+    devset = [new_example(f"placeholder_{i}", f"placeholder_{i}") for i in range(20)]
+
+    evaluator = Evaluate(devset=devset, metric=dummy_metric, num_threads=10, display_progress=False)
+
+    result = await evaluator.acall(MyProgram())
+    assert isinstance(result.score, float)
+    assert result.score == 100.0  # Both answers should match
+    assert len(result.results) == 20
+
+    # Check the results are in the correct order
+    for i, (example, prediction, score) in enumerate(result.results):
+        assert isinstance(prediction, dspy.Prediction)
+        assert score == 1
+        assert example.question == f"placeholder_{i}"
+        assert prediction.answer == f"placeholder_{i}"
