@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any
+from typing import Any, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -9,7 +9,7 @@ CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
 CUSTOM_TYPE_END_IDENTIFIER = "<<CUSTOM-TYPE-END-IDENTIFIER>>"
 
 
-class BaseType(pydantic.BaseModel):
+class Type(pydantic.BaseModel):
     """Base class to support creating custom types for DSPy signatures.
 
     This is the parent class of DSPy custom types, e.g, dspy.Image. Subclasses must implement the `format` method to
@@ -18,7 +18,7 @@ class BaseType(pydantic.BaseModel):
     Example:
 
         ```python
-        class Image(BaseType):
+        class Image(Type):
             url: str
 
             def format(self) -> list[dict[str, Any]]:
@@ -26,12 +26,46 @@ class BaseType(pydantic.BaseModel):
         ```
     """
 
-    def format(self) -> list[dict[str, Any]]:
+    def format(self) -> list[dict[str, Any]] | str:
         raise NotImplementedError
+
+    @classmethod
+    def description(cls) -> str:
+        """Description of the custom type"""
+        return ""
+
+    @classmethod
+    def extract_custom_type_from_annotation(cls, annotation):
+        """Extract all custom types from the annotation.
+
+        This is used to extract all custom types from the annotation of a field, while the annotation can
+        have arbitrary level of nesting. For example, we detect `Tool` is in `list[dict[str, Tool]]`.
+        """
+        # Direct match. Nested type like `list[dict[str, Event]]` passes `isinstance(annotation, type)` in python 3.10
+        # while fails in python 3.11. To accomodate users using python 3.10, we need to capture the error and ignore it.
+        try:
+            if isinstance(annotation, type) and issubclass(annotation, cls):
+                return [annotation]
+        except TypeError:
+            pass
+
+        origin = get_origin(annotation)
+        if origin is None:
+            return []
+
+        result = []
+        # Recurse into all type args
+        for arg in get_args(annotation):
+            result.extend(cls.extract_custom_type_from_annotation(arg))
+
+        return result
 
     @pydantic.model_serializer()
     def serialize_model(self):
-        return f"{CUSTOM_TYPE_START_IDENTIFIER}{self.format()}{CUSTOM_TYPE_END_IDENTIFIER}"
+        formatted = self.format()
+        if isinstance(formatted, list):
+            return f"{CUSTOM_TYPE_START_IDENTIFIER}{self.format()}{CUSTOM_TYPE_END_IDENTIFIER}"
+        return formatted
 
 
 def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -51,7 +85,7 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
 
     This is implemented by finding the `<<CUSTOM-TYPE-START-IDENTIFIER>>` and `<<CUSTOM-TYPE-END-IDENTIFIER>>`
     in the user message content and splitting the content around them. The `<<CUSTOM-TYPE-START-IDENTIFIER>>`
-    and `<<CUSTOM-TYPE-END-IDENTIFIER>>` are the reserved identifiers for the custom types as in `dspy.BaseType`.
+    and `<<CUSTOM-TYPE-END-IDENTIFIER>>` are the reserved identifiers for the custom types as in `dspy.Type`.
 
     Args:
         messages: a list of messages sent to the LM. The format is the same as [OpenAI API's messages

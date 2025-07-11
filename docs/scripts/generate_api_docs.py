@@ -36,7 +36,6 @@ API_MAPPING = {
         dspy.ReAct,
         dspy.ProgramOfThought,
         dspy.MultiChainComparison,
-        dspy.ChainOfThoughtWithHint,
         dspy.Parallel,
         dspy.BestOfN,
         dspy.Refine,
@@ -135,6 +134,7 @@ def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = Fal
         members:
 {methods_list}"""
 
+    # We need to put ::: at last to avoid unclosed div. See https://github.com/danielfrg/mkdocs-jupyter/issues/231 for more details.
     return f"""<!-- START_API_REF -->
 ::: {module_path}.{name}
     handler: python
@@ -147,6 +147,7 @@ def generate_doc_page(name: str, module_path: str, obj: Any, is_root: bool = Fal
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+:::
 <!-- END_API_REF -->
 """
 

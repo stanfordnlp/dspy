@@ -7,6 +7,7 @@ from dspy.utils import exceptions
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.dummies import DummyLM, DummyVectorizer, dummy_rm
 from dspy.utils.inspect_history import pretty_print_history
+from dspy.utils.syncify import syncify
 
 
 def download(url):

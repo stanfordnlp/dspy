@@ -27,11 +27,11 @@ litellm.success_callback = [_litellm_track_cache_hit_callback]
 
 
 def configure_cache(
-    enable_disk_cache: Optional[bool] = True,
-    enable_memory_cache: Optional[bool] = True,
-    disk_cache_dir: Optional[str] = DISK_CACHE_DIR,
-    disk_size_limit_bytes: Optional[int] = DISK_CACHE_LIMIT,
-    memory_max_entries: Optional[int] = 1000000,
+    enable_disk_cache: bool | None = True,
+    enable_memory_cache: bool | None = True,
+    disk_cache_dir: str | None = DISK_CACHE_DIR,
+    disk_size_limit_bytes: int | None = DISK_CACHE_LIMIT,
+    memory_max_entries: int | None = 1000000,
     enable_litellm_cache: bool = False,
 ):
     """Configure the cache for DSPy.

@@ -1,7 +1,5 @@
 from unittest.mock import Mock
 
-import pytest
-
 import dspy
 from dspy.teleprompt.utils import eval_candidate_program
 
@@ -43,19 +41,12 @@ def test_eval_candidate_program_minibatch():
     assert called_kwargs["callback_metadata"] == {"metric_key": "eval_minibatch"}
     assert result == 0
 
-
-@pytest.mark.parametrize("return_all_scores", [True, False])
-def test_eval_candidate_program_failure(return_all_scores):
+def test_eval_candidate_program_failure():
     trainset = [1, 2, 3, 4, 5]
     candidate_program = DummyModule()
     evaluate = Mock(side_effect=ValueError("Error"))
     batch_size = 3
 
-    result = eval_candidate_program(
-        batch_size, trainset, candidate_program, evaluate, return_all_scores=return_all_scores
-    )
+    result = eval_candidate_program(batch_size, trainset, candidate_program, evaluate)
 
-    if return_all_scores:
-        assert result == (0.0, [0.0] * len(trainset))
-    else:
-        assert result == 0.0
+    assert result.score == 0.0

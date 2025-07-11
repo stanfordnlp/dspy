@@ -1,4 +1,3 @@
-from typing import Optional
 
 from dspy.signatures.signature import Signature
 
@@ -11,8 +10,8 @@ class AdapterParseError(Exception):
         adapter_name: str,
         signature: Signature,
         lm_response: str,
-        message: Optional[str] = None,
-        parsed_result: Optional[str] = None,
+        message: str | None = None,
+        parsed_result: str | None = None,
     ):
         self.adapter_name = adapter_name
         self.signature = signature

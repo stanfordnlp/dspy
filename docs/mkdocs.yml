@@ -7,6 +7,7 @@ repo_name: stanfordnlp/dspy
 
 edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
+
 nav:
     - Get Started: index.md
     - Learn DSPy:
@@ -27,13 +28,15 @@ nav:
         - Tutorials Overview: tutorials/index.md
         - Build AI Programs with DSPy:
             - Overview: tutorials/build_ai_program/index.md
+            - Building AI Agents with DSPy: tutorials/customer_service_agent/index.ipynb
+            - Building AI Applications by Customizing DSPy Modules: tutorials/custom_module/index.ipynb
             - Retrieval-Augmented Generation (RAG): tutorials/rag/index.ipynb
-            - Build AI Agents with DSPy: tutorials/customer_service_agent/index.ipynb
             - Building RAG as Agent: tutorials/agents/index.ipynb
             - Entity Extraction: tutorials/entity_extraction/index.ipynb
             - Classification: tutorials/classification/index.md
             - Multi-Hop RAG: tutorials/multihop_search/index.ipynb
             - Privacy-Conscious Delegation: tutorials/papillon/index.md
+            - Program Of Thought: tutorials/program_of_thought/index.ipynb
             - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
             - Audio: tutorials/audio/index.ipynb
         - Optimize AI Programs with DSPy:
@@ -57,6 +60,14 @@ nav:
             - Tracking DSPy Optimizers: tutorials/optimizer_tracking/index.md
             - Streaming: tutorials/streaming/index.md
             - Async: tutorials/async/index.md
+        - Real-World Examples:
+            - Overview: tutorials/real_world_examples/index.md
+            - Generating llms.txt: tutorials/llms_txt_generation/index.md
+            - Memory-Enabled ReAct Agents: tutorials/mem0_react_agent/index.md
+            - Financial Analysis with Yahoo Finance: tutorials/yahoo_finance_react/index.md
+            - Email Information Extraction: tutorials/email_extraction/index.md
+            - Code Generation for Unfamiliar Libraries: tutorials/sample_code_generation/index.md
+            - Building a Creative Text-Based AI Game: tutorials/ai_text_game/index.md
     - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
@@ -86,13 +97,11 @@ nav:
         - Modules:
             - BestOfN: api/modules/BestOfN.md
             - ChainOfThought: api/modules/ChainOfThought.md
-            - ChainOfThoughtWithHint: api/modules/ChainOfThoughtWithHint.md
             - CodeAct: api/modules/CodeAct.md
             - Module: api/modules/Module.md
             - MultiChainComparison: api/modules/MultiChainComparison.md
             - Parallel: api/modules/Parallel.md
             - Predict: api/modules/Predict.md
-            - Program: api/modules/Program.md
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
             - Refine: api/modules/Refine.md
@@ -145,6 +154,7 @@ theme:
         - navigation.tabs
         - navigation.path
         - navigation.indexes
+        - navigation.expand
         - toc.follow
         - navigation.top
         - search.suggest
@@ -183,15 +193,6 @@ plugins:
     - search:
         lang: en
         separator: '[\s\-\.]+'
-        min_search_length: 2
-        prebuild_index: true
-        indexing: 'full'
-        properties:
-            - title
-            - tags
-            - content
-            - sections
-        search_index_only: false
     - mkdocstrings:
         handlers:
             python:
@@ -216,7 +217,7 @@ plugins:
                         show_warnings: false
                         html_meta: false
     - mkdocs-jupyter:
-        ignore_h1_titles: True
+        ignore_h1_titles: true
     - redirects:
         redirect_maps:
             # Redirect /intro/ to the main page

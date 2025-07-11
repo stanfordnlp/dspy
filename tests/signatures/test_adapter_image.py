@@ -1,7 +1,6 @@
 import os
 import tempfile
 from io import BytesIO
-from typing import List, Optional
 
 import pydantic
 import pytest
@@ -78,7 +77,7 @@ def setup_predictor(signature, expected_output):
     [
         {
             "name": "probabilistic_classification",
-            "signature": "image: dspy.Image, class_labels: List[str] -> probabilities: Dict[str, float]",
+            "signature": "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]",
             "inputs": {"image": "https://example.com/dog.jpg", "class_labels": ["dog", "cat", "bird"]},
             "key_output": "probabilities",
             "expected": {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}},
@@ -92,14 +91,14 @@ def setup_predictor(signature, expected_output):
         },
         {
             "name": "bbox_detection",
-            "signature": "image: dspy.Image -> bboxes: List[Tuple[int, int, int, int]]",
+            "signature": "image: dspy.Image -> bboxes: list[Tuple[int, int, int, int]]",
             "inputs": {"image": "https://example.com/image.jpg"},
             "key_output": "bboxes",
             "expected": {"bboxes": [(10, 20, 30, 40), (50, 60, 70, 80)]},
         },
         {
             "name": "multilingual_caption",
-            "signature": "image: dspy.Image, languages: List[str] -> captions: Dict[str, str]",
+            "signature": "image: dspy.Image, languages: list[str] -> captions: dict[str, str]",
             "inputs": {"image": "https://example.com/dog.jpg", "languages": ["en", "es", "fr"]},
             "key_output": "captions",
             "expected": {
@@ -139,7 +138,7 @@ def test_image_input_formats(
     request, sample_pil_image, sample_dspy_image_download, sample_dspy_image_no_download, image_input, description
 ):
     """Test different input formats for image fields"""
-    signature = "image: dspy.Image, class_labels: List[str] -> probabilities: Dict[str, float]"
+    signature = "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]"
     expected = {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}
     predictor, lm = setup_predictor(signature, expected)
 
@@ -195,7 +194,7 @@ def test_save_load_complex_default_types():
     ]
 
     class ComplexTypeSignature(dspy.Signature):
-        image_list: List[dspy.Image] = dspy.InputField(desc="A list of images")
+        image_list: list[dspy.Image] = dspy.InputField(desc="A list of images")
         caption: str = dspy.OutputField(desc="A caption for the image list")
 
     predictor, lm = setup_predictor(ComplexTypeSignature, {"caption": "A list of images"})
@@ -223,7 +222,7 @@ class BasicImageSignature(dspy.Signature):
 class ImageListSignature(dspy.Signature):
     """Signature with a list of images input"""
 
-    image_list: List[dspy.Image] = dspy.InputField()
+    image_list: list[dspy.Image] = dspy.InputField()
     output: str = dspy.OutputField()
 
 
@@ -290,7 +289,7 @@ def test_save_load_pydantic_model():
 
     class ImageModel(pydantic.BaseModel):
         image: dspy.Image
-        image_list: Optional[List[dspy.Image]] = None
+        image_list: list[dspy.Image] | None = None
         output: str
 
     class PydanticSignature(dspy.Signature):
@@ -330,7 +329,7 @@ def test_optional_image_field():
     """Test that optional image fields are not required"""
 
     class OptionalImageSignature(dspy.Signature):
-        image: Optional[dspy.Image] = dspy.InputField()
+        image: dspy.Image | None = dspy.InputField()
         output: str = dspy.OutputField()
 
     predictor, lm = setup_predictor(OptionalImageSignature, {"output": "Hello"})

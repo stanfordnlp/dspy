@@ -1,20 +1,19 @@
-from typing import Optional, Type, Union
+from typing import Any
 
 from pydantic.fields import FieldInfo
 
 import dspy
-from dspy.primitives.program import Module
-from dspy.signatures.field import OutputField
+from dspy.primitives.module import Module
 from dspy.signatures.signature import Signature, ensure_signature
 
 
 class ChainOfThought(Module):
     def __init__(
         self,
-        signature: Type[Signature],
-        rationale_field: Optional[Union[OutputField, FieldInfo]] = None,
-        rationale_field_type: Type = str,
-        **config,
+        signature: str | type[Signature],
+        rationale_field: FieldInfo | None = None,
+        rationale_field_type: type = str,
+        **config: dict[str, Any],
     ):
         """
         A module that reasons step by step in order to predict the output of a task.

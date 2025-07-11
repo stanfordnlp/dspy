@@ -66,17 +66,6 @@ def batch(group, bsize, provide_offset=False):
     return
 
 
-# class dotdict(dict):
-#     """
-#     dot.notation access to dictionary attributes
-#     Credit: derek73 @ https://stackoverflow.com/questions/2352181
-#     """
-
-#     __getattr__ = dict.__getitem__
-#     __setattr__ = dict.__setitem__
-#     __delattr__ = dict.__delitem__
-
-
 class dotdict(dict):  # noqa: N801
     def __getattr__(self, key):
         if key.startswith("__") and key.endswith("__"):
@@ -110,8 +99,6 @@ class dotdict_lax(dict):  # noqa: N801
 
 
 def flatten(data_list):
-    # return [x for y in L for x in y]
-
     result = []
     for child_list in data_list:
         result += child_list
@@ -133,7 +120,7 @@ def zipstar(data_list, lazy=False):
     if width < 100:
         return [[elem[idx] for elem in data_list] for idx in range(width)]
 
-    zipped_data = zip(*data_list)
+    zipped_data = zip(*data_list, strict=False)
 
     return zipped_data if lazy else list(zipped_data)
 
@@ -141,7 +128,7 @@ def zipstar(data_list, lazy=False):
 def zip_first(list1, list2):
     length = len(list1) if type(list1) in [tuple, list] else None
 
-    zipped_data = list(zip(list1, list2))
+    zipped_data = list(zip(list1, list2, strict=False))
 
     assert length in [None, len(zipped_data)], "zip_first() failure: length differs!"
 

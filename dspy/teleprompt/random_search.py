@@ -1,5 +1,6 @@
 import random
 
+import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -33,7 +34,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         max_rounds=1,
         num_candidate_programs=16,
         num_threads=None,
-        max_errors=10,
+        max_errors=None,
         stop_at_score=None,
         metric_threshold=None,
     ):
@@ -56,6 +57,12 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
+
+        effective_max_errors = (
+            self.max_errors
+            if self.max_errors is not None
+            else dspy.settings.max_errors
+        )
 
         scores = []
         all_subscores = []
@@ -85,7 +92,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     max_labeled_demos=self.max_labeled_demos,
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
-                    max_errors=self.max_errors,
+                    max_errors=effective_max_errors,
                 )
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
 
@@ -102,7 +109,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                     max_labeled_demos=self.max_labeled_demos,
                     teacher_settings=self.teacher_settings,
                     max_rounds=self.max_rounds,
-                    max_errors=self.max_errors,
+                    max_errors=effective_max_errors,
                 )
 
                 program = optimizer.compile(student, teacher=teacher, trainset=trainset_copy)
@@ -111,12 +118,14 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
                 devset=self.valset,
                 metric=self.metric,
                 num_threads=self.num_threads,
-                max_errors=self.max_errors,
+                max_errors=effective_max_errors,
                 display_table=False,
                 display_progress=True,
             )
 
-            score, subscores = evaluate(program, return_all_scores=True)
+            result = evaluate(program)
+
+            score, subscores = result.score, [output[2] for output in result.results]
 
             all_subscores.append(subscores)
 
@@ -143,7 +152,9 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
         # To best program, attach all program candidates in decreasing average score
         best_program.candidate_programs = score_data
-        best_program.candidate_programs = sorted(best_program.candidate_programs, key=lambda x: x["score"], reverse=True)
+        best_program.candidate_programs = sorted(
+            best_program.candidate_programs, key=lambda x: x["score"], reverse=True
+        )
 
         print(f"{len(best_program.candidate_programs)} candidate programs found.")
 

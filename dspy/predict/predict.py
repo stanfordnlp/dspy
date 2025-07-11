@@ -8,15 +8,16 @@ from dspy.clients.base_lm import BaseLM
 from dspy.clients.lm import LM
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parameter import Parameter
+from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.program import Module
-from dspy.signatures.signature import ensure_signature
+from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.callback import BaseCallback
 
 logger = logging.getLogger(__name__)
 
 
 class Predict(Module, Parameter):
-    def __init__(self, signature, callbacks=None, **config):
+    def __init__(self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None, **config):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
@@ -47,14 +48,14 @@ class Predict(Module, Parameter):
         state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
-    def load_state(self, state):
+    def load_state(self, state: dict) -> "Predict":
         """Load the saved state of a `Predict` object.
 
         Args:
-            state (dict): The saved state of a `Predict` object.
+            state: The saved state of a `Predict` object.
 
         Returns:
-            self: Returns self to allow method chaining
+            Self to allow method chaining.
         """
         excluded_keys = ["signature", "extended_signature", "lm"]
         for name, value in state.items():
@@ -99,7 +100,22 @@ class Predict(Module, Parameter):
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or settings.lm
-        assert isinstance(lm, BaseLM), "No LM is loaded."
+
+        if lm is None:
+            raise ValueError(
+                "No LM is loaded. Please configure the LM using `dspy.configure(lm=dspy.LM(...))`. e.g, "
+                "`dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))`"
+            )
+
+        if isinstance(lm, str):
+            # Many users mistakenly use `dspy.configure(lm="openai/gpt-4o-mini")` instead of
+            # `dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))`, so we are providing a specific error message.
+            raise ValueError(
+                f"LM must be an instance of `dspy.BaseLM`, not a string. Instead of using a string like "
+                f"'dspy.configure(lm=\"{lm}\")', please configure the LM like 'dspy.configure(lm=dspy.LM(\"{lm}\"))'"
+            )
+        elif not isinstance(lm, BaseLM):
+            raise ValueError(f"LM must be an instance of `dspy.BaseLM`, not {type(lm)}. Received `lm={lm}`.")
 
         # If temperature is unset or <=0.15, and n > 1, set temperature to 0.7 to keep randomness.
         temperature = config.get("temperature") or lm.kwargs.get("temperature")

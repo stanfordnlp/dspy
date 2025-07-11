@@ -301,7 +301,7 @@ def test_logprobs_included_when_requested():
         )
         result = lm("question")
         assert result[0]["text"] == "test answer"
-        assert result[0]["logprobs"].dict() == {
+        assert result[0]["logprobs"].model_dump() == {
             "content": [
                 {
                     "token": "test",

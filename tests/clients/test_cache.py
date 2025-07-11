@@ -280,3 +280,40 @@ async def test_request_cache_decorator_async(cache):
         # Call with different arguments should compute again
         result3 = await test_function(prompt="Different", model="openai/gpt-4o-mini")
         assert result3 == "Response for Different with openai/gpt-4o-mini"
+
+
+def test_cache_consistency_with_lm_call_modifies_the_request(cache):
+    """Test that the cache is consistent with the LM call that modifies the request."""
+    from dspy.clients.cache import request_cache
+
+    # Mock the dspy.cache attribute
+    with patch("dspy.cache", cache):
+        # Define a test function
+        @request_cache()
+        def test_function(**kwargs):
+            del kwargs["field_to_delete"]
+            return kwargs
+
+        # First call should compute the result
+        test_function(field_to_delete="delete", field_to_keep="keep")
+
+        # The cache key should use the original request, not the modified one
+        assert (
+            cache.get(
+                {
+                    "field_to_keep": "keep",
+                    "_fn_identifier": f"{test_function.__module__}.{test_function.__qualname__}",
+                }
+            )
+            is None
+        )
+        assert (
+            cache.get(
+                {
+                    "field_to_keep": "keep",
+                    "field_to_delete": "delete",
+                    "_fn_identifier": f"{test_function.__module__}.{test_function.__qualname__}",
+                }
+            )
+            is not None
+        )

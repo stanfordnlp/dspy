@@ -1,6 +1,6 @@
 import os
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
+from typing import Any, Literal, TypedDict
 
 import ujson
 
@@ -25,7 +25,7 @@ class TrainDataFormat(str, Enum):
 
 
 class Message(TypedDict):
-    role: Union[Literal["user"], Literal["assistant"], Literal["system"]]
+    role: Literal["user"] | Literal["assistant"] | Literal["system"]
     content: str
 
 
@@ -35,12 +35,12 @@ class MessageAssistant(TypedDict):
 
 
 class GRPOChatData(TypedDict):
-    messages: List[Message]
+    messages: list[Message]
     completion: MessageAssistant
     reward: float
 
 
-GRPOGroup = List[GRPOChatData]
+GRPOGroup = list[GRPOChatData]
 
 
 def infer_data_format(adapter: Adapter) -> str:
@@ -64,7 +64,7 @@ def write_lines(file_path, data):
 
 
 def save_data(
-    data: List[Dict[str, Any]],
+    data: list[dict[str, Any]],
 ) -> str:
     from datasets.fingerprint import Hasher
 
@@ -82,7 +82,7 @@ def save_data(
 
 
 def validate_data_format(
-    data: List[Dict[str, Any]],
+    data: list[dict[str, Any]],
     data_format: TrainDataFormat,
 ):
     find_err_funcs = {
@@ -116,7 +116,7 @@ def validate_data_format(
         raise ValueError(err)
 
 
-def find_data_errors_completion(data_dict: Dict[str, str]) -> Optional[str]:
+def find_data_errors_completion(data_dict: dict[str, str]) -> str | None:
     keys = ["prompt", "completion"]
 
     assert isinstance(data_dict, dict)
@@ -132,7 +132,7 @@ def find_data_errors_completion(data_dict: Dict[str, str]) -> Optional[str]:
 
 # Following functions are modified from the OpenAI cookbook:
 # https://cookbook.openai.com/examples/chat_finetuning_data_prep
-def find_data_error_chat(messages: Dict[str, Any]) -> Optional[str]:
+def find_data_error_chat(messages: dict[str, Any]) -> str | None:
     assert isinstance(messages, dict)
 
     expected_keys = ["messages"]
@@ -149,7 +149,7 @@ def find_data_error_chat(messages: Dict[str, Any]) -> Optional[str]:
             return f"Error in message at index {ind}: {err}"
 
 
-def find_data_error_chat_message(message: Dict[str, Any]) -> Optional[str]:
+def find_data_error_chat_message(message: dict[str, Any]) -> str | None:
     assert isinstance(message, dict)
 
     message_keys = sorted(["role", "content"])

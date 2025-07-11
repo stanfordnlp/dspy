@@ -6,7 +6,7 @@ import string
 import subprocess
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import requests
 
@@ -26,7 +26,7 @@ class LocalProvider(Provider):
         self.TrainingJob = TrainingJob
 
     @staticmethod
-    def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
+    def launch(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
         try:
             import sglang  # noqa: F401
         except ImportError:
@@ -118,7 +118,7 @@ class LocalProvider(Provider):
         lm.thread = thread
 
     @staticmethod
-    def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
         from sglang.utils import terminate_process
 
         if not hasattr(lm, "process"):
@@ -136,9 +136,9 @@ class LocalProvider(Provider):
     def finetune(
         job: TrainingJob,
         model: str,
-        train_data: List[Dict[str, Any]],
-        train_data_format: Optional[TrainDataFormat],
-        train_kwargs: Optional[Dict[str, Any]] = None,
+        train_data: list[dict[str, Any]],
+        train_data_format: TrainDataFormat | None,
+        train_kwargs: dict[str, Any] | None = None,
     ) -> str:
         if model.startswith("openai/"):
             model = model[7:]
@@ -322,7 +322,7 @@ def get_free_port() -> int:
         return s.getsockname()[1]
 
 
-def wait_for_server(base_url: str, timeout: Optional[int] = None) -> None:
+def wait_for_server(base_url: str, timeout: int | None = None) -> None:
     """
     Wait for the server to be ready by polling the /v1/models endpoint.
 

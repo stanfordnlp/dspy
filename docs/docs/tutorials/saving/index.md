@@ -131,10 +131,10 @@ registered for serialization.
 
 ## Backward Compatibility
 
-As of `dspy<2.7`, we don't guarantee the backward compatibility of the saved program. For example, if you save the program with `dspy==2.5.35`,
+As of `dspy<3.0.0`, we don't guarantee the backward compatibility of the saved program. For example, if you save the program with `dspy==2.5.35`,
 at loading time please make sure to use the same version of DSPy to load the program, otherwise the program may not work as expected. Chances
 are that loading a saved file in a different version of DSPy will not raise an error, but the performance could be different from when
 the program was saved.
 
-Starting from `dspy>=2.7`, we will guarantee the backward compatibility of the saved program in major releases, i.e., programs saved in `dspy==2.7.0`
-should be loadable in `dspy==2.7.10`.
+Starting from `dspy>=3.0.0`, we will guarantee the backward compatibility of the saved program in major releases, i.e., programs saved in `dspy==3.0.0`
+should be loadable in `dspy==3.7.10`.

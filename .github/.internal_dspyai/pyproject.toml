@@ -1,0 +1,22 @@
+[project]  
+#replace_package_name_marker
+name="dspy-ai"  
+#replace_package_version_marker
+version="3.0.0b2"  
+description = "DSPy"  
+readme = "README.md"  
+authors = [  
+    { name = "Omar Khattab", email = "okhattab@stanford.edu" }  
+]  
+license = { text = "MIT License" }  
+requires-python = ">=3.9" 
+#replace_dspy_version_marker 
+dependencies = ["dspy>=3.0.0b2"]  
+urls = { "Homepage" = "https://github.com/stanfordnlp/dsp" }  
+  
+[build-system]  
+requires = ["setuptools>=40.8.0", "wheel"]  
+build-backend = "setuptools.build_meta"  
+  
+[tool.setuptools.packages.find]  
+include = ["dsp.*", "dspy.*", "dsp", "dspy"] 

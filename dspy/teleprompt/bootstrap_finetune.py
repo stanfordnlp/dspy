@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -12,7 +12,7 @@ from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
-from dspy.primitives.program import Program
+from dspy.primitives.module import Module
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.exceptions import AdapterParseError
 
@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 class FinetuneTeleprompter(Teleprompter):
     def __init__(
         self,
-        train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
+        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
     ):
-        self.train_kwargs: Dict[LM, Any] = self.convert_to_lm_dict(train_kwargs or {})
+        self.train_kwargs: dict[LM, Any] = self.convert_to_lm_dict(train_kwargs or {})
 
     @staticmethod
-    def convert_to_lm_dict(arg) -> Dict[LM, Any]:
+    def convert_to_lm_dict(arg) -> dict[LM, Any]:
         non_empty_dict = arg and isinstance(arg, dict)
         if non_empty_dict and all(isinstance(k, LM) for k in arg.keys()):
             return arg
@@ -38,12 +38,12 @@ class FinetuneTeleprompter(Teleprompter):
 class BootstrapFinetune(FinetuneTeleprompter):
     def __init__(
         self,
-        metric: Optional[Callable] = None,
+        metric: Callable | None = None,
         multitask: bool = True,
-        train_kwargs: Optional[Union[Dict[str, Any], Dict[LM, Dict[str, Any]]]] = None,
-        adapter: Optional[Union[Adapter, Dict[LM, Adapter]]] = None,
+        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
+        adapter: Adapter | dict[LM, Adapter] | None = None,
         exclude_demos: bool = False,
-        num_threads: Optional[int] = None,
+        num_threads: int | None = None,
     ):
         # TODO(feature): Inputs train_kwargs (a dict with string keys) and
         # adapter (Adapter) can depend on the LM they are used with. We are
@@ -55,13 +55,13 @@ class BootstrapFinetune(FinetuneTeleprompter):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
         self.multitask = multitask
-        self.adapter: Dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
+        self.adapter: dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
 
     def compile(
-        self, student: Program, trainset: List[Example], teacher: Optional[Union[Program, List[Program]]] = None
-    ) -> Program:
+        self, student: Module, trainset: list[Example], teacher: Module | list[Module] | None = None
+    ) -> Module:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
         # environments.
@@ -129,7 +129,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         return student
 
     @staticmethod
-    def finetune_lms(finetune_dict) -> Dict[Any, LM]:
+    def finetune_lms(finetune_dict) -> dict[Any, LM]:
         num_jobs = len(finetune_dict)
         logger.info(f"Starting {num_jobs} fine-tuning job(s)...")
         # TODO(nit) Pass an identifier to the job so that we can tell the logs
@@ -160,7 +160,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         return key_to_lm
 
-    def _prepare_finetune_data(self, trace_data: List[Dict[str, Any]], lm: LM, pred_ind: Optional[int] = None):
+    def _prepare_finetune_data(self, trace_data: list[dict[str, Any]], lm: LM, pred_ind: int | None = None):
         # TODO(nit) Log dataset details/size; make logs nicer
         if self.metric:
             logger.info(f"Collected data for {len(trace_data)} examples")
@@ -190,11 +190,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
 # Similar methods are implemented separately and used by other DSPy
 # teleprompters. These can be moved to shared locations.
 def build_call_data_from_trace(
-    trace: List[Dict],
+    trace: list[dict],
     pred_ind: int,
     adapter: Adapter,
     exclude_demos: bool = False,
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[dict[str, Any]]]:
     # Find data that's relevant to the predictor
     pred, inputs, outputs = trace[pred_ind]  # assuming that the order is kept
 
@@ -211,27 +211,26 @@ def build_call_data_from_trace(
 @dataclass
 class FailedPrediction:
     completion_text: str
-    format_reward: Union[float, None] = None
+    format_reward: float | None = None
 
 
 def bootstrap_trace_data(
-    program: Program,
-    dataset: List[Example],
-    metric: Optional[Callable] = None,
-    num_threads: Optional[int] = None,
+    program: Module,
+    dataset: list[Example],
+    metric: Callable | None = None,
+    num_threads: int | None = None,
     raise_on_error=True,
     capture_failed_parses=False,
     failure_score: float = 0,
     format_failure_score: float = -1,
     log_format_failures: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
     evaluator = Evaluate(
         devset=dataset,
         num_threads=num_threads,
         display_progress=True,
-        return_outputs=True,
         provide_traceback=False,  # TODO(check with team)
         max_errors=len(dataset) * 10,  # TODO(check with team)
         failure_score=failure_score,
@@ -290,10 +289,10 @@ def bootstrap_trace_data(
 
                 return failed_pred, trace
 
-    _, outputs = evaluator(wrapped_program, metric=wrapped_metric)
+    results = evaluator(wrapped_program, metric=wrapped_metric).results
 
     data = []
-    for example_ind, (example, prediction, score) in enumerate(outputs):
+    for example_ind, (example, prediction, score) in enumerate(results):
         try:
             prediction, trace = prediction
         except ValueError as ve:
@@ -321,7 +320,7 @@ def bootstrap_trace_data(
 #     example: Example,
 #     program: Program,
 #     metric: Optional[Callable] = None
-# ) -> Dict[str, Any]:
+# ) -> dict[str, Any]:
 #     # Return a dict with the following keys:
 #     #     example, prediction, trace, and score (if metric != None)
 #     with dspy.context(trace=[]):
@@ -343,12 +342,12 @@ def bootstrap_trace_data(
 # Note: Shared below are useful functions for preparing student/teacher programs
 # Similar methods are implemented separately and used by other DSPy
 # teleprompters. These can be moved to shared locations.
-def all_predictors_have_lms(program: Program) -> bool:
+def all_predictors_have_lms(program: Module) -> bool:
     """Return True if all predictors in the program have an LM set."""
     return all(pred.lm for pred in program.predictors())
 
 
-def copy_program_with_lms(program: Program) -> Program:
+def copy_program_with_lms(program: Module) -> Module:
     pred_lms = [pred.lm for pred in program.predictors()]
     program = program.deepcopy()
     for ind, pred in enumerate(program.predictors()):
@@ -356,7 +355,7 @@ def copy_program_with_lms(program: Program) -> Program:
     return program
 
 
-def prepare_student(student: Program) -> Program:
+def prepare_student(student: Module) -> Module:
     if getattr(student, "_compiled", False):
         raise ValueError("The student program should not be compiled.")
 
@@ -368,7 +367,7 @@ def prepare_student(student: Program) -> Program:
     return student
 
 
-def prepare_teacher(student: Program, teacher: Optional[Program] = None) -> Program:
+def prepare_teacher(student: Module, teacher: Module | None = None) -> Module:
     if teacher is None:
         return student
 
@@ -382,15 +381,15 @@ def prepare_teacher(student: Program, teacher: Optional[Program] = None) -> Prog
 
 
 def assert_structural_equivalency(program1: object, program2: object):
-    assert isinstance(program1, Program)
-    assert isinstance(program2, Program)
+    assert isinstance(program1, Module)
+    assert isinstance(program2, Module)
 
     num1 = len(program1.predictors())
     num2 = len(program2.predictors())
     err = f"Structurally equivalent programs must have the the number of predictors. The number of predictors for the two modules do not match: {num1} != {num2}"
     assert num1 == num2, err
 
-    pzip = zip(program1.named_predictors(), program2.named_predictors())
+    pzip = zip(program1.named_predictors(), program2.named_predictors(), strict=False)
     for ind, ((name1, pred1), (name2, pred2)) in enumerate(pzip):
         err = f"Program predictor names must match at  corresponding indices for structural equivalency. The predictor names for the programs do not match at index {ind}: '{name1}' != '{name2}'"
         assert name1 == name2, err
@@ -398,7 +397,7 @@ def assert_structural_equivalency(program1: object, program2: object):
         assert isinstance(pred2, Predict)
 
 
-def assert_no_shared_predictor(program1: Program, program2: Program):
+def assert_no_shared_predictor(program1: Module, program2: Module):
     id_to_name1 = {id(p): n for n, p in program1.named_predictors()}
     id_to_name2 = {id(p): n for n, p in program2.named_predictors()}
     shared_ids = set(id_to_name1.keys()) & set(id_to_name2.keys())
@@ -408,18 +407,18 @@ def assert_no_shared_predictor(program1: Program, program2: Program):
     assert not shared_ids, err
 
 
-def get_unique_lms(program: Program) -> List[LM]:
+def get_unique_lms(program: Module) -> list[LM]:
     lms = [pred.lm for pred in program.predictors()]
     return list(set(lms))
 
 
-def launch_lms(program: Program):
+def launch_lms(program: Module):
     lms = get_unique_lms(program)
     for lm in lms:
         lm.launch()
 
 
-def kill_lms(program: Program):
+def kill_lms(program: Module):
     lms = get_unique_lms(program)
     for lm in lms:
         lm.kill()

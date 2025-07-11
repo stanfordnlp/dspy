@@ -58,6 +58,7 @@ assertion.log
 /.devcontainer/.personalization.sh
 
 .mypy_cache
+CLAUDE.local.md
 dummy.csv
 docs/docs/**/*.json*
 *.index
@@ -65,4 +66,4 @@ docs/docs/**/*.json*
 *.tar.gz
 
 test_before_pypi/
-dspy/.internal_dspyai/dist/
+.github/.internal_dspyai/dist/

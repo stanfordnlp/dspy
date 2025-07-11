@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from types import UnionType
+from typing import Any, Optional, Union
 
 import pydantic
 import pytest
@@ -14,13 +15,13 @@ def test_field_types_and_custom_attributes():
 
         input1: str = InputField()
         input2: int = InputField()
-        output1: List[str] = OutputField()
+        output1: list[str] = OutputField()
         output2 = OutputField()
 
     assert TestSignature.instructions == "Instructions"
     assert TestSignature.input_fields["input1"].annotation == str
     assert TestSignature.input_fields["input2"].annotation == int
-    assert TestSignature.output_fields["output1"].annotation == List[str]
+    assert TestSignature.output_fields["output1"].annotation == list[str]
     assert TestSignature.output_fields["output2"].annotation == str
 
 
@@ -254,13 +255,13 @@ def test_typed_signatures_basic_types():
 
 def test_typed_signatures_generics():
     sig = Signature(
-        "input_list: List[int], input_dict: Dict[str, float] -> output_tuple: Tuple[str, int]")
+        "input_list: list[int], input_dict: dict[str, float] -> output_tuple: tuple[str, int]")
     assert "input_list" in sig.input_fields
-    assert sig.input_fields["input_list"].annotation == List[int]
+    assert sig.input_fields["input_list"].annotation == list[int]
     assert "input_dict" in sig.input_fields
-    assert sig.input_fields["input_dict"].annotation == Dict[str, float]
+    assert sig.input_fields["input_dict"].annotation == dict[str, float]
     assert "output_tuple" in sig.output_fields
-    assert sig.output_fields["output_tuple"].annotation == Tuple[str, int]
+    assert sig.output_fields["output_tuple"].annotation == tuple[str, int]
 
 
 def test_typed_signatures_unions_and_optionals():
@@ -304,7 +305,7 @@ def test_typed_signatures_any():
 
 def test_typed_signatures_nested():
     sig = Signature(
-        "input_nested: List[Union[str, int]] -> output_nested: Tuple[int, Optional[float], List[str]]")
+        "input_nested: list[Union[str, int]] -> output_nested: Tuple[int, Optional[float], list[str]]")
     input_nested_ann = sig.input_fields["input_nested"].annotation
     assert getattr(input_nested_ann, "__origin__", None) is list
     assert len(input_nested_ann.__args__) == 1
@@ -319,7 +320,7 @@ def test_typed_signatures_nested():
     second_arg = output_nested_ann.__args__[1]
     assert getattr(second_arg, "__origin__", None) is Union
     assert float in second_arg.__args__ and type(None) in second_arg.__args__
-    # The third arg is List[str]
+    # The third arg is list[str]
     third_arg = output_nested_ann.__args__[2]
     assert getattr(third_arg, "__origin__", None) is list
     assert third_arg.__args__[0] == str
@@ -327,28 +328,28 @@ def test_typed_signatures_nested():
 
 def test_typed_signatures_from_dict():
     fields = {
-        "input_str_list": (List[str], InputField()),
-        "input_dict_int": (Dict[str, int], InputField()),
-        "output_tup": (Tuple[int, float], OutputField()),
+        "input_str_list": (list[str], InputField()),
+        "input_dict_int": (dict[str, int], InputField()),
+        "output_tup": (tuple[int, float], OutputField()),
     }
     sig = Signature(fields)
     assert "input_str_list" in sig.input_fields
-    assert sig.input_fields["input_str_list"].annotation == List[str]
+    assert sig.input_fields["input_str_list"].annotation == list[str]
     assert "input_dict_int" in sig.input_fields
-    assert sig.input_fields["input_dict_int"].annotation == Dict[str, int]
+    assert sig.input_fields["input_dict_int"].annotation == dict[str, int]
     assert "output_tup" in sig.output_fields
-    assert sig.output_fields["output_tup"].annotation == Tuple[int, float]
+    assert sig.output_fields["output_tup"].annotation == tuple[int, float]
 
 
 def test_typed_signatures_complex_combinations():
     sig = Signature(
-        "input_complex: Dict[str, List[Optional[Tuple[int, str]]]] -> output_complex: Union[List[str], Dict[str, Any]]"
+        "input_complex: dict[str, list[Optional[Tuple[int, str]]]] -> output_complex: Union[list[str], dict[str, Any]]"
     )
     input_complex_ann = sig.input_fields["input_complex"].annotation
     assert getattr(input_complex_ann, "__origin__", None) is dict
     key_arg, value_arg = input_complex_ann.__args__
     assert key_arg == str
-    # value_arg: List[Optional[Tuple[int, str]]]
+    # value_arg: list[Optional[Tuple[int, str]]]
     assert getattr(value_arg, "__origin__", None) is list
     inner_union = value_arg.__args__[0]
     # inner_union should be Optional[Tuple[int, str]]
@@ -362,9 +363,9 @@ def test_typed_signatures_complex_combinations():
     assert getattr(output_complex_ann, "__origin__", None) is Union
     assert len(output_complex_ann.__args__) == 2
     possible_args = set(output_complex_ann.__args__)
-    # Expecting List[str] and Dict[str, Any]
+    # Expecting list[str] and dict[str, Any]
     # Because sets don't preserve order, just check membership.
-    # Find the List[str] arg
+    # Find the list[str] arg
     list_arg = next(a for a in possible_args if getattr(
         a, "__origin__", None) is list)
     dict_arg = next(a for a in possible_args if getattr(
@@ -376,13 +377,13 @@ def test_typed_signatures_complex_combinations():
 
 def test_make_signature_from_string():
     sig = Signature(
-        "input1: int, input2: Dict[str, int] -> output1: List[str], output2: Union[int, str]")
+        "input1: int, input2: dict[str, int] -> output1: list[str], output2: Union[int, str]")
     assert "input1" in sig.input_fields
     assert sig.input_fields["input1"].annotation == int
     assert "input2" in sig.input_fields
-    assert sig.input_fields["input2"].annotation == Dict[str, int]
+    assert sig.input_fields["input2"].annotation == dict[str, int]
     assert "output1" in sig.output_fields
-    assert sig.output_fields["output1"].annotation == List[str]
+    assert sig.output_fields["output1"].annotation == list[str]
     assert "output2" in sig.output_fields
     assert sig.output_fields["output2"].annotation == Union[int, str]
 
@@ -436,3 +437,139 @@ def test_custom_type_from_different_module():
     path_obj = Path("/test/path")
     pred = dspy.Predict(test_signature)(input=path_obj)
     assert pred.output == "/test/path"
+
+def test_pep604_union_type_inline():
+    sig = Signature(
+        "input1: str | None, input2: None | int -> output_union: int | str"
+    )
+
+    # input1 and input2 test that both 'T | None' and 'None | T' are interpreted as Optional types,
+    # regardless of the order of None in the union expression.
+
+    assert "input1" in sig.input_fields
+    input1_annotation = sig.input_fields["input1"].annotation
+    assert input1_annotation == Optional[str] or (
+        getattr(input1_annotation, "__origin__", None) is Union
+        and str in input1_annotation.__args__
+        and type(None) in input1_annotation.__args__
+    )
+
+    assert "input2" in sig.input_fields
+    input2_annotation = sig.input_fields["input2"].annotation
+    assert input2_annotation == Optional[int] or (
+        getattr(input2_annotation, "__origin__", None) is Union
+        and int in input2_annotation.__args__
+        and type(None) in input2_annotation.__args__
+    )
+
+    assert "output_union" in sig.output_fields
+    output_union_annotation = sig.output_fields["output_union"].annotation
+    assert (
+        getattr(output_union_annotation, "__origin__", None) is Union
+        and int in output_union_annotation.__args__
+        and str in output_union_annotation.__args__
+    )
+
+
+def test_pep604_union_type_inline_equivalence():
+    sig1 = Signature("input: str | None -> output: int | str")
+    sig2 = Signature("input: Optional[str] -> output: Union[int, str]")
+
+    # PEP 604 union types in inline signatures should be equivalent to Optional and Union types
+    assert sig1.equals(sig2)
+
+    # Check that the annotations are equivalent
+    assert sig1.input_fields["input"].annotation == sig2.input_fields["input"].annotation
+    assert sig1.output_fields["output"].annotation == sig2.output_fields["output"].annotation
+
+
+def test_pep604_union_type_inline_nested():
+    sig = Signature(
+        "input: str | (int | float) | None -> output: str"
+    )
+    assert "input" in sig.input_fields
+    input_annotation = sig.input_fields["input"].annotation
+
+    # Check for the correct union: Union[str, int, float, NoneType]
+    assert getattr(input_annotation, "__origin__", None) is Union
+    assert set(input_annotation.__args__) == {str, int, float, type(None)}
+
+
+def test_pep604_union_type_class_nested():
+    class Sig1(Signature):
+        input: str | (int | float) | None = InputField()
+        output: str = OutputField()
+
+    assert "input" in Sig1.input_fields
+    input_annotation = Sig1.input_fields["input"].annotation
+
+    # Check for the correct union: UnionType[str, int, float, NoneType]
+    assert isinstance(input_annotation, UnionType)
+    assert set(input_annotation.__args__) == {str, int, float, type(None)}
+
+
+def test_pep604_union_type_class_equivalence():
+    class Sig1(Signature):
+        input: str | None = InputField()
+        output: int | str = OutputField()
+
+    class Sig2(Signature):
+        input: str | None = InputField()
+        output: Union[int, str] = OutputField()  # noqa: UP007
+
+    # PEP 604 union types in class signatures should be equivalent to Optional and Union types
+    assert Sig1.equals(Sig2)
+
+    # Check that the annotations are equivalent
+    assert Sig1.input_fields["input"].annotation == Sig2.input_fields["input"].annotation
+    assert Sig1.output_fields["output"].annotation == Sig2.output_fields["output"].annotation
+
+    # Check that the pep604 annotations are of type UnionType
+    assert isinstance(Sig1.input_fields["input"].annotation, UnionType)
+    assert isinstance(Sig1.output_fields["output"].annotation, UnionType)
+
+
+def test_pep604_union_type_insert():
+    class PEP604Signature(Signature):
+        input: str | None = InputField()
+        output: int | str = OutputField()
+
+    # This test ensures that inserting a field into a signature with a PEP 604 UnionType works
+
+    # Insert a new input field at the start
+    NewSig = PEP604Signature.prepend("new_input", InputField(), float | int)
+    assert "new_input" in NewSig.input_fields
+
+    new_input_annotation = NewSig.input_fields["new_input"].annotation
+    assert isinstance(new_input_annotation, UnionType)
+    assert set(new_input_annotation.__args__) == {float, int}
+
+    # The original union type field should still be present and correct
+    input_annotation = NewSig.input_fields["input"].annotation
+    output_annotation = NewSig.output_fields["output"].annotation
+
+    assert isinstance(input_annotation, UnionType)
+    assert str in input_annotation.__args__ and type(None) in input_annotation.__args__
+
+    assert isinstance(output_annotation, UnionType)
+    assert set(output_annotation.__args__) == {int, str}
+
+
+def test_pep604_union_type_with_custom_types():
+    class CustomType(pydantic.BaseModel):
+        value: str
+
+    sig = Signature(
+        "input: CustomType | None -> output: int | str",
+        custom_types={"CustomType": CustomType}
+    )
+
+    assert sig.input_fields["input"].annotation == Union[CustomType, None]
+    assert sig.output_fields["output"].annotation == Union[int, str]
+
+    lm = DummyLM([{"output": "processed"}])
+    dspy.settings.configure(lm=lm)
+
+    custom_obj = CustomType(value="test")
+    pred = dspy.Predict(sig)(input=custom_obj)
+    assert pred.output == "processed"

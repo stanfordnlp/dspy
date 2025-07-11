@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
-from typing import Callable, List, Optional, Tuple
+from typing import Callable
 
 from pydantic import BaseModel
 from tqdm import tqdm
@@ -16,7 +16,7 @@ DEFAULT_MAX_EXAMPLES = 10
 class EvalResult(BaseModel):
     example: dict
     score: float
-    actions: Optional[List[ActionOutput]] = None
+    actions: list[ActionOutput] | None = None
 
 
 class Comparator(dspy.Signature):
@@ -31,15 +31,15 @@ Task:
         prefix="Instruction: ",
         desc="Instruction for the actor to execute the task",
     )
-    actions: List[str] = dspy.InputField(
+    actions: list[str] = dspy.InputField(
         prefix="Actions: ",
         desc="Actions actor can take to complete the task",
     )
-    pos_input_with_metrics: List[EvalResult] = dspy.InputField(
+    pos_input_with_metrics: list[EvalResult] = dspy.InputField(
         prefix="Positive Inputs: ",
         desc="Positive inputs along with their score on a evaluation metric and actions taken",
     )
-    neg_input_with_metrics: List[EvalResult] = dspy.InputField(
+    neg_input_with_metrics: list[EvalResult] = dspy.InputField(
         prefix="Negative Inputs: ",
         desc="Negative inputs along with their score on a evaluation metric and actions taken",
     )
@@ -79,8 +79,8 @@ class AvatarOptimizer(Teleprompter):
         max_iters: int = 10,
         lower_bound: int = 0,
         upper_bound: int = 1,
-        max_positive_inputs: Optional[int] = None,
-        max_negative_inputs: Optional[int] = None,
+        max_positive_inputs: int | None = None,
+        max_negative_inputs: int | None = None,
         optimize_for: str = "max",
     ):
         assert metric is not None, "`metric` argument cannot be None. Please provide a metric function."
@@ -148,8 +148,8 @@ class AvatarOptimizer(Teleprompter):
     def _get_pos_neg_results(
         self,
         actor: dspy.Module,
-        trainset: List[dspy.Example]
-    ) -> Tuple[float, List[EvalResult], List[EvalResult]]:
+        trainset: list[dspy.Example]
+    ) -> tuple[float, list[EvalResult], list[EvalResult]]:
         pos_inputs = []
         neg_inputs = []
 
@@ -187,7 +187,7 @@ class AvatarOptimizer(Teleprompter):
         best_score = -999 if self.optimize_for == "max" else 999
 
         for i in range(self.max_iters):
-            print(20*'=')
+            print(20*"=")
             print(f"Iteration {i+1}/{self.max_iters}")
 
             score, pos_inputs, neg_inputs = self._get_pos_neg_results(best_actor, trainset)
