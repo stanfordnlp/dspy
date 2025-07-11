@@ -171,7 +171,14 @@ def parse_value(value, annotation):
 
     try:
         return TypeAdapter(annotation).validate_python(candidate)
-    except pydantic.ValidationError:
+    except pydantic.ValidationError as e:
+        if issubclass(annotation, Type):
+            try:
+                # For dspy.Type, try parsing from the original value in case it has a custom parser
+                return TypeAdapter(annotation).validate_python(value)
+            except Exception:
+                raise e
+
         if origin is Union and type(None) in get_args(annotation) and str in get_args(annotation):
             return str(candidate)
         raise
