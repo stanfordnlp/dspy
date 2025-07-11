@@ -57,7 +57,7 @@ def generate_test_program(dst_path: str, additional_instructions: Optional[str] 
         A dspy.Module object representing the generated program.
     """
 
-    def generate_models(schema: Dict[str, Any], class_name: str) -> str:
+    def generate_models(schema: dict[str, Any], class_name: str) -> str:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_schema_path = os.path.join(tmp_dir, "schema.json")
             tmp_model_path = os.path.join(tmp_dir, "model.py")
@@ -85,9 +85,9 @@ def generate_test_program(dst_path: str, additional_instructions: Optional[str] 
                 return f.read()
 
     def rename_conflicting_fields(
-        input_schema: Dict[str, Any],
-        output_schema: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        input_schema: dict[str, Any],
+        output_schema: dict[str, Any],
+    ) -> dict[str, Any]:
         input_fields = set(input_schema.get("properties", {}))
         output_schema["properties"] = {
             (f"{field}_output" if field in input_fields else field): properties
@@ -259,10 +259,10 @@ class GeneratedTestCase:
     # A JSON  representation of the input to the program that the test case is testing.
     program_input: str
     # The assertions that the output of the program must satisfy for the test case to pass.
-    output_assertions: List[str]
+    output_assertions: list[str]
 
 
-def load_generated_cases(dir_path) -> List[GeneratedTestCase]:
+def load_generated_cases(dir_path) -> list[GeneratedTestCase]:
     """
     Recursively loads generated test cases from the specified directory and its subdirectories.
 
@@ -437,7 +437,7 @@ def _get_test_inputs_generation_program() -> dspy.Module:
             description="The output signature of the program in JSON Schema format, including output field names, types, and descriptions. The outermost fields in the JSON schema definition represent the top-level output fields of the program."
         )
         additional_instructions: str = dspy.InputField(description="Additional instructions for generating test inputs")
-        test_inputs: List[_TestInput] = dspy.OutputField(
+        test_inputs: list[_TestInput] = dspy.OutputField(
             description="Generated test inputs for the program, used to verify the correctness of the program outputs for a variety of inputs"
         )
 
@@ -488,14 +488,14 @@ def _get_assertions_generation_program() -> dspy.Module:
         program_output_signature: str = dspy.InputField(
             description="The output signature of the program in JSON Schema format, including output field names, types, and descriptions. The outermost fields in the JSON schema definition represent the top-level output fields of the program."
         )
-        output_assertions: List[str] = dspy.OutputField(
+        output_assertions: list[str] = dspy.OutputField(
             description="Assertions used to verify the correctness of the program output after running the program on the specified input"
         )
 
     return dspy.ChainOfThought(_TestInputsGeneration)
 
 
-def _clean_json_schema_property(prop: Dict[str, Any]) -> Dict[str, Any]:
+def _clean_json_schema_property(prop: dict[str, Any]) -> dict[str, Any]:
     """
     Remove unnecessary keys from a JSON schema property dictionary, as well as
     all of its child properties.
@@ -516,7 +516,7 @@ def _clean_json_schema_property(prop: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned_prop
 
 
-def _get_json_schema(signature: dspy.Signature) -> Dict[str, Any]:
+def _get_json_schema(signature: dspy.Signature) -> dict[str, Any]:
     """
     Obtain the JSON schema representation of a DSPy signature.
 
@@ -526,7 +526,7 @@ def _get_json_schema(signature: dspy.Signature) -> Dict[str, Any]:
         A JSON schema representation of the signature.
     """
 
-    def expand_refs(schema: Dict[str, Any], definitions: Dict[str, Any]) -> Dict[str, Any]:
+    def expand_refs(schema: dict[str, Any], definitions: dict[str, Any]) -> dict[str, Any]:
         """
         Expand $ref fields in a JSON schema, inlining the referenced schema definitions
         directly into the $ref field locations.
@@ -551,7 +551,7 @@ def _get_json_schema(signature: dspy.Signature) -> Dict[str, Any]:
     return expand_refs(signature_schema_with_refs, definitions)
 
 
-def _split_schema(schema: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def _split_schema(schema: dict[str, Any]) -> Tuple[dict[str, Any], dict[str, Any]]:
     """
     Split a JSON schema into input and output components based on DSPy field types.
 
@@ -586,7 +586,7 @@ def _split_schema(schema: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any
     return inputs, outputs
 
 
-def _clean_schema(prop: Dict[str, Any]) -> Dict[str, Any]:
+def _clean_schema(prop: dict[str, Any]) -> dict[str, Any]:
     """
     Recursively clean a JSON schema property by removing unnecessary keys.
 
@@ -606,7 +606,7 @@ def _clean_schema(prop: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned_prop
 
 
-def _json_input_to_program_input(input_schema: pydantic.BaseModel, json_input: str) -> Dict[str, Any]:
+def _json_input_to_program_input(input_schema: pydantic.BaseModel, json_input: str) -> dict[str, Any]:
     """
     Convert a JSON input string to a DSPy program input dictionary, validating it against the
     provided program signature.
@@ -693,7 +693,7 @@ def _remove_comments_from_file(file_path: str) -> None:
         file.writelines(cleaned_lines)
 
 
-def _write_pretty_json(data: Dict[str, Any], path: Optional[str] = None) -> Optional[str]:
+def _write_pretty_json(data: dict[str, Any], path: Optional[str] = None) -> Optional[str]:
     """
     Format JSON data with indentation, and write it to a file if specified.
 

@@ -1,7 +1,6 @@
 import logging
 import random
 import threading
-from typing import Dict
 
 import tqdm
 
@@ -39,7 +38,7 @@ class BootstrapFewShot(Teleprompter):
         self,
         metric=None,
         metric_threshold=None,
-        teacher_settings: Dict | None = None,
+        teacher_settings: dict | None = None,
         max_bootstrapped_demos=4,
         max_labeled_demos=16,
         max_rounds=1,
@@ -245,11 +244,12 @@ class BootstrapFewShot(Teleprompter):
 
             # Update the traces
             for name, demos in name2traces.items():
-                from datasets.fingerprint import Hasher
 
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:
+                    from datasets.fingerprint import Hasher
+
                     rng = random.Random(Hasher.hash(tuple(demos)))
                     demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]
                 self.name2traces[name].extend(demos)

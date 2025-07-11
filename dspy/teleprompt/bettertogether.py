@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Callable, List
+from typing import Callable
 
 import dspy
 from dspy.primitives.example import Example
@@ -53,7 +53,7 @@ class BetterTogether(Teleprompter):
     def compile(
         self,
         student: Module,
-        trainset: List[Example],
+        trainset: list[Example],
         strategy: str = "p -> w -> p",
         valset_ratio = 0.1,
     ) -> Module:

@@ -4,7 +4,7 @@ import sys
 import textwrap
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 
@@ -97,9 +97,9 @@ class MIPROv2(Teleprompter):
         self,
         student: Any,
         *,
-        trainset: List,
+        trainset: list,
         teacher: Any = None,
-        valset: List | None = None,
+        valset: list | None = None,
         num_trials: int | None = None,
         max_bootstrapped_demos: int | None = None,
         max_labeled_demos: int | None = None,
@@ -242,8 +242,8 @@ class MIPROv2(Teleprompter):
         num_trials: int,
         minibatch: bool,
         zeroshot_opt: bool,
-        valset: List,
-    ) -> Tuple[int, List, bool]:
+        valset: list,
+    ) -> tuple[int, list, bool]:
         if self.auto is None:
             return num_trials, valset, minibatch
 
@@ -262,7 +262,7 @@ class MIPROv2(Teleprompter):
 
         return num_trials, valset, minibatch
 
-    def _set_and_validate_datasets(self, trainset: List, valset: List | None):
+    def _set_and_validate_datasets(self, trainset: list, valset: list | None):
         if not trainset:
             raise ValueError("Trainset cannot be empty.")
 
@@ -279,7 +279,7 @@ class MIPROv2(Teleprompter):
 
         return trainset, valset
 
-    def _print_auto_run_settings(self, num_trials: int, minibatch: bool, valset: List):
+    def _print_auto_run_settings(self, num_trials: int, minibatch: bool, valset: list):
         logger.info(
             f"\nRUNNING WITH THE FOLLOWING {self.auto.upper()} AUTO RUN SETTINGS:"
             f"\nnum_trials: {num_trials}"
@@ -296,9 +296,9 @@ class MIPROv2(Teleprompter):
         minibatch: bool,
         minibatch_size: int,
         minibatch_full_eval_steps: int,
-        valset: List,
+        valset: list,
         program_aware_proposer: bool,
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         num_predictors = len(program.predictors())
 
         # Estimate prompt model calls
@@ -343,7 +343,7 @@ class MIPROv2(Teleprompter):
         minibatch: bool,
         minibatch_size: int,
         minibatch_full_eval_steps: int,
-        valset: List,
+        valset: list,
         program_aware_proposer: bool,
     ) -> bool:
         prompt_model_line, task_model_line = self._estimate_lm_calls(
@@ -410,7 +410,7 @@ class MIPROv2(Teleprompter):
         print("\nNo input received within 20 seconds. Proceeding with execution...")
         return True
 
-    def _bootstrap_fewshot_examples(self, program: Any, trainset: List, seed: int, teacher: Any) -> List | None:
+    def _bootstrap_fewshot_examples(self, program: Any, trainset: list, seed: int, teacher: Any) -> list | None:
         logger.info("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")
         if self.max_bootstrapped_demos > 0:
             logger.info(
@@ -454,14 +454,14 @@ class MIPROv2(Teleprompter):
     def _propose_instructions(
         self,
         program: Any,
-        trainset: List,
-        demo_candidates: List | None,
+        trainset: list,
+        demo_candidates: list | None,
         view_data_batch_size: int,
         program_aware_proposer: bool,
         data_aware_proposer: bool,
         tip_aware_proposer: bool,
         fewshot_aware_proposer: bool,
-    ) -> Dict[int, List[str]]:
+    ) -> dict[int, list[str]]:
         logger.info("\n==> STEP 2: PROPOSE INSTRUCTION CANDIDATES <==")
         logger.info(
             "We will use the few-shot examples from the previous step, a generated dataset summary, a summary of the program code, and a randomly selected prompting tip to propose instructions."
@@ -506,10 +506,10 @@ class MIPROv2(Teleprompter):
     def _optimize_prompt_parameters(
         self,
         program: Any,
-        instruction_candidates: Dict[int, List[str]],
-        demo_candidates: List | None,
+        instruction_candidates: dict[int, list[str]],
+        demo_candidates: list | None,
         evaluate: Evaluate,
-        valset: List,
+        valset: list,
         num_trials: int,
         minibatch: bool,
         minibatch_size: int,
@@ -751,12 +751,12 @@ class MIPROv2(Teleprompter):
     def _select_and_insert_instructions_and_demos(
         self,
         candidate_program: Any,
-        instruction_candidates: Dict[int, List[str]],
-        demo_candidates: List | None,
+        instruction_candidates: dict[int, list[str]],
+        demo_candidates: list | None,
         trial: "optuna.trial.Trial",
-        trial_logs: Dict,
+        trial_logs: dict,
         trial_num: int,
-    ) -> List[str]:
+    ) -> list[str]:
         chosen_params = []
         raw_chosen_params = {}
 
@@ -799,18 +799,18 @@ class MIPROv2(Teleprompter):
         self,
         trial_num: int,
         adjusted_num_trials: int,
-        param_score_dict: Dict,
-        fully_evaled_param_combos: Dict,
+        param_score_dict: dict,
+        fully_evaled_param_combos: dict,
         evaluate: Evaluate,
-        valset: List,
-        trial_logs: Dict,
+        valset: list,
+        trial_logs: dict,
         total_eval_calls: int,
         score_data,
         best_score: float,
         best_program: Any,
         study: "optuna.Study",
-        instruction_candidates: List,
-        demo_candidates: List,
+        instruction_candidates: list,
+        demo_candidates: list,
     ):
         import optuna
 

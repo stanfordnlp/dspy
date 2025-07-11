@@ -3,7 +3,7 @@ import os
 import subprocess
 from os import PathLike
 from types import TracebackType
-from typing import Any, Dict, List
+from typing import Any
 
 
 class InterpreterError(RuntimeError):
@@ -27,11 +27,11 @@ class PythonInterpreter:
 
     def __init__(
         self,
-        deno_command: List[str] | None = None,
-        enable_read_paths: List[PathLike | str] | None = None,
-        enable_write_paths: List[PathLike | str] | None = None,
-        enable_env_vars: List[str] | None = None,
-        enable_network_access: List[str] | None = None,
+        deno_command: list[str] | None = None,
+        enable_read_paths: list[PathLike | str] | None = None,
+        enable_write_paths: list[PathLike | str] | None = None,
+        enable_env_vars: list[str] | None = None,
+        enable_network_access: list[str] | None = None,
         sync_files: bool = True,
     ) -> None:
         """
@@ -127,6 +127,7 @@ class PythonInterpreter:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    encoding="UTF-8",
                     env=os.environ.copy()
                 )
             except FileNotFoundError as e:
@@ -140,7 +141,7 @@ class PythonInterpreter:
                 )
                 raise InterpreterError(install_instructions) from e
 
-    def _inject_variables(self, code: str, variables: Dict[str, Any]) -> str:
+    def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         # Insert Python assignments for each variable at the top of the code
         injected_lines = []
         for key, value in variables.items():
@@ -167,7 +168,7 @@ class PythonInterpreter:
     def execute(
         self,
         code: str,
-        variables: Dict[str, Any] | None = None,
+        variables: dict[str, Any] | None = None,
     ) -> Any:
         variables = variables or {}
         code = self._inject_variables(code, variables)
@@ -231,7 +232,7 @@ class PythonInterpreter:
     def __call__(
         self,
         code: str,
-        variables: Dict[str, Any] | None = None,
+        variables: dict[str, Any] | None = None,
     ) -> Any:
         return self.execute(code, variables)
 

@@ -1,6 +1,5 @@
 import logging
 import random
-from typing import Type
 
 from pydantic import BaseModel
 
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class Predict(Module, Parameter):
-    def __init__(self, signature: str | Type[Signature], callbacks: list[BaseCallback] | None = None, **config):
+    def __init__(self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None, **config):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)

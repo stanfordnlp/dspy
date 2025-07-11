@@ -1,10 +1,11 @@
 import copy
+import os
 
 import pytest
 
 from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs  # noqa: F401
 
-SKIP_DEFAULT_FLAGS = ["reliability", "extra"]
+SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call"]
 
 
 @pytest.fixture(autouse=True)
@@ -49,3 +50,11 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if flag in item.keywords:
                 item.add_marker(skip_mark)
+
+
+@pytest.fixture
+def lm_for_test():
+    model = os.environ.get("LM_FOR_TEST", None)
+    if model is None:
+        pytest.skip("LM_FOR_TEST is not set in the environment variables")
+    return model

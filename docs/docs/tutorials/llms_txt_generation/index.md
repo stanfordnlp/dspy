@@ -31,7 +31,7 @@ class AnalyzeRepository(dspy.Signature):
     readme_content: str = dspy.InputField(desc="README.md content")
     
     project_purpose: str = dspy.OutputField(desc="Main purpose and goals of the project")
-    key_concepts: List[str] = dspy.OutputField(desc="List of important concepts and terminology")
+    key_concepts: list[str] = dspy.OutputField(desc="List of important concepts and terminology")
     architecture_overview: str = dspy.OutputField(desc="High-level architecture description")
 
 class AnalyzeCodeStructure(dspy.Signature):
@@ -39,17 +39,17 @@ class AnalyzeCodeStructure(dspy.Signature):
     file_tree: str = dspy.InputField(desc="Repository file structure")
     package_files: str = dspy.InputField(desc="Key package and configuration files")
     
-    important_directories: List[str] = dspy.OutputField(desc="Key directories and their purposes")
-    entry_points: List[str] = dspy.OutputField(desc="Main entry points and important files")
+    important_directories: list[str] = dspy.OutputField(desc="Key directories and their purposes")
+    entry_points: list[str] = dspy.OutputField(desc="Main entry points and important files")
     development_info: str = dspy.OutputField(desc="Development setup and workflow information")
 
 class GenerateLLMsTxt(dspy.Signature):
     """Generate a comprehensive llms.txt file from analyzed repository information."""
     project_purpose: str = dspy.InputField()
-    key_concepts: List[str] = dspy.InputField()
+    key_concepts: list[str] = dspy.InputField()
     architecture_overview: str = dspy.InputField()
-    important_directories: List[str] = dspy.InputField()
-    entry_points: List[str] = dspy.InputField()
+    important_directories: list[str] = dspy.InputField()
+    entry_points: list[str] = dspy.InputField()
     development_info: str = dspy.InputField()
     usage_examples: str = dspy.InputField(desc="Common usage patterns and examples")
     
@@ -113,6 +113,8 @@ import requests
 import os
 from pathlib import Path
 
+os.environ["GITHUB_ACCESS_TOKEN"] = "<your_access_token>"
+
 def get_github_file_tree(repo_url):
     """Get repository file structure from GitHub API."""
     # Extract owner/repo from URL
@@ -120,7 +122,9 @@ def get_github_file_tree(repo_url):
     owner, repo = parts[-2], parts[-1]
     
     api_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/main?recursive=1"
-    response = requests.get(api_url)
+    response = requests.get(api_url, headers={
+        "Authorization": f"Bearer {os.environ.get('GITHUB_ACCESS_TOKEN')}"
+    })
     
     if response.status_code == 200:
         tree_data = response.json()
@@ -135,7 +139,9 @@ def get_github_file_content(repo_url, file_path):
     owner, repo = parts[-2], parts[-1]
     
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
-    response = requests.get(api_url)
+    response = requests.get(api_url, headers={
+        "Authorization": f"Bearer {os.environ.get('GITHUB_ACCESS_TOKEN')}"
+    })
     
     if response.status_code == 200:
         import base64

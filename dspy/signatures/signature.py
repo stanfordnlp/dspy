@@ -23,7 +23,7 @@ import sys
 import types
 import typing
 from copy import deepcopy
-from typing import Any, Dict, Tuple, Type
+from typing import Any
 
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
@@ -226,7 +226,7 @@ class SignatureMeta(type(BaseModel)):
         Uses the form:
         Signature(question, context -> answer
             question: str = InputField(desc="..."),
-            context: List[str] = InputField(desc="..."),
+            context: list[str] = InputField(desc="..."),
             answer: int = OutputField(desc="..."),
         ).
         """
@@ -244,11 +244,11 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     # for any signature that doesn't define it's own instructions.
 
     @classmethod
-    def with_instructions(cls, instructions: str) -> Type["Signature"]:
+    def with_instructions(cls, instructions: str) -> type["Signature"]:
         return Signature(cls.fields, instructions)
 
     @classmethod
-    def with_updated_fields(cls, name: str, type_: Type | None = None, **kwargs: dict[str, Any]) -> Type["Signature"]:
+    def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
         """Create a new Signature class with the updated field information.
 
         Returns a new Signature class with the field, name, updated
@@ -274,15 +274,15 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields_copy, cls.instructions)
 
     @classmethod
-    def prepend(cls, name, field, type_=None) -> Type["Signature"]:
+    def prepend(cls, name, field, type_=None) -> type["Signature"]:
         return cls.insert(0, name, field, type_)
 
     @classmethod
-    def append(cls, name, field, type_=None) -> Type["Signature"]:
+    def append(cls, name, field, type_=None) -> type["Signature"]:
         return cls.insert(-1, name, field, type_)
 
     @classmethod
-    def delete(cls, name) -> Type["Signature"]:
+    def delete(cls, name) -> type["Signature"]:
         fields = dict(cls.fields)
 
         fields.pop(name, None)
@@ -290,7 +290,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields, cls.instructions)
 
     @classmethod
-    def insert(cls, index: int, name: str, field, type_: Type | None = None) -> Type["Signature"]:
+    def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
@@ -355,7 +355,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return signature_copy
 
 
-def ensure_signature(signature: str | Type[Signature], instructions=None) -> Signature:
+def ensure_signature(signature: str | type[Signature], instructions=None) -> type[Signature]:
     if signature is None:
         return None
     if isinstance(signature, str):
@@ -366,11 +366,11 @@ def ensure_signature(signature: str | Type[Signature], instructions=None) -> Sig
 
 
 def make_signature(
-    signature: str | Dict[str, Tuple[type, FieldInfo]],
+    signature: str | dict[str, tuple[type, FieldInfo]],
     instructions: str | None = None,
     signature_name: str = "StringSignature",
-    custom_types: Dict[str, Type] | None = None,
-) -> Type[Signature]:
+    custom_types: dict[str, type] | None = None,
+) -> type[Signature]:
     """Create a new Signature subclass with the specified fields and instructions.
 
     Args:
@@ -449,7 +449,7 @@ def make_signature(
     )
 
 
-def _parse_signature(signature: str, names=None) -> Dict[str, Tuple[Type, Field]]:
+def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Field]]:
     if signature.count("->") != 1:
         raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
 
@@ -464,7 +464,7 @@ def _parse_signature(signature: str, names=None) -> Dict[str, Tuple[Type, Field]
     return fields
 
 
-def _parse_field_string(field_string: str, names=None) -> Dict[str, str]:
+def _parse_field_string(field_string: str, names=None) -> dict[str, str]:
     """Extract the field name and type from field string in the string-based Signature.
 
     It takes a string like "x: int, y: str" and returns a dictionary mapping field names to their types.
@@ -482,11 +482,11 @@ def _parse_type_node(node, names=None) -> Any:
     """Recursively parse an AST node representing a type annotation.
 
     This function converts Python's Abstract Syntax Tree (AST) nodes into actual Python types.
-    It's used to parse type annotations in signature strings like "x: List[int] -> y: str".
+    It's used to parse type annotations in signature strings like "x: list[int] -> y: str".
 
     Examples:
         - For "x: int", the AST node represents 'int' and returns the int type
-        - For "x: List[str]", it processes a subscript node to return typing.List[str]
+        - For "x: list[str]", it processes a subscript node to return typing.list[str]
         - For "x: Optional[int]", it handles the Union type to return Optional[int]
         - For "x: MyModule.CustomType", it processes attribute access to return the actual type
 
@@ -495,7 +495,7 @@ def _parse_type_node(node, names=None) -> Any:
             Common node types include:
             - ast.Name: Simple types like 'int', 'str'
             - ast.Attribute: Nested types like 'typing.List'
-            - ast.Subscript: Generic types like 'List[int]'
+            - ast.Subscript: Generic types like 'list[int]'
         names: Optional dictionary mapping type names to their actual type objects.
             Defaults to Python's typing module contents plus NoneType.
 

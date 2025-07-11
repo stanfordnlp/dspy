@@ -60,7 +60,7 @@ class EmailInsight(BaseModel):
     email_type: EmailType
     urgency: UrgencyLevel
     summary: str
-    key_entities: List[ExtractedEntity]
+    key_entities: list[ExtractedEntity]
     action_required: bool
     deadline: Optional[str] = None
     amount: Optional[float] = None
@@ -89,7 +89,7 @@ class ExtractEntities(dspy.Signature):
     email_content: str = dspy.InputField(desc="The full email content including subject and body")
     email_type: EmailType = dspy.InputField(desc="The classified type of email")
 
-    key_entities: List[ExtractedEntity] = dspy.OutputField(desc="List of extracted entities with type, value, and confidence")
+    key_entities: list[ExtractedEntity] = dspy.OutputField(desc="List of extracted entities with type, value, and confidence")
     financial_amount: Optional[float] = dspy.OutputField(desc="Any monetary amounts found (e.g., '$99.99')")
     important_dates: list[str] = dspy.OutputField(desc="List of important dates found in the email")
     contact_info: list[str] = dspy.OutputField(desc="Relevant contact information extracted")
@@ -100,7 +100,7 @@ class GenerateActionItems(dspy.Signature):
     email_type: EmailType = dspy.InputField()
     urgency: UrgencyLevel = dspy.InputField()
     email_summary: str = dspy.InputField(desc="Brief summary of the email content")
-    extracted_entities: List[ExtractedEntity] = dspy.InputField(desc="Key entities found in the email")
+    extracted_entities: list[ExtractedEntity] = dspy.InputField(desc="Key entities found in the email")
 
     action_required: bool = dspy.OutputField(desc="Whether any action is required")
     action_items: list[str] = dspy.OutputField(desc="List of specific actions needed")
@@ -112,7 +112,7 @@ class SummarizeEmail(dspy.Signature):
 
     email_subject: str = dspy.InputField()
     email_body: str = dspy.InputField()
-    key_entities: List[ExtractedEntity] = dspy.InputField()
+    key_entities: list[ExtractedEntity] = dspy.InputField()
 
     summary: str = dspy.OutputField(desc="A 2-3 sentence summary of the email's main points")
 ```

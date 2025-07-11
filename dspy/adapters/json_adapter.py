@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, Type, get_origin
+from typing import Any, get_origin
 
 import json_repair
 import litellm
@@ -9,6 +9,7 @@ import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
+from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
@@ -18,6 +19,7 @@ from dspy.adapters.utils import (
 )
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature, SignatureMeta
+from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,10 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
+    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
+        # JSONAdapter uses native function calling by default.
+        super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
+
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
         provider = lm.model.split("/", 1)[0] or "openai"
@@ -45,7 +51,10 @@ class JSONAdapter(ChatAdapter):
         if not params or "response_format" not in params:
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
-        if _has_open_ended_mapping(signature):
+        has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
+        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls):
+            # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
+            # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
@@ -53,7 +62,7 @@ class JSONAdapter(ChatAdapter):
         self,
         lm: LM,
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -62,7 +71,9 @@ class JSONAdapter(ChatAdapter):
             return result
 
         try:
-            structured_output_model = _get_structured_outputs_response_format(signature)
+            structured_output_model = _get_structured_outputs_response_format(
+                signature, self.use_native_function_calling
+            )
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception:
@@ -74,7 +85,7 @@ class JSONAdapter(ChatAdapter):
         self,
         lm: LM,
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -91,21 +102,11 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 
-    def _call_preprocess(
-        self,
-        lm: "LM",
-        lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
-        inputs: dict[str, Any],
-        use_native_function_calling: bool = True,
-    ) -> dict[str, Any]:
-        return super()._call_preprocess(lm, lm_kwargs, signature, inputs, use_native_function_calling)
-
-    def format_field_structure(self, signature: Type[Signature]) -> str:
+    def format_field_structure(self, signature: type[Signature]) -> str:
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
-        def format_signature_fields_for_instructions(fields: Dict[str, FieldInfo], role: str):
+        def format_signature_fields_for_instructions(fields: dict[str, FieldInfo], role: str):
             return self.format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
@@ -120,7 +121,7 @@ class JSONAdapter(ChatAdapter):
         parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
         return "\n\n".join(parts).strip()
 
-    def user_message_output_requirements(self, signature: Type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str:
         def type_info(v):
             return (
                 f" (must be formatted as a valid Python {get_annotation_name(v.annotation)})"
@@ -135,7 +136,7 @@ class JSONAdapter(ChatAdapter):
 
     def format_assistant_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         outputs: dict[str, Any],
         missing_field_message=None,
     ) -> str:
@@ -145,7 +146,7 @@ class JSONAdapter(ChatAdapter):
         }
         return self.format_field_with_value(fields_with_values, role="assistant")
 
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+    def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         pattern = r"\{(?:[^{}]|(?R))*\}"
         match = regex.search(pattern, completion, regex.DOTALL)
         if match:
@@ -177,7 +178,7 @@ class JSONAdapter(ChatAdapter):
 
         return fields
 
-    def format_field_with_value(self, fields_with_values: Dict[FieldInfoWithName, Any], role: str = "user") -> str:
+    def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any], role: str = "user") -> str:
         """
         Formats the values of the specified fields according to the field's DSPy type (input or output),
         annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
@@ -200,13 +201,16 @@ class JSONAdapter(ChatAdapter):
             return json.dumps(serialize_for_json(d), indent=2)
 
     def format_finetune_data(
-        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
+        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
     ) -> dict[str, list[Any]]:
         # TODO: implement format_finetune_data method in JSONAdapter
         raise NotImplementedError
 
 
-def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[pydantic.BaseModel]:
+def _get_structured_outputs_response_format(
+    signature: SignatureMeta,
+    use_native_function_calling: bool = True,
+) -> type[pydantic.BaseModel]:
     """
     Builds a Pydantic model from a DSPy signature's output_fields and ensures the generated JSON schema
     is compatible with OpenAI Structured Outputs (all objects have a "required" key listing every property,
@@ -227,6 +231,9 @@ def _get_structured_outputs_response_format(signature: SignatureMeta) -> type[py
     fields = {}
     for name, field in signature.output_fields.items():
         annotation = field.annotation
+        if use_native_function_calling and annotation == ToolCalls:
+            # Skip ToolCalls field if native function calling is enabled.
+            continue
         default = field.default if hasattr(field, "default") else ...
         fields[name] = (annotation, default)
 

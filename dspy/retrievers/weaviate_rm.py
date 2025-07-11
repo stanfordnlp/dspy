@@ -1,4 +1,3 @@
-from typing import List
 
 import dspy
 from dspy.dsp.utils import dotdict
@@ -71,11 +70,11 @@ class WeaviateRM(dspy.Retrieve):
 
         super().__init__(k=k)
 
-    def forward(self, query_or_queries: str | List[str], k: int | None = None, **kwargs) -> Prediction:
+    def forward(self, query_or_queries: str | list[str], k: int | None = None, **kwargs) -> Prediction:
         """Search with Weaviate for self.k top passages for query or queries.
 
         Args:
-            query_or_queries (Union[str, List[str]]): The query or queries to search for.
+            query_or_queries (Union[str, list[str]]): The query or queries to search for.
             k (Optional[int]): The number of top passages to retrieve. Defaults to self.k.
             kwargs :
 
@@ -111,7 +110,7 @@ class WeaviateRM(dspy.Retrieve):
 
         return passages
 
-    def get_objects(self, num_samples: int, fields: List[str]) -> List[dict]:
+    def get_objects(self, num_samples: int, fields: list[str]) -> list[dict]:
         """Get objects from Weaviate using the cursor API."""
         if self._client_type == "WeaviateClient":
             objects = []

@@ -1,5 +1,4 @@
 import random
-from typing import List
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
@@ -46,7 +45,7 @@ class Retrieve(Parameter):
         query: str,
         k: int | None = None,
         **kwargs,
-    ) -> List[str] | Prediction | List[Prediction]:
+    ) -> list[str] | Prediction | list[Prediction]:
         k = k if k is not None else self.k
 
         import dspy

@@ -89,7 +89,7 @@ Once the pull request is approved, a team member will take care of merging.
 
 ## Environment Setup
 
-Python 3.9 or later is required.
+Python 3.10 or later is required.
 
 Setting up your DSPy development environment requires you to fork the DSPy repository and clone it locally.
 If you are not familiar with the GitHub fork process, please refer to [Fork a repository](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo). After creating the fork, clone

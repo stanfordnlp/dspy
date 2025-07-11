@@ -48,7 +48,7 @@ class DocumentationFetcher:
         self.html_converter.ignore_links = False
         self.html_converter.ignore_images = True
     
-    def fetch_url(self, url: str) -> Dict[str, str]:
+    def fetch_url(self, url: str) -> dict[str, str]:
         """Fetch content from a single URL."""
         for attempt in range(self.max_retries):
             try:
@@ -86,7 +86,7 @@ class DocumentationFetcher:
         
         return {"url": url, "title": "Failed", "content": "", "success": False}
     
-    def fetch_documentation(self, urls: List[str]) -> List[Dict[str, str]]:
+    def fetch_documentation(self, urls: list[str]) -> list[dict[str, str]]:
         """Fetch documentation from multiple URLs."""
         results = []
         
@@ -102,11 +102,11 @@ class LibraryAnalyzer(dspy.Signature):
     library_name: str = dspy.InputField(desc="Name of the library to analyze")
     documentation_content: str = dspy.InputField(desc="Combined documentation content")
     
-    core_concepts: List[str] = dspy.OutputField(desc="Main concepts and components")
-    common_patterns: List[str] = dspy.OutputField(desc="Common usage patterns")
-    key_methods: List[str] = dspy.OutputField(desc="Important methods and functions")
+    core_concepts: list[str] = dspy.OutputField(desc="Main concepts and components")
+    common_patterns: list[str] = dspy.OutputField(desc="Common usage patterns")
+    key_methods: list[str] = dspy.OutputField(desc="Important methods and functions")
     installation_info: str = dspy.OutputField(desc="Installation and setup information")
-    code_examples: List[str] = dspy.OutputField(desc="Example code snippets found")
+    code_examples: list[str] = dspy.OutputField(desc="Example code snippets found")
 
 class CodeGenerator(dspy.Signature):
     """Generate code examples for specific use cases using the target library."""
@@ -116,8 +116,8 @@ class CodeGenerator(dspy.Signature):
     
     code_example: str = dspy.OutputField(desc="Complete, working code example")
     explanation: str = dspy.OutputField(desc="Step-by-step explanation of the code")
-    best_practices: List[str] = dspy.OutputField(desc="Best practices and tips")
-    imports_needed: List[str] = dspy.OutputField(desc="Required imports and dependencies")
+    best_practices: list[str] = dspy.OutputField(desc="Best practices and tips")
+    imports_needed: list[str] = dspy.OutputField(desc="Required imports and dependencies")
 
 class DocumentationLearningAgent(dspy.Module):
     """Agent that learns from documentation URLs and generates code examples."""
@@ -128,10 +128,10 @@ class DocumentationLearningAgent(dspy.Module):
         self.analyze_docs = dspy.ChainOfThought(LibraryAnalyzer)
         self.generate_code = dspy.ChainOfThought(CodeGenerator)
         self.refine_code = dspy.ChainOfThought(
-            "code, feedback -> improved_code: str, changes_made: List[str]"
+            "code, feedback -> improved_code: str, changes_made: list[str]"
         )
     
-    def learn_from_urls(self, library_name: str, doc_urls: List[str]) -> Dict:
+    def learn_from_urls(self, library_name: str, doc_urls: list[str]) -> Dict:
         """Learn about a library from its documentation URLs."""
         
         print(f"📚 Learning about {library_name} from {len(doc_urls)} URLs...")
@@ -198,7 +198,7 @@ agent = DocumentationLearningAgent()
 ## Step 2: Learning from Documentation URLs
 
 ```python
-def learn_library_from_urls(library_name: str, documentation_urls: List[str]) -> Dict:
+def learn_library_from_urls(library_name: str, documentation_urls: list[str]) -> Dict:
     """Learn about any library from its documentation URLs."""
     
     try:
@@ -318,7 +318,7 @@ streamlit_examples = generate_examples_for_library(streamlit_info, "Streamlit")
 ## Step 4: Interactive Library Learning Function
 
 ```python
-def learn_any_library(library_name: str, documentation_urls: List[str], use_cases: List[str] = None):
+def learn_any_library(library_name: str, documentation_urls: list[str], use_cases: list[str] = None):
     """Learn any library from its documentation and generate examples."""
     
     if use_cases is None:
@@ -602,7 +602,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 @app.post("/login")
-async def login(username: str, password: str) -> Dict[str, str]:
+async def login(username: str, password: str) -> dict[str, str]:
     # In production, verify against database
     if username == "admin" and password == "secret":
         token_data = {"sub": username, "exp": datetime.utcnow() + timedelta(hours=24)}
@@ -611,7 +611,7 @@ async def login(username: str, password: str) -> Dict[str, str]:
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.get("/protected")
-async def protected_route(current_user: str = Depends(verify_token)) -> Dict[str, str]:
+async def protected_route(current_user: str = Depends(verify_token)) -> dict[str, str]:
     return {"message": f"Hello {current_user}! This is a protected route."}
 
 if __name__ == "__main__":

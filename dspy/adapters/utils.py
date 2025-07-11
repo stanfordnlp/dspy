@@ -3,14 +3,14 @@ import enum
 import inspect
 import json
 from collections.abc import Mapping
-from typing import Any, List, Literal, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 
 import json_repair
 import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.types.base_type import BaseType
+from dspy.adapters.types.base_type import Type
 from dspy.signatures.utils import get_dspy_field_type
 
 
@@ -204,7 +204,7 @@ def get_field_description_string(fields: dict) -> str:
         field_message += f" ({get_annotation_name(v.annotation)})"
         desc = v.json_schema_extra["desc"] if v.json_schema_extra["desc"] != f"${{{k}}}" else ""
 
-        custom_types = BaseType.extract_custom_type_from_annotation(v.annotation)
+        custom_types = Type.extract_custom_type_from_annotation(v.annotation)
         for custom_type in custom_types:
             if len(custom_type.description()) > 0:
                 desc += f"\n    Type description of {get_annotation_name(custom_type)}: {custom_type.description()}"
@@ -217,9 +217,9 @@ def get_field_description_string(fields: dict) -> str:
     return "\n".join(field_descriptions).strip()
 
 
-def _format_input_list_field_value(value: List[Any]) -> str:
+def _format_input_list_field_value(value: list[Any]) -> str:
     """
-    Formats the value of an input field of type List[Any].
+    Formats the value of an input field of type list[Any].
 
     Args:
       value: The value of the list-type input field.

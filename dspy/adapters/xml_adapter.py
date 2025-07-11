@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, Type
+from typing import Any
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import format_field_value
@@ -12,20 +12,20 @@ class XMLAdapter(ChatAdapter):
         super().__init__(callbacks)
         self.field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
 
-    def format_field_with_value(self, fields_with_values: Dict[FieldInfoWithName, Any]) -> str:
+    def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, field_value in fields_with_values.items():
             formatted = format_field_value(field_info=field.info, value=field_value)
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()
 
-    def user_message_output_requirements(self, signature: Type[Signature]) -> str:
+    def user_message_output_requirements(self, signature: type[Signature]) -> str:
         message = "Respond with the corresponding output fields wrapped in XML tags"
         message += ", then ".join(f"`<{f}>`" for f in signature.output_fields)
         message += ", and then end with the `<completed>` tag."
         return message
 
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+    def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         fields = {}
         for match in self.field_pattern.finditer(completion):
             name = match.group("name")

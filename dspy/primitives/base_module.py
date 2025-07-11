@@ -69,8 +69,8 @@ class BaseModule:
     def named_sub_modules(self, type_=None, skip_compiled=False) -> Generator[tuple[str, "BaseModule"], None, None]:
         """Find all sub-modules in the module, as well as their names.
 
-        Say self.children[4]['key'].sub_module is a sub-module. Then the name will be
-        'children[4][key].sub_module'. But if the sub-module is accessible at different
+        Say `self.children[4]['key'].sub_module` is a sub-module. Then the name will be
+        `children[4]['key'].sub_module`. But if the sub-module is accessible at different
         paths, only one of the paths will be returned.
         """
         if type_ is None:
@@ -248,7 +248,7 @@ class BaseModule:
         path = Path(path)
 
         if path.suffix == ".json":
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 state = ujson.loads(f.read())
         elif path.suffix == ".pkl":
             with open(path, "rb") as f:

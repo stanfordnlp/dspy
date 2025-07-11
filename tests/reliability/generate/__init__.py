@@ -15,7 +15,7 @@ def generate_test_cases(
     num_inputs: int = 1,
     program_instructions: Optional[str] = None,
     input_instructions: Optional[str] = None,
-) -> List[GeneratedTestCase]:
+) -> list[GeneratedTestCase]:
     os.makedirs(dst_path, exist_ok=True)
     if _directory_contains_program(dst_path):
         print(f"Found an existing test program at path {dst_path}. Generating new" f" test inputs for this program.")

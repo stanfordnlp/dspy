@@ -1,7 +1,7 @@
 import asyncio
 import concurrent.futures
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 from asyncer import syncify
 
@@ -69,7 +69,7 @@ class StatusMessageProvider:
     ```
     """
 
-    def tool_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
+    def tool_start_status_message(self, instance: Any, inputs: dict[str, Any]):
         """Status message before a `dspy.Tool` is called."""
         return f"Calling tool {instance.name}..."
 
@@ -77,7 +77,7 @@ class StatusMessageProvider:
         """Status message after a `dspy.Tool` is called."""
         return "Tool calling finished! Querying the LLM with tool calling results..."
 
-    def module_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
+    def module_start_status_message(self, instance: Any, inputs: dict[str, Any]):
         """Status message before a `dspy.Module` or `dspy.Predict` is called."""
         pass
 
@@ -85,7 +85,7 @@ class StatusMessageProvider:
         """Status message after a `dspy.Module` or `dspy.Predict` is called."""
         pass
 
-    def lm_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
+    def lm_start_status_message(self, instance: Any, inputs: dict[str, Any]):
         """Status message before a `dspy.LM` is called."""
         pass
 
@@ -102,7 +102,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         instance: Any,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
     ):
         stream = settings.send_stream
         if stream is None or instance.name == "finish":
@@ -115,7 +115,7 @@ class StatusStreamingCallback(BaseCallback):
     def on_tool_end(
         self,
         call_id: str,
-        outputs: Dict[str, Any] | None,
+        outputs: dict[str, Any] | None,
         exception: Exception | None = None,
     ):
         stream = settings.send_stream
@@ -130,7 +130,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         instance: Any,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
     ):
         stream = settings.send_stream
         if stream is None:
@@ -143,7 +143,7 @@ class StatusStreamingCallback(BaseCallback):
     def on_lm_end(
         self,
         call_id: str,
-        outputs: Dict[str, Any] | None,
+        outputs: dict[str, Any] | None,
         exception: Exception | None = None,
     ):
         stream = settings.send_stream
@@ -158,7 +158,7 @@ class StatusStreamingCallback(BaseCallback):
         self,
         call_id: str,
         instance: Any,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
     ):
         stream = settings.send_stream
         if stream is None:
@@ -171,7 +171,7 @@ class StatusStreamingCallback(BaseCallback):
     def on_module_end(
         self,
         call_id: str,
-        outputs: Dict[str, Any] | None,
+        outputs: dict[str, Any] | None,
         exception: Exception | None = None,
     ):
         stream = settings.send_stream

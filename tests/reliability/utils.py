@@ -15,7 +15,7 @@ JUDGE_MODEL_NAME = "judge"
 def assert_program_output_correct(
     program_input: Any,
     program_output: Any,
-    grading_guidelines: Union[str, List[str]],
+    grading_guidelines: Union[str, list[str]],
 ):
     """
     With the help of an LLM judge, assert that the specified output of a DSPy program is correct,
@@ -40,7 +40,7 @@ def assert_program_output_correct(
             assert judge_response.correct, f"Output: {program_output}. Reason incorrect: {judge_response.justification}"
 
 
-def known_failing_models(models: List[str]):
+def known_failing_models(models: list[str]):
     """
     Decorator to allow specific test cases to fail for certain models. This is useful when a
     model is known to be unable to perform a specific task (e.g. output formatting with complex
@@ -115,7 +115,7 @@ def _get_judge_program():
 
 class ReliabilityTestConf(pydantic.BaseModel):
     adapter: str
-    models: Dict[str, Any]
+    models: dict[str, Any]
 
 
 @lru_cache(maxsize=None)

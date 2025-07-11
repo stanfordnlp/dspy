@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any
 
 import numpy as np
 
@@ -10,10 +10,10 @@ from dspy.utils.unbatchify import Unbatchify
 class Embeddings:
     def __init__(
         self,
-        corpus: List[str],
+        corpus: list[str],
         embedder,
         k: int = 5,
-        callbacks: List[Any] | None = None,
+        callbacks: list[Any] | None = None,
         cache: bool = False,
         brute_force_threshold: int = 20_000,
         normalize: bool = True,
@@ -40,7 +40,7 @@ class Embeddings:
         passages, indices = self.search_fn(query)
         return dspy.Prediction(passages=passages, indices=indices)
 
-    def _batch_forward(self, queries: List[str]):
+    def _batch_forward(self, queries: list[str]):
         q_embeds = self.embedder(queries)
         q_embeds = self._normalize(q_embeds) if self.normalize else q_embeds
 

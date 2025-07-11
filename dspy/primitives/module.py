@@ -123,7 +123,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         return_failed_examples: bool = False,
         provide_traceback: bool | None = None,
         disable_progress_bar: bool = False,
-    ):
+    ) -> list[Example] | tuple[list[Example], list[Example], list[Exception]]:
         """
         Processes a list of dspy.Example instances in parallel using the Parallel module.
 

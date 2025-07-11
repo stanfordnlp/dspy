@@ -1,11 +1,11 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Tuple, Type, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Type, get_origin, get_type_hints
 
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
-from dspy.adapters.types.base_type import BaseType
+from dspy.adapters.types.base_type import Type
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import with_callbacks
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 _TYPE_MAPPING = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
 
 
-class Tool(BaseType):
+class Tool(Type):
     """Tool class.
 
     This class is used to simplify the creation of tools for tool calling (function calling) in LLMs. Only supports
@@ -254,7 +254,7 @@ class Tool(BaseType):
         return f"{self.name}{desc} {arg_desc}"
 
 
-class ToolCalls(BaseType):
+class ToolCalls(Type):
     class ToolCall(BaseModel):
         name: str
         args: dict[str, Any]
@@ -303,7 +303,8 @@ class ToolCalls(BaseType):
                             "name": tool_call.name,
                             "arguments": tool_call.args,
                         },
-                    } for tool_call in self.tool_calls
+                    }
+                    for tool_call in self.tool_calls
                 ],
             }
         ]
@@ -337,7 +338,7 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
 
 def convert_input_schema_to_tool_args(
     schema: dict[str, Any],
-) -> Tuple[dict[str, Any], dict[str, Type], dict[str, str]]:
+) -> tuple[dict[str, Any], dict[str, Type], dict[str, str]]:
     """Convert an input json schema to tool arguments compatible with DSPy Tool.
 
     Args:
