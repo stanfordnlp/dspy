@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import threading
-from typing import Any, Dict, List, Literal, cast
+from typing import Any, Literal, cast
 
 import litellm
 from anyio.streams.memory import MemoryObjectSendStream
@@ -34,7 +34,7 @@ class LM(BaseLM):
         max_tokens: int = 4000,
         cache: bool = True,
         cache_in_memory: bool = True,
-        callbacks: List[BaseCallback] | None = None,
+        callbacks: list[BaseCallback] | None = None,
         num_retries: int = 3,
         provider: Provider | None = None,
         finetuning_model: str | None = None,
@@ -173,17 +173,17 @@ class LM(BaseLM):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
-    def launch(self, launch_kwargs: Dict[str, Any] | None = None):
+    def launch(self, launch_kwargs: dict[str, Any] | None = None):
         self.provider.launch(self, launch_kwargs)
 
-    def kill(self, launch_kwargs: Dict[str, Any] | None = None):
+    def kill(self, launch_kwargs: dict[str, Any] | None = None):
         self.provider.kill(self, launch_kwargs)
 
     def finetune(
         self,
-        train_data: List[Dict[str, Any]],
+        train_data: list[dict[str, Any]],
         train_data_format: TrainDataFormat | None,
-        train_kwargs: Dict[str, Any] | None = None,
+        train_kwargs: dict[str, Any] | None = None,
     ) -> TrainingJob:
         from dspy import settings as settings
 
@@ -255,8 +255,8 @@ class LM(BaseLM):
 
 
 def _get_stream_completion_fn(
-    request: Dict[str, Any],
-    cache_kwargs: Dict[str, Any],
+    request: dict[str, Any],
+    cache_kwargs: dict[str, Any],
     sync=True,
 ):
     stream = dspy.settings.send_stream
@@ -272,7 +272,7 @@ def _get_stream_completion_fn(
     if dspy.settings.track_usage:
         request["stream_options"] = {"include_usage": True}
 
-    async def stream_completion(request: Dict[str, Any], cache_kwargs: Dict[str, Any]):
+    async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
         response = await litellm.acompletion(
             cache=cache_kwargs,
             stream=True,
@@ -300,7 +300,7 @@ def _get_stream_completion_fn(
         return async_stream_completion
 
 
-def litellm_completion(request: Dict[str, Any], num_retries: int, cache: Dict[str, Any] | None = None):
+def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
@@ -314,7 +314,7 @@ def litellm_completion(request: Dict[str, Any], num_retries: int, cache: Dict[st
     return stream_completion()
 
 
-def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Dict[str, Any] | None = None):
+def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
@@ -340,7 +340,7 @@ def litellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Di
     )
 
 
-async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache: Dict[str, Any] | None = None):
+async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
@@ -354,7 +354,7 @@ async def alitellm_completion(request: Dict[str, Any], num_retries: int, cache: 
     return await stream_completion()
 
 
-async def alitellm_text_completion(request: Dict[str, Any], num_retries: int, cache: Dict[str, Any] | None = None):
+async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     model = request.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]

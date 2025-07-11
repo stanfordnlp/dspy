@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import openai
 import requests
@@ -168,7 +168,7 @@ class ArborReinforceJob(ReinforceJob):
         current_model = response["current_model"]
         self.lm.model = ArborProvider._add_provider_prefix(current_model)
 
-    def step(self, train_data: List[GRPOGroup], train_data_format: TrainDataFormat | str | None):
+    def step(self, train_data: list[GRPOGroup], train_data_format: TrainDataFormat | str | None):
         # Note: TrainDataFormat specifies the format for the inner most dict.
         # Because we run GRPO at the group level, train_data will be a list of
         # groups, where each group is a list of GRPOChatData. Our teleprompters
@@ -237,7 +237,7 @@ class ArborProvider(Provider):
         self.ReinforceJob = ArborReinforceJob
 
     @staticmethod
-    def launch(lm: "LM", launch_kwargs: Dict[str, Any] | None = None):
+    def launch(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
         model = ArborProvider._remove_provider_prefix(lm.model)
 
         api_base = lm.kwargs["api_base"]
@@ -253,7 +253,7 @@ class ArborProvider(Provider):
         print(f"Inference server for model {model} launched successfully")
 
     @staticmethod
-    def kill(lm: "LM", launch_kwargs: Dict[str, Any] | None = None):
+    def kill(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
         api_base = lm.kwargs["api_base"]
 
         response = requests.post(
@@ -295,9 +295,9 @@ class ArborProvider(Provider):
     def finetune(
         job: ArborTrainingJob,
         model: str,
-        train_data: List[Dict[str, Any]],
+        train_data: list[dict[str, Any]],
         train_data_format: TrainDataFormat | None,
-        train_kwargs: Dict[str, Any] | None = None,
+        train_kwargs: dict[str, Any] | None = None,
     ) -> str:
         # TODO: We want to re-factor finetune so that it takes in an LM.
         # Until then, we use the following to get the api information. The
@@ -337,7 +337,7 @@ class ArborProvider(Provider):
         return ArborProvider._add_provider_prefix(model)
 
     @staticmethod
-    def does_job_exist(job_id: str, training_kwargs: Dict[str, Any]) -> bool:
+    def does_job_exist(job_id: str, training_kwargs: dict[str, Any]) -> bool:
         try:
             original_base_url = openai.base_url
             openai.base_url = ArborProvider._get_arbor_base_api()
@@ -348,7 +348,7 @@ class ArborProvider(Provider):
             return False
 
     @staticmethod
-    def does_file_exist(file_id: str, training_kwargs: Dict[str, Any]) -> bool:
+    def does_file_exist(file_id: str, training_kwargs: dict[str, Any]) -> bool:
         try:
             original_base_url = openai.base_url
             openai.base_url = ArborProvider._get_arbor_base_api()
@@ -367,7 +367,7 @@ class ArborProvider(Provider):
         ]
 
     @staticmethod
-    def get_training_status(job_id: str, training_kwargs: Dict[str, Any]) -> TrainingStatus:
+    def get_training_status(job_id: str, training_kwargs: dict[str, Any]) -> TrainingStatus:
         provider_status_to_training_status = {
             "validating_files": TrainingStatus.pending,
             "queued": TrainingStatus.pending,
@@ -412,7 +412,7 @@ class ArborProvider(Provider):
             raise ValueError(err_msg)
 
     @staticmethod
-    def upload_data(data_path: str, training_kwargs: Dict[str, Any]) -> str:
+    def upload_data(data_path: str, training_kwargs: dict[str, Any]) -> str:
         original_base_url = openai.base_url
         openai.base_url = ArborProvider._get_arbor_base_api()
         provider_file = openai.files.create(
@@ -424,7 +424,7 @@ class ArborProvider(Provider):
         return provider_file.id
 
     @staticmethod
-    def _start_remote_training(train_file_id: str, model: str, train_kwargs: Dict[str, Any]) -> str:
+    def _start_remote_training(train_file_id: str, model: str, train_kwargs: dict[str, Any]) -> str:
         train_kwargs = train_kwargs or {}
         original_base_url = openai.base_url
         openai.base_url = ArborProvider._get_arbor_base_api()
@@ -439,7 +439,7 @@ class ArborProvider(Provider):
     @staticmethod
     def wait_for_job(
         job: TrainingJob,
-        training_kwargs: Dict[str, Any],
+        training_kwargs: dict[str, Any],
         poll_frequency: int = 20,
     ):
         done = False
@@ -477,7 +477,7 @@ class ArborProvider(Provider):
             done = ArborProvider.is_terminal_training_status(job.status())
 
     @staticmethod
-    def get_trained_model(job, training_kwargs: Dict[str, Any]):
+    def get_trained_model(job, training_kwargs: dict[str, Any]):
         status = job.status()
         if status != TrainingStatus.succeeded:
             err_msg = f"Job status is {status}."

@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 class FinetuneTeleprompter(Teleprompter):
     def __init__(
         self,
-        train_kwargs: Dict[str, Any] | Dict[LM, Dict[str, Any]] | None = None,
+        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
     ):
-        self.train_kwargs: Dict[LM, Any] = self.convert_to_lm_dict(train_kwargs or {})
+        self.train_kwargs: dict[LM, Any] = self.convert_to_lm_dict(train_kwargs or {})
 
     @staticmethod
-    def convert_to_lm_dict(arg) -> Dict[LM, Any]:
+    def convert_to_lm_dict(arg) -> dict[LM, Any]:
         non_empty_dict = arg and isinstance(arg, dict)
         if non_empty_dict and all(isinstance(k, LM) for k in arg.keys()):
             return arg
@@ -40,8 +40,8 @@ class BootstrapFinetune(FinetuneTeleprompter):
         self,
         metric: Callable | None = None,
         multitask: bool = True,
-        train_kwargs: Dict[str, Any] | Dict[LM, Dict[str, Any]] | None = None,
-        adapter: Adapter | Dict[LM, Adapter] | None = None,
+        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
+        adapter: Adapter | dict[LM, Adapter] | None = None,
         exclude_demos: bool = False,
         num_threads: int | None = None,
     ):
@@ -55,12 +55,12 @@ class BootstrapFinetune(FinetuneTeleprompter):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
         self.multitask = multitask
-        self.adapter: Dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
+        self.adapter: dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
 
     def compile(
-        self, student: Module, trainset: List[Example], teacher: Module | List[Module] | None = None
+        self, student: Module, trainset: list[Example], teacher: Module | list[Module] | None = None
     ) -> Module:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
@@ -129,7 +129,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         return student
 
     @staticmethod
-    def finetune_lms(finetune_dict) -> Dict[Any, LM]:
+    def finetune_lms(finetune_dict) -> dict[Any, LM]:
         num_jobs = len(finetune_dict)
         logger.info(f"Starting {num_jobs} fine-tuning job(s)...")
         # TODO(nit) Pass an identifier to the job so that we can tell the logs
@@ -160,7 +160,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         return key_to_lm
 
-    def _prepare_finetune_data(self, trace_data: List[Dict[str, Any]], lm: LM, pred_ind: int | None = None):
+    def _prepare_finetune_data(self, trace_data: list[dict[str, Any]], lm: LM, pred_ind: int | None = None):
         # TODO(nit) Log dataset details/size; make logs nicer
         if self.metric:
             logger.info(f"Collected data for {len(trace_data)} examples")
@@ -190,11 +190,11 @@ class BootstrapFinetune(FinetuneTeleprompter):
 # Similar methods are implemented separately and used by other DSPy
 # teleprompters. These can be moved to shared locations.
 def build_call_data_from_trace(
-    trace: List[Dict],
+    trace: list[dict],
     pred_ind: int,
     adapter: Adapter,
     exclude_demos: bool = False,
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[dict[str, Any]]]:
     # Find data that's relevant to the predictor
     pred, inputs, outputs = trace[pred_ind]  # assuming that the order is kept
 
@@ -216,7 +216,7 @@ class FailedPrediction:
 
 def bootstrap_trace_data(
     program: Module,
-    dataset: List[Example],
+    dataset: list[Example],
     metric: Callable | None = None,
     num_threads: int | None = None,
     raise_on_error=True,
@@ -224,7 +224,7 @@ def bootstrap_trace_data(
     failure_score: float = 0,
     format_failure_score: float = -1,
     log_format_failures: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
     evaluator = Evaluate(
@@ -320,7 +320,7 @@ def bootstrap_trace_data(
 #     example: Example,
 #     program: Program,
 #     metric: Optional[Callable] = None
-# ) -> Dict[str, Any]:
+# ) -> dict[str, Any]:
 #     # Return a dict with the following keys:
 #     #     example, prediction, trace, and score (if metric != None)
 #     with dspy.context(trace=[]):
@@ -407,7 +407,7 @@ def assert_no_shared_predictor(program1: Module, program2: Module):
     assert not shared_ids, err
 
 
-def get_unique_lms(program: Module) -> List[LM]:
+def get_unique_lms(program: Module) -> list[LM]:
     lms = [pred.lm for pred in program.predictors()]
     return list(set(lms))
 

@@ -1,7 +1,7 @@
 import logging
 import random
 from collections import Counter
-from typing import Any, Callable, Dict, List, Literal, Tuple
+from typing import Any, Callable, Literal
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
@@ -27,8 +27,8 @@ class GRPO(FinetuneTeleprompter):
         self,
         metric: Callable | None = None,
         multitask: bool = True,
-        train_kwargs: Dict[str, Any] | Dict[LM, Dict[str, Any]] | None = None,
-        adapter: Adapter | Dict[LM, Adapter] | None = None,
+        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
+        adapter: Adapter | dict[LM, Adapter] | None = None,
         exclude_demos: bool = False,
         num_threads: int = 6,
         num_train_steps: int = 100,
@@ -46,7 +46,7 @@ class GRPO(FinetuneTeleprompter):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
         self.multitask = multitask
-        self.adapter: Dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
+        self.adapter: dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
         self.num_train_steps = num_train_steps
@@ -81,13 +81,13 @@ class GRPO(FinetuneTeleprompter):
 
     def validate_trace_data_and_log_issues(
         self,
-        trace_data: List[List[List[Dict[str, Any]]]],
-        subsample_training_dataset: List[Example],
+        trace_data: list[list[list[dict[str, Any]]]],
+        subsample_training_dataset: list[Example],
         num_teachers: int,
         num_samples_per_input: int,
-        pred_signature_hash_to_ind: Dict[int, int],
+        pred_signature_hash_to_ind: dict[int, int],
     ):
-        # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
+        # At this point, trace_data: list[example_idx -> list[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
         # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
         assert len(trace_data) == len(subsample_training_dataset), f"Trace data length {len(trace_data)} does not match the number of examples {len(subsample_training_dataset)}"
         assert len(trace_data[0]) == num_teachers, f"Trace data length {len(trace_data[0])} does not match the number of teachers {num_teachers}"
@@ -208,9 +208,9 @@ class GRPO(FinetuneTeleprompter):
 
     def select_training_sample_and_update_shuffled_trainset(
         self,
-        original_trainset: List[Example],
+        original_trainset: list[Example],
         train_step_idx: int,
-    ) -> List[Example]:
+    ) -> list[Example]:
         base_idx = train_step_idx * self.num_dspy_examples_per_grpo_step
         if self.epoch == -1:
             curr_epoch = 0
@@ -234,9 +234,9 @@ class GRPO(FinetuneTeleprompter):
     def compile(
         self,
         student: Module,
-        trainset: List[Example],
-        teacher: Module | List[Module] | None = None,
-        valset: List[Example] | None = None,
+        trainset: list[Example],
+        teacher: Module | list[Module] | None = None,
+        valset: list[Example] | None = None,
         **kwargs,
     ) -> Module:
         logger.info("Starting the GRPO compilation process... The LM(s) for the student program will be updated in place at the end of the training.")
@@ -375,7 +375,7 @@ class GRPO(FinetuneTeleprompter):
             # The trace_data for examples with FailedPrediction cases will have the signature at index 0, instead of the predictor
             # We need to replace the signature with the predictor
 
-            # At this point, trace_data: List[example_idx -> List[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
+            # At this point, trace_data: list[example_idx -> list[teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]]]
             # Shape of trace is: [dspy_module_invocation_idx -> Tuple[Predictor, PredictorInputs, Prediction]]
             self.validate_trace_data_and_log_issues(
                 trace_data=trace_data,
@@ -387,15 +387,15 @@ class GRPO(FinetuneTeleprompter):
 
             logger.info("Preparing the training data batch from bootstrapped examples for GRPO...")
             # Now, we need to prepare batches of data to be sent for training
-            # Shape of train_batch_per_predictor: List[num_student_predictors -> List[ ]]
-            train_batch_per_predictor: List[List[GRPOGroup]] = [[] for _ in range(num_student_predictors)]
+            # Shape of train_batch_per_predictor: list[num_student_predictors -> list[ ]]
+            train_batch_per_predictor: list[list[GRPOGroup]] = [[] for _ in range(num_student_predictors)]
             for pred_id in range(num_student_predictors):
                 for example_ind, example_data in enumerate(trace_data):
                     # Each example_data is a list of teacher_idx -> [num_samples_per_input * Dict(example, prediction, trace, example_ind, score)]
                     # We need to flatten this list and create a batch for each predictor
 
                     # TODO(Lakshya, Omar, Noah): Discuss what to do with the same module being invoked multiple times within a single dspy.Example
-                    predictor_example_invocations: List[List[Tuple]] = []
+                    predictor_example_invocations: list[list[tuple]] = []
 
                     for teacher_data in example_data:
                         for sample in teacher_data:
@@ -434,7 +434,7 @@ class GRPO(FinetuneTeleprompter):
                         assert self.variably_invoked_predictor_grouping_mode == "ragged", f"Unknown variably invoked predictor grouping mode {self.variably_invoked_predictor_grouping_mode}"
                     max_len = max([len(predictor_example_invocations[i]) for i in range(len(predictor_example_invocations))])
 
-                    example_training_data: List[GRPOGroup] = [[] for _ in range(max_len)]
+                    example_training_data: list[GRPOGroup] = [[] for _ in range(max_len)]
 
                     for group_idx in range(max_len):
                         for rollout_idx in range(len(predictor_example_invocations)):
@@ -519,7 +519,7 @@ class GRPO(FinetuneTeleprompter):
             #   LM.
             logger.info("Invoking GRPO training step...")
             for (_, data_key), job in grpo_training_jobs.items():
-                train_data: List[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key] #noqa: RUF017
+                train_data: list[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key] #noqa: RUF017
                 for group in train_data:
                     if len(group) != self.num_rollouts_per_grpo_step:
                         # TODO(GRPO Team): This is very undesirable. This occurs only because in some of the generations, the model does not follow the correct dspy format.

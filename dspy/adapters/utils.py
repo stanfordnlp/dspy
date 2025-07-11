@@ -3,7 +3,7 @@ import enum
 import inspect
 import json
 from collections.abc import Mapping
-from typing import Any, List, Literal, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -217,9 +217,9 @@ def get_field_description_string(fields: dict) -> str:
     return "\n".join(field_descriptions).strip()
 
 
-def _format_input_list_field_value(value: List[Any]) -> str:
+def _format_input_list_field_value(value: list[Any]) -> str:
     """
-    Formats the value of an input field of type List[Any].
+    Formats the value of an input field of type list[Any].
 
     Args:
       value: The value of the list-type input field.

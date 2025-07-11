@@ -4,7 +4,7 @@ import logging
 import threading
 from functools import wraps
 from hashlib import sha256
-from typing import Any, Dict
+from typing import Any
 
 import cloudpickle
 import pydantic
@@ -62,7 +62,7 @@ class Cache:
         """Check if a key is in the cache."""
         return key in self.memory_cache or key in self.disk_cache
 
-    def cache_key(self, request: Dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> str:
+    def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> str:
         """
         Obtain a unique cache key for the given request dictionary by hashing its JSON
         representation. For request fields having types that are known to be JSON-incompatible,
@@ -95,7 +95,7 @@ class Cache:
         params = {k: transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
         return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
 
-    def get(self, request: Dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
+    def get(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
@@ -122,7 +122,7 @@ class Cache:
 
     def put(
         self,
-        request: Dict[str, Any],
+        request: dict[str, Any],
         value: Any,
         ignored_args_for_cache_key: list[str] | None = None,
         enable_memory_cache: bool = True,

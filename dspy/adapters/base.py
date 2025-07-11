@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, Type, get_origin
+from typing import TYPE_CHECKING, Any, get_origin
 
 import json_repair
 import litellm
@@ -32,7 +32,7 @@ class Adapter:
         self,
         lm: "LM",
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         inputs: dict[str, Any],
     ) -> dict[str, Any]:
         if self.use_native_function_calling:
@@ -67,8 +67,8 @@ class Adapter:
 
     def _call_postprocess(
         self,
-        processed_signature: Type[Signature],
-        original_signature: Type[Signature],
+        processed_signature: type[Signature],
+        original_signature: type[Signature],
         outputs: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         values = []
@@ -117,7 +117,7 @@ class Adapter:
         self,
         lm: "LM",
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -131,7 +131,7 @@ class Adapter:
         self,
         lm: "LM",
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -143,7 +143,7 @@ class Adapter:
 
     def format(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -221,7 +221,7 @@ class Adapter:
         messages = split_message_content_for_custom_types(messages)
         return messages
 
-    def format_field_description(self, signature: Type[Signature]) -> str:
+    def format_field_description(self, signature: type[Signature]) -> str:
         """Format the field description for the system message.
 
         This method formats the field description for the system message. It should return a string that contains
@@ -235,7 +235,7 @@ class Adapter:
         """
         raise NotImplementedError
 
-    def format_field_structure(self, signature: Type[Signature]) -> str:
+    def format_field_structure(self, signature: type[Signature]) -> str:
         """Format the field structure for the system message.
 
         This method formats the field structure for the system message. It should return a string that dictates the
@@ -247,7 +247,7 @@ class Adapter:
         """
         raise NotImplementedError
 
-    def format_task_description(self, signature: Type[Signature]) -> str:
+    def format_task_description(self, signature: type[Signature]) -> str:
         """Format the task description for the system message.
 
         This method formats the task description for the system message. In most cases this is just a thin wrapper
@@ -263,7 +263,7 @@ class Adapter:
 
     def format_user_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
@@ -287,7 +287,7 @@ class Adapter:
 
     def format_assistant_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         outputs: dict[str, Any],
         missing_field_message: str | None = None,
     ) -> str:
@@ -306,7 +306,7 @@ class Adapter:
         """
         raise NotImplementedError
 
-    def format_demos(self, signature: Type[Signature], demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def format_demos(self, signature: type[Signature], demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Format the few-shot examples.
 
         This method formats the few-shot examples as multiturn messages.
@@ -368,13 +368,13 @@ class Adapter:
 
         return messages
 
-    def _get_history_field_name(self, signature: Type[Signature]) -> bool:
+    def _get_history_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.input_fields.items():
             if field.annotation == History:
                 return name
         return None
 
-    def _get_tool_call_input_field_name(self, signature: Type[Signature]) -> bool:
+    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.input_fields.items():
             # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
             origin = get_origin(field.annotation)
@@ -384,7 +384,7 @@ class Adapter:
                 return name
         return None
 
-    def _get_tool_call_output_field_name(self, signature: Type[Signature]) -> bool:
+    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.output_fields.items():
             if field.annotation == ToolCalls:
                 return name
@@ -392,7 +392,7 @@ class Adapter:
 
     def format_conversation_history(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         history_field_name: str,
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -433,7 +433,7 @@ class Adapter:
 
         return messages
 
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+    def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Parse the LM output into a dictionary of the output fields.
 
         This method parses the LM output into a dictionary of the output fields.

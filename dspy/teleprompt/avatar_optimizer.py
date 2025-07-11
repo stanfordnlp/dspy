@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
-from typing import Callable, List, Tuple
+from typing import Callable
 
 from pydantic import BaseModel
 from tqdm import tqdm
@@ -16,7 +16,7 @@ DEFAULT_MAX_EXAMPLES = 10
 class EvalResult(BaseModel):
     example: dict
     score: float
-    actions: List[ActionOutput] | None = None
+    actions: list[ActionOutput] | None = None
 
 
 class Comparator(dspy.Signature):
@@ -31,15 +31,15 @@ Task:
         prefix="Instruction: ",
         desc="Instruction for the actor to execute the task",
     )
-    actions: List[str] = dspy.InputField(
+    actions: list[str] = dspy.InputField(
         prefix="Actions: ",
         desc="Actions actor can take to complete the task",
     )
-    pos_input_with_metrics: List[EvalResult] = dspy.InputField(
+    pos_input_with_metrics: list[EvalResult] = dspy.InputField(
         prefix="Positive Inputs: ",
         desc="Positive inputs along with their score on a evaluation metric and actions taken",
     )
-    neg_input_with_metrics: List[EvalResult] = dspy.InputField(
+    neg_input_with_metrics: list[EvalResult] = dspy.InputField(
         prefix="Negative Inputs: ",
         desc="Negative inputs along with their score on a evaluation metric and actions taken",
     )
@@ -148,8 +148,8 @@ class AvatarOptimizer(Teleprompter):
     def _get_pos_neg_results(
         self,
         actor: dspy.Module,
-        trainset: List[dspy.Example]
-    ) -> Tuple[float, List[EvalResult], List[EvalResult]]:
+        trainset: list[dspy.Example]
+    ) -> tuple[float, list[EvalResult], list[EvalResult]]:
         pos_inputs = []
         neg_inputs = []
 

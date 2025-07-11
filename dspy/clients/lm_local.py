@@ -6,7 +6,7 @@ import string
 import subprocess
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any
 
 import requests
 
@@ -26,7 +26,7 @@ class LocalProvider(Provider):
         self.TrainingJob = TrainingJob
 
     @staticmethod
-    def launch(lm: "LM", launch_kwargs: Dict[str, Any] | None = None):
+    def launch(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
         try:
             import sglang  # noqa: F401
         except ImportError:
@@ -118,7 +118,7 @@ class LocalProvider(Provider):
         lm.thread = thread
 
     @staticmethod
-    def kill(lm: "LM", launch_kwargs: Dict[str, Any] | None = None):
+    def kill(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
         from sglang.utils import terminate_process
 
         if not hasattr(lm, "process"):
@@ -136,9 +136,9 @@ class LocalProvider(Provider):
     def finetune(
         job: TrainingJob,
         model: str,
-        train_data: List[Dict[str, Any]],
+        train_data: list[dict[str, Any]],
         train_data_format: TrainDataFormat | None,
-        train_kwargs: Dict[str, Any] | None = None,
+        train_kwargs: dict[str, Any] | None = None,
     ) -> str:
         if model.startswith("openai/"):
             model = model[7:]

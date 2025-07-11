@@ -1,4 +1,4 @@
-from typing import Any, Type
+from typing import Any
 
 import json_repair
 
@@ -46,7 +46,7 @@ class TwoStepAdapter(Adapter):
         self.extraction_model = extraction_model
 
     def format(
-        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
+        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
     ) -> list[dict[str, Any]]:
         """
         Format a prompt for the first stage with the main LM.
@@ -107,7 +107,7 @@ class TwoStepAdapter(Adapter):
         self,
         lm: "LM",
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -176,7 +176,7 @@ class TwoStepAdapter(Adapter):
 
     def format_user_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
@@ -192,7 +192,7 @@ class TwoStepAdapter(Adapter):
 
     def format_assistant_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         outputs: dict[str, Any],
         missing_field_message: str | None = None,
     ) -> str:
@@ -206,8 +206,8 @@ class TwoStepAdapter(Adapter):
 
     def _create_extractor_signature(
         self,
-        original_signature: Type[Signature],
-    ) -> Type[Signature]:
+        original_signature: type[Signature],
+    ) -> type[Signature]:
         """Create a new signature containing a new 'text' input field and all output fields.
 
         Args:

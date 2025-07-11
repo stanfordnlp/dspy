@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Tuple, Type, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Type, get_origin, get_type_hints
 
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -338,7 +338,7 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
 
 def convert_input_schema_to_tool_args(
     schema: dict[str, Any],
-) -> Tuple[dict[str, Any], dict[str, Type], dict[str, str]]:
+) -> tuple[dict[str, Any], dict[str, Type], dict[str, str]]:
     """Convert an input json schema to tool arguments compatible with DSPy Tool.
 
     Args:

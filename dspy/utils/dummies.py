@@ -1,6 +1,6 @@
 import random
 from collections import defaultdict
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 
@@ -93,7 +93,7 @@ class DummyLM(LM):
 
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
-        def format_answer_fields(field_names_and_values: Dict[str, Any]):
+        def format_answer_fields(field_names_and_values: dict[str, Any]):
             return ChatAdapter().format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=OutputField()): value

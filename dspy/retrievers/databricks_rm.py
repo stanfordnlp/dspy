@@ -2,7 +2,7 @@ import json
 import os
 from dataclasses import dataclass
 from importlib.util import find_spec
-from typing import Any, Dict, List
+from typing import Any
 
 import requests
 
@@ -15,10 +15,10 @@ _databricks_sdk_installed = find_spec("databricks.sdk") is not None
 @dataclass
 class Document:
     page_content: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     type: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "page_content": self.page_content,
             "metadata": self.metadata,
@@ -88,7 +88,7 @@ class DatabricksRM(dspy.Retrieve):
         databricks_token: str | None = None,
         databricks_client_id: str | None = None,
         databricks_client_secret: str | None = None,
-        columns: List[str] | None = None,
+        columns: list[str] | None = None,
         filters_json: str | None = None,
         k: int = 3,
         docs_id_column_name: str = "id",
@@ -111,7 +111,7 @@ class DatabricksRM(dspy.Retrieve):
                 the token is resolved from the current environment (DATABRICKS_CLIENT_ID).
             databricks_client_secret (str): Databricks service principal secret. If not specified,
                 the endpoint is resolved from the current environment (DATABRICKS_CLIENT_SECRET).
-            columns (Optional[List[str]]): Extra column names to include in response,
+            columns (Optional[list[str]]): Extra column names to include in response,
                 in addition to the document id and text columns specified by
                 ``docs_id_column_name`` and ``text_column_name``.
             filters_json (Optional[str]): A JSON string specifying additional query filters.
@@ -172,11 +172,11 @@ class DatabricksRM(dspy.Retrieve):
                     "you must install the mlflow Python library. Please install mlflow via `pip install mlflow`."
                 )
 
-    def _extract_doc_ids(self, item: Dict[str, Any]) -> str:
+    def _extract_doc_ids(self, item: dict[str, Any]) -> str:
         """Extracts the document id from a search result
 
         Args:
-            item: Dict[str, Any]: a record from the search results.
+            item: dict[str, Any]: a record from the search results.
         Returns:
             str: document id.
         """
@@ -185,13 +185,13 @@ class DatabricksRM(dspy.Retrieve):
             return docs_dict["document_id"]
         return item[self.docs_id_column_name]
 
-    def _get_extra_columns(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def _get_extra_columns(self, item: dict[str, Any]) -> dict[str, Any]:
         """Extracts search result column values, excluding the "text" and not "id" columns
 
         Args:
-            item: Dict[str, Any]: a record from the search results.
+            item: dict[str, Any]: a record from the search results.
         Returns:
-            Dict[str, Any]: Search result column values, excluding the "text", "id" and "uri" columns.
+            dict[str, Any]: Search result column values, excluding the "text", "id" and "uri" columns.
         """
         extra_columns = {
             k: v
@@ -207,16 +207,16 @@ class DatabricksRM(dspy.Retrieve):
 
     def forward(
         self,
-        query: str | List[float],
+        query: str | list[float],
         query_type: str = "ANN",
         filters_json: str | None = None,
-    ) -> dspy.Prediction | List[Dict[str, Any]]:
+    ) -> dspy.Prediction | list[dict[str, Any]]:
         """
         Retrieve documents from a Databricks Mosaic AI Vector Search Index that are relevant to the
         specified query.
 
         Args:
-            query (Union[str, List[float]]): The query text or numeric query vector for which to
+            query (Union[str, list[float]]): The query text or numeric query vector for which to
                 retrieve relevant documents.
             query_type (str): The type of search query to perform against the Databricks Vector
                 Search Index. Must be either 'ANN' (approximate nearest neighbor) or 'HYBRID'
@@ -326,16 +326,16 @@ class DatabricksRM(dspy.Retrieve):
     def _query_via_databricks_sdk(
         index_name: str,
         k: int,
-        columns: List[str],
+        columns: list[str],
         query_type: str,
         query_text: str | None,
-        query_vector: List[float] | None,
+        query_vector: list[float] | None,
         databricks_token: str | None,
         databricks_endpoint: str | None,
         databricks_client_id: str | None,
         databricks_client_secret: str | None,
         filters_json: str | None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Query a Databricks Vector Search Index via the Databricks SDK.
         Assumes that the databricks-sdk Python library is installed.
@@ -343,10 +343,10 @@ class DatabricksRM(dspy.Retrieve):
         Args:
             index_name (str): Name of the Databricks vector search index to query
             k (int): Number of relevant documents to retrieve.
-            columns (List[str]): Column names to include in response.
+            columns (list[str]): Column names to include in response.
             query_text (Optional[str]): Text query for which to find relevant documents. Exactly
                 one of query_text or query_vector must be specified.
-            query_vector (Optional[List[float]]): Numeric query vector for which to find relevant
+            query_vector (Optional[list[float]]): Numeric query vector for which to find relevant
                 documents. Exactly one of query_text or query_vector must be specified.
             filters_json (Optional[str]): JSON string representing additional query filters.
             databricks_token (str): Databricks authentication token. If not specified,
@@ -359,7 +359,7 @@ class DatabricksRM(dspy.Retrieve):
                 the endpoint is resolved from the current environment (DATABRICKS_CLIENT_SECRET).
         Returns:
         Returns:
-            Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
+            dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
         """
 
         from databricks.sdk import WorkspaceClient
@@ -397,31 +397,31 @@ class DatabricksRM(dspy.Retrieve):
     def _query_via_requests(
         index_name: str,
         k: int,
-        columns: List[str],
+        columns: list[str],
         databricks_token: str,
         databricks_endpoint: str,
         query_type: str,
         query_text: str | None,
-        query_vector: List[float] | None,
+        query_vector: list[float] | None,
         filters_json: str | None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Query a Databricks Vector Search Index via the Python requests library.
 
         Args:
             index_name (str): Name of the Databricks vector search index to query
             k (int): Number of relevant documents to retrieve.
-            columns (List[str]): Column names to include in response.
+            columns (list[str]): Column names to include in response.
             databricks_token (str): Databricks authentication token.
             databricks_endpoint (str): Databricks index endpoint url.
             query_text (Optional[str]): Text query for which to find relevant documents. Exactly
                 one of query_text or query_vector must be specified.
-            query_vector (Optional[List[float]]): Numeric query vector for which to find relevant
+            query_vector (Optional[list[float]]): Numeric query vector for which to find relevant
                 documents. Exactly one of query_text or query_vector must be specified.
             filters_json (Optional[str]): JSON string representing additional query filters.
 
         Returns:
-            Dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
+            dict[str, Any]: Parsed JSON response from the Databricks Vector Search Index query.
         """
         if (query_text, query_vector).count(None) != 1:
             raise ValueError("Exactly one of query_text or query_vector must be specified.")
