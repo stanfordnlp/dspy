@@ -5,7 +5,7 @@ import logging
 import numpy as np
 from typing import Callable, Optional, Any, Dict
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule
+from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule, update_fields
 from dspy.teleprompt.utils import log_token_usage
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,8 @@ class SIMBAFast(Teleprompter):
         self.temperature_for_candidates = temperature_for_candidates
 
         if self.max_demos > 0:
-            self.strategies = [append_a_demo(demo_input_field_maxlen), append_a_rule]
+            # self.strategies = [append_a_demo(demo_input_field_maxlen), append_a_rule]
+            self.strategies = [update_fields]
         else:
             self.strategies = [append_a_rule]
 

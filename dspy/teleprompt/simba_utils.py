@@ -114,6 +114,24 @@ def append_a_demo(demo_input_field_maxlen):
     
     return append_a_demo_
 
+def get_good_and_bad_examples(bucket):
+    """Get good and bad examples from bucket
+    """
+    good, bad = bucket[0], bucket[-1]
+    return good["example"], bad["example"]
+
+def get_good_and_bad_trajectories(good_example, bad_example, predictor2name):
+    """Get good and bad trajectories from examples
+    """
+    good_trajectory = [
+        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
+        for p, i, o in good_example["trace"]
+    ]
+    bad_trajectory = [
+        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
+        for p, i, o in bad_example["trace"]
+    ]
+    return good_trajectory, bad_trajectory
 
 def append_a_rule(bucket, system, **kwargs):
     # Read in kwargs
@@ -179,6 +197,130 @@ def append_a_rule(bucket, system, **kwargs):
             predictor.signature = predictor.signature.with_instructions(instructions)
 
     return True
+
+def update_fields(bucket, system, **kwargs):
+    predictor2name = kwargs["predictor2name"]
+    batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
+    prompt_model = kwargs["prompt_model"] or dspy.settings.lm
+
+    module_names = [name for name, _ in system.named_predictors()]
+    good, bad = bucket[0], bucket[-1]
+    example = good["example"]
+
+    if good["score"] <= batch_10p_score or bad["score"] >= batch_90p_score:
+        logger.info(f"Skipping rule generation as good score {good['score']} is at or below the 10th percentile "
+                    f"*or* bad score {bad['score']} is at or above the 90th percentile.")
+        return False
+
+    if good["score"] <= bad["score"]:
+        if good["score"] > batch_90p_score:
+            bad["trace"] = []
+            bad["score"] = "N/A"
+            bad["prediction"] = {"N/A": "Prediction not available"}
+        else:
+            good["trace"] = []
+            good["score"] = "N/A"
+            good["prediction"] = {"N/A": "Prediction not available"}
+
+    better_trajectory = [
+        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
+        for p, i, o in good["trace"]
+    ]
+    worse_trajectory = [
+        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
+        for p, i, o in bad["trace"]
+    ]
+
+    # Get the current fields
+    current_fields = {}
+    for name, predictor in system.named_predictors():
+        current_fields[name] = {}
+        for field_name, field in predictor.signature.input_fields.items():
+            current_fields[name][field_name] = {}
+            current_fields[name][field_name]["name"] = field.json_schema_extra["prefix"]
+            current_fields[name][field_name]["desc"] = field.json_schema_extra["desc"]
+        for field_name, field in predictor.signature.output_fields.items():
+            current_fields[name][field_name] = {}
+            current_fields[name][field_name]["name"] = field.json_schema_extra["prefix"]
+            current_fields[name][field_name]["desc"] = field.json_schema_extra["desc"]
+
+    kwargs = dict(
+        program_code=inspect.getsource(system.__class__),
+        modules_defn=inspect_modules(system),
+        program_inputs={**example.inputs()},
+        oracle_metadata={**example.labels()},
+        current_fields=current_fields,
+        better_program_trajectory=better_trajectory,
+        better_program_outputs=dict(good["prediction"]),
+        worse_program_trajectory=worse_trajectory,
+        worse_program_outputs=dict(bad["prediction"] or {}),
+        worse_reward_value=bad["score"],
+        better_reward_value=good["score"],
+        worse_reward_info=bad["output_metadata"],
+        better_reward_info=good["output_metadata"],
+    )
+
+    kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
+              for k, v in kwargs.items()}
+
+    # Get new prefixes and descriptions for each field
+    with dspy.settings.context(trace=[], lm=prompt_model):
+        update_fields_program = dspy.Predict(UpdateFields)
+        updated_fields = update_fields_program(**kwargs).updated_fields
+    
+    # Set the prefix and description of the fields
+    for name, predictor in system.named_predictors():
+        if name in updated_fields:
+            for field_name, field in predictor.signature.input_fields.items():
+                if field_name in updated_fields[name]:
+                    if "name" in updated_fields[name][field_name]:
+                        field.json_schema_extra["prefix"] = updated_fields[name][field_name]["name"]
+                    if "desc" in updated_fields[name][field_name]:
+                        field.json_schema_extra["desc"] = updated_fields[name][field_name]["desc"]
+            for field_name, field in predictor.signature.output_fields.items():
+                if field_name in updated_fields[name]:
+                    if "name" in updated_fields[name][field_name]:
+                        field.json_schema_extra["prefix"] = updated_fields[name][field_name]["name"]
+                    if "desc" in updated_fields[name][field_name]:
+                        field.json_schema_extra["desc"] = updated_fields[name][field_name]["desc"]
+
+    prompt_model.inspect_history(n=1)
+    print(f"Current fields: {current_fields}")
+    print(f"Updated fields: {updated_fields}")
+
+    return True
+
+class UpdateFields(dspy.Signature):
+    """
+    You will be given two trajectories of an LLM-driven program's execution: one that is successful and one that is not.
+    You will also be provided with the current fields of the program, which are being used to describe the desired inputs and outputs of the program to the LLM.
+    Your goal is to update the fields of the program to be more accurate and informative to ensure that the program
+    is able to learn from the successful trajectory and avoid the mistakes of the unsuccessful trajectory. You can update both the name and the description of the fields.
+
+    These fields are important because they are used to provide the LLM with a description of the inputs it will receive,
+    and the outputs it will produce.
+
+    """
+    program_code: str = InputField(desc="The code of the program that we are analyzing")
+    modules_defn: str = InputField(desc="The definition of each module in the program, including its I/O")
+    program_inputs: str = InputField(desc="The inputs to the program that we are analyzing")
+    oracle_metadata: str = InputField(desc="Any (hidden) metadata about the training set instance we're analyzing")
+    worse_program_trajectory: str = InputField(
+        desc="The trajectory of the program's execution, showing each module's I/O"
+    )
+    worse_program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
+    worse_reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
+    worse_reward_info: str = InputField(desc="Additional information that might be helpful to understanding the assigned reward value.")
+    better_program_trajectory: str = InputField(
+        desc="The trajectory of the program's execution, showing each module's I/O"
+    )
+    better_program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
+    better_reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
+    better_reward_info: str = InputField(desc="Additional information that might be helpful to understanding the assigned reward value.")
+    current_fields: dict[str, dict[str, dict[str, str]]] = InputField(desc="A dictionary of current field names and descriptions for the program.")
+    discussion: str = OutputField(desc="Discussing blame of where each module went wrong, if it did.")
+    field_discussion: str = OutputField(desc="Discussing the changes to the fields that should be made for each model in the program.")
+    updated_fields: dict[str, dict[str, dict[str, str]]] = OutputField(desc="A dictionary of new field names and descriptions for each module in the program. These will be used to update the fields of the program to better clarify expected inputs & outputs to the LLM.")
 
 class OfferFeedback(dspy.Signature):
     """
