@@ -4,6 +4,9 @@ This section covers essential DSPy features and best practices for professional 
 
 ## Integration and Tooling
 
+### [Managing Conversation History](../conversation_history/index.md)
+Learn how to manage conversation history in DSPy applications.
+
 ### [Use MCP in DSPy](../mcp/index.md)
 Learn to integrate Model Context Protocol (MCP) with DSPy applications. This tutorial shows how to leverage MCP for enhanced context management and more sophisticated AI interactions.
 
