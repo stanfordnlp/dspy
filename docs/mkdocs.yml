@@ -51,6 +51,7 @@ nav:
             - RL for Multi-Hop Research: tutorials/rl_multihop/index.ipynb
         - Tools, Development, and Deployment:
             - Overview: tutorials/core_development/index.md
+            - Managing Conversation History: tutorials/conversation_history/index.md
             - Use MCP in DSPy: tutorials/mcp/index.md
             - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
             - Saving and Loading: tutorials/saving/index.md

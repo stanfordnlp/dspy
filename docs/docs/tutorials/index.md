@@ -33,6 +33,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Finetuning Agents](games/index.ipynb)
 
 - Tools, Development, and Deployment
+    - [Managing Conversation History](conversation_history/index.md)
     - [Use MCP in DSPy](mcp/index.md)
     - [Output Refinement](output_refinement/best-of-n-and-refine.md)
     - [Saving and Loading](saving/index.md)
