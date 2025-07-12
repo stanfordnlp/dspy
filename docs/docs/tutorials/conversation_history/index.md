@@ -28,7 +28,7 @@ while True:
         break
     outputs = predict(question=question, history=history)
     print(f"\n{outputs.answer}\n")
-    history.messages.append({"question": "What is the capital of France?", **outputs})
+    history.messages.append({"question": question, **outputs})
 
 dspy.inspect_history()
 ```
@@ -81,7 +81,7 @@ In adhering to this structure, your objective is:
 User message:
 
 [[ ## question ## ]]
-What is the capital of France?
+do you know the competition between pytorch and tensorflow?
 
 
 Assistant message:
