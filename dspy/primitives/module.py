@@ -93,10 +93,19 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def get_lm(self):
         all_used_lms = [param.lm for _, param in self.named_predictors()]
 
-        if len(set(all_used_lms)) == 1:
-            return all_used_lms[0]
+        if len(all_used_lms) == 0:
+            raise ValueError("No LMs are being used in the module. There's no LM to return.")
 
-        raise ValueError("Multiple LMs are being used in the module. There's no unique LM to return.")
+        elif len(all_used_lms) == 1:
+            return all_used_lms.pop()
+
+        else:
+            first_lm = all_used_lms.pop()
+            for lm in all_used_lms:
+                if first_lm.dump_state() != lm.dump_state():
+                    raise ValueError("Multiple LMs are being used in the module. There's no unique LM to return.")
+
+            return first_lm
 
     def __repr__(self):
         s = []
