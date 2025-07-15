@@ -73,6 +73,8 @@ nav:
     - Community:
         - Community Resources: community/community-resources.md
         - Use Cases: community/use-cases.md
+        - Why DSPy?: why-dspy.md
+        - Design Principles: design-principles.md
         - Roadmap: roadmap.md
         - Contributing: community/how-to-contribute.md
     - FAQ:
@@ -247,6 +249,9 @@ extra:
 
 extra_javascript:
     - "js/runllm-widget.js"
+    - "js/mathjax-config.js"
+    - https://polyfill.io/v3/polyfill.min.js?features=es6
+    - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 markdown_extensions:
     - pymdownx.tabbed:
