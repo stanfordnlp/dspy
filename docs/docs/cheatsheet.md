@@ -42,8 +42,38 @@ print(f"Final Predicted Answer (after ProgramOfThought process): {result.answer}
 
 ### dspy.ReACT
 
+We need to write a custom tool to be used in the ReAct module.
 ```python
-react_module = dspy.ReAct(BasicQA)
+def basic_arithmetic(a: float, b: float, ops: str) -> float:
+    """
+    Perform basic arithmetic operations between two numbers.
+
+    Args:
+        a (float): The first operand.
+        b (float): The second operand.
+        ops (str): The arithmetic operator as a string. Supported operators are '+', '-', '*', '/'.
+
+    Returns:
+        float: The result of the arithmetic operation.
+
+    Raises:
+        ValueError: If an unsupported operator is provided.
+        ZeroDivisionError: If division by zero is attempted.
+
+    Example:
+        >>> basic_arithmetic(2, 3, '+')
+        5.0
+        >>> basic_arithmetic(10, 2, '/')
+        5.0
+    """
+    if ops not in ['+', '-', '*', '/']:
+        raise ValueError(f"Unsupported operator: {ops}")
+    return eval(f'{a}{ops}{b}')
+```
+
+And declare the tool in the ReAct module.
+```python
+react_module = dspy.ReAct(BasicQA, tools=[basic_arithmetic])
 
 question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
 result = react_module(question=question)
