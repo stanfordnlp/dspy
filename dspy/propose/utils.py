@@ -69,7 +69,7 @@ def parse_list_of_instructions(instruction_string):
 
 def get_program_instruction_set_string(program):
     instruction_list = []
-    for _, pred in enumerate(program.predictors()):
+    for _, pred in enumerate(program.predictors(return_trainable=False)):
         pred_instructions = get_signature(pred).instructions
         instruction_list.append(f'"{pred_instructions}"')
     # Joining the list into a single string that looks like a list
