@@ -1,5 +1,6 @@
 # Tutorial: Use MCP tools in DSPy
 
+
 MCP, standing for Model Context Protocol, is an open protocol that standardizes how applications
 provide context to LLMs. Despite some development overhead, MCP offers a valuable opportunity to
 share tools, resources, and prompts with other developers regardless of the technical stack you are
@@ -8,14 +9,16 @@ using. Likewise, you can use the tools built by other developers without rewriti
 In this guide, we will walk you through how to use MCP tools in DSPy. For demonstration purposes,
 we will build an airline service agent that can help users book flights and modify or cancel
 existing bookings. This will rely on an MCP server with custom tools, but it should be easy to generalize
-to [MCP servers built by the community](https://modelcontextprotocol.io/examples).
+to [MCP servers built by the community](https://modelcontextprotocol.io/examples). We will also demonstrate how to connect to a remote MCP server using the fastmcp library together with DSPy.
+
+## Build and deploy local MCP server and use it in DSPy
 
 ??? "How to run this tutorial"
     This tutorial cannot be run in hosted IPython notebooks like Google Colab or Databricks notebooks.
     To run the code, you will need to follow the guide to write code on your local device. The code
     is tested on macOS and should work the same way in Linux environments.
 
-## Install Dependencies
+### Install Dependencies
 
 Before starting, let's install the required dependencies:
 
@@ -23,7 +26,7 @@ Before starting, let's install the required dependencies:
 pip install -U dspy[mcp]
 ```
 
-## MCP Server Setup
+### MCP Server Setup
 
 Let's first set up the MCP server for the airline agent, which contains:
 
@@ -284,13 +287,13 @@ Now we have finished writing the server! Let's launch it:
 python path_to_your_working_directory/mcp_server.py
 ```
 
-## Write a DSPy Program That Utilizes Tools in MCP Server
+### Write a DSPy Program That Utilizes Tools in MCP Server
 
 Now that the server is running, let's build the actual airline service agent which
 utilizes the MCP tools in our server to assist users. In your working directory,
 create a file named `dspy_mcp_agent.py`, and follow the guide to add code to it.
 
-### Gather Tools from MCP Servers
+#### Gather Tools from MCP Servers
 
 We first need to gather all available tools from the MCP server and make them
 usable by DSPy. DSPy provides an API [`dspy.Tool`](https://dspy.ai/api/primitives/Tool/)
@@ -336,7 +339,7 @@ With the code above, we have successfully collected all available MCP tools and 
 them to DSPy tools.
 
 
-### Build a DSPy Agent to Handle Customer Requests
+#### Build a DSPy Agent to Handle Customer Requests
 
 Now we will use `dspy.ReAct` to build the agent for handling customer requests. `ReAct` stands
 for "reasoning and acting," which asks the LLM to decide whether to call a tool or wrap up the process.
@@ -445,6 +448,100 @@ The `trajectory` field contains the entire thinking and acting process. If you'r
 under the hood, check out the [Observability Guide](https://dspy.ai/tutorials/observability/) to set up MLflow,
 which visualizes every step happening inside `dspy.ReAct`!
 
+## Interact with remote MCP servers
+
+### Install dependencies
+To interact with remote MCP servers, we can use the `fastmcp` library, which provides a simple interface 
+for connecting to MCP servers. You can install it using:
+
+```shell
+pip install fastmcp 
+# or
+uv pip install fastmcp
+```
+
+### Client to interact with MCP servers
+We can use the `fastmcp.Client` class to connect to a remote MCP server and interact with its tools.
+You can find a list of remote MCP servers at this repo [Awesome Remote MCP Servers](https://github.com/jaw9c/awesome-remote-mcp-servers).
+
+```python
+from fastmcp import Client
+
+# the URL to the MCP server
+# Below is an example of a public MCP server hosted by Hugging Face
+MCP_URL = "https://hf.co/mcp"
+client = Client(MCP_URL)
+```
+
+You can list all the available tools in the MCP server using the `list_tools` method.
+```python
+async def list_available_tools():
+    async with client:
+        tools = await client.list_tools()
+        return [{
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.inputSchema,
+            "output_schema": tool.outputSchema,
+            "annotations": tool.annotations,
+            } for tool in tools]
+
+await list_available_tools()
+```
+
+By listing the available tools, you can view each tool's name, description, input and output schemas, 
+and any annotations. Next, you can define Python functions that interact with these tools, 
+making them accessible for use by the LLM in your application.
+```python
+async def search_models(query: str):
+    async with client:
+        results = await client.call_tool(
+            "model_search", {"query": query, "limit": 10, "sort": "trendingScore"}
+        )
+        return results
+```
+
+We then create the ReAct agent by passing the tools and signature into the `dspy.ReAct` API.
+```python
+class HuggingFaceFindGoodModel(dspy.Signature):
+    """Analyze user query to find suitable list of models to solve the query"""
+
+    query: str = dspy.InputField(desc="The original query that describes the problem.")
+    model_names: list[str] = dspy.OutputField(
+        desc="The list of HuggingFace model name to solve the problem, "
+        "using the HuggingFace tools to search for model"
+    )
+
+
+react = dspy.ReAct(HuggingFaceFindGoodModel, tools=[search_models])
+result = await react.acall(query="I want to classify images of birds")
+
+# Print the result nicely
+print(f'Found {len(result.model_names)} models that can classify images of birds:')
+for model_name in result.model_names:
+    print(f"- {model_name}")
+print('-' * 50)
+print(f'The reasoning process is:\n- {result.reasoning}')
+print('-' * 50)
+print(f'The detailed trajectory is:')
+cur_step = 0
+for step, value in result.trajectory.items():
+    step_index = step.split('_')[-1]
+    if step_index.isdigit() and int(step_index) > cur_step:
+        cur_step = int(step_index)
+        print('-' * 20)
+    if step.startswith("observation"):
+        # print(1/0)
+        print(f"- {step}:")
+        if isinstance(value, str):
+            print(f"  + {value}")
+            continue
+        for val in value.content:
+            for k, v in val.model_dump().items():
+                print(f"  + {k}: {v}")
+    else:
+        print(f"- {step}: {value}")
+```
 
 ## Conclusion
 
