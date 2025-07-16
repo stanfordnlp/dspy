@@ -50,7 +50,12 @@ class UserProfile(BaseModel):
     tags: list[str] = []
 
 
-def complex_dummy_function(profile: UserProfile, priority: int, notes: str | None = None) -> dict[str, Any]:
+class Note(BaseModel):
+    content: str
+    author: str
+
+
+def complex_dummy_function(profile: UserProfile, priority: int, notes: list[Note] | None = None) -> dict[str, Any]:
     """Process user profile with complex nested structure.
 
     Args:
@@ -88,9 +93,7 @@ async def async_dummy_with_pydantic(model: DummyModel) -> str:
     return f"{model.field1} {model.field2}"
 
 
-async def async_complex_dummy_function(
-    profile: UserProfile, priority: int, notes: str | None = None
-) -> dict[str, Any]:
+async def async_complex_dummy_function(profile: UserProfile, priority: int, notes: str | None = None) -> dict[str, Any]:
     """Process user profile with complex nested structure asynchronously.
 
     Args:
@@ -176,6 +179,13 @@ def test_tool_from_function_with_pydantic_nesting():
     assert tool.args["profile"]["properties"]["age"]["anyOf"] == [{"type": "integer"}, {"type": "null"}]
     assert tool.args["profile"]["properties"]["contact"]["type"] == "object"
     assert tool.args["profile"]["properties"]["contact"]["properties"]["email"]["type"] == "string"
+
+    # Reference should be resolved for nested pydantic models
+    assert "$defs" not in str(tool.args["notes"])
+    assert tool.args["notes"]["anyOf"][0]["type"] == "array"
+    assert tool.args["notes"]["anyOf"][0]["items"]["type"] == "object"
+    assert tool.args["notes"]["anyOf"][0]["items"]["properties"]["content"]["type"] == "string"
+    assert tool.args["notes"]["anyOf"][0]["items"]["properties"]["author"]["type"] == "string"
 
 
 def test_tool_callable():
@@ -382,42 +392,39 @@ TOOL_CALL_TEST_CASES = [
     ([], [{"type": "tool_calls", "tool_calls": []}]),
     (
         [{"name": "search", "args": {"query": "hello"}}],
-        [{
-            "type": "tool_calls",
-            "tool_calls": [{
-                "type": "function",
-                "function": {"name": "search", "arguments": {"query": "hello"}}
-            }]
-        }],
+        [
+            {
+                "type": "tool_calls",
+                "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
+            }
+        ],
     ),
     (
         [
             {"name": "search", "args": {"query": "hello"}},
-            {"name": "translate", "args": {"text": "world", "lang": "fr"}}
+            {"name": "translate", "args": {"text": "world", "lang": "fr"}},
         ],
-        [{
-            "type": "tool_calls",
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "function": {"name": "search", "arguments": {"query": "hello"}}
-                },
-                {
-                    "type": "function",
-                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}}
-                }
-            ]
-        }],
+        [
+            {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
+                    {
+                        "type": "function",
+                        "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
+                    },
+                ],
+            }
+        ],
     ),
     (
         [{"name": "get_time", "args": {}}],
-        [{
-            "type": "tool_calls",
-            "tool_calls": [{
-                "type": "function",
-                "function": {"name": "get_time", "arguments": {}}
-            }]
-        }],
+        [
+            {
+                "type": "tool_calls",
+                "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
+            }
+        ],
     ),
 ]
 
@@ -431,11 +438,12 @@ def test_tool_calls_format_basic(tool_calls_data, expected):
 
     assert result == expected
 
+
 def test_tool_calls_format_from_dict_list():
     """Test format works with ToolCalls created from from_dict_list."""
     tool_calls_dicts = [
         {"name": "search", "args": {"query": "hello"}},
-        {"name": "translate", "args": {"text": "world", "lang": "fr"}}
+        {"name": "translate", "args": {"text": "world", "lang": "fr"}},
     ]
 
     tool_calls = ToolCalls.from_dict_list(tool_calls_dicts)

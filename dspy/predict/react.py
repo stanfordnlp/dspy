@@ -96,8 +96,6 @@ class ReAct(Module):
     def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        dspy.settings.adapter.use_native_function_calling = True
-
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -112,8 +110,7 @@ class ReAct(Module):
             try:
                 trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
             except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {tool_name}: {_fmt_exc(err)}"
-                self.bad_tool_call.append(err)
+                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 
             if pred.next_tool_name == "finish":
                 break

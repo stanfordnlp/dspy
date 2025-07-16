@@ -386,7 +386,7 @@ class Adapter:
 
     def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.output_fields.items():
-            if field.annotation == ToolCalls or field.annotation == ToolCalls.ToolCall:
+            if field.annotation == ToolCalls:
                 return name
         return None
 
