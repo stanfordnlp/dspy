@@ -437,7 +437,7 @@ asyncio.run(dspy_program(question="What is DSPy"))
 ```
 
 
-### track_usage
+### Track Usage
 
 ```python
 import dspy
