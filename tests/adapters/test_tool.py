@@ -93,7 +93,11 @@ async def async_dummy_with_pydantic(model: DummyModel) -> str:
     return f"{model.field1} {model.field2}"
 
 
-async def async_complex_dummy_function(profile: UserProfile, priority: int, notes: str | None = None) -> dict[str, Any]:
+async def async_complex_dummy_function(
+    profile: UserProfile,
+    priority: int,
+    notes: list[Note] | None = None,
+) -> dict[str, Any]:
     """Process user profile with complex nested structure asynchronously.
 
     Args:
@@ -170,6 +174,7 @@ def test_tool_from_function_with_pydantic_nesting():
     tool = Tool(complex_dummy_function)
 
     assert tool.name == "complex_dummy_function"
+
     assert "profile" in tool.args
     assert "priority" in tool.args
     assert "notes" in tool.args
@@ -329,11 +334,11 @@ async def test_async_tool_with_complex_pydantic():
         ),
     )
 
-    result = await tool.acall(profile=profile, priority=1, notes="Test note")
+    result = await tool.acall(profile=profile, priority=1, notes=[Note(content="Test note", author="Test author")])
     assert result["user_id"] == 1
     assert result["name"] == "Test User"
     assert result["priority"] == 1
-    assert result["notes"] == "Test note"
+    assert result["notes"] == [Note(content="Test note", author="Test author")]
     assert result["primary_address"]["street"] == "123 Main St"
 
 
