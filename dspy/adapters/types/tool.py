@@ -103,7 +103,7 @@ class Tool(Type):
                 v_json_schema = _resolve_json_schema_reference(v.model_json_schema())
                 args[k] = v_json_schema
             else:
-                args[k] = TypeAdapter(v).json_schema()
+                args[k] = _resolve_json_schema_reference(TypeAdapter(v).json_schema())
             if default_values[k] is not inspect.Parameter.empty:
                 args[k]["default"] = default_values[k]
             if arg_desc and k in arg_desc:

@@ -50,7 +50,12 @@ class UserProfile(BaseModel):
     tags: list[str] = []
 
 
-def complex_dummy_function(profile: UserProfile, priority: int, notes: str | None = None) -> dict[str, Any]:
+class Note(BaseModel):
+    content: str
+    author: str
+
+
+def complex_dummy_function(profile: UserProfile, priority: int, notes: list[Note] | None = None) -> dict[str, Any]:
     """Process user profile with complex nested structure.
 
     Args:
@@ -89,7 +94,9 @@ async def async_dummy_with_pydantic(model: DummyModel) -> str:
 
 
 async def async_complex_dummy_function(
-    profile: UserProfile, priority: int, notes: str | None = None
+    profile: UserProfile,
+    priority: int,
+    notes: list[Note] | None = None,
 ) -> dict[str, Any]:
     """Process user profile with complex nested structure asynchronously.
 
@@ -167,6 +174,7 @@ def test_tool_from_function_with_pydantic_nesting():
     tool = Tool(complex_dummy_function)
 
     assert tool.name == "complex_dummy_function"
+
     assert "profile" in tool.args
     assert "priority" in tool.args
     assert "notes" in tool.args
@@ -176,6 +184,13 @@ def test_tool_from_function_with_pydantic_nesting():
     assert tool.args["profile"]["properties"]["age"]["anyOf"] == [{"type": "integer"}, {"type": "null"}]
     assert tool.args["profile"]["properties"]["contact"]["type"] == "object"
     assert tool.args["profile"]["properties"]["contact"]["properties"]["email"]["type"] == "string"
+
+    # Reference should be resolved for nested pydantic models
+    assert "$defs" not in str(tool.args["notes"])
+    assert tool.args["notes"]["anyOf"][0]["type"] == "array"
+    assert tool.args["notes"]["anyOf"][0]["items"]["type"] == "object"
+    assert tool.args["notes"]["anyOf"][0]["items"]["properties"]["content"]["type"] == "string"
+    assert tool.args["notes"]["anyOf"][0]["items"]["properties"]["author"]["type"] == "string"
 
 
 def test_tool_callable():
@@ -319,11 +334,11 @@ async def test_async_tool_with_complex_pydantic():
         ),
     )
 
-    result = await tool.acall(profile=profile, priority=1, notes="Test note")
+    result = await tool.acall(profile=profile, priority=1, notes=[Note(content="Test note", author="Test author")])
     assert result["user_id"] == 1
     assert result["name"] == "Test User"
     assert result["priority"] == 1
-    assert result["notes"] == "Test note"
+    assert result["notes"] == [Note(content="Test note", author="Test author")]
     assert result["primary_address"]["street"] == "123 Main St"
 
 
@@ -382,42 +397,39 @@ TOOL_CALL_TEST_CASES = [
     ([], [{"type": "tool_calls", "tool_calls": []}]),
     (
         [{"name": "search", "args": {"query": "hello"}}],
-        [{
-            "type": "tool_calls",
-            "tool_calls": [{
-                "type": "function",
-                "function": {"name": "search", "arguments": {"query": "hello"}}
-            }]
-        }],
+        [
+            {
+                "type": "tool_calls",
+                "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
+            }
+        ],
     ),
     (
         [
             {"name": "search", "args": {"query": "hello"}},
-            {"name": "translate", "args": {"text": "world", "lang": "fr"}}
+            {"name": "translate", "args": {"text": "world", "lang": "fr"}},
         ],
-        [{
-            "type": "tool_calls",
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "function": {"name": "search", "arguments": {"query": "hello"}}
-                },
-                {
-                    "type": "function",
-                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}}
-                }
-            ]
-        }],
+        [
+            {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
+                    {
+                        "type": "function",
+                        "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
+                    },
+                ],
+            }
+        ],
     ),
     (
         [{"name": "get_time", "args": {}}],
-        [{
-            "type": "tool_calls",
-            "tool_calls": [{
-                "type": "function",
-                "function": {"name": "get_time", "arguments": {}}
-            }]
-        }],
+        [
+            {
+                "type": "tool_calls",
+                "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
+            }
+        ],
     ),
 ]
 
@@ -431,11 +443,12 @@ def test_tool_calls_format_basic(tool_calls_data, expected):
 
     assert result == expected
 
+
 def test_tool_calls_format_from_dict_list():
     """Test format works with ToolCalls created from from_dict_list."""
     tool_calls_dicts = [
         {"name": "search", "args": {"query": "hello"}},
-        {"name": "translate", "args": {"text": "world", "lang": "fr"}}
+        {"name": "translate", "args": {"text": "world", "lang": "fr"}},
     ]
 
     tool_calls = ToolCalls.from_dict_list(tool_calls_dicts)
