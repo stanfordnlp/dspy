@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import copy
 import logging
@@ -42,29 +43,60 @@ class ParallelExecutor:
         self.error_lock = threading.Lock()
         self.cancel_jobs = threading.Event()
 
+        self.error_lock_async = asyncio.Lock()
+        self.cancel_jobs_async = asyncio.Event()
+
     def execute(self, function, data):
         tqdm.tqdm._instances.clear()
-        wrapped = self._wrap_function(function)
+        wrapped = self._wrap_function(function, async_mode=False)
         return self._execute_parallel(wrapped, data)
 
-    def _wrap_function(self, user_function):
-        def safe_func(item):
+    async def aexecute(self, function, data):
+        tqdm.tqdm._instances.clear()
+        wrapped = self._wrap_function(function, async_mode=True)
+        return await self._execute_parallel_async(wrapped, data)
+
+    def _handle_error(self, item, e):
+        with self.error_lock:
+            self.error_count += 1
+            if self.error_count >= self.max_errors:
+                self.cancel_jobs.set()
+        if self.provide_traceback:
+            logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
+        else:
+            logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
+
+    async def _handle_error_async(self, item, e):
+        async with self.error_lock_async:
+            self.error_count += 1
+            if self.error_count >= self.max_errors:
+                self.cancel_jobs_async.set()
+        if self.provide_traceback:
+            logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
+
+    def _wrap_function(self, user_function, async_mode=False):
+        async def _async_safe_func(item):
+            if self.cancel_jobs.is_set():
+                return None
+            try:
+                return await user_function(item)
+            except Exception as e:
+                await self._handle_error_async(item, e)
+                return None
+
+        def _sync_safe_func(item):
             if self.cancel_jobs.is_set():
                 return None
             try:
                 return user_function(item)
             except Exception as e:
-                with self.error_lock:
-                    self.error_count += 1
-                    if self.error_count >= self.max_errors:
-                        self.cancel_jobs.set()
-                if self.provide_traceback:
-                    logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
-                else:
-                    logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
+                self._handle_error(item, e)
                 return None
 
-        return safe_func
+        if async_mode:
+            return _async_safe_func
+        else:
+            return _sync_safe_func
 
     def _execute_parallel(self, function, data):
         results = [None] * len(data)
@@ -199,6 +231,50 @@ class ParallelExecutor:
             executor.shutdown(wait=False)
 
         if self.cancel_jobs.is_set():
+            logger.warning("Execution cancelled due to errors or interruption.")
+            raise Exception("Execution cancelled due to errors or interruption.")
+
+        return results
+
+    async def _execute_parallel_async(self, function, data):
+        queue = asyncio.Queue()
+        results = [None] * len(data)
+        for i, example in enumerate(data):
+            await queue.put((i, example))
+
+        for _ in range(self.num_threads):
+            # Add a sentinel value to indicate that the worker should exit
+            await queue.put((-1, None))
+
+        # Create tqdm progress bar
+        pbar = tqdm.tqdm(total=len(data), dynamic_ncols=True)
+
+        async def worker():
+            while True:
+                if self.cancel_jobs_async.is_set():
+                    break
+                index, example = await queue.get()
+                if index == -1:
+                    break
+                function_outputs = await function(example)
+                results[index] = function_outputs
+
+                if self.compare_results:
+                    vals = [r[-1] for r in results if r is not None]
+                    self._update_progress(pbar, sum(vals), len(vals))
+                else:
+                    self._update_progress(
+                        pbar,
+                        len([r for r in results if r is not None]),
+                        len(data),
+                    )
+
+                queue.task_done()
+
+        workers = [asyncio.create_task(worker()) for _ in range(self.num_threads)]
+        await asyncio.gather(*workers)
+        pbar.close()
+        if self.cancel_jobs_async.is_set():
             logger.warning("Execution cancelled due to errors or interruption.")
             raise Exception("Execution cancelled due to errors or interruption.")
 

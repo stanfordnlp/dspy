@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Callable
 if TYPE_CHECKING:
     import pandas as pd
 
-import asyncio
 
 import tqdm
 
@@ -161,7 +160,7 @@ class Evaluate:
         if callback_metadata:
             logger.debug(f"Evaluate.acall is called with callback metadata: {callback_metadata}")
         tqdm.tqdm._instances.clear()
-        results = await self._execute_with_event_loop(program, metric, devset, num_threads)
+        results = await self._execute_with_event_loop(program, metric, devset, num_threads, display_progress)
         return self._process_evaluate_result(devset, results, metric, display_table)
 
     def _resolve_call_args(self, metric, devset, num_threads, display_progress, display_table):
@@ -220,41 +219,22 @@ class Evaluate:
         metric: Callable,
         devset: list["dspy.Example"],
         num_threads: int,
+        disable_progress_bar: bool,
     ):
-        queue = asyncio.Queue()
-        results = [None] * len(devset)
-        for i, example in enumerate(devset):
-            await queue.put((i, example))
+        executor = ParallelExecutor(
+            num_threads=num_threads,
+            disable_progress_bar=disable_progress_bar,
+            max_errors=(self.max_errors or dspy.settings.max_errors),
+            provide_traceback=self.provide_traceback,
+            compare_results=True,
+        )
 
-        for _ in range(num_threads):
-            # Add a sentinel value to indicate that the worker should exit
-            await queue.put((-1, None))
+        async def process_item(example):
+            prediction = await program.acall(**example.inputs())
+            score = metric(example, prediction)
+            return prediction, score
 
-        # Create tqdm progress bar
-        pbar = tqdm.tqdm(total=len(devset), dynamic_ncols=True)
-
-        async def worker():
-            while True:
-                index, example = await queue.get()
-                if index == -1:
-                    break
-                prediction = await program.acall(**example.inputs())
-                score = metric(example, prediction)
-                results[index] = (prediction, score)
-
-                vals = [r[-1] for r in results if r is not None]
-                nresults = sum(vals)
-                ntotal = len(vals)
-                pct = round(100 * nresults / ntotal, 1) if ntotal else 0
-                pbar.set_description(f"Average Metric: {nresults:.2f} / {ntotal} ({pct}%)")
-                pbar.update(1)
-                queue.task_done()
-
-        workers = [asyncio.create_task(worker()) for _ in range(num_threads)]
-        await asyncio.gather(*workers)
-        pbar.close()
-
-        return results
+        return await executor.aexecute(process_item, devset)
 
     def _construct_result_table(
         self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
