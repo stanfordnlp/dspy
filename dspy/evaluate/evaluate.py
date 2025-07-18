@@ -51,6 +51,7 @@ class EvaluationResult(Prediction):
     - score: An float value (e.g., 67.30) representing the overall performance
     - results: a list of (example, prediction, score) tuples for each example in devset
     """
+
     def __init__(self, score: float, results: list[tuple["dspy.Example", "dspy.Example", Any]]):
         super().__init__(score=score, results=results)
 
@@ -126,9 +127,9 @@ class Evaluate:
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
-            
+
             - score: A float percentage score (e.g., 67.30) representing overall performance
-            
+
             - results: a list of (example, prediction, score) tuples for each example in devset
         """
         metric = metric if metric is not None else self.metric
@@ -145,11 +146,7 @@ class Evaluate:
         executor = ParallelExecutor(
             num_threads=num_threads,
             disable_progress_bar=not display_progress,
-            max_errors=(
-                self.max_errors
-                if self.max_errors is not None
-                else dspy.settings.max_errors
-            ),
+            max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
             provide_traceback=self.provide_traceback,
             compare_results=True,
         )
@@ -157,13 +154,6 @@ class Evaluate:
         def process_item(example):
             prediction = program(**example.inputs())
             score = metric(example, prediction)
-
-            # Increment assert and suggest failures to program's attributes
-            if hasattr(program, "_assert_failures"):
-                program._assert_failures += dspy.settings.get("assert_failures")
-            if hasattr(program, "_suggest_failures"):
-                program._suggest_failures += dspy.settings.get("suggest_failures")
-
             return prediction, score
 
         results = executor.execute(process_item, devset)
@@ -190,7 +180,6 @@ class Evaluate:
             score=round(100 * ncorrect / ntotal, 2),
             results=results,
         )
-
 
     def _construct_result_table(
         self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str

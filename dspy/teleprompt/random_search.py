@@ -58,11 +58,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
-        effective_max_errors = (
-            self.max_errors
-            if self.max_errors is not None
-            else dspy.settings.max_errors
-        )
+        effective_max_errors = self.max_errors if self.max_errors is not None else dspy.settings.max_errors
 
         scores = []
         all_subscores = []
@@ -128,13 +124,6 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
             score, subscores = result.score, [output[2] for output in result.results]
 
             all_subscores.append(subscores)
-
-            ############ Assertion-aware Optimization ############
-            if hasattr(program, "_suggest_failures"):
-                score = score - program._suggest_failures * 0.2
-            if hasattr(program, "_assert_failures"):
-                score = 0 if program._assert_failures > 0 else score
-            ######################################################
 
             if len(scores) == 0 or score > max(scores):
                 print("New best score:", score, "for seed", seed)
