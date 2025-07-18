@@ -28,6 +28,7 @@ nav:
         - Tutorials Overview: tutorials/index.md
         - Build AI Programs with DSPy:
             - Overview: tutorials/build_ai_program/index.md
+            - Managing Conversation History: tutorials/conversation_history/index.md
             - Building AI Agents with DSPy: tutorials/customer_service_agent/index.ipynb
             - Building AI Applications by Customizing DSPy Modules: tutorials/custom_module/index.ipynb
             - Retrieval-Augmented Generation (RAG): tutorials/rag/index.ipynb
@@ -51,7 +52,6 @@ nav:
             - RL for Multi-Hop Research: tutorials/rl_multihop/index.ipynb
         - Tools, Development, and Deployment:
             - Overview: tutorials/core_development/index.md
-            - Managing Conversation History: tutorials/conversation_history/index.md
             - Use MCP in DSPy: tutorials/mcp/index.md
             - Output Refinement: tutorials/output_refinement/best-of-n-and-refine.md
             - Saving and Loading: tutorials/saving/index.md
