@@ -73,7 +73,6 @@ nav:
     - Community:
         - Community Resources: community/community-resources.md
         - Use Cases: community/use-cases.md
-        - Roadmap: roadmap.md
         - Contributing: community/how-to-contribute.md
     - FAQ:
         - FAQ: faqs.md
