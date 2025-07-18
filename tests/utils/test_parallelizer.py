@@ -59,3 +59,63 @@ def test_max_errors_not_met():
 
     # Verify that the results exclude the failed task
     assert results == [1, 2, None, 4, 5]
+
+
+@pytest.mark.asyncio
+async def test_worker_threads_independence_async():
+    async def task(item):
+        # Each thread maintains its own state by appending to a thread-local list
+        return item * 2
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=3)
+    results = await executor.aexecute(task, data)
+
+    assert results == [2, 4, 6, 8, 10]
+
+
+@pytest.mark.asyncio
+async def test_parallel_execution_speed_async():
+    async def task(item):
+        time.sleep(0.1)  # Simulate a time-consuming task
+        return item
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=5)
+
+    start_time = time.time()
+    await executor.aexecute(task, data)
+    end_time = time.time()
+
+    assert end_time - start_time < len(data)
+
+
+@pytest.mark.asyncio
+async def test_max_errors_handling_async():
+    async def task(item):
+        if item == 3:
+            raise ValueError("Intentional error")
+        return item
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=3, max_errors=1)
+
+    with pytest.raises(Exception, match="Execution cancelled due to errors or interruption."):
+        await executor.aexecute(task, data)
+
+
+@pytest.mark.asyncio
+async def test_max_errors_not_met_async():
+    async def task(item):
+        if item == 3:
+            raise ValueError("Intentional error")
+        return item
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=3, max_errors=2)
+
+    # Ensure that the execution completes without crashing when max_errors is not met
+    results = await executor.aexecute(task, data)
+
+    # Verify that the results exclude the failed task
+    assert results == [1, 2, None, 4, 5]
