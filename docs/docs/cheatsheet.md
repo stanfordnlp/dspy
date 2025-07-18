@@ -40,7 +40,7 @@ print(f"Question: {question}")
 print(f"Final Predicted Answer (after ProgramOfThought process): {result.answer}")
 ```
 
-### dspy.ReACT
+### dspy.ReAct
 
 ```python
 react_module = dspy.ReAct(BasicQA)
@@ -68,6 +68,38 @@ topK_passages = retriever(query).passages
 
 for idx, passage in enumerate(topK_passages):
     print(f'{idx+1}]', passage, '\n')
+```
+
+### dspy.CodeAct
+
+```python
+from dspy import CodeAct
+
+def factorial(n):
+    """Calculate factorial of n"""
+    if n == 1:
+        return 1
+    return n * factorial(n-1)
+
+act = CodeAct("n->factorial", tools=[factorial])
+result = act(n=5)
+result # Returns 120
+```
+
+### dspy.Parallel
+
+```python
+import dspy
+
+parallel = dspy.Parallel(num_threads=2)
+predict = dspy.Predict("question -> answer")
+result = parallel(
+    [
+        (predict, dspy.Example(question="1+1").with_inputs("question")),
+        (predict, dspy.Example(question="2+2").with_inputs("question"))
+    ]
+)
+result
 ```
 
 ## DSPy Metrics
@@ -354,6 +386,78 @@ simba = SIMBA(metric=your_defined_metric, max_steps=12, max_demos=10)
 optimized_program = simba.compile(student=your_dspy_program, trainset=trainset)
 ```
 
+
+## DSPy Tools and Utilities
+
+### dspy.Tool
+
+```python
+import dspy
+
+def search_web(query: str) -> str:
+    """Search the web for information"""
+    return f"Search results for: {query}"
+
+tool = dspy.Tool(search_web)
+result = tool(query="Python programming")
+```
+
+### dspy.streamify
+
+```python
+import dspy
+import asyncio
+
+predict = dspy.Predict("question->answer")
+
+stream_predict = dspy.streamify(
+    predict,
+    stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+)
+
+async def read_output_stream():
+    output_stream = stream_predict(question="Why did a chicken cross the kitchen?")
+
+    async for chunk in output_stream:
+        print(chunk)
+
+asyncio.run(read_output_stream())
+```
+
+
+### dspy.asyncify
+
+```python
+import dspy
+
+dspy_program = dspy.ChainOfThought("question -> answer")
+dspy_program = dspy.asyncify(dspy_program)
+
+asyncio.run(dspy_program(question="What is DSPy"))
+```
+
+
+### Track Usage
+
+```python
+import dspy
+dspy.settings.configure(track_usage=True)
+
+result = dspy.ChainOfThought(BasicQA)(question="What is 2+2?")
+print(f"Token usage: {result.get_lm_usage()}")
+```
+
+### dspy.configure_cache
+
+```python
+import dspy
+
+# Configure cache settings
+dspy.configure_cache(
+    enable_disk_cache=False,
+    enable_memory_cache=False,
+)
+```
 
 ## DSPy `Refine` and `BestofN`
 
