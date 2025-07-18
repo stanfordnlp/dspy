@@ -64,7 +64,7 @@ class Embeddings:
 
         print(
             f"Training a {nbytes}-byte FAISS index with {partitions} partitions, based on "
-            f"{len(self.corpus)} x {dim}-dim embeddings"
+            f"{len(self.corpus)} x {dim}-dim embeddings",
         )
         index.train(self.corpus_embeddings)
         index.add(self.corpus_embeddings)

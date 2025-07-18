@@ -77,7 +77,7 @@ class StreamListener:
         if adapter_name not in self.adapter_identifiers:
             raise ValueError(
                 f"Unsupported adapter for streaming: {adapter_name}, please use one of the following adapters: "
-                f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
+                f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}",
             )
         start_identifier = self.adapter_identifiers[adapter_name]["start_identifier"]
         end_identifier = self.adapter_identifiers[adapter_name]["end_identifier"]
@@ -195,7 +195,7 @@ class StreamListener:
         else:
             raise ValueError(
                 f"Unsupported adapter for streaming: {settings.adapter}, please use one of the following adapters: "
-                f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
+                f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}",
             )
 
 
@@ -222,13 +222,13 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
             if field_name_to_named_predictor[field_name] is not None:
                 raise ValueError(
                     f"Signature field {field_name} is not unique in the program, cannot automatically determine which "
-                    "predictor to use for streaming. Please specify the predictor to listen to."
+                    "predictor to use for streaming. Please specify the predictor to listen to.",
                 )
 
             if field_info.annotation is not str:
                 raise ValueError(
                     f"Stream listener can only be applied to string output field, but your field {field_name} is of "
-                    f"type {field_info.annotation}."
+                    f"type {field_info.annotation}.",
                 )
 
             field_name_to_named_predictor[field_name] = (name, predictor)
@@ -242,7 +242,7 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
             raise ValueError(
                 f"Signature field {listener.signature_field_name} is not a field of any predictor in the program, "
                 "cannot automatically determine which predictor to use for streaming. Please verify your field name or "
-                "specify the predictor to listen to."
+                "specify the predictor to listen to.",
             )
         listener.predict_name, listener.predict = field_name_to_named_predictor[listener.signature_field_name]
         predict_id_to_listener[id(listener.predict)].append(listener)

@@ -147,7 +147,7 @@ class DatabricksRM(dspy.Retrieve):
                 " databricks-sdk Python library, supply the databricks_token and"
                 " databricks_endpoint parameters, or set the DATABRICKS_TOKEN and DATABRICKS_HOST"
                 " environment variables. You may also supply a service principal the databricks_client_id and"
-                " databricks_client_secret parameters, or set the DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET"
+                " databricks_client_secret parameters, or set the DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET",
             )
         self.databricks_index_name = databricks_index_name
         self.columns = list({docs_id_column_name, text_column_name, *(columns or [])})
@@ -169,7 +169,7 @@ class DatabricksRM(dspy.Retrieve):
             except ImportError:
                 raise ValueError(
                     "To use the `DatabricksRM` retriever module with the Databricks Mosaic Agent Framework, "
-                    "you must install the mlflow Python library. Please install mlflow via `pip install mlflow`."
+                    "you must install the mlflow Python library. Please install mlflow via `pip install mlflow`.",
                 )
 
     def _extract_doc_ids(self, item: dict[str, Any]) -> str:
@@ -282,7 +282,7 @@ class DatabricksRM(dspy.Retrieve):
 
         if self.docs_id_column_name not in col_names:
             raise Exception(
-                f"docs_id_column_name: '{self.docs_id_column_name}' is not in the index columns: \n {col_names}"
+                f"docs_id_column_name: '{self.docs_id_column_name}' is not in the index columns: \n {col_names}",
             )
 
         if self.text_column_name not in col_names:

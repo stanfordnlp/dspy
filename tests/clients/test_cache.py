@@ -303,7 +303,7 @@ def test_cache_consistency_with_lm_call_modifies_the_request(cache):
                 {
                     "field_to_keep": "keep",
                     "_fn_identifier": f"{test_function.__module__}.{test_function.__qualname__}",
-                }
+                },
             )
             is None
         )
@@ -313,7 +313,7 @@ def test_cache_consistency_with_lm_call_modifies_the_request(cache):
                     "field_to_keep": "keep",
                     "field_to_delete": "delete",
                     "_fn_identifier": f"{test_function.__module__}.{test_function.__qualname__}",
-                }
+                },
             )
             is not None
         )

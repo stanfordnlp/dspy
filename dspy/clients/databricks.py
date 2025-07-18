@@ -32,7 +32,7 @@ class TrainingJobDatabricks(TrainingJob):
         except ImportError:
             raise ImportError(
                 "To use Databricks finetuning, please install the databricks_genai package via "
-                "`pip install databricks_genai`."
+                "`pip install databricks_genai`.",
             )
         run = fm.get(self.finetuning_run)
         return run.status
@@ -84,7 +84,7 @@ class DatabricksProvider(Provider):
         model_name = model.replace(".", "_")
 
         get_endpoint_response = requests.get(
-            url=f"{databricks_host}/api/2.0/serving-endpoints/{model_name}", json={"name": model_name}, headers=headers
+            url=f"{databricks_host}/api/2.0/serving-endpoints/{model_name}", json={"name": model_name}, headers=headers,
         )
 
         if get_endpoint_response.status_code == 200:
@@ -98,8 +98,8 @@ class DatabricksProvider(Provider):
                         "entity_version": model_version,
                         "min_provisioned_throughput": min_provisioned_throughput,
                         "max_provisioned_throughput": max_provisioned_throughput,
-                    }
-                ]
+                    },
+                ],
             }
 
             response = requests.put(
@@ -120,8 +120,8 @@ class DatabricksProvider(Provider):
                             "entity_version": model_version,
                             "min_provisioned_throughput": min_provisioned_throughput,
                             "max_provisioned_throughput": max_provisioned_throughput,
-                        }
-                    ]
+                        },
+                    ],
                 },
             }
 
@@ -129,14 +129,14 @@ class DatabricksProvider(Provider):
 
         if response.status_code == 200:
             logger.info(
-                f"Successfully started creating/updating serving endpoint {model_name} on Databricks model serving!"
+                f"Successfully started creating/updating serving endpoint {model_name} on Databricks model serving!",
             )
         else:
             raise ValueError(f"Failed to create serving endpoint: {response.json()}.")
 
         logger.info(
             f"Waiting for serving endpoint {model_name} to be ready, this might take a few minutes... You can check "
-            f"the status of the endpoint at {databricks_host}/ml/endpoints/{model_name}"
+            f"the status of the endpoint at {databricks_host}/ml/endpoints/{model_name}",
         )
         from openai import OpenAI
 
@@ -150,7 +150,7 @@ class DatabricksProvider(Provider):
             try:
                 if data_format == TrainDataFormat.CHAT:
                     client.chat.completions.create(
-                        messages=[{"role": "user", "content": "hi"}], model=model_name, max_tokens=1
+                        messages=[{"role": "user", "content": "hi"}], model=model_name, max_tokens=1,
                     )
                 elif data_format == TrainDataFormat.COMPLETION:
                     client.completions.create(prompt="hi", model=model_name, max_tokens=1)
@@ -161,7 +161,7 @@ class DatabricksProvider(Provider):
 
         raise ValueError(
             f"Failed to create serving endpoint {model_name} on Databricks model serving platform within "
-            f"{deploy_timeout} seconds."
+            f"{deploy_timeout} seconds.",
         )
 
     @staticmethod
@@ -179,14 +179,14 @@ class DatabricksProvider(Provider):
                 train_data_format = TrainDataFormat.COMPLETION
             else:
                 raise ValueError(
-                    f"String `train_data_format` must be one of 'chat' or 'completion', but received: {train_data_format}."
+                    f"String `train_data_format` must be one of 'chat' or 'completion', but received: {train_data_format}.",
                 )
 
         if "train_data_path" not in train_kwargs:
             raise ValueError("The `train_data_path` must be provided to finetune on Databricks.")
         # Add the file name to the directory path.
         train_kwargs["train_data_path"] = DatabricksProvider.upload_data(
-            train_data, train_kwargs["train_data_path"], train_data_format
+            train_data, train_kwargs["train_data_path"], train_data_format,
         )
 
         try:
@@ -194,7 +194,7 @@ class DatabricksProvider(Provider):
         except ImportError:
             raise ImportError(
                 "To use Databricks finetuning, please install the databricks_genai package via "
-                "`pip install databricks_genai`."
+                "`pip install databricks_genai`.",
             )
 
         if "register_to" not in train_kwargs:
@@ -224,7 +224,7 @@ class DatabricksProvider(Provider):
             elif job.run.status.display_name == "Failed":
                 raise ValueError(
                     f"Finetuning run failed with status: {job.run.status.display_name}. Please check the Databricks "
-                    f"workspace for more details. Finetuning job's metadata: {job.run}."
+                    f"workspace for more details. Finetuning job's metadata: {job.run}.",
                 )
             else:
                 time.sleep(60)
@@ -236,7 +236,7 @@ class DatabricksProvider(Provider):
         model_to_deploy = train_kwargs.get("register_to")
         job.endpoint_name = model_to_deploy.replace(".", "_")
         DatabricksProvider.deploy_finetuned_model(
-            model_to_deploy, train_data_format, databricks_host, databricks_token, deploy_timeout
+            model_to_deploy, train_data_format, databricks_host, databricks_token, deploy_timeout,
         )
         job.launch_completed = True
         # The finetuned model name should be in the format: "databricks/<endpoint_name>".
@@ -266,7 +266,7 @@ def _get_workspace_client() -> "WorkspaceClient":
     except ImportError:
         raise ImportError(
             "To use Databricks finetuning, please install the databricks-sdk package via "
-            "`pip install databricks-sdk`."
+            "`pip install databricks-sdk`.",
         )
     return WorkspaceClient()
 
@@ -277,7 +277,7 @@ def _create_directory_in_databricks_unity_catalog(w: "WorkspaceClient", databric
     if not match:
         raise ValueError(
             f"Databricks Unity Catalog path must be in the format '/Volumes/<catalog>/<schema>/<volume>/...', but "
-            f"received: {databricks_unity_catalog_path}."
+            f"received: {databricks_unity_catalog_path}.",
         )
 
     catalog = match.group("catalog")
@@ -290,7 +290,7 @@ def _create_directory_in_databricks_unity_catalog(w: "WorkspaceClient", databric
     except Exception:
         raise ValueError(
             f"Databricks Unity Catalog volume does not exist: {volume_path}, please create it on the Databricks "
-            "workspace."
+            "workspace.",
         )
 
     try:
@@ -326,13 +326,13 @@ def _validate_chat_data(data: dict[str, Any]):
     if "messages" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'messages' key when `task=CHAT_COMPLETION`, but "
-            f"received: {data}"
+            f"received: {data}",
         )
 
     if not isinstance(data["messages"], list):
         raise ValueError(
             "The value of the 'messages' key in each finetuning data must be a list of dicts with keys 'role' and "
-            f"'content' when `task=CHAT_COMPLETION`, but received: {data['messages']}"
+            f"'content' when `task=CHAT_COMPLETION`, but received: {data['messages']}",
         )
 
     for message in data["messages"]:
@@ -340,7 +340,7 @@ def _validate_chat_data(data: dict[str, Any]):
             raise ValueError(f"Each message in the 'messages' list must contain a 'role' key, but received: {message}.")
         if "content" not in message:
             raise ValueError(
-                f"Each message in the 'messages' list must contain a 'content' key, but received: {message}."
+                f"Each message in the 'messages' list must contain a 'content' key, but received: {message}.",
             )
 
 
@@ -348,10 +348,10 @@ def _validate_completion_data(data: dict[str, Any]):
     if "prompt" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'prompt' key when `task=INSTRUCTION_FINETUNE`, but "
-            f"received: {data}"
+            f"received: {data}",
         )
     if "response" not in data and "completion" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'response' or 'completion' key when "
-            f"`task=INSTRUCTION_FINETUNE`, but received: {data}"
+            f"`task=INSTRUCTION_FINETUNE`, but received: {data}",
         )

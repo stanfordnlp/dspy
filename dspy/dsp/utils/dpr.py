@@ -190,7 +190,7 @@ class SimpleTokenizer(Tokenizer):
                     token,
                     text[start_ws:end_ws],
                     span,
-                )
+                ),
             )
         return Tokens(data, self.annotators)
 

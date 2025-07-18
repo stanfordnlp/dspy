@@ -47,19 +47,19 @@ def test_create_finetuning_job():
             "messages": [
                 {"role": "user", "content": "Hello, how are you?"},
                 {"role": "assistant", "content": "I'm doing great, thank you!"},
-            ]
+            ],
         },
         {
             "messages": [
                 {"role": "user", "content": "What is the capital of France?"},
                 {"role": "assistant", "content": "Paris!"},
-            ]
+            ],
         },
         {
             "messages": [
                 {"role": "user", "content": "What is the capital of Germany?"},
                 {"role": "assistant", "content": "Berlin!"},
-            ]
+            ],
         },
     ]
     dspy.settings.experimental = True

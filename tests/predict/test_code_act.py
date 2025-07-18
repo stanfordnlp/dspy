@@ -10,7 +10,7 @@ from dspy.utils import DummyLM
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 is_deno_available = shutil.which("deno") is not None
 skip_if_deno_not_available = pytest.mark.skipif(
-    not is_deno_available, reason="Deno is not installed or not in PATH"
+    not is_deno_available, reason="Deno is not installed or not in PATH",
 )
 
 
@@ -32,7 +32,7 @@ def test_codeact_code_generation():
                 "finished": True,
             },
             {"reasoning": "Reason_B", "answer": "2"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])
@@ -64,7 +64,7 @@ def test_codeact_support_multiple_fields():
                 "finished": True,
             },
             {"reasoning": "Reason_B", "maximum": "6", "minimum": "2"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     program = CodeAct(ExtremumFinder, tools=[extract_maximum_minimum])
@@ -93,7 +93,7 @@ def test_codeact_code_parse_failure():
                 "finished": True,
             },
             {"reasoning": "Reason_B", "answer": "2"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])
@@ -123,7 +123,7 @@ def test_codeact_code_execution_failure():
                 "finished": True,
             },
             {"reasoning": "Reason_B", "answer": "2"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])

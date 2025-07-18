@@ -94,7 +94,7 @@ def test_xml_adapter_format_and_parse_nested_model():
     adapter = XMLAdapter()
     # Format output fields as XML
     fields_with_values = {
-        FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): InnerModel(value=5, label="foo")
+        FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): InnerModel(value=5, label="foo"),
     }
     xml = adapter.format_field_with_value(fields_with_values)
     # The output will be a JSON string inside the XML tag
@@ -160,7 +160,7 @@ def test_xml_adapter_with_tool_like_output():
     fields_with_values = {
         FieldInfoWithName(name="tool_calls", info=TestSignature.output_fields["tool_calls"]): tool_calls,
         FieldInfoWithName(
-            name="answer", info=TestSignature.output_fields["answer"]
+            name="answer", info=TestSignature.output_fields["answer"],
         ): "The weather is Sunny. Population is 125M.",
     }
     xml = adapter.format_field_with_value(fields_with_values)

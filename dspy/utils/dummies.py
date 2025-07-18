@@ -98,7 +98,7 @@ class DummyLM(LM):
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=OutputField()): value
                     for field_name, value in field_names_and_values.items()
-                }
+                },
             )
 
         # Build the request.
@@ -114,7 +114,7 @@ class DummyLM(LM):
                     next(
                         (format_answer_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
                         "No more responses",
-                    )
+                    ),
                 )
             else:
                 outputs.append(format_answer_fields(next(self.answers, {"answer": "No more responses"})))

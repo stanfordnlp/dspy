@@ -25,7 +25,7 @@ def test_pot_code_generation():
                 "generated_code": "```python\nresult = 1+1\nfinal_answer({'answer': result})\n```",
             },
             {"reasoning": "Reason_B", "answer": "2"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
@@ -41,7 +41,7 @@ def test_old_style_pot():
         [
             {"reasoning": "Reason_A", "generated_code": "```python\nresult = 1+1\n```"},
             {"reasoning": "Reason_B", "answer": "2"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
@@ -65,7 +65,7 @@ def test_pot_support_multiple_fields():
                 "generated_code": "```python\nmaximum = 6\nminimum = 2\nfinal_answer({'maximum': maximum, 'minimum': minimum})\n```",
             },
             {"reasoning": "Reason_B", "maximum": "6", "minimum": "2"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     pot = ProgramOfThought(ExtremumFinder)
@@ -88,7 +88,7 @@ def test_pot_code_generation_with_one_error():
                 "generated_code": "```python\nresult = 1+1\nfinal_answer({'answer': result})\n```",
             },
             {"reasoning": "Reason_C", "answer": "2"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
@@ -107,7 +107,7 @@ def test_pot_code_generation_persistent_errors():
                 "generated_code": "```python\nresult = 1+0/0\nfinal_answer({'answer': result})\n```",
             },
         ]
-        * max_iters
+        * max_iters,
     )
     dspy.settings.configure(lm=lm)
 
@@ -123,14 +123,14 @@ def test_pot_code_parse_error():
         [
             {"reasoning": "Reason_A", "generated_code": "```python\ninvalid=python=code\n```"},
         ]
-        * max_iters
+        * max_iters,
     )
     dspy.settings.configure(lm=lm)
     pot = ProgramOfThought(BasicQA, max_iters=max_iters)
     with (
         patch("dspy.predict.program_of_thought.ProgramOfThought._execute_code") as mock_execute_code,
         pytest.raises(
-            RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: Error: Code format is not correct."
+            RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: Error: Code format is not correct.",
         ),
     ):
         pot(question="What is 1+1?")

@@ -14,7 +14,7 @@ def test_basic_custom_type_resolution():
     # Custom types can be explicitly mapped
     explicit_sig = Signature(
         "input: CustomType -> output: str",
-        custom_types={"CustomType": CustomType}
+        custom_types={"CustomType": CustomType},
     )
     assert explicit_sig.input_fields["input"].annotation == CustomType
 

@@ -104,7 +104,7 @@ class Predict(Module, Parameter):
         if lm is None:
             raise ValueError(
                 "No LM is loaded. Please configure the LM using `dspy.configure(lm=dspy.LM(...))`. e.g, "
-                "`dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))`"
+                "`dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))`",
             )
 
         if isinstance(lm, str):
@@ -112,7 +112,7 @@ class Predict(Module, Parameter):
             # `dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))`, so we are providing a specific error message.
             raise ValueError(
                 f"LM must be an instance of `dspy.BaseLM`, not a string. Instead of using a string like "
-                f"'dspy.configure(lm=\"{lm}\")', please configure the LM like 'dspy.configure(lm=dspy.LM(\"{lm}\"))'"
+                f"'dspy.configure(lm=\"{lm}\")', please configure the LM like 'dspy.configure(lm=dspy.LM(\"{lm}\"))'",
             )
         elif not isinstance(lm, BaseLM):
             raise ValueError(f"LM must be an instance of `dspy.BaseLM`, not {type(lm)}. Received `lm={lm}`.")

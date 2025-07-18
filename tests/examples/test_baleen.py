@@ -111,7 +111,7 @@ def _test_compiled_baleen():
 
     evaluate_on_hotpotqa = Evaluate(devset=devset, num_threads=1, display_progress=True, display_table=5)
     uncompiled_baleen_retrieval_score = evaluate_on_hotpotqa(
-        uncompiled_baleen, metric=gold_passages_retrieved, display=False
+        uncompiled_baleen, metric=gold_passages_retrieved, display=False,
     )
     # assert uncompiled_baleen_retrieval_score / 100 == 18 / 50
 

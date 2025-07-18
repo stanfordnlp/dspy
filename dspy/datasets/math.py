@@ -15,7 +15,7 @@ class MATH:
 
         dataset = [
             dspy.Example(
-                question=example["problem"], reasoning=example["solution"], answer=extract_answer(example["solution"])
+                question=example["problem"], reasoning=example["solution"], answer=extract_answer(example["solution"]),
             ).with_inputs("question")
             for example in ds["test"]
         ]

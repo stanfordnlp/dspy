@@ -97,7 +97,7 @@ def test_error_handling_during_bootstrap():
     lm = DummyLM(
         [
             {"output": "Initial thoughts"},  # Simulate initial teacher's prediction
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
 
@@ -123,7 +123,7 @@ def test_validation_set_usage():
         [
             {"output": "Initial thoughts"},
             {"output": "Finish[blue]"},  # Expected output for both training and validation
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
 

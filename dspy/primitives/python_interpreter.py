@@ -112,7 +112,7 @@ class PythonInterpreter:
             virtual_path = f"/sandbox/{os.path.basename(path)}"
             sync_msg = json.dumps({
                 "sync_file": virtual_path,
-                "host_file": str(path)
+                "host_file": str(path),
             })
             self.deno_process.stdin.write(sync_msg + "\n")
             self.deno_process.stdin.flush()
@@ -128,7 +128,7 @@ class PythonInterpreter:
                     stderr=subprocess.PIPE,
                     text=True,
                     encoding="UTF-8",
-                    env=os.environ.copy()
+                    env=os.environ.copy(),
                 )
             except FileNotFoundError as e:
                 install_instructions = (

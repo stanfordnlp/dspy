@@ -238,10 +238,10 @@ class ChatAdapter(Adapter):
         wrapped in a dictionary with a "messages" key.
         """
         system_user_messages = self.format(  # returns a list of dicts with the keys "role" and "content"
-            signature=signature, demos=demos, inputs=inputs
+            signature=signature, demos=demos, inputs=inputs,
         )
         assistant_message_content = self.format_assistant_message_content(  # returns a string, without the role
-            signature=signature, outputs=outputs
+            signature=signature, outputs=outputs,
         )
         assistant_message = {"role": "assistant", "content": assistant_message_content}
         messages = system_user_messages + [assistant_message]

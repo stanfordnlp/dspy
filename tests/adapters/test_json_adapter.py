@@ -147,14 +147,14 @@ def test_json_adapter_on_pydantic_model():
             choices=[
                 Choices(
                     message=Message(
-                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}"
-                    )
-                )
+                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}",
+                    ),
+                ),
             ],
             model="openai/gpt4o",
         )
         result = program(
-            user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
+            user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?",
         )
 
         # Check that litellm.completion was called exactly once
@@ -487,7 +487,7 @@ def test_json_adapter_formats_conversation_history():
         messages=[
             {"question": "What is the capital of France?", "answer": "Paris"},
             {"question": "What is the capital of Germany?", "answer": "Berlin"},
-        ]
+        ],
     )
 
     adapter = dspy.JSONAdapter()
@@ -525,16 +525,16 @@ async def test_json_adapter_on_pydantic_model_async():
             choices=[
                 Choices(
                     message=Message(
-                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}"
-                    )
-                )
+                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}",
+                    ),
+                ),
             ],
             model="openai/gpt4o",
         )
 
         with dspy.context(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter()):
             result = await program.acall(
-                user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
+                user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?",
             )
 
         # Check that litellm.acompletion was called exactly once
@@ -723,7 +723,7 @@ def test_json_adapter_toolcalls_native_function_calling():
                                 function=Function(arguments='{"city":"Paris"}', name="get_weather"),
                                 id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
                                 type="function",
-                            )
+                            ),
                         ],
                     ),
                 ),
@@ -739,7 +739,7 @@ def test_json_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})],
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None

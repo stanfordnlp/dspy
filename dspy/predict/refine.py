@@ -34,7 +34,7 @@ class OfferFeedback(Signature):
     advice: dict[str, str] = OutputField(
         desc="For each module, describe very concretely, in this order: the specific scenarios in which it has made "
         "mistakes in the past and what each mistake was, followed by what it should do differently in that kind of"
-        "scenario in the future. If the module is not to blame, write N/A."
+        "scenario in the future. If the module is not to blame, write N/A.",
     )
 
 
@@ -121,7 +121,7 @@ class Refine(Module):
                             def __call__(self, lm, lm_kwargs, signature, demos, inputs):
                                 inputs["hint_"] = advice.get(signature2name[signature], "N/A")  # noqa: B023
                                 signature = signature.append(
-                                    "hint_", InputField(desc="A hint to the module from an earlier run")
+                                    "hint_", InputField(desc="A hint to the module from an earlier run"),
                                 )
                                 return adapter(lm, lm_kwargs, signature, demos, inputs)
 

@@ -39,7 +39,7 @@ def wrap_program(program: dspy.Module, metric: Callable):
             "prediction": prediction,
             "trace": trace,
             "score": score,
-            "example": example
+            "example": example,
         }
 
     return wrapped_program
@@ -152,12 +152,12 @@ class OfferFeedback(dspy.Signature):
     program_inputs: str = InputField(desc="The inputs to the program that we are analyzing")
     oracle_metadata: str = InputField(desc="Any (hidden) metadata about the training set instance we're analyzing")
     worse_program_trajectory: str = InputField(
-        desc="The trajectory of the program's execution, showing each module's I/O"
+        desc="The trajectory of the program's execution, showing each module's I/O",
     )
     worse_program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
     worse_reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
     better_program_trajectory: str = InputField(
-        desc="The trajectory of the program's execution, showing each module's I/O"
+        desc="The trajectory of the program's execution, showing each module's I/O",
     )
     better_program_outputs: str = InputField(desc="The outputs of the program that we are analyzing")
     better_reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
@@ -167,7 +167,7 @@ class OfferFeedback(dspy.Signature):
         desc="For each module, describe very concretely: If the module receives ${description of input or patterns "
         "therein}, then it should ${description of content, behavior, or strategies to adopt and/or others to avoid}. "
         "Basically, your advice be such that if the module has access to your tip, it would be much more likely to act "
-        "like the successful trajectory rather than the lower-scoring trajectory."
+        "like the successful trajectory rather than the lower-scoring trajectory.",
     )
 
 

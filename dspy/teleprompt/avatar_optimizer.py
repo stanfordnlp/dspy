@@ -148,7 +148,7 @@ class AvatarOptimizer(Teleprompter):
     def _get_pos_neg_results(
         self,
         actor: dspy.Module,
-        trainset: list[dspy.Example]
+        trainset: list[dspy.Example],
     ) -> tuple[float, list[EvalResult], list[EvalResult]]:
         pos_inputs = []
         neg_inputs = []
@@ -162,16 +162,16 @@ class AvatarOptimizer(Teleprompter):
                     EvalResult(
                         example=example.inputs().toDict(),
                         score=score,
-                        actions=prediction.actions if prediction else None
-                    )
+                        actions=prediction.actions if prediction else None,
+                    ),
                 )
             elif score <= self.lower_bound:
                 neg_inputs.append(
                     EvalResult(
                         example=example.inputs().toDict(),
                         score=score,
-                        actions=prediction.actions if prediction else None
-                    )
+                        actions=prediction.actions if prediction else None,
+                    ),
                 )
 
         if len(pos_inputs) == 0:
@@ -205,12 +205,12 @@ class AvatarOptimizer(Teleprompter):
                 instruction=best_actor.actor.signature.instructions,
                 actions=[str(tool) for tool in best_actor.tools],
                 pos_input_with_metrics=pos_inputs,
-                neg_input_with_metrics=neg_inputs
+                neg_input_with_metrics=neg_inputs,
             ).feedback
 
             new_instruction = self.feedback_instruction(
                 previous_instruction=best_actor.actor.signature.instructions,
-                feedback=feedback
+                feedback=feedback,
             ).new_instruction
 
             print(f"Generated new instruction: {new_instruction}")

@@ -57,7 +57,7 @@ class ReAct(Module):
                 "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
                 "When writing next_thought, you may reason about the current situation and plan for future steps.",
                 "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
-            ]
+            ],
         )
 
         tools["finish"] = Tool(
@@ -175,7 +175,7 @@ class ReAct(Module):
             # Every tool call has 4 keys: thought, tool_name, tool_args, and observation.
             raise ValueError(
                 "The trajectory is too long so your prompt exceeded the context window, but the trajectory cannot be "
-                "truncated because it only has one tool call."
+                "truncated because it only has one tool call.",
             )
 
         for key in keys[:4]:

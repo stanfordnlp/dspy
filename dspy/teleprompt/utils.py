@@ -56,7 +56,7 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
             return evaluate(
                 candidate_program,
                 devset=create_minibatch(trainset, batch_size, rng),
-                callback_metadata={"metric_key": "eval_minibatch"}
+                callback_metadata={"metric_key": "eval_minibatch"},
             )
     except Exception:
         logger.error("An exception occurred during evaluation", exc_info=True)
@@ -442,7 +442,7 @@ def old_getfile(object):
     if inspect.iscode(object):
         return object.co_filename
     raise TypeError(
-        f"module, class, method, function, traceback, frame, or code object was expected, got {type(object).__name__}"
+        f"module, class, method, function, traceback, frame, or code object was expected, got {type(object).__name__}",
     )
 
 

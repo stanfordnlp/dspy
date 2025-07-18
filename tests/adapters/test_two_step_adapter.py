@@ -23,7 +23,7 @@ def test_two_step_adapter_call():
 [[ ## solution ## ]] result
 [[ ## answer ## ]] 12
 [[ ## completed ## ]]
-"""
+""",
     ]
     mock_extraction_lm.kwargs = {"temperature": 1.0}
     mock_extraction_lm.model = "openai/gpt-4o"
@@ -89,7 +89,7 @@ async def test_two_step_adapter_async_call():
 [[ ## solution ## ]] result
 [[ ## answer ## ]] 12
 [[ ## completed ## ]]
-"""
+""",
     ]
     mock_extraction_lm.kwargs = {"temperature": 1.0}
     mock_extraction_lm.model = "openai/gpt-4o"
@@ -150,7 +150,7 @@ def test_two_step_adapter_parse():
             "tags": ["AI", "deep learning", "neural networks"],
             "confidence": 0.87
         }
-    """
+    """,
     ]
     mock_extraction_lm.kwargs = {"temperature": 1.0}
     mock_extraction_lm.model = "openai/gpt-4o"

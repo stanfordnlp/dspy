@@ -234,19 +234,19 @@ async def test_stream_listener_json_adapter(lm_for_test):
 async def test_streaming_handles_space_correctly():
     my_program = dspy.Predict("question->answer")
     program = dspy.streamify(
-        my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
+        my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
     )
 
     async def gpt_4o_mini_stream(*args, **kwargs):
         yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))],
         )
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="How "))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="are "))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="you "))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="doing?"))])
         yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))],
         )
 
     with mock.patch("litellm.acompletion", side_effect=gpt_4o_mini_stream):
@@ -482,7 +482,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
 
     with mock.patch(
-        "litellm.acompletion", new_callable=AsyncMock, side_effect=[gpt_4o_mini_stream_1(), gpt_4o_mini_stream_2()]
+        "litellm.acompletion", new_callable=AsyncMock, side_effect=[gpt_4o_mini_stream_1(), gpt_4o_mini_stream_2()],
     ):
         program = dspy.streamify(
             MyProgram(),
@@ -532,15 +532,15 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content=" answer ## ]]"))])
         yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content="To get to the other side."))]
+            model="gemini", choices=[StreamingChoices(delta=Delta(content="To get to the other side."))],
         )
         yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+            model="gemini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))],
         )
 
     async def gemini_stream_2(*args, **kwargs):
         yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content="[[ ## judgement ## ]]\n\n"))]
+            model="gemini", choices=[StreamingChoices(delta=Delta(content="[[ ## judgement ## ]]\n\n"))],
         )
         yield ModelResponseStream(
             model="gemini",
@@ -550,9 +550,9 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
                         content=(
                             "The answer provides the standard punchline for this classic joke format, adapted to the "
                             "specific location mentioned in the question. It is the expected and appropriate response."
-                        )
-                    )
-                )
+                        ),
+                    ),
+                ),
             ],
         )
         yield ModelResponseStream(
@@ -604,26 +604,26 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
     async def gemini_stream_1(*args, **kwargs):
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="{\n"))])
         yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content='  "answer": "To get to'))]
+            model="gemini", choices=[StreamingChoices(delta=Delta(content='  "answer": "To get to'))],
         )
         yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content=' the other side... of the cutting board!"'))]
+            model="gemini", choices=[StreamingChoices(delta=Delta(content=' the other side... of the cutting board!"'))],
         )
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="}\n"))])
 
     async def gemini_stream_2(*args, **kwargs):
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="{\n"))])
         yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content='  "judgement": "The'))]
+            model="gemini", choices=[StreamingChoices(delta=Delta(content='  "judgement": "The'))],
         )
         yield ModelResponseStream(
             model="gemini",
             choices=[
                 StreamingChoices(
                     delta=Delta(
-                        content=' answer provides a humorous and relevant punchline to the classic joke setup."'
-                    )
-                )
+                        content=' answer provides a humorous and relevant punchline to the classic joke setup."',
+                    ),
+                ),
             ],
         )
         yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="}\n"))])

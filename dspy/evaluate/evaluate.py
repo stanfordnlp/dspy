@@ -193,7 +193,7 @@ class Evaluate:
 
 
     def _construct_result_table(
-        self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+        self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str,
     ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
@@ -298,7 +298,7 @@ def stylize_metric_name(df: "pd.DataFrame", metric_name: str) -> "pd.DataFrame":
     :param metric_name: The name of the metric for which to stylize DataFrame cell contents.
     """
     df[metric_name] = df[metric_name].apply(
-        lambda x: f"✔️ [{x:.3f}]" if x and isinstance(x, float) else f"✔️ [{x}]" if x else ""
+        lambda x: f"✔️ [{x:.3f}]" if x and isinstance(x, float) else f"✔️ [{x}]" if x else "",
     )
     return df
 
@@ -316,7 +316,7 @@ def display_dataframe(df: "pd.DataFrame"):
     else:
         # Pretty print the DataFrame to the console
         with pd.option_context(
-            "display.max_rows", None, "display.max_columns", None
+            "display.max_rows", None, "display.max_columns", None,
         ):  # more options can be specified also
             print(df)
 

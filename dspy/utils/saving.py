@@ -50,7 +50,7 @@ def load(path: str) -> "Module":
                 f"There is a mismatch of {key} version between saved model and current environment. You saved with "
                 f"`{key}=={saved_version}`, but now you have `{key}=={dependency_versions[key]}`. This might cause "
                 "errors or performance downgrade on the loaded model, please consider loading the model in the same "
-                "environment as the saving environment."
+                "environment as the saving environment.",
             )
 
     with open(path / "program.pkl", "rb") as f:

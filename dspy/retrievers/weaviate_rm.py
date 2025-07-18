@@ -97,7 +97,7 @@ class WeaviateRM(dspy.Retrieve):
 
             elif self._client_type == "Client":
                 q = self._weaviate_client.query.get(
-                        self._weaviate_collection_name, [self._weaviate_collection_text_key]
+                        self._weaviate_collection_name, [self._weaviate_collection_text_key],
                     )
                 if tenant:
                     q = q.with_tenant(tenant)
@@ -132,7 +132,7 @@ class WeaviateRM(dspy.Retrieve):
         if self._client_type == "WeaviateClient":
             self._weaviate_collection.data.insert(
                 properties=new_object_properties,
-                uuid=get_valid_uuid(uuid4())
+                uuid=get_valid_uuid(uuid4()),
             ) # TODO: add tenancy scoping
         else:
             raise AttributeError("`insert` is not supported for the v3 Weaviate Python client, please upgrade to v4.")

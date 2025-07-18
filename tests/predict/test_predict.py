@@ -295,7 +295,7 @@ def test_multi_output2():
                 {"answer1": "my 0 answer", "answer2": "my 2 answer"},
                 {"answer1": "my 1 answer", "answer2": "my 3 answer"},
             ],
-        )
+        ),
     )
     results = program(question="What is 1+1?")
     assert results.completions.answer1[0] == "my 0 answer"
@@ -323,8 +323,8 @@ def test_datetime_inputs_and_outputs():
                 "reasoning": "Processed datetime inputs",
                 "summary": "All events are processed",
                 "next_event_time": "2024-11-27T14:00:00",
-            }
-        ]
+            },
+        ],
     )
     dspy.settings.configure(lm=lm)
 
@@ -332,7 +332,7 @@ def test_datetime_inputs_and_outputs():
         events=[
             TimedEvent(event_name="Event 1", event_time=datetime(2024, 11, 25, 10, 0, 0)),
             TimedEvent(event_name="Event 2", event_time=datetime(2024, 11, 25, 15, 30, 0)),
-        ]
+        ],
     )
     assert output.summary == "All events are processed"
     assert output.next_event_time == datetime(2024, 11, 27, 14, 0, 0)
@@ -355,8 +355,8 @@ def test_explicitly_valued_enum_inputs_and_outputs():
             {
                 "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
                 "next_status": "in_progress",
-            }
-        ]
+            },
+        ],
     )
     dspy.settings.configure(lm=lm)
 
@@ -382,8 +382,8 @@ def test_enum_inputs_and_outputs_with_shared_names_and_values():
             {
                 "reasoning": "The ticket is currently 'OPEN', transitioning to 'CLOSED'.",
                 "next_status": "RESOLVED",  # Refers to TicketStatus.CLOSED by value
-            }
-        ]
+            },
+        ],
     )
     dspy.settings.configure(lm=lm)
 
@@ -405,8 +405,8 @@ def test_auto_valued_enum_inputs_and_outputs():
             {
                 "reasoning": "The current status is 'PENDING', advancing to 'IN_PROGRESS'.",
                 "next_status": "IN_PROGRESS",  # Use the auto-assigned value for IN_PROGRESS
-            }
-        ]
+            },
+        ],
     )
     dspy.settings.configure(lm=lm)
 

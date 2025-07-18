@@ -10,7 +10,7 @@ def test_parallel_module():
             {"output": "test output 3"},
             {"output": "test output 4"},
             {"output": "test output 5"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
 
@@ -30,7 +30,7 @@ def test_parallel_module():
                     (self.predictor, input),
                     (self.predictor2, input),
                     (self.predictor, input),
-                ]
+                ],
             )
 
     output = MyModule()(dspy.Example(input="test input").with_inputs("input"))
@@ -47,7 +47,7 @@ def test_batch_module():
             {"output": "test output 3"},
             {"output": "test output 4"},
             {"output": "test output 5"},
-        ]
+        ],
     )
     res_lm = DummyLM(
         [
@@ -56,7 +56,7 @@ def test_batch_module():
             {"output": "test output 3", "reasoning": "test reasoning 3"},
             {"output": "test output 4", "reasoning": "test reasoning 4"},
             {"output": "test output 5", "reasoning": "test reasoning 5"},
-        ]
+        ],
     )
 
     class MyModule(dspy.Module):
@@ -97,7 +97,7 @@ def test_nested_parallel_module():
             {"output": "test output 3"},
             {"output": "test output 4"},
             {"output": "test output 5"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
 
@@ -121,7 +121,7 @@ def test_nested_parallel_module():
                             (self.predictor, input),
                         ],
                     ),
-                ]
+                ],
             )
 
     output = MyModule()(dspy.Example(input="test input").with_inputs("input"))
@@ -141,7 +141,7 @@ def test_nested_batch_method():
             {"output": "test output 3"},
             {"output": "test output 4"},
             {"output": "test output 5"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
 

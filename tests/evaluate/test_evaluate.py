@@ -39,8 +39,8 @@ def test_evaluate_call():
             {
                 "What is 1+1?": {"answer": "2"},
                 "What is 2+2?": {"answer": "4"},
-            }
-        )
+            },
+        ),
     )
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
@@ -75,7 +75,7 @@ def test_construct_result_df():
                 "example_answer": ["2", "4"],
                 "pred_answer": ["2", "4"],
                 "answer_exact_match": [100.0, 100.0],
-            }
+            },
         ),
     )
 
@@ -159,7 +159,7 @@ def test_evaluate_call_wrong_answer():
         (
             lambda text: Predict("text: str -> entities: list[dict[str, str]]")(text=text).entities,
             dspy.Example(text="United States", entities=[{"name": "United States", "type": "location"}]).with_inputs(
-                "text"
+                "text",
             ),
         ),
         (
@@ -179,8 +179,8 @@ def test_evaluate_display_table(program_with_example, display_table, is_in_ipyth
         lm=DummyLM(
             {
                 example_input: example_output,
-            }
-        )
+            },
+        ),
     )
 
     ev = Evaluate(
@@ -191,7 +191,7 @@ def test_evaluate_display_table(program_with_example, display_table, is_in_ipyth
     assert ev.display_table == display_table
 
     with patch(
-        "dspy.evaluate.evaluate.is_in_ipython_notebook_environment", return_value=is_in_ipython_notebook_environment
+        "dspy.evaluate.evaluate.is_in_ipython_notebook_environment", return_value=is_in_ipython_notebook_environment,
     ):
         ev(program)
         out, _ = capfd.readouterr()
@@ -234,7 +234,7 @@ def test_evaluate_callback():
             {
                 "What is 1+1?": {"answer": "2"},
                 "What is 2+2?": {"answer": "4"},
-            }
+            },
         ),
         callbacks=[callback],
     )

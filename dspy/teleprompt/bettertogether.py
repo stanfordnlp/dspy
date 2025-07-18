@@ -45,7 +45,7 @@ class BetterTogether(Teleprompter):
         if not is_supported_prompt or not is_supported_weight:
             raise ValueError(
                 "The BetterTogether optimizer only supports the following optimizers for now: BootstrapFinetune, "
-                "BootstrapFewShotWithRandomSearch."
+                "BootstrapFewShotWithRandomSearch.",
             )
 
         self.rng = random.Random(seed)
@@ -65,7 +65,7 @@ class BetterTogether(Teleprompter):
         if not all(s in ["p", "w"] for s in parsed_strategy):
             raise ValueError(
                 f"The strategy should be a sequence of 'p' and 'w' separated by '{self.STRAT_SEP}', but "
-                f"found: {strategy}"
+                f"found: {strategy}",
             )
 
         logger.info("Preparing the student program...")
@@ -94,7 +94,7 @@ class BetterTogether(Teleprompter):
             current_strategy = self.STRAT_SEP.join(parsed_strategy[:ind + 1])
             logger.info(
                 f"\n########## Step {ind + 1} of {len(parsed_strategy)} - Strategy "
-                f"'{current_strategy}' ##########"
+                f"'{current_strategy}' ##########",
             )
 
             logger.info("Shuffling the trainset...")

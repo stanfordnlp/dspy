@@ -64,7 +64,7 @@ def complex_dummy_function(profile: UserProfile, priority: int, notes: list[Note
         notes: Optional processing notes
     """
     primary_address = next(
-        (addr for addr in profile.contact.addresses if addr.is_primary), profile.contact.addresses[0]
+        (addr for addr in profile.contact.addresses if addr.is_primary), profile.contact.addresses[0],
     )
 
     return {
@@ -109,7 +109,7 @@ async def async_complex_dummy_function(
     await asyncio.sleep(0.1)
 
     primary_address = next(
-        (addr for addr in profile.contact.addresses if addr.is_primary), profile.contact.addresses[0]
+        (addr for addr in profile.contact.addresses if addr.is_primary), profile.contact.addresses[0],
     )
 
     # Simulate more async work after finding primary address
@@ -233,7 +233,7 @@ def test_tool_call_parses_args():
         "model": {
             "field1": "hello",
             "field2": 123,
-        }
+        },
     }
 
     result = tool(**args)
@@ -251,9 +251,9 @@ def test_tool_call_parses_nested_list_of_pydantic_model():
                 {
                     "field1": "hello",
                     "field2": 123,
-                }
-            ]
-        ]
+                },
+            ],
+        ],
     }
 
     result = tool(**args)
@@ -401,7 +401,7 @@ TOOL_CALL_TEST_CASES = [
             {
                 "type": "tool_calls",
                 "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
-            }
+            },
         ],
     ),
     (
@@ -419,7 +419,7 @@ TOOL_CALL_TEST_CASES = [
                         "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
                     },
                 ],
-            }
+            },
         ],
     ),
     (
@@ -428,7 +428,7 @@ TOOL_CALL_TEST_CASES = [
             {
                 "type": "tool_calls",
                 "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
-            }
+            },
         ],
     ),
 ]

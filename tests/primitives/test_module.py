@@ -41,8 +41,8 @@ def test_forward():
             {
                 "What is 1+1?": {"query": "let me check"},
                 "let me check": {"answer": "2"},
-            }
-        )
+            },
+        ),
     )
     result = program(question="What is 1+1?").answer
     assert result == "2"

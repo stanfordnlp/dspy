@@ -49,7 +49,7 @@ def test_adapter_parse_error_with_parsed_result():
     parsed_result = {"answer1": "value1"}
 
     error = AdapterParseError(
-        adapter_name=adapter_name, signature=signature, lm_response=lm_response, parsed_result=parsed_result
+        adapter_name=adapter_name, signature=signature, lm_response=lm_response, parsed_result=parsed_result,
     )
 
     error_message = str(error)

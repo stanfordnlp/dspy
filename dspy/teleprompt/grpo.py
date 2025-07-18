@@ -125,7 +125,7 @@ class GRPO(FinetuneTeleprompter):
                     display_progress=True,
                     provide_traceback=False,  # TODO(check with team)
                     max_errors=len(valset)*10,  # TODO(check with team)
-                    failure_score=self.failure_score
+                    failure_score=self.failure_score,
                 )
                 if step_idx == -1:
                     logger.info("Evaluating the student program on the train+validation set before training loop...")
@@ -151,7 +151,7 @@ class GRPO(FinetuneTeleprompter):
                     display_progress=True,
                     provide_traceback=False,  # TODO(check with team)
                     max_errors=len(valset)*10,  # TODO(check with team)
-                    failure_score=self.failure_score
+                    failure_score=self.failure_score,
                 )
                 if step_idx == -1:
                     logger.info("Evaluating the student program on the validation set before training loop...")
@@ -175,7 +175,7 @@ class GRPO(FinetuneTeleprompter):
                     display_progress=True,
                     provide_traceback=False,  # TODO(check with team)
                     max_errors=len(trainset)*10,  # TODO(check with team)
-                    failure_score=self.failure_score
+                    failure_score=self.failure_score,
                 )
                 if step_idx == -1:
                     logger.info("Evaluating the student program on the validation set before training loop...")
@@ -247,12 +247,12 @@ class GRPO(FinetuneTeleprompter):
         if len(trainset) < self.num_dspy_examples_per_grpo_step:
             logger.warning(
             f"Number of training examples {len(trainset)} is less than the number of examples per GRPO step {self.num_dspy_examples_per_grpo_step}. "
-                "Repeating the training set to fill the GRPO step. This could lead to overfitting and training instability."
+                "Repeating the training set to fill the GRPO step. This could lead to overfitting and training instability.",
             )
             multiplier = (self.num_dspy_examples_per_grpo_step + len(trainset) - 1) // len(trainset)
             if multiplier > 1:
                 logger.warning(
-                    f"Repeating the training set {multiplier} times to fill the GRPO step. This could lead to overfitting and training instability."
+                    f"Repeating the training set {multiplier} times to fill the GRPO step. This could lead to overfitting and training instability.",
                 )
                 trainset = trainset * multiplier
 
@@ -272,7 +272,7 @@ class GRPO(FinetuneTeleprompter):
         if not self.multitask:
             raise ValueError(
                 "Independent GRPO training jobs for each predictor in the student program "
-                "are not supported yet. Please set multitask=True."
+                "are not supported yet. Please set multitask=True.",
             )
 
         student_lms = {id(pred.lm) for pred in student.predictors()}
@@ -455,7 +455,7 @@ class GRPO(FinetuneTeleprompter):
                             inp_messages = adapter.format(
                                 signature=trace_instance[0].signature,
                                 inputs=trace_instance[1],
-                                demos=[] # TODO: Add support for demos
+                                demos=[], # TODO: Add support for demos
                             )
 
                             if isinstance(trace_instance[2], FailedPrediction):
@@ -474,7 +474,7 @@ class GRPO(FinetuneTeleprompter):
                                     signature=trace_instance[0].signature,
                                     inputs=trace_instance[1],
                                     outputs=trace_instance[2],
-                                    demos=[] # TODO: Add support for demos
+                                    demos=[], # TODO: Add support for demos
                                 )["messages"]
 
                                 assert all_messages[:-1] == inp_messages, f"Input messages {inp_messages} do not match the expected messages {all_messages[:-1]}"
