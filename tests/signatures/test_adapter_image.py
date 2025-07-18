@@ -102,7 +102,7 @@ def setup_predictor(signature, expected_output):
             "inputs": {"image": "https://example.com/dog.jpg", "languages": ["en", "es", "fr"]},
             "key_output": "captions",
             "expected": {
-                "captions": {"en": "A golden retriever", "es": "Un golden retriever", "fr": "Un golden retriever"}
+                "captions": {"en": "A golden retriever", "es": "Un golden retriever", "fr": "Un golden retriever"},
             },
         },
     ],
@@ -135,7 +135,7 @@ def test_basic_image_operations(test_case):
     ],
 )
 def test_image_input_formats(
-    request, sample_pil_image, sample_dspy_image_download, sample_dspy_image_no_download, image_input, description
+    request, sample_pil_image, sample_dspy_image_download, sample_dspy_image_no_download, image_input, description,
 ):
     """Test different input formats for image fields"""
     signature = "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]"

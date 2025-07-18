@@ -293,9 +293,9 @@ def test_logprobs_included_when_requested():
                         "content": [
                             {"token": "test", "logprob": 0.1, "top_logprobs": [{"token": "test", "logprob": 0.1}]},
                             {"token": "answer", "logprob": 0.2, "top_logprobs": [{"token": "answer", "logprob": 0.2}]},
-                        ]
+                        ],
                     },
-                )
+                ),
             ],
             model="dspy-test-model",
         )
@@ -315,7 +315,7 @@ def test_logprobs_included_when_requested():
                     "logprob": 0.2,
                     "top_logprobs": [{"token": "answer", "bytes": None, "logprob": 0.2}],
                 },
-            ]
+            ],
         }
         assert mock_completion.call_args.kwargs["logprobs"]
 
@@ -352,7 +352,7 @@ async def test_async_lm_call_with_cache(tmp_path):
 
     with mock.patch("dspy.clients.lm.alitellm_completion") as mock_alitellm_completion:
         mock_alitellm_completion.return_value = ModelResponse(
-            choices=[Choices(message=Message(content="answer"))], model="openai/gpt-4o-mini"
+            choices=[Choices(message=Message(content="answer"))], model="openai/gpt-4o-mini",
         )
         mock_alitellm_completion.__qualname__ = "alitellm_completion"
         await lm.acall("Query")

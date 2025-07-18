@@ -50,7 +50,7 @@ async def test_convert_mcp_tool():
             assert error_tool.name == "wrong_tool"
             assert error_tool.desc == "This tool raises an error"
             with pytest.raises(
-                RuntimeError, match="Failed to call a MCP tool: Error executing tool wrong_tool: error!"
+                RuntimeError, match="Failed to call a MCP tool: Error executing tool wrong_tool: error!",
             ):
                 await error_tool.acall()
 
@@ -76,7 +76,7 @@ async def test_convert_mcp_tool():
                         },
                         "account_id": {"title": "Account Id", "type": "string"},
                     },
-                }
+                },
             }
             account_in_json = {
                 "profile": {

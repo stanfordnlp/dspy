@@ -118,7 +118,7 @@ class SignatureMeta(type(BaseModel)):
 
                 logging.getLogger("dspy").warning(
                     f"Reached maximum frame search depth ({max_frames}) while looking for types: {needed_types}. "
-                    "Consider providing custom_types explicitly to Signature."
+                    "Consider providing custom_types explicitly to Signature.",
                 )
         except (AttributeError, ValueError):
             # Handle environments where frame introspection is not available
@@ -126,7 +126,7 @@ class SignatureMeta(type(BaseModel)):
 
             logging.getLogger("dspy").debug(
                 "Frame introspection failed while trying to resolve custom types. "
-                "Consider providing custom_types explicitly to Signature."
+                "Consider providing custom_types explicitly to Signature.",
             )
         finally:
             if frame:
@@ -338,7 +338,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
                 {
                     "prefix": cls.fields[field].json_schema_extra["prefix"],
                     "description": cls.fields[field].json_schema_extra["desc"],
-                }
+                },
             )
 
         return state
@@ -610,7 +610,7 @@ def _parse_type_node(node, names=None) -> Any:
 
     raise ValueError(
         f"Failed to parse string-base Signature due to unhandled AST node type in annotation: {ast.dump(node)}. "
-        "Please consider using class-based DSPy Signatures instead."
+        "Please consider using class-based DSPy Signatures instead.",
     )
 
 

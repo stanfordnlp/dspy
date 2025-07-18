@@ -209,12 +209,12 @@ class SIMBA(Teleprompter):
                 max_to_min_gap, max_score, max_to_avg_gap = bucket_stats
                 logger.info(
                     f"Batch {batch_idx+1}: Processing bucket #{bucket_idx+1}, with max score {max_score}, "
-                    f"max-to-min gap {max_to_min_gap}, and max-to-avg gap {max_to_avg_gap}."
+                    f"max-to-min gap {max_to_min_gap}, and max-to-avg gap {max_to_avg_gap}.",
                 )
 
                 # pick source program
                 src_prog_idx = softmax_sample(
-                    rng, top_k_plus_baseline(self.num_candidates), self.temperature_for_candidates
+                    rng, top_k_plus_baseline(self.num_candidates), self.temperature_for_candidates,
                 )
                 system_candidate = programs[src_prog_idx].deepcopy()
 
@@ -240,7 +240,7 @@ class SIMBA(Teleprompter):
                 strategy = rng.choice(self.strategies)
                 logger.info(
                     f"Batch {batch_idx+1}: Invoking strategy: {strategy.__name__}"
-                    + (f", having dropped {num_demos_to_drop} demos per predictor" if num_demos_to_drop else "")
+                    + (f", having dropped {num_demos_to_drop} demos per predictor" if num_demos_to_drop else ""),
                 )
 
                 try:
@@ -280,7 +280,7 @@ class SIMBA(Teleprompter):
 
             logger.info(
                 f"Scores after {batch_idx+1} batches: {candidate_scores}, "
-                f"Best: {max(candidate_scores) if candidate_scores else 'N/A'}\n"
+                f"Best: {max(candidate_scores) if candidate_scores else 'N/A'}\n",
             )
 
             # STEP 7: Select the best among these new ones for "winning" record
@@ -329,7 +329,7 @@ class SIMBA(Teleprompter):
         best_program = candidate_programs[best_idx].deepcopy()
         logger.info(
             f"Final trainset scores: {scores}, Best: {max(scores) if scores else 'N/A'} "
-            f"(at index {best_idx if scores else 'N/A'})\n\n\n"
+            f"(at index {best_idx if scores else 'N/A'})\n\n\n",
         )
 
         # Attach sorted, scored candidates & logs

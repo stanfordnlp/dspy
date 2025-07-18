@@ -101,13 +101,13 @@ class ColBERTv2RetrieverLocal:
         if not load_only:
             print(
                 f"Building the index for experiment {self.colbert_config.experiment} with index name "
-                f"{self.colbert_config.index_name}"
+                f"{self.colbert_config.index_name}",
             )
             self.build_index()
 
         print(
             f"Loading the index for experiment {self.colbert_config.experiment} with index name "
-            f"{self.colbert_config.index_name}"
+            f"{self.colbert_config.index_name}",
         )
         self.searcher = self.get_index()
 
@@ -117,7 +117,7 @@ class ColBERTv2RetrieverLocal:
         except ImportError:
             print(
                 "Colbert not found. Please check your installation or install the module using pip install "
-                "colbert-ai[faiss-gpu,torch]."
+                "colbert-ai[faiss-gpu,torch].",
             )
 
         from colbert import Indexer
@@ -133,7 +133,7 @@ class ColBERTv2RetrieverLocal:
         except ImportError:
             print(
                 "Colbert not found. Please check your installation or install the module using pip install "
-                "colbert-ai[faiss-gpu,torch]."
+                "colbert-ai[faiss-gpu,torch].",
             )
 
         from colbert import Searcher
@@ -159,7 +159,7 @@ class ColBERTv2RetrieverLocal:
                 k=k,
                 # Passing the filter function of relevant
                 filter_fn=lambda pids: torch.tensor(
-                    [pid for pid in pids if pid in filtered_pids], dtype=torch.int32
+                    [pid for pid in pids if pid in filtered_pids], dtype=torch.int32,
                 ).to(device),
             )
         else:
@@ -177,7 +177,7 @@ class ColBERTv2RerankerLocal:
         except ImportError:
             print(
                 "Colbert not found. Please check your installation or install the module using pip install "
-                "colbert-ai[faiss-gpu,torch]."
+                "colbert-ai[faiss-gpu,torch].",
             )
         """_summary_
 

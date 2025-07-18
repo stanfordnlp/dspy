@@ -35,8 +35,8 @@ class Audio(Type):
             "type": "input_audio",
             "input_audio": {
                 "data": data,
-                "format": self.audio_format
-            }
+                "format": self.audio_format,
+            },
         }]
 
 
@@ -85,7 +85,7 @@ class Audio(Type):
 
     @classmethod
     def from_array(
-        cls, array: Any, sampling_rate: int, format: str = "wav"
+        cls, array: Any, sampling_rate: int, format: str = "wav",
     ) -> "Audio":
         """
         Process numpy-like array and encode it as base64. Uses sampling rate and audio format for encoding.

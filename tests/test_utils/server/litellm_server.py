@@ -72,7 +72,7 @@ def _append_request_to_log_file(completion_kwargs):
     if log_file_path is None:
         raise ValueError(
             "Server logs file path is not defined! Please set the path using the"
-            + f" {LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR} environment variable."
+            + f" {LITELLM_TEST_SERVER_LOG_FILE_PATH_ENV_VAR} environment variable.",
         )
 
     with open(log_file_path, "a") as f:

@@ -27,7 +27,7 @@ def test_basic_workflow():
         [
             "Initial thoughts",
             "Finish[blue]",  # Expected output for both training and validation
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
 

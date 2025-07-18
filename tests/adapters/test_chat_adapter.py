@@ -54,7 +54,7 @@ import dspy
     ],
 )
 def test_chat_adapter_quotes_literals_as_expected(
-    input_literal, output_literal, input_value, expected_input_str, expected_output_str
+    input_literal, output_literal, input_value, expected_input_str, expected_output_str,
 ):
     """
     This test verifies that when we declare Literal fields with various mixes
@@ -408,7 +408,7 @@ def test_chat_adapter_formats_conversation_history():
         messages=[
             {"question": "What is the capital of France?", "answer": "Paris"},
             {"question": "What is the capital of Germany?", "answer": "Berlin"},
-        ]
+        ],
     )
 
     adapter = dspy.ChatAdapter()
@@ -495,7 +495,7 @@ def test_chat_adapter_toolcalls_native_function_calling():
                                 function=Function(arguments='{"city":"Paris"}', name="get_weather"),
                                 id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
                                 type="function",
-                            )
+                            ),
                         ],
                     ),
                 ),
@@ -511,7 +511,7 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})],
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None

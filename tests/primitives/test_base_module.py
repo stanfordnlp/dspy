@@ -62,7 +62,7 @@ def test_save_and_load_with_json(tmp_path):
     model = dspy.ChainOfThought(dspy.Signature("q -> a"))
     model.predict.signature = model.predict.signature.with_instructions("You are a helpful assistant.")
     model.predict.demos = [
-        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")
+        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a"),
     ]
     save_path = tmp_path / "model.json"
     model.save(save_path)
@@ -95,7 +95,7 @@ def test_save_and_load_with_pkl(tmp_path):
     trainset = [dspy.Example(**example).with_inputs("current_date", "target_date") for example in trainset]
 
     dspy.settings.configure(
-        lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10)
+        lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10),
     )
 
     cot = dspy.ChainOfThought(MySignature)
@@ -301,7 +301,7 @@ def test_usage_tracker_in_parallel():
         [
             (program1, {"question": "What is the meaning of life?"}),
             (program2, {"question": "why did a chicken cross the kitchen?"}),
-        ]
+        ],
     )
 
     assert results[0].get_lm_usage() is not None
@@ -342,7 +342,7 @@ async def test_usage_tracker_async_parallel():
             program.acall(question="What is the capital of France?"),
         ]
         with dspy.settings.context(
-            lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter(),
         ):
             results = await asyncio.gather(*coroutines)
 
@@ -371,7 +371,7 @@ def test_module_history():
     with patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
-                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}")),
             ],
             model="openai/gpt-4o-mini",
         )
@@ -432,7 +432,7 @@ def test_module_history_with_concurrency():
             [
                 (program, {"question": "What is the meaning of life?"}),
                 (program, {"question": "why did a chicken cross the kitchen?"}),
-            ]
+            ],
         )
         assert len(program.history) == 2
         assert len(program.cot.history) == 2
@@ -452,7 +452,7 @@ async def test_module_history_async():
     with patch("litellm.acompletion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
-                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}")),
             ],
             model="openai/gpt-4o-mini",
         )
@@ -474,7 +474,7 @@ async def test_module_history_async():
         assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
 
         with dspy.context(
-            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+            disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter(),
         ):
             await program.acall(question="What is the capital of France?")
 
@@ -484,7 +484,7 @@ async def test_module_history_async():
         assert len(program.cot.predict.history) == 2
 
         with dspy.context(
-            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
+            disable_history=False, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter(),
         ):
             await program.acall(question="What is the capital of France?")
         # History is recorded again when history is enabled.

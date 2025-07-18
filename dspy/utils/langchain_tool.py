@@ -43,5 +43,5 @@ def convert_langchain_tool(tool: "BaseTool") -> Tool:
         desc=tool.description,
         args=args,
         arg_types=arg_types,
-        arg_desc=arg_desc
+        arg_desc=arg_desc,
     )

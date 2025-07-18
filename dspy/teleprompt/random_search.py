@@ -153,7 +153,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         # To best program, attach all program candidates in decreasing average score
         best_program.candidate_programs = score_data
         best_program.candidate_programs = sorted(
-            best_program.candidate_programs, key=lambda x: x["score"], reverse=True
+            best_program.candidate_programs, key=lambda x: x["score"], reverse=True,
         )
 
         print(f"{len(best_program.candidate_programs)} candidate programs found.")

@@ -71,7 +71,7 @@ class Avatar(dspy.Module):
 
     def _update_signature(self, idx: int, omit_action: bool = False):
         self.actor.signature = self.actor.signature.with_updated_fields(
-            f"action_{idx}", Action, __dspy_field_type="input"
+            f"action_{idx}", Action, __dspy_field_type="input",
         )
 
         self.actor.signature = self.actor.signature.append(
@@ -139,7 +139,7 @@ class Avatar(dspy.Module):
             if tool_name != "Finish":
                 tool_output = self._call_tool(tool_name, tool_input_query)
                 action_results.append(
-                    ActionOutput(tool_name=tool_name, tool_input_query=tool_input_query, tool_output=tool_output)
+                    ActionOutput(tool_name=tool_name, tool_input_query=tool_input_query, tool_output=tool_output),
                 )
 
                 self._update_signature(idx)

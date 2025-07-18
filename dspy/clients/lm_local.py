@@ -32,7 +32,7 @@ class LocalProvider(Provider):
         except ImportError:
             raise ImportError(
                 "For local model launching, please install sglang."
-                "Navigate to https://docs.sglang.ai/start/install.html for the latest installation instructions!"
+                "Navigate to https://docs.sglang.ai/start/install.html for the latest installation instructions!",
             )
 
         if hasattr(lm, "process"):
@@ -195,7 +195,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
     except ImportError:
         raise ImportError(
             "For local finetuning, please install torch, transformers, and trl "
-            "by running `pip install -U torch transformers accelerate trl peft`"
+            "by running `pip install -U torch transformers accelerate trl peft`",
         )
 
     device = train_kwargs.get("device", None)
@@ -220,7 +220,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
     if "max_seq_length" not in train_kwargs:
         train_kwargs["max_seq_length"] = 4096
         logger.info(
-            f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}"
+            f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}",
         )
 
     from datasets import Dataset

@@ -52,7 +52,7 @@ def test_tool_calling_with_pydantic_args():
                 "reasoning": "This is a very rigorous reasoning process, trust me bro!",
                 "invitation_letter": "It's my honor to invite Alice to the Science Fair event on Friday.",
             },
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
 
@@ -97,7 +97,7 @@ def test_tool_calling_without_typehint():
             {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
             {"next_thought": "I have the sum, now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
             {"reasoning": "I added the numbers successfully", "c": 3},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     outputs = react(a=1, b=2)
@@ -180,7 +180,7 @@ def test_error_retry():
             },
             # (The model *would* succeed on the 3rd turn, but max_iters=2 stops earlier.)
             {"reasoning": "I added the numbers successfully", "c": 3},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
 
@@ -252,7 +252,7 @@ async def test_async_tool_calling_with_pydantic_args():
                 "reasoning": "This is a very rigorous reasoning process, trust me bro!",
                 "invitation_letter": "It's my honor to invite Alice to the Science Fair event on Friday.",
             },
-        ]
+        ],
     )
     with dspy.context(lm=lm):
         outputs = await react.acall(
@@ -306,7 +306,7 @@ async def test_async_error_retry():
             },
             # (The model *would* succeed on the 3rd turn, but max_iters=2 stops earlier.)
             {"reasoning": "I added the numbers successfully", "c": 3},
-        ]
+        ],
     )
     with dspy.context(lm=lm):
         outputs = await react.acall(a=1, b=2, max_iters=2)

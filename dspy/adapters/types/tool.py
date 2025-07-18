@@ -179,7 +179,7 @@ class Tool(Type):
             else:
                 raise ValueError(
                     "You are calling `__call__` on an async tool, please use `acall` instead or set "
-                    "`allow_async=True` to run the async tool in sync mode."
+                    "`allow_async=True` to run the async tool in sync mode.",
                 )
         return result
 
@@ -306,7 +306,7 @@ class ToolCalls(Type):
                     }
                     for tool_call in self.tool_calls
                 ],
-            }
+            },
         ]
 
 

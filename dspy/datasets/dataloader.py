@@ -128,11 +128,11 @@ class DataLoader(Dataset):
                 ]
             except AttributeError:
                 raise ValueError(
-                    "Retrieval module does not support `get_objects`. Please use a different retrieval module."
+                    "Retrieval module does not support `get_objects`. Please use a different retrieval module.",
                 )
         except AttributeError:
             raise ValueError(
-                "Retrieval module not found. Please set a retrieval module using `dspy.settings.configure`."
+                "Retrieval module not found. Please set a retrieval module using `dspy.settings.configure`.",
             )
 
     def sample(
@@ -144,7 +144,7 @@ class DataLoader(Dataset):
     ) -> list[dspy.Example]:
         if not isinstance(dataset, list):
             raise ValueError(
-                f"Invalid dataset provided of type {type(dataset)}. Please provide a list of `dspy.Example`s."
+                f"Invalid dataset provided of type {type(dataset)}. Please provide a list of `dspy.Example`s.",
             )
 
         return random.sample(dataset, n, *args, **kwargs)
@@ -170,7 +170,7 @@ class DataLoader(Dataset):
             raise ValueError(
                 "Invalid `train_size`. Please provide a float between 0 and 1 to represent the proportion of the "
                 "dataset to include in the train split or an int to represent the absolute number of samples to "
-                f"include in the train split. Received `train_size`: {train_size}."
+                f"include in the train split. Received `train_size`: {train_size}.",
             )
 
         if test_size is not None:
@@ -182,12 +182,12 @@ class DataLoader(Dataset):
                 raise ValueError(
                     "Invalid `test_size`. Please provide a float between 0 and 1 to represent the proportion of the "
                     "dataset to include in the test split or an int to represent the absolute number of samples to "
-                    f"include in the test split. Received `test_size`: {test_size}."
+                    f"include in the test split. Received `test_size`: {test_size}.",
                 )
             if train_end + test_end > len(dataset_shuffled):
                 raise ValueError(
                     "`train_size` + `test_size` cannot exceed the total number of samples. Received "
-                    f"`train_size`: {train_end}, `test_size`: {test_end}, and `dataset_size`: {len(dataset_shuffled)}."
+                    f"`train_size`: {train_end}, `test_size`: {test_end}, and `dataset_size`: {len(dataset_shuffled)}.",
                 )
         else:
             test_end = len(dataset_shuffled) - train_end

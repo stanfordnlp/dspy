@@ -46,7 +46,7 @@ class TwoStepAdapter(Adapter):
         self.extraction_model = extraction_model
 
     def format(
-        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
+        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """
         Format a prompt for the first stage with the main LM.

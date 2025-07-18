@@ -284,7 +284,7 @@ class GroundedProposer(Proposer):
         set_tip_randomly=True,
         set_history_randomly=True,
         verbose=False,
-        rng=None
+        rng=None,
     ):
         super().__init__()
         self.program_aware = program_aware
@@ -411,7 +411,7 @@ class GroundedProposer(Proposer):
             use_task_demos=self.use_task_demos and demo_candidates,
             use_instruct_history=self.use_instruct_history and instruction_history,
             use_tip=self.use_tip,
-            verbose=self.verbose
+            verbose=self.verbose,
         )
 
         # Generate a new instruction for our predictor, using the temperature specified for this round

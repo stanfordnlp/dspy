@@ -77,7 +77,7 @@ class InferRules(BootstrapFewShot):
                 else:
                     raise RuntimeError(
                         "Failed to generate natural language rules since a single example couldn't fit in the model's "
-                        "context window."
+                        "context window.",
                     ) from e
 
     def update_program_instructions(self, predictor, natural_language_rules):

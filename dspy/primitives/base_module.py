@@ -133,7 +133,7 @@ class BaseModule:
                 except Exception:
                     logging.warning(
                         f"Failed to deep copy attribute '{attr}' of {self.__class__.__name__}, "
-                        "falling back to shallow copy or reference copy."
+                        "falling back to shallow copy or reference copy.",
                     )
                     try:
                         # Fallback to shallow copy if deep copy fails
@@ -194,7 +194,7 @@ class BaseModule:
         if save_program:
             if path.suffix:
                 raise ValueError(
-                    f"`path` must point to a directory without a suffix when `save_program=True`, but received: {path}"
+                    f"`path` must point to a directory without a suffix when `save_program=True`, but received: {path}",
                 )
             if path.exists() and not path.is_dir():
                 raise NotADirectoryError(f"The path '{path}' exists but is not a directory.")
@@ -213,7 +213,7 @@ class BaseModule:
             except Exception as e:
                 raise RuntimeError(
                     f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy program, "
-                    "or consider using state-only saving by setting `save_program=False`."
+                    "or consider using state-only saving by setting `save_program=False`.",
                 )
             with open(path / "metadata.json", "w", encoding="utf-8") as f:
                 ujson.dump(metadata, f, indent=2, ensure_ascii=False)
@@ -230,7 +230,7 @@ class BaseModule:
                 raise RuntimeError(
                     f"Failed to save state to {path} with error: {e}. Your DSPy program may contain non "
                     "json-serializable objects, please consider saving the state in .pkl by using `path` ending "
-                    "with `.pkl`, or saving the whole program by setting `save_program=True`."
+                    "with `.pkl`, or saving the whole program by setting `save_program=True`.",
                 )
         elif path.suffix == ".pkl":
             with open(path, "wb") as f:
@@ -265,6 +265,6 @@ class BaseModule:
                     f"You saved with `{key}=={saved_version}`, but now you have "
                     f"`{key}=={dependency_versions[key]}`. This might cause errors or performance downgrade "
                     "on the loaded model, please consider loading the model in the same environment as the "
-                    "saving environment."
+                    "saving environment.",
                 )
         self.load_state(state)

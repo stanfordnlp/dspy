@@ -43,7 +43,7 @@ class Adapter:
                 raise ValueError(
                     f"You provided an output field {tool_call_output_field_name} to receive the tool calls information, "
                     "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
-                    "input field with type `list[dspy.Tool]`."
+                    "input field with type `list[dspy.Tool]`.",
                 )
 
             if tool_call_output_field_name and litellm.supports_function_calling(model=lm.model):
@@ -58,7 +58,7 @@ class Adapter:
 
                 signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
                 signature_for_native_function_calling = signature_for_native_function_calling.delete(
-                    tool_call_input_field_name
+                    tool_call_input_field_name,
                 )
 
                 return signature_for_native_function_calling
@@ -344,15 +344,15 @@ class Adapter:
                 {
                     "role": "user",
                     "content": self.format_user_message_content(signature, demo, prefix=incomplete_demo_prefix),
-                }
+                },
             )
             messages.append(
                 {
                     "role": "assistant",
                     "content": self.format_assistant_message_content(
-                        signature, demo, missing_field_message="Not supplied for this particular example. "
+                        signature, demo, missing_field_message="Not supplied for this particular example. ",
                     ),
-                }
+                },
             )
 
         for demo in complete_demos:
@@ -361,9 +361,9 @@ class Adapter:
                 {
                     "role": "assistant",
                     "content": self.format_assistant_message_content(
-                        signature, demo, missing_field_message="Not supplied for this conversation history message. "
+                        signature, demo, missing_field_message="Not supplied for this conversation history message. ",
                     ),
-                }
+                },
             )
 
         return messages
@@ -419,13 +419,13 @@ class Adapter:
                 {
                     "role": "user",
                     "content": self.format_user_message_content(signature, message),
-                }
+                },
             )
             messages.append(
                 {
                     "role": "assistant",
                     "content": self.format_assistant_message_content(signature, message),
-                }
+                },
             )
 
         # Remove the history field from the inputs

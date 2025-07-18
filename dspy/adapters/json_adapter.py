@@ -72,7 +72,7 @@ class JSONAdapter(ChatAdapter):
 
         try:
             structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
+                signature, self.use_native_function_calling,
             )
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
@@ -201,7 +201,7 @@ class JSONAdapter(ChatAdapter):
             return json.dumps(serialize_for_json(d), indent=2)
 
     def format_finetune_data(
-        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
+        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any],
     ) -> dict[str, list[Any]]:
         # TODO: implement format_finetune_data method in JSONAdapter
         raise NotImplementedError
@@ -225,7 +225,7 @@ def _get_structured_outputs_response_format(
         annotation = field.annotation
         if get_origin(annotation) is dict:
             raise ValueError(
-                f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs."
+                f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs.",
             )
 
     fields = {}

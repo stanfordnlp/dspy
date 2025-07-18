@@ -152,7 +152,7 @@ class Colors(Dataset):
         colors = self.sorted_by_suffix(all_colors)
 
         train_size = int(
-            len(colors) * 0.6
+            len(colors) * 0.6,
         )  # chosen to ensure that similar colors aren't repeated between train and dev
         train_colors, dev_colors = colors[:train_size], colors[train_size:]
 

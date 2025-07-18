@@ -150,7 +150,7 @@ class Settings:
         if not in_ipython and config_owner_async_task != asyncio.current_task():
             raise RuntimeError(
                 "dspy.settings.configure(...) can only be called from the same async task that called it first. Please "
-                "use `dspy.context(...)` in other async tasks instead."
+                "use `dspy.context(...)` in other async tasks instead.",
             )
 
     def configure(self, **kwargs):

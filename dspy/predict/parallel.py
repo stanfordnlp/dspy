@@ -57,7 +57,7 @@ class Parallel:
                 result = module(*example)
             else:
                 raise ValueError(
-                    f"Invalid example type: {type(example)}, only supported types are Example, dict, list and tuple"
+                    f"Invalid example type: {type(example)}, only supported types are Example, dict, list and tuple",
                 )
             return result
 

@@ -79,7 +79,7 @@ class CodeAct(ReAct, ProgramOfThought):
             "For each iteration, you will generate a code snippet that either solves the task or progresses towards the solution.\n"
             "Ensure any output you wish to extract from the code is printed to the console. The code should be enclosed in a fenced code block.\n"
             f"When all information for producing the outputs ({outputs}) are available to be extracted, mark `finished=True` besides the final Python code.\n"
-            "You have access to the Python Standard Library and the following functions:"
+            "You have access to the Python Standard Library and the following functions:",
         )
 
         for idx, tool in enumerate(tools.values()):

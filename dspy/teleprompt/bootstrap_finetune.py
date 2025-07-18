@@ -60,7 +60,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         self.num_threads = num_threads
 
     def compile(
-        self, student: Module, trainset: list[Example], teacher: Module | list[Module] | None = None
+        self, student: Module, trainset: list[Example], teacher: Module | list[Module] | None = None,
     ) -> Module:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
@@ -84,7 +84,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             training_key = (pred.lm, data_pred_ind)
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(
-                    trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind
+                    trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind,
                 )
                 logger.info(f"Using {len(train_data)} data points for fine-tuning the model: {pred.lm.model}")
                 finetune_kwargs = {
@@ -106,7 +106,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
                 "be equal to the number of predictors in the student program. If the `multitask` flag is set to True, "
                 "the number of fine-tuning jobs will be equal to: 1 if there is only a context LM, or the number of "
                 "unique LMs attached to the predictors in the student program. In any case, the number of fine-tuning "
-                "jobs will be less than or equal to the number of predictors."
+                "jobs will be less than or equal to the number of predictors.",
             )
         logger.info(f"{len(key_to_data)} fine-tuning job(s) to start")
         key_to_lm = self.finetune_lms(key_to_data)
@@ -144,7 +144,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
             # before fine-tuning is started.
             logger.info(
                 "Calling lm.kill() on the LM to be fine-tuned to free up resources. This won't have any effect if the "
-                "LM is not running."
+                "LM is not running.",
             )
             lm.kill()
             key_to_job[key] = lm.finetune(**finetune_kwargs)
@@ -175,7 +175,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
                 include_data = pred_ind is None or pred_ind == pred_ind
                 if include_data:
                     call_data = build_call_data_from_trace(
-                        trace=item["trace"], pred_ind=pred_ind, adapter=adapter, exclude_demos=self.exclude_demos
+                        trace=item["trace"], pred_ind=pred_ind, adapter=adapter, exclude_demos=self.exclude_demos,
                     )
                     data.append(call_data)
 
@@ -279,12 +279,12 @@ def bootstrap_trace_data(
                         found_pred,
                         failed_inputs,
                         failed_pred,
-                    )
+                    ),
                 )
 
                 if log_format_failures:
                     logging.warning(
-                        "Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting."
+                        "Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting.",
                     )
 
                 return failed_pred, trace
@@ -301,7 +301,7 @@ def bootstrap_trace_data(
             # Proposal(Lakshya): We should capture the incorrectly-formatted LLM response, and store it in the trace, and pass it to in the GRPO group
             # with a high-negative user-configurable score.
             logger.warning(
-                "Failed to unpack prediction and trace. This is likely due to the LLM response not following dspy formatting."
+                "Failed to unpack prediction and trace. This is likely due to the LLM response not following dspy formatting.",
             )
             if raise_on_error:
                 raise ve

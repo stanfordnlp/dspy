@@ -170,7 +170,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             if forward_called_directly:
                 logger.warning(
                     f"Calling {self.__class__.__name__}.forward() directly is discouraged. "
-                    f"Please use {self.__class__.__name__}() instead."
+                    f"Please use {self.__class__.__name__}() instead.",
                 )
 
         return attr

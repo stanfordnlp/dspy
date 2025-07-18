@@ -18,7 +18,7 @@ def env_worker(inq, outq):
     except ImportError:
         raise ImportError(
             "alfworld is not installed. "
-            "Please install it via `pip install alfworld==0.3.5` then run `alfworld-download`."
+            "Please install it via `pip install alfworld==0.3.5` then run `alfworld-download`.",
         )
 
     buf = io.StringIO()

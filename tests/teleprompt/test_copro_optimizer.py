@@ -14,7 +14,7 @@ def simple_metric(example, prediction):
 trainset = [
     Example(input="Question: What is the color of the sky?", output="blue").with_inputs("input"),
     Example(input="Question: What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs(
-        "input"
+        "input",
     ),
 ]
 
@@ -46,15 +46,15 @@ def test_signature_optimizer_optimization_process():
                     "proposed_instruction": "Optimized instruction 1",
                     "proposed_prefix_for_output_field": "Optimized instruction 2",
                 },
-            ]
-        )
+            ],
+        ),
     )
 
     student = SimpleModule("input -> output")
 
     # Assuming the compile method of COPRO requires a student module, a development set, and evaluation kwargs
     optimized_student = optimizer.compile(
-        student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False}
+        student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False},
     )
 
     # Check that the optimized student has been modified from the original
@@ -76,12 +76,12 @@ def test_signature_optimizer_statistics_tracking():
                     "proposed_instruction": "Optimized instruction 1",
                     "proposed_prefix_for_output_field": "Optimized instruction 2",
                 },
-            ]
-        )
+            ],
+        ),
     )
     student = SimpleModule("input -> output")
     optimized_student = optimizer.compile(
-        student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False}
+        student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False},
     )
 
     # Verify that statistics have been tracked and attached to the optimized student
@@ -103,7 +103,7 @@ def test_optimization_and_output_verification():
             {"reasoning": "france", "output": "Paris"},
             {"reasoning": "france", "output": "Paris"},
             {"reasoning": "france", "output": "Paris"},
-        ]
+        ],
     )
     dspy.settings.configure(lm=lm)
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
@@ -112,7 +112,7 @@ def test_optimization_and_output_verification():
 
     # Compile the student with the optimizer
     optimized_student = optimizer.compile(
-        student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False}
+        student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False},
     )
 
     # Simulate calling the optimized student with a new input
@@ -129,8 +129,8 @@ def test_statistics_tracking_during_optimization():
         lm=DummyLM(
             [
                 {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
-            ]
-        )
+            ],
+        ),
     )
 
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
@@ -138,7 +138,7 @@ def test_statistics_tracking_during_optimization():
 
     student = SimpleModule("input -> output")
     optimized_student = optimizer.compile(
-        student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False}
+        student, trainset=trainset, eval_kwargs={"num_threads": 1, "display_progress": False},
     )
 
     # Verify that statistics have been tracked

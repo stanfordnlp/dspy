@@ -47,7 +47,7 @@ def configure_cache(
     if enable_disk_cache and enable_litellm_cache:
         raise ValueError(
             "Cannot enable both LiteLLM and DSPy on-disk cache, please set at most one of `enable_disk_cache` or "
-            "`enable_litellm_cache` to True."
+            "`enable_litellm_cache` to True.",
         )
 
     if enable_litellm_cache:

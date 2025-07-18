@@ -343,7 +343,7 @@ def test_typed_signatures_from_dict():
 
 def test_typed_signatures_complex_combinations():
     sig = Signature(
-        "input_complex: dict[str, list[Optional[Tuple[int, str]]]] -> output_complex: Union[list[str], dict[str, Any]]"
+        "input_complex: dict[str, list[Optional[Tuple[int, str]]]] -> output_complex: Union[list[str], dict[str, Any]]",
     )
     input_complex_ann = sig.input_fields["input_complex"].annotation
     assert getattr(input_complex_ann, "__origin__", None) is dict
@@ -412,7 +412,7 @@ def test_basic_custom_type():
 
     test_signature = dspy.Signature(
         "input: CustomType -> output: str",
-        custom_types={"CustomType": CustomType}
+        custom_types={"CustomType": CustomType},
     )
 
     assert test_signature.input_fields["input"].annotation == CustomType
@@ -440,7 +440,7 @@ def test_custom_type_from_different_module():
 
 def test_pep604_union_type_inline():
     sig = Signature(
-        "input1: str | None, input2: None | int -> output_union: int | str"
+        "input1: str | None, input2: None | int -> output_union: int | str",
     )
 
     # input1 and input2 test that both 'T | None' and 'None | T' are interpreted as Optional types,
@@ -485,7 +485,7 @@ def test_pep604_union_type_inline_equivalence():
 
 def test_pep604_union_type_inline_nested():
     sig = Signature(
-        "input: str | (int | float) | None -> output: str"
+        "input: str | (int | float) | None -> output: str",
     )
     assert "input" in sig.input_fields
     input_annotation = sig.input_fields["input"].annotation
@@ -561,7 +561,7 @@ def test_pep604_union_type_with_custom_types():
 
     sig = Signature(
         "input: CustomType | None -> output: int | str",
-        custom_types={"CustomType": CustomType}
+        custom_types={"CustomType": CustomType},
     )
 
     assert sig.input_fields["input"].annotation == Union[CustomType, None]
