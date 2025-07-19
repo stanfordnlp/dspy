@@ -422,7 +422,7 @@ class GroundedProposer(Proposer):
 
         with dspy.settings.context(lm=self.prompt_model):
             self.prompt_model.kwargs["temperature"] = modified_temp
-            proposed_instruction = instruction_generator.forward(
+            proposed_instruction = instruction_generator(
                 demo_candidates=demo_candidates,
                 pred_i=pred_i,
                 demo_set_i=demo_set_i,
