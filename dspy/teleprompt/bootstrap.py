@@ -1,8 +1,10 @@
+import hashlib
 import logging
 import random
 import threading
 
 import tqdm
+import ujson
 
 import dspy
 from dspy.teleprompt.teleprompt import Teleprompter
@@ -248,9 +250,7 @@ class BootstrapFewShot(Teleprompter):
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:
-                    from datasets.fingerprint import Hasher
-
-                    rng = random.Random(Hasher.hash(tuple(demos)))
+                    rng = random.Random(hashlib.sha256(ujson.dumps(tuple(demos)).encode()).hexdigest())
                     demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]
                 self.name2traces[name].extend(demos)
 
