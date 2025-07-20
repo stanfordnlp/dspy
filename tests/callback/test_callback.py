@@ -189,13 +189,12 @@ def test_callback_complex_module():
 @pytest.mark.asyncio
 async def test_callback_async_module():
     callback = MyCallback()
-    dspy.settings.configure(
+    with dspy.context(
         lm=DummyLM({"How are you?": {"answer": "test output", "reasoning": "No more responses"}}),
         callbacks=[callback],
-    )
-
-    cot = dspy.ChainOfThought("question -> answer", n=3)
-    result = await cot.acall(question="How are you?")
+    ):
+        cot = dspy.ChainOfThought("question -> answer", n=3)
+        result = await cot.acall(question="How are you?")
     assert result["answer"] == "test output"
     assert result["reasoning"] == "No more responses"
 

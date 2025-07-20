@@ -1,17 +1,25 @@
-from typing import TYPE_CHECKING, Any, Optional, Type
+import logging
+from typing import TYPE_CHECKING, Any, get_origin
+
+import json_repair
+import litellm
 
 from dspy.adapters.types import History
-from dspy.adapters.types.image import try_expand_image_tags
+from dspy.adapters.types.base_type import split_message_content_for_custom_types
+from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
 
 class Adapter:
-    def __init__(self, callbacks: Optional[list[BaseCallback]] = None):
+    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False):
         self.callbacks = callbacks or []
+        self.use_native_function_calling = use_native_function_calling
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -20,18 +28,85 @@ class Adapter:
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def _call_post_process(self, outputs: list[dict[str, Any]], signature: Type[Signature]) -> list[dict[str, Any]]:
+    def _call_preprocess(
+        self,
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+        signature: type[Signature],
+        inputs: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.use_native_function_calling:
+            tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
+            tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
+
+            if tool_call_output_field_name and tool_call_input_field_name is None:
+                raise ValueError(
+                    f"You provided an output field {tool_call_output_field_name} to receive the tool calls information, "
+                    "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
+                    "input field with type `list[dspy.Tool]`."
+                )
+
+            if tool_call_output_field_name and litellm.supports_function_calling(model=lm.model):
+                tools = inputs[tool_call_input_field_name]
+                tools = tools if isinstance(tools, list) else [tools]
+
+                litellm_tools = []
+                for tool in tools:
+                    litellm_tools.append(tool.format_as_litellm_function_call())
+
+                lm_kwargs["tools"] = litellm_tools
+
+                signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
+                signature_for_native_function_calling = signature_for_native_function_calling.delete(
+                    tool_call_input_field_name
+                )
+
+                return signature_for_native_function_calling
+
+        return signature
+
+    def _call_postprocess(
+        self,
+        processed_signature: type[Signature],
+        original_signature: type[Signature],
+        outputs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         values = []
+
+        tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
 
         for output in outputs:
             output_logprobs = None
+            tool_calls = None
+            text = output
 
             if isinstance(output, dict):
-                output, output_logprobs = output["text"], output["logprobs"]
+                text = output["text"]
+                output_logprobs = output.get("logprobs")
+                tool_calls = output.get("tool_calls")
 
-            value = self.parse(signature, output)
+            if text:
+                value = self.parse(processed_signature, text)
+                for field_name in original_signature.output_fields.keys():
+                    if field_name not in value:
+                        # We need to set the field not present in the processed signature to None for consistency.
+                        value[field_name] = None
+            else:
+                value = {}
+                for field_name in original_signature.output_fields.keys():
+                    value[field_name] = None
 
-            if output_logprobs is not None:
+            if tool_calls and tool_call_output_field_name:
+                tool_calls = [
+                    {
+                        "name": v["function"]["name"],
+                        "args": json_repair.loads(v["function"]["arguments"]),
+                    }
+                    for v in tool_calls
+                ]
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+
+            if output_logprobs:
                 value["logprobs"] = output_logprobs
 
             values.append(value)
@@ -42,31 +117,33 @@ class Adapter:
         self,
         lm: "LM",
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
+        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+        inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_post_process(outputs, signature)
+        return self._call_postprocess(processed_signature, signature, outputs)
 
     async def acall(
         self,
         lm: "LM",
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        inputs = self.format(signature, demos, inputs)
+        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+        inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_post_process(outputs, signature)
+        return self._call_postprocess(processed_signature, signature, outputs)
 
     def format(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -141,10 +218,10 @@ class Adapter:
             content = self.format_user_message_content(signature, inputs_copy, main_request=True)
             messages.append({"role": "user", "content": content})
 
-        messages = try_expand_image_tags(messages)
+        messages = split_message_content_for_custom_types(messages)
         return messages
 
-    def format_field_description(self, signature: Type[Signature]) -> str:
+    def format_field_description(self, signature: type[Signature]) -> str:
         """Format the field description for the system message.
 
         This method formats the field description for the system message. It should return a string that contains
@@ -158,7 +235,7 @@ class Adapter:
         """
         raise NotImplementedError
 
-    def format_field_structure(self, signature: Type[Signature]) -> str:
+    def format_field_structure(self, signature: type[Signature]) -> str:
         """Format the field structure for the system message.
 
         This method formats the field structure for the system message. It should return a string that dictates the
@@ -170,7 +247,7 @@ class Adapter:
         """
         raise NotImplementedError
 
-    def format_task_description(self, signature: Type[Signature]) -> str:
+    def format_task_description(self, signature: type[Signature]) -> str:
         """Format the task description for the system message.
 
         This method formats the task description for the system message. In most cases this is just a thin wrapper
@@ -186,7 +263,7 @@ class Adapter:
 
     def format_user_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
@@ -210,9 +287,9 @@ class Adapter:
 
     def format_assistant_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         outputs: dict[str, Any],
-        missing_field_message: Optional[str] = None,
+        missing_field_message: str | None = None,
     ) -> str:
         """Format the assistant message content.
 
@@ -229,7 +306,7 @@ class Adapter:
         """
         raise NotImplementedError
 
-    def format_demos(self, signature: Type[Signature], demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def format_demos(self, signature: type[Signature], demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Format the few-shot examples.
 
         This method formats the few-shot examples as multiturn messages.
@@ -291,15 +368,31 @@ class Adapter:
 
         return messages
 
-    def _get_history_field_name(self, signature: Type[Signature]) -> bool:
+    def _get_history_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.input_fields.items():
             if field.annotation == History:
                 return name
         return None
 
+    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> bool:
+        for name, field in signature.input_fields.items():
+            # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
+            origin = get_origin(field.annotation)
+            if origin is list and field.annotation.__args__[0] == Tool:
+                return name
+            if field.annotation == Tool:
+                return name
+        return None
+
+    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
+        for name, field in signature.output_fields.items():
+            if field.annotation == ToolCalls:
+                return name
+        return None
+
     def format_conversation_history(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         history_field_name: str,
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -340,7 +433,7 @@ class Adapter:
 
         return messages
 
-    def parse(self, signature: Type[Signature], completion: str) -> dict[str, Any]:
+    def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Parse the LM output into a dictionary of the output fields.
 
         This method parses the LM output into a dictionary of the output fields.

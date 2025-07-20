@@ -1,6 +1,6 @@
 import random
 from collections import defaultdict
-from typing import Any, Dict, Union
+from typing import Any
 
 import numpy as np
 
@@ -67,7 +67,7 @@ class DummyLM(LM):
 
     """
 
-    def __init__(self, answers: Union[list[dict[str, str]], dict[str, dict[str, str]]], follow_examples: bool = False):
+    def __init__(self, answers: list[dict[str, str]] | dict[str, dict[str, str]], follow_examples: bool = False):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.answers = answers
         if isinstance(answers, list):
@@ -87,13 +87,13 @@ class DummyLM(LM):
 
         # get the output from the last turn that has the output fields as headers
         final_input = messages[-1]["content"].split("\n\n")[0]
-        for input, output in zip(reversed(messages[:-1]), reversed(messages)):
+        for input, output in zip(reversed(messages[:-1]), reversed(messages), strict=False):
             if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
                 return output["content"]
 
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
-        def format_answer_fields(field_names_and_values: Dict[str, Any]):
+        def format_answer_fields(field_names_and_values: dict[str, Any]):
             return ChatAdapter().format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=OutputField()): value
@@ -172,7 +172,7 @@ class DummyVectorizer:
     def _hash(self, gram):
         """Hashes a string using a polynomial hash function."""
         h = 1
-        for coeff, c in zip(self.coeffs, gram):
+        for coeff, c in zip(self.coeffs, gram, strict=False):
             h = h * coeff + ord(c)
             h %= self.P
         return h % self.max_length

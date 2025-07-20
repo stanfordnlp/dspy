@@ -1,12 +1,11 @@
 import signal
 import threading
 from unittest.mock import patch
-import pandas as pd
 
 import pytest
 
 import dspy
-from dspy.evaluate.evaluate import Evaluate
+from dspy.evaluate.evaluate import Evaluate, EvaluationResult
 from dspy.evaluate.metrics import answer_exact_match
 from dspy.predict import Predict
 from dspy.utils.callback import BaseCallback
@@ -31,7 +30,7 @@ def test_evaluate_initialization():
     assert ev.devset == devset
     assert ev.metric == answer_exact_match
     assert ev.num_threads is None
-    assert ev.display_progress == False
+    assert not ev.display_progress
 
 
 def test_evaluate_call():
@@ -52,10 +51,12 @@ def test_evaluate_call():
         display_progress=False,
     )
     score = ev(program)
-    assert score == 100.0
+    assert score.score == 100.0
 
 
+@pytest.mark.extra
 def test_construct_result_df():
+    import pandas as pd
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     ev = Evaluate(
         devset=devset,
@@ -75,7 +76,7 @@ def test_construct_result_df():
                 "pred_answer": ["2", "4"],
                 "answer_exact_match": [100.0, 100.0],
             }
-        )
+        ),
     )
 
 
@@ -90,8 +91,8 @@ def test_multithread_evaluate_call():
         display_progress=False,
         num_threads=2,
     )
-    score = ev(program)
-    assert score == 100.0
+    result = ev(program)
+    assert result.score == 100.0
 
 
 def test_multi_thread_evaluate_call_cancelled(monkeypatch):
@@ -128,11 +129,10 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
             display_progress=False,
             num_threads=2,
         )
-        score = ev(program)
-        assert score == 100.0
+        ev(program)
 
 
-def test_evaluate_call_bad():
+def test_evaluate_call_wrong_answer():
     dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
@@ -141,10 +141,11 @@ def test_evaluate_call_bad():
         metric=answer_exact_match,
         display_progress=False,
     )
-    score = ev(program)
-    assert score == 0.0
+    result = ev(program)
+    assert result.score == 0.0
 
 
+@pytest.mark.extra
 @pytest.mark.parametrize(
     "program_with_example",
     [
@@ -152,11 +153,11 @@ def test_evaluate_call_bad():
         # Create programs that do not return dictionary-like objects because Evaluate()
         # has failed for such cases in the past
         (
-            lambda text: Predict("text: str -> entities: List[str]")(text=text).entities,
+            lambda text: Predict("text: str -> entities: list[str]")(text=text).entities,
             dspy.Example(text="United States", entities=["United States"]).with_inputs("text"),
         ),
         (
-            lambda text: Predict("text: str -> entities: List[Dict[str, str]]")(text=text).entities,
+            lambda text: Predict("text: str -> entities: list[dict[str, str]]")(text=text).entities,
             dspy.Example(text="United States", entities=[{"name": "United States", "type": "location"}]).with_inputs(
                 "text"
             ),
@@ -200,6 +201,7 @@ def test_evaluate_display_table(program_with_example, display_table, is_in_ipyth
             example_input = next(iter(example.inputs().values()))
             assert example_input in out
 
+
 def test_evaluate_callback():
     class TestCallback(BaseCallback):
         def __init__(self):
@@ -216,12 +218,12 @@ def test_evaluate_callback():
         ):
             self.start_call_inputs = inputs
             self.start_call_count += 1
-        
+
         def on_evaluate_end(
             self,
             call_id: str,
             outputs,
-            exception = None,
+            exception=None,
         ):
             self.end_call_outputs = outputs
             self.end_call_count += 1
@@ -234,7 +236,7 @@ def test_evaluate_callback():
                 "What is 2+2?": {"answer": "4"},
             }
         ),
-        callbacks=[callback]
+        callbacks=[callback],
     )
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
@@ -244,9 +246,13 @@ def test_evaluate_callback():
         metric=answer_exact_match,
         display_progress=False,
     )
-    score = ev(program)
-    assert score == 100.0
+    result = ev(program)
+    assert result.score == 100.0
     assert callback.start_call_inputs["program"] == program
     assert callback.start_call_count == 1
-    assert callback.end_call_outputs == 100.0
+    assert callback.end_call_outputs.score == 100.0
     assert callback.end_call_count == 1
+
+def test_evaluation_result_repr():
+    result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])
+    assert repr(result) == "EvaluationResult(score=100.0, results=<list of 1 results>)"

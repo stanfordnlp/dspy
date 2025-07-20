@@ -4,7 +4,7 @@ import logging
 import threading
 from asyncio import iscoroutinefunction
 from queue import Queue
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
 import litellm
 import ujson
@@ -21,13 +21,13 @@ from dspy.utils.asyncify import asyncify
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from dspy.primitives.program import Module
+    from dspy.primitives.module import Module
 
 
 def streamify(
     program: "Module",
-    status_message_provider: Optional[StatusMessageProvider] = None,
-    stream_listeners: Optional[List[StreamListener]] = None,
+    status_message_provider: StatusMessageProvider | None = None,
+    stream_listeners: list[StreamListener] | None = None,
     include_final_prediction_in_output_stream: bool = True,
     is_async_program: bool = False,
     async_streaming: bool = True,
@@ -183,7 +183,7 @@ def streamify(
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
                     else:
-                        # We are receiving a chunk from the LM's response stream, delgate it to the listeners to
+                        # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
                         # determine if we should yield a value to the user.
                         output = None
                         for listener in predict_id_to_listener[value.predict_id]:
@@ -222,15 +222,9 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
 
     # To propagate prediction request ID context to the child thread
     context = contextvars.copy_context()
-    from dspy.dsp.utils.settings import thread_local_overrides
-
-    parent_overrides = thread_local_overrides.overrides.copy()
 
     def producer():
         """Runs in a background thread to fetch items asynchronously."""
-
-        original_overrides = thread_local_overrides.overrides
-        thread_local_overrides.overrides = parent_overrides.copy()
 
         async def runner():
             try:
@@ -241,7 +235,6 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
                 queue.put(stop_sentinel)
 
         context.run(asyncio.run, runner())
-        thread_local_overrides.overrides = original_overrides
 
     # Start the producer in a background thread
     thread = threading.Thread(target=producer, daemon=True)

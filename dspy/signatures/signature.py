@@ -19,15 +19,15 @@ import ast
 import importlib
 import inspect
 import re
+import sys
 import types
 import typing
 from copy import deepcopy
-from typing import Any, Dict, Optional, Tuple, Type, Union
+from typing import Any
 
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
-from dspy.adapters.types.image import Image  # noqa: F401
 from dspy.signatures.field import InputField, OutputField
 
 
@@ -41,10 +41,100 @@ class SignatureMeta(type(BaseModel)):
     def __call__(cls, *args, **kwargs):
         if cls is Signature:
             # We don't create an actual Signature instance, instead, we create a new Signature class.
-            return make_signature(*args, **kwargs)
+            custom_types = kwargs.pop("custom_types", None)
+
+            if custom_types is None and args and isinstance(args[0], str):
+                custom_types = cls._detect_custom_types_from_caller(args[0])
+
+            return make_signature(*args, custom_types=custom_types, **kwargs)
         return super().__call__(*args, **kwargs)
 
-    def __new__(mcs, signature_name, bases, namespace, **kwargs):  # noqa: N804
+    @staticmethod
+    def _detect_custom_types_from_caller(signature_str):
+        """Detect custom types from the caller's frame based on the signature string.
+
+        Note: This method relies on Python's frame introspection which has some limitations:
+        1. May not work in all Python implementations (e.g., compiled with optimizations)
+        2. Looks up a limited number of frames in the call stack
+        3. Cannot find types that are imported but not in the caller's namespace
+
+        For more reliable custom type resolution, explicitly provide types using the
+        `custom_types` parameter when creating a Signature.
+        """
+
+        # Extract potential type names from the signature string, including dotted names
+        # Match both simple types like 'MyType' and dotted names like 'Module.Type'
+        type_pattern = r":\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"
+        type_names = re.findall(type_pattern, signature_str)
+        if not type_names:
+            return None
+
+        # Get type references from caller frames by walking the stack
+        found_types = {}
+
+        needed_types = set()
+        dotted_types = {}
+
+        for type_name in type_names:
+            parts = type_name.split(".")
+            base_name = parts[0]
+
+            if base_name not in typing.__dict__ and base_name not in __builtins__:
+                if len(parts) > 1:
+                    dotted_types[type_name] = base_name
+                    needed_types.add(base_name)
+                else:
+                    needed_types.add(type_name)
+
+        if not needed_types:
+            return None
+
+        frame = None
+        try:
+            frame = sys._getframe(1)  # Start one level up (skip this function)
+
+            max_frames = 100
+            frame_count = 0
+
+            while frame and needed_types and frame_count < max_frames:
+                frame_count += 1
+
+                for type_name in list(needed_types):
+                    if type_name in frame.f_locals:
+                        found_types[type_name] = frame.f_locals[type_name]
+                        needed_types.remove(type_name)
+                    elif frame.f_globals and type_name in frame.f_globals:
+                        found_types[type_name] = frame.f_globals[type_name]
+                        needed_types.remove(type_name)
+
+                # If we found all needed types, stop looking
+                if not needed_types:
+                    break
+
+                frame = frame.f_back
+
+            if needed_types and frame_count >= max_frames:
+                import logging
+
+                logging.getLogger("dspy").warning(
+                    f"Reached maximum frame search depth ({max_frames}) while looking for types: {needed_types}. "
+                    "Consider providing custom_types explicitly to Signature."
+                )
+        except (AttributeError, ValueError):
+            # Handle environments where frame introspection is not available
+            import logging
+
+            logging.getLogger("dspy").debug(
+                "Frame introspection failed while trying to resolve custom types. "
+                "Consider providing custom_types explicitly to Signature."
+            )
+        finally:
+            if frame:
+                del frame
+
+        return found_types or None
+
+    def __new__(mcs, signature_name, bases, namespace, **kwargs):
         # At this point, the orders have been swapped already.
         field_order = [name for name, value in namespace.items() if isinstance(value, FieldInfo)]
         # Set `str` as the default type for all fields
@@ -136,7 +226,7 @@ class SignatureMeta(type(BaseModel)):
         Uses the form:
         Signature(question, context -> answer
             question: str = InputField(desc="..."),
-            context: List[str] = InputField(desc="..."),
+            context: list[str] = InputField(desc="..."),
             answer: int = OutputField(desc="..."),
         ).
         """
@@ -154,11 +244,11 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     # for any signature that doesn't define it's own instructions.
 
     @classmethod
-    def with_instructions(cls, instructions: str) -> Type["Signature"]:
+    def with_instructions(cls, instructions: str) -> type["Signature"]:
         return Signature(cls.fields, instructions)
 
     @classmethod
-    def with_updated_fields(cls, name, type_=None, **kwargs) -> Type["Signature"]:
+    def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
         """Create a new Signature class with the updated field information.
 
         Returns a new Signature class with the field, name, updated
@@ -167,7 +257,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         Args:
             name: The name of the field to update.
             type_: The new type of the field.
-            **kwargs: The new values for the field.
+            kwargs: The new values for the field.
 
         Returns:
             A new Signature class (not an instance) with the updated field information.
@@ -184,26 +274,23 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields_copy, cls.instructions)
 
     @classmethod
-    def prepend(cls, name, field, type_=None) -> Type["Signature"]:
+    def prepend(cls, name, field, type_=None) -> type["Signature"]:
         return cls.insert(0, name, field, type_)
 
     @classmethod
-    def append(cls, name, field, type_=None) -> Type["Signature"]:
+    def append(cls, name, field, type_=None) -> type["Signature"]:
         return cls.insert(-1, name, field, type_)
 
     @classmethod
-    def delete(cls, name) -> Type["Signature"]:
+    def delete(cls, name) -> type["Signature"]:
         fields = dict(cls.fields)
 
-        if name in fields:
-            del fields[name]
-        else:
-            raise ValueError(f"Field `{name}` not found in `{cls.__name__}`.")
+        fields.pop(name, None)
 
         return Signature(fields, cls.instructions)
 
     @classmethod
-    def insert(cls, index: int, name: str, field, type_: Optional[Type] = None) -> Type["Signature"]:
+    def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
@@ -261,14 +348,14 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
 
         signature_copy.instructions = state["instructions"]
-        for field, saved_field in zip(signature_copy.fields.values(), state["fields"]):
+        for field, saved_field in zip(signature_copy.fields.values(), state["fields"], strict=False):
             field.json_schema_extra["prefix"] = saved_field["prefix"]
             field.json_schema_extra["desc"] = saved_field["description"]
 
         return signature_copy
 
 
-def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) -> Signature:
+def ensure_signature(signature: str | type[Signature], instructions=None) -> type[Signature]:
     if signature is None:
         return None
     if isinstance(signature, str):
@@ -279,10 +366,11 @@ def ensure_signature(signature: Union[str, Type[Signature]], instructions=None) 
 
 
 def make_signature(
-    signature: Union[str, Dict[str, Tuple[type, FieldInfo]]],
-    instructions: Optional[str] = None,
+    signature: str | dict[str, tuple[type, FieldInfo]],
+    instructions: str | None = None,
     signature_name: str = "StringSignature",
-) -> Type[Signature]:
+    custom_types: dict[str, type] | None = None,
+) -> type[Signature]:
     """Create a new Signature subclass with the specified fields and instructions.
 
     Args:
@@ -292,6 +380,8 @@ def make_signature(
             If not provided, defaults to a basic description of inputs and outputs.
         signature_name: Optional string to name the generated Signature subclass.
             Defaults to "StringSignature".
+        custom_types: Optional dictionary mapping type names to their actual type objects.
+            Useful for resolving custom types that aren't built-ins or in the typing module.
 
     Returns:
         A new signature class with the specified fields and instructions.
@@ -307,9 +397,21 @@ def make_signature(
         "question": (str, InputField()),
         "answer": (str, OutputField())
     })
+
+    # Using custom types
+    class MyType:
+        pass
+
+    sig3 = make_signature("input: MyType -> output", custom_types={"MyType": MyType})
     ```
     """
-    fields = _parse_signature(signature) if isinstance(signature, str) else signature
+    # Prepare the names dictionary for type resolution
+    names = None
+    if custom_types:
+        names = dict(typing.__dict__)
+        names.update(custom_types)
+
+    fields = _parse_signature(signature, names) if isinstance(signature, str) else signature
 
     # Validate the fields, this is important because we sometimes forget the
     # slightly unintuitive syntax with tuples of (type, Field)
@@ -328,7 +430,7 @@ def make_signature(
         # program of thought and teleprompters, so we just silently default to string.
         if type_ is None:
             type_ = str
-        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm)):
+        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm, types.UnionType)):
             raise ValueError(f"Field types must be types, but received: {type_} of type {type(type_)}.")
         if not isinstance(field, FieldInfo):
             raise ValueError(f"Field values must be Field instances, but received: {field}.")
@@ -347,22 +449,22 @@ def make_signature(
     )
 
 
-def _parse_signature(signature: str) -> Dict[str, Tuple[Type, Field]]:
+def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Field]]:
     if signature.count("->") != 1:
         raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
 
     inputs_str, outputs_str = signature.split("->")
 
     fields = {}
-    for field_name, field_type in _parse_field_string(inputs_str):
+    for field_name, field_type in _parse_field_string(inputs_str, names):
         fields[field_name] = (field_type, InputField())
-    for field_name, field_type in _parse_field_string(outputs_str):
+    for field_name, field_type in _parse_field_string(outputs_str, names):
         fields[field_name] = (field_type, OutputField())
 
     return fields
 
 
-def _parse_field_string(field_string: str) -> Dict[str, str]:
+def _parse_field_string(field_string: str, names=None) -> dict[str, str]:
     """Extract the field name and type from field string in the string-based Signature.
 
     It takes a string like "x: int, y: str" and returns a dictionary mapping field names to their types.
@@ -371,20 +473,20 @@ def _parse_field_string(field_string: str) -> Dict[str, str]:
     """
 
     args = ast.parse(f"def f({field_string}): pass").body[0].args.args
-    names = [arg.arg for arg in args]
-    types = [str if arg.annotation is None else _parse_type_node(arg.annotation) for arg in args]
-    return zip(names, types)
+    field_names = [arg.arg for arg in args]
+    types = [str if arg.annotation is None else _parse_type_node(arg.annotation, names) for arg in args]
+    return zip(field_names, types, strict=False)
 
 
 def _parse_type_node(node, names=None) -> Any:
     """Recursively parse an AST node representing a type annotation.
 
     This function converts Python's Abstract Syntax Tree (AST) nodes into actual Python types.
-    It's used to parse type annotations in signature strings like "x: List[int] -> y: str".
+    It's used to parse type annotations in signature strings like "x: list[int] -> y: str".
 
     Examples:
         - For "x: int", the AST node represents 'int' and returns the int type
-        - For "x: List[str]", it processes a subscript node to return typing.List[str]
+        - For "x: list[str]", it processes a subscript node to return typing.list[str]
         - For "x: Optional[int]", it handles the Union type to return Optional[int]
         - For "x: MyModule.CustomType", it processes attribute access to return the actual type
 
@@ -393,7 +495,7 @@ def _parse_type_node(node, names=None) -> Any:
             Common node types include:
             - ast.Name: Simple types like 'int', 'str'
             - ast.Attribute: Nested types like 'typing.List'
-            - ast.Subscript: Generic types like 'List[int]'
+            - ast.Subscript: Generic types like 'list[int]'
         names: Optional dictionary mapping type names to their actual type objects.
             Defaults to Python's typing module contents plus NoneType.
 
@@ -446,10 +548,16 @@ def _parse_type_node(node, names=None) -> Any:
     if isinstance(node, ast.Attribute):
         base = _parse_type_node(node.value, names)
         attr_name = node.attr
+
         if hasattr(base, attr_name):
             return getattr(base, attr_name)
-        else:
-            raise ValueError(f"Unknown attribute: {attr_name} on {base}")
+
+        if isinstance(node.value, ast.Name):
+            full_name = f"{node.value.id}.{attr_name}"
+            if full_name in names:
+                return names[full_name]
+
+        raise ValueError(f"Unknown attribute: {attr_name} on {base}")
 
     if isinstance(node, ast.Subscript):
         base_type = _parse_type_node(node.value, names)
@@ -472,6 +580,18 @@ def _parse_type_node(node, names=None) -> Any:
 
         return base_type[arg_types]
 
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        # Handle PEP 604: int | None, str | float, etc.
+        left = _parse_type_node(node.left, names)
+        right = _parse_type_node(node.right, names)
+
+        # Optional[X] is Union[X, NoneType]
+        if right is type(None):
+            return typing.Optional[left]
+        if left is type(None):
+            return typing.Optional[right]
+        return typing.Union[left, right]
+
     if isinstance(node, ast.Tuple):
         return tuple(_parse_type_node(elt, names) for elt in node.elts)
 
@@ -486,7 +606,7 @@ def _parse_type_node(node, names=None) -> Any:
                 values.append(kw.value.value)
             else:
                 values.append(_parse_type_node(kw.value, names))
-        return Field(**dict(zip(keys, values)))
+        return Field(**dict(zip(keys, values, strict=False)))
 
     raise ValueError(
         f"Failed to parse string-base Signature due to unhandled AST node type in annotation: {ast.dump(node)}. "

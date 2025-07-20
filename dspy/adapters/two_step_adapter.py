@@ -1,14 +1,17 @@
-from typing import Any, Optional, Type
+from typing import Any
+
+import json_repair
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.types import ToolCalls
 from dspy.adapters.utils import get_field_description_string
 from dspy.clients import LM
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
 
 """
-NOTE/TODO/FIMXE:
+NOTE/TODO/FIXME:
 
 The main issue below is that the second step's signature is entirely created on the fly and is invoked with a chat
 adapter explicitly constructed with no demonstrations. This means that it cannot "learn" or get optimized.
@@ -36,13 +39,14 @@ class TwoStepAdapter(Adapter):
     ```
     """
 
-    def __init__(self, extraction_model: LM):
+    def __init__(self, extraction_model: LM, **kwargs):
+        super().__init__(**kwargs)
         if not isinstance(extraction_model, LM):
             raise ValueError("extraction_model must be an instance of LM")
         self.extraction_model = extraction_model
 
     def format(
-        self, signature: Type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
+        self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any]
     ) -> list[dict[str, Any]]:
         """
         Format a prompt for the first stage with the main LM.
@@ -103,7 +107,7 @@ class TwoStepAdapter(Adapter):
         self,
         lm: "LM",
         lm_kwargs: dict[str, Any],
-        signature: Type[Signature],
+        signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
@@ -115,11 +119,16 @@ class TwoStepAdapter(Adapter):
 
         values = []
 
+        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
         for output in outputs:
             output_logprobs = None
+            tool_calls = None
+            text = output
 
             if isinstance(output, dict):
-                output, output_logprobs = output["text"], output["logprobs"]
+                text = output["text"]
+                output_logprobs = output.get("logprobs")
+                tool_calls = output.get("tool_calls")
 
             try:
                 # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
@@ -128,12 +137,22 @@ class TwoStepAdapter(Adapter):
                     lm_kwargs={},
                     signature=extractor_signature,
                     demos=[],
-                    inputs={"text": output},
+                    inputs={"text": text},
                 )
                 value = value[0]
 
             except Exception as e:
                 raise ValueError(f"Failed to parse response from the original completion: {output}") from e
+
+            if tool_calls and tool_call_output_field_name:
+                tool_calls = [
+                    {
+                        "name": v["function"]["name"],
+                        "args": json_repair.loads(v["function"]["arguments"]),
+                    }
+                    for v in tool_calls
+                ]
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs
@@ -157,7 +176,7 @@ class TwoStepAdapter(Adapter):
 
     def format_user_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         inputs: dict[str, Any],
         prefix: str = "",
         suffix: str = "",
@@ -173,9 +192,9 @@ class TwoStepAdapter(Adapter):
 
     def format_assistant_message_content(
         self,
-        signature: Type[Signature],
+        signature: type[Signature],
         outputs: dict[str, Any],
-        missing_field_message: Optional[str] = None,
+        missing_field_message: str | None = None,
     ) -> str:
         parts = []
 
@@ -187,8 +206,8 @@ class TwoStepAdapter(Adapter):
 
     def _create_extractor_signature(
         self,
-        original_signature: Type[Signature],
-    ) -> Type[Signature]:
+        original_signature: type[Signature],
+    ) -> type[Signature]:
         """Create a new signature containing a new 'text' input field and all output fields.
 
         Args:

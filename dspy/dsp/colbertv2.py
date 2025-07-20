@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import requests
 
@@ -14,7 +14,7 @@ class ColBERTv2:
     def __init__(
         self,
         url: str = "http://0.0.0.0",
-        port: Optional[Union[str, int]] = None,
+        port: str | int | None = None,
         post_requests: bool = False,
     ):
         self.post_requests = post_requests
@@ -25,7 +25,7 @@ class ColBERTv2:
         query: str,
         k: int = 10,
         simplify: bool = False,
-    ) -> Union[list[str], list[dotdict]]:
+    ) -> list[str] | list[dotdict]:
         if self.post_requests:
             topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k)
         else:
@@ -75,11 +75,11 @@ colbertv2_post_request = colbertv2_post_request_v2_wrapped
 
 
 class ColBERTv2RetrieverLocal:
-    def __init__(self, passages: List[str], colbert_config=None, load_only: bool = False):
+    def __init__(self, passages: list[str], colbert_config=None, load_only: bool = False):
         """Colbertv2 retriever module
 
         Args:
-            passages (List[str]): list of passages
+            passages (list[str]): list of passages
             colbert_config (ColBERTConfig, optional): colbert config for building and searching. Defaults to None.
             load_only (bool, optional): whether to load the index or build and then load. Defaults to False.
         """
@@ -151,7 +151,7 @@ class ColBERTv2RetrieverLocal:
 
         if kwargs.get("filtered_pids"):
             filtered_pids = kwargs.get("filtered_pids")
-            assert type(filtered_pids) == List[int], "The filtered pids should be a list of integers"
+            assert isinstance(filtered_pids, list) and all(isinstance(pid, int) for pid in filtered_pids), "The filtered pids should be a list of integers"
             device = "cuda" if torch.cuda.is_available() else "cpu"
             results = self.searcher.search(
                 query,
@@ -165,7 +165,7 @@ class ColBERTv2RetrieverLocal:
         else:
             searcher_results = self.searcher.search(query, k=k)
         results = []
-        for pid, rank, score in zip(*searcher_results):  # noqa: B007
+        for pid, rank, score in zip(*searcher_results, strict=False):  # noqa: B007
             results.append(dotdict({"long_text": self.searcher.collection[pid], "score": score, "pid": pid}))
         return results
 
@@ -192,7 +192,7 @@ class ColBERTv2RerankerLocal:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
 
-    def forward(self, query: str, passages: Optional[List[str]] = None):
+    def forward(self, query: str, passages: list[str] | None = None):
         assert len(passages) > 0, "Passages should not be empty"
 
         import numpy as np

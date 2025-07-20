@@ -1,5 +1,3 @@
-import optuna
-
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -37,7 +35,7 @@ class BootstrapFewShotWithOptuna(Teleprompter):
     def objective(self, trial):
         program2 = self.student.reset_copy()
         for (name, compiled_predictor), (_, program2_predictor) in zip(
-            self.compiled_teleprompter.named_predictors(), program2.named_predictors(),
+            self.compiled_teleprompter.named_predictors(), program2.named_predictors(), strict=False,
         ):
             all_demos = compiled_predictor.demos
             demo_index = trial.suggest_int(f"demo_index_for_{name}", 0, len(all_demos) - 1)
@@ -50,11 +48,12 @@ class BootstrapFewShotWithOptuna(Teleprompter):
             display_table=False,
             display_progress=True,
         )
-        score = evaluate(program2, return_all_scores=False)
+        result = evaluate(program2)
         trial.set_user_attr("program", program2)
-        return score
+        return result.score
 
     def compile(self, student, *, teacher=None, max_demos, trainset, valset=None):
+        import optuna
         self.trainset = trainset
         self.valset = valset or trainset
         self.student = student.reset_copy()

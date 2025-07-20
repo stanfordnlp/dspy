@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from concurrent.futures import Future
 from threading import Thread
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from dspy.clients.utils_finetune import TrainDataFormat
 
@@ -12,11 +12,11 @@ if TYPE_CHECKING:
 class TrainingJob(Future):
     def __init__(
         self,
-        thread: Optional[Thread] = None,
-        model: Optional[str] = None,
-        train_data: Optional[List[Dict[str, Any]]] = None,
-        train_data_format: Optional[TrainDataFormat] = None,
-        train_kwargs: Optional[Dict[str, Any]] = None,
+        thread: Thread | None = None,
+        model: str | None = None,
+        train_data: list[dict[str, Any]] | None = None,
+        train_data_format: TrainDataFormat | None = None,
+        train_kwargs: dict[str, Any] | None = None,
     ):
         self.thread = thread
         self.model = model
@@ -35,10 +35,9 @@ class TrainingJob(Future):
         raise NotImplementedError
 
 
-
 class ReinforceJob:
-    def __init__(self, lm: "LM", train_kwargs: Optional[Dict[str, Any]] = None):
-        self.lm = LM
+    def __init__(self, lm: "LM", train_kwargs: dict[str, Any] | None = None):
+        self.lm = lm
         self.train_kwargs = train_kwargs or {}
         self.checkpoints = {}
         self.last_checkpoint = None
@@ -48,7 +47,7 @@ class ReinforceJob:
         raise NotImplementedError
 
     @abstractmethod
-    def step(self, train_data: List[Dict[str, Any]], train_data_format: Optional[Union[TrainDataFormat, str]] = None):
+    def step(self, train_data: list[dict[str, Any]], train_data_format: TrainDataFormat | str | None = None):
         raise NotImplementedError
 
     @abstractmethod
@@ -58,7 +57,7 @@ class ReinforceJob:
     @abstractmethod
     def update_model(self):
         raise NotImplementedError
-    
+
     @abstractmethod
     def save_checkpoint(self, checkpoint_name: str):
         raise NotImplementedError
@@ -84,14 +83,14 @@ class Provider:
         return False
 
     @staticmethod
-    def launch(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
+    def launch(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
         # Note that "launch" and "kill" methods might be called even if there
         # is a launched LM or no launched LM to kill. These methods should be
         # resillient to such cases.
         pass
 
     @staticmethod
-    def kill(lm: "LM", launch_kwargs: Optional[Dict[str, Any]] = None):
+    def kill(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
         # We assume that LM.launch_kwargs dictionary will contain the necessary
         # information for a provider to launch and/or kill an LM. This is the
         # reeason why the argument here is named launch_kwargs and not
@@ -102,8 +101,8 @@ class Provider:
     def finetune(
         job: TrainingJob,
         model: str,
-        train_data: List[Dict[str, Any]],
-        train_data_format: Optional[Union[TrainDataFormat, str]],
-        train_kwargs: Optional[Dict[str, Any]] = None,
+        train_data: list[dict[str, Any]],
+        train_data_format: TrainDataFormat | str | None,
+        train_kwargs: dict[str, Any] | None = None,
     ) -> str:
         raise NotImplementedError

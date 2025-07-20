@@ -13,6 +13,7 @@
             - dump_state
             - forward
             - get_lm
+            - inspect_history
             - load
             - load_state
             - map_named_predictors
@@ -33,4 +34,5 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+:::
 <!-- END_API_REF -->

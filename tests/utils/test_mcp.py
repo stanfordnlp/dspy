@@ -1,14 +1,19 @@
-import pytest
 import asyncio
+import importlib
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+import pytest
 
 from dspy.utils.mcp import convert_mcp_tool
 
+if importlib.util.find_spec("mcp") is None:
+    pytest.skip(reason="mcp is not installed", allow_module_level=True)
+
 
 @pytest.mark.asyncio
+@pytest.mark.extra
 async def test_convert_mcp_tool():
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
     server_params = StdioServerParameters(
         command="python",
         args=["tests/utils/resources/mcp_server.py"],

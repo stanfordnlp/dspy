@@ -1,7 +1,7 @@
-from time import time, sleep
 import asyncio
-
 import math
+from time import sleep, time
+
 import pytest
 
 import dspy
@@ -14,10 +14,10 @@ async def test_async_limiter():
     assert limiter.total_tokens == 8, "Default async capacity should be 8"
     assert get_limiter() == limiter, "AsyncLimiter should be a singleton"
 
-    dspy.settings.configure(async_max_workers=16)
-    assert get_limiter() == limiter, "AsyncLimiter should be a singleton"
-    assert get_limiter().total_tokens == 16, "Async capacity should be 16"
-    assert get_limiter() == get_limiter(), "AsyncLimiter should be a singleton"
+    with dspy.context(async_max_workers=16):
+        assert get_limiter() == limiter, "AsyncLimiter should be a singleton"
+        assert get_limiter().total_tokens == 16, "Async capacity should be 16"
+        assert get_limiter() == get_limiter(), "AsyncLimiter should be a singleton"
 
 
 @pytest.mark.anyio
@@ -32,12 +32,11 @@ async def test_asyncify():
         await asyncio.gather(*[ask_the_question(wait) for _ in range(n)])
 
     async def verify_asyncify(capacity: int, number_of_tasks: int, wait: float = 0.5):
-        dspy.settings.configure(async_max_workers=capacity)
-
-        start = time()
-        await run_n_tasks(number_of_tasks, wait)
-        end = time()
-        total_time = end - start
+        with dspy.context(async_max_workers=capacity):
+            start = time()
+            await run_n_tasks(number_of_tasks, wait)
+            end = time()
+            total_time = end - start
 
         # If asyncify is working correctly, the total time should be less than the total number of loops
         # `(number_of_tasks / capacity)` times wait time, plus the computational overhead. The lower bound should
@@ -51,5 +50,3 @@ async def test_asyncify():
     await verify_asyncify(4, 10)
     await verify_asyncify(8, 15)
     await verify_asyncify(8, 30)
-
-

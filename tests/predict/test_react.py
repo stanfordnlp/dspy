@@ -1,11 +1,11 @@
+import re
+
+import litellm
+import pytest
 from pydantic import BaseModel
 
-import re
 import dspy
-import litellm
-
 from dspy.utils.dummies import DummyLM
-import pytest
 
 
 def test_tool_calling_with_pydantic_args():
@@ -161,7 +161,7 @@ def test_trajectory_truncation():
 
 def test_error_retry():
     # --- a tiny tool that always fails -------------------------------------
-    def foo(a, b):  # noqa: D401, ANN001
+    def foo(a, b):
         raise Exception("tool error")
 
     # --- program under test -------------------------------------------------
@@ -254,16 +254,15 @@ async def test_async_tool_calling_with_pydantic_args():
             },
         ]
     )
-    dspy.settings.configure(lm=lm)
-
-    outputs = await react.acall(
-        participant_name="Alice",
-        event_info=CalendarEvent(
-            name="Science Fair",
-            date="Friday",
-            participants={"Alice": "female", "Bob": "male"},
-        ),
-    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(
+            participant_name="Alice",
+            event_info=CalendarEvent(
+                name="Science Fair",
+                date="Friday",
+                participants={"Alice": "female", "Bob": "male"},
+            ),
+        )
     assert outputs.invitation_letter == "It's my honor to invite Alice to the Science Fair event on Friday."
 
     expected_trajectory = {
@@ -289,7 +288,7 @@ async def test_async_tool_calling_with_pydantic_args():
 @pytest.mark.asyncio
 async def test_async_error_retry():
     # A tiny tool that always fails
-    async def foo(a, b):  # noqa: D401, ANN001
+    async def foo(a, b):
         raise Exception("tool error")
 
     react = dspy.ReAct("a, b -> c:int", tools=[foo])
@@ -309,9 +308,8 @@ async def test_async_error_retry():
             {"reasoning": "I added the numbers successfully", "c": 3},
         ]
     )
-    dspy.settings.configure(lm=lm)
-
-    outputs = await react.acall(a=1, b=2, max_iters=2)
+    with dspy.context(lm=lm):
+        outputs = await react.acall(a=1, b=2, max_iters=2)
     traj = outputs.trajectory
 
     # Exact-match checks (thoughts + tool calls)

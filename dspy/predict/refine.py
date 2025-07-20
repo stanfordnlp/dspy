@@ -1,6 +1,6 @@
 import inspect
 import textwrap
-from typing import Callable, Optional
+from typing import Callable
 
 import ujson
 
@@ -45,7 +45,7 @@ class Refine(Module):
         N: int,  # noqa: N803
         reward_fn: Callable[[dict, Prediction], float],
         threshold: float,
-        fail_count: Optional[int] = None,
+        fail_count: int | None = None,
     ):
         """
         Refines a module by running it up to N times with different temperatures and returns the best prediction.

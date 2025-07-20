@@ -17,6 +17,7 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+:::
 <!-- END_API_REF -->
 
 ## Example Usage
@@ -42,6 +43,7 @@ teleprompter = MIPROv2(
 
 # Optimize program
 print(f"Optimizing program with MIPROv2...")
+gsm8k = GSM8K()
 optimized_program = teleprompter.compile(
     dspy.ChainOfThought("question -> answer"),
     trainset=gsm8k.train,

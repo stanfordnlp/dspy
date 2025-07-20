@@ -2,10 +2,9 @@ import json
 import os
 import socket
 import subprocess
-import sys
 import tempfile
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import pytest
 
@@ -13,7 +12,7 @@ from tests.test_utils.server.litellm_server import LITELLM_TEST_SERVER_LOG_FILE_
 
 
 @pytest.fixture()
-def litellm_test_server() -> Tuple[str, str]:
+def litellm_test_server() -> tuple[str, str]:
     """
     Start a LiteLLM test server for a DSPy integration test case, and tear down the
     server when the test case completes.
@@ -46,7 +45,7 @@ def litellm_test_server() -> Tuple[str, str]:
         process.wait()
 
 
-def read_litellm_test_server_request_logs(server_log_file_path: str) -> List[Dict[str, Any]]:
+def read_litellm_test_server_request_logs(server_log_file_path: str) -> list[dict[str, Any]]:
     """
     Read request logs from a LiteLLM server used during DSPy integration tests.
 
@@ -56,7 +55,7 @@ def read_litellm_test_server_request_logs(server_log_file_path: str) -> List[Dic
         A list of log entries, where each entry corresponds to one request handled by the server.
     """
     data = []
-    with open(server_log_file_path, "r") as f:
+    with open(server_log_file_path) as f:
         for line in f:
             data.append(json.loads(line))
 

@@ -86,14 +86,16 @@ dspy.configure(lm=lm)
         ```
 
     === "Other providers"
-        In DSPy, you can use any of the dozens of [LLM providers supported by LiteLLM](https://docs.litellm.ai/docs/providers). Simply follow their instructions for which `{PROVIDER}_API_KEY` to set and how to write pass the `{provider_name}/{model_name}` to the constructor.
+        In DSPy, you can use any of the dozens of [LLM providers supported by LiteLLM](https://docs.litellm.ai/docs/providers). Simply follow their instructions for which `{PROVIDER}_API_KEY` to set and how to write pass the `{provider_name}/{model_name}` to the constructor. 
 
         Some examples:
 
         - `anyscale/mistralai/Mistral-7B-Instruct-v0.1`, with `ANYSCALE_API_KEY`
         - `together_ai/togethercomputer/llama-2-70b-chat`, with `TOGETHERAI_API_KEY`
         - `sagemaker/<your-endpoint-name>`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION_NAME`
-        - `azure/<your_deployment_name>`, with `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, and the optional `AZURE_AD_TOKEN` and `AZURE_API_TYPE`
+        - `azure/<your_deployment_name>`, with `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, and the optional `AZURE_AD_TOKEN` and `AZURE_API_TYPE` as environment variables. If you are initiating external models without setting environment variables, use the following:
+        `lm = dspy.LM('azure/<your_deployment_name>', api_key = 'AZURE_API_KEY' , api_base = 'AZURE_API_BASE', api_version = 'AZURE_API_VERSION')`
+
 
         
         If your provider offers an OpenAI-compatible endpoint, just add an `openai/` prefix to your full model name.
@@ -103,6 +105,7 @@ dspy.configure(lm=lm)
         lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
         dspy.configure(lm=lm)
         ```
+If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
 
 ## Calling the LM directly.
 
@@ -149,7 +152,7 @@ with dspy.context(lm=dspy.LM('openai/gpt-3.5-turbo')):
 ```
 **Possible Output:**
 ```text
-GPT-4o: The number of floors in the castle David Gregory inherited cannot be determined with the information provided.
+GPT-4o-mini: The number of floors in the castle David Gregory inherited cannot be determined with the information provided.
 GPT-3.5-turbo: The castle David Gregory inherited has 7 floors.
 ```
 

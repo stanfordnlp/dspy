@@ -1,3 +1,5 @@
+import asyncio
+import contextvars
 import copy
 import threading
 from contextlib import contextmanager
@@ -10,11 +12,6 @@ DEFAULT_CONFIG = dotdict(
     rm=None,
     branch_idx=0,
     trace=[],
-    bypass_assert=False,
-    bypass_suggest=False,
-    assert_failures=0,
-    suggest_failures=0,
-    backoff_time=10,
     callbacks=[],
     async_max_workers=8,
     send_stream=None,
@@ -22,25 +19,24 @@ DEFAULT_CONFIG = dotdict(
     track_usage=False,
     usage_tracker=None,
     caller_predict=None,
+    caller_modules=None,
     stream_listeners=[],
     provide_traceback=False,  # Whether to include traceback information in error logs.
     num_threads=8,  # Number of threads to use for parallel processing.
+    max_errors=10,  # Maximum errors before halting operations.
+    # If true, async tools can be called in sync mode by getting converted to sync.
+    allow_tool_async_sync_conversion=False,
 )
 
 # Global base configuration and owner tracking
 main_thread_config = copy.deepcopy(DEFAULT_CONFIG)
 config_owner_thread_id = None
+config_owner_async_task = None
 
 # Global lock for settings configuration
 global_lock = threading.Lock()
 
-
-class ThreadLocalOverrides(threading.local):
-    def __init__(self):
-        self.overrides = dotdict()
-
-
-thread_local_overrides = ThreadLocalOverrides()
+thread_local_overrides = contextvars.ContextVar("context_overrides", default=dotdict())
 
 
 class Settings:
@@ -71,7 +67,7 @@ class Settings:
         return global_lock
 
     def __getattr__(self, name):
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
+        overrides = thread_local_overrides.get()
         if name in overrides:
             return overrides[name]
         elif name in main_thread_config:
@@ -92,7 +88,7 @@ class Settings:
         self.__setattr__(key, value)
 
     def __contains__(self, key):
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
+        overrides = thread_local_overrides.get()
         return key in overrides or key in main_thread_config
 
     def get(self, key, default=None):
@@ -102,23 +98,64 @@ class Settings:
             return default
 
     def copy(self):
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
+        overrides = thread_local_overrides.get()
         return dotdict({**main_thread_config, **overrides})
 
     @property
     def config(self):
         return self.copy()
 
-    def configure(self, **kwargs):
-        global main_thread_config, config_owner_thread_id
+    def _ensure_configure_allowed(self):
+        global main_thread_config, config_owner_thread_id, config_owner_async_task
         current_thread_id = threading.get_ident()
 
-        with self.lock:
-            # First configuration: establish ownership. If ownership established, only that thread can configure.
-            if config_owner_thread_id in [None, current_thread_id]:
-                config_owner_thread_id = current_thread_id
-            else:
-                raise RuntimeError("dspy.settings can only be changed by the thread that initially configured it.")
+        if config_owner_thread_id is None:
+            # First `configure` call assigns the owner thread id.
+            config_owner_thread_id = current_thread_id
+
+        if config_owner_thread_id != current_thread_id:
+            # Disallow a second `configure` calls from other threads.
+            raise RuntimeError("dspy.settings can only be changed by the thread that initially configured it.")
+
+        # Async task doesn't allow a second `configure` call, must use dspy.context(...) instead.
+        is_async_task = False
+        try:
+            if asyncio.current_task() is not None:
+                is_async_task = True
+        except RuntimeError:
+            # This exception (e.g., "no current task") means we are not in an async loop/task,
+            # or asyncio module itself is not fully functional in this specific sub-thread context.
+            is_async_task = False
+
+        if not is_async_task:
+            return
+
+        if config_owner_async_task is None:
+            # First `configure` call assigns the owner async task.
+            config_owner_async_task = asyncio.current_task()
+            return
+
+        # We are in an async task. Now check for IPython and allow calling `configure` from IPython.
+        in_ipython = False
+        try:
+            from IPython import get_ipython
+
+            # get_ipython is a global injected by IPython environments.
+            # We check its existence and type to be more robust.
+            in_ipython = get_ipython() is not None
+        except Exception:
+            # If `IPython` is not installed or `get_ipython` failed, we are not in an IPython environment.
+            in_ipython = False
+
+        if not in_ipython and config_owner_async_task != asyncio.current_task():
+            raise RuntimeError(
+                "dspy.settings.configure(...) can only be called from the same async task that called it first. Please "
+                "use `dspy.context(...)` in other async tasks instead."
+            )
+
+    def configure(self, **kwargs):
+        # If no exception is raised, the `configure` call is allowed.
+        self._ensure_configure_allowed()
 
         # Update global config
         for k, v in kwargs.items():
@@ -132,17 +169,17 @@ class Settings:
         If threads are spawned inside this block using ParallelExecutor, they will inherit these overrides.
         """
 
-        original_overrides = getattr(thread_local_overrides, "overrides", dotdict()).copy()
+        original_overrides = thread_local_overrides.get().copy()
         new_overrides = dotdict({**main_thread_config, **original_overrides, **kwargs})
-        thread_local_overrides.overrides = new_overrides
+        token = thread_local_overrides.set(new_overrides)
 
         try:
             yield
         finally:
-            thread_local_overrides.overrides = original_overrides
+            thread_local_overrides.reset(token)
 
     def __repr__(self):
-        overrides = getattr(thread_local_overrides, "overrides", dotdict())
+        overrides = thread_local_overrides.get()
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 

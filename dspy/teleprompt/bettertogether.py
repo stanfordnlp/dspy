@@ -1,10 +1,10 @@
 import logging
 import random
-from typing import Callable, List, Optional
+from typing import Callable
 
 import dspy
 from dspy.primitives.example import Example
-from dspy.primitives.program import Program
+from dspy.primitives.module import Module
 from dspy.teleprompt.bootstrap_finetune import (
     BootstrapFinetune,
     all_predictors_have_lms,
@@ -24,9 +24,9 @@ class BetterTogether(Teleprompter):
 
     def __init__(self,
         metric: Callable,
-        prompt_optimizer: Optional[Teleprompter] = None,
-        weight_optimizer: Optional[Teleprompter] = None,
-        seed: Optional[int] = None,
+        prompt_optimizer: Teleprompter | None = None,
+        weight_optimizer: Teleprompter | None = None,
+        seed: int | None = None,
       ):
         if not dspy.settings.experimental:
             raise ValueError("This is an experimental optimizer. Set `dspy.settings.experimental` to `True` to use it.")
@@ -52,11 +52,11 @@ class BetterTogether(Teleprompter):
 
     def compile(
         self,
-        student: Program,
-        trainset: List[Example],
+        student: Module,
+        trainset: list[Example],
         strategy: str = "p -> w -> p",
         valset_ratio = 0.1,
-    ) -> Program:
+    ) -> Module:
         # TODO: We could record acc on a different valset to pick the best
         # strategy within the provided strategy
         logger.info("Validating the strategy")
@@ -83,7 +83,7 @@ class BetterTogether(Teleprompter):
         logger.info("BetterTogether has finished compiling the student program")
         return student
 
-    def _run_strategies(self, parsed_strategy, student, trainset, valset_ratio) -> Program:
+    def _run_strategies(self, parsed_strategy, student, trainset, valset_ratio) -> Module:
         # Keep track of all the partial strategies/programs in parsed_strategy
         # "" corresponds to the initial student program
         candidate_programs = []
@@ -122,7 +122,7 @@ class BetterTogether(Teleprompter):
         student.candidate_programs = candidate_programs
         return student
 
-    def _compile_prompt_optimizer(self, student, trainset, valset_ratio) -> Program:
+    def _compile_prompt_optimizer(self, student, trainset, valset_ratio) -> Module:
         logger.info("Preparing for prompt optimization...")
 
         # Sampling a validation set from the trainset for the prompt optimizer
@@ -139,16 +139,16 @@ class BetterTogether(Teleprompter):
         # predictor.lm attributes. In particular,
         # BootstrapFewShotWithRandomSearch seems to be resetting these. We are
         # manually re-setting the LMs here to circumvent this issue, but we
-        # should consider adressing it in BFRS.
+        # should consider addressing it in BFRS.
         logger.info("Compiling the prompt optimizer...")
         pred_lms = [pred.lm for pred in student.predictors()]
         student = self.prompt_optimizer.compile(student, trainset=prompt_trainset, valset=prompt_valset)
-        for pred, lm in zip(student.predictors(), pred_lms):
+        for pred, lm in zip(student.predictors(), pred_lms, strict=False):
             pred.lm = lm
 
         return student
 
-    def _compile_weight_optimizer(self, student, trainset) -> Program:
+    def _compile_weight_optimizer(self, student, trainset) -> Module:
         logger.info("Preparing for weight optimization...")
 
         # Saving the LMs before compiling the weight optimizer
@@ -163,7 +163,7 @@ class BetterTogether(Teleprompter):
         # Updating the train kwargs for the new LMs. This is needed because the
         # train_kwargs of the optimizer is configured for the original LMs.
         new_lms = [pred.lm for pred in student.predictors()]
-        for original_lm, new_lm in zip(original_lms, new_lms):
+        for original_lm, new_lm in zip(original_lms, new_lms, strict=False):
             original_params = self.weight_optimizer.train_kwargs[original_lm]
             self.weight_optimizer.train_kwargs[new_lm] = original_params
 

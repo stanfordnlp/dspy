@@ -5,6 +5,9 @@
     handler: python
     options:
         members:
+            - description
+            - extract_custom_type_from_annotation
+            - format
             - from_PIL
             - from_file
             - from_url
@@ -18,4 +21,5 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+:::
 <!-- END_API_REF -->

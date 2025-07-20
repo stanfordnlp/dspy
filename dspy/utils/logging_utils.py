@@ -55,29 +55,19 @@ def enable_logging():
 
 
 def configure_dspy_loggers(root_module_name):
-    logging.config.dictConfig(
-        {
-            "version": 1,
-            "disable_existing_loggers": False,
-            "formatters": {
-                "dspy_formatter": {
-                    "format": LOGGING_LINE_FORMAT,
-                    "datefmt": LOGGING_DATETIME_FORMAT,
-                },
-            },
-            "handlers": {
-                "dspy_handler": {
-                    "formatter": "dspy_formatter",
-                    "class": "logging.StreamHandler",
-                    "stream": DSPY_LOGGING_STREAM,
-                },
-            },
-            "loggers": {
-                root_module_name: {
-                    "handlers": ["dspy_handler"],
-                    "level": "INFO",
-                    "propagate": False,
-                },
-            },
-        }
-    )
+    formatter = logging.Formatter(fmt=LOGGING_LINE_FORMAT, datefmt=LOGGING_DATETIME_FORMAT)
+
+    dspy_handler_name = "dspy_handler"
+    handler = logging.StreamHandler(stream=DSPY_LOGGING_STREAM)
+    handler.setFormatter(formatter)
+    handler.set_name(dspy_handler_name)
+
+    logger = logging.getLogger(root_module_name)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    for existing_handler in logger.handlers[:]:
+        if getattr(existing_handler, "name", None) == dspy_handler_name:
+            logger.removeHandler(existing_handler)
+
+    logger.addHandler(handler)

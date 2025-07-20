@@ -1,7 +1,7 @@
 # dspy.retrievers.Embeddings
 
 <!-- START_API_REF -->
-::: dspy.retrievers.Embeddings
+::: dspy.Embeddings
     handler: python
     options:
         members:
@@ -15,4 +15,5 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
+:::
 <!-- END_API_REF -->

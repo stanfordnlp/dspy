@@ -2,13 +2,13 @@ import queue
 import threading
 import time
 from concurrent.futures import Future
-from typing import Any, Callable, List
+from typing import Any, Callable
 
 
 class Unbatchify:
     def __init__(
         self,
-        batch_fn: Callable[[List[Any]], List[Any]],
+        batch_fn: Callable[[list[Any]], list[Any]],
         max_batch_size: int = 32,
         max_wait_time: float = 0.1
     ):
@@ -67,7 +67,7 @@ class Unbatchify:
             if batch:
                 try:
                     outputs = self.batch_fn(batch)
-                    for output, future in zip(outputs, futures):
+                    for output, future in zip(outputs, futures, strict=False):
                         future.set_result(output)
                 except Exception as e:
                     for future in futures:
