@@ -42,7 +42,7 @@ class Type(pydantic.BaseModel):
         have arbitrary level of nesting. For example, we detect `Tool` is in `list[dict[str, Tool]]`.
         """
         # Direct match. Nested type like `list[dict[str, Event]]` passes `isinstance(annotation, type)` in python 3.10
-        # while fails in python 3.11. To accomodate users using python 3.10, we need to capture the error and ignore it.
+        # while fails in python 3.11. To accommodate users using python 3.10, we need to capture the error and ignore it.
         try:
             if isinstance(annotation, type) and issubclass(annotation, cls):
                 return [annotation]

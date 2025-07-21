@@ -131,7 +131,7 @@ class Predict(Module, Parameter):
                 and "content" in kwargs["prediction"]
             ):
                 # If the `prediction` is the standard predicted outputs format
-                # (https://platform.openai.com/docs/guides/predicted-outputs), we remvoe it from input kwargs and add it
+                # (https://platform.openai.com/docs/guides/predicted-outputs), we remove it from input kwargs and add it
                 # to the lm kwargs.
                 config["prediction"] = kwargs.pop("prediction")
 

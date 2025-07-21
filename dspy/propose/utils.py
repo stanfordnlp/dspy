@@ -7,7 +7,7 @@ import dspy
 try:
     from IPython.core.magics.code import extract_symbols
 except ImportError:
-    # Won't be able to read code from juptyer notebooks
+    # Won't be able to read code from jupyter notebooks
     extract_symbols = None
 
 from dspy.predict.parameter import Parameter
