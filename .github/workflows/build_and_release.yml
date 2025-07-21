@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - id: extract_tag
         name: Extract tag name
-        run: echo "::set-output name=tag::$(echo $GITHUB_REF | cut -d / -f 3)"
+        run: echo "tag=$(echo $GITHUB_REF | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
 
   build-and-publish-test-pypi:
     needs: extract-tag
@@ -39,7 +39,7 @@ jobs:
           echo "Checking if $VERSION for $PACKAGE_NAME exists on TestPyPI"  
           NEW_VERSION=$(python3 .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
-          echo "::set-output name=version::$NEW_VERSION"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml
       - name: Update package name in pyproject.toml
