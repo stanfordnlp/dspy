@@ -457,3 +457,50 @@ def test_tool_calls_format_from_dict_list():
     assert len(result[0]["tool_calls"]) == 2
     assert result[0]["tool_calls"][0]["function"]["name"] == "search"
     assert result[0]["tool_calls"][1]["function"]["name"] == "translate"
+
+
+def test_toolcalls_vague_match():
+    """
+    Test that ToolCalls can parse the data with slightly off format:
+
+    - a single dict with "name" and "args"
+    - a list of dicts with "name" and "args"
+    - invalid input (should raise ValueError)
+    """
+    # Single dict with "name" and "args" should parse as one ToolCall
+    data_single = {"name": "search", "args": {"query": "hello"}}
+    tc = ToolCalls.model_validate(data_single)
+    assert isinstance(tc, ToolCalls)
+    assert len(tc.tool_calls) == 1
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[0].args == {"query": "hello"}
+
+    # List of dicts with "name" and "args" should parse as multiple ToolCalls
+    data_list = [
+        {"name": "search", "args": {"query": "hello"}},
+        {"name": "translate", "args": {"text": "world", "lang": "fr"}},
+    ]
+    tc = ToolCalls.model_validate(data_list)
+    assert isinstance(tc, ToolCalls)
+    assert len(tc.tool_calls) == 2
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[1].name == "translate"
+
+    # Dict with "tool_calls" key containing a list of dicts
+    data_tool_calls = {
+        "tool_calls": [
+            {"name": "search", "args": {"query": "hello"}},
+            {"name": "get_time", "args": {}},
+        ]
+    }
+    tc = ToolCalls.model_validate(data_tool_calls)
+    assert isinstance(tc, ToolCalls)
+    assert len(tc.tool_calls) == 2
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[1].name == "get_time"
+
+    # Invalid input should raise ValueError
+    with pytest.raises(ValueError):
+        ToolCalls.model_validate({"foo": "bar"})
+    with pytest.raises(ValueError):
+        ToolCalls.model_validate([{"foo": "bar"}])
