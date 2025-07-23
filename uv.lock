@@ -664,7 +664,7 @@ wheels = [
 
 [[package]]
 name = "dspy"
-version = "3.0.0b1"
+version = "3.0.0b3"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
@@ -672,9 +672,11 @@ dependencies = [
     { name = "backoff" },
     { name = "cachetools" },
     { name = "cloudpickle" },
+    { name = "datasets" },
     { name = "diskcache" },
     { name = "joblib" },
     { name = "json-repair" },
+    { name = "langchain-mcp-adapters" },
     { name = "litellm" },
     { name = "magicattr" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -736,12 +738,14 @@ requires-dist = [
     { name = "cachetools", specifier = ">=5.5.0" },
     { name = "cloudpickle", specifier = ">=3.0.0" },
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
+    { name = "datasets", specifier = ">=2.14.6" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
     { name = "joblib", specifier = "~=1.3" },
     { name = "json-repair", specifier = ">=0.30.0" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
     { name = "langchain-core", marker = "extra == 'test-extras'" },
+    { name = "langchain-mcp-adapters", specifier = ">=0.1.9" },
     { name = "litellm", specifier = ">=1.64.0" },
     { name = "litellm", marker = "sys_platform == 'win32' and extra == 'dev'", specifier = ">=1.64.0" },
     { name = "litellm", extras = ["proxy"], marker = "sys_platform != 'win32' and extra == 'dev'", specifier = ">=1.64.0" },
@@ -788,7 +792,7 @@ name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -1424,6 +1428,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/04/8a/d08c83195d1ef26c42728412ab92ab08211893906b283abce65775e21327/langchain_core-0.3.65.tar.gz", hash = "sha256:54b5e0c8d9bb405415c3211da508ef9cfe0acbe5b490d1b4a15664408ee82d9b", size = 558557, upload-time = "2025-06-10T20:08:28.94Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/f0/31db18b7b8213266aed926ce89b5bdd84ccde7ee2edf4cab14e3dd2bfcf1/langchain_core-0.3.65-py3-none-any.whl", hash = "sha256:80e8faf6e9f331f8ef728f3fe793549f1d3fb244fcf9e1bdcecab6a6f4669394", size = 438052, upload-time = "2025-06-10T20:08:27.393Z" },
+]
+
+[[package]]
+name = "langchain-mcp-adapters"
+version = "0.1.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "mcp", version = "1.9.3", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "mcp", version = "1.9.4", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b9/74/e36003a43136f9095a5f968c730fbfe894f94284ebe6d2b50bb17d41b8b5/langchain_mcp_adapters-0.1.9.tar.gz", hash = "sha256:0018cf7b5f7bc4c044e05ec20fcb9ebe345311c8d1060c61d411188001ab3aab", size = 22101, upload-time = "2025-07-09T15:56:14.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/eb/9e98822d3db22beff44449a8f61fca208d4f59d592a7ce67ce4c400b8f8f/langchain_mcp_adapters-0.1.9-py3-none-any.whl", hash = "sha256:fd131009c60c9e5a864f96576bbe757fc1809abd604891cb2e5d6e8aebd6975c", size = 15300, upload-time = "2025-07-09T15:56:13.316Z" },
 ]
 
 [[package]]
