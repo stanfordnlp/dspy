@@ -7,7 +7,8 @@ import re
 
 from dspy.adapters.chat_adapter import enumerate_fields
 from dspy.signatures import InputField, OutputField
-from typing import Callable, Optional, Dict, Any
+from dspy.adapters.types.base_type import Type
+from typing import Callable, Optional, Dict, Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +232,35 @@ def update_fields(bucket, system, **kwargs):
         for p, i, o in bad["trace"]
     ]
 
+    def extract_model_fields(model, prefix, current_fields_dict, module_name):
+        if hasattr(model, 'model_fields'):
+            for nested_field_name, nested_field in model.model_fields.items():
+                nested_key = f"{prefix}.{nested_field_name}"
+                current_fields_dict[module_name][nested_key] = {}
+                current_fields_dict[module_name][nested_key]["name"] = nested_field_name
+                current_fields_dict[module_name][nested_key]["desc"] = nested_field.description or ""
+
+    def process_field(field, field_name, current_fields_dict, module_name):
+        if hasattr(field.annotation, 'model_fields'):
+            extract_model_fields(field.annotation, field_name, current_fields_dict, module_name)
+        elif hasattr(field.annotation, '__origin__'):
+            origin = field.annotation.__origin__
+            args = field.annotation.__args__
+            
+            if origin is list:
+                extract_model_fields(args[0], field_name, current_fields_dict, module_name)
+            elif origin is Union:
+                for arg in args:
+                    if arg != type(None):
+                        extract_model_fields(arg, field_name, current_fields_dict, module_name)
+            elif origin is tuple:
+                for i, arg in enumerate(args):
+                    extract_model_fields(arg, f"{field_name}.{i}", current_fields_dict, module_name)
+            elif origin is dict:
+                extract_model_fields(args[1], f"{field_name}.value", current_fields_dict, module_name)
+        elif hasattr(field.annotation, '__bases__') and any(issubclass(base, Type) for base in field.annotation.__bases__):
+            extract_model_fields(field.annotation, field_name, current_fields_dict, module_name)
+
     # Get the current fields
     current_fields = {}
     for name, predictor in system.named_predictors():
@@ -239,10 +269,12 @@ def update_fields(bucket, system, **kwargs):
             current_fields[name][field_name] = {}
             current_fields[name][field_name]["name"] = field.json_schema_extra["prefix"]
             current_fields[name][field_name]["desc"] = field.json_schema_extra["desc"]
+            process_field(field, field_name, current_fields, name)
         for field_name, field in predictor.signature.output_fields.items():
             current_fields[name][field_name] = {}
             current_fields[name][field_name]["name"] = field.json_schema_extra["prefix"]
             current_fields[name][field_name]["desc"] = field.json_schema_extra["desc"]
+            process_field(field, field_name, current_fields, name)
 
     kwargs = dict(
         program_code=inspect.getsource(system.__class__),
