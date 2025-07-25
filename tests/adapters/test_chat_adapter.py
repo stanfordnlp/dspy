@@ -531,3 +531,63 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
         assert result[0]["answer"] == "Paris"
         assert result[0]["tool_calls"] is None
+
+
+def test_chat_adapter_toolcalls_vague_match():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    tools = [dspy.Tool(get_weather)]
+
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        # Case 1: tool_calls field is a list of dicts
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content="[[ ## tool_calls ## ]]\n[{'name': 'get_weather', 'args': {'city': 'Paris'}]"
+                    )
+                )
+            ],
+            model="openai/gpt-4o-mini",
+        )
+        result = adapter(
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            {},
+            MySignature,
+            [],
+            {"question": "What is the weather in Paris?", "tools": tools},
+        )
+        assert result[0]["tool_calls"] == dspy.ToolCalls(
+            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+        )
+
+    with mock.patch("litellm.completion") as mock_completion:
+        # Case 2: tool_calls field is a single dict with "name" and "args" keys
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content="[[ ## tool_calls ## ]]\n{'name': 'get_weather', 'args': {'city': 'Paris'}}"
+                    )
+                )
+            ],
+            model="openai/gpt-4o-mini",
+        )
+        result = adapter(
+            dspy.LM(model="openai/gpt-4o-mini", cache=False),
+            {},
+            MySignature,
+            [],
+            {"question": "What is the weather in Paris?", "tools": tools},
+        )
+        assert result[0]["tool_calls"] == dspy.ToolCalls(
+            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+        )
