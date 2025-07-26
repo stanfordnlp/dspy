@@ -1,6 +1,15 @@
 # Contribution Guide
 
-DSPy is an actively growing project and community! We welcome your contributions and involvement. Below are instructions for how to contribute to DSPy.
+DSPy is an actively growing project and community! We welcome your contributions and involvement. This guide will walk you through the entire contribution process, from finding issues to getting your code merged.
+
+## Table of Contents
+
+- [Finding an Issue](#finding-an-issue)
+- [Contributing Code](#contributing-code)
+- [Environment Setup](#environment-setup)
+- [Testing](#testing)
+- [Documentation](#documentation)
+- [Getting Help](#getting-help)
 
 ## Finding an Issue
 
@@ -35,7 +44,7 @@ For minor changes (simple bug fixes or documentation fixes), feel free to open a
 To make code changes, fork the repository and set up your local development environment following the
 instructions in the "Environment Setup" section below.
 
-### Step 3 Commit Your Code and Run Autoformatting
+### Step 3. Commit Your Code and Run Autoformatting
 
 We follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) and use `ruff` for both linting and formatting. To ensure consistent code quality, we use pre-commit hooks that automatically check and fix common issues.
 
@@ -145,5 +154,104 @@ Then verify the installation by running some unit tests:
 
 ```shell
 pytest tests/predict
+```
+
+## Testing
+
+We strongly encourage adding tests for any new functionality or bug fixes. DSPy uses pytest for testing.
+
+### Running Tests
+
+To run the full test suite:
+
+```shell
+# Using uv
+uv run pytest
+
+# Using conda/pip
+pytest
+```
+
+To run specific tests:
+
+```shell
+# Test a specific module
+uv run pytest tests/predict
+
+# Test a specific file
+uv run pytest tests/test_example.py
+
+# Test with coverage
+uv run pytest --cov=dspy tests/
+```
+
+### Writing Tests
+
+- Place tests in the `tests/` directory
+- Follow the naming convention `test_*.py` for test files
+- Use descriptive test function names that explain what is being tested
+- Include both positive and negative test cases
+- Mock external dependencies when appropriate
+
+## Documentation
+
+Good documentation helps users understand and adopt DSPy. When contributing:
+
+### Code Documentation
+
+- Add docstrings to all public functions, classes, and modules
+- Follow Google-style docstrings
+- Include parameter types, return types, and examples where helpful
+
+### Examples and Tutorials
+
+- Update existing examples if your changes affect them
+- Consider adding new examples for significant new features
+- Ensure examples are self-contained and well-commented
+
+### README Updates
+
+- Update the main README.md if your contribution adds new features
+- Keep installation instructions current
+- Update the feature list if applicable
+
+## Getting Help
+
+If you need help at any point during the contribution process:
+
+- **Questions about the code**: Open a discussion on GitHub
+- **Technical issues**: Create an issue with detailed information
+- **Feature discussions**: Use GitHub discussions for broader conversations
+- **Stuck on something**: Don't hesitate to ask for help in your PR comments
+
+Remember, contributing to open source is a learning process, and the maintainers are here to help you succeed!
+
+## Quick Reference
+
+### First-time Contributors
+
+1. Fork the repository
+2. Set up your development environment
+3. Find a "good first issue"
+4. Make your changes
+5. Run tests and formatting
+6. Create a pull request
+
+### Common Commands
+
+```shell
+# Setup (uv)
+uv sync --extra dev
+uv run pre-commit install
+
+# Testing
+uv run pytest tests/predict
+
+# Formatting
+uv run pre-commit run --all-files
+
+# Add and commit
+git add .
+git commit -m "descriptive commit message"
 ```
 
