@@ -69,7 +69,7 @@ this example it is the `answer` field. `Prediction` is the program's final outpu
 implemented in a sidecar fashion: we enable streaming on the LM so that LM outputs a stream of tokens. We send these
 tokens to a side channel, which is being continuously read by the user-defined listeners. Listeners keep interpreting
 the stream, and decides if the `signature_field_name` it is listening to has started to appear and has finalized.
-Once it decides that the field appears, the listener begins outputing tokens to the async generator users can
+Once it decides that the field appears, the listener begins outputting tokens to the async generator users can
 read. Listeners' internal mechanism changes according to the adapter behind the scene, and because usually
 we cannot decide if a field has finalized until seeing the next field, the listener buffers the output tokens
 before sending to the final generator, which is why you will usually see the last chunk of type `StreamResponse`

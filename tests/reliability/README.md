@@ -1,6 +1,6 @@
 # DSPy Reliability Tests
 
-This directory contains reliability tests for DSPy programs. The purpose of these tests is to verify that DSPy programs reliabily produce expected outputs across multiple large language models (LLMs), regardless of model size or capability. These tests are designed to ensure that DSPy programs maintain robustness and accuracy across diverse LLM configurations.
+This directory contains reliability tests for DSPy programs. The purpose of these tests is to verify that DSPy programs reliably produce expected outputs across multiple large language models (LLMs), regardless of model size or capability. These tests are designed to ensure that DSPy programs maintain robustness and accuracy across diverse LLM configurations.
 
 ### Overview
 

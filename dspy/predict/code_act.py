@@ -88,7 +88,7 @@ class CodeAct(ReAct, ProgramOfThought):
         return instructions
 
     def forward(self, **kwargs):
-        # Define the tool funcitons in the interpreter
+        # Define the tool functions in the interpreter
         for tool in self.tools.values():
             self.interpreter(inspect.getsource(tool.func))
 
