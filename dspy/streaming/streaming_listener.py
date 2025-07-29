@@ -166,7 +166,12 @@ class StreamListener:
                 token = token.rstrip()  # Remove the trailing \n\n
 
             if token:
-                return StreamResponse(self.predict_name, self.signature_field_name, token)
+                return StreamResponse(
+                    self.predict_name,
+                    self.signature_field_name,
+                    token,
+                    is_last_chunk=self.stream_end,
+                )
 
     def flush(self) -> str:
         """Flush all tokens in the field end queue.
