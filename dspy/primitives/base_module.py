@@ -5,7 +5,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import cloudpickle
-import ujson
+import orjson
 
 from dspy.utils.saving import get_dependency_versions
 
@@ -216,7 +216,7 @@ class BaseModule:
                     "or consider using state-only saving by setting `save_program=False`."
                 )
             with open(path / "metadata.json", "w", encoding="utf-8") as f:
-                ujson.dump(metadata, f, indent=2, ensure_ascii=False)
+                f.write(orjson.dumps(metadata, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE).decode('utf-8'))
 
             return
 
@@ -225,7 +225,7 @@ class BaseModule:
         if path.suffix == ".json":
             try:
                 with open(path, "w", encoding="utf-8") as f:
-                    f.write(ujson.dumps(state, indent=2 , ensure_ascii=False))
+                    f.write(orjson.dumps(state, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE).decode('utf-8'))
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to save state to {path} with error: {e}. Your DSPy program may contain non "
@@ -249,7 +249,7 @@ class BaseModule:
 
         if path.suffix == ".json":
             with open(path, encoding="utf-8") as f:
-                state = ujson.loads(f.read())
+                state = orjson.loads(f.read().encode('utf-8'))
         elif path.suffix == ".pkl":
             with open(path, "rb") as f:
                 state = cloudpickle.load(f)
