@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=40.8.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dspy-minimal"
+version = "0.1.0"
+description = "Minimal DSPy implementation for Lambda deployment"
+readme = "README.md"
+authors = [{ name = "DSPy Minimal", email = "minimal@example.com" }]
+license = { text = "MIT License" }
+requires-python = ">=3.10, <3.14"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3"
+]
+dependencies = [
+    "pydantic>=2.8.0,<3.0.0",
+    "requests>=2.31.0",
+    "boto3>=1.34.0",
+    "anyio>=4.0.0",
+    "mcp>=1.0.0",
+    "regex>=2023.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dspy_minimal*"]
+exclude = ["tests*", "docs*", "examples*"]
+
+[project.urls]
+homepage = "https://github.com/stanfordnlp/dspy" 
