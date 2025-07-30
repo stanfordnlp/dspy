@@ -47,7 +47,6 @@ gsm8k = GSM8K()
 optimized_program = teleprompter.compile(
     dspy.ChainOfThought("question -> answer"),
     trainset=gsm8k.train,
-    requires_permission_to_run=False,
 )
 
 # Save optimize program for future use
