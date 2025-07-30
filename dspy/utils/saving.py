@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import cloudpickle
-import ujson
+import orjson
 
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
@@ -40,7 +40,7 @@ def load(path: str) -> "Module":
         raise FileNotFoundError(f"The path '{path}' does not exist.")
 
     with open(path / "metadata.json") as f:
-        metadata = ujson.load(f)
+        metadata = orjson.loads(f.read())
 
     dependency_versions = get_dependency_versions()
     saved_dependency_versions = metadata["dependency_versions"]
