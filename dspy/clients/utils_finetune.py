@@ -1,3 +1,4 @@
+import hashlib
 import os
 from enum import Enum
 from typing import Any, Literal, TypedDict
@@ -66,10 +67,8 @@ def write_lines(file_path, data):
 def save_data(
     data: list[dict[str, Any]],
 ) -> str:
-    from datasets.fingerprint import Hasher
-
     # Assign a unique name to the file based on the data hash
-    hash = Hasher.hash(data)
+    hash = hashlib.sha256(ujson.dumps(data).encode()).hexdigest()
     file_name = f"{hash}.jsonl"
 
     finetune_dir = get_finetune_directory()
