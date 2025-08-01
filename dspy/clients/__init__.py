@@ -8,6 +8,7 @@ from litellm.caching.caching import Cache as LitellmCache
 
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.cache import Cache
+from dspy.clients.claude_code_lm import ClaudeCodeLM, create_claude_code_lm
 from dspy.clients.embedding import Embedder
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
@@ -105,6 +106,8 @@ def disable_litellm_logging():
 __all__ = [
     "BaseLM",
     "LM",
+    "ClaudeCodeLM",
+    "create_claude_code_lm",
     "Provider",
     "TrainingJob",
     "inspect_history",
