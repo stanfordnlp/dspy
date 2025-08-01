@@ -64,7 +64,11 @@ class Type(pydantic.BaseModel):
     def serialize_model(self):
         formatted = self.format()
         if isinstance(formatted, list):
-            return f"{CUSTOM_TYPE_START_IDENTIFIER}{self.format()}{CUSTOM_TYPE_END_IDENTIFIER}"
+            try:
+                str_rep = json.dumps(formatted)
+            except TypeError:
+                str_rep = formatted
+            return f"{CUSTOM_TYPE_START_IDENTIFIER}{str_rep}{CUSTOM_TYPE_END_IDENTIFIER}"
         return formatted
 
 
@@ -115,9 +119,13 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
             # Parse the JSON inside the block
             custom_type_content = match.group(1).strip()
             try:
-                parsed = json_repair.loads(custom_type_content)
+                try:
+                    parsed = json.loads(custom_type_content)
+                except json.JSONDecodeError:
+                    parsed = json_repair.loads(custom_type_content)
                 for custom_type_content in parsed:
                     result.append(custom_type_content)
+
             except json.JSONDecodeError:
                 # fallback to raw string if it's not valid JSON
                 parsed = {"type": "text", "text": custom_type_content}
