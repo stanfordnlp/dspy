@@ -423,31 +423,33 @@ class MIPROv2(Teleprompter):
 
         zeroshot = self.max_bootstrapped_demos == 0 and self.max_labeled_demos == 0
 
-        try:
-            effective_max_errors = (
-                self.max_errors if self.max_errors is not None else dspy.settings.max_errors
-            )
+        # try:
+        effective_max_errors = (
+            self.max_errors if self.max_errors is not None else dspy.settings.max_errors
+        )
 
-            demo_candidates = create_n_fewshot_demo_sets(
-                student=program,
-                num_candidate_sets=self.num_fewshot_candidates,
-                trainset=trainset,
-                max_labeled_demos=(LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_labeled_demos),
-                max_bootstrapped_demos=(
-                    BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_bootstrapped_demos
-                ),
-                metric=self.metric,
-                max_errors=effective_max_errors,
-                teacher=teacher,
-                teacher_settings=self.teacher_settings,
-                seed=seed,
-                metric_threshold=self.metric_threshold,
-                rng=self.rng,
-            )
-        except Exception as e:
-            logger.info(f"Error generating few-shot examples: {e}")
-            logger.info("Running without few-shot examples.")
-            demo_candidates = None
+        demo_candidates = create_n_fewshot_demo_sets(
+            student=program,
+            num_candidate_sets=self.num_fewshot_candidates,
+            trainset=trainset,
+            max_labeled_demos=(LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_labeled_demos),
+            max_bootstrapped_demos=(
+                BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else self.max_bootstrapped_demos
+            ),
+            metric=self.metric,
+            max_errors=effective_max_errors,
+            teacher=teacher,
+            teacher_settings=self.teacher_settings,
+            seed=seed,
+            metric_threshold=self.metric_threshold,
+            rng=self.rng,
+        )
+        # NOTE: Bootstrapping is essential to MIPRO!
+        # Failing silently here makes the rest of the optimization far weaker as a result!
+        # except Exception as e:
+        #     logger.info(f"!!!!\n\n\n\n\nError generating few-shot examples: {e}")
+        #     logger.info("Running without few-shot examples.!!!!\n\n\n\n\n")
+        #     demo_candidates = None
 
         return demo_candidates
 

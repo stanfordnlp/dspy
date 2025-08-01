@@ -13,6 +13,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
 
 
 - Build AI Programs with DSPy
+    - [Managing Conversation History](conversation_history/index.md)
     - [Building AI Agents with DSPy](customer_service_agent/index.ipynb)
     - [Building AI Applications by Customizing DSPy Modules](custom_module/index.ipynb)
     - [Retrieval-Augmented Generation (RAG)](rag/index.ipynb)

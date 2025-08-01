@@ -2,7 +2,7 @@
 
 We often get questions like “How are people using DSPy in practice?”, both in production and for research. This list was created to collect a few pointers and to encourage others in the community to add their own work below.
 
-This list is ever-expanding and highly incomplete (WIP)! We'll be adding a bunch more. If you would like to add your product or research to this list, please submit a PR.
+This list is continuously growing. We regularly add new use cases and welcome community contributions. If you would like to add your product or research to this list, please submit a PR.
 
 ## A Few Company Use Cases
 
@@ -35,7 +35,7 @@ This list is ever-expanding and highly incomplete (WIP)! We'll be adding a bunch
 | **[Pretrain](https://pretrain.com)** | Uses DSPy to automatically optimize AI performance towards user-defined tasks based on uploaded examples. |
 | **[Spindle AI](https://spindle.ai)** | Turns natural-language constrained optimization problems into solvable mathematical programs whose candidate solutions are scenarios. |
 
-WIP. This list mainly the small fraction of companies that have public posts or have OKed being publicly included for specific products so far, out of hundreds of other industry use cases.
+This list represents companies that have publicly shared their use cases or have provided permission to be included. It reflects a selection of the many industry applications of DSPy currently in production.
 
 
 ## A Few Papers Using DSPy
@@ -57,7 +57,7 @@ WIP. This list mainly the small fraction of companies that have public posts or 
 | **[Co-STORM](https://arxiv.org/pdf/2408.15232)** | Collaborative STORM: Generate Wikipedia-like articles through collaborative discourse among users and multiple LM agents |
 | **[MedVAL](https://arxiv.org/abs/2507.03152)** | Expert-level validation of AI-generated medical text with scalable language models |
 
-WIP, this list is highly outdated and incomplete.
+This list is regularly updated with new research publications using DSPy.
 
 ## A Few Repositories (or other OSS examples) using DSPy
 
@@ -86,7 +86,7 @@ WIP, this list is highly outdated and incomplete.
 | **Self Discover**| [Github](https://colab.research.google.com/drive/1GkAQKmw1XQgg5UNzzy8OncRe79V6pADB?usp=sharing) |
 | **MedVAL**| [Github](https://github.com/StanfordMIMI/MedVAL) |
 
-TODO: This list in particular is highly incomplete. There are a couple dozen other good ones.
+This list showcases some of the open-source projects and repositories using DSPy, with many more examples available in the community.
 
 ## A Few Providers, Integrations, and related Blog Releases
 

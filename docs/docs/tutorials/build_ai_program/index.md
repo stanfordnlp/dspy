@@ -4,6 +4,9 @@ This section contains hands-on tutorials that guide you through building product
 
 ## Core Applications
 
+### [Managing Conversation History](../conversation_history/index.md)
+Learn how to manage conversation history in DSPy applications.
+
 ### [Building AI Agents with DSPy](../customer_service_agent/index.ipynb)
 Learn to create intelligent agents that can handle complex customer service scenarios. This tutorial shows how to build agents that can understand context, maintain conversation state, and provide helpful responses.
 

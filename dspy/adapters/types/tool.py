@@ -103,7 +103,7 @@ class Tool(Type):
                 v_json_schema = _resolve_json_schema_reference(v.model_json_schema())
                 args[k] = v_json_schema
             else:
-                args[k] = TypeAdapter(v).json_schema()
+                args[k] = _resolve_json_schema_reference(TypeAdapter(v).json_schema())
             if default_values[k] is not inspect.Parameter.empty:
                 args[k]["default"] = default_values[k]
             if arg_desc and k in arg_desc:
@@ -111,8 +111,8 @@ class Tool(Type):
 
         self.name = self.name or name
         self.desc = self.desc or desc
-        self.args = self.args or args
-        self.arg_types = self.arg_types or arg_types
+        self.args = self.args if self.args is not None else args
+        self.arg_types = self.arg_types if self.arg_types is not None else arg_types
         self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
 
     def _validate_and_parse_args(self, **kwargs):

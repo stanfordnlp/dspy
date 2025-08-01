@@ -225,9 +225,11 @@ async def test_stream_listener_json_adapter(lm_for_test):
 
     assert all_chunks[0].predict_name == "predict1"
     assert all_chunks[0].signature_field_name == "answer"
+    assert all_chunks[0].is_last_chunk is False
 
     assert all_chunks[-1].predict_name == "predict2"
     assert all_chunks[-1].signature_field_name == "judgement"
+    assert all_chunks[-1].is_last_chunk is True
 
 
 @pytest.mark.anyio
@@ -292,9 +294,11 @@ def test_sync_streaming(lm_for_test):
 
     assert all_chunks[0].predict_name == "predict1"
     assert all_chunks[0].signature_field_name == "answer"
+    assert all_chunks[0].is_last_chunk is False
 
     assert all_chunks[-1].predict_name == "predict2"
     assert all_chunks[-1].signature_field_name == "judgement"
+    assert all_chunks[-1].is_last_chunk is True
 
 
 def test_sync_status_streaming():
@@ -411,6 +415,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
         assert all_chunks[3].chunk == " the"
         assert all_chunks[4].chunk == " other"
         assert all_chunks[5].chunk == " side of the dinner plate!"
+        assert all_chunks[5].is_last_chunk is True
 
         # Start processing the second listened field.
         assert all_chunks[6].predict_name == "predict2"
@@ -421,6 +426,8 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
         assert all_chunks[9].chunk == " humorous"
         assert all_chunks[10].chunk == " and"
         assert all_chunks[11].chunk == " plays"
+        assert all_chunks[11].is_last_chunk is False
+        assert all_chunks[-1].is_last_chunk is True
 
 
 @pytest.mark.anyio
@@ -762,6 +769,7 @@ async def test_stream_listener_allow_reuse():
     concat_message = "".join([chunk.chunk for chunk in all_chunks])
     # The listener functions twice.
     assert concat_message == "To get to the other side!To get to the other side!"
+
 
 @pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_xml_adapter():

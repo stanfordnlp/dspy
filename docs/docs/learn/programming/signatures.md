@@ -187,13 +187,13 @@ class QueryResult(pydantic.BaseModel):
 
 signature = dspy.Signature("query: str -> result: QueryResult")
 
-class Container:
+class MyContainer:
     class Query(pydantic.BaseModel):
         text: str
     class Score(pydantic.BaseModel):
         score: float
 
-signature = dspy.Signature("query: Container.Query -> score: Container.Score")
+signature = dspy.Signature("query: MyContainer.Query -> score: MyContainer.Score")
 ```
 
 ## Using signatures to build modules & compiling them

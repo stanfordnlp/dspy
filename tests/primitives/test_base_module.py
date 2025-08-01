@@ -501,7 +501,7 @@ def test_forward_direct_call_warning(capsys):
     module = TestModule()
     module.forward("test")
     captured = capsys.readouterr()
-    assert "Calling TestModule.forward() directly is discouraged" in captured.err
+    assert "directly is discouraged" in captured.err
 
 
 def test_forward_through_call_no_warning(capsys):
@@ -512,4 +512,4 @@ def test_forward_through_call_no_warning(capsys):
     module = TestModule()
     module(x="test")
     captured = capsys.readouterr()
-    assert "Calling TestModule.forward() directly is discouraged" not in captured.err
+    assert "directly is discouraged" not in captured.err
