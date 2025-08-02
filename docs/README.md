@@ -73,3 +73,13 @@ This guide is for contributors looking to make changes to the documentation in t
 2. **Push your new changes on a new branch**: Feel free to add or edit existing documentation and open a PR for your changes. Once your PR is reviewed and approved, the changes will be ready to merge into main. 
 
 3. **Updating the website**: Once your changes are merged to main, the changes would be reflected on live websites usually in 5-15 mins.
+
+## LLMs.txt Files
+
+DSPy documentation automatically generates [llmstxt.org](https://llmstxt.org/) compliant files to help LLMs understand and work with DSPy:
+
+- **`/llms.txt`** - A structured overview with links to key documentation sections
+- **`/llms-full.txt`** - A comprehensive version with full content for deep understanding
+
+These txt files are automatically generated during the docs build process using the [mkdocs-llmstxt](https://github.com/pawamoy/mkdocs-llmstxt) plugin. When modifying documentation, consider updating the `llmstxt` plugin section within `mkdocs.yml` to help LLMs better understand DSPy's capabilities.
+
