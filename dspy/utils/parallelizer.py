@@ -7,10 +7,35 @@ import threading
 import time
 import traceback
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from functools import wraps
 
 import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+def _with_otel_context(otel_context):
+    """Decorator to attach OpenTelemetry context to a function."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            ctx_token = None
+            if otel_context:
+                try:
+                    from opentelemetry.context import attach, detach
+                    ctx_token = attach(otel_context)
+                except ImportError:
+                    pass
+            try:
+                return func(*args, **kwargs)
+            finally:
+                if ctx_token:
+                    try:
+                        detach(ctx_token)
+                    except:
+                        pass
+        return wrapper
+    return decorator
 
 
 class ParallelExecutor:
@@ -75,7 +100,15 @@ class ParallelExecutor:
         start_time_lock = threading.Lock()
         resubmitted = set()
 
+        # Capture OpenTelemetry context for trace preservation
+        try:
+            from opentelemetry.context import get_current
+            otel_context = get_current()
+        except ImportError:
+            otel_context = None
+
         # This is the worker function each thread will run.
+        @_with_otel_context(otel_context)
         def worker(parent_overrides, submission_id, index, item):
             if self.cancel_jobs.is_set():
                 return index, job_cancelled
