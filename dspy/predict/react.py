@@ -210,7 +210,7 @@ One way to fix this is to support `format=fn` in the dspy.InputField() for "traj
 means that care must be taken that the adapter is accessed at `forward` runtime, not signature definition time.
 
 Another potential fix is to more natively support a "variadic" input field, where the input is a list of dictionaries,
-or a big dictionary, and have each adatper format it accordingly.
+or a big dictionary, and have each adapter format it accordingly.
 
 Trajectories also affect meta-programming modules that view the trace later. It's inefficient O(n^2) to view the
 trace of every module repeating the prefix.

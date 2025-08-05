@@ -10,9 +10,9 @@ Through the autologging capability, MLflow tracks the following information:
     * Other configuration settings
 
 * **Program States**
-    * Initial instuctions and few-shot examples
-    * Optimized instuctions and few-shot examples
-    * Intermediate instuctions and few-shot examples during optimization
+    * Initial instructions and few-shot examples
+    * Optimized instructions and few-shot examples
+    * Intermediate instructions and few-shot examples during optimization
 
 * **Datasets**
     * Training data used

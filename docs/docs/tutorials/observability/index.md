@@ -147,7 +147,7 @@ Click on the most recent trace to view its detailed breakdown:
 ![MLflow Trace View](./mlflow_trace_view.png)
 
 Here, you can examine the input and output of every step in your workflow. For example, the screenshot above shows the `retrieve` function's input and output. By inspecting the retriever's output, you can see that it returned outdated information, which is not sufficient to determine which team Shohei Ohtani plays for in June 2025. You can also inspect
-other steps, e.g, anguage model's input, output, and configuration.
+other steps, e.g, language model's input, output, and configuration.
 
 To address the issue of outdated information, you can replace the `retrieve` function with a web search tool powered by [Tavily search](https://www.tavily.com/).
 

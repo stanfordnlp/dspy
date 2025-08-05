@@ -169,7 +169,7 @@ sys.stderr = old_stderr
       // Only python exceptions have args.
       const last_exception_args = pyodide.globals.get("last_exception_args");
       // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
-      // we do a addtional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
+      // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
       errorArgs = JSON.parse(last_exception_args()) || [];
     }
 
