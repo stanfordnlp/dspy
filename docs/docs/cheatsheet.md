@@ -307,7 +307,6 @@ optimized_program = teleprompter.compile(
     trainset=trainset,
     max_bootstrapped_demos=3,
     max_labeled_demos=4,
-    requires_permission_to_run=False,
 )
 
 # Save optimize program for future use
@@ -337,7 +336,6 @@ optimized_program = teleprompter.compile(
     trainset=trainset,
     max_bootstrapped_demos=0,
     max_labeled_demos=0,
-    requires_permission_to_run=False,
 )
 
 # Save optimize program for future use
