@@ -246,7 +246,7 @@ def update_fields(bucket, system, **kwargs):
         elif hasattr(field.annotation, '__origin__'):
             origin = field.annotation.__origin__
             args = field.annotation.__args__
-            
+
             if origin is list:
                 extract_model_fields(args[0], field_name, current_fields_dict, module_name)
             elif origin is Union:
@@ -261,19 +261,38 @@ def update_fields(bucket, system, **kwargs):
         elif hasattr(field.annotation, '__bases__') and any(issubclass(base, Type) for base in field.annotation.__bases__):
             extract_model_fields(field.annotation, field_name, current_fields_dict, module_name)
 
+    def update_nested_fields(field_name, field, updated_fields_for_name):
+        for update_key, update_value in updated_fields_for_name.items():
+            if "." in update_key:
+                parent_field, nested_field = update_key.split(".", 1)
+                if parent_field == field_name:
+                    if hasattr(field.annotation, 'model_fields'):
+                        nested_model = field.annotation
+                        if nested_field in nested_model.model_fields:
+                            field_info = nested_model.model_fields[nested_field]
+                            if "desc" in update_value:
+                                if field_info.json_schema_extra is None:
+                                    field_info.json_schema_extra = {}
+                                field_info.json_schema_extra["desc"] = update_value["desc"]
+                    elif hasattr(field.annotation, '__origin__') and field.annotation.__origin__ is list:
+                        inner_type = field.annotation.__args__[0]
+                        if hasattr(inner_type, 'model_fields'):
+                            if nested_field in inner_type.model_fields:
+                                field_info = inner_type.model_fields[nested_field]
+                                if "desc" in update_value:
+                                    if field_info.json_schema_extra is None:
+                                        field_info.json_schema_extra = {}
+                                    field_info.json_schema_extra["desc"] = update_value["desc"]
+
     # Get the current fields
     current_fields = {}
     for name, predictor in system.named_predictors():
         current_fields[name] = {}
         for field_name, field in predictor.signature.input_fields.items():
-            current_fields[name][field_name] = {}
-            current_fields[name][field_name]["name"] = field.json_schema_extra["prefix"]
-            current_fields[name][field_name]["desc"] = field.json_schema_extra["desc"]
+            current_fields[name][field_name] = {"desc": field.json_schema_extra.get("desc", "") if field.json_schema_extra is not None else ""}
             process_field(field, field_name, current_fields, name)
         for field_name, field in predictor.signature.output_fields.items():
-            current_fields[name][field_name] = {}
-            current_fields[name][field_name]["name"] = field.json_schema_extra["prefix"]
-            current_fields[name][field_name]["desc"] = field.json_schema_extra["desc"]
+            current_fields[name][field_name] = {"desc": field.json_schema_extra.get("desc", "") if field.json_schema_extra is not None else ""}
             process_field(field, field_name, current_fields, name)
 
     kwargs = dict(
@@ -300,21 +319,23 @@ def update_fields(bucket, system, **kwargs):
         update_fields_program = dspy.Predict(UpdateFields)
         updated_fields = update_fields_program(**kwargs).updated_fields
     
-    # Set the prefix and description of the fields
+    
     for name, predictor in system.named_predictors():
         if name in updated_fields:
             for field_name, field in predictor.signature.input_fields.items():
                 if field_name in updated_fields[name]:
-                    if "name" in updated_fields[name][field_name]:
-                        field.json_schema_extra["prefix"] = updated_fields[name][field_name]["name"]
                     if "desc" in updated_fields[name][field_name]:
+                        if field.json_schema_extra is None:
+                            field.json_schema_extra = {}
                         field.json_schema_extra["desc"] = updated_fields[name][field_name]["desc"]
+                update_nested_fields(field_name, field, updated_fields[name])
             for field_name, field in predictor.signature.output_fields.items():
                 if field_name in updated_fields[name]:
-                    if "name" in updated_fields[name][field_name]:
-                        field.json_schema_extra["prefix"] = updated_fields[name][field_name]["name"]
                     if "desc" in updated_fields[name][field_name]:
+                        if field.json_schema_extra is None:
+                            field.json_schema_extra = {}
                         field.json_schema_extra["desc"] = updated_fields[name][field_name]["desc"]
+                update_nested_fields(field_name, field, updated_fields[name])
 
     prompt_model.inspect_history(n=1)
     print(f"Current fields: {current_fields}")
