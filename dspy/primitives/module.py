@@ -47,6 +47,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self._compiled = False
         # LM calling history of the module.
         self.history = []
+        self.trainable = True
 
     @with_callbacks
     def __call__(self, *args, **kwargs):
@@ -78,13 +79,27 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
             return await self.aforward(*args, **kwargs)
 
+    def freeze(self):
+        self.trainable = False
+        # Propagate freeze to all sub-modules and predictors
+        for _, module in self.named_sub_modules():
+            if module is not self and hasattr(module, 'trainable'):
+                module.trainable = False
+
+    def unfreeze(self):
+        self.trainable = True
+        # Propagate unfreeze to all sub-modules and predictors
+        for _, module in self.named_sub_modules():
+            if module is not self and hasattr(module, 'trainable'):
+                module.trainable = True
+
     def named_predictors(self):
         from dspy.predict.predict import Predict
 
         return [(name, param) for name, param in self.named_parameters() if isinstance(param, Predict)]
 
-    def predictors(self):
-        return [param for _, param in self.named_predictors()]
+    def predictors(self, return_trainable: bool = True):
+        return [param for _, param in self.named_predictors() if param.trainable or not return_trainable]
 
     def set_lm(self, lm):
         for _, param in self.named_predictors():
