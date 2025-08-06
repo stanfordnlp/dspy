@@ -48,6 +48,19 @@ class Module(BaseModule, metaclass=ProgramMeta):
         # LM calling history of the module.
         self.history = []
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("history", None)
+        state.pop("callbacks", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if not hasattr(self, "history"):
+            self.history = []
+        if not hasattr(self, "callbacks"):
+            self.callbacks = []
+
     @with_callbacks
     def __call__(self, *args, **kwargs):
         caller_modules = settings.caller_modules or []
