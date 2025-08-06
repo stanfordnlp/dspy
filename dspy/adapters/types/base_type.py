@@ -116,8 +116,8 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
             custom_type_content = match.group(1).strip()
             try:
                 try:
-                    custom_type_content = custom_type_content.replace("'", '"')
-                    parsed = json.loads(custom_type_content)
+                    # Replace single quotes with double quotes to make it valid JSON
+                    parsed = json.loads(custom_type_content.replace("'", '"'))
                 except json.JSONDecodeError:
                     parsed = json_repair.loads(custom_type_content)
                 for custom_type_content in parsed:
