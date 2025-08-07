@@ -137,7 +137,7 @@ class BaseLM:
         return pretty_print_history(self.history, n)
 
     def update_history(self, entry):
-        if settings.disable_history:
+        if settings.disable_history or settings.max_history_size == 0:
             return
 
         # dspy.LM.history

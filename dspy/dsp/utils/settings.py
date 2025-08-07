@@ -4,8 +4,6 @@ import copy
 import threading
 from contextlib import contextmanager
 
-from litellm.constants import MAXIMUM_TRACEBACK_LINES_TO_LOG
-
 from dspy.dsp.utils.utils import dotdict
 
 DEFAULT_CONFIG = dotdict(
