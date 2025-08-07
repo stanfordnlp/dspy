@@ -374,3 +374,39 @@ async def test_async_lm_call_with_cache(tmp_path):
         assert mock_alitellm_completion.call_count == 2
 
     dspy.cache = original_cache
+
+
+def test_lm_history_size_limit():
+    lm = dspy.LM(model="openai/gpt-4o-mini")
+    with dspy.context(max_history_size=5):
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="test answer"))],
+                model="openai/gpt-4o-mini",
+            )
+
+            for _ in range(10):
+                lm("query")
+
+    assert len(lm.history) == 5
+
+
+def test_disable_history():
+    lm = dspy.LM(model="openai/gpt-4o-mini")
+    with dspy.context(disable_history=True):
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="test answer"))],
+                model="openai/gpt-4o-mini",
+            )
+            for _ in range(10):
+                lm("query")
+
+    assert len(lm.history) == 0
+
+    with dspy.context(disable_history=False):
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="test answer"))],
+                model="openai/gpt-4o-mini",
+            )

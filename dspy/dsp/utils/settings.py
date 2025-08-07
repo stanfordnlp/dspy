@@ -4,6 +4,8 @@ import copy
 import threading
 from contextlib import contextmanager
 
+from litellm.constants import MAXIMUM_TRACEBACK_LINES_TO_LOG
+
 from dspy.dsp.utils.utils import dotdict
 
 DEFAULT_CONFIG = dotdict(
@@ -26,6 +28,8 @@ DEFAULT_CONFIG = dotdict(
     max_errors=10,  # Maximum errors before halting operations.
     # If true, async tools can be called in sync mode by getting converted to sync.
     allow_tool_async_sync_conversion=False,
+    max_history_size=10000,
+    max_trace_size=10000,
 )
 
 # Global base configuration and owner tracking

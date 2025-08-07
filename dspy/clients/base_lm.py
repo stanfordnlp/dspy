@@ -5,7 +5,6 @@ from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
-MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 
 
@@ -84,11 +83,9 @@ class BaseLM:
             "response_model": response.model,
             "model_type": self.model_type,
         }
-        self.history.append(entry)
-        self.update_global_history(entry)
-        caller_modules = settings.caller_modules or []
-        for module in caller_modules:
-            module.history.append(entry)
+
+        self.update_history(entry)
+
         return outputs
 
     @with_callbacks
@@ -139,14 +136,28 @@ class BaseLM:
     def inspect_history(self, n: int = 1):
         return pretty_print_history(self.history, n)
 
-    def update_global_history(self, entry):
+    def update_history(self, entry):
         if settings.disable_history:
             return
 
-        if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
+        # dspy.LM.history
+        if len(self.history) >= settings.max_history_size:
+            self.history.pop(0)
+
+        self.history.append(entry)
+
+        # Global LM history
+        if len(GLOBAL_HISTORY) >= settings.max_history_size:
             GLOBAL_HISTORY.pop(0)
 
         GLOBAL_HISTORY.append(entry)
+
+        # Per-module history
+        caller_modules = settings.caller_modules or []
+        for module in caller_modules:
+            if len(module.history) >= settings.max_history_size:
+                module.history.pop(0)
+            module.history.append(entry)
 
 
 def inspect_history(n: int = 1):
