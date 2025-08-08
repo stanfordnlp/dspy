@@ -5,6 +5,7 @@ from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
+MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 
 
@@ -147,7 +148,7 @@ class BaseLM:
         self.history.append(entry)
 
         # Global LM history
-        if len(GLOBAL_HISTORY) >= settings.max_history_size:
+        if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
             GLOBAL_HISTORY.pop(0)
 
         GLOBAL_HISTORY.append(entry)
