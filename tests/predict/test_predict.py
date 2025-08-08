@@ -688,11 +688,12 @@ def test_predicted_outputs_piped_from_predict_to_lm_call():
     assert "prediction" not in mock_completion.call_args[1]
 
 
-def test_pydantic_special_type_serialization():
+def test_dump_state_pydantic_non_primitive_types():
     class WebsiteInfo(BaseModel):
         name: str
         url: HttpUrl
         description: str | None = None
+        created_at: datetime
 
     class TestSignature(dspy.Signature):
         website_info: WebsiteInfo = dspy.InputField()
@@ -701,12 +702,14 @@ def test_pydantic_special_type_serialization():
     website_info = WebsiteInfo(
         name="Example",
         url="https://www.example.com",
-        description="Test website"
+        description="Test website",
+        created_at=datetime(2021, 1, 1, 12, 0, 0),
     )
 
     serialized = serialize_object(website_info)
 
     assert serialized["url"] == "https://www.example.com/"
+    assert serialized["created_at"] == "2021-01-01T12:00:00"
 
     json_str = ujson.dumps(serialized)
     reloaded = ujson.loads(json_str)
@@ -725,3 +728,4 @@ def test_pydantic_special_type_serialization():
 
     demo_data = reloaded_state["demos"][0]
     assert demo_data["website_info"]["url"] == "https://www.example.com/"
+    assert demo_data["website_info"]["created_at"] == "2021-01-01T12:00:00"
