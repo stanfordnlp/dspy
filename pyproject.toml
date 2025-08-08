@@ -25,9 +25,7 @@ dependencies = [
     "backoff>=2.2",
     "joblib~=1.3",
     "openai>=0.28.1",
-    "datasets>=2.14.6", # needed for Bootstrap's Hasher
     "regex>=2023.10.3",
-    "datasets>=2.14.6", # needed for Bootstrap's Hasher
     "ujson>=5.8.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
@@ -51,6 +49,7 @@ anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 mcp = ["mcp; python_version >= '3.10'"]
 langchain = ["langchain_core"]
+offline = ["datasets>=2.14.6"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
