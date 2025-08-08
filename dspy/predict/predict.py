@@ -203,8 +203,9 @@ def serialize_object(obj):
     Supports Pydantic models, lists, dicts, and primitive types.
     """
     if isinstance(obj, BaseModel):
-        # Use model_dump to convert the model into a JSON-serializable dict
-        return obj.model_dump()
+        # Use model_dump with mode="json" to ensure all fields (including HttpUrl, datetime, etc.)
+        # are converted to JSON-serializable types (strings)
+        return obj.model_dump(mode="json")
     elif isinstance(obj, list):
         return [serialize_object(item) for item in obj]
     elif isinstance(obj, tuple):
