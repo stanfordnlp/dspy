@@ -540,3 +540,59 @@ def test_baml_adapter_field_alias_without_description():
     regular_field_section = schema.split("regular_field: int,")[0].split("\n")[-1]
     assert f"{COMMENT_SYMBOL} alias:" not in regular_field_section
 
+
+def test_baml_adapter_multiple_pydantic_input_fields():
+    """Test that multiple InputField() with Pydantic models are rendered correctly."""
+
+    class UserProfile(pydantic.BaseModel):
+        name: str = pydantic.Field(description="User's full name")
+        email: str
+        age: int
+
+    class SystemConfig(pydantic.BaseModel):
+        timeout: int = pydantic.Field(description="Timeout in seconds")
+        debug: bool
+        endpoints: list[str]
+
+    class TestSignature(dspy.Signature):
+        input_1: UserProfile = dspy.InputField()
+        input_2: SystemConfig = dspy.InputField()
+        result: str = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+
+    # Test schema generation includes headers for ALL input fields
+    schema = adapter.format_field_structure(TestSignature)
+    assert "[[ ## input_1 ## ]]" in schema  # Should include first input field header
+    assert "[[ ## input_2 ## ]]" in schema  # Should include second input field header
+    # Update expectations for new format
+    assert "Your input fields are:" in schema
+    assert "Your output fields are:" in schema
+    assert "All interactions will be structured in the following way" in schema
+    assert "Inputs will have the following structure:" in schema
+    assert "Outputs will be a JSON object with the following fields." in schema
+    assert "{input_1}" in schema
+    assert "{input_2}" in schema
+
+    # Test message formatting with actual Pydantic instances
+    user_profile = UserProfile(name="John Doe", email="john@example.com", age=30)
+    system_config = SystemConfig(timeout=300, debug=True, endpoints=["api1", "api2"])
+
+    messages = adapter.format(TestSignature, [], {"input_1": user_profile, "input_2": system_config})
+
+    user_message = messages[-1]["content"]
+
+    # Verify both inputs are rendered with the correct bracket notation
+    assert "[[ ## input_1 ## ]]" in user_message
+    assert "[[ ## input_2 ## ]]" in user_message
+
+    # Verify JSON content for both inputs
+    assert '"name": "John Doe"' in user_message
+    assert '"email": "john@example.com"' in user_message
+    assert '"age": 30' in user_message
+    assert '"timeout": 300' in user_message
+    assert '"debug": true' in user_message
+    # Endpoints array is formatted with indentation, so check for individual elements
+    assert '"api1"' in user_message
+    assert '"api2"' in user_message
+    assert '"endpoints":' in user_message

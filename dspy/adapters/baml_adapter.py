@@ -205,35 +205,65 @@ class BAMLAdapter(JSONAdapter):
     def format_field_structure(self, signature: type[Signature]) -> str:
         """Overrides the base method to generate a simplified schema for Pydantic models."""
 
-        instruction = "You must produce a single, valid JSON object that strictly adheres to the following schema. Do not output anything else."
+        sections = []
 
-        # Get the first input field name to use as the schema header
-        input_field_name = next(iter(signature.input_fields.keys())) if signature.input_fields else "schema"
+        # Add input field descriptions
+        if signature.input_fields:
+            sections.append("Your input fields are:")
+            for i, (name, field) in enumerate(signature.input_fields.items(), 1):
+                type_name = getattr(field.annotation, "__name__", str(field.annotation))
+                description = f": {field.description}" if field.description else ":"
+                sections.append(f"{i}. `{name}` ({type_name}){description}")
 
-        output_schemas = []
-        for name, field in signature.output_fields.items():
-            field_type = field.annotation
-            main_type = field_type
+        # Add output field descriptions
+        if signature.output_fields:
+            sections.append("Your output fields are:")
+            for i, (name, field) in enumerate(signature.output_fields.items(), 1):
+                type_name = getattr(field.annotation, "__name__", str(field.annotation))
+                description = f": {field.description}" if field.description else ":"
+                sections.append(f"{i}. `{name}` ({type_name}){description}")
 
-            # Find the core type if it's wrapped in Optional or Union
-            origin = get_origin(field_type)
-            if origin in (types.UnionType, Union):
-                non_none_args = [arg for arg in get_args(field_type) if arg is not type(None)]
-                if len(non_none_args) == 1:
-                    main_type = non_none_args[0]
+        # Add structural explanation
+        sections.append(
+            "All interactions will be structured in the following way, with the appropriate values filled in.\n"
+        )
 
-            if inspect.isclass(main_type) and issubclass(main_type, BaseModel):
-                # We have a pydantic model, so build the simplified schema for it.
-                # Assuming the entire output is one JSON object corresponding to this model.
-                schema_str = _build_simplified_schema(main_type)
-                output_schemas.append(schema_str)
-            else:
-                # Handle non-pydantic or primitive types simply
-                type_str = _render_type_str(field_type, indent=0)
-                output_schemas.append(f"Output field `{name}` should be of type: {type_str}")
+        # Add input structure section
+        if signature.input_fields:
+            sections.append("Inputs will have the following structure:")
+            sections.append("")  # Empty line
 
-        # Use the actual input field name instead of hardcoded "schema"
-        return f"{instruction}\n\n[[ ## {input_field_name} ## ]]:\n" + "\n\n".join(output_schemas)
+            for name in signature.input_fields.keys():
+                sections.append(f"[[ ## {name} ## ]]")
+                sections.append(f"{{{name}}}")
+                sections.append("")  # Empty line after each input
+
+        # Add output structure section
+        if signature.output_fields:
+            sections.append("Outputs will be a JSON object with the following fields.")
+            sections.append("")  # Empty line
+
+            for name, field in signature.output_fields.items():
+                field_type = field.annotation
+                main_type = field_type
+
+                # Find the core type if it's wrapped in Optional or Union
+                origin = get_origin(field_type)
+                if origin in (types.UnionType, Union):
+                    non_none_args = [arg for arg in get_args(field_type) if arg is not type(None)]
+                    if len(non_none_args) == 1:
+                        main_type = non_none_args[0]
+
+                if inspect.isclass(main_type) and issubclass(main_type, BaseModel):
+                    # We have a pydantic model, so build the simplified schema for it.
+                    schema_str = _build_simplified_schema(main_type)
+                    sections.append(schema_str)
+                else:
+                    # Handle non-pydantic or primitive types simply
+                    type_str = _render_type_str(field_type, indent=0)
+                    sections.append(f"Output field `{name}` should be of type: {type_str}")
+
+        return "\n".join(sections)
 
     def format_user_message_content(
         self,
