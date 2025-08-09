@@ -202,9 +202,8 @@ class BAMLAdapter(JSONAdapter):
     ```
     """
 
-    def format_field_structure(self, signature: type[Signature]) -> str:
-        """Overrides the base method to generate a simplified schema for Pydantic models."""
-
+    def format_field_description(self, signature: type[Signature]) -> str:
+        """Format the field description for the system message."""
         sections = []
 
         # Add input field descriptions
@@ -222,6 +221,18 @@ class BAMLAdapter(JSONAdapter):
                 type_name = getattr(field.annotation, "__name__", str(field.annotation))
                 description = f": {field.description}" if field.description else ":"
                 sections.append(f"{i}. `{name}` ({type_name}){description}")
+
+        return "\n".join(sections)
+
+    def format_field_structure(self, signature: type[Signature]) -> str:
+        """Overrides the base method to generate a simplified schema for Pydantic models."""
+
+        sections = []
+
+        # Add the main instruction
+        sections.append(
+            "You must produce a single, valid JSON object that strictly adheres to the following schema. Do not output anything else."
+        )
 
         # Add structural explanation
         sections.append(
@@ -264,6 +275,14 @@ class BAMLAdapter(JSONAdapter):
                     sections.append(f"Output field `{name}` should be of type: {type_str}")
 
         return "\n".join(sections)
+
+    def format_task_description(self, signature: type[Signature]) -> str:
+        """Format the task description for the system message."""
+        import textwrap
+
+        instructions = textwrap.dedent(signature.instructions)
+        objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
+        return f"In adhering to this structure, your objective is: {objective}"
 
     def format_user_message_content(
         self,
