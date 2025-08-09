@@ -138,7 +138,16 @@ class BaseLM:
         return pretty_print_history(self.history, n)
 
     def update_history(self, entry):
-        if settings.disable_history or settings.max_history_size == 0:
+        if settings.disable_history:
+            return
+
+        # Global LM history
+        if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
+            GLOBAL_HISTORY.pop(0)
+
+        GLOBAL_HISTORY.append(entry)
+
+        if settings.max_history_size == 0:
             return
 
         # dspy.LM.history
@@ -146,12 +155,6 @@ class BaseLM:
             self.history.pop(0)
 
         self.history.append(entry)
-
-        # Global LM history
-        if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
-            GLOBAL_HISTORY.pop(0)
-
-        GLOBAL_HISTORY.append(entry)
 
         # Per-module history
         caller_modules = settings.caller_modules or []
