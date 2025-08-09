@@ -7,7 +7,7 @@ from litellm import Choices, Message
 from litellm.files.main import ModelResponse
 
 import dspy
-from dspy.adapters.baml_adapter import BAMLAdapter
+from dspy.adapters.baml_adapter import COMMENT_SYMBOL, BAMLAdapter
 
 
 # Test fixtures - Pydantic models for testing
@@ -61,7 +61,7 @@ def test_baml_adapter_basic_schema_generation():
     schema = adapter.format_field_structure(TestSignature)
 
     # Should contain simplified schema with comments
-    assert "Full name of the patient" in schema
+    assert f"{COMMENT_SYMBOL} Full name of the patient" in schema
     assert "name: string," in schema
     assert "age: int," in schema
     assert "address:" in schema
@@ -116,8 +116,9 @@ def test_baml_adapter_handles_lists_with_bracket_notation():
     adapter = BAMLAdapter()
     schema = adapter.format_field_structure(TestSignature)
 
-    # Should use bracket notation for lists
+    # Should use bracket notation for lists and include comments
     assert "items: [" in schema
+    assert f"{COMMENT_SYMBOL} List of patient addresses" in schema
     assert "street: string," in schema
     assert "city: string," in schema
     assert "]," in schema
@@ -134,10 +135,10 @@ def test_baml_adapter_handles_complex_nested_models():
     adapter = BAMLAdapter()
     schema = adapter.format_field_structure(TestSignature)
 
-    # Should include nested structure
-    assert "Unique identifier" in schema
+    # Should include nested structure with comments
+    assert f"{COMMENT_SYMBOL} Unique identifier" in schema
     assert "details:" in schema
-    assert "Full name of the patient" in schema
+    assert f"{COMMENT_SYMBOL} Full name of the patient" in schema
     assert "tags: string[]," in schema
     assert "metadata: dict[string, string]," in schema
 
@@ -512,3 +513,30 @@ def test_baml_adapter_with_field_aliases():
     schema = adapter.format_field_structure(TestSignature)
     assert "name:" in schema  # Should use alias, not field name
     assert "age:" in schema  # Should use alias, not field name
+
+
+def test_baml_adapter_field_alias_without_description():
+    """Test BAMLAdapter with field alias present but description absent."""
+
+    class ModelWithAliasNoDescription(pydantic.BaseModel):
+        internal_field: str = pydantic.Field(alias="public_name")
+        regular_field: int
+        field_with_description: str = pydantic.Field(description="This field has a description", alias="desc_field")
+
+    class TestSignature(dspy.Signature):
+        input: str = dspy.InputField()
+        data: ModelWithAliasNoDescription = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    schema = adapter.format_field_structure(TestSignature)
+
+    # Should show alias as comment when description is absent
+    assert f"{COMMENT_SYMBOL} alias: public_name" in schema
+    # Should show description comment when present
+    assert f"{COMMENT_SYMBOL} This field has a description" in schema
+    # Regular field (without alias) should appear in schema but without alias comment
+    assert "regular_field: int," in schema
+    # Check that regular_field section doesn't have an alias comment
+    regular_field_section = schema.split("regular_field: int,")[0].split("\n")[-1]
+    assert f"{COMMENT_SYMBOL} alias:" not in regular_field_section
+
