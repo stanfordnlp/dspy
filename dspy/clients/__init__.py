@@ -1,44 +1,9 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
-
-# Set environment variables before importing litellm
-os.environ["LITELLM_LOG"] = "ERROR"
-os.environ["OPENAI_LOG"] = "ERROR"
 
 import litellm
 from litellm.caching.caching import Cache as LitellmCache
-
-def _configure_litellm_logging(level: str = "ERROR"):
-    """Configure LiteLLM logging to the specified level."""
-    # Update environment variables
-    os.environ["LITELLM_LOG"] = level
-    os.environ["OPENAI_LOG"] = level
-    
-    # Cover both capitalization variants used by LiteLLM
-    logger_names = [
-        "LiteLLM",
-        "LiteLLM.utils",
-        "LiteLLM.proxy.utils",
-        "litellm",
-        "litellm.utils",
-        "litellm.proxy.utils",
-    ]
-    _level = getattr(logging, level)
-    for logger_name in logger_names:
-        lg = logging.getLogger(logger_name)
-        lg.setLevel(_level)
-        lg.propagate = False
-        # Remove all existing handlers or force them to the desired level
-        for h in lg.handlers[:]:
-            h.setLevel(_level)
-        # Ensure there is at least a NullHandler to swallow logs
-        if not lg.handlers:
-            lg.addHandler(logging.NullHandler())
-
-# Immediately disable LiteLLM logging after import
-_configure_litellm_logging("ERROR")
 
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.cache import Cache
@@ -125,20 +90,30 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 
+def configure_litellm_logging(level: str = "ERROR"):
+    """Configure LiteLLM logging to the specified level."""
+    # Litellm uses a global logger called `verbose_logger` to control all loggings.
+    from litellm._logging import verbose_logger
+
+    numeric_logging_level = getattr(logging, level)
+
+    verbose_logger.setLevel(numeric_logging_level)
+    for h in verbose_logger.handlers:
+        h.setLevel(numeric_logging_level)
+
+
 def enable_litellm_logging():
     litellm.suppress_debug_info = False
-    _configure_litellm_logging("INFO")
-    # Remove environment variables to allow logging
-    if "LITELLM_LOG" in os.environ:
-        del os.environ["LITELLM_LOG"]
-    if "OPENAI_LOG" in os.environ:
-        del os.environ["OPENAI_LOG"]
+    configure_litellm_logging("DEBUG")
 
 
 def disable_litellm_logging():
     litellm.suppress_debug_info = True
-    _configure_litellm_logging("ERROR")
+    configure_litellm_logging("ERROR")
 
+
+# By default, we disable LiteLLM logging for clean logging
+disable_litellm_logging()
 
 __all__ = [
     "BaseLM",
