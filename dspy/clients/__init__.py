@@ -1,7 +1,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 import litellm
 from litellm.caching.caching import Cache as LitellmCache
@@ -86,21 +85,35 @@ DSPY_CACHE = Cache(
     memory_max_entries=1000000,
 )
 
-# Turn off by default to avoid LiteLLM logging during every LM call.
-litellm.suppress_debug_info = True
-
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     # Accessed at run time by litellm; i.e., fine to keep after import
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 
+def configure_litellm_logging(level: str = "ERROR"):
+    """Configure LiteLLM logging to the specified level."""
+    # Litellm uses a global logger called `verbose_logger` to control all loggings.
+    from litellm._logging import verbose_logger
+
+    numeric_logging_level = getattr(logging, level)
+
+    verbose_logger.setLevel(numeric_logging_level)
+    for h in verbose_logger.handlers:
+        h.setLevel(numeric_logging_level)
+
+
 def enable_litellm_logging():
     litellm.suppress_debug_info = False
+    configure_litellm_logging("DEBUG")
 
 
 def disable_litellm_logging():
     litellm.suppress_debug_info = True
+    configure_litellm_logging("ERROR")
 
+
+# By default, we disable LiteLLM logging for clean logging
+disable_litellm_logging()
 
 __all__ = [
     "BaseLM",
