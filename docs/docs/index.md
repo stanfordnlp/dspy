@@ -330,7 +330,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
     Examples below rely on HuggingFace/datasets, you can install it by the command below.
 
     ```bash
-    > pip install -U datasets
+    > pip install -U dspy[offline]
     ```
 
     === "Optimizing prompts for a ReAct agent"
