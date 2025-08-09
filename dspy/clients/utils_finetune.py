@@ -2,7 +2,7 @@ import os
 from enum import Enum
 from typing import Any, Literal, TypedDict
 
-import ujson
+import orjson
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -60,7 +60,7 @@ def get_finetune_directory() -> str:
 def write_lines(file_path, data):
     with open(file_path, "w") as f:
         for item in data:
-            f.write(ujson.dumps(item) + "\n")
+            f.write(orjson.dumps(item).decode() + "\n")
 
 
 def save_data(
@@ -77,7 +77,7 @@ def save_data(
     file_path = os.path.abspath(file_path)
     with open(file_path, "w") as f:
         for item in data:
-            f.write(ujson.dumps(item) + "\n")
+            f.write(orjson.dumps(item).decode() + "\n")
     return file_path
 
 

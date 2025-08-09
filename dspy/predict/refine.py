@@ -2,7 +2,7 @@ import inspect
 import textwrap
 from typing import Callable
 
-import ujson
+import orjson
 
 import dspy
 from dspy.adapters.utils import get_field_description_string
@@ -158,10 +158,9 @@ class Refine(Module):
                 }
 
                 advise_kwargs = dict(**modules, **trajectory, **reward, module_names=module_names)
-                # advise_kwargs = {k: ujson.dumps(recursive_mask(v), indent=2) for k, v in advise_kwargs.items()}
                 # only dumps if it's a list or dict
                 advise_kwargs = {
-                    k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
+                    k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
                     for k, v in advise_kwargs.items()
                 }
                 advice = dspy.Predict(OfferFeedback)(**advise_kwargs).advice
@@ -200,7 +199,7 @@ def inspect_modules(program):
 def recursive_mask(o):
     # If the object is already serializable, return it.
     try:
-        ujson.dumps(o)
+        orjson.dumps(o)
         return o
     except TypeError:
         pass
