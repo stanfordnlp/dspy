@@ -229,11 +229,6 @@ class BAMLAdapter(JSONAdapter):
 
         sections = []
 
-        # Add the main instruction
-        sections.append(
-            "You must produce a single, valid JSON object that strictly adheres to the following schema. Do not output anything else."
-        )
-
         # Add structural explanation
         sections.append(
             "All interactions will be structured in the following way, with the appropriate values filled in.\n"
@@ -241,9 +236,6 @@ class BAMLAdapter(JSONAdapter):
 
         # Add input structure section
         if signature.input_fields:
-            sections.append("Inputs will have the following structure:")
-            sections.append("")  # Empty line
-
             for name in signature.input_fields.keys():
                 sections.append(f"[[ ## {name} ## ]]")
                 sections.append(f"{{{name}}}")
@@ -251,9 +243,6 @@ class BAMLAdapter(JSONAdapter):
 
         # Add output structure section
         if signature.output_fields:
-            sections.append("Outputs will be a JSON object with the following fields.")
-            sections.append("")  # Empty line
-
             for name, field in signature.output_fields.items():
                 field_type = field.annotation
                 main_type = field_type
@@ -265,6 +254,8 @@ class BAMLAdapter(JSONAdapter):
                     if len(non_none_args) == 1:
                         main_type = non_none_args[0]
 
+                sections.append(f"[[ ## {name} ## ]]")
+
                 if inspect.isclass(main_type) and issubclass(main_type, BaseModel):
                     # We have a pydantic model, so build the simplified schema for it.
                     schema_str = _build_simplified_schema(main_type)
@@ -273,6 +264,11 @@ class BAMLAdapter(JSONAdapter):
                     # Handle non-pydantic or primitive types simply
                     type_str = _render_type_str(field_type, indent=0)
                     sections.append(f"Output field `{name}` should be of type: {type_str}")
+
+                sections.append("")  # Empty line after each output
+
+        # Add completed section
+        sections.append("[[ ## completed ## ]]")
 
         return "\n".join(sections)
 

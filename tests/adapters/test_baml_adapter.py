@@ -565,11 +565,12 @@ def test_baml_adapter_multiple_pydantic_input_fields():
     schema = adapter.format_field_structure(TestSignature)
     assert "[[ ## input_1 ## ]]" in schema  # Should include first input field header
     assert "[[ ## input_2 ## ]]" in schema  # Should include second input field header
+    assert "[[ ## result ## ]]" in schema  # Should include output field header
+    assert "[[ ## completed ## ]]" in schema  # Should include completed section
     assert "All interactions will be structured in the following way" in schema
-    assert "Inputs will have the following structure:" in schema
-    assert "Outputs will be a JSON object with the following fields." in schema
     assert "{input_1}" in schema
     assert "{input_2}" in schema
+    assert "Output field `result` should be of type: string" in schema
 
     # Test field descriptions are in the correct method
     field_desc = adapter.format_field_description(TestSignature)
