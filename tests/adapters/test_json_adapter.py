@@ -147,7 +147,7 @@ def test_json_adapter_on_pydantic_model():
             choices=[
                 Choices(
                     message=Message(
-                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}"
+                        content="{'answer': {'analysis': 'Paris is the capital of France', 'result': 'Paris'}}"
                     )
                 )
             ],
@@ -204,7 +204,7 @@ def test_json_adapter_on_pydantic_model():
         assert expected_input_data in user_message_content
 
         # Assert that the adapter output has expected fields and values
-        assert result.answer.analysis == "Paris is the captial of France"
+        assert result.answer.analysis == "Paris is the capital of France"
         assert result.answer.result == "Paris"
 
 
@@ -525,7 +525,7 @@ async def test_json_adapter_on_pydantic_model_async():
             choices=[
                 Choices(
                     message=Message(
-                        content="{'answer': {'analysis': 'Paris is the captial of France', 'result': 'Paris'}}"
+                        content="{'answer': {'analysis': 'Paris is the capital of France', 'result': 'Paris'}}"
                     )
                 )
             ],
@@ -584,7 +584,7 @@ async def test_json_adapter_on_pydantic_model_async():
         assert expected_input_data in user_message_content
 
         # Assert that the adapter output has expected fields and values
-        assert result.answer.analysis == "Paris is the captial of France"
+        assert result.answer.analysis == "Paris is the capital of France"
         assert result.answer.result == "Paris"
 
 

@@ -86,7 +86,7 @@ rl:
 
   training:
     max_nb_steps_per_episode: 50                              # terminate after this many steps
-    learn_start_from_this_episode: 0                          # delay updates until this epsiode
+    learn_start_from_this_episode: 0                          # delay updates until this episode
     target_net_update_frequency: 500                          # sync target net with online net per this many epochs
 
   replay:
