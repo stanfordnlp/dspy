@@ -8,7 +8,7 @@ from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.teleprompt import Teleprompter
 
-from gepa.gepa import GEPAResult, optimize
+from gepa import GEPAResult, optimize
 from .gepa_utils import LoggerAdapter, DSPyTrace, ScoreWithFeedback, PredictorFeedbackFn, DspyAdapter
 
 logger = logging.getLogger(__name__)

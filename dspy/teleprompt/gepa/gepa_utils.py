@@ -8,7 +8,7 @@ from ..bootstrap_finetune import TraceData
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 
-from gepa.gepa import EvaluationBatch, GEPAAdapter
+from gepa import EvaluationBatch, GEPAAdapter
 
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
