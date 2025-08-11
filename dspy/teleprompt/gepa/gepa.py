@@ -298,7 +298,7 @@ class GEPA(Teleprompter):
         # Reproducibility
         self.seed = seed
 
-    def auto_budget(num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5) -> int:
+    def auto_budget(self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5) -> int:
         import numpy as np
         num_trials = int(max(2 * (num_preds * 2) * np.log2(num_candidates), 1.5 * num_candidates))
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
@@ -359,8 +359,11 @@ class GEPA(Teleprompter):
             self.max_metric_calls = self.max_full_evals * (len(trainset) + (len(valset) if valset is not None else 0))
         else:
             assert self.max_metric_calls is not None, "Either auto, max_full_evals, or max_metric_calls must be set."
+        
+        logger.info(f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set.")
 
         valset = valset or trainset
+        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
 
         rng = random.Random(self.seed)
 
