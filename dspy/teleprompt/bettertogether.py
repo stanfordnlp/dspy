@@ -34,7 +34,7 @@ class BetterTogether(Teleprompter):
         # TODO: Note that the BetterTogether optimizer is meaningful when
         # BootstrapFinetune uses a metric to filter the training data before
         # fine-tuning. However, one can also choose to run this optimizer with
-        # a BoostrapFinetune without a metric, say, if there aren't labels
+        # a BootstrapFinetune without a metric, say, if there aren't labels
         # available for the training data. Should this be noted somewhere?
         # TODO: We should re-consider if the metric should be required.
         self.prompt_optimizer = prompt_optimizer if prompt_optimizer else BootstrapFewShotWithRandomSearch(metric=metric)

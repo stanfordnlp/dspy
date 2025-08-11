@@ -1,8 +1,5 @@
 import logging
 import random
-import sys
-import textwrap
-import time
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
@@ -112,7 +109,7 @@ class MIPROv2(Teleprompter):
         view_data_batch_size: int = 10,
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
-        requires_permission_to_run: bool = True,
+        requires_permission_to_run: bool = True, # deprecated
         provide_traceback: bool | None = None,
     ) -> Any:
         effective_max_errors = (
@@ -135,7 +132,7 @@ class MIPROv2(Teleprompter):
         # If auto is provided, and either num_candidates or num_trials is not None, raise an error
         if self.auto is not None and (self.num_candidates is not None or num_trials is not None):
             raise ValueError(
-                "If auto is not None, num_candidates and num_trials cannot be set, since they would be overrided by the auto settings. Please either set auto to None, or do not specify num_candidates and num_trials."
+                "If auto is not None, num_candidates and num_trials cannot be set, since they would be overridden by the auto settings. Please either set auto to None, or do not specify num_candidates and num_trials."
             )
 
         # Set random seeds
@@ -161,20 +158,6 @@ class MIPROv2(Teleprompter):
 
         if minibatch and minibatch_size > len(valset):
             raise ValueError(f"Minibatch size cannot exceed the size of the valset. Valset size: {len(valset)}.")
-
-        # Estimate LM calls and get user confirmation
-        if requires_permission_to_run:
-            if not self._get_user_confirmation(
-                student,
-                num_trials,
-                minibatch,
-                minibatch_size,
-                minibatch_full_eval_steps,
-                valset,
-                program_aware_proposer,
-            ):
-                logger.info("Compilation aborted by the user.")
-                return student  # Return the original student program
 
         # Initialize program and evaluator
         program = student.deepcopy()
@@ -335,80 +318,6 @@ class MIPROv2(Teleprompter):
             )
 
         return prompt_model_line, task_model_line
-
-    def _get_user_confirmation(
-        self,
-        program: Any,
-        num_trials: int,
-        minibatch: bool,
-        minibatch_size: int,
-        minibatch_full_eval_steps: int,
-        valset: list,
-        program_aware_proposer: bool,
-    ) -> bool:
-        prompt_model_line, task_model_line = self._estimate_lm_calls(
-            program,
-            num_trials,
-            minibatch,
-            minibatch_size,
-            minibatch_full_eval_steps,
-            valset,
-            program_aware_proposer,
-        )
-
-        user_message = textwrap.dedent(
-            f"""\
-            {YELLOW}{BOLD}Projected Language Model (LM) Calls{ENDC}
-
-            Based on the parameters you have set, the maximum number of LM calls is projected as follows:
-
-            {prompt_model_line}
-            {task_model_line}
-
-            {YELLOW}{BOLD}Estimated Cost Calculation:{ENDC}
-
-            {YELLOW}Total Cost = (Number of calls to task model * (Avg Input Token Length per Call * Task Model Price per Input Token + Avg Output Token Length per Call * Task Model Price per Output Token)
-                        + (Number of program calls * (Avg Input Token Length per Call * Task Prompt Price per Input Token + Avg Output Token Length per Call * Prompt Model Price per Output Token).{ENDC}
-
-            For a preliminary estimate of potential costs, we recommend you perform your own calculations based on the task
-            and prompt models you intend to use. If the projected costs exceed your budget or expectations, you may consider:
-
-            {YELLOW}- Reducing the number of trials (`num_trials`), the size of the valset, or the number of LM calls in your program.{ENDC}
-            {YELLOW}- Using a cheaper task model to optimize the prompt.{ENDC}
-            {YELLOW}- Setting `minibatch=True` if you haven't already.{ENDC}\n"""
-        )
-
-        user_confirmation_message = textwrap.dedent(
-            f"""\
-            To proceed with the execution of this program, please confirm by typing {BLUE}'y'{ENDC} for yes or {BLUE}'n'{ENDC} for no.
-            If no input is received within 20 seconds, the program will proceed automatically.
-
-            If you would like to bypass this confirmation step in future executions, set the {YELLOW}`requires_permission_to_run`{ENDC} flag to {YELLOW}`False`{ENDC} when calling compile.
-
-            {YELLOW}Awaiting your input...{ENDC}
-        """
-        )
-
-        print(f"{user_message}\n{user_confirmation_message}\nDo you wish to continue? (y/n): ", end="", flush=True)
-
-        # Wait for input with timeout
-        start_time = time.time()
-        while time.time() - start_time < 20:
-            if sys.platform == "win32":
-                import msvcrt
-                if msvcrt.kbhit():
-                    user_input = msvcrt.getch().decode("utf-8").strip().lower()
-                    print(user_input)  # Echo the input
-                    return user_input == "y"
-            else:
-                import select
-                if select.select([sys.stdin], [], [], 0.1)[0]:
-                    user_input = sys.stdin.readline().strip().lower()
-                    return user_input == "y"
-            time.sleep(0.1)
-
-        print("\nNo input received within 20 seconds. Proceeding with execution...")
-        return True
 
     def _bootstrap_fewshot_examples(self, program: Any, trainset: list, seed: int, teacher: Any) -> list | None:
         logger.info("\n==> STEP 1: BOOTSTRAP FEWSHOT EXAMPLES <==")

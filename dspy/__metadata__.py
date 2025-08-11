@@ -1,7 +1,7 @@
 #replace_package_name_marker
 __name__="dspy"
 #replace_package_version_marker
-__version__="3.0.0b3"
+__version__="3.0.0b4"
 __description__="DSPy"
 __url__="https://github.com/stanfordnlp/dspy"
 __author__="Omar Khattab"
