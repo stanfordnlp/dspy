@@ -391,20 +391,31 @@ class GEPA(Teleprompter):
             trainset=trainset,
             valset=valset,
             adapter=adapter,
-            logger=LoggerAdapter(logger),
-            run_dir=self.log_dir,
+            
+            # Reflection-based configuration
             reflection_lm=reflection_lm,
             candidate_selection_strategy=self.candidate_selection_strategy,
-            perfect_score=self.perfect_score,
-            seed=self.seed,
             skip_perfect_score=self.skip_perfect_score,
+            num_examples_per_gepa_step=self.reflection_minibatch_size,
+
+            perfect_score=self.perfect_score,
+            
+            # Merge-based configuration
             use_merge=self.use_merge,
             max_merge_invocations=self.max_merge_invocations,
-            num_examples_per_gepa_step=self.reflection_minibatch_size,
+            
+            # Budget
             max_metric_calls=self.max_metric_calls,
+
+            # Logging
+            logger=LoggerAdapter(logger),
+            run_dir=self.log_dir,
             use_wandb=self.use_wandb,
             wandb_api_key=self.wandb_api_key,
             wandb_init_kwargs=self.wandb_init_kwargs,
+
+            # Reproducibility
+            seed=self.seed,
         )
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
