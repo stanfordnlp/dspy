@@ -1,7 +1,7 @@
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional, Set, Protocol
+from typing import Any, Dict, List, Literal, Optional, Set, Protocol, Tuple
 
 from dspy.dsp.utils.settings import settings
 from dspy.clients.lm import LM
@@ -77,6 +77,9 @@ class DspyGEPAResult:
     per_val_instance_best_candidates: List[Set[int]]
     discovery_eval_counts: List[int]
 
+    # Optional data
+    best_outputs_valset: Optional[List[List[Tuple[int, List[Prediction]]]]] = None
+
     # Optimization metadata
     total_metric_calls: Optional[int] = None
     num_full_val_evals: Optional[int] = None
@@ -102,6 +105,7 @@ class DspyGEPAResult:
             candidates=cands,
             parents=self.parents,
             val_aggregate_scores=self.val_aggregate_scores,
+            best_outputs_valset=self.best_outputs_valset,
             val_subscores=self.val_subscores,
             per_val_instance_best_candidates=[list(s) for s in self.per_val_instance_best_candidates],
             discovery_eval_counts=self.discovery_eval_counts,
@@ -117,6 +121,7 @@ class DspyGEPAResult:
             candidates=[adapter.build_program(c) for c in gepa_result.candidates],
             parents=gepa_result.parents,
             val_aggregate_scores=gepa_result.val_aggregate_scores,
+            best_outputs_valset=gepa_result.best_outputs_valset,
             val_subscores=gepa_result.val_subscores,
             per_val_instance_best_candidates=gepa_result.per_val_instance_best_candidates,
             discovery_eval_counts=gepa_result.discovery_eval_counts,
@@ -129,7 +134,7 @@ class DspyGEPAResult:
 class GEPA(Teleprompter):
     """
     GEPA is an evolutionary optimizer, which uses reflection to evolve text components
-    of complex systems.
+    of complex systems. GEPA is proposed in the paper [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457).
 
     GEPA captures full traces of the DSPy module's execution, identifies the parts of the trace
     corresponding to a specific predictor, and reflects on the behaviour of the predictor to
@@ -169,8 +174,19 @@ class GEPA(Teleprompter):
         ...
     ```
 
+    GEPA can also be used as a batch inference-time search strategy, by passing `valset=trainset, track_stats=True`, and using the
+    `detailed_results` attribute of the optimized program (returned by `compile`) to get the Pareto frontier of the batch.
+
+    Example:
+    ```
+    gepa = GEPA(metric=metric, track_stats=True)
+    batch_of_tasks = [dspy.Example(...) for task in tasks]
+    new_prog = gepa.compile(student, trainset=trainset, valset=batch_of_tasks)
+    pareto_frontier = new_prog.detailed_results.val_aggregate_scores
+    # pareto_frontier is a list of scores, one for each task in the batch.
+    ```
+
     Parameters:
-        Mandatory:
         - metric: The metric function to use for feedback and evaluation.
 
         Budget configuration (exactly one of the following must be provided):
@@ -193,12 +209,12 @@ class GEPA(Teleprompter):
         - perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA to determine if all examples in a minibatch are perfect.
 
         Logging configuration:
-        - log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all the candidate programs, in this directory.
-          Running GEPA with the same `log_dir` will resume the run from the last checkpoint.
+        - log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all the candidate programs, in this directory. Running GEPA with the same `log_dir` will resume the run from the last checkpoint.
         - track_stats: Whether to return detailed results and all proposed programs in the `detailed_results` attribute of the optimized program. Default is False.
         - use_wandb: Whether to use wandb for logging. Default is False.
         - wandb_api_key: The API key to use for wandb. If not provided, wandb will use the API key from the environment variable `WANDB_API_KEY`.
         - wandb_init_kwargs: Additional keyword arguments to pass to `wandb.init`.
+        - track_best_outputs: Whether to track the best outputs on the validation set. track_stats must be True if track_best_outputs is True. `optimized_program.detailed_results.best_outputs_valset` will contain the best outputs for each task in the validation set.
 
         Reproducibility:
         - seed: The random seed to use for reproducibility. Default is 0.
@@ -206,8 +222,9 @@ class GEPA(Teleprompter):
     def __init__(
         self,
         metric: GEPAFeedbackMetric,
+        *,
         # Budget configuration
-        auto: Optional[Literal["light", "medium", "heavy"]] = "light",
+        auto: Optional[Literal["light", "medium", "heavy"]] = None,
         max_full_evals: Optional[int] = None,
         max_metric_calls: Optional[int] = None,
         # Reflection based configuration
@@ -229,6 +246,7 @@ class GEPA(Teleprompter):
         use_wandb: bool = False,
         wandb_api_key: Optional[str] = None,
         wandb_init_kwargs: Optional[Dict[str, Any]] = None,
+        track_best_outputs: bool = False,
         # Reproducibility
         seed: Optional[int] = 0,
     ):
@@ -272,6 +290,10 @@ class GEPA(Teleprompter):
         self.use_wandb = use_wandb
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
+
+        if track_best_outputs:
+            assert track_stats, "track_stats must be True if track_best_outputs is True."
+        self.track_best_outputs = track_best_outputs
 
         # Reproducibility
         self.seed = seed
@@ -396,7 +418,7 @@ class GEPA(Teleprompter):
             reflection_lm=reflection_lm,
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
-            num_examples_per_gepa_step=self.reflection_minibatch_size,
+            reflection_minibatch_size=self.reflection_minibatch_size,
 
             perfect_score=self.perfect_score,
             
@@ -413,6 +435,7 @@ class GEPA(Teleprompter):
             use_wandb=self.use_wandb,
             wandb_api_key=self.wandb_api_key,
             wandb_init_kwargs=self.wandb_init_kwargs,
+            track_best_outputs=self.track_best_outputs,
 
             # Reproducibility
             seed=self.seed,
