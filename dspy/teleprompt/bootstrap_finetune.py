@@ -221,7 +221,6 @@ class FailedPrediction:
     completion_text: str
     format_reward: float | None = None
 
-@dataclass
 class TraceData(TypedDict):
     example_ind: int
     example: Example
