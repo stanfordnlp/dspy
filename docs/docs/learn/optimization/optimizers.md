@@ -58,17 +58,18 @@ These optimizers produce optimal instructions for the prompt and, in the case of
 
 6. [**`MIPROv2`**](../../api/optimizers/MIPROv2.md): Generates instructions *and* few-shot examples in each step. The instruction generation is data-aware and demonstration-aware. Uses Bayesian Optimization to effectively search over the space of generation instructions/demonstrations across your modules.
 
+7. [**`SIMBA`**](../../api/optimizers/SIMBA.md)
 
 ### Automatic Finetuning
 
 This optimizer is used to fine-tune the underlying LLM(s).
 
-7. [**`BootstrapFinetune`**](../../api/optimizers/BootstrapFinetune.md): Distills a prompt-based DSPy program into weight updates. The output is a DSPy program that has the same steps, but where each step is conducted by a finetuned model instead of a prompted LM.
+8. [**`BootstrapFinetune`**](/api/optimizers/BootstrapFinetune): Distills a prompt-based DSPy program into weight updates. The output is a DSPy program that has the same steps, but where each step is conducted by a finetuned model instead of a prompted LM. [See the classification fine-tuning tutorial](https://dspy.ai/tutorials/classification_finetuning/) for a complete example.
 
 
 ### Program Transformations
 
-8. [**`Ensemble`**](../../api/optimizers/Ensemble.md): Ensembles a set of DSPy programs and either uses the full set or randomly samples a subset into a single program.
+9. [**`Ensemble`**](../../api/optimizers/Ensemble.md): Ensembles a set of DSPy programs and either uses the full set or randomly samples a subset into a single program.
 
 
 ## Which optimizer should I use?
@@ -176,17 +177,20 @@ optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINS
 
         ```python linenums="1"
         import dspy
-        dspy.configure(lm=dspy.LM('openai/gpt-4o-mini-2024-07-18'))
+        lm=dspy.LM('openai/gpt-4o-mini-2024-07-18')
 
         # Define the DSPy module for classification. It will use the hint at training time, if available.
         signature = dspy.Signature("text, hint -> label").with_updated_fields('label', type_=Literal[tuple(CLASSES)])
         classify = dspy.ChainOfThought(signature)
+        classify.set_lm(lm)
 
         # Optimize via BootstrapFinetune.
         optimizer = dspy.BootstrapFinetune(metric=(lambda x, y, trace=None: x.label == y.label), num_threads=24)
         optimized = optimizer.compile(classify, trainset=trainset)
 
         optimized(text="What does a pending cash withdrawal mean?")
+        
+        # For a complete fine-tuning tutorial, see: https://dspy.ai/tutorials/classification_finetuning/
         ```
 
         **Possible Output (from the last line):**
