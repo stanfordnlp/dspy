@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Dict, List, Tuple, TypedDict
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -9,6 +9,7 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import infer_data_format
 from dspy.dsp.utils.settings import settings
+from dspy.primitives.prediction import Prediction
 from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
@@ -213,6 +214,13 @@ class FailedPrediction:
     completion_text: str
     format_reward: float | None = None
 
+@dataclass
+class TraceData(TypedDict):
+    example_ind: int
+    example: Example
+    prediction: Prediction
+    trace: List[Tuple[Any, Dict[str, Any], Prediction]]
+    score: float | None
 
 def bootstrap_trace_data(
     program: Module,
@@ -224,7 +232,7 @@ def bootstrap_trace_data(
     failure_score: float = 0,
     format_failure_score: float = -1,
     log_format_failures: bool = False,
-) -> list[dict[str, Any]]:
+) -> list[TraceData]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
     evaluator = Evaluate(
