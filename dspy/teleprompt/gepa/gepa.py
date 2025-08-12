@@ -136,6 +136,7 @@ class GEPA(Teleprompter):
     """
     GEPA is an evolutionary optimizer, which uses reflection to evolve text components
     of complex systems. GEPA is proposed in the paper [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457).
+    The GEPA optimization engine is provided by the `gepa` package, available from [https://github.com/gepa-ai/gepa](https://github.com/gepa-ai/gepa).
 
     GEPA captures full traces of the DSPy module's execution, identifies the parts of the trace
     corresponding to a specific predictor, and reflects on the behaviour of the predictor to
@@ -175,8 +176,8 @@ class GEPA(Teleprompter):
         ...
     ```
 
-    GEPA can also be used as a batch inference-time search strategy, by passing `valset=trainset, track_stats=True`, and using the
-    `detailed_results` attribute of the optimized program (returned by `compile`) to get the Pareto frontier of the batch.
+    GEPA can also be used as a batch inference-time search strategy, by passing `valset=trainset, track_stats=True, track_best_outputs=True`, and using the
+    `detailed_results` attribute of the optimized program (returned by `compile`) to get the Pareto frontier of the batch. `optimized_program.detailed_results.best_outputs_valset` will contain the best outputs for each task in the batch.
 
     Example:
     ```
