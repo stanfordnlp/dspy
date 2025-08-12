@@ -1,15 +1,16 @@
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional, Set, Protocol, Tuple
+from typing import Any, Literal, Protocol
 
-from dspy.dsp.utils.settings import settings
+from gepa import GEPAResult, optimize
+
 from dspy.clients.lm import LM
+from dspy.dsp.utils.settings import settings
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.teleprompt import Teleprompter
 
-from gepa import GEPAResult, optimize
-from .gepa_utils import LoggerAdapter, DSPyTrace, ScoreWithFeedback, PredictorFeedbackFn, DspyAdapter
+from .gepa_utils import DspyAdapter, DSPyTrace, LoggerAdapter, PredictorFeedbackFn, ScoreWithFeedback
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,9 @@ class GEPAFeedbackMetric(Protocol):
     def __call__(
         gold: Example,
         pred: Prediction,
-        trace: Optional[DSPyTrace],
-        pred_name: Optional[str],
-        pred_trace: Optional[DSPyTrace],
+        trace: DSPyTrace | None,
+        pred_name: str | None,
+        pred_trace: DSPyTrace | None,
     ) -> float | ScoreWithFeedback:
         """
         This function is called with the following arguments:
@@ -70,21 +71,21 @@ class DspyGEPAResult:
     - best_candidate: the program text mapping for best_idx
     """
     # Data about the proposed candidates
-    candidates: List[Module]
-    parents: List[List[Optional[int]]]
-    val_aggregate_scores: List[float]
-    val_subscores: List[List[float]]
-    per_val_instance_best_candidates: List[Set[int]]
-    discovery_eval_counts: List[int]
+    candidates: list[Module]
+    parents: list[list[int | None]]
+    val_aggregate_scores: list[float]
+    val_subscores: list[list[float]]
+    per_val_instance_best_candidates: list[set[int]]
+    discovery_eval_counts: list[int]
 
     # Optional data
-    best_outputs_valset: Optional[List[List[Tuple[int, List[Prediction]]]]] = None
+    best_outputs_valset: list[list[tuple[int, list[Prediction]]]] | None = None
 
     # Optimization metadata
-    total_metric_calls: Optional[int] = None
-    num_full_val_evals: Optional[int] = None
-    log_dir: Optional[str] = None
-    seed: Optional[int] = None
+    total_metric_calls: int | None = None
+    num_full_val_evals: int | None = None
+    log_dir: str | None = None
+    seed: int | None = None
 
     @property
     def best_idx(self) -> int:
@@ -92,10 +93,10 @@ class DspyGEPAResult:
         return max(range(len(scores)), key=lambda i: scores[i])
 
     @property
-    def best_candidate(self) -> Dict[str, str]:
+    def best_candidate(self) -> dict[str, str]:
         return self.candidates[self.best_idx]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         cands = [
             {k: v for k, v in cand.items()}
             for cand in self.candidates
@@ -224,31 +225,31 @@ class GEPA(Teleprompter):
         metric: GEPAFeedbackMetric,
         *,
         # Budget configuration
-        auto: Optional[Literal["light", "medium", "heavy"]] = None,
-        max_full_evals: Optional[int] = None,
-        max_metric_calls: Optional[int] = None,
+        auto: Literal["light", "medium", "heavy"] | None = None,
+        max_full_evals: int | None = None,
+        max_metric_calls: int | None = None,
         # Reflection based configuration
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
-        reflection_lm: Optional[LM] = None,
+        reflection_lm: LM | None = None,
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         # Merge-based configuration
         use_merge: bool = True,
-        max_merge_invocations: Optional[int] = 5,
+        max_merge_invocations: int | None = 5,
         # Evaluation configuration
-        num_threads: Optional[int] = None,
+        num_threads: int | None = None,
         failure_score: float = 0.0,
         perfect_score: float = 1.0,
         # Logging
         log_dir: str = None,
         track_stats: bool = False,
         use_wandb: bool = False,
-        wandb_api_key: Optional[str] = None,
-        wandb_init_kwargs: Optional[Dict[str, Any]] = None,
+        wandb_api_key: str | None = None,
+        wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         # Reproducibility
-        seed: Optional[int] = 0,
+        seed: int | None = 0,
     ):
         self.metric_fn = metric
 
@@ -278,7 +279,7 @@ class GEPA(Teleprompter):
         # Merge-based configuration
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
-        
+
         # Evaluation Configuration
         self.num_threads = num_threads
         self.failure_score = failure_score
@@ -333,9 +334,9 @@ class GEPA(Teleprompter):
         self,
         student: Module,
         *,
-        trainset: List[Example],
-        teacher: Optional[Module] = None,
-        valset: Optional[List[Example]] = None,
+        trainset: list[Example],
+        teacher: Module | None = None,
+        valset: list[Example] | None = None,
     ) -> Module:
         """
         GEPA uses the trainset to perform reflective updates to the prompt, but uses the valset for tracking Pareto scores.
@@ -359,7 +360,7 @@ class GEPA(Teleprompter):
             self.max_metric_calls = self.max_full_evals * (len(trainset) + (len(valset) if valset is not None else 0))
         else:
             assert self.max_metric_calls is not None, "Either auto, max_full_evals, or max_metric_calls must be set."
-        
+
         logger.info(f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set.")
 
         valset = valset or trainset
@@ -369,10 +370,10 @@ class GEPA(Teleprompter):
 
         def feedback_fn_creator(pred_name: str, predictor) -> PredictorFeedbackFn:
             def feedback_fn(
-                predictor_output: Dict[str, Any],
-                predictor_inputs: Dict[str, Any],
+                predictor_output: dict[str, Any],
+                predictor_inputs: dict[str, Any],
                 module_inputs: Example,
-                module_outputs: Prediction, 
+                module_outputs: Prediction,
                 captured_trace: DSPyTrace,
             ) -> ScoreWithFeedback:
                 trace_for_pred = [(predictor, predictor_inputs, predictor_output)]
@@ -383,16 +384,16 @@ class GEPA(Teleprompter):
                     pred_name,
                     trace_for_pred,
                 )
-                if hasattr(o, 'feedback'):
-                    if o['feedback'] is None:
-                        o['feedback'] = f"This trajectory got a score of {o['score']}."
+                if hasattr(o, "feedback"):
+                    if o["feedback"] is None:
+                        o["feedback"] = f"This trajectory got a score of {o['score']}."
                     return o
                 else:
                     return dict(score=o, feedback=f"This trajectory got a score of {o}.")
             return feedback_fn
 
         feedback_map = {
-            k: feedback_fn_creator(k, v) 
+            k: feedback_fn_creator(k, v)
             for k, v in student.named_predictors()
         }
 
@@ -416,7 +417,7 @@ class GEPA(Teleprompter):
             trainset=trainset,
             valset=valset,
             adapter=adapter,
-            
+
             # Reflection-based configuration
             reflection_lm=reflection_lm,
             candidate_selection_strategy=self.candidate_selection_strategy,
@@ -424,11 +425,11 @@ class GEPA(Teleprompter):
             reflection_minibatch_size=self.reflection_minibatch_size,
 
             perfect_score=self.perfect_score,
-            
+
             # Merge-based configuration
             use_merge=self.use_merge,
             max_merge_invocations=self.max_merge_invocations,
-            
+
             # Budget
             max_metric_calls=self.max_metric_calls,
 
@@ -448,6 +449,6 @@ class GEPA(Teleprompter):
 
         if self.track_stats:
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)
-            setattr(new_prog, "detailed_results", dspy_gepa_result)
+            new_prog.detailed_results = dspy_gepa_result
 
         return new_prog
