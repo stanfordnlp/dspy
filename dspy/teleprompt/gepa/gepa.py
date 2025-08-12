@@ -199,7 +199,7 @@ class GEPA(Teleprompter):
         Reflection based configuration:
         - reflection_minibatch_size: The number of examples to use for reflection in a single GEPA step.
         - candidate_selection_strategy: The strategy to use for candidate selection. Default is "pareto", which stochastically selects candidates from the Pareto frontier of all validation scores.
-        - reflection_lm: The language model to use for reflection. If not provided, student's LM is used, or dspy.settings.lm is used.
+        - reflection_lm: [Required] The language model to use for reflection. GEPA benefits from a strong reflection model, and you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model.
 
         Merge-based configuration:
         - use_merge: Whether to use merge-based optimization. Default is True.
@@ -273,7 +273,9 @@ class GEPA(Teleprompter):
         # Reflection based configuration
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
-        self.reflection_lm = reflection_lm
+        # self.reflection_lm = reflection_lm
+        assert reflection_lm is not None, "GEPA requires a reflection language model to be provided. Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model."
+        self.reflection_lm = lambda x: reflection_lm(x)[0]
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
 
@@ -409,7 +411,7 @@ class GEPA(Teleprompter):
             rng=rng,
         )
 
-        reflection_lm = lambda x: (self.reflection_lm or settings.lm or student.get_lm())(x)[0]
+        reflection_lm = self.reflection_lm
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
