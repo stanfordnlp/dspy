@@ -422,7 +422,7 @@ class GEPA(Teleprompter):
             reflection_lm=reflection_lm,
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
-            reflection_minibatch_size=self.reflection_minibatch_size,
+            num_examples_per_gepa_step=self.reflection_minibatch_size,
 
             perfect_score=self.perfect_score,
 
@@ -439,7 +439,7 @@ class GEPA(Teleprompter):
             use_wandb=self.use_wandb,
             wandb_api_key=self.wandb_api_key,
             wandb_init_kwargs=self.wandb_init_kwargs,
-            track_best_outputs=self.track_best_outputs,
+            #track_best_outputs=self.track_best_outputs,
 
             # Reproducibility
             seed=self.seed,
