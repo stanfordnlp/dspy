@@ -6,7 +6,6 @@ from typing import Any, Literal, Protocol
 from gepa import GEPAResult, optimize
 
 from dspy.clients.lm import LM
-from dspy.dsp.utils.settings import settings
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.teleprompt import Teleprompter
 
