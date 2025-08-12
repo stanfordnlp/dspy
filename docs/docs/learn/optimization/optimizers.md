@@ -212,7 +212,7 @@ After running a program through an optimizer, it's useful to also save it. At a 
 optimized_program.save(YOUR_SAVE_PATH)
 ```
 
-The resulting file is in plain-text JSON format. It contains all the parameters and steps in the source program. You can always read it and see what the optimizer generated. You can add `save_field_meta` to additionally save the list of fields with the keys, `name`, `field_type`, `description`, and `prefix` with: `optimized_program.save(YOUR_SAVE_PATH, save_field_meta=True).
+The resulting file is in plain-text JSON format. It contains all the parameters and steps in the source program. You can always read it and see what the optimizer generated.
 
 
 To load a program from a file, you can instantiate an object from that class and then call the load method on it.
