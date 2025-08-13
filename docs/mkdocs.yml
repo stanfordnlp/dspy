@@ -46,6 +46,11 @@ nav:
             - Classification Finetuning: tutorials/classification_finetuning/index.ipynb
             - Advanced Tool Use: tutorials/tool_use/index.ipynb
             - Finetuning Agents: tutorials/games/index.ipynb
+        - Reflective Prompt Evolution with dspy.GEPA:
+            - Overview: tutorials/gepa_ai_program/index.md
+            - GEPA for AIME (Math): tutorials/gepa_aime/index.ipynb
+            - GEPA for Structured Information Extraction for Enterprise Tasks: tutorials/gepa_facilitysupportanalyzer/index.ipynb
+            - GEPA for Privacy-Conscious Delegation: tutorials/gepa_papillon/index.ipynb
         - Experimental RL Optimization for DSPy:
             - Overview: tutorials/rl_ai_program/index.md
             - RL for Privacy-Conscious Delegation: tutorials/rl_papillon/index.ipynb

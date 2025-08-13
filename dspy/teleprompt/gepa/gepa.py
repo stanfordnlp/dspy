@@ -40,7 +40,7 @@ class GEPAFeedbackMetric(Protocol):
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
         and the sub-trace (of the trace) corresponding to the predictor in `pred_trace`.
-        If available at the predictor level, the metric should return {'score': float, 'feedback': str} corresponding 
+        If available at the predictor level, the metric should return dspy.Prediction(score: float, feedback: str) corresponding 
         to the predictor.
         If not available at the predictor level, the metric can also return a text feedback at the program level
         (using just the gold, pred and trace).
@@ -95,6 +95,13 @@ class DspyGEPAResult:
     @property
     def best_candidate(self) -> dict[str, str]:
         return self.candidates[self.best_idx]
+
+    @property
+    def highest_score_achieved_per_val_task(self) -> list[float]:
+        return [
+            self.val_subscores[list(self.per_val_instance_best_candidates[val_idx])[0]][val_idx]
+            for val_idx in range(len(self.val_subscores[0]))
+        ]
 
     def to_dict(self) -> dict[str, Any]:
         cands = [
@@ -330,7 +337,7 @@ class GEPA(Teleprompter):
         periodic_fulls = (N + 1) // (m) + 1
         # If 1 <= N < m, the code triggers one final full eval at the end
         extra_final = 1 if N < m else 0
-        print(periodic_fulls+extra_final)
+
         total += (periodic_fulls + extra_final) * V
         return total
 
@@ -372,7 +379,7 @@ class GEPA(Teleprompter):
         logger.info(f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set.")
 
         valset = valset or trainset
-        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
+        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
 
         rng = random.Random(self.seed)
 
