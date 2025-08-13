@@ -328,7 +328,7 @@ class GEPA(Teleprompter):
         periodic_fulls = (N + 1) // (m) + 1
         # If 1 <= N < m, the code triggers one final full eval at the end
         extra_final = 1 if N < m else 0
-        print(periodic_fulls+extra_final)
+
         total += (periodic_fulls + extra_final) * V
         return total
 
