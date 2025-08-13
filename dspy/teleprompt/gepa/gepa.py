@@ -95,7 +95,7 @@ class DspyGEPAResult:
     @property
     def best_candidate(self) -> dict[str, str]:
         return self.candidates[self.best_idx]
-    
+
     @property
     def highest_score_achieved_per_val_task(self) -> list[float]:
         return [
