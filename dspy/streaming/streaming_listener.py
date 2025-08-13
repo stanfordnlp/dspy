@@ -173,6 +173,24 @@ class StreamListener:
                     is_last_chunk=self.stream_end,
                 )
 
+    def finalize_stream(self):
+        """Called when the stream ends naturally without finding an end identifier.
+        
+        This flushes any remaining buffered tokens and marks the stream as ended.
+        """
+        if self.stream_start and not self.stream_end:
+            self.stream_end = True
+            if self.field_end_queue.qsize() > 0:
+                last_token = self.flush()
+                if last_token:
+                    return StreamResponse(
+                        self.predict_name,
+                        self.signature_field_name,
+                        last_token.rstrip(),
+                        is_last_chunk=True,
+                    )
+        return None
+
     def flush(self) -> str:
         """Flush all tokens in the field end queue.
 
