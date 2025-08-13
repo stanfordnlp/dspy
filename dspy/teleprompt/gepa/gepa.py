@@ -366,7 +366,7 @@ class GEPA(Teleprompter):
         logger.info(f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set.")
 
         valset = valset or trainset
-        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
+        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
 
         rng = random.Random(self.seed)
 
