@@ -351,7 +351,7 @@ class GEPA(Teleprompter):
         - trainset: The training set to use for reflective updates.
         - valset: The validation set to use for tracking Pareto scores. If not provided, GEPA will use the trainset for both.
         """
-        from gepa import optimize
+        from gepa import GEPAResult, optimize
 
         from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
 
@@ -420,7 +420,7 @@ class GEPA(Teleprompter):
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
-        gepa_result: Any = optimize(
+        gepa_result: GEPAResult = optimize(
             seed_candidate=base_program,
             trainset=trainset,
             valset=valset,
