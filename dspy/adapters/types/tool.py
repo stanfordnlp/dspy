@@ -112,8 +112,8 @@ class Tool(Type):
 
         self.name = self.name or name
         self.desc = self.desc or desc
-        self.args = self.args or args
-        self.arg_types = self.arg_types or arg_types
+        self.args = self.args if self.args is not None else args
+        self.arg_types = self.arg_types if self.arg_types is not None else arg_types
         self.has_kwargs = any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values())
 
     def _validate_and_parse_args(self, **kwargs):

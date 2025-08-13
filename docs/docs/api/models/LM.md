@@ -17,7 +17,7 @@
             - kill
             - launch
             - reinforce
-            - update_global_history
+            - update_history
         show_source: true
         show_root_heading: true
         heading_level: 2

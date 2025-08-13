@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, TypedDict
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -13,6 +13,7 @@ from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
+from dspy.primitives.prediction import Prediction
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.exceptions import AdapterParseError
 
@@ -81,7 +82,14 @@ class BootstrapFinetune(FinetuneTeleprompter):
         key_to_data = {}
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
+            if pred.lm is None:
+                raise ValueError(
+                    f"Predictor {pred_ind} does not have an LM assigned. "
+                    f"Please ensure the module's predictors have their LM set before fine-tuning. "
+                    f"You can set it using: your_module.set_lm(your_lm)"
+                )
             training_key = (pred.lm, data_pred_ind)
+
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(
                     trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind
@@ -213,6 +221,12 @@ class FailedPrediction:
     completion_text: str
     format_reward: float | None = None
 
+class TraceData(TypedDict):
+    example_ind: int
+    example: Example
+    prediction: Prediction
+    trace: list[tuple[Any, dict[str, Any], Prediction]]
+    score: float | None
 
 def bootstrap_trace_data(
     program: Module,
@@ -224,7 +238,7 @@ def bootstrap_trace_data(
     failure_score: float = 0,
     format_failure_score: float = -1,
     log_format_failures: bool = False,
-) -> list[dict[str, Any]]:
+) -> list[TraceData]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
     evaluator = Evaluate(

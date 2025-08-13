@@ -8,7 +8,7 @@
 
 **Documentation:** [DSPy Docs](https://dspy.ai/)
 
-![PyPI Downloads](https://img.shields.io/pypi/dm/dspy)
+[![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
 
 
 ----
@@ -46,6 +46,7 @@ If you're looking to understand the framework, please go to the [DSPy Docs at ds
 
 If you're looking to understand the underlying research, this is a set of our papers:
 
+**[Jul'25] [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457)**       
 **[Jun'24] [Optimizing Instructions and Demonstrations for Multi-Stage Language Model Programs](https://arxiv.org/abs/2406.11695)**       
 **[Oct'23] [DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines](https://arxiv.org/abs/2310.03714)**     
 [Jul'24] [Fine-Tuning and Prompt Optimization: Two Great Steps that Work Better Together](https://arxiv.org/abs/2407.10930)     

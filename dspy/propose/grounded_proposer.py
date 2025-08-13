@@ -347,7 +347,7 @@ class GroundedProposer(Proposer):
             if self.verbose:
                 print("No demo candidates provided. Running without task demos.")
             self.use_task_demos = False
-            # When no demo candidates are provided, defailt to N
+            # When no demo candidates are provided, default to N
             num_demos = N
         else:
             num_demos = max(len(demo_candidates[0]), 1)

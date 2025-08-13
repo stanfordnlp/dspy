@@ -38,5 +38,11 @@ def get_account_name(account: Account):
     return account.profile.name
 
 
+@mcp.tool()
+def current_datetime() -> str:
+    """Get the current datetime"""
+    return "2025-07-23T09:10:10.0+00:00"
+
+
 if __name__ == "__main__":
     mcp.run()
