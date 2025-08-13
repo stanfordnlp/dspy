@@ -394,42 +394,33 @@ def test_async_tool_call_in_sync_mode():
 
 
 TOOL_CALL_TEST_CASES = [
-    ([], [{"type": "tool_calls", "tool_calls": []}]),
+    ([], {"tool_calls": []}),
     (
         [{"name": "search", "args": {"query": "hello"}}],
-        [
-            {
-                "type": "tool_calls",
-                "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
-            }
-        ],
+        {
+            "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
+        },
     ),
     (
         [
             {"name": "search", "args": {"query": "hello"}},
             {"name": "translate", "args": {"text": "world", "lang": "fr"}},
         ],
-        [
-            {
-                "type": "tool_calls",
-                "tool_calls": [
-                    {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
-                    {
-                        "type": "function",
-                        "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
-                    },
-                ],
-            }
-        ],
+        {
+            "tool_calls": [
+                {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
+                {
+                    "type": "function",
+                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
+                },
+            ],
+        },
     ),
     (
         [{"name": "get_time", "args": {}}],
-        [
-            {
-                "type": "tool_calls",
-                "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
-            }
-        ],
+        {
+            "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
+        },
     ),
 ]
 
@@ -454,40 +445,89 @@ def test_tool_calls_format_from_dict_list():
     tool_calls = ToolCalls.from_dict_list(tool_calls_dicts)
     result = tool_calls.format()
 
-    assert len(result[0]["tool_calls"]) == 2
-    assert result[0]["tool_calls"][0]["function"]["name"] == "search"
-    assert result[0]["tool_calls"][1]["function"]["name"] == "translate"
+    assert len(result["tool_calls"]) == 2
+    assert result["tool_calls"][0]["function"]["name"] == "search"
+    assert result["tool_calls"][1]["function"]["name"] == "translate"
 
 
-def test_tool_convert_input_schema_to_tool_args__no_input_params():
+def test_toolcalls_vague_match():
+    """
+    Test that ToolCalls can parse the data with slightly off format:
+
+    - a single dict with "name" and "args"
+    - a list of dicts with "name" and "args"
+    - invalid input (should raise ValueError)
+    """
+    # Single dict with "name" and "args" should parse as one ToolCall
+    data_single = {"name": "search", "args": {"query": "hello"}}
+    tc = ToolCalls.model_validate(data_single)
+    assert isinstance(tc, ToolCalls)
+    assert len(tc.tool_calls) == 1
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[0].args == {"query": "hello"}
+
+    # List of dicts with "name" and "args" should parse as multiple ToolCalls
+    data_list = [
+        {"name": "search", "args": {"query": "hello"}},
+        {"name": "translate", "args": {"text": "world", "lang": "fr"}},
+    ]
+    tc = ToolCalls.model_validate(data_list)
+    assert isinstance(tc, ToolCalls)
+    assert len(tc.tool_calls) == 2
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[1].name == "translate"
+
+    # Dict with "tool_calls" key containing a list of dicts
+    data_tool_calls = {
+        "tool_calls": [
+            {"name": "search", "args": {"query": "hello"}},
+            {"name": "get_time", "args": {}},
+        ]
+    }
+    tc = ToolCalls.model_validate(data_tool_calls)
+    assert isinstance(tc, ToolCalls)
+    assert len(tc.tool_calls) == 2
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[1].name == "get_time"
+
+    # Invalid input should raise ValueError
+    with pytest.raises(ValueError):
+        ToolCalls.model_validate({"foo": "bar"})
+    with pytest.raises(ValueError):
+        ToolCalls.model_validate([{"foo": "bar"}])
+
+
+def test_tool_convert_input_schema_to_tool_args_no_input_params():
     args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema={"properties": {}})
     assert args == {}
     assert arg_types == {}
     assert arg_desc == {}
 
 
-def test_tool_convert_input_schema_to_tool_args__lang_chain():
+def test_tool_convert_input_schema_to_tool_args_lang_chain():
     # Example from langchain docs:
     # https://web.archive.org/web/20250723101359/https://api.python.langchain.com/en/latest/tools/langchain_core.tools.tool.html
-    args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema={
-        "title": "fooSchema",
-        "description": "The foo.",
-        "type": "object",
-        "properties": {
-            "bar": {
-                "title": "Bar",
-                "description": "The bar.",
-                "type": "string",
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(
+        schema={
+            "title": "fooSchema",
+            "description": "The foo.",
+            "type": "object",
+            "properties": {
+                "bar": {
+                    "title": "Bar",
+                    "description": "The bar.",
+                    "type": "string",
+                },
+                "baz": {
+                    "title": "Baz",
+                    "type": "integer",
+                },
             },
-            "baz": {
-                "title": "Baz",
-                "type": "integer",
-            }
-        },
-        "required": [
-            "baz",
-        ],
-    })
+            "required": [
+                "baz",
+            ],
+        }
+    )
     assert args == {
         "bar": {"title": "Bar", "description": "The bar.", "type": "string"},
         "baz": {"title": "Baz", "type": "integer"},
