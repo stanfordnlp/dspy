@@ -83,9 +83,9 @@ class LM(BaseLM):
 
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
-            assert (
-                max_tokens >= 20_000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            assert max_tokens >= 20_000 and temperature == 1.0, (
+                "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -303,6 +303,9 @@ def _get_stream_completion_fn(
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
+    import pdb
+
+    pdb.set_trace()
     if stream_completion is None:
         return litellm.completion(
             cache=cache,

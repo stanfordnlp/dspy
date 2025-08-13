@@ -17,16 +17,17 @@ from dspy.signatures.signature import Signature
 COMMENT_SYMBOL = "#"
 
 
-def _render_type_str(annotation: Any, _depth: int = 0, indent: int = 0) -> str:
+def _render_type_str(annotation: Any, depth: int = 0, indent: int = 0) -> str:
     """Recursively renders a type annotation into a simplified string.
 
     Args:
         annotation: The type annotation to render
-        _depth: Current recursion depth (prevents infinite recursion)
+        depth: Current recursion depth (prevents infinite recursion)
         indent: Current indentation level for nested structures
     """
     max_depth = 10
-    if _depth > max_depth:  # Prevent excessive recursion
+    if depth > max_depth:
+        # Prevent excessive recursion
         return f"<max depth of {max_depth} exceeded>"
 
     try:
@@ -39,7 +40,7 @@ def _render_type_str(annotation: Any, _depth: int = 0, indent: int = 0) -> str:
     if origin in (types.UnionType, Union):
         non_none_args = [arg for arg in args if arg is not type(None)]
         # Render the non-None part of the union
-        type_render = " or ".join([_render_type_str(arg, _depth + 1, indent) for arg in non_none_args])
+        type_render = " or ".join([_render_type_str(arg, depth + 1, indent) for arg in non_none_args])
         # Add 'or null' if None was part of the union
         if len(non_none_args) < len(args):
             return f"{type_render} or null"
@@ -68,9 +69,9 @@ def _render_type_str(annotation: Any, _depth: int = 0, indent: int = 0) -> str:
             current_indent = "  " * indent
             return f"[\n{inner_schema}\n{current_indent}]"
         else:
-            return f"{_render_type_str(inner_type, _depth + 1, indent)}[]"
+            return f"{_render_type_str(inner_type, depth + 1, indent)}[]"
     if origin is dict:
-        return f"dict[{_render_type_str(args[0], _depth + 1, indent)}, {_render_type_str(args[1], _depth + 1, indent)}]"
+        return f"dict[{_render_type_str(args[0], depth + 1, indent)}, {_render_type_str(args[1], depth + 1, indent)}]"
 
     # Pydantic models (we'll recurse in the main function)
     if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
@@ -85,21 +86,25 @@ def _render_type_str(annotation: Any, _depth: int = 0, indent: int = 0) -> str:
     return str(annotation)
 
 
-def _build_simplified_schema(model: type[BaseModel], indent: int = 0, _seen: set[type] | None = None) -> str:
+def _build_simplified_schema(
+    pydantic_model: type[BaseModel],
+    indent: int = 0,
+    seen_models: set[type] | None = None,
+) -> str:
     """Builds a simplified, human-readable schema from a Pydantic model.
 
     Args:
-        model: The Pydantic model to build schema for
+        pydantic_model: The Pydantic model to build schema for
         indent: Current indentation level
-        _seen: Set to track visited models (prevents infinite recursion)
+        seen_models: Set to track visited pydantic models (prevents infinite recursion)
     """
-    if _seen is None:
-        _seen = set()
+    if seen_models is None:
+        seen_models = set()
 
-    if model in _seen:
-        return f"<circular reference to {model.__name__}>"
+    if pydantic_model in seen_models:
+        return f"<circular reference to {pydantic_model.__name__}>"
 
-    _seen.add(model)
+    seen_models.add(pydantic_model)
 
     try:
         lines = []
@@ -108,7 +113,7 @@ def _build_simplified_schema(model: type[BaseModel], indent: int = 0, _seen: set
 
         lines.append(f"{current_indent}{{")
 
-        fields = model.model_fields
+        fields = pydantic_model.model_fields
         if not fields:
             lines.append(f"{next_indent}{COMMENT_SYMBOL} No fields defined")
         for name, field in fields.items():
@@ -135,7 +140,7 @@ def _build_simplified_schema(model: type[BaseModel], indent: int = 0, _seen: set
 
             if inspect.isclass(field_type_to_render) and issubclass(field_type_to_render, BaseModel):
                 # Recursively build schema for nested models with circular reference protection
-                nested_schema = _build_simplified_schema(field_type_to_render, indent + 1, _seen)
+                nested_schema = _build_simplified_schema(field_type_to_render, indent + 1, seen_models)
                 rendered_type = _render_type_str(field.annotation, indent=indent + 1).replace(
                     field_type_to_render.__name__, nested_schema
                 )
@@ -149,9 +154,9 @@ def _build_simplified_schema(model: type[BaseModel], indent: int = 0, _seen: set
         lines.append(f"{current_indent}}}")
         return "\n".join(lines)
     except Exception as e:
-        return f"<error building schema for {model.__name__}: {e}>"
+        return f"<error building schema for {pydantic_model.__name__}: {e}>"
     finally:
-        _seen.discard(model)
+        seen_models.discard(pydantic_model)
 
 
 class BAMLAdapter(JSONAdapter):
@@ -176,6 +181,7 @@ class BAMLAdapter(JSONAdapter):
         street: str
         city: str
         country: Literal["US", "CA"]
+
     class PatientDetails(BaseModel):
         name: str = Field(description="Full name of the patient.")
         age: int
