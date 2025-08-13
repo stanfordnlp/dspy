@@ -39,7 +39,7 @@ class GEPAFeedbackMetric(Protocol):
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
         and the sub-trace (of the trace) corresponding to the predictor in `pred_trace`.
-        If available at the predictor level, the metric should return {'score': float, 'feedback': str} corresponding 
+        If available at the predictor level, the metric should return dspy.Prediction(score: float, feedback: str) corresponding 
         to the predictor.
         If not available at the predictor level, the metric can also return a text feedback at the program level
         (using just the gold, pred and trace).
