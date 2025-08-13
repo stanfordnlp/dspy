@@ -664,7 +664,7 @@ wheels = [
 
 [[package]]
 name = "dspy"
-version = "3.0.0b3"
+version = "3.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
@@ -673,6 +673,7 @@ dependencies = [
     { name = "cachetools" },
     { name = "cloudpickle" },
     { name = "diskcache" },
+    { name = "gepa" },
     { name = "joblib" },
     { name = "json-repair" },
     { name = "litellm" },
@@ -739,6 +740,7 @@ requires-dist = [
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
+    { name = "gepa", specifier = "==0.0.2" },
     { name = "joblib", specifier = "~=1.3" },
     { name = "json-repair", specifier = ">=0.30.0" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
@@ -950,6 +952,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c5/cf/2303c8ad276dcf5ee2ad6cf69c4338fd86ef0f471a5207b069adf7a393cf/genson-1.3.0.tar.gz", hash = "sha256:e02db9ac2e3fd29e65b5286f7135762e2cd8a986537c075b06fc5f1517308e37", size = 34919, upload-time = "2024-05-15T22:08:49.123Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f8/5c/e226de133afd8bb267ec27eead9ae3d784b95b39a287ed404caab39a5f50/genson-1.3.0-py3-none-any.whl", hash = "sha256:468feccd00274cc7e4c09e84b08704270ba8d95232aa280f65b986139cec67f7", size = 21470, upload-time = "2024-05-15T22:08:47.056Z" },
+]
+
+[[package]]
+name = "gepa"
+version = "0.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/8b/2aba83c1a85d1260151c7b0ec57c4b34901ae7a74f27eba4e7532c2f80c8/gepa-0.0.2.tar.gz", hash = "sha256:0fa8ca333e4a69eec68087a68cdd651c9e4b8df0c147009f42a5563f1b9702dc", size = 32253, upload-time = "2025-08-12T02:26:49.112Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/9c/a1111dfc06e1f4b3adac51670b76b45b8385ed510f35bca6c002ca25eef8/gepa-0.0.2-py3-none-any.whl", hash = "sha256:9894ceefd53d46a6811cf8737b698c99f626777a773307dafc5f8e0038007e53", size = 34191, upload-time = "2025-08-12T02:26:47.625Z" },
 ]
 
 [[package]]
