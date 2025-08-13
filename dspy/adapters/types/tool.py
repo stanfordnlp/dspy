@@ -2,6 +2,7 @@ import asyncio
 import inspect
 from typing import TYPE_CHECKING, Any, Callable, Type, get_origin, get_type_hints
 
+import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
@@ -255,9 +256,18 @@ class Tool(Type):
 
 
 class ToolCalls(Type):
-    class ToolCall(BaseModel):
+    class ToolCall(Type):
         name: str
         args: dict[str, Any]
+
+        def format(self):
+            return {
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "arguments": self.args,
+                },
+            }
 
     tool_calls: list[ToolCall]
 
@@ -293,21 +303,37 @@ class ToolCalls(Type):
 
     def format(self) -> list[dict[str, Any]]:
         # The tool_call field is compatible with OpenAI's tool calls schema.
-        return [
-            {
-                "type": "tool_calls",
-                "tool_calls": [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": tool_call.name,
-                            "arguments": tool_call.args,
-                        },
+        return {
+            "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
+        }
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, data: Any):
+        if isinstance(data, cls):
+            return data
+
+        # Handle case where data is a list of dicts with "name" and "args" keys
+        if isinstance(data, list) and all(
+            isinstance(item, dict) and "name" in item and "args" in item for item in data
+        ):
+            return {"tool_calls": [cls.ToolCall(**item) for item in data]}
+        # Handle case where data is a dict
+        elif isinstance(data, dict):
+            if "tool_calls" in data:
+                # Handle case where data is a dict with "tool_calls" key
+                tool_calls_data = data["tool_calls"]
+                if isinstance(tool_calls_data, list):
+                    return {
+                        "tool_calls": [
+                            cls.ToolCall(**item) if isinstance(item, dict) else item for item in tool_calls_data
+                        ]
                     }
-                    for tool_call in self.tool_calls
-                ],
-            }
-        ]
+            elif "name" in data and "args" in data:
+                # Handle case where data is a dict with "name" and "args" keys
+                return {"tool_calls": [cls.ToolCall(**data)]}
+
+        raise ValueError(f"Received invalid value for `dspy.ToolCalls`: {data}")
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
