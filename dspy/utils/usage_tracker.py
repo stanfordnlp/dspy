@@ -20,7 +20,7 @@ class UsageTracker:
         # }
         self.usage_data = defaultdict(list)
 
-    def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, Any]:
         result = dict(usage_entry)
 
         if completion_tokens_details := result.get("completion_tokens_details"):
