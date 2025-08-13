@@ -1,15 +1,16 @@
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
-
-from gepa import GEPAResult, optimize
+from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
 
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.teleprompt import Teleprompter
 
-from .gepa_utils import DspyAdapter, DSPyTrace, LoggerAdapter, PredictorFeedbackFn, ScoreWithFeedback
+if TYPE_CHECKING:
+    from gepa import GEPAResult
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +24,10 @@ class GEPAFeedbackMetric(Protocol):
     def __call__(
         gold: Example,
         pred: Prediction,
-        trace: DSPyTrace | None,
+        trace: Optional["DSPyTrace"],
         pred_name: str | None,
-        pred_trace: DSPyTrace | None,
-    ) -> float | ScoreWithFeedback:
+        pred_trace: Optional["DSPyTrace"],
+    ) -> Union[float, "ScoreWithFeedback"]:
         """
         This function is called with the following arguments:
         - gold: The gold example.
@@ -116,7 +117,8 @@ class DspyGEPAResult:
             best_idx=self.best_idx,
         )
 
-    def from_gepa_result(gepa_result: GEPAResult, adapter: DspyAdapter) -> "DspyGEPAResult":
+    @staticmethod
+    def from_gepa_result(gepa_result: "GEPAResult", adapter: "DspyAdapter") -> "DspyGEPAResult":
         return DspyGEPAResult(
             candidates=[adapter.build_program(c) for c in gepa_result.candidates],
             parents=gepa_result.parents,
@@ -349,6 +351,10 @@ class GEPA(Teleprompter):
         - trainset: The training set to use for reflective updates.
         - valset: The validation set to use for tracking Pareto scores. If not provided, GEPA will use the trainset for both.
         """
+        from gepa import GEPAResult, optimize
+
+        from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
+
         assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
@@ -370,14 +376,14 @@ class GEPA(Teleprompter):
 
         rng = random.Random(self.seed)
 
-        def feedback_fn_creator(pred_name: str, predictor) -> PredictorFeedbackFn:
+        def feedback_fn_creator(pred_name: str, predictor) -> "PredictorFeedbackFn":
             def feedback_fn(
                 predictor_output: dict[str, Any],
                 predictor_inputs: dict[str, Any],
                 module_inputs: Example,
                 module_outputs: Prediction,
-                captured_trace: DSPyTrace,
-            ) -> ScoreWithFeedback:
+                captured_trace: "DSPyTrace",
+            ) -> "ScoreWithFeedback":
                 trace_for_pred = [(predictor, predictor_inputs, predictor_output)]
                 o = self.metric_fn(
                     module_inputs,
