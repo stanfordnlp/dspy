@@ -7,8 +7,8 @@ This section introduces GEPA, a reflective prompt optimizer for DSPy. GEPA works
 ### [GEPA for AIME (Math)](../gepa_aime/index.ipynb)
 This tutorial explores how GEPA can optimize a single `dspy.ChainOfThought` based program to achieve 10% gains on AIME 2025 with GPT-4.1 Mini!
 
-### [GEPA for Privacy-Conscious Delegation](../gepa_papillon/index.ipynb)
-This tutorial explores how GEPA can improve rapidly in as few as 1 iteration, while leveraging a simple feedback provided by a LLM-as-a-judge metric. The tutorial also explores how GEPA benefits from the textual feedback showing a breakdown of aggregate metrics into sub-components, allowing the reflection LM to identify what aspects of the task need improvement.
-
 ### [GEPA for Structured Information Extraction for Enterprise Tasks](../gepa_facilitysupportanalyzer/index.ipynb)
 This tutorial explores how GEPA leverages predictor-level feedback to improve GPT-4.1 Nano's performance on a three-part task for structured information extraction and classification in an enterprise setting.
+
+### [GEPA for Privacy-Conscious Delegation](../gepa_papillon/index.ipynb)
+This tutorial explores how GEPA can improve rapidly in as few as 1 iteration, while leveraging a simple feedback provided by a LLM-as-a-judge metric. The tutorial also explores how GEPA benefits from the textual feedback showing a breakdown of aggregate metrics into sub-components, allowing the reflection LM to identify what aspects of the task need improvement.
