@@ -4,7 +4,7 @@ from dspy.teleprompt.bootstrap import BootstrapFewShot
 from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune
 from dspy.teleprompt.copro_optimizer import COPRO
 from dspy.teleprompt.ensemble import Ensemble
-from dspy.teleprompt.gepa.gepa import GEPA
+from dspy.teleprompt.gepa import GEPA
 from dspy.teleprompt.infer_rules import InferRules
 from dspy.teleprompt.knn_fewshot import KNNFewShot
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
