@@ -1,7 +1,8 @@
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import MethodType
-from typing import Any, Callable, TypedDict
+from typing import Any, TypedDict
 
 import dspy
 from dspy.evaluate.evaluate import Evaluate

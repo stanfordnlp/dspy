@@ -3,8 +3,9 @@ import contextvars
 import logging
 import threading
 from asyncio import iscoroutinefunction
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from queue import Queue
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
+from typing import TYPE_CHECKING, Any
 
 import litellm
 import orjson

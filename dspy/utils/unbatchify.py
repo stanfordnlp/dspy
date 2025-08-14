@@ -1,8 +1,9 @@
 import queue
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import Future
-from typing import Any, Callable
+from typing import Any
 
 
 class Unbatchify:
