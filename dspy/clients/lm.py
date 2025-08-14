@@ -306,10 +306,11 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
+        strategy = dspy.settings.get("retry_strategy", "exponential_backoff_retry")
         return litellm.completion(
             cache=cache,
             num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
+            retry_strategy=strategy,
             **request,
         )
 
@@ -330,6 +331,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
+    strategy = dspy.settings.get("retry_strategy", "exponential_backoff_retry")
     return litellm.text_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
@@ -337,7 +339,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
+        retry_strategy=strategy,
         **request,
     )
 
@@ -346,10 +348,11 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
+        strategy = dspy.settings.get("retry_strategy", "exponential_backoff_retry")
         return await litellm.acompletion(
             cache=cache,
             num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
+            retry_strategy=strategy,
             **request,
         )
 
@@ -368,6 +371,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
+    strategy = dspy.settings.get("retry_strategy", "exponential_backoff_retry")
     return await litellm.atext_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
@@ -375,6 +379,6 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
+        retry_strategy=strategy,
         **request,
     )
