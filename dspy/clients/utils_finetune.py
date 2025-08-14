@@ -58,9 +58,9 @@ def get_finetune_directory() -> str:
 
 
 def write_lines(file_path, data):
-    with open(file_path, "w") as f:
+    with open(file_path, "wb") as f:
         for item in data:
-            f.write(orjson.dumps(item).decode() + "\n")
+            f.write(orjson.dumps(item) + b"\n")
 
 
 def save_data(
@@ -75,9 +75,9 @@ def save_data(
     finetune_dir = get_finetune_directory()
     file_path = os.path.join(finetune_dir, file_name)
     file_path = os.path.abspath(file_path)
-    with open(file_path, "w") as f:
+    with open(file_path, "wb") as f:
         for item in data:
-            f.write(orjson.dumps(item).decode() + "\n")
+            f.write(orjson.dumps(item) + b"\n")
     return file_path
 
 
