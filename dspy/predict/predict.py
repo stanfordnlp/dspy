@@ -42,7 +42,10 @@ class Predict(Module, Parameter):
                 # FIXME: Saving BaseModels as strings in examples doesn't matter because you never re-access as an object
                 demo[field] = serialize_object(demo[field])
 
-            state["demos"].append(demo)
+            if isinstance(demo, dict):
+                state["demos"].append(demo)
+            else:
+                state["demos"].append(demo.toDict())
 
         state["signature"] = self.signature.dump_state()
         state["lm"] = self.lm.dump_state() if self.lm else None

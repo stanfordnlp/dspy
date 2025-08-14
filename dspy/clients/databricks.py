@@ -4,8 +4,8 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
-import requests
 import orjson
+import requests
 
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory

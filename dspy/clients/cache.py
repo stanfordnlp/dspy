@@ -7,8 +7,8 @@ from hashlib import sha256
 from typing import Any
 
 import cloudpickle
-import pydantic
 import orjson
+import pydantic
 from cachetools import LRUCache
 from diskcache import FanoutCache
 
