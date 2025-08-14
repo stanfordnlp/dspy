@@ -452,3 +452,27 @@ def get_active_callbacks(instance: Any) -> list[BaseCallback]:
     Combines globally configured callbacks with instance-level callbacks.
     """
     return dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
+
+
+def notify_retry_start(instance: Any, *, attempt: int, reason: str | None = None, parent_call_id: str | None = None):
+    callbacks = get_active_callbacks(instance)
+    if not callbacks:
+        return
+    call_id = get_active_call_id()
+    for cb in callbacks:
+        try:
+            cb.on_retry_start(call_id=call_id, instance=instance, attempt=attempt, reason=reason, parent_call_id=parent_call_id)
+        except Exception:
+            pass
+
+
+def notify_retry_end(instance: Any, *, outputs: Any | None, exception: Exception | None = None):
+    callbacks = get_active_callbacks(instance)
+    if not callbacks:
+        return
+    call_id = get_active_call_id()
+    for cb in callbacks:
+        try:
+            cb.on_retry_end(call_id=call_id, outputs=outputs, exception=exception)
+        except Exception:
+            pass

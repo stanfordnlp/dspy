@@ -8,7 +8,7 @@ import dspy
 from dspy.adapters.utils import get_field_description_string
 from dspy.predict.predict import Prediction
 from dspy.signatures import InputField, OutputField, Signature
-from dspy.utils.callback import get_active_callbacks, get_active_call_id
+from dspy.utils.callback import notify_retry_end, notify_retry_start
 
 from .predict import Module
 
@@ -116,15 +116,8 @@ class Refine(Module):
             try:
                 # Fire retry start for attempts beyond the first
                 if idx > 0:
-                    callbacks = get_active_callbacks(self)
-                    if callbacks:
-                        call_id = get_active_call_id()
-                        for cb in callbacks:
-                            try:
-                                reason = "feedback_refine" if advice else (prev_reason or "below_threshold")
-                                cb.on_retry_start(call_id=call_id, instance=self, attempt=idx + 1, reason=reason, parent_call_id=None)
-                            except Exception:
-                                pass
+                    reason = "feedback_refine" if advice else (prev_reason or "below_threshold")
+                    notify_retry_start(self, attempt=idx + 1, reason=reason, parent_call_id=None)
                 with dspy.context(trace=[]):
                     if not advice:
                         outputs = mod(**kwargs)
@@ -154,26 +147,12 @@ class Refine(Module):
                 if self.threshold is not None and reward >= self.threshold:
                     # End retry event for this successful attempt (if it was a retry)
                     if idx > 0:
-                        callbacks = get_active_callbacks(self)
-                        if callbacks:
-                            call_id = get_active_call_id()
-                            for cb in callbacks:
-                                try:
-                                    cb.on_retry_end(call_id=call_id, outputs=outputs, exception=None)
-                                except Exception:
-                                    pass
+                        notify_retry_end(self, outputs=outputs, exception=None)
                     break
                 else:
                     # Attempt completed without meeting threshold
                     if idx > 0:
-                        callbacks = get_active_callbacks(self)
-                        if callbacks:
-                            call_id = get_active_call_id()
-                            for cb in callbacks:
-                                try:
-                                    cb.on_retry_end(call_id=call_id, outputs=outputs, exception=None)
-                                except Exception:
-                                    pass
+                        notify_retry_end(self, outputs=outputs, exception=None)
                     prev_reason = "below_threshold"
 
                 if idx == self.N - 1:
@@ -209,14 +188,7 @@ class Refine(Module):
                 self.fail_count -= 1
                 # End retry event with exception (if it was a retry)
                 if idx > 0:
-                    callbacks = get_active_callbacks(self)
-                    if callbacks:
-                        call_id = get_active_call_id()
-                        for cb in callbacks:
-                            try:
-                                cb.on_retry_end(call_id=call_id, outputs=None, exception=e)
-                            except Exception:
-                                pass
+                    notify_retry_end(self, outputs=None, exception=e)
                 prev_reason = "exception"
         if best_trace:
             dspy.settings.trace.extend(best_trace)

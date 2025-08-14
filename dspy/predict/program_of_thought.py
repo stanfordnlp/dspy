@@ -6,7 +6,7 @@ import dspy
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
-from dspy.utils.callback import get_active_callbacks, get_active_call_id
+from dspy.utils.callback import notify_retry_end, notify_retry_start
 
 logger = logging.getLogger(__name__)
 
@@ -187,28 +187,14 @@ class ProgramOfThought(Module):
                 self.interpreter.shutdown()
                 raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
             # Fire retry start before regeneration attempt
-            callbacks = get_active_callbacks(self)
-            if callbacks:
-                call_id = get_active_call_id()
-                for cb in callbacks:
-                    try:
-                        cb.on_retry_start(call_id=call_id, instance=self, attempt=hop + 1, reason="code_error", parent_call_id=None)
-                    except Exception:
-                        pass
+            notify_retry_start(self, attempt=hop + 1, reason="code_error", parent_call_id=None)
             input_kwargs.update({"previous_code": code, "error": error})
             code_data = self.code_regenerate(**input_kwargs)
             code, error = self._parse_code(code_data)
             if not error:
                 output, error = self._execute_code(code)
             # End retry for this attempt
-            callbacks = get_active_callbacks(self)
-            if callbacks:
-                call_id = get_active_call_id()
-                for cb in callbacks:
-                    try:
-                        cb.on_retry_end(call_id=call_id, outputs=output if error is None else None, exception=None if error is None else Exception(str(error)))
-                    except Exception:
-                        pass
+            notify_retry_end(self, outputs=output if error is None else None, exception=None if error is None else Exception(str(error)))
             hop += 1
         input_kwargs.update({"final_generated_code": code, "code_output": output})
         answer_gen_result = self.generate_answer(**input_kwargs)

@@ -2,7 +2,7 @@ from typing import Callable
 
 import dspy
 from dspy.predict.predict import Module, Prediction
-from dspy.utils.callback import get_active_callbacks, get_active_call_id
+from dspy.utils.callback import notify_retry_end, notify_retry_start
 
 
 class BestOfN(Module):
@@ -67,15 +67,8 @@ class BestOfN(Module):
             try:
                 # Fire retry start for attempts beyond the first
                 if idx > 0:
-                    callbacks = get_active_callbacks(self)
-                    if callbacks:
-                        call_id = get_active_call_id()
-                        reason = prev_reason or "below_threshold"
-                        for cb in callbacks:
-                            try:
-                                cb.on_retry_start(call_id=call_id, instance=self, attempt=idx + 1, reason=reason, parent_call_id=None)
-                            except Exception:
-                                pass
+                    reason = prev_reason or "below_threshold"
+                    notify_retry_start(self, attempt=idx + 1, reason=reason, parent_call_id=None)
                 with dspy.context(trace=[]):
                     pred = mod(**kwargs)
                     trace = dspy.settings.trace.copy()
@@ -89,26 +82,12 @@ class BestOfN(Module):
                 if reward >= self.threshold:
                     # End retry event for this successful attempt (if it was a retry)
                     if idx > 0:
-                        callbacks = get_active_callbacks(self)
-                        if callbacks:
-                            call_id = get_active_call_id()
-                            for cb in callbacks:
-                                try:
-                                    cb.on_retry_end(call_id=call_id, outputs=pred, exception=None)
-                                except Exception:
-                                    pass
+                        notify_retry_end(self, outputs=pred, exception=None)
                     break
                 else:
                     # Attempt finished without meeting threshold, emit retry_end for this attempt if it was a retry
                     if idx > 0:
-                        callbacks = get_active_callbacks(self)
-                        if callbacks:
-                            call_id = get_active_call_id()
-                            for cb in callbacks:
-                                try:
-                                    cb.on_retry_end(call_id=call_id, outputs=pred, exception=None)
-                                except Exception:
-                                    pass
+                        notify_retry_end(self, outputs=pred, exception=None)
                     prev_reason = "below_threshold"
 
             except Exception as e:
@@ -118,14 +97,7 @@ class BestOfN(Module):
                 self.fail_count -= 1
                 # End retry event with exception (if it was a retry)
                 if idx > 0:
-                    callbacks = get_active_callbacks(self)
-                    if callbacks:
-                        call_id = get_active_call_id()
-                        for cb in callbacks:
-                            try:
-                                cb.on_retry_end(call_id=call_id, outputs=None, exception=e)
-                            except Exception:
-                                pass
+                    notify_retry_end(self, outputs=None, exception=e)
                 prev_reason = "exception"
 
         if best_trace:
