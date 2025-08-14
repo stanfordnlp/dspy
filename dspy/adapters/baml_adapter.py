@@ -9,7 +9,7 @@ from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
 
-from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.utils import format_field_value as original_format_field_value
 from dspy.signatures.signature import Signature
 
@@ -40,10 +40,7 @@ def _render_type_str(
     if annotation is bool:
         return "boolean"
     if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
-        try:
-            return _build_simplified_schema(annotation, indent, seen_models)
-        except Exception:
-            return f"<{annotation.__name__}>"
+        return _build_simplified_schema(annotation, indent, seen_models)
 
     try:
         origin = get_origin(annotation)
@@ -108,37 +105,32 @@ def _build_simplified_schema(
     # Add `pydantic_model` to `seen_models` with a placeholder value to avoid infinite recursion.
     seen_models.add(pydantic_model)
 
-    try:
-        lines = []
-        current_indent = "  " * indent
-        next_indent = "  " * (indent + 1)
+    lines = []
+    current_indent = "  " * indent
+    next_indent = "  " * (indent + 1)
 
-        lines.append(f"{current_indent}{{")
+    lines.append(f"{current_indent}{{")
 
-        fields = pydantic_model.model_fields
-        if not fields:
-            lines.append(f"{next_indent}{COMMENT_SYMBOL} No fields defined")
-        for name, field in fields.items():
-            if field.description:
-                lines.append(f"{next_indent}{COMMENT_SYMBOL} {field.description}")
-            elif field.alias and field.alias != name:
-                # If there's an alias but no description, show the alias as a comment
-                lines.append(f"{next_indent}{COMMENT_SYMBOL} alias: {field.alias}")
+    fields = pydantic_model.model_fields
+    if not fields:
+        lines.append(f"{next_indent}{COMMENT_SYMBOL} No fields defined")
+    for name, field in fields.items():
+        if field.description:
+            lines.append(f"{next_indent}{COMMENT_SYMBOL} {field.description}")
+        elif field.alias and field.alias != name:
+            # If there's an alias but no description, show the alias as a comment
+            lines.append(f"{next_indent}{COMMENT_SYMBOL} alias: {field.alias}")
 
-            rendered_type = _render_type_str(field.annotation, indent=indent + 1, seen_models=seen_models)
-            line = f"{next_indent}{name}: {rendered_type},"
+        rendered_type = _render_type_str(field.annotation, indent=indent + 1, seen_models=seen_models)
+        line = f"{next_indent}{name}: {rendered_type},"
 
-            lines.append(line)
+        lines.append(line)
 
-        lines.append(f"{current_indent}}}")
-        return "\n".join(lines)
-    except Exception as e:
-        return f"<error building schema for {pydantic_model.__name__}: {e}>"
-    finally:
-        seen_models.discard(pydantic_model)
+    lines.append(f"{current_indent}}}")
+    return "\n".join(lines)
 
 
-class BAMLAdapter(ChatAdapter):
+class BAMLAdapter(JSONAdapter):
     """
     A DSPy adapter that improves the rendering of complex/nested Pydantic models to help LMs.
 
