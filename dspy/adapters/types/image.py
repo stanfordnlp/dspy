@@ -21,12 +21,12 @@ except ImportError:
 class Image(Type):
     url: str
 
-    model_config = {
-        "frozen": True,
-        "str_strip_whitespace": True,
-        "validate_assignment": True,
-        "extra": "forbid",
-    }
+    model_config = pydantic.ConfigDict(
+        frozen=True,
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra="forbid",
+    )
 
     def format(self) -> list[dict[str, Any]] | str:
         try:
