@@ -37,7 +37,6 @@ class ChatAdapter(Adapter):
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            raise e
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
