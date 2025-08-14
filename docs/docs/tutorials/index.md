@@ -35,10 +35,10 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
 
 
 - Reflective Prompt Evolution with dspy.GEPA:
-    - [Overview](tutorials/gepa_ai_program/index.md)
-    - [GEPA for AIME](tutorials/gepa_aime/index.ipynb)
-    - [GEPA for PAPILLON](tutorials/gepa_papillon/index.ipynb)
-    - [GEPA for Enterprise classification task](tutorials/gepa_facilitysupportanalyzer/index.ipynb)
+    - [Overview](gepa_ai_program/)
+    - [GEPA for AIME](gepa_aime/)
+    - [GEPA for PAPILLON](gepa_papillon/)
+    - [GEPA for Enterprise classification task](gepa_facilitysupportanalyzer/)
 
 
 - Tools, Development, and Deployment
