@@ -1,7 +1,7 @@
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
-from typing import Callable
 
 from pydantic import BaseModel
 from tqdm import tqdm

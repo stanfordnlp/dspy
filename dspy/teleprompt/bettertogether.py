@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Callable
+from collections.abc import Callable
 
 import dspy
 from dspy.primitives.example import Example

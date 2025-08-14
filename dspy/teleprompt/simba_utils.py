@@ -1,7 +1,7 @@
 import inspect
 import logging
 import textwrap
-from typing import Callable
+from collections.abc import Callable
 
 import orjson
 

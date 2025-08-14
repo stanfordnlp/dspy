@@ -60,7 +60,7 @@ def format_nav_section(nav_dict, indent_level=2):
 
 def read_mkdocs_sections(filename: str = "mkdocs.yml"):
     """Read and parse the mkdocs.yml file into sections."""
-    with open(filename, "r") as f:
+    with open(filename) as f:
         lines = f.readlines()
 
     nav_start = -1

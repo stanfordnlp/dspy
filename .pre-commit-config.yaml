@@ -26,3 +26,10 @@ repos:
         args: ["--maxkb=1024"]
       - id: check-merge-conflict
       - id: debug-statements
+
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
+    hooks:
+      - id: pyupgrade
+        name: Enforce Python 3.10+ idioms
+        args: ["--py310-plus"]
