@@ -19,10 +19,8 @@ def test_program_of_thought_retry_hooks(monkeypatch):
 
     # Use a tiny signature; interpreter may raise, so we focus on hook wiring
     pot = dspy.ProgramOfThought("question -> answer", max_iters=2)
-    try:
-        pot(question="what is 1+1?")
-    except Exception:
-        pass
+    
+    pot(question="what is 1+1?")
 
     starts = [e for e in cb.events if e[0] == "start"]
     assert len(starts) >= 1
