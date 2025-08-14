@@ -232,6 +232,25 @@ class AgentLoggingCallback(BaseCallback):
 dspy.configure(callbacks=[AgentLoggingCallback()])
 ```
 
+## Example: Custom minimal logging callback
+
+```python
+import dspy
+from dspy.utils.callback import BaseCallback
+
+class MinimalLogger(BaseCallback):
+    def on_retry_start(self, call_id, instance, attempt, reason=None, parent_call_id=None):
+        print({"event": "retry.start", "attempt": attempt, "reason": reason})
+
+    def on_lm_raw_response(self, call_id, instance, response):
+        print({"event": "lm.raw_response", "model": instance.model})
+
+    def on_adapter_parse_start(self, call_id, instance, inputs):
+        print({"event": "adapter.parse.start", "len": len(inputs.get("completion", ""))})
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[MinimalLogger()])
+```
+
 
 ```
 == Reasoning Step ===

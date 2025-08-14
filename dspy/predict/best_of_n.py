@@ -58,6 +58,7 @@ class BestOfN(Module):
         temps = list(dict.fromkeys(temps))[: self.N]
         best_pred, best_trace, best_reward = None, None, -float("inf")
 
+        prev_reason = None
         for idx, t in enumerate(temps):
             lm_ = lm.copy(temperature=t)
             mod = self.module.deepcopy()
@@ -69,9 +70,10 @@ class BestOfN(Module):
                     callbacks = get_active_callbacks(self)
                     if callbacks:
                         call_id = get_active_call_id()
+                        reason = prev_reason or "below_threshold"
                         for cb in callbacks:
                             try:
-                                cb.on_retry_start(call_id=call_id, instance=self, attempt=idx + 1, reason="below_threshold", parent_call_id=None)
+                                cb.on_retry_start(call_id=call_id, instance=self, attempt=idx + 1, reason=reason, parent_call_id=None)
                             except Exception:
                                 pass
                 with dspy.context(trace=[]):
@@ -96,6 +98,18 @@ class BestOfN(Module):
                                 except Exception:
                                     pass
                     break
+                else:
+                    # Attempt finished without meeting threshold, emit retry_end for this attempt if it was a retry
+                    if idx > 0:
+                        callbacks = get_active_callbacks(self)
+                        if callbacks:
+                            call_id = get_active_call_id()
+                            for cb in callbacks:
+                                try:
+                                    cb.on_retry_end(call_id=call_id, outputs=pred, exception=None)
+                                except Exception:
+                                    pass
+                    prev_reason = "below_threshold"
 
             except Exception as e:
                 print(f"BestOfN: Attempt {idx + 1} failed with temperature {t}: {e}")
@@ -112,6 +126,7 @@ class BestOfN(Module):
                                 cb.on_retry_end(call_id=call_id, outputs=None, exception=e)
                             except Exception:
                                 pass
+                prev_reason = "exception"
 
         if best_trace:
             dspy.settings.trace.extend(best_trace)

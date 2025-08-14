@@ -103,6 +103,7 @@ class Refine(Module):
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
+        prev_reason = None
         for idx, t in enumerate(temps):
             lm_ = lm.copy(temperature=t)
             mod = self.module.deepcopy()
@@ -120,7 +121,8 @@ class Refine(Module):
                         call_id = get_active_call_id()
                         for cb in callbacks:
                             try:
-                                cb.on_retry_start(call_id=call_id, instance=self, attempt=idx + 1, reason="feedback_refine" if advice else "below_threshold", parent_call_id=None)
+                                reason = "feedback_refine" if advice else (prev_reason or "below_threshold")
+                                cb.on_retry_start(call_id=call_id, instance=self, attempt=idx + 1, reason=reason, parent_call_id=None)
                             except Exception:
                                 pass
                 with dspy.context(trace=[]):
@@ -161,6 +163,18 @@ class Refine(Module):
                                 except Exception:
                                     pass
                     break
+                else:
+                    # Attempt completed without meeting threshold
+                    if idx > 0:
+                        callbacks = get_active_callbacks(self)
+                        if callbacks:
+                            call_id = get_active_call_id()
+                            for cb in callbacks:
+                                try:
+                                    cb.on_retry_end(call_id=call_id, outputs=outputs, exception=None)
+                                except Exception:
+                                    pass
+                    prev_reason = "below_threshold"
 
                 if idx == self.N - 1:
                     break
@@ -203,6 +217,7 @@ class Refine(Module):
                                 cb.on_retry_end(call_id=call_id, outputs=None, exception=e)
                             except Exception:
                                 pass
+                prev_reason = "exception"
         if best_trace:
             dspy.settings.trace.extend(best_trace)
         return best_pred
