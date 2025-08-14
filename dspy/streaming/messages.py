@@ -14,6 +14,7 @@ class StreamResponse:
     predict_name: str
     signature_field_name: str
     chunk: str
+    is_last_chunk: bool
 
 
 @dataclass

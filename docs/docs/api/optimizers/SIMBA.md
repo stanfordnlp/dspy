@@ -26,3 +26,6 @@ optimized_program = optimizer.compile(your_program, trainset=your_trainset)
 # Save optimize program for future use
 optimized_program.save(f"optimized.json")
 ```
+
+## How `SIMBA` works
+SIMBA (Stochastic Introspective Mini-Batch Ascent) is a DSPy optimizer that uses the LLM to analyze its own performance and generate improvement rules. It samples mini-batches, identifies challenging examples with high output variability, then either creates self-reflective rules or adds successful examples as demonstrations. See [this great blog post](https://blog.mariusvach.com/posts/dspy-simba) from [Marius](https://x.com/rasmus1610) for more details.

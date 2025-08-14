@@ -104,7 +104,7 @@ class StreamListener:
         if chunk_message and start_identifier in chunk_message:
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
             # directly end the stream listening. In some models like gemini, each stream chunk can be multiple
-            # tokens, so it's posible that response only has one chunk, we also fall back to this logic.
+            # tokens, so it's possible that response only has one chunk, we also fall back to this logic.
             message_after_start_identifier = chunk_message[
                 chunk_message.find(start_identifier) + len(start_identifier) :
             ]
@@ -166,7 +166,12 @@ class StreamListener:
                 token = token.rstrip()  # Remove the trailing \n\n
 
             if token:
-                return StreamResponse(self.predict_name, self.signature_field_name, token)
+                return StreamResponse(
+                    self.predict_name,
+                    self.signature_field_name,
+                    token,
+                    is_last_chunk=self.stream_end,
+                )
 
     def flush(self) -> str:
         """Flush all tokens in the field end queue.

@@ -1,5 +1,5 @@
 default_language_version:
-  python: python3.9
+  python: python3.10
 
 default_stages: [pre-commit]
 default_install_hook_types: [pre-commit]

@@ -124,8 +124,7 @@ class DummyLM(LM):
             entry = {"prompt": prompt, "messages": messages, "kwargs": kwargs}
             entry = {**entry, "outputs": outputs, "usage": 0}
             entry = {**entry, "cost": 0}
-            self.history.append(entry)
-            self.update_global_history(entry)
+            self.update_history(entry)
 
         return outputs
 
