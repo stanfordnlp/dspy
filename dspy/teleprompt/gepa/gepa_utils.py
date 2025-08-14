@@ -111,7 +111,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 metric=self.metric_fn,
                 num_threads=self.num_threads,
                 return_all_scores=True,
-                return_outputs=True,
                 failure_score=self.failure_score,
                 provide_traceback=True,
                 max_errors=len(batch) * 100
