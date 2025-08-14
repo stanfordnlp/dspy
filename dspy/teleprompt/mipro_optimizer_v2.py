@@ -109,7 +109,7 @@ class MIPROv2(Teleprompter):
         view_data_batch_size: int = 10,
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
-        requires_permission_to_run: bool = True, # deprecated
+        requires_permission_to_run: bool = False, # deprecated
         provide_traceback: bool | None = None,
     ) -> Any:
         if requires_permission_to_run:
