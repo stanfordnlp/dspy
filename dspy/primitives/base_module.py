@@ -153,8 +153,8 @@ class BaseModule:
 
         return new_instance
 
-    def dump_state(self):
-        return {name: param.dump_state() for name, param in self.named_parameters()}
+    def dump_state(self, json_mode=True):
+        return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
     def load_state(self, state):
         for name, param in self.named_parameters():
@@ -220,9 +220,9 @@ class BaseModule:
 
             return
 
-        state = self.dump_state()
-        state["metadata"] = metadata
         if path.suffix == ".json":
+            state = self.dump_state()
+            state["metadata"] = metadata
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(orjson.dumps(state, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE).decode("utf-8"))
@@ -233,6 +233,8 @@ class BaseModule:
                     "with `.pkl`, or saving the whole program by setting `save_program=True`."
                 )
         elif path.suffix == ".pkl":
+            state = self.dump_state(json_mode=False)
+            state["metadata"] = metadata
             with open(path, "wb") as f:
                 cloudpickle.dump(state, f)
         else:
