@@ -219,13 +219,13 @@ def test_reasoning_model_token_parameter():
 
 def test_reasoning_model_requirements():
     # Should raise assertion error if temperature or max_tokens requirements not met
-    with pytest.raises(AssertionError) as exc_info:
+    with pytest.raises(ValueError) as error:
         dspy.LM(
             model="openai/o1",
             temperature=0.7,  # Should be 1.0
             max_tokens=1000,  # Should be >= 20_000
         )
-    assert "reasoning models require passing temperature=1.0 and max_tokens >= 20_000" in str(exc_info.value)
+    assert "reasoning models require passing temperature=1.0 and max_tokens >= 20000" in str(error.value)
 
     # Should pass with correct parameters
     lm = dspy.LM(
