@@ -303,9 +303,6 @@ def _get_stream_completion_fn(
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
-    import pdb
-
-    pdb.set_trace()
     if stream_completion is None:
         return litellm.completion(
             cache=cache,

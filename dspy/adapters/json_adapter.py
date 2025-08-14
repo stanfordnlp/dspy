@@ -66,9 +66,6 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        import pdb
-
-        pdb.set_trace()
         result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().__call__)
         if result:
             return result
