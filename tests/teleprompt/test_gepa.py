@@ -1,7 +1,8 @@
 import json
+
 import dspy
-from dspy import Example
 import dspy.clients
+from dspy import Example
 from dspy.predict import Predict
 
 
@@ -18,12 +19,12 @@ class DictDummyLM(dspy.clients.lm.LM):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.history = {}
         for m in history:
-            self.history[hash(repr(m['messages']))] = m
-    
+            self.history[hash(repr(m["messages"]))] = m
+
     def __call__(self, prompt=None, messages=None, **kwargs):
         assert hash(repr(messages)) in self.history, f"Message {messages} not found in history"
         m = self.history[hash(repr(messages))]
-        return m['outputs']
+        return m["outputs"]
 
 def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
     return dspy.Prediction(score=example.output == prediction.output, feedback="Wrong answer.")
@@ -33,10 +34,10 @@ def test_basic_workflow():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
 
-    with open("tests/teleprompt/gepa_dummy_lm.json", "r") as f:
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
         data = json.load(f)
-    lm_history = data['lm']
-    reflection_lm_history = data['reflection_lm']
+    lm_history = data["lm"]
+    reflection_lm_history = data["reflection_lm"]
 
     lm_main = DictDummyLM(lm_history)
     dspy.settings.configure(lm=lm_main)
