@@ -43,6 +43,10 @@ class PlanAndExecute(Module):
             tools=[get_weather, book_restaurant]
         )
         pred = plan_execute(request="Plan a dinner date in Tokyo considering the weather")
+        
+        # The agent can also handle steps that don't require tools:
+        pred = plan_execute(request="Analyze the pros and cons of different programming languages")
+        # In this case, some steps might use 'no_tool' for pure reasoning tasks
         ```
         """
         super().__init__()
@@ -53,6 +57,14 @@ class PlanAndExecute(Module):
         # Convert tools to Tool objects and create a dictionary for lookup
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         self.tools = {tool.name: tool for tool in tools}
+        
+        # Add a special "no_tool" option for steps that don't require tool execution
+        self.tools["no_tool"] = Tool(
+            func=lambda reasoning="": f"Step completed without tool execution: {reasoning}",
+            name="no_tool", 
+            desc="Use this when the step can be completed through reasoning alone without calling any external tools",
+            args={"reasoning": "str"}
+        )
 
         # Get input/output field names for instruction formatting
         inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
@@ -122,6 +134,9 @@ class PlanAndExecute(Module):
             "Execute the current step by selecting the appropriate tool and providing the correct arguments.",
             f"Available tools:\n{tools_list}\n",
             "Analyze the current step, consider the execution history, and choose the right tool with proper arguments.",
+            "IMPORTANT: If the current step can be completed through reasoning alone without external tools,",
+            "use 'no_tool' and provide your reasoning in the 'reasoning' argument.",
+            "Only use actual tools when external data or actions are genuinely needed.",
             "Provide clear reasoning for your tool selection and argument choices.",
             "The tool_args must be in valid JSON format that matches the tool's expected parameters."
         ])
@@ -226,7 +241,12 @@ class PlanAndExecute(Module):
                         raise ValueError(f"Invalid tool selected: {exec_result.tool_name}")
                     
                     # Execute the tool
-                    tool_result = self.tools[exec_result.tool_name](**exec_result.tool_args)
+                    if exec_result.tool_name == "no_tool":
+                        # For no_tool, pass the reasoning from the execution result
+                        tool_args = {"reasoning": exec_result.reasoning}
+                        tool_result = self.tools[exec_result.tool_name](**tool_args)
+                    else:
+                        tool_result = self.tools[exec_result.tool_name](**exec_result.tool_args)
                     
                     # Record successful execution
                     execution_history.append({
@@ -335,7 +355,11 @@ class PlanAndExecute(Module):
                         raise ValueError(f"Invalid tool selected: {exec_result.tool_name}")
                     
                     # Execute the tool (async if available)
-                    if hasattr(self.tools[exec_result.tool_name], 'acall'):
+                    if exec_result.tool_name == "no_tool":
+                        # For no_tool, pass the reasoning from the execution result
+                        tool_args = {"reasoning": exec_result.reasoning}
+                        tool_result = self.tools[exec_result.tool_name](**tool_args)
+                    elif hasattr(self.tools[exec_result.tool_name], 'acall'):
                         tool_result = await self.tools[exec_result.tool_name].acall(**exec_result.tool_args)
                     else:
                         tool_result = self.tools[exec_result.tool_name](**exec_result.tool_args)
@@ -477,6 +501,8 @@ TOOL INTEGRATION:
 - Supports both sync and async tool execution
 - Tools are validated at execution time with clear error messages
 - No special "finish" tool needed (unlike ReAct) as execution follows the predetermined plan
+- Built-in "no_tool" option for steps that can be completed through reasoning alone
+- Automatically handles mixed workflows combining tool usage and pure reasoning steps
 
 CONTEXT MANAGEMENT:
 - Implements truncation strategies for execution history when context limits are reached
