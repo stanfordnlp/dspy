@@ -50,26 +50,7 @@ class PlanAndExecute(Module):
         
         # Access the structured plan and execution results:
         print("Original plan:", pred.plan)  # JSON string
-        print("Parsed plan:", pred.parsed_plan)  # List of step objects with id and description
         print("Execution history:", pred.execution_history)  # List with step_id references
-        
-        # Streaming support - you can stream plan, step, and execution_history:
-        import dspy.streaming as streaming
-        
-        stream_listeners = [
-            streaming.StreamListener("plan"),  # Stream the plan generation
-            streaming.StreamListener("step"),  # Stream each step execution
-            streaming.StreamListener("execution_history")  # Stream execution history updates
-        ]
-        
-        streaming_plan_execute = dspy.streamify(plan_execute, stream_listeners=stream_listeners)
-        
-        # Use the streaming version:
-        # async for update in streaming_plan_execute(request="Your request"):
-        #     if isinstance(update, streaming.StreamResponse):
-        #         print(f"Field: {update.signature_field_name}, Content: {update.chunk}")
-        #     elif isinstance(update, dspy.Prediction):
-        #         print("Final result:", update)
         ```
         """
         super().__init__()
@@ -80,16 +61,10 @@ class PlanAndExecute(Module):
         # Convert tools to Tool objects and create a dictionary for lookup
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         self.tools = {tool.name: tool for tool in tools}
-        
-        # Add a special "no_tool" option for steps that don't require tool execution
-        def no_tool_func(reasoning: str = "") -> str:
-            """Complete a step through reasoning alone without external tools."""
-            return f"Step completed without tool execution: {reasoning}"
-        
-        self.tools["no_tool"] = Tool(
-            func=no_tool_func,
-            name="no_tool", 
-            desc="Use this when the step can be completed through reasoning alone without calling any external tools"
+        self.tools["reasoning"] = Tool(
+            func=lambda: "Completed.",
+            name="reasoning", 
+            desc="Use this when the step can be completed through reasoning alone without calling any external tools."
         )
 
         # Get input/output field names for instruction formatting
@@ -119,11 +94,10 @@ class PlanAndExecute(Module):
                  "execution_history": dspy.InputField(desc="History of executed steps and their results")},
                 exec_instr
             )
+            .append("step_id", dspy.OutputField(desc="ID of the current step to execute"), type_=str)
+            .append("step_reasoning", dspy.OutputField(desc="Reasoning for this execution step"), type_=str)
             .append("tool_name", dspy.OutputField(desc="Name of the tool to use"), type_=str)
             .append("tool_args", dspy.OutputField(desc="Arguments for the tool in JSON format"), type_=dict[str, Any])
-            .append("reasoning", dspy.OutputField(desc="Reasoning for this execution step"), type_=str)
-            .append("step", dspy.OutputField(desc="Current step information for streaming"), type_=str)
-            .append("execution_history", dspy.OutputField(desc="Updated execution history for streaming"), type_=str)
         )
 
         self.extraction_signature = dspy.Signature(
@@ -137,9 +111,6 @@ class PlanAndExecute(Module):
         self.planner = dspy.ChainOfThought(self.planning_signature)
         self.executor = dspy.ChainOfThought(self.execution_signature)
         self.extractor = dspy.ChainOfThought(self.extraction_signature)
-        
-        # Create streaming-enabled executor
-        self.streaming_executor = self._create_streaming_executor()
 
     def _build_planning_instructions(self, inputs: str, outputs: str) -> str:
         """Build instructions for the planning phase."""
@@ -177,7 +148,7 @@ class PlanAndExecute(Module):
             f"Available tools:\n{tools_list}\n",
             "Analyze the current step description, consider the execution history, and choose the right tool with proper arguments.",
             "IMPORTANT: If the current step can be completed through reasoning alone without external tools,",
-            "use 'no_tool' and provide your reasoning in the 'reasoning' argument.",
+            "use 'reasoning' and provide your reasoning in the 'step_reasoning' argument.",
             "Only use actual tools when external data or actions are genuinely needed.",
             "Provide clear reasoning for your tool selection and argument choices.",
             "The tool_args must be in valid JSON format that matches the tool's expected parameters."
@@ -206,7 +177,7 @@ class PlanAndExecute(Module):
             step_id = step.get('step_id', 'N/A')
             formatted.append(f"Step {step_id}:")
             formatted.append(f"  Description: {step.get('step_description', 'N/A')}")
-            formatted.append(f"  Reasoning: {step.get('reasoning', 'N/A')}")
+            formatted.append(f"  Reasoning: {step.get('step_reasoning', 'N/A')}")
             formatted.append(f"  Tool: {step.get('tool_name', 'N/A')}")
             formatted.append(f"  Arguments: {step.get('tool_args', 'N/A')}")
             formatted.append(f"  Result: {step.get('result', 'N/A')}")
@@ -266,66 +237,6 @@ class PlanAndExecute(Module):
                     step_id += 1
         
         return steps[:self.max_plan_steps]
-    
-    def _create_streaming_executor(self):
-        """Create a streaming-enabled executor that outputs step and execution_history."""
-        
-        class StreamingExecutor(Module):
-            def __init__(self, base_executor, parent_module):
-                super().__init__()
-                self.base_executor = base_executor
-                self.parent = parent_module
-                
-            @property
-            def signature(self):
-                return self.parent.execution_signature
-                
-            def named_predictors(self):
-                return [("streaming_executor", self)]
-                
-            def forward(self, step_id, step_description, execution_history_formatted, **kwargs):
-                # Call the base executor
-                result = self.base_executor(
-                    step_id=step_id,
-                    step_description=step_description,
-                    execution_history=execution_history_formatted,
-                    **kwargs
-                )
-                
-                # Add streaming fields
-                step_info = f"Step {step_id}: {step_description}"
-                result.step = step_info
-                result.execution_history = execution_history_formatted
-                
-                return result
-                
-            async def aforward(self, step_id, step_description, execution_history_formatted, **kwargs):
-                # Call the base executor async
-                result = await self.base_executor.aforward(
-                    step_id=step_id,
-                    step_description=step_description,
-                    execution_history=execution_history_formatted,
-                    **kwargs
-                )
-                
-                # Add streaming fields
-                step_info = f"Step {step_id}: {step_description}"
-                result.step = step_info
-                result.execution_history = execution_history_formatted
-                
-                return result
-        
-        return StreamingExecutor(self.executor, self)
-    
-    def named_predictors(self):
-        """Return named predictors for streaming support."""
-        predictors = []
-        if hasattr(self.planner, 'predict'):
-            predictors.append(("planner", self.planner.predict))
-        predictors.append(("streaming_executor", self.streaming_executor))
-        if hasattr(self.extractor, 'predict'):
-            predictors.append(("extractor", self.extractor.predict))
-        return predictors
 
     def forward(self, **input_args):
         """Execute the plan-and-execute workflow."""
@@ -365,15 +276,14 @@ class PlanAndExecute(Module):
             
             for retry in range(max_retries):
                 try:
-                    # Execute current step using streaming executor
-                    execution_history_formatted = self._format_execution_history(execution_history)
+                    # Execute current step
                     exec_result = self._call_with_potential_context_truncation(
-                        self.streaming_executor,
+                        self.executor,
                         {
                             "step_id": step_id,
                             "step_description": step_description,
-                            "execution_history_formatted": execution_history_formatted,
-                            "plan": plan
+                            "plan": plan,
+                            "execution_history": self._format_execution_history(execution_history)
                         },
                         **input_args
                     )
@@ -384,8 +294,7 @@ class PlanAndExecute(Module):
                     
                     # Execute the tool
                     if exec_result.tool_name == "no_tool":
-                        # For no_tool, pass the reasoning from the execution result
-                        tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.reasoning)
+                        tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.step_reasoning)
                     else:
                         tool_result = self.tools[exec_result.tool_name](**exec_result.tool_args)
                     
@@ -393,7 +302,7 @@ class PlanAndExecute(Module):
                     execution_history.append({
                         "step_id": step_id,
                         "step_description": step_description,
-                        "reasoning": exec_result.reasoning,
+                        "step_reasoning": exec_result.step_reasoning,
                         "tool_name": exec_result.tool_name,
                         "tool_args": exec_result.tool_args,
                         "result": tool_result,
@@ -412,7 +321,7 @@ class PlanAndExecute(Module):
                         execution_history.append({
                             "step_id": step_id,
                             "step_description": step_description,
-                            "reasoning": getattr(exec_result, 'reasoning', 'Failed to get reasoning'),
+                            "step_reasoning": getattr(exec_result, 'step_reasoning', 'Failed to get reasoning'),
                             "tool_name": getattr(exec_result, 'tool_name', 'unknown'),
                             "tool_args": getattr(exec_result, 'tool_args', {}),
                             "result": f"FAILED: {error_msg}",
@@ -431,8 +340,7 @@ class PlanAndExecute(Module):
             )
             
             # Add metadata to the result
-            final_result.plan = plan
-            final_result.parsed_plan = steps  # Include the parsed JSON plan
+            final_result.plan = steps
             final_result.execution_history = execution_history
             final_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
             final_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
@@ -441,10 +349,8 @@ class PlanAndExecute(Module):
             
         except Exception as err:
             logger.error(f"Final extraction failed: {_fmt_exc(err)}")
-            # Return a basic response with execution details
             return dspy.Prediction(
-                plan=plan,
-                parsed_plan=steps,
+                plan=steps,
                 execution_history=execution_history,
                 error=f"Extraction failed: {_fmt_exc(err)}"
             )
@@ -486,15 +392,14 @@ class PlanAndExecute(Module):
             
             for retry in range(max_retries):
                 try:
-                    # Execute current step using streaming executor
-                    execution_history_formatted = self._format_execution_history(execution_history)
+                    # Execute current step
                     exec_result = await self._async_call_with_potential_context_truncation(
-                        self.streaming_executor,
+                        self.executor,
                         {
                             "step_id": step_id,
                             "step_description": step_description,
-                            "execution_history_formatted": execution_history_formatted,
-                            "plan": plan
+                            "plan": plan,
+                            "execution_history": self._format_execution_history(execution_history)
                         },
                         **input_args
                     )
@@ -506,7 +411,7 @@ class PlanAndExecute(Module):
                     # Execute the tool (async if available)
                     if exec_result.tool_name == "no_tool":
                         # For no_tool, pass the reasoning from the execution result
-                        tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.reasoning)
+                        tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.step_reasoning)
                     elif hasattr(self.tools[exec_result.tool_name], 'acall'):
                         tool_result = await self.tools[exec_result.tool_name].acall(**exec_result.tool_args)
                     else:
@@ -515,7 +420,7 @@ class PlanAndExecute(Module):
                     # Record successful execution
                     execution_history.append({
                         "step": step,
-                        "reasoning": exec_result.reasoning,
+                        "step_reasoning": exec_result.step_reasoning,
                         "tool_name": exec_result.tool_name,
                         "tool_args": exec_result.tool_args,
                         "result": tool_result,
@@ -534,7 +439,7 @@ class PlanAndExecute(Module):
                         execution_history.append({
                             "step_id": step_id,
                             "step_description": step_description,
-                            "reasoning": getattr(exec_result, 'reasoning', 'Failed to get reasoning'),
+                            "step_reasoning": getattr(exec_result, 'step_reasoning', 'Failed to get reasoning'),
                             "tool_name": getattr(exec_result, 'tool_name', 'unknown'),
                             "tool_args": getattr(exec_result, 'tool_args', {}),
                             "result": f"FAILED: {error_msg}",
@@ -553,8 +458,7 @@ class PlanAndExecute(Module):
             )
             
             # Add metadata to the result
-            final_result.plan = plan
-            final_result.parsed_plan = steps  # Include the parsed JSON plan
+            final_result.plan = steps
             final_result.execution_history = execution_history
             final_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
             final_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
@@ -563,10 +467,8 @@ class PlanAndExecute(Module):
             
         except Exception as err:
             logger.error(f"Final extraction failed: {_fmt_exc(err)}")
-            # Return a basic response with execution details
             return dspy.Prediction(
-                plan=plan,
-                parsed_plan=steps,
+                plan=steps,
                 execution_history=execution_history,
                 error=f"Extraction failed: {_fmt_exc(err)}"
             )
@@ -648,16 +550,6 @@ KEY FEATURES:
 STREAMING SUPPORT:
 The module fully supports DSPy's streaming functionality through the streamify wrapper.
 Each phase (planning, execution steps, extraction) can be streamed independently.
-
-Supported streaming fields:
-- "plan": Stream the JSON plan as it's generated during the planning phase
-- "step": Stream each step execution in real-time (format: "Step {id}: {description}")
-- "execution_history": Stream the formatted execution history as it's updated
-- Plus any final output fields from the signature for extraction phase
-
-The streaming is enabled through a custom StreamingExecutor that wraps the base execution
-logic and adds the streamable fields while maintaining full compatibility with the
-underlying ChainOfThought modules.
 
 TOOL INTEGRATION:
 - Uses the same Tool abstraction as ReAct for consistency
