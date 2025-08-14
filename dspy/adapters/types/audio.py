@@ -21,10 +21,10 @@ class Audio(Type):
     data: str
     audio_format: str
 
-    model_config = {
-        "frozen": True,
-        "extra": "forbid",
-    }
+    model_config = pydantic.ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
 
     def format(self) -> list[dict[str, Any]]:
         try:

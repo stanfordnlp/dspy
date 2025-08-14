@@ -112,6 +112,14 @@ exclude_lines = [
     "continue",
 ]
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    # litellm uses deprecated pydantic config classes sometimes.
+    # The issue has been fixed repeatedly, but still keeps showing up.
+    # For examples, see litellm PRs #6903, #7300, #8096, #9372, and #12528.
+    "ignore:.+class-based `config` is deprecated, use ConfigDict:DeprecationWarning",
+]
+
 [tool.ruff]
 include = ["dspy/**/*.py", "tests/**/*.py"]
 exclude = [
