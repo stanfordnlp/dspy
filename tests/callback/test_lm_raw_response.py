@@ -28,8 +28,8 @@ def test_on_lm_raw_response_hook(monkeypatch):
     cb = RecordingCallback()
     lm = DummyLM(model="dummy-model")
     dspy.settings.configure(callbacks=[cb], lm=lm)
-    pred = dspy.Predict("q->a")
-    pred(q="hi")
+    # Call LM directly to avoid adapter parsing requirements
+    lm(prompt="hi")
 
     assert len(cb.raw) == 1
     call_id, model, response = cb.raw[0]

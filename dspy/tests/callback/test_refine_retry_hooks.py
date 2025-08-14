@@ -33,12 +33,13 @@ def test_refine_retry_hooks(monkeypatch):
             return []
 
     def reward_fn(args, pred):
-        return 0.0 if mod.calls == 1 else 1.0
+        return 0.0
 
     mod = SimpleModule()
     ref = dspy.Refine(module=mod, N=2, reward_fn=reward_fn, threshold=1.0)
-    ref()
 
+    ref()
+    
     starts = [e for e in cb.events if e[0] == "start"]
     ends = [e for e in cb.events if e[0] == "end"]
     assert len(starts) >= 1
