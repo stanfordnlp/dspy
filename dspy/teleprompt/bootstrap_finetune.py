@@ -1,6 +1,7 @@
 import logging
 from collections import defaultdict
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import dspy
 from dspy.adapters.base import Adapter

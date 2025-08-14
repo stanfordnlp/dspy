@@ -1,6 +1,7 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, get_origin, get_type_hints
 
 import pydantic
 from jsonschema import ValidationError, validate

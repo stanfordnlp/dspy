@@ -1,6 +1,6 @@
 import json
 import os
-from typing import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator
 
 import litellm
 from litellm import CustomLLM
