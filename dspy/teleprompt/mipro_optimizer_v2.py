@@ -109,9 +109,13 @@ class MIPROv2(Teleprompter):
         view_data_batch_size: int = 10,
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
-        requires_permission_to_run: bool = True, # deprecated
+        requires_permission_to_run: bool = False, # deprecated
         provide_traceback: bool | None = None,
     ) -> Any:
+        if requires_permission_to_run:
+            logger.warning(
+                "'requires_permission_to_run' is deprecated and will be removed in a future version."
+            )
         effective_max_errors = (
             self.max_errors
             if self.max_errors is not None
