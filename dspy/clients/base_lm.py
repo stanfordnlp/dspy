@@ -2,7 +2,7 @@ import datetime
 import uuid
 
 from dspy.dsp.utils import settings
-from dspy.utils.callback import with_callbacks
+from dspy.utils.callback import with_callbacks, get_active_callbacks, get_active_call_id
 from dspy.utils.inspect_history import pretty_print_history
 
 MAX_HISTORY_SIZE = 10_000
@@ -92,6 +92,15 @@ class BaseLM:
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
+        # Emit raw response hook before processing/parsing
+        callbacks = get_active_callbacks(self)
+        if callbacks:
+            call_id = get_active_call_id()
+            for cb in callbacks:
+                try:
+                    cb.on_lm_raw_response(call_id=call_id, instance=self, response=response)
+                except Exception:
+                    pass
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
 
         return outputs
@@ -99,6 +108,14 @@ class BaseLM:
     @with_callbacks
     async def acall(self, prompt=None, messages=None, **kwargs):
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
+        callbacks = get_active_callbacks(self)
+        if callbacks:
+            call_id = get_active_call_id()
+            for cb in callbacks:
+                try:
+                    cb.on_lm_raw_response(call_id=call_id, instance=self, response=response)
+                except Exception:
+                    pass
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
 

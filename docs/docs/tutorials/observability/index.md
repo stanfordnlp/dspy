@@ -201,6 +201,7 @@ Sometimes, you may want to implement a custom logging solution. For instance, yo
 |:--|:--|
 |`on_module_start` / `on_module_end` | Triggered when a `dspy.Module` subclass is invoked. |
 |`on_lm_start` / `on_lm_end` | Triggered when a `dspy.LM` subclass is invoked. |
+|`on_lm_raw_response`| Triggered immediately after the provider returns, before DSPy processes/parses it. Useful for telemetry (OpenTelemetry/Langfuse) or detailed logging.|
 |`on_adapter_format_start` / `on_adapter_format_end`| Triggered when a `dspy.Adapter` subclass formats the input prompt. |
 |`on_adapter_parse_start` / `on_adapter_parse_end`| Triggered when a `dspy.Adapter` subclass postprocess the output text from an LM. Useful to access the raw completion string before parsing. |
 |`on_retry_start` / `on_retry_end`| Triggered when a module performs a retry attempt (e.g., `BestOfN`, `Refine`, `ProgramOfThought`). Includes attempt index and optional reason. |

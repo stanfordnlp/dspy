@@ -160,6 +160,21 @@ class BaseCallback:
         """
         pass
 
+    def on_lm_raw_response(
+        self,
+        call_id: str,
+        instance: Any,
+        response: Any,
+    ):
+        """A handler triggered immediately after the LM provider returns, before DSPy processes/parses it.
+
+        Args:
+            call_id: A unique identifier for the LM call.
+            instance: The LM instance.
+            response: The raw provider response object (e.g., OpenAI response-like object).
+        """
+        pass
+
     def on_adapter_format_start(
         self,
         call_id: str,
