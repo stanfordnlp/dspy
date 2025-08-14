@@ -664,11 +664,7 @@ wheels = [
 
 [[package]]
 name = "dspy"
-<<<<<<< HEAD
-version = "3.0.0b3"
-=======
 version = "3.0.0"
->>>>>>> main
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
@@ -676,7 +672,6 @@ dependencies = [
     { name = "backoff" },
     { name = "cachetools" },
     { name = "cloudpickle" },
-    { name = "datasets" },
     { name = "diskcache" },
     { name = "gepa" },
     { name = "joblib" },
@@ -695,6 +690,7 @@ dependencies = [
     { name = "rich", version = "14.0.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
     { name = "tenacity" },
     { name = "tqdm" },
+    { name = "xxhash" },
 ]
 
 [package.optional-dependencies]
@@ -742,7 +738,6 @@ requires-dist = [
     { name = "cachetools", specifier = ">=5.5.0" },
     { name = "cloudpickle", specifier = ">=3.0.0" },
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
-    { name = "datasets", specifier = ">=2.14.6" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
     { name = "gepa", specifier = "==0.0.2" },
