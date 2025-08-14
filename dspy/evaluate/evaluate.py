@@ -101,6 +101,9 @@ class Evaluate:
         self.provide_traceback = provide_traceback
         self.failure_score = failure_score
 
+        if "return_outputs" in kwargs:
+            raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
+
     @with_callbacks
     def __call__(
         self,

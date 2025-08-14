@@ -1,16 +1,16 @@
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
-
-from gepa import GEPAResult, optimize
+from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
 
 from dspy.clients.lm import LM
-from dspy.dsp.utils.settings import settings
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.teleprompt import Teleprompter
 
-from .gepa_utils import DspyAdapter, DSPyTrace, LoggerAdapter, PredictorFeedbackFn, ScoreWithFeedback
+if TYPE_CHECKING:
+    from gepa import GEPAResult
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,10 @@ class GEPAFeedbackMetric(Protocol):
     def __call__(
         gold: Example,
         pred: Prediction,
-        trace: DSPyTrace | None,
+        trace: Optional["DSPyTrace"],
         pred_name: str | None,
-        pred_trace: DSPyTrace | None,
-    ) -> float | ScoreWithFeedback:
+        pred_trace: Optional["DSPyTrace"],
+    ) -> Union[float, "ScoreWithFeedback"]:
         """
         This function is called with the following arguments:
         - gold: The gold example.
@@ -40,7 +40,7 @@ class GEPAFeedbackMetric(Protocol):
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
         and the sub-trace (of the trace) corresponding to the predictor in `pred_trace`.
-        If available at the predictor level, the metric should return {'score': float, 'feedback': str} corresponding 
+        If available at the predictor level, the metric should return dspy.Prediction(score: float, feedback: str) corresponding 
         to the predictor.
         If not available at the predictor level, the metric can also return a text feedback at the program level
         (using just the gold, pred and trace).
@@ -96,6 +96,13 @@ class DspyGEPAResult:
     def best_candidate(self) -> dict[str, str]:
         return self.candidates[self.best_idx]
 
+    @property
+    def highest_score_achieved_per_val_task(self) -> list[float]:
+        return [
+            self.val_subscores[list(self.per_val_instance_best_candidates[val_idx])[0]][val_idx]
+            for val_idx in range(len(self.val_subscores[0]))
+        ]
+
     def to_dict(self) -> dict[str, Any]:
         cands = [
             {k: v for k, v in cand.items()}
@@ -117,7 +124,8 @@ class DspyGEPAResult:
             best_idx=self.best_idx,
         )
 
-    def from_gepa_result(gepa_result: GEPAResult, adapter: DspyAdapter) -> "DspyGEPAResult":
+    @staticmethod
+    def from_gepa_result(gepa_result: "GEPAResult", adapter: "DspyAdapter") -> "DspyGEPAResult":
         return DspyGEPAResult(
             candidates=[adapter.build_program(c) for c in gepa_result.candidates],
             parents=gepa_result.parents,
@@ -199,7 +207,7 @@ class GEPA(Teleprompter):
         Reflection based configuration:
         - reflection_minibatch_size: The number of examples to use for reflection in a single GEPA step.
         - candidate_selection_strategy: The strategy to use for candidate selection. Default is "pareto", which stochastically selects candidates from the Pareto frontier of all validation scores.
-        - reflection_lm: The language model to use for reflection. If not provided, student's LM is used, or dspy.settings.lm is used.
+        - reflection_lm: [Required] The language model to use for reflection. GEPA benefits from a strong reflection model, and you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model.
 
         Merge-based configuration:
         - use_merge: Whether to use merge-based optimization. Default is True.
@@ -273,7 +281,9 @@ class GEPA(Teleprompter):
         # Reflection based configuration
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
-        self.reflection_lm = reflection_lm
+        # self.reflection_lm = reflection_lm
+        assert reflection_lm is not None, "GEPA requires a reflection language model to be provided. Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model."
+        self.reflection_lm = lambda x: reflection_lm(x)[0]
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
 
@@ -327,7 +337,7 @@ class GEPA(Teleprompter):
         periodic_fulls = (N + 1) // (m) + 1
         # If 1 <= N < m, the code triggers one final full eval at the end
         extra_final = 1 if N < m else 0
-        print(periodic_fulls+extra_final)
+
         total += (periodic_fulls + extra_final) * V
         return total
 
@@ -348,6 +358,10 @@ class GEPA(Teleprompter):
         - trainset: The training set to use for reflective updates.
         - valset: The validation set to use for tracking Pareto scores. If not provided, GEPA will use the trainset for both.
         """
+        from gepa import GEPAResult, optimize
+
+        from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
+
         assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
@@ -365,18 +379,18 @@ class GEPA(Teleprompter):
         logger.info(f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set.")
 
         valset = valset or trainset
-        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
+        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
 
         rng = random.Random(self.seed)
 
-        def feedback_fn_creator(pred_name: str, predictor) -> PredictorFeedbackFn:
+        def feedback_fn_creator(pred_name: str, predictor) -> "PredictorFeedbackFn":
             def feedback_fn(
                 predictor_output: dict[str, Any],
                 predictor_inputs: dict[str, Any],
                 module_inputs: Example,
                 module_outputs: Prediction,
-                captured_trace: DSPyTrace,
-            ) -> ScoreWithFeedback:
+                captured_trace: "DSPyTrace",
+            ) -> "ScoreWithFeedback":
                 trace_for_pred = [(predictor, predictor_inputs, predictor_output)]
                 o = self.metric_fn(
                     module_inputs,
@@ -409,7 +423,7 @@ class GEPA(Teleprompter):
             rng=rng,
         )
 
-        reflection_lm = lambda x: (self.reflection_lm or settings.lm or student.get_lm())(x)[0]
+        reflection_lm = self.reflection_lm
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
