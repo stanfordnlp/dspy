@@ -83,9 +83,9 @@ class LM(BaseLM):
 
         if model_pattern:
             # Handle OpenAI reasoning models (o1, o3)
-            assert (
-                max_tokens >= 20_000 and temperature == 1.0
-            ), "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            assert max_tokens >= 20_000 and temperature == 1.0, (
+                "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20_000 to `dspy.LM(...)`"
+            )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
@@ -187,8 +187,12 @@ class LM(BaseLM):
     ) -> TrainingJob:
         from dspy import settings as settings
 
-        err = f"Provider {self.provider} does not support fine-tuning."
-        assert self.provider.finetunable, err
+        if not self.provider.finetunable:
+            raise ValueError(
+                f"Provider {self.provider} does not support fine-tuning, please specify your provider by explicitly "
+                "setting `provider` when creating the `dspy.LM` instance. For example, "
+                "`dspy.LM('openai/gpt-4.1-mini-2025-04-14', provider=dspy.OpenAIProvider())`."
+            )
 
         def thread_function_wrapper():
             return self._run_finetune_job(job)
