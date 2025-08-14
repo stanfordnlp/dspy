@@ -75,7 +75,7 @@ class Cache:
             if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
                 return value.model_json_schema()
             elif isinstance(value, pydantic.BaseModel):
-                return value.model_dump()
+                return value.model_dump(mode="json")
             elif callable(value):
                 # Try to get the source code of the callable if available
                 import inspect

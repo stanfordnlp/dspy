@@ -117,11 +117,9 @@ class ArborReinforceJob(ReinforceJob):
         lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
-        suffix = "dspy"
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         data = {
             "model": finetune_model,
-            "suffix": suffix,
             "num_generations": num_generations,
             "temperature": temperature,
             "beta": beta,
@@ -147,8 +145,9 @@ class ArborReinforceJob(ReinforceJob):
         headers = {"Content-Type": "application/json"}
         response = requests.post(url=url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to initialize GRPO: {response}"
-        self.lm.model = ArborProvider._add_provider_prefix(finetune_model)
-        # self.provider_job_id = response.json().get("job_id")  # TODO: To be updated
+        response = response.json()
+        self.lm.model = ArborProvider._add_provider_prefix(response["current_model"])
+        self.provider_job_id = response.get("job_id")
 
     def _run_grpo_step_one_group(
         self, train_group: GRPOGroup, train_data_format: TrainDataFormat | str | None = None
@@ -158,7 +157,7 @@ class ArborReinforceJob(ReinforceJob):
         # api_key = self.lm.kwargs["api_key"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
-        data = {"model": finetune_model, "batch": train_group}
+        data = {"job_id": self.provider_job_id, "model": finetune_model, "batch": train_group}
         url = f"{api_base}fine_tuning/grpo/step"
         headers = {"Content-Type": "application/json"}
         response = requests.post(url, headers=headers, json=data)
@@ -187,7 +186,7 @@ class ArborReinforceJob(ReinforceJob):
         api_base = self.lm.kwargs["api_base"]
         url = f"{api_base}fine_tuning/grpo/checkpoint"
         headers = {"Content-Type": "application/json"}
-        body = {"checkpoint_name": checkpoint_name}
+        body = {"job_id": self.provider_job_id, "checkpoint_name": checkpoint_name}
         response = requests.post(url, headers=headers, json=body)
         assert response.status_code == 200, f"Failed to save checkpoint: {response.text}"
         response = response.json()
@@ -206,7 +205,8 @@ class ArborReinforceJob(ReinforceJob):
 
         url = f"{api_base}fine_tuning/grpo/terminate"
         headers = {"Content-Type": "application/json"}
-        response = requests.post(url, headers=headers)
+        body = {"job_id": self.provider_job_id}
+        response = requests.post(url, headers=headers, json=body)
         assert response.status_code == 200, f"Failed to terminate GRPO: {response.text}"
 
         response = response.json()

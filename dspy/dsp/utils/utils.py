@@ -50,12 +50,12 @@ def create_directory(path):
 
 def deduplicate(seq: list[str]) -> list[str]:
     """
-    Source: https://stackoverflow.com/a/480227/1493011
+        From Raymond Hettinger
+        https://twitter.com/raymondh/status/944125570534621185
+        Since Python 3.6 Dict are ordered
+        Benchmark: https://gist.github.com/peterbe/67b9e40af60a1d5bcb1cfb4b2937b088
     """
-
-    seen = set()
-    return [x for x in seq if not (x in seen or seen.add(x))]
-
+    return list(dict.fromkeys(seq))
 
 def batch(group, bsize, provide_offset=False):
     offset = 0

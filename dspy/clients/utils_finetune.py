@@ -66,7 +66,7 @@ def write_lines(file_path, data):
 def save_data(
     data: list[dict[str, Any]],
 ) -> str:
-    from datasets.fingerprint import Hasher
+    from dspy.utils.hasher import Hasher
 
     # Assign a unique name to the file based on the data hash
     hash = Hasher.hash(data)

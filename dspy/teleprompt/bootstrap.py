@@ -241,7 +241,7 @@ class BootstrapFewShot(Teleprompter):
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:
-                    from datasets.fingerprint import Hasher
+                    from dspy.utils.hasher import Hasher
 
                     rng = random.Random(Hasher.hash(tuple(demos)))
                     demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]

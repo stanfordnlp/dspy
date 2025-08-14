@@ -113,6 +113,7 @@ nav:
             - BootstrapRS: api/optimizers/BootstrapRS.md
             - COPRO: api/optimizers/COPRO.md
             - Ensemble: api/optimizers/Ensemble.md
+            - GEPA: api/optimizers/GEPA.md
             - InferRules: api/optimizers/InferRules.md
             - KNN: api/optimizers/KNN.md
             - KNNFewShot: api/optimizers/KNNFewShot.md

@@ -14,7 +14,7 @@ from dspy.utils.dummies import DummyLM
     ],
 )
 def test_propose_instructions_for_program(demo_candidates):
-    # Set large numner here so that lm always returns the same response
+    # Set large number here so that lm always returns the same response
     prompt_model = DummyLM([{"proposed_instruction": "instruction"}] * 10)
     program = Predict("question -> answer")
     trainset = []

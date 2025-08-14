@@ -371,7 +371,7 @@ def test_module_history():
     with patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
-                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+                Choices(message=Message(content="{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"))
             ],
             model="openai/gpt-4o-mini",
         )
@@ -390,7 +390,7 @@ def test_module_history():
         # The same history entity is shared across all the ancestor callers to reduce memory usage.
         assert id(program.history[0]) == id(program.cot.history[0])
 
-        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         dspy.settings.configure(disable_history=True)
 
@@ -452,7 +452,7 @@ async def test_module_history_async():
     with patch("litellm.acompletion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
-                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+                Choices(message=Message(content="{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"))
             ],
             model="openai/gpt-4o-mini",
         )
@@ -471,7 +471,7 @@ async def test_module_history_async():
         # The same history entity is shared across all the ancestor callers to reduce memory usage.
         assert id(program.history[0]) == id(program.cot.history[0])
 
-        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         with dspy.context(
             disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()
