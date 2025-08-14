@@ -35,7 +35,7 @@ class LM(BaseLM):
         cache: bool = True,
         cache_in_memory: bool = True,
         callbacks: list[BaseCallback] | None = None,
-        num_retries: int = 3,
+        num_retries: int | None = None,
         provider: Provider | None = None,
         finetuning_model: str | None = None,
         launch_kwargs: dict[str, Any] | None = None,
@@ -70,7 +70,9 @@ class LM(BaseLM):
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
         self.history = []
-        self.num_retries = num_retries
+        self.num_retries = (
+            num_retries if num_retries is not None else dspy.settings.get("default_num_retries", 3)
+        )
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
