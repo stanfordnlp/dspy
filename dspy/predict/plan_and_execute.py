@@ -52,6 +52,24 @@ class PlanAndExecute(Module):
         print("Original plan:", pred.plan)  # JSON string
         print("Parsed plan:", pred.parsed_plan)  # List of step objects with id and description
         print("Execution history:", pred.execution_history)  # List with step_id references
+        
+        # Streaming support - you can stream plan, step, and execution_history:
+        import dspy.streaming as streaming
+        
+        stream_listeners = [
+            streaming.StreamListener("plan"),  # Stream the plan generation
+            streaming.StreamListener("step"),  # Stream each step execution
+            streaming.StreamListener("execution_history")  # Stream execution history updates
+        ]
+        
+        streaming_plan_execute = dspy.streamify(plan_execute, stream_listeners=stream_listeners)
+        
+        # Use the streaming version:
+        # async for update in streaming_plan_execute(request="Your request"):
+        #     if isinstance(update, streaming.StreamResponse):
+        #         print(f"Field: {update.signature_field_name}, Content: {update.chunk}")
+        #     elif isinstance(update, dspy.Prediction):
+        #         print("Final result:", update)
         ```
         """
         super().__init__()
@@ -104,6 +122,8 @@ class PlanAndExecute(Module):
             .append("tool_name", dspy.OutputField(desc="Name of the tool to use"), type_=str)
             .append("tool_args", dspy.OutputField(desc="Arguments for the tool in JSON format"), type_=dict[str, Any])
             .append("reasoning", dspy.OutputField(desc="Reasoning for this execution step"), type_=str)
+            .append("step", dspy.OutputField(desc="Current step information for streaming"), type_=str)
+            .append("execution_history", dspy.OutputField(desc="Updated execution history for streaming"), type_=str)
         )
 
         self.extraction_signature = dspy.Signature(
@@ -117,6 +137,9 @@ class PlanAndExecute(Module):
         self.planner = dspy.ChainOfThought(self.planning_signature)
         self.executor = dspy.ChainOfThought(self.execution_signature)
         self.extractor = dspy.ChainOfThought(self.extraction_signature)
+        
+        # Create streaming-enabled executor
+        self.streaming_executor = self._create_streaming_executor()
 
     def _build_planning_instructions(self, inputs: str, outputs: str) -> str:
         """Build instructions for the planning phase."""
@@ -243,6 +266,66 @@ class PlanAndExecute(Module):
                     step_id += 1
         
         return steps[:self.max_plan_steps]
+    
+    def _create_streaming_executor(self):
+        """Create a streaming-enabled executor that outputs step and execution_history."""
+        
+        class StreamingExecutor(Module):
+            def __init__(self, base_executor, parent_module):
+                super().__init__()
+                self.base_executor = base_executor
+                self.parent = parent_module
+                
+            @property
+            def signature(self):
+                return self.parent.execution_signature
+                
+            def named_predictors(self):
+                return [("streaming_executor", self)]
+                
+            def forward(self, step_id, step_description, execution_history_formatted, **kwargs):
+                # Call the base executor
+                result = self.base_executor(
+                    step_id=step_id,
+                    step_description=step_description,
+                    execution_history=execution_history_formatted,
+                    **kwargs
+                )
+                
+                # Add streaming fields
+                step_info = f"Step {step_id}: {step_description}"
+                result.step = step_info
+                result.execution_history = execution_history_formatted
+                
+                return result
+                
+            async def aforward(self, step_id, step_description, execution_history_formatted, **kwargs):
+                # Call the base executor async
+                result = await self.base_executor.aforward(
+                    step_id=step_id,
+                    step_description=step_description,
+                    execution_history=execution_history_formatted,
+                    **kwargs
+                )
+                
+                # Add streaming fields
+                step_info = f"Step {step_id}: {step_description}"
+                result.step = step_info
+                result.execution_history = execution_history_formatted
+                
+                return result
+        
+        return StreamingExecutor(self.executor, self)
+    
+    def named_predictors(self):
+        """Return named predictors for streaming support."""
+        predictors = []
+        if hasattr(self.planner, 'predict'):
+            predictors.append(("planner", self.planner.predict))
+        predictors.append(("streaming_executor", self.streaming_executor))
+        if hasattr(self.extractor, 'predict'):
+            predictors.append(("extractor", self.extractor.predict))
+        return predictors
 
     def forward(self, **input_args):
         """Execute the plan-and-execute workflow."""
@@ -282,14 +365,15 @@ class PlanAndExecute(Module):
             
             for retry in range(max_retries):
                 try:
-                    # Execute current step
+                    # Execute current step using streaming executor
+                    execution_history_formatted = self._format_execution_history(execution_history)
                     exec_result = self._call_with_potential_context_truncation(
-                        self.executor,
+                        self.streaming_executor,
                         {
                             "step_id": step_id,
                             "step_description": step_description,
-                            "plan": plan,
-                            "execution_history": self._format_execution_history(execution_history)
+                            "execution_history_formatted": execution_history_formatted,
+                            "plan": plan
                         },
                         **input_args
                     )
@@ -402,14 +486,15 @@ class PlanAndExecute(Module):
             
             for retry in range(max_retries):
                 try:
-                    # Execute current step
+                    # Execute current step using streaming executor
+                    execution_history_formatted = self._format_execution_history(execution_history)
                     exec_result = await self._async_call_with_potential_context_truncation(
-                        self.executor,
+                        self.streaming_executor,
                         {
                             "step_id": step_id,
                             "step_description": step_description,
-                            "plan": plan,
-                            "execution_history": self._format_execution_history(execution_history)
+                            "execution_history_formatted": execution_history_formatted,
+                            "plan": plan
                         },
                         **input_args
                     )
@@ -563,6 +648,16 @@ KEY FEATURES:
 STREAMING SUPPORT:
 The module fully supports DSPy's streaming functionality through the streamify wrapper.
 Each phase (planning, execution steps, extraction) can be streamed independently.
+
+Supported streaming fields:
+- "plan": Stream the JSON plan as it's generated during the planning phase
+- "step": Stream each step execution in real-time (format: "Step {id}: {description}")
+- "execution_history": Stream the formatted execution history as it's updated
+- Plus any final output fields from the signature for extraction phase
+
+The streaming is enabled through a custom StreamingExecutor that wraps the base execution
+logic and adds the streamable fields while maintaining full compatibility with the
+underlying ChainOfThought modules.
 
 TOOL INTEGRATION:
 - Uses the same Tool abstraction as ReAct for consistency
