@@ -2,6 +2,7 @@ from typing import Callable
 
 import dspy
 from dspy.predict.predict import Module, Prediction
+from dspy.utils.callback import get_active_callbacks, get_active_call_id
 
 
 class BestOfN(Module):
@@ -63,6 +64,16 @@ class BestOfN(Module):
             mod.set_lm(lm_)
 
             try:
+                # Fire retry start for attempts beyond the first
+                if idx > 0:
+                    callbacks = get_active_callbacks(self)
+                    if callbacks:
+                        call_id = get_active_call_id()
+                        for cb in callbacks:
+                            try:
+                                cb.on_retry_start(call_id=call_id, instance=self, attempt=idx + 1, reason="below_threshold", parent_call_id=None)
+                            except Exception:
+                                pass
                 with dspy.context(trace=[]):
                     pred = mod(**kwargs)
                     trace = dspy.settings.trace.copy()
@@ -74,6 +85,16 @@ class BestOfN(Module):
                     best_reward, best_pred, best_trace = reward, pred, trace
 
                 if reward >= self.threshold:
+                    # End retry event for this successful attempt (if it was a retry)
+                    if idx > 0:
+                        callbacks = get_active_callbacks(self)
+                        if callbacks:
+                            call_id = get_active_call_id()
+                            for cb in callbacks:
+                                try:
+                                    cb.on_retry_end(call_id=call_id, outputs=pred, exception=None)
+                                except Exception:
+                                    pass
                     break
 
             except Exception as e:
@@ -81,6 +102,16 @@ class BestOfN(Module):
                 if idx > self.fail_count:
                     raise e
                 self.fail_count -= 1
+                # End retry event with exception (if it was a retry)
+                if idx > 0:
+                    callbacks = get_active_callbacks(self)
+                    if callbacks:
+                        call_id = get_active_call_id()
+                        for cb in callbacks:
+                            try:
+                                cb.on_retry_end(call_id=call_id, outputs=None, exception=e)
+                            except Exception:
+                                pass
 
         if best_trace:
             dspy.settings.trace.extend(best_trace)

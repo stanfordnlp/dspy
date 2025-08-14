@@ -78,6 +78,40 @@ class BaseCallback:
         """
         pass
 
+    def on_retry_start(
+        self,
+        call_id: str,
+        instance: Any,
+        attempt: int,
+        reason: str | None = None,
+        parent_call_id: str | None = None,
+    ):
+        """A handler triggered when a module is about to perform a retry attempt.
+
+        Args:
+            call_id: The active call identifier associated with the parent module call.
+            instance: The Module instance performing the retry.
+            attempt: 1-based attempt index for the retry attempt that is about to start.
+            reason: Optional machine-readable reason for retry (e.g., "below_threshold", "exception", "code_error").
+            parent_call_id: Optional parent call id if a nested call hierarchy is tracked.
+        """
+        pass
+
+    def on_retry_end(
+        self,
+        call_id: str,
+        outputs: Any | None,
+        exception: Exception | None = None,
+    ):
+        """A handler triggered after a retry attempt completes.
+
+        Args:
+            call_id: The active call identifier associated with the parent module call.
+            outputs: Outputs produced by the retry attempt, if any.
+            exception: If an exception occurred during the retry, the exception instance.
+        """
+        pass
+
     def on_module_end(
         self,
         call_id: str,
@@ -390,3 +424,16 @@ def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> 
 
     # We treat everything else as a module.
     return callback.on_module_end
+
+
+def get_active_call_id() -> str | None:
+    """Return the current active call id for the decorated call context, if any."""
+    return ACTIVE_CALL_ID.get()
+
+
+def get_active_callbacks(instance: Any) -> list[BaseCallback]:
+    """Return the list of active callbacks for the given instance.
+
+    Combines globally configured callbacks with instance-level callbacks.
+    """
+    return dspy.settings.get("callbacks", []) + getattr(instance, "callbacks", [])
