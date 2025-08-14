@@ -47,6 +47,11 @@ class PlanAndExecute(Module):
         # The agent can also handle steps that don't require tools:
         pred = plan_execute(request="Analyze the pros and cons of different programming languages")
         # In this case, some steps might use 'no_tool' for pure reasoning tasks
+        
+        # Access the structured plan and execution results:
+        print("Original plan:", pred.plan)  # JSON string
+        print("Parsed plan:", pred.parsed_plan)  # List of step objects with id and description
+        print("Execution history:", pred.execution_history)  # List with step_id references
         ```
         """
         super().__init__()
@@ -59,11 +64,14 @@ class PlanAndExecute(Module):
         self.tools = {tool.name: tool for tool in tools}
         
         # Add a special "no_tool" option for steps that don't require tool execution
+        def no_tool_func(reasoning: str = "") -> str:
+            """Complete a step through reasoning alone without external tools."""
+            return f"Step completed without tool execution: {reasoning}"
+        
         self.tools["no_tool"] = Tool(
-            func=lambda reasoning="": f"Step completed without tool execution: {reasoning}",
+            func=no_tool_func,
             name="no_tool", 
-            desc="Use this when the step can be completed through reasoning alone without calling any external tools",
-            args={"reasoning": "str"}
+            desc="Use this when the step can be completed through reasoning alone without calling any external tools"
         )
 
         # Get input/output field names for instruction formatting
@@ -82,13 +90,14 @@ class PlanAndExecute(Module):
         # Create signatures for each phase
         self.planning_signature = (
             dspy.Signature({**signature.input_fields}, plan_instr)
-            .append("plan", dspy.OutputField(desc="A numbered list of steps to accomplish the task"), type_=str)
+            .append("plan", dspy.OutputField(desc="A JSON array of plan steps with id and description"), type_=str)
         )
 
         self.execution_signature = (
             dspy.Signature(
-                {**signature.input_fields, "step": dspy.InputField(desc="Current step to execute"), 
-                 "plan": dspy.InputField(desc="The full plan"), 
+                {**signature.input_fields, "step_id": dspy.InputField(desc="ID of the current step to execute"), 
+                 "step_description": dspy.InputField(desc="Description of the current step to execute"),
+                 "plan": dspy.InputField(desc="The full plan in JSON format"), 
                  "execution_history": dspy.InputField(desc="History of executed steps and their results")},
                 exec_instr
             )
@@ -118,9 +127,18 @@ class PlanAndExecute(Module):
         base_instr.extend([
             f"You are a strategic planning agent. Given the input fields {inputs}, create a comprehensive plan to produce {outputs}.",
             f"You have access to the following tools:\n{tools_desc}\n",
-            f"Create a detailed step-by-step plan with at most {self.max_plan_steps} numbered steps.",
+            f"Create a detailed step-by-step plan with at most {self.max_plan_steps} steps.",
             "Each step should be specific and actionable, clearly stating what tool to use and why.",
-            "The plan should be logical, sequential, and comprehensive to fully accomplish the task."
+            "The plan should be logical, sequential, and comprehensive to fully accomplish the task.",
+            "",
+            "IMPORTANT: Output the plan as a JSON array where each step has an 'id' (integer starting from 1) and 'description' (string).",
+            "Example format:",
+            '[',
+            '  {"id": 1, "description": "First step description"},',
+            '  {"id": 2, "description": "Second step description"},',
+            '  {"id": 3, "description": "Third step description"}',
+            ']',
+            "Ensure the JSON is properly formatted and valid."
         ])
         
         return "\n".join(base_instr)
@@ -131,9 +149,10 @@ class PlanAndExecute(Module):
         
         return "\n".join([
             "You are an execution agent following a predetermined plan.",
+            "You are given a specific step ID and its description from the plan to execute.",
             "Execute the current step by selecting the appropriate tool and providing the correct arguments.",
             f"Available tools:\n{tools_list}\n",
-            "Analyze the current step, consider the execution history, and choose the right tool with proper arguments.",
+            "Analyze the current step description, consider the execution history, and choose the right tool with proper arguments.",
             "IMPORTANT: If the current step can be completed through reasoning alone without external tools,",
             "use 'no_tool' and provide your reasoning in the 'reasoning' argument.",
             "Only use actual tools when external data or actions are genuinely needed.",
@@ -160,8 +179,10 @@ class PlanAndExecute(Module):
             return "No execution history yet."
         
         formatted = []
-        for i, step in enumerate(history, 1):
-            formatted.append(f"Step {i}:")
+        for step in history:
+            step_id = step.get('step_id', 'N/A')
+            formatted.append(f"Step {step_id}:")
+            formatted.append(f"  Description: {step.get('step_description', 'N/A')}")
             formatted.append(f"  Reasoning: {step.get('reasoning', 'N/A')}")
             formatted.append(f"  Tool: {step.get('tool_name', 'N/A')}")
             formatted.append(f"  Arguments: {step.get('tool_args', 'N/A')}")
@@ -170,22 +191,56 @@ class PlanAndExecute(Module):
         
         return "\n".join(formatted)
 
-    def _parse_plan_steps(self, plan: str) -> List[str]:
-        """Parse the plan into individual steps."""
+    def _parse_plan_steps(self, plan: str) -> List[Dict[str, Any]]:
+        """Parse the JSON plan into individual steps."""
+        try:
+            # Try to parse as JSON
+            plan_data = json.loads(plan.strip())
+            
+            # Ensure it's a list
+            if not isinstance(plan_data, list):
+                logger.warning("Plan is not a JSON array, attempting to extract steps")
+                return []
+            
+            # Validate step structure and limit to max_plan_steps
+            steps = []
+            for item in plan_data[:self.max_plan_steps]:
+                if isinstance(item, dict) and 'id' in item and 'description' in item:
+                    steps.append({
+                        'id': item['id'],
+                        'description': item['description']
+                    })
+                else:
+                    logger.warning(f"Invalid step format: {item}")
+            
+            return steps
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse plan as JSON: {e}")
+            # Fallback: try to extract steps from text format
+            return self._fallback_parse_plan_steps(plan)
+    
+    def _fallback_parse_plan_steps(self, plan: str) -> List[Dict[str, Any]]:
+        """Fallback parser for non-JSON plan format."""
         lines = plan.strip().split('\n')
         steps = []
+        step_id = 1
         
         for line in lines:
             line = line.strip()
             if line and (line[0].isdigit() or line.startswith('-') or line.startswith('•')):
                 # Remove numbering and bullet points
-                step = line
+                step_text = line
                 for prefix in ['1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', '10.', '-', '•']:
-                    if step.startswith(prefix):
-                        step = step[len(prefix):].strip()
+                    if step_text.startswith(prefix):
+                        step_text = step_text[len(prefix):].strip()
                         break
-                if step:
-                    steps.append(step)
+                if step_text:
+                    steps.append({
+                        'id': step_id,
+                        'description': step_text
+                    })
+                    step_id += 1
         
         return steps[:self.max_plan_steps]
 
@@ -220,7 +275,9 @@ class PlanAndExecute(Module):
         # Phase 2: Execution
         execution_history = []
         
-        for step_idx, step in enumerate(steps):
+        for step in steps:
+            step_id = step['id']
+            step_description = step['description']
             step_executed = False
             
             for retry in range(max_retries):
@@ -229,7 +286,8 @@ class PlanAndExecute(Module):
                     exec_result = self._call_with_potential_context_truncation(
                         self.executor,
                         {
-                            "step": step,
+                            "step_id": step_id,
+                            "step_description": step_description,
                             "plan": plan,
                             "execution_history": self._format_execution_history(execution_history)
                         },
@@ -243,14 +301,14 @@ class PlanAndExecute(Module):
                     # Execute the tool
                     if exec_result.tool_name == "no_tool":
                         # For no_tool, pass the reasoning from the execution result
-                        tool_args = {"reasoning": exec_result.reasoning}
-                        tool_result = self.tools[exec_result.tool_name](**tool_args)
+                        tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.reasoning)
                     else:
                         tool_result = self.tools[exec_result.tool_name](**exec_result.tool_args)
                     
                     # Record successful execution
                     execution_history.append({
-                        "step": step,
+                        "step_id": step_id,
+                        "step_description": step_description,
                         "reasoning": exec_result.reasoning,
                         "tool_name": exec_result.tool_name,
                         "tool_args": exec_result.tool_args,
@@ -262,13 +320,14 @@ class PlanAndExecute(Module):
                     break
                     
                 except Exception as err:
-                    error_msg = f"Step {step_idx + 1} execution failed (attempt {retry + 1}): {_fmt_exc(err)}"
+                    error_msg = f"Step {step_id} execution failed (attempt {retry + 1}): {_fmt_exc(err)}"
                     logger.warning(error_msg)
                     
                     if retry == max_retries - 1:
                         # Record failed execution after all retries
                         execution_history.append({
-                            "step": step,
+                            "step_id": step_id,
+                            "step_description": step_description,
                             "reasoning": getattr(exec_result, 'reasoning', 'Failed to get reasoning'),
                             "tool_name": getattr(exec_result, 'tool_name', 'unknown'),
                             "tool_args": getattr(exec_result, 'tool_args', {}),
@@ -289,6 +348,7 @@ class PlanAndExecute(Module):
             
             # Add metadata to the result
             final_result.plan = plan
+            final_result.parsed_plan = steps  # Include the parsed JSON plan
             final_result.execution_history = execution_history
             final_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
             final_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
@@ -300,6 +360,7 @@ class PlanAndExecute(Module):
             # Return a basic response with execution details
             return dspy.Prediction(
                 plan=plan,
+                parsed_plan=steps,
                 execution_history=execution_history,
                 error=f"Extraction failed: {_fmt_exc(err)}"
             )
@@ -334,7 +395,9 @@ class PlanAndExecute(Module):
         # Phase 2: Execution
         execution_history = []
         
-        for step_idx, step in enumerate(steps):
+        for step in steps:
+            step_id = step['id']
+            step_description = step['description']
             step_executed = False
             
             for retry in range(max_retries):
@@ -343,7 +406,8 @@ class PlanAndExecute(Module):
                     exec_result = await self._async_call_with_potential_context_truncation(
                         self.executor,
                         {
-                            "step": step,
+                            "step_id": step_id,
+                            "step_description": step_description,
                             "plan": plan,
                             "execution_history": self._format_execution_history(execution_history)
                         },
@@ -357,8 +421,7 @@ class PlanAndExecute(Module):
                     # Execute the tool (async if available)
                     if exec_result.tool_name == "no_tool":
                         # For no_tool, pass the reasoning from the execution result
-                        tool_args = {"reasoning": exec_result.reasoning}
-                        tool_result = self.tools[exec_result.tool_name](**tool_args)
+                        tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.reasoning)
                     elif hasattr(self.tools[exec_result.tool_name], 'acall'):
                         tool_result = await self.tools[exec_result.tool_name].acall(**exec_result.tool_args)
                     else:
@@ -378,13 +441,14 @@ class PlanAndExecute(Module):
                     break
                     
                 except Exception as err:
-                    error_msg = f"Step {step_idx + 1} execution failed (attempt {retry + 1}): {_fmt_exc(err)}"
+                    error_msg = f"Step {step_id} execution failed (attempt {retry + 1}): {_fmt_exc(err)}"
                     logger.warning(error_msg)
                     
                     if retry == max_retries - 1:
                         # Record failed execution after all retries
                         execution_history.append({
-                            "step": step,
+                            "step_id": step_id,
+                            "step_description": step_description,
                             "reasoning": getattr(exec_result, 'reasoning', 'Failed to get reasoning'),
                             "tool_name": getattr(exec_result, 'tool_name', 'unknown'),
                             "tool_args": getattr(exec_result, 'tool_args', {}),
@@ -405,6 +469,7 @@ class PlanAndExecute(Module):
             
             # Add metadata to the result
             final_result.plan = plan
+            final_result.parsed_plan = steps  # Include the parsed JSON plan
             final_result.execution_history = execution_history
             final_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
             final_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
@@ -416,6 +481,7 @@ class PlanAndExecute(Module):
             # Return a basic response with execution details
             return dspy.Prediction(
                 plan=plan,
+                parsed_plan=steps,
                 execution_history=execution_history,
                 error=f"Extraction failed: {_fmt_exc(err)}"
             )
@@ -486,11 +552,13 @@ DIFFERENCES FROM ReAct:
 
 KEY FEATURES:
 - Three separate DSPy signatures for planning, execution, and extraction phases
+- JSON-structured plans with step IDs for better traceability and organization
 - Robust error handling with configurable retry logic for failed steps
 - Context window management with automatic truncation of execution history
 - Full async support for both modules and tool execution
-- Comprehensive execution history tracking with metadata
+- Comprehensive execution history tracking with step ID references
 - Compatible with DSPy streaming and callback systems
+- Fallback parsing for non-JSON plan formats
 
 STREAMING SUPPORT:
 The module fully supports DSPy's streaming functionality through the streamify wrapper.
