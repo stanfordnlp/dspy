@@ -4,8 +4,9 @@ from dspy.teleprompt.teleprompt import Teleprompter
 
 
 class LabeledFewShot(Teleprompter):
-    def __init__(self, k=16):
+    def __init__(self, k: int = 16, seed: int = 0):
         self.k = k
+        self.seed = seed
 
     def compile(self, student, *, trainset, sample=True):
         self.student = student.reset_copy()
@@ -14,7 +15,7 @@ class LabeledFewShot(Teleprompter):
         if len(self.trainset) == 0:
             return self.student
 
-        rng = random.Random(0)
+        rng = random.Random(self.seed)
 
         for predictor in self.student.predictors():
             if sample:
