@@ -75,9 +75,9 @@ class PlanAndExecute(Module):
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         self.tools = {tool.name: tool for tool in tools}
         self.tools["reasoning"] = Tool(
-            func=lambda: "Completed.",
+            func=lambda: "Hoàn thành.",
             name="reasoning", 
-            desc="Use this when the step can be completed through reasoning alone without calling any external tools."
+            desc="Sử dụng khi bước này có thể được hoàn thành chỉ thông qua lập luận mà không cần gọi bất kỳ công cụ bên ngoài nào."
         )
 
         # Get input/output field names for instruction formatting
@@ -147,22 +147,22 @@ class PlanAndExecute(Module):
         tools_desc = "\n".join([f"- {tool.name}: {tool.desc}" for tool in self.tools.values()])
         
         base_instr.extend([
-            f"You are a strategic planning agent. Given the input fields {inputs}, create a comprehensive plan to produce {outputs}.",
-            f"You have access to the following tools:\n{tools_desc}\n",
-            f"Create a detailed step-by-step plan with at most {self.max_plan_steps} steps.",
-            "Each step should be specific and actionable, clearly stating what tool to use and why.",
-            "The plan should be logical, sequential, and comprehensive to fully accomplish the task.",
+            f"Bạn là một tác nhân lập kế hoạch chiến lược. Với các trường đầu vào {inputs}, hãy tạo một kế hoạch toàn diện để tạo ra {outputs}.",
+            f"Bạn có quyền truy cập vào các công cụ sau:\n{tools_desc}\n",
+            f"Tạo một kế hoạch chi tiết từng bước với tối đa {self.max_plan_steps} bước.",
+            "Mỗi bước phải cụ thể và có thể thực hiện được, nêu rõ công cụ nào sẽ sử dụng và tại sao.",
+            "Kế hoạch phải logic, tuần tự và toàn diện để hoàn thành nhiệm vụ một cách đầy đủ.",
             "",
-            "IMPORTANT: Output the plan as a JSON array where each step has an 'id' (integer starting from 1) and 'description' (string).",
-            "Optionally, steps can include a 'replan' field (boolean) to indicate that the plan should be updated after this step completes.",
-            "Use 'replan': true for steps where the results will determine what subsequent steps are needed.",
-            "Example format:",
+            "QUAN TRỌNG: Xuất kế hoạch dưới dạng mảng JSON trong đó mỗi bước có 'id' (số nguyên bắt đầu từ 1) và 'description' (chuỗi).",
+            "Tùy chọn, các bước có thể bao gồm trường 'replan' (boolean) để chỉ ra rằng kế hoạch nên được cập nhật sau khi bước này hoàn thành.",
+            "Sử dụng 'replan': true cho các bước mà kết quả sẽ xác định những bước tiếp theo cần thiết.",
+            "Định dạng ví dụ:",
             '[',
-            '  {"id": "1", "description": "Search for all files in the directory", "replan": true},',
-            '  {"id": "2", "description": "Process each found file (this will be expanded after step 1)"}',
+            '  {"id": "1", "description": "Tìm kiếm tất cả các tệp trong thư mục", "replan": true},',
+            '  {"id": "2", "description": "Xử lý từng tệp được tìm thấy (sẽ được mở rộng sau bước 1)"}',
             ']',
-            "When replan is true, the plan will be regenerated after that step to incorporate the step's results.",
-            "Ensure the JSON is properly formatted and valid."
+            "Khi replan là true, kế hoạch sẽ được tạo lại sau bước đó để kết hợp kết quả của bước.",
+            "Đảm bảo JSON được định dạng đúng và hợp lệ."
         ])
         
         return "\n".join(base_instr)
@@ -172,17 +172,17 @@ class PlanAndExecute(Module):
         tools_list = "\n".join([f"({idx + 1}) {tool}" for idx, tool in enumerate(self.tools.values())])
         
         return "\n".join([
-            "You are an execution agent following a predetermined plan.",
-            "You are given a specific step ID and its description from the plan to execute.",
-            "Execute the current step by selecting the appropriate tool and providing the correct arguments.",
-            f"Available tools:\n{tools_list}\n",
-            "Analyze the current step description, consider the execution history, and choose the right tool with proper arguments.",
-            "IMPORTANT: If the current step can be completed through reasoning alone without external tools,",
-            "use 'reasoning' and provide your reasoning in the 'step_reasoning' argument.",
-            "use 'step_id' and provide your step id in the 'step_id' argument.",
-            "Only use actual tools when external data or actions are genuinely needed.",
-            "Provide clear reasoning for your tool selection and argument choices.",
-            "The tool_args must be in valid JSON format that matches the tool's expected parameters."
+            "Bạn là một tác nhân thực thi theo một kế hoạch đã được xác định trước.",
+            "Bạn được cung cấp một ID bước cụ thể và mô tả của nó từ kế hoạch để thực hiện.",
+            "Thực hiện bước hiện tại bằng cách chọn công cụ phù hợp và cung cấp các đối số đúng.",
+            f"Các công cụ có sẵn:\n{tools_list}\n",
+            "Phân tích mô tả bước hiện tại, xem xét lịch sử thực thi, và chọn công cụ phù hợp với các đối số đúng.",
+            "QUAN TRỌNG: Nếu bước hiện tại có thể được hoàn thành chỉ thông qua lập luận mà không cần công cụ bên ngoài,",
+            "sử dụng 'reasoning' và cung cấp lập luận của bạn trong đối số 'step_reasoning'.",
+            "sử dụng 'step_id' và cung cấp ID bước của bạn trong đối số 'step_id'.",
+            "Chỉ sử dụng các công cụ thực sự khi thực sự cần dữ liệu hoặc hành động bên ngoài.",
+            "Cung cấp lập luận rõ ràng cho việc lựa chọn công cụ và đối số của bạn.",
+            "Các tool_args phải ở định dạng JSON hợp lệ phù hợp với các tham số mong đợi của công cụ."
         ])
 
     def _build_extraction_instructions(self, inputs: str, outputs: str) -> str:
@@ -190,10 +190,10 @@ class PlanAndExecute(Module):
         base_instr = [f"{self.signature.instructions}\n"] if self.signature.instructions else []
         
         base_instr.extend([
-            f"You are a result extraction agent. Based on the input {inputs}, the executed plan, and the complete execution history,",
-            f"extract and format the final answer to produce {outputs}.",
-            "Synthesize information from all execution steps to provide a comprehensive and accurate response.",
-            "Ensure the output directly addresses the original request and incorporates all relevant findings."
+            f"Bạn là một tác nhân trích xuất kết quả. Dựa trên đầu vào {inputs}, kế hoạch đã thực hiện và lịch sử thực thi hoàn chỉnh,",
+            f"trích xuất và định dạng câu trả lời cuối cùng để tạo ra {outputs}.",
+            "Tổng hợp thông tin từ tất cả các bước thực thi để cung cấp một phản hồi toàn diện và chính xác.",
+            "Đảm bảo đầu ra trực tiếp giải quyết yêu cầu ban đầu và kết hợp tất cả các phát hiện liên quan."
         ])
         
         return "\n".join(base_instr)
@@ -205,22 +205,22 @@ class PlanAndExecute(Module):
         tools_desc = "\n".join([f"- {tool.name}: {tool.desc}" for tool in self.tools.values()])
         
         base_instr.extend([
-            f"You are a replanning agent. Based on the input {inputs}, the original plan, and the execution results so far,",
-            f"create an updated plan to continue working toward producing {outputs}.",
-            f"You have access to the following tools:\n{tools_desc}\n",
-            "The original plan had a step marked for replanning, and that step has now been executed.",
-            "Based on the results of that step, update the remaining plan to incorporate the new information.",
-            "Keep completed steps as-is, but modify upcoming steps based on the new results.",
-            "Ensure the updated plan will efficiently accomplish the remaining work.",
+            f"Bạn là một tác nhân lên kế hoạch lại. Dựa trên đầu vào {inputs}, kế hoạch ban đầu và kết quả thực thi cho đến nay,",
+            f"tạo một kế hoạch cập nhật để tiếp tục làm việc hướng tới việc tạo ra {outputs}.",
+            f"Bạn có quyền truy cập vào các công cụ sau:\n{tools_desc}\n",
+            "Kế hoạch ban đầu có một bước được đánh dấu để lên kế hoạch lại, và bước đó đã được thực hiện.",
+            "Dựa trên kết quả của bước đó, cập nhật kế hoạch còn lại để kết hợp thông tin mới.",
+            "Giữ nguyên các bước đã hoàn thành, nhưng sửa đổi các bước sắp tới dựa trên kết quả mới.",
+            "Đảm bảo kế hoạch cập nhật sẽ hoàn thành hiệu quả công việc còn lại.",
             "",
-            "IMPORTANT: Output the updated plan as a JSON array where each step has an 'id', 'description', and optional 'replan' field.",
-            "Maintain the same ID numbering for completed steps, and assign new IDs for new/modified steps.",
-            "Example updated plan format:",
+            "QUAN TRỌNG: Xuất kế hoạch cập nhật dưới dạng mảng JSON trong đó mỗi bước có 'id', 'description' và trường 'replan' tùy chọn.",
+            "Duy trì cùng một hệ thống đánh số ID cho các bước đã hoàn thành và chỉ định ID mới cho các bước mới/đã sửa đổi.",
+            "Định dạng kế hoạch cập nhật ví dụ:",
             '[',
-            '  {"id": "1", "description": "Search for all files in the directory"},',
-            '  {"id": "2", "description": "Get details of file1.pdf"},',
-            '  {"id": "3", "description": "Get details of file2.txt"},',
-            '  {"id": "4", "description": "Aggregate results"}',
+            '  {"id": "1", "description": "Tìm kiếm tất cả các tệp trong thư mục"},',
+            '  {"id": "2", "description": "Lấy chi tiết của file1.pdf"},',
+            '  {"id": "3", "description": "Lấy chi tiết của file2.txt"},',
+            '  {"id": "4", "description": "Tổng hợp kết quả"}',
             ']'
         ])
         
@@ -229,17 +229,17 @@ class PlanAndExecute(Module):
     def _format_execution_history(self, history: List[Dict[str, Any]]) -> str:
         """Format execution history for display."""
         if not history:
-            return "No execution history yet."
+            return "Chưa có lịch sử thực thi nào."
         
         formatted = []
         for step in history:
-            step_id = step.get('step_id', 'N/A')
-            formatted.append(f"Step {step_id}:")
-            formatted.append(f"  Description: {step.get('step_description', 'N/A')}")
-            formatted.append(f"  Reasoning: {step.get('step_reasoning', 'N/A')}")
-            formatted.append(f"  Tool: {step.get('tool_name', 'N/A')}")
-            formatted.append(f"  Arguments: {step.get('tool_args', 'N/A')}")
-            formatted.append(f"  Result: {step.get('result', 'N/A')}")
+            step_id = step.get('step_id', 'Không có')
+            formatted.append(f"Bước {step_id}:")
+            formatted.append(f"  Mô tả: {step.get('step_description', 'Không có')}")
+            formatted.append(f"  Lập luận: {step.get('step_reasoning', 'Không có')}")
+            formatted.append(f"  Công cụ: {step.get('tool_name', 'Không có')}")
+            formatted.append(f"  Đối số: {step.get('tool_args', 'Không có')}")
+            formatted.append(f"  Kết quả: {step.get('result', 'Không có')}")
             formatted.append("")
         
         return "\n".join(formatted)
@@ -286,7 +286,7 @@ class PlanAndExecute(Module):
             # Fallback to direct answer if planning fails
             result = self._call_with_potential_context_truncation(
                 self.extractor, 
-                {"plan": "Planning failed", "execution_history": "No execution performed"},
+                {"plan": "Lập kế hoạch thất bại", "execution_history": "Không thực hiện gì"},
                 **input_args
             )
             # Ensure plan is available immediately even in failure case
@@ -294,7 +294,7 @@ class PlanAndExecute(Module):
             result.execution_history = []
             result.steps_executed = 0
             result.steps_failed = 0
-            result.error = f"Planning failed: {_fmt_exc(err)}"
+            result.error = f"Lập kế hoạch thất bại: {_fmt_exc(err)}"
             return result
 
         # Parse plan into steps
@@ -302,7 +302,7 @@ class PlanAndExecute(Module):
         if not steps:
             result = self._call_with_potential_context_truncation(
                 self.extractor,
-                {"plan": plan, "execution_history": "No valid steps in plan"},
+                {"plan": plan, "execution_history": "Không có bước hợp lệ nào trong kế hoạch"},
                 **input_args
             )
             # Ensure plan is available immediately
@@ -345,7 +345,7 @@ class PlanAndExecute(Module):
                     if not hasattr(exec_result, 'step_id'):
                         exec_result.step_id = step_id
                     if not hasattr(exec_result, 'step_reasoning'):
-                        exec_result.step_reasoning = "No reasoning provided by executor"
+                        exec_result.step_reasoning = "Không có lập luận nào được cung cấp bởi trình thực thi"
                     if not hasattr(exec_result, 'tool_name'):
                         raise ValueError("Executor did not provide tool_name")
                     if not hasattr(exec_result, 'tool_args'):
@@ -400,7 +400,7 @@ class PlanAndExecute(Module):
                     break
                     
                 except Exception as err:
-                    error_msg = f"Step {step_id} execution failed (attempt {retry + 1}): {_fmt_exc(err)}"
+                    error_msg = f"Thực thi bước {step_id} thất bại (lần thử {retry + 1}): {_fmt_exc(err)}"
                     logger.warning(error_msg)
                     
                     if retry == max_retries - 1:
@@ -408,8 +408,8 @@ class PlanAndExecute(Module):
                         execution_history.append({
                             "step_id": step_id,
                             "step_description": step_description,
-                            "step_reasoning": getattr(exec_result, 'step_reasoning', 'Failed to get reasoning'),
-                            "tool_name": getattr(exec_result, 'tool_name', 'unknown'),
+                            "step_reasoning": getattr(exec_result, 'step_reasoning', 'Không thể lấy lập luận'),
+                            "tool_name": getattr(exec_result, 'tool_name', 'không rõ'),
                             "tool_args": getattr(exec_result, 'tool_args', {}),
                             "result": f"FAILED: {error_msg}",
                             "retry_count": retry + 1
@@ -447,7 +447,7 @@ class PlanAndExecute(Module):
             initial_result.execution_history = execution_history
             initial_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
             initial_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
-            initial_result.error = f"Extraction failed: {_fmt_exc(err)}"
+            initial_result.error = f"Trích xuất thất bại: {_fmt_exc(err)}"
             return initial_result
 
     async def aforward(self, **input_args):
@@ -473,10 +473,10 @@ class PlanAndExecute(Module):
         """Truncate execution history to fit in context window."""
         lines = history.split('\n')
         if len(lines) <= 10:
-            return "Execution history truncated due to context limits."
+            return "Lịch sử thực thi đã bị cắt bớt do giới hạn ngữ cảnh."
         
         # Keep the first few and last few lines
-        truncated = lines[:5] + ["... (history truncated) ..."] + lines[-5:]
+        truncated = lines[:5] + ["... (lịch sử đã bị cắt bớt) ..."] + lines[-5:]
         return '\n'.join(truncated)
 
 
