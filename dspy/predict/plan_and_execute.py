@@ -107,8 +107,8 @@ class PlanAndExecute(Module):
                  "execution_history": dspy.InputField(desc="History of executed steps and their results")},
                 exec_instr
             )
-            .append("current_step_id", dspy.OutputField(desc="ID of the current step to execute, this must be return to track the step"), type_=str)
-            .append("current_step_reasoning", dspy.OutputField(desc="Reasoning for this execution step, this must be return to track the step"), type_=str)
+            .append("step_id", dspy.OutputField(desc="ID of the current step to execute"), type_=str)
+            .append("step_reasoning", dspy.OutputField(desc="Reasoning for this execution step"), type_=str)
             .append("tool_name", dspy.OutputField(desc="Name of the tool to use"), type_=str)
             .append("tool_args", dspy.OutputField(desc="Arguments for the tool in JSON format"), type_=dict[str, Any])
         )
@@ -178,8 +178,8 @@ class PlanAndExecute(Module):
             f"Available tools:\n{tools_list}\n",
             "Analyze the current step description, consider the execution history, and choose the right tool with proper arguments.",
             "IMPORTANT: If the current step can be completed through reasoning alone without external tools,",
-            "use 'reasoning' and provide your reasoning in the 'current_step_reasoning' argument.",
-            "use 'step_id' and provide your step id in the 'current_step_id' argument.",
+            "use 'reasoning' and provide your reasoning in the 'step_reasoning' argument.",
+            "use 'step_id' and provide your step id in the 'step_id' argument.",
             "Only use actual tools when external data or actions are genuinely needed.",
             "Provide clear reasoning for your tool selection and argument choices.",
             "The tool_args must be in valid JSON format that matches the tool's expected parameters."
@@ -270,32 +270,7 @@ class PlanAndExecute(Module):
             
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse plan as JSON: {e}")
-            # Fallback: try to extract steps from text format
-            return self._fallback_parse_plan_steps(plan)
-    
-    def _fallback_parse_plan_steps(self, plan: str) -> List[Dict[str, Any]]:
-        """Fallback parser for non-JSON plan format."""
-        lines = plan.strip().split('\n')
-        steps = []
-        step_id = 1
-        
-        for line in lines:
-            line = line.strip()
-            if line and (line[0].isdigit() or line.startswith('-') or line.startswith('•')):
-                # Remove numbering and bullet points
-                step_text = line
-                for prefix in ['1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', '10.', '-', '•']:
-                    if step_text.startswith(prefix):
-                        step_text = step_text[len(prefix):].strip()
-                        break
-                if step_text:
-                    steps.append({
-                        'id': str(step_id),
-                        'description': step_text
-                    })
-                    step_id += 1
-        
-        return steps[:self.max_plan_steps]
+            return []
 
     def forward(self, **input_args):
         """Execute the plan-and-execute workflow."""
@@ -325,7 +300,6 @@ class PlanAndExecute(Module):
         # Parse plan into steps
         steps = self._parse_plan_steps(plan)
         if not steps:
-            logger.warning("No valid steps found in plan")
             result = self._call_with_potential_context_truncation(
                 self.extractor,
                 {"plan": plan, "execution_history": "No valid steps in plan"},
@@ -366,12 +340,12 @@ class PlanAndExecute(Module):
                         },
                         **input_args
                     )
-                    
+
                     # Validate execution result has required fields
-                    if not hasattr(exec_result, 'current_step_id'):
-                        exec_result.current_step_id = str(step_id)
-                    if not hasattr(exec_result, 'current_step_reasoning'):
-                        exec_result.current_step_reasoning = "No reasoning provided by executor"
+                    if not hasattr(exec_result, 'step_id'):
+                        exec_result.step_id = step_id
+                    if not hasattr(exec_result, 'step_reasoning'):
+                        exec_result.step_reasoning = "No reasoning provided by executor"
                     if not hasattr(exec_result, 'tool_name'):
                         raise ValueError("Executor did not provide tool_name")
                     if not hasattr(exec_result, 'tool_args'):
@@ -391,7 +365,7 @@ class PlanAndExecute(Module):
                     execution_history.append({
                         "step_id": step_id,
                         "step_description": step_description,
-                        "step_reasoning": exec_result.current_step_reasoning,
+                        "step_reasoning": exec_result.step_reasoning,
                         "tool_name": exec_result.tool_name,
                         "tool_args": exec_result.tool_args,
                         "result": tool_result,
@@ -415,9 +389,8 @@ class PlanAndExecute(Module):
                             # Parse the updated plan
                             new_steps = self._parse_plan_steps(replan_result.updated_plan)
                             if new_steps:
-                                # Replace the current steps with the updated plan
                                 current_steps = new_steps
-                                plan = replan_result.updated_plan  # Update plan for final extraction
+                                plan = replan_result.updated_plan
                             else:
                                 logger.warning("Failed to parse updated plan, continuing with original plan")
                                 
@@ -435,7 +408,7 @@ class PlanAndExecute(Module):
                         execution_history.append({
                             "step_id": step_id,
                             "step_description": step_description,
-                            "step_reasoning": getattr(exec_result, 'current_step_reasoning', 'Failed to get reasoning'),
+                            "step_reasoning": getattr(exec_result, 'step_reasoning', 'Failed to get reasoning'),
                             "tool_name": getattr(exec_result, 'tool_name', 'unknown'),
                             "tool_args": getattr(exec_result, 'tool_args', {}),
                             "result": f"FAILED: {error_msg}",
