@@ -105,4 +105,18 @@ class Example:
         return copied
 
     def toDict(self):  # noqa: N802
-        return self._store.copy()
+        def convert_to_serializable(value):
+            if hasattr(value, "toDict"):
+                return value.toDict()
+            elif isinstance(value, list):
+                return [convert_to_serializable(item) for item in value]
+            elif isinstance(value, dict):
+                return {k: convert_to_serializable(v) for k, v in value.items()}
+            else:
+                return value
+
+        serializable_store = {}
+        for k, v in self._store.items():
+            serializable_store[k] = convert_to_serializable(v)
+
+        return serializable_store
