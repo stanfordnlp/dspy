@@ -308,21 +308,39 @@ class PlanAndExecute(Module):
         except Exception as err:
             logger.error(f"Planning phase failed: {_fmt_exc(err)}")
             # Fallback to direct answer if planning fails
-            return self._call_with_potential_context_truncation(
+            result = self._call_with_potential_context_truncation(
                 self.extractor, 
                 {"plan": "Planning failed", "execution_history": "No execution performed"},
                 **input_args
             )
+            # Ensure plan is available immediately even in failure case
+            result.plan = []
+            result.execution_history = []
+            result.steps_executed = 0
+            result.steps_failed = 0
+            result.error = f"Planning failed: {_fmt_exc(err)}"
+            return result
 
         # Parse plan into steps
         steps = self._parse_plan_steps(plan)
         if not steps:
             logger.warning("No valid steps found in plan")
-            return self._call_with_potential_context_truncation(
+            result = self._call_with_potential_context_truncation(
                 self.extractor,
                 {"plan": plan, "execution_history": "No valid steps in plan"},
                 **input_args
             )
+            # Ensure plan is available immediately
+            result.plan = []
+            result.execution_history = []
+            return result
+
+        # Create initial result with plan available immediately
+        initial_result = dspy.Prediction()
+        initial_result.plan = steps
+        initial_result.execution_history = []
+        initial_result.steps_executed = 0
+        initial_result.steps_failed = 0
 
         # Phase 2: Execution
         execution_history = []
@@ -349,12 +367,22 @@ class PlanAndExecute(Module):
                         **input_args
                     )
                     
+                    # Validate execution result has required fields
+                    if not hasattr(exec_result, 'step_id'):
+                        exec_result.step_id = str(step_id)
+                    if not hasattr(exec_result, 'step_reasoning'):
+                        exec_result.step_reasoning = "No reasoning provided by executor"
+                    if not hasattr(exec_result, 'tool_name'):
+                        raise ValueError("Executor did not provide tool_name")
+                    if not hasattr(exec_result, 'tool_args'):
+                        exec_result.tool_args = {}
+                    
                     # Validate tool selection
                     if exec_result.tool_name not in self.tools:
                         raise ValueError(f"Invalid tool selected: {exec_result.tool_name}")
                     
                     # Execute the tool
-                    if exec_result.tool_name == "no_tool":
+                    if exec_result.tool_name == "reasoning":
                         tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.step_reasoning)
                     else:
                         tool_result = self.tools[exec_result.tool_name](**exec_result.tool_args)
@@ -431,195 +459,36 @@ class PlanAndExecute(Module):
                 **input_args
             )
             
-            # Add metadata to the result
-            final_result.plan = steps
-            final_result.execution_history = execution_history
-            final_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
-            final_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
+            # Update the initial result with extraction results while preserving plan
+            for key, value in final_result.items():
+                if key not in ['plan', 'execution_history', 'steps_executed', 'steps_failed']:
+                    setattr(initial_result, key, value)
             
-            return final_result
+            # Update metadata
+            initial_result.execution_history = execution_history
+            initial_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
+            initial_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
+            
+            return initial_result
             
         except Exception as err:
             logger.error(f"Final extraction failed: {_fmt_exc(err)}")
-            return dspy.Prediction(
-                plan=steps,
-                execution_history=execution_history,
-                error=f"Extraction failed: {_fmt_exc(err)}"
-            )
+            # Update initial result with error while preserving plan
+            initial_result.execution_history = execution_history
+            initial_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
+            initial_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
+            initial_result.error = f"Extraction failed: {_fmt_exc(err)}"
+            return initial_result
 
     async def aforward(self, **input_args):
         """Async version of the plan-and-execute workflow."""
-        max_plan_steps = input_args.pop("max_plan_steps", self.max_plan_steps)
-        max_retries = input_args.pop("max_retries", self.max_retries)
-
-        # Phase 1: Planning
-        try:
-            plan_result = await self._async_call_with_potential_context_truncation(self.planner, {}, **input_args)
-            plan = plan_result.plan
-        except Exception as err:
-            logger.error(f"Planning phase failed: {_fmt_exc(err)}")
-            return await self._async_call_with_potential_context_truncation(
-                self.extractor,
-                {"plan": "Planning failed", "execution_history": "No execution performed"},
-                **input_args
-            )
-
-        # Parse plan into steps
-        steps = self._parse_plan_steps(plan)
-        if not steps:
-            logger.warning("No valid steps found in plan")
-            return await self._async_call_with_potential_context_truncation(
-                self.extractor,
-                {"plan": plan, "execution_history": "No valid steps in plan"},
-                **input_args
-            )
-
-        # Phase 2: Execution
-        execution_history = []
-        current_steps = steps.copy()  # Work with a copy that can be updated
-        step_index = 0
-        
-        while step_index < len(current_steps):
-            step = current_steps[step_index]
-            step_id = step['id']
-            step_description = step['description']
-            step_executed = False
-            
-            for retry in range(max_retries):
-                try:
-                    # Execute current step
-                    exec_result = await self._async_call_with_potential_context_truncation(
-                        self.executor,
-                        {
-                            "step_id": step_id,
-                            "step_description": step_description,
-                            "plan": plan,
-                            "execution_history": self._format_execution_history(execution_history)
-                        },
-                        **input_args
-                    )
-                    
-                    # Validate tool selection
-                    if exec_result.tool_name not in self.tools:
-                        raise ValueError(f"Invalid tool selected: {exec_result.tool_name}")
-                    
-                    # Execute the tool (async if available)
-                    if exec_result.tool_name == "no_tool":
-                        # For no_tool, pass the reasoning from the execution result
-                        tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.step_reasoning)
-                    elif hasattr(self.tools[exec_result.tool_name], 'acall'):
-                        tool_result = await self.tools[exec_result.tool_name].acall(**exec_result.tool_args)
-                    else:
-                        tool_result = self.tools[exec_result.tool_name](**exec_result.tool_args)
-                    
-                    # Record successful execution
-                    execution_history.append({
-                        "step_id": step_id,
-                        "step_description": step_description,
-                        "step_reasoning": exec_result.step_reasoning,
-                        "tool_name": exec_result.tool_name,
-                        "tool_args": exec_result.tool_args,
-                        "result": tool_result,
-                        "retry_count": retry
-                    })
-                    
-                    step_executed = True
-                    
-                    # Check if this step requires replanning
-                    if self.replan_enabled and step.get('replan', False):
-                        logger.info(f"Step {step_id} marked for replanning, updating plan...")
-                        try:
-                            replan_result = await self._async_call_with_potential_context_truncation(
-                                self.replanner,
-                                {
-                                    "original_plan": json.dumps(current_steps, indent=2),
-                                    "execution_history": self._format_execution_history(execution_history),
-                                    "replan_step_result": str(tool_result)
-                                },
-                                **input_args
-                            )
-                            
-                            # Parse the updated plan
-                            new_steps = self._parse_plan_steps(replan_result.updated_plan)
-                            if new_steps:
-                                # Replace the current steps with the updated plan
-                                current_steps = new_steps
-                                logger.info(f"Plan updated with {len(new_steps)} steps")
-                                plan = replan_result.updated_plan  # Update plan for final extraction
-                            else:
-                                logger.warning("Failed to parse updated plan, continuing with original plan")
-                                
-                        except Exception as replan_err:
-                            logger.warning(f"Replanning failed: {_fmt_exc(replan_err)}, continuing with original plan")
-                    
-                    break
-                    
-                except Exception as err:
-                    error_msg = f"Step {step_id} execution failed (attempt {retry + 1}): {_fmt_exc(err)}"
-                    logger.warning(error_msg)
-                    
-                    if retry == max_retries - 1:
-                        # Record failed execution after all retries
-                        execution_history.append({
-                            "step_id": step_id,
-                            "step_description": step_description,
-                            "step_reasoning": getattr(exec_result, 'step_reasoning', 'Failed to get reasoning'),
-                            "tool_name": getattr(exec_result, 'tool_name', 'unknown'),
-                            "tool_args": getattr(exec_result, 'tool_args', {}),
-                            "result": f"FAILED: {error_msg}",
-                            "retry_count": retry + 1
-                        })
-            
-            # Move to next step
-            step_index += 1
-
-        # Phase 3: Extract final answer
-        try:
-            final_result = await self._async_call_with_potential_context_truncation(
-                self.extractor,
-                {
-                    "plan": plan,
-                    "execution_history": self._format_execution_history(execution_history)
-                },
-                **input_args
-            )
-            
-            # Add metadata to the result
-            final_result.plan = steps
-            final_result.execution_history = execution_history
-            final_result.steps_executed = len([h for h in execution_history if not h["result"].startswith("FAILED:")])
-            final_result.steps_failed = len([h for h in execution_history if h["result"].startswith("FAILED:")])
-            
-            return final_result
-            
-        except Exception as err:
-            logger.error(f"Final extraction failed: {_fmt_exc(err)}")
-            return dspy.Prediction(
-                plan=steps,
-                execution_history=execution_history,
-                error=f"Extraction failed: {_fmt_exc(err)}"
-            )
+        pass
 
     def _call_with_potential_context_truncation(self, module, additional_args, **input_args):
         """Call a module with potential context window truncation handling."""
         for _ in range(3):
             try:
                 return module(**input_args, **additional_args)
-            except ContextWindowExceededError:
-                logger.warning("Context window exceeded, truncating execution history.")
-                if "execution_history" in additional_args:
-                    additional_args["execution_history"] = self._truncate_execution_history(
-                        additional_args["execution_history"]
-                    )
-                else:
-                    # If no execution history to truncate, raise the error
-                    raise
-
-    async def _async_call_with_potential_context_truncation(self, module, additional_args, **input_args):
-        """Async version of context truncation handling."""
-        for _ in range(3):
-            try:
-                return await module.acall(**input_args, **additional_args)
             except ContextWindowExceededError:
                 logger.warning("Context window exceeded, truncating execution history.")
                 if "execution_history" in additional_args:
