@@ -232,23 +232,23 @@ class ProgramWrapper(Module):
     def __init__(self, program: Module, callable: Callable):
         self.program = program
         self.callable = callable
-    
+
     def __getattr__(self, name):
         attr = getattr(self._obj, name)
         return attr
-    
+
     def __getitem__(self, key):
         return self.program[key]
-    
+
     def __setattr__(self, name, value):
         setattr(self.program, name, value)
-    
+
     def __delattr__(self, name):
         delattr(self.program, name)
-    
+
     def __dir__(self):
         return dir(self.program)
-    
+
     def __repr__(self):
         return repr(self.program)
 
