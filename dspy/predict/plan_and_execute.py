@@ -107,8 +107,8 @@ class PlanAndExecute(Module):
                  "execution_history": dspy.InputField(desc="History of executed steps and their results")},
                 exec_instr
             )
-            .append("step_id", dspy.OutputField(desc="ID of the current step to execute"), type_=str)
-            .append("step_reasoning", dspy.OutputField(desc="Reasoning for this execution step"), type_=str)
+            .append("step_id", dspy.OutputField(desc="ID of the current step to execute, this must be return to track the step"), type_=str)
+            .append("step_reasoning", dspy.OutputField(desc="Reasoning for this execution step, this must be return to track the step"), type_=str)
             .append("tool_name", dspy.OutputField(desc="Name of the tool to use"), type_=str)
             .append("tool_args", dspy.OutputField(desc="Arguments for the tool in JSON format"), type_=dict[str, Any])
         )
@@ -382,7 +382,7 @@ class PlanAndExecute(Module):
                     
                     # Execute the tool
                     if exec_result.tool_name == "reasoning":
-                        tool_result = self.tools[exec_result.tool_name](reasoning=exec_result.step_reasoning)
+                        tool_result = self.tools[exec_result.tool_name]()
                     else:
                         tool_result = self.tools[exec_result.tool_name](**exec_result.tool_args)
                     
