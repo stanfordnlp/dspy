@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class PlanAndExecute(Module):
-    def __init__(self, signature: type["Signature"], tools: list[Callable], max_plan_steps: int = 10, max_retries: int = 3):
+    def __init__(self, signature: type["Signature"], tools: list[Callable], max_plan_steps: int = 10, max_retries: int = 3, replan_enabled: bool = True):
         """
         PlanAndExecute is a framework for building agents that separate planning from execution.
         The agent first creates a comprehensive plan to accomplish the task, then executes each
@@ -28,35 +28,48 @@ class PlanAndExecute(Module):
             tools (list[Callable]): A list of functions, callable objects, or `dspy.Tool` instances.
             max_plan_steps (Optional[int]): The maximum number of steps in the plan. Defaults to 10.
             max_retries (Optional[int]): The maximum number of retries for failed steps. Defaults to 3.
+            replan_enabled (Optional[bool]): Whether to enable dynamic replanning. Defaults to True.
 
         Example:
 
         ```python
-        def get_weather(city: str) -> str:
-            return f"The weather in {city} is sunny."
+        def list_files(directory: str) -> str:
+            return "Found files: a.pdf, b.txt, c.docx"
 
-        def book_restaurant(restaurant: str, time: str) -> str:
-            return f"Booked {restaurant} at {time}."
+        def get_file_details(filename: str) -> str:
+            return f"Details of {filename}: size 1MB, created yesterday"
 
         plan_execute = dspy.PlanAndExecute(
             signature="request->response", 
-            tools=[get_weather, book_restaurant]
+            tools=[list_files, get_file_details],
+            replan_enabled=True
         )
-        pred = plan_execute(request="Plan a dinner date in Tokyo considering the weather")
         
-        # The agent can also handle steps that don't require tools:
-        pred = plan_execute(request="Analyze the pros and cons of different programming languages")
-        # In this case, some steps might use 'no_tool' for pure reasoning tasks
+        # Example with replanning - the plan will be updated after step 1
+        pred = plan_execute(request="Give me list of files and detail of each file")
+        
+        # Initial plan might be:
+        # 1. {"id": 1, "description": "List all files", "replan": true}
+        # 2. {"id": 2, "description": "Get details for each file found"}
+        
+        # After step 1 executes and finds files a.pdf, b.txt, c.docx,
+        # the plan gets updated to:
+        # 1. {"id": 1, "description": "List all files (completed)"}  
+        # 2. {"id": 2, "description": "Get details of a.pdf"}
+        # 3. {"id": 3, "description": "Get details of b.txt"}
+        # 4. {"id": 4, "description": "Get details of c.docx"}
+        # 5. {"id": 5, "description": "Aggregate all file details"}
         
         # Access the structured plan and execution results:
-        print("Original plan:", pred.plan)  # JSON string
-        print("Execution history:", pred.execution_history)  # List with step_id references
+        print("Final plan:", pred.plan)  # Updated plan
+        print("Execution history:", pred.execution_history)  # All executed steps
         ```
         """
         super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_plan_steps = max_plan_steps
         self.max_retries = max_retries
+        self.replan_enabled = replan_enabled
 
         # Convert tools to Tool objects and create a dictionary for lookup
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
@@ -107,10 +120,25 @@ class PlanAndExecute(Module):
             extract_instr,
         )
 
+        # Create replanning signature if replan is enabled
+        if self.replan_enabled:
+            replan_instr = self._build_replanning_instructions(inputs, outputs)
+            self.replanning_signature = (
+                dspy.Signature({
+                    **signature.input_fields,
+                    "original_plan": dspy.InputField(desc="The original plan that is being updated"),
+                    "execution_history": dspy.InputField(desc="History of executed steps and their results"),
+                    "replan_step_result": dspy.InputField(desc="Result of the step that triggered replanning")
+                }, replan_instr)
+                .append("updated_plan", dspy.OutputField(desc="Updated plan incorporating new information"), type_=str)
+            )
+
         # Create the sub-modules
         self.planner = dspy.ChainOfThought(self.planning_signature)
         self.executor = dspy.ChainOfThought(self.execution_signature)
         self.extractor = dspy.ChainOfThought(self.extraction_signature)
+        if self.replan_enabled:
+            self.replanner = dspy.ChainOfThought(self.replanning_signature)
 
     def _build_planning_instructions(self, inputs: str, outputs: str) -> str:
         """Build instructions for the planning phase."""
@@ -126,12 +154,14 @@ class PlanAndExecute(Module):
             "The plan should be logical, sequential, and comprehensive to fully accomplish the task.",
             "",
             "IMPORTANT: Output the plan as a JSON array where each step has an 'id' (integer starting from 1) and 'description' (string).",
+            "Optionally, steps can include a 'replan' field (boolean) to indicate that the plan should be updated after this step completes.",
+            "Use 'replan': true for steps where the results will determine what subsequent steps are needed.",
             "Example format:",
             '[',
-            '  {"id": 1, "description": "First step description"},',
-            '  {"id": 2, "description": "Second step description"},',
-            '  {"id": 3, "description": "Third step description"}',
+            '  {"id": 1, "description": "Search for all files in the directory", "replan": true},',
+            '  {"id": 2, "description": "Process each found file (this will be expanded after step 1)"}',
             ']',
+            "When replan is true, the plan will be regenerated after that step to incorporate the step's results.",
             "Ensure the JSON is properly formatted and valid."
         ])
         
@@ -163,6 +193,34 @@ class PlanAndExecute(Module):
             f"extract and format the final answer to produce {outputs}.",
             "Synthesize information from all execution steps to provide a comprehensive and accurate response.",
             "Ensure the output directly addresses the original request and incorporates all relevant findings."
+        ])
+        
+        return "\n".join(base_instr)
+
+    def _build_replanning_instructions(self, inputs: str, outputs: str) -> str:
+        """Build instructions for the replanning phase."""
+        base_instr = [f"{self.signature.instructions}\n"] if self.signature.instructions else []
+        
+        tools_desc = "\n".join([f"- {tool.name}: {tool.desc}" for tool in self.tools.values()])
+        
+        base_instr.extend([
+            f"You are a replanning agent. Based on the input {inputs}, the original plan, and the execution results so far,",
+            f"create an updated plan to continue working toward producing {outputs}.",
+            f"You have access to the following tools:\n{tools_desc}\n",
+            "The original plan had a step marked for replanning, and that step has now been executed.",
+            "Based on the results of that step, update the remaining plan to incorporate the new information.",
+            "Keep completed steps as-is, but modify upcoming steps based on the new results.",
+            "Ensure the updated plan will efficiently accomplish the remaining work.",
+            "",
+            "IMPORTANT: Output the updated plan as a JSON array where each step has an 'id', 'description', and optional 'replan' field.",
+            "Maintain the same ID numbering for completed steps, and assign new IDs for new/modified steps.",
+            "Example updated plan format:",
+            '[',
+            '  {"id": 1, "description": "Search for all files in the directory"},',
+            '  {"id": 2, "description": "Get details of file1.pdf"},',
+            '  {"id": 3, "description": "Get details of file2.txt"},',
+            '  {"id": 4, "description": "Aggregate results"}',
+            ']'
         ])
         
         return "\n".join(base_instr)
@@ -200,10 +258,10 @@ class PlanAndExecute(Module):
             steps = []
             for item in plan_data[:self.max_plan_steps]:
                 if isinstance(item, dict) and 'id' in item and 'description' in item:
-                    steps.append({
-                        'id': item['id'],
-                        'description': item['description']
-                    })
+                    step = { 'id': item['id'], 'description': item['description'] }
+                    if 'replan' in item:
+                        step['replan'] = bool(item['replan'])
+                    steps.append(step)
                 else:
                     logger.warning(f"Invalid step format: {item}")
             
@@ -268,8 +326,11 @@ class PlanAndExecute(Module):
 
         # Phase 2: Execution
         execution_history = []
+        current_steps = steps.copy()  # Work with a copy that can be updated
+        step_index = 0
         
-        for step in steps:
+        while step_index < len(current_steps):
+            step = current_steps[step_index]
             step_id = step['id']
             step_description = step['description']
             step_executed = False
@@ -310,6 +371,34 @@ class PlanAndExecute(Module):
                     })
                     
                     step_executed = True
+                    
+                    # Check if this step requires replanning
+                    if self.replan_enabled and step.get('replan', False):
+                        logger.info(f"Step {step_id} marked for replanning, updating plan...")
+                        try:
+                            replan_result = self._call_with_potential_context_truncation(
+                                self.replanner,
+                                {
+                                    "original_plan": json.dumps(current_steps, indent=2),
+                                    "execution_history": self._format_execution_history(execution_history),
+                                    "replan_step_result": str(tool_result)
+                                },
+                                **input_args
+                            )
+                            
+                            # Parse the updated plan
+                            new_steps = self._parse_plan_steps(replan_result.updated_plan)
+                            if new_steps:
+                                # Replace the current steps with the updated plan
+                                current_steps = new_steps
+                                logger.info(f"Plan updated with {len(new_steps)} steps")
+                                plan = replan_result.updated_plan  # Update plan for final extraction
+                            else:
+                                logger.warning("Failed to parse updated plan, continuing with original plan")
+                                
+                        except Exception as replan_err:
+                            logger.warning(f"Replanning failed: {_fmt_exc(replan_err)}, continuing with original plan")
+                    
                     break
                     
                 except Exception as err:
@@ -327,6 +416,9 @@ class PlanAndExecute(Module):
                             "result": f"FAILED: {error_msg}",
                             "retry_count": retry + 1
                         })
+            
+            # Move to next step
+            step_index += 1
 
         # Phase 3: Extract final answer
         try:
@@ -384,8 +476,11 @@ class PlanAndExecute(Module):
 
         # Phase 2: Execution
         execution_history = []
+        current_steps = steps.copy()  # Work with a copy that can be updated
+        step_index = 0
         
-        for step in steps:
+        while step_index < len(current_steps):
+            step = current_steps[step_index]
             step_id = step['id']
             step_description = step['description']
             step_executed = False
@@ -419,7 +514,8 @@ class PlanAndExecute(Module):
                     
                     # Record successful execution
                     execution_history.append({
-                        "step": step,
+                        "step_id": step_id,
+                        "step_description": step_description,
                         "step_reasoning": exec_result.step_reasoning,
                         "tool_name": exec_result.tool_name,
                         "tool_args": exec_result.tool_args,
@@ -428,6 +524,34 @@ class PlanAndExecute(Module):
                     })
                     
                     step_executed = True
+                    
+                    # Check if this step requires replanning
+                    if self.replan_enabled and step.get('replan', False):
+                        logger.info(f"Step {step_id} marked for replanning, updating plan...")
+                        try:
+                            replan_result = await self._async_call_with_potential_context_truncation(
+                                self.replanner,
+                                {
+                                    "original_plan": json.dumps(current_steps, indent=2),
+                                    "execution_history": self._format_execution_history(execution_history),
+                                    "replan_step_result": str(tool_result)
+                                },
+                                **input_args
+                            )
+                            
+                            # Parse the updated plan
+                            new_steps = self._parse_plan_steps(replan_result.updated_plan)
+                            if new_steps:
+                                # Replace the current steps with the updated plan
+                                current_steps = new_steps
+                                logger.info(f"Plan updated with {len(new_steps)} steps")
+                                plan = replan_result.updated_plan  # Update plan for final extraction
+                            else:
+                                logger.warning("Failed to parse updated plan, continuing with original plan")
+                                
+                        except Exception as replan_err:
+                            logger.warning(f"Replanning failed: {_fmt_exc(replan_err)}, continuing with original plan")
+                    
                     break
                     
                 except Exception as err:
@@ -445,6 +569,9 @@ class PlanAndExecute(Module):
                             "result": f"FAILED: {error_msg}",
                             "retry_count": retry + 1
                         })
+            
+            # Move to next step
+            step_index += 1
 
         # Phase 3: Extract final answer
         try:
