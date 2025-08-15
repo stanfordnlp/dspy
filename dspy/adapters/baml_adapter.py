@@ -7,11 +7,10 @@ import inspect
 import types
 from typing import Any, Literal, Union, get_args, get_origin
 
-from pydantic import BaseModel
-
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.utils import format_field_value as original_format_field_value
 from dspy.signatures.signature import Signature
+from pydantic import BaseModel
 
 # Changing the comment symbol to Python's # rather than other languages' // seems to help
 COMMENT_SYMBOL = "#"
@@ -39,7 +38,9 @@ def _render_type_str(annotation: Any, _depth: int = 0, indent: int = 0) -> str:
     if origin in (types.UnionType, Union):
         non_none_args = [arg for arg in args if arg is not type(None)]
         # Render the non-None part of the union
-        type_render = " or ".join([_render_type_str(arg, _depth + 1, indent) for arg in non_none_args])
+        type_render = " or ".join(
+            [_render_type_str(arg, _depth + 1, indent) for arg in non_none_args]
+        )
         # Add 'or null' if None was part of the union
         if len(non_none_args) < len(args):
             return f"{type_render} or null"
@@ -85,7 +86,9 @@ def _render_type_str(annotation: Any, _depth: int = 0, indent: int = 0) -> str:
     return str(annotation)
 
 
-def _build_simplified_schema(model: type[BaseModel], indent: int = 0, _seen: set[type] | None = None) -> str:
+def _build_simplified_schema(
+    model: type[BaseModel], indent: int = 0, _seen: set[type] | None = None
+) -> str:
     """Builds a simplified, human-readable schema from a Pydantic model.
 
     Args:
@@ -124,7 +127,9 @@ def _build_simplified_schema(model: type[BaseModel], indent: int = 0, _seen: set
             # Unpack Optional[T] to get T
             origin = get_origin(field_type_to_render)
             if origin in (types.UnionType, Union):
-                non_none_args = [arg for arg in get_args(field_type_to_render) if arg is not type(None)]
+                non_none_args = [
+                    arg for arg in get_args(field_type_to_render) if arg is not type(None)
+                ]
                 if len(non_none_args) == 1:
                     field_type_to_render = non_none_args[0]
 
@@ -133,7 +138,9 @@ def _build_simplified_schema(model: type[BaseModel], indent: int = 0, _seen: set
             if origin is list:
                 field_type_to_render = get_args(field_type_to_render)[0]
 
-            if inspect.isclass(field_type_to_render) and issubclass(field_type_to_render, BaseModel):
+            if inspect.isclass(field_type_to_render) and issubclass(
+                field_type_to_render, BaseModel
+            ):
                 # Recursively build schema for nested models with circular reference protection
                 nested_schema = _build_simplified_schema(field_type_to_render, indent + 1, _seen)
                 rendered_type = _render_type_str(field.annotation, indent=indent + 1).replace(
@@ -202,25 +209,71 @@ class BAMLAdapter(JSONAdapter):
     ```
     """
 
+    def _get_clean_type_name(self, annotation: Any) -> str:
+        """Extract a clean type name for display in field descriptions."""
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+
+        # Handle Optional[T] or T | None
+        if origin in (types.UnionType, Union):
+            non_none_args = [arg for arg in args if arg is not type(None)]
+            if len(non_none_args) == 1:
+                base_type = self._get_clean_type_name(non_none_args[0])
+                return f"{base_type} or null" if len(non_none_args) < len(args) else base_type
+            return " or ".join(self._get_clean_type_name(arg) for arg in non_none_args) + (
+                " or null" if len(non_none_args) < len(args) else ""
+            )
+
+        # Handle list[T]
+        if origin is list:
+            return f"list[{self._get_clean_type_name(args[0])}]"
+
+        # Handle dict[K, V]
+        if origin is dict:
+            return (
+                f"dict[{self._get_clean_type_name(args[0])}, {self._get_clean_type_name(args[1])}]"
+            )
+
+        # Handle Literal types
+        if origin is Literal:
+            return f"Literal[{', '.join(repr(arg) for arg in args)}]"
+
+        # For classes, return just the class name
+        return getattr(annotation, "__name__", str(annotation))
+
+    def _extract_core_type(self, annotation: Any) -> Any:
+        """Extract the core type from Optional/Union wrappers."""
+        origin = get_origin(annotation)
+        if origin in (types.UnionType, Union):
+            non_none_args = [arg for arg in get_args(annotation) if arg is not type(None)]
+            return non_none_args[0] if len(non_none_args) == 1 else annotation
+        return annotation
+
+    def _get_field_description(self, field) -> str | None:
+        """Extract description from field, filtering out template values."""
+        desc_text = field.description
+        if not desc_text and isinstance(field.json_schema_extra, dict):
+            desc_text = field.json_schema_extra.get("desc")
+            # Skip default template values like ${field_name}
+            if desc_text and desc_text.startswith("${") and desc_text.endswith("}"):
+                desc_text = None
+        return desc_text
+
     def format_field_description(self, signature: type[Signature]) -> str:
         """Format the field description for the system message."""
         sections = []
 
-        # Add input field descriptions
-        if signature.input_fields:
-            sections.append("Your input fields are:")
-            for i, (name, field) in enumerate(signature.input_fields.items(), 1):
-                type_name = getattr(field.annotation, "__name__", str(field.annotation))
-                description = f": {field.description}" if field.description else ":"
-                sections.append(f"{i}. `{name}` ({type_name}){description}")
-
-        # Add output field descriptions
-        if signature.output_fields:
-            sections.append("Your output fields are:")
-            for i, (name, field) in enumerate(signature.output_fields.items(), 1):
-                type_name = getattr(field.annotation, "__name__", str(field.annotation))
-                description = f": {field.description}" if field.description else ":"
-                sections.append(f"{i}. `{name}` ({type_name}){description}")
+        for field_type, fields in [
+            ("input", signature.input_fields),
+            ("output", signature.output_fields),
+        ]:
+            if fields:
+                sections.append(f"Your {field_type} fields are:")
+                for i, (name, field) in enumerate(fields.items(), 1):
+                    type_name = self._get_clean_type_name(field.annotation)
+                    desc_text = self._get_field_description(field)
+                    description = f": {desc_text}" if desc_text else ":"
+                    sections.append(f"{i}. `{name}` ({type_name}){description}")
 
         return "\n".join(sections)
 
@@ -244,25 +297,13 @@ class BAMLAdapter(JSONAdapter):
         # Add output structure section
         if signature.output_fields:
             for name, field in signature.output_fields.items():
-                field_type = field.annotation
-                main_type = field_type
-
-                # Find the core type if it's wrapped in Optional or Union
-                origin = get_origin(field_type)
-                if origin in (types.UnionType, Union):
-                    non_none_args = [arg for arg in get_args(field_type) if arg is not type(None)]
-                    if len(non_none_args) == 1:
-                        main_type = non_none_args[0]
-
                 sections.append(f"[[ ## {name} ## ]]")
 
+                main_type = self._extract_core_type(field.annotation)
                 if inspect.isclass(main_type) and issubclass(main_type, BaseModel):
-                    # We have a pydantic model, so build the simplified schema for it.
-                    schema_str = _build_simplified_schema(main_type)
-                    sections.append(schema_str)
+                    sections.append(_build_simplified_schema(main_type))
                 else:
-                    # Handle non-pydantic or primitive types simply
-                    type_str = _render_type_str(field_type, indent=0)
+                    type_str = _render_type_str(field.annotation, indent=0)
                     sections.append(f"Output field `{name}` should be of type: {type_str}")
 
                 sections.append("")  # Empty line after each output
@@ -271,14 +312,6 @@ class BAMLAdapter(JSONAdapter):
         sections.append("[[ ## completed ## ]]")
 
         return "\n".join(sections)
-
-    def format_task_description(self, signature: type[Signature]) -> str:
-        """Format the task description for the system message."""
-        import textwrap
-
-        instructions = textwrap.dedent(signature.instructions)
-        objective = ("\n" + " " * 8).join([""] + instructions.splitlines())
-        return f"In adhering to this structure, your objective is: {objective}"
 
     def format_user_message_content(
         self,
@@ -299,7 +332,9 @@ class BAMLAdapter(JSONAdapter):
                     formatted_value = value.model_dump_json(indent=2, by_alias=True)
                 else:
                     # Fallback to the original dspy formatter for other types
-                    formatted_value = original_format_field_value(field_info=field_info, value=value)
+                    formatted_value = original_format_field_value(
+                        field_info=field_info, value=value
+                    )
 
                 messages.append(f"[[ ## {key} ## ]]\n{formatted_value}")
 

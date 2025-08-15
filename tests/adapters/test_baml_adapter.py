@@ -599,3 +599,23 @@ def test_baml_adapter_multiple_pydantic_input_fields():
     assert '"api1"' in user_message
     assert '"api2"' in user_message
     assert '"endpoints":' in user_message
+
+
+def test_baml_adapter_field_descriptions():
+    """
+    Test that signature descriptions (`desc`) are correctly handled in InputField/OutputField.
+    """
+    input_desc = "My input description"
+    output_desc = "My output description"
+    class Patient(pydantic.BaseModel):
+        name: str
+
+    class TestSignature(dspy.Signature):
+        input_field: str = dspy.InputField(desc=input_desc)
+        output_field: Patient = dspy.OutputField(desc=output_desc)
+
+    adapter = BAMLAdapter()
+    field_desc = adapter.format_field_description(TestSignature)
+
+    assert f"1. `input_field` (str): {input_desc}" in field_desc
+    assert f"1. `output_field` (Patient): {output_desc}" in field_desc
