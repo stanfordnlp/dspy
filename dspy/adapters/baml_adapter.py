@@ -7,10 +7,11 @@ import inspect
 import types
 from typing import Any, Literal, Union, get_args, get_origin
 
+from pydantic import BaseModel
+
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.utils import format_field_value as original_format_field_value
 from dspy.signatures.signature import Signature
-from pydantic import BaseModel
 
 # Changing the comment symbol to Python's # rather than other languages' // seems to help
 COMMENT_SYMBOL = "#"
