@@ -49,16 +49,16 @@ class PlanAndExecute(Module):
         pred = plan_execute(request="Give me list of files and detail of each file")
         
         # Initial plan might be:
-        # 1. {"id": 1, "description": "List all files", "replan": true}
-        # 2. {"id": 2, "description": "Get details for each file found"}
+        # 1. {"id": "1", "description": "List all files", "replan": true}
+        # 2. {"id": "2", "description": "Get details for each file found"}
         
         # After step 1 executes and finds files a.pdf, b.txt, c.docx,
         # the plan gets updated to:
-        # 1. {"id": 1, "description": "List all files (completed)"}  
-        # 2. {"id": 2, "description": "Get details of a.pdf"}
-        # 3. {"id": 3, "description": "Get details of b.txt"}
-        # 4. {"id": 4, "description": "Get details of c.docx"}
-        # 5. {"id": 5, "description": "Aggregate all file details"}
+        # 1. {"id": "1", "description": "List all files (completed)"}  
+        # 2. {"id": "2", "description": "Get details of a.pdf"}
+        # 3. {"id": "3", "description": "Get details of b.txt"}
+        # 4. {"id": "4", "description": "Get details of c.docx"}
+        # 5. {"id": "5", "description": "Aggregate all file details"}
         
         # Access the structured plan and execution results:
         print("Final plan:", pred.plan)  # Updated plan
@@ -158,8 +158,8 @@ class PlanAndExecute(Module):
             "Use 'replan': true for steps where the results will determine what subsequent steps are needed.",
             "Example format:",
             '[',
-            '  {"id": 1, "description": "Search for all files in the directory", "replan": true},',
-            '  {"id": 2, "description": "Process each found file (this will be expanded after step 1)"}',
+            '  {"id": "1", "description": "Search for all files in the directory", "replan": true},',
+            '  {"id": "2", "description": "Process each found file (this will be expanded after step 1)"}',
             ']',
             "When replan is true, the plan will be regenerated after that step to incorporate the step's results.",
             "Ensure the JSON is properly formatted and valid."
@@ -216,10 +216,10 @@ class PlanAndExecute(Module):
             "Maintain the same ID numbering for completed steps, and assign new IDs for new/modified steps.",
             "Example updated plan format:",
             '[',
-            '  {"id": 1, "description": "Search for all files in the directory"},',
-            '  {"id": 2, "description": "Get details of file1.pdf"},',
-            '  {"id": 3, "description": "Get details of file2.txt"},',
-            '  {"id": 4, "description": "Aggregate results"}',
+            '  {"id": "1", "description": "Search for all files in the directory"},',
+            '  {"id": "2", "description": "Get details of file1.pdf"},',
+            '  {"id": "3", "description": "Get details of file2.txt"},',
+            '  {"id": "4", "description": "Aggregate results"}',
             ']'
         ])
         
@@ -258,7 +258,7 @@ class PlanAndExecute(Module):
             steps = []
             for item in plan_data[:self.max_plan_steps]:
                 if isinstance(item, dict) and 'id' in item and 'description' in item:
-                    step = { 'id': item['id'], 'description': item['description'] }
+                    step = { 'id': str(item['id']), 'description': item['description'] }  # Ensure id is always string
                     if 'replan' in item:
                         step['replan'] = bool(item['replan'])
                     steps.append(step)
@@ -289,7 +289,7 @@ class PlanAndExecute(Module):
                         break
                 if step_text:
                     steps.append({
-                        'id': step_id,
+                        'id': str(step_id),
                         'description': step_text
                     })
                     step_id += 1
@@ -351,7 +351,6 @@ class PlanAndExecute(Module):
             step = current_steps[step_index]
             step_id = step['id']
             step_description = step['description']
-            step_executed = False
             
             for retry in range(max_retries):
                 try:
@@ -397,8 +396,6 @@ class PlanAndExecute(Module):
                         "result": tool_result,
                         "retry_count": retry
                     })
-                    
-                    step_executed = True
                     
                     # Check if this step requires replanning
                     if self.replan_enabled and step.get('replan', False):
@@ -482,6 +479,7 @@ class PlanAndExecute(Module):
 
     async def aforward(self, **input_args):
         """Async version of the plan-and-execute workflow."""
+        # Skip asycn for now
         pass
 
     def _call_with_potential_context_truncation(self, module, additional_args, **input_args):
