@@ -194,6 +194,13 @@ def streamify(
                 elif isinstance(value, StatusMessage):
                     yield value
                 elif isinstance(value, Prediction):
+                    # Finalize any active streams when the prediction completes
+                    for listeners in predict_id_to_listener.values():
+                        for listener in listeners:
+                            finalized_response = listener.finalize_stream()
+                            if finalized_response:
+                                yield finalized_response
+                    
                     if include_final_prediction_in_output_stream:
                         yield value
                     elif (

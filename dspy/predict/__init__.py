@@ -5,6 +5,7 @@ from dspy.predict.code_act import CodeAct
 from dspy.predict.knn import KNN
 from dspy.predict.multi_chain_comparison import MultiChainComparison
 from dspy.predict.parallel import Parallel
+from dspy.predict.plan_and_execute import PlanAndExecute
 from dspy.predict.predict import Predict
 from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct, Tool
@@ -17,10 +18,11 @@ __all__ = [
     "CodeAct",
     "KNN",
     "MultiChainComparison",
+    "Parallel",
+    "PlanAndExecute",
     "Predict",
     "ProgramOfThought",
     "ReAct",
     "Refine",
     "Tool",
-    "Parallel",
 ]
