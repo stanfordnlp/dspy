@@ -228,6 +228,33 @@ class TraceData(TypedDict):
     trace: list[tuple[Any, dict[str, Any], Prediction]]
     score: float | None
 
+class ProgramWrapper(Module):
+    def __init__(self, program: Module, callable: Callable):
+        self.program = program
+        self.callable = callable
+    
+    def __getattr__(self, name):
+        attr = getattr(self._obj, name)
+        return attr
+    
+    def __getitem__(self, key):
+        return self.program[key]
+    
+    def __setattr__(self, name, value):
+        setattr(self.program, name, value)
+    
+    def __delattr__(self, name):
+        delattr(self.program, name)
+    
+    def __dir__(self):
+        return dir(self.program)
+    
+    def __repr__(self):
+        return repr(self.program)
+
+    def __call__(self, *args, **kwargs):
+        return self.callable(*args, **kwargs)
+
 def bootstrap_trace_data(
     program: Module,
     dataset: list[Example],
@@ -302,6 +329,8 @@ def bootstrap_trace_data(
                     )
 
                 return failed_pred, trace
+
+    wrapped_program = ProgramWrapper(program, wrapped_program)
 
     results = evaluator(wrapped_program, metric=wrapped_metric).results
 
