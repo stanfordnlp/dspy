@@ -1,3 +1,4 @@
+import inspect
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
@@ -228,32 +229,94 @@ class TraceData(TypedDict):
     trace: list[tuple[Any, dict[str, Any], Prediction]]
     score: float | None
 
-class ProgramWrapper(Module):
-    def __init__(self, program: Module, callable: Callable):
-        self.program = program
-        self.callable = callable
+class ProgramWrapper:
+    """
+    A transparent wrapper around a program object.
 
-    def __getattr__(self, name):
-        attr = getattr(self.program, name)
-        return attr
+    - Forwards attribute access, setting, deletion, iteration, and dir() to the wrapped program.
+    - __call__ uses an optional call_wrapper(program, **kwargs) to execute the call. If that cannot
+      be used (e.g., positional-only args), it falls back to calling the original program directly,
+      ensuring behavior matches the wrapped program.
+    """
 
-    def __getitem__(self, key):
-        return self.program[key]
+    __slots__ = ("_program", "_call_wrapper")
 
-    def __setattr__(self, name, value):
-        setattr(self.program, name, value)
-
-    def __delattr__(self, name):
-        delattr(self.program, name)
-
-    def __dir__(self):
-        return dir(self.program)
-
-    def __repr__(self):
-        return repr(self.program)
+    def __init__(self, program, call_wrapper=None):
+        object.__setattr__(self, "_program", program)
+        object.__setattr__(self, "_call_wrapper", call_wrapper)
 
     def __call__(self, *args, **kwargs):
-        return self.callable(self.program, *args, **kwargs)
+        # If no wrapper provided, just call through.
+        if self._call_wrapper is None:
+            return self._program(*args, **kwargs)
+
+        # Try to adapt to the wrapper signature (program, **kwargs).
+        # 1) If we only got a single dict-like positional arg, treat it as kwargs.
+        if args and not kwargs and len(args) == 1 and isinstance(args[0], dict):
+            kwargs = dict(args[0])
+            args = ()
+
+        # 2) Try binding args/kwargs to the wrapped program's signature, then call wrapper with **bound.
+        if args:
+            try:
+                sig = inspect.signature(self._program)
+                bound = sig.bind_partial(*args, **kwargs)
+                kwargs = dict(bound.arguments)
+                args = ()
+            except Exception:
+                # If we can't bind into pure kwargs, we can't use the wrapper safely;
+                # fall back to behaving exactly like the program (direct call).
+                return self._program(*args, **kwargs)
+
+        # At this point, we have only kwargs; use the wrapper.
+        return self._call_wrapper(self._program, **kwargs)
+
+    # Transparent attribute access
+    def __getattr__(self, name):
+        return getattr(self._program, name)
+
+    def __setattr__(self, name, value):
+        if name in ProgramWrapper.__slots__:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._program, name, value)
+
+    def __delattr__(self, name):
+        if name in ProgramWrapper.__slots__:
+            object.__delattr__(self, name)
+        else:
+            delattr(self._program, name)
+
+    # Introspection and representation
+    def __dir__(self):
+        # Merge attributes of wrapper and program for better UX
+        return sorted(set(dir(type(self)) + list(self.__dict__ if hasattr(self, "__dict__") else []) + dir(self._program)))
+
+    def __repr__(self):
+        return repr(self._program)
+
+    def __str__(self):
+        return str(self._program)
+
+    # Iteration support if the wrapped program is iterable
+    def __iter__(self):
+        return iter(self._program)
+
+    # Equality and hashing should delegate to the wrapped object
+    def __eq__(self, other):
+        return self._program == (other._program if isinstance(other, ProgramWrapper) else other)
+
+    def __hash__(self):
+        return hash(self._program)
+
+    # Pickle support
+    def __getstate__(self):
+        return {"_program": self._program, "_call_wrapper": self._call_wrapper}
+
+    def __setstate__(self, state):
+        object.__setattr__(self, "_program", state["_program"])
+        object.__setattr__(self, "_call_wrapper", state["_call_wrapper"])
+
 
 def bootstrap_trace_data(
     program: Module,
