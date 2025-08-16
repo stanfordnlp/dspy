@@ -253,7 +253,7 @@ class ProgramWrapper(Module):
         return repr(self.program)
 
     def __call__(self, *args, **kwargs):
-        return self.callable(*args, **kwargs)
+        return self.callable(self.program, *args, **kwargs)
 
 def bootstrap_trace_data(
     program: Module,
@@ -283,10 +283,10 @@ def bootstrap_trace_data(
             return prediction.format_reward or format_failure_score
         return metric(example, prediction, trace) if metric else True
 
-    def wrapped_program_callable(**kwargs):
+    def wrapped_program_callable(program_to_use: Module, **kwargs):
         with dspy.context(trace=[]):
             try:
-                return program(**kwargs), dspy.settings.trace.copy()
+                return program_to_use(**kwargs), dspy.settings.trace.copy()
             except AdapterParseError as e:
                 completion_str = e.lm_response
                 parsed_result = e.parsed_result
@@ -297,7 +297,7 @@ def bootstrap_trace_data(
                 expected = list(failed_signature.output_fields.keys())
 
                 found_pred = None
-                for pred in program.predictors():
+                for pred in program_to_use.predictors():
                     if pred.signature == failed_signature:
                         found_pred = pred
                         break
