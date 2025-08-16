@@ -1,22 +1,15 @@
 import inspect
 import logging
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Callable, TypedDict
 
 import dspy
-from dspy.adapters.base import Adapter
-from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import infer_data_format
-from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
-from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.exceptions import AdapterParseError
+
 
 @dataclass
 class FailedPrediction:
