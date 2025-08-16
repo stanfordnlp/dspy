@@ -16,7 +16,7 @@ from dspy.teleprompt.bootstrap_finetune import (
     all_predictors_have_lms,
     assert_structural_equivalency,
 )
-from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data, FailedPrediction
+from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
 
 logger = logging.getLogger(__name__)
 
