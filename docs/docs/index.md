@@ -78,7 +78,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM("ollama_chat/llama3.2", api_base="http://localhost:11434", api_key="")
+        lm = dspy.LM("ollama_chat/llama3.2:1b", api_base="http://localhost:11434", api_key="")
         dspy.configure(lm=lm)
         ```
 
