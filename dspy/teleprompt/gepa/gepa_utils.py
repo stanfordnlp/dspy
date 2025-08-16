@@ -123,7 +123,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
-        from ..bootstrap_finetune import FailedPrediction
+        from ..bootstrap_trace import FailedPrediction
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[dict[str, Any]]] = {}
