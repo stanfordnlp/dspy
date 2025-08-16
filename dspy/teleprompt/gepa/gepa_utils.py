@@ -82,7 +82,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
-            from ..bootstrap_finetune import bootstrap_trace_data
+            from ..bootstrap_trace import bootstrap_trace_data
             trajs = bootstrap_trace_data(
                 program=program,
                 dataset=batch,
