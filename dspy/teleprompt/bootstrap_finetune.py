@@ -234,7 +234,7 @@ class ProgramWrapper(Module):
         self.callable = callable
 
     def __getattr__(self, name):
-        attr = getattr(self._obj, name)
+        attr = getattr(self.program, name)
         return attr
 
     def __getitem__(self, key):
