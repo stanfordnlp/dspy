@@ -8,7 +8,7 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
-from dspy.teleprompt.bootstrap_finetune import TraceData
+from dspy.teleprompt.bootstrap_trace import TraceData
 
 
 class LoggerAdapter:
