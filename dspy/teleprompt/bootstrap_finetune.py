@@ -283,7 +283,7 @@ def bootstrap_trace_data(
             return prediction.format_reward or format_failure_score
         return metric(example, prediction, trace) if metric else True
 
-    def wrapped_program(**kwargs):
+    def wrapped_program_callable(**kwargs):
         with dspy.context(trace=[]):
             try:
                 return program(**kwargs), dspy.settings.trace.copy()
@@ -330,7 +330,7 @@ def bootstrap_trace_data(
 
                 return failed_pred, trace
 
-    wrapped_program = ProgramWrapper(program, wrapped_program)
+    wrapped_program = ProgramWrapper(program, wrapped_program_callable)
 
     results = evaluator(wrapped_program, metric=wrapped_metric).results
 
