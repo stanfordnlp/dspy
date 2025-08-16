@@ -17,6 +17,7 @@ nav:
             - Language Models: learn/programming/language_models.md
             - Signatures: learn/programming/signatures.md
             - Modules: learn/programming/modules.md
+            - Adapters: learn/programming/adapters.md
         - DSPy Evaluation:
             - Evaluation Overview: learn/evaluation/overview.md
             - Data Handling: learn/evaluation/data.md
