@@ -229,34 +229,54 @@ class TraceData(TypedDict):
     trace: list[tuple[Any, dict[str, Any], Prediction]]
     score: float | None
 
-class ProgramWrapper:
-    """
-    A transparent wrapper around a program object.
+import inspect
 
-    - Forwards attribute access, setting, deletion, iteration, and dir() to the wrapped program.
-    - __call__ uses an optional call_wrapper(program, **kwargs) to execute the call. If that cannot
-      be used (e.g., positional-only args), it falls back to calling the original program directly,
-      ensuring behavior matches the wrapped program.
-    """
+import inspect
 
-    __slots__ = ("_program", "_call_wrapper")
+# ProgramWrapper inherits from your Module class with ProgramMeta metaclass.
+
+class ProgramWrapper(Module):
+    """
+    A transparent wrapper around a dspy Module that:
+    - Inherits from Module.
+    - Delegates behavior to the wrapped program, with an optional call_wrapper(program, **kwargs)
+      used when calling.
+    - Avoids recursion during Module's metaclass-driven initialization by handling attribute
+      setting carefully before _program exists.
+    """
 
     def __init__(self, program, call_wrapper=None):
+        # Initialize Module (this sets callbacks/history on the wrapper instance).
+        super().__init__(callbacks=getattr(program, "callbacks", None))
+        # Set internal fields directly.
         object.__setattr__(self, "_program", program)
         object.__setattr__(self, "_call_wrapper", call_wrapper)
+        # Make wrapper's callbacks/history reference the wrapped program's lists for consistency.
+        try:
+            object.__setattr__(self, "history", program.history)
+        except Exception:
+            pass
+        try:
+            object.__setattr__(self, "callbacks", program.callbacks)
+        except Exception:
+            pass
 
+    # Core calling behavior
     def __call__(self, *args, **kwargs):
-        # If no wrapper provided, just call through.
+        """
+        If call_wrapper is provided, try to adapt the call to kwargs and call
+        call_wrapper(program, **kwargs). Otherwise, or if adaptation fails, call the
+        wrapped program directly to preserve behavior.
+        """
         if self._call_wrapper is None:
             return self._program(*args, **kwargs)
 
-        # Try to adapt to the wrapper signature (program, **kwargs).
-        # 1) If we only got a single dict-like positional arg, treat it as kwargs.
+        # If single dict-like positional arg, treat it as kwargs.
         if args and not kwargs and len(args) == 1 and isinstance(args[0], dict):
             kwargs = dict(args[0])
             args = ()
 
-        # 2) Try binding args/kwargs to the wrapped program's signature, then call wrapper with **bound.
+        # Try binding args to program signature so we can pass only kwargs to call_wrapper.
         if args:
             try:
                 sig = inspect.signature(self._program)
@@ -264,33 +284,123 @@ class ProgramWrapper:
                 kwargs = dict(bound.arguments)
                 args = ()
             except Exception:
-                # If we can't bind into pure kwargs, we can't use the wrapper safely;
-                # fall back to behaving exactly like the program (direct call).
+                # Can't safely adapt; preserve exact behavior by calling program directly.
                 return self._program(*args, **kwargs)
 
-        # At this point, we have only kwargs; use the wrapper.
         return self._call_wrapper(self._program, **kwargs)
 
-    # Transparent attribute access
+    async def acall(self, *args, **kwargs):
+        if hasattr(self._program, "acall"):
+            return await self._program.acall(*args, **kwargs)
+        # Fallback to sync call if no async available
+        return self.__call__(*args, **kwargs)
+
+    def forward(self, *args, **kwargs):
+        if hasattr(self._program, "forward"):
+            return self._program.forward(*args, **kwargs)
+        return self._program(*args, **kwargs)
+
+    async def aforward(self, *args, **kwargs):
+        if hasattr(self._program, "aforward"):
+            return await self._program.aforward(*args, **kwargs)
+        if hasattr(self._program, "acall"):
+            return await self._program.acall(*args, **kwargs)
+        return self.forward(*args, **kwargs)
+
+    # Predictor/LM APIs: delegate to wrapped program to preserve fidelity.
+    def named_predictors(self):
+        return self._program.named_predictors() if hasattr(self._program, "named_predictors") else []
+
+    def predictors(self):
+        return self._program.predictors() if hasattr(self._program, "predictors") else []
+
+    def set_lm(self, lm):
+        if hasattr(self._program, "set_lm"):
+            return self._program.set_lm(lm)
+        return super().set_lm(lm)
+
+    def get_lm(self):
+        if hasattr(self._program, "get_lm"):
+            return self._program.get_lm()
+        return super().get_lm()
+
+    def map_named_predictors(self, func):
+        if hasattr(self._program, "map_named_predictors"):
+            self._program.map_named_predictors(func)
+            return self
+        return super().map_named_predictors(func)
+
+    def inspect_history(self, n: int = 1):
+        if hasattr(self._program, "inspect_history"):
+            return self._program.inspect_history(n)
+        return super().inspect_history(n)
+
+    def batch(
+        self,
+        examples,
+        num_threads=None,
+        max_errors=None,
+        return_failed_examples=False,
+        provide_traceback=None,
+        disable_progress_bar=False,
+    ):
+        if hasattr(self._program, "batch"):
+            return self._program.batch(
+                examples,
+                num_threads=num_threads,
+                max_errors=max_errors,
+                return_failed_examples=return_failed_examples,
+                provide_traceback=provide_traceback,
+                disable_progress_bar=disable_progress_bar,
+            )
+        return super().batch(
+            examples,
+            num_threads=num_threads,
+            max_errors=max_errors,
+            return_failed_examples=return_failed_examples,
+            provide_traceback=provide_traceback,
+            disable_progress_bar=disable_progress_bar,
+        )
+
+    # Transparent attribute access with init-safe guards
     def __getattr__(self, name):
+        # Only called if normal lookup fails. Avoid recursion before _program exists.
+        if "_program" not in self.__dict__:
+            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
         return getattr(self._program, name)
 
     def __setattr__(self, name, value):
-        if name in ProgramWrapper.__slots__:
+        # During metaclass-initialization, _program isn't set yet; keep attributes local.
+        if name in {"_program", "_call_wrapper"} or "_program" not in self.__dict__:
             object.__setattr__(self, name, value)
-        else:
-            setattr(self._program, name, value)
+            return
+
+        # If setting a data attribute that already lives on the wrapper instance, set locally.
+        if name in getattr(self, "__dict__", {}):
+            object.__setattr__(self, name, value)
+            return
+
+        # Delegate attribute setting to the wrapped program by default.
+        setattr(self._program, name, value)
 
     def __delattr__(self, name):
-        if name in ProgramWrapper.__slots__:
+        if name in {"_program", "_call_wrapper"} or "_program" not in self.__dict__:
+            object.__delattr__(self, name)
+            return
+
+        if name in getattr(self, "__dict__", {}):
             object.__delattr__(self, name)
         else:
             delattr(self._program, name)
 
     # Introspection and representation
     def __dir__(self):
-        # Merge attributes of wrapper and program for better UX
-        return sorted(set(dir(type(self)) + list(self.__dict__ if hasattr(self, "__dict__") else []) + dir(self._program)))
+        own = set(dir(type(self))) | set(getattr(self, "__dict__", {}).keys())
+        try:
+            prog = set(dir(self._program))
+        except Exception:
+            prog = set()
+        return sorted(own | prog)
 
     def __repr__(self):
         return repr(self._program)
@@ -302,7 +412,7 @@ class ProgramWrapper:
     def __iter__(self):
         return iter(self._program)
 
-    # Equality and hashing should delegate to the wrapped object
+    # Equality and hashing delegate to the wrapped object
     def __eq__(self, other):
         return self._program == (other._program if isinstance(other, ProgramWrapper) else other)
 
@@ -311,11 +421,19 @@ class ProgramWrapper:
 
     # Pickle support
     def __getstate__(self):
-        return {"_program": self._program, "_call_wrapper": self._call_wrapper}
+        # Let Module's __getstate__ do its normal pruning on the wrapper's dict,
+        # but also include the wrapped program and call_wrapper explicitly.
+        state = super().__getstate__()
+        state["_program"] = self._program
+        state["_call_wrapper"] = self._call_wrapper
+        return state
 
     def __setstate__(self, state):
-        object.__setattr__(self, "_program", state["_program"])
-        object.__setattr__(self, "_call_wrapper", state["_call_wrapper"])
+        # Restore wrapper internals first.
+        object.__setattr__(self, "_program", state.pop("_program"))
+        object.__setattr__(self, "_call_wrapper", state.pop("_call_wrapper"))
+        # Restore the rest via Module's machinery.
+        super().__setstate__(state)
 
 
 def bootstrap_trace_data(
