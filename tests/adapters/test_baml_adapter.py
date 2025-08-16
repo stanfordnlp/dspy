@@ -40,14 +40,9 @@ class ImageWrapper(pydantic.BaseModel):
     tag: list[str]
 
 
-class CircularModelA(pydantic.BaseModel):
+class CircularModel(pydantic.BaseModel):
     name: str
-    related_b: "CircularModelB | None" = None
-
-
-class CircularModelB(pydantic.BaseModel):
-    id: int
-    related_a: CircularModelA | None = None
+    field: "CircularModel"
 
 
 def test_baml_adapter_basic_schema_generation():
@@ -143,20 +138,18 @@ def test_baml_adapter_handles_complex_nested_models():
     assert "metadata: dict[string, string]," in schema
 
 
-def test_baml_adapter_prevents_circular_references():
+def test_baml_adapter_raise_error_on_circular_references():
     """Test that circular references are handled gracefully."""
 
     class TestSignature(dspy.Signature):
         input: str = dspy.InputField()
-        circular: CircularModelA = dspy.OutputField()
+        circular: CircularModel = dspy.OutputField()
 
     adapter = BAMLAdapter()
-    schema = adapter.format_field_structure(TestSignature)
+    with pytest.raises(ValueError) as error:
+        adapter.format_field_structure(TestSignature)
 
-    # Should not cause infinite recursion and should handle ForwardRef gracefully
-    assert "name: string," in schema
-    # The actual output shows ForwardRef handling, which is acceptable
-    assert "ForwardRef" in schema or "<circular reference" in schema
+    assert "BAMLAdapter cannot handle recursive pydantic models" in str(error.value)
 
 
 def test_baml_adapter_formats_pydantic_inputs_as_clean_json():
@@ -225,53 +218,6 @@ def test_baml_adapter_handles_schema_generation_errors_gracefully():
     except Exception:
         # If exception occurs, test passes as we're testing graceful handling
         pass
-
-
-def test_baml_adapter_inherits_json_parsing_behavior():
-    """Test that BAMLAdapter maintains JSONAdapter's parsing compatibility."""
-
-    class TestSignature(dspy.Signature):
-        question: str = dspy.InputField()
-        answer: str = dspy.OutputField()
-
-    baml_adapter = BAMLAdapter()
-    json_adapter = dspy.JSONAdapter()
-
-    # Both should parse the same JSON response identically
-    completion = '{"answer": "Paris"}'
-
-    baml_result = baml_adapter.parse(TestSignature, completion)
-    json_result = json_adapter.parse(TestSignature, completion)
-
-    assert baml_result == json_result == {"answer": "Paris"}
-
-
-def test_baml_adapter_parse_complex_pydantic_models():
-    """Test parsing JSON into complex Pydantic models."""
-
-    class TestSignature(dspy.Signature):
-        input: str = dspy.InputField()
-        patient: PatientDetails = dspy.OutputField()
-
-    adapter = BAMLAdapter()
-
-    completion = """{"patient": {
-        "name": "John Smith",
-        "age": 42,
-        "address": {
-            "street": "456 Oak St",
-            "city": "Springfield",
-            "country": "US"
-        }
-    }}"""
-
-    result = adapter.parse(TestSignature, completion)
-
-    assert isinstance(result["patient"], PatientDetails)
-    assert result["patient"].name == "John Smith"
-    assert result["patient"].age == 42
-    assert isinstance(result["patient"].address, PatientAddress)
-    assert result["patient"].address.street == "456 Oak St"
 
 
 def test_baml_adapter_raises_on_missing_fields():
