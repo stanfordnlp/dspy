@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
+from urllib.parse import urljoin
 
 import openai
 import requests
@@ -152,7 +153,7 @@ class ArborReinforceJob(ReinforceJob):
                 gpu_config_type: self.gpu_config,
             },
         }
-        url = f"{api_base}fine_tuning/grpo/initialize"
+        url = urljoin(api_base, "fine_tuning/grpo/initialize")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url=url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to initialize GRPO: {response}"
@@ -169,7 +170,7 @@ class ArborReinforceJob(ReinforceJob):
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         data = {"job_id": self.provider_job_id, "model": finetune_model, "batch": train_group}
-        url = f"{api_base}fine_tuning/grpo/step"
+        url = urljoin(api_base, "fine_tuning/grpo/step")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
@@ -195,7 +196,7 @@ class ArborReinforceJob(ReinforceJob):
 
     def save_checkpoint(self, checkpoint_name: str, score: float | None = None):
         api_base = self.lm.kwargs["api_base"]
-        url = f"{api_base}fine_tuning/grpo/checkpoint"
+        url = urljoin(api_base, "fine_tuning/grpo/checkpoint")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id, "checkpoint_name": checkpoint_name}
         response = requests.post(url, headers=headers, json=body)
@@ -214,7 +215,7 @@ class ArborReinforceJob(ReinforceJob):
     def terminate(self):
         api_base = self.lm.kwargs["api_base"]
 
-        url = f"{api_base}fine_tuning/grpo/terminate"
+        url = urljoin(api_base, "fine_tuning/grpo/terminate")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id}
         response = requests.post(url, headers=headers, json=body)
@@ -256,7 +257,7 @@ class ArborProvider(Provider):
         launch_kwargs = launch_kwargs or lm.launch_kwargs
 
         # Make request to launch endpoint
-        response = requests.post(f"{api_base}chat/launch", json={"model": model, "launch_kwargs": launch_kwargs})
+        response = requests.post(urljoin(api_base, "chat/launch"), json={"model": model, "launch_kwargs": launch_kwargs})
 
         if response.status_code != 200:
             raise Exception(f"Failed to launch model. Status code: {response.status_code}, Response: {response.text}")
@@ -268,7 +269,7 @@ class ArborProvider(Provider):
         api_base = lm.kwargs["api_base"]
 
         response = requests.post(
-            f"{api_base}chat/kill",
+            urljoin(api_base, "chat/kill"),
         )
 
         if response.status_code != 200:
