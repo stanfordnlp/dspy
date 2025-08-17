@@ -43,9 +43,6 @@ class GRPOChatData(TypedDict):
 GRPOGroup = list[GRPOChatData]
 
 
-class SingleGPUConfig(TypedDict):
-    shared_memory: bool
-
 
 class MultiGPUConfig(TypedDict):
     num_inference_gpus: int

@@ -6,7 +6,7 @@ from typing import Any, Callable, Literal
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, SingleGPUConfig, MultiGPUConfig
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, MultiGPUConfig
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
@@ -42,7 +42,7 @@ class GRPO(FinetuneTeleprompter):
         format_failure_score: float = -1,
         variably_invoked_predictor_grouping_mode: Literal["truncate"] | Literal["fill"] | Literal["ragged"] = "truncate",
         variably_invoked_predictor_fill_strategy: Literal["randint"] | Literal["max"] | None = None,
-        gpu_config: SingleGPUConfig | MultiGPUConfig | None = SingleGPUConfig(shared_memory=True),
+        gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1),
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric

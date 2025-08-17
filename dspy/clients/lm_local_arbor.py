@@ -8,7 +8,7 @@ import requests
 
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data, SingleGPUConfig, MultiGPUConfig
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data, MultiGPUConfig
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -71,7 +71,7 @@ class ArborReinforceJob(ReinforceJob):
         "lora": False,
     }
 
-    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs, gpu_config: SingleGPUConfig | MultiGPUConfig | None = SingleGPUConfig(shared_memory=True)):
+    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
         # The teleprompter must ensure that this is set
         if "num_generations" not in train_kwargs:
             raise ValueError("num_generations must be set in the training kwargs")
@@ -120,12 +120,8 @@ class ArborReinforceJob(ReinforceJob):
         api_base = self.lm.kwargs["api_base"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
-        # Check gpu_config type by examining its keys since TypedDict doesn't support isinstance
-        # SingleGPUConfig has 'shared_memory', MultiGPUConfig has 'num_inference_gpus' and 'num_training_gpus'
-        if isinstance(self.gpu_config, dict) and "shared_memory" in self.gpu_config:
-            gpu_config_type = "single"
-        else:
-            gpu_config_type = "multi"
+        # Only multi-GPU is supported for now
+        gpu_config_type = "multi"
         data = {
             "model": finetune_model,
             "num_generations": num_generations,
