@@ -119,7 +119,12 @@ class ArborReinforceJob(ReinforceJob):
         api_base = self.lm.kwargs["api_base"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
-        gpu_config_type = "single" if isinstance(self.gpu_config, SingleGPUConfig) else "multi"
+        # Check gpu_config type by examining its keys since TypedDict doesn't support isinstance
+        # SingleGPUConfig has 'shared_memory', MultiGPUConfig has 'num_inference_gpus' and 'num_training_gpus'
+        if isinstance(self.gpu_config, dict) and "shared_memory" in self.gpu_config:
+            gpu_config_type = "single"
+        else:
+            gpu_config_type = "multi"
         data = {
             "model": finetune_model,
             "num_generations": num_generations,
