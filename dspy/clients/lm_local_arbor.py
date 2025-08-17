@@ -7,7 +7,7 @@ import requests
 
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data, SingleGPUConfig, MultiGPUConfig
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -70,7 +70,7 @@ class ArborReinforceJob(ReinforceJob):
         "lora": False,
     }
 
-    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs):
+    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs, gpu_config: SingleGPUConfig | MultiGPUConfig | None = SingleGPUConfig(shared_memory=True)):
         # The teleprompter must ensure that this is set
         if "num_generations" not in train_kwargs:
             raise ValueError("num_generations must be set in the training kwargs")
@@ -80,6 +80,7 @@ class ArborReinforceJob(ReinforceJob):
         self.provider_job_id = None
         self.checkpoints = {}
         self.last_checkpoint = None
+        self.gpu_config = gpu_config
 
     def initialize(self):
         # TODO(GRPO Team): Set provider job ID
@@ -118,6 +119,7 @@ class ArborReinforceJob(ReinforceJob):
         api_base = self.lm.kwargs["api_base"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
+        gpu_config_type = "single" if isinstance(self.gpu_config, SingleGPUConfig) else "multi"
         data = {
             "model": finetune_model,
             "num_generations": num_generations,
@@ -140,6 +142,10 @@ class ArborReinforceJob(ReinforceJob):
             "logging_steps": logging_steps,
             "max_context_length": max_context_length,
             "lora": lora,
+            "gpu_config": {
+                "type": gpu_config_type,
+                gpu_config_type: self.gpu_config,
+            },
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {"Content-Type": "application/json"}
