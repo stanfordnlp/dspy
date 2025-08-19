@@ -20,7 +20,7 @@ to [MCP servers built by the community](https://modelcontextprotocol.io/examples
 Before starting, let's install the required dependencies:
 
 ```shell
-pip install -U dspy[mcp]
+pip install -U "dspy[mcp]"
 ```
 
 ## MCP Server Setup
