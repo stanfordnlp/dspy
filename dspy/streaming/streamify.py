@@ -204,6 +204,9 @@ def streamify(
                         yield value
                     return
                 else:
+                    # This wildcard case allows for customized streaming behavior.
+                    # It is useful when a users have a custom LM which returns stream chunks in a custom format.
+                    # We let those chunks pass through to the user to handle them as needed.
                     yield value
 
     if async_streaming:
