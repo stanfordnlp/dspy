@@ -203,6 +203,8 @@ def streamify(
                     ):
                         yield value
                     return
+                else:
+                    yield value
 
     if async_streaming:
         return async_streamer
