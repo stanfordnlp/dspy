@@ -85,7 +85,7 @@ class LM(BaseLM):
             if max_tokens < 20000 or temperature != 1.0:
                 raise ValueError(
                     "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20000 to "
-                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5o', temperature=1.0, max_tokens=20000)"
+                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=20000)"
                 )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
         else:
