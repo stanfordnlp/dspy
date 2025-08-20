@@ -1,9 +1,11 @@
 import asyncio
 import time
+from dataclasses import dataclass
 from unittest import mock
 from unittest.mock import AsyncMock
 
 import pytest
+from asyncer import syncify
 from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
@@ -849,10 +851,6 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
 
 @pytest.mark.anyio
 async def test_streaming_allows_custom_chunk_types():
-    from dataclasses import dataclass
-
-    from asyncer import syncify
-
     @dataclass
     class CustomChunk:
         text: str
