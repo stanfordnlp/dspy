@@ -34,7 +34,7 @@ class ProgramWrapper(Module):
       setting carefully before _program exists.
     """
 
-    def __init__(self, program, call_wrapper=None):
+    def __init__(self, program: Module, call_wrapper: Callable[[Module,], Any] = None):
         # Initialize Module (this sets callbacks/history on the wrapper instance).
         super().__init__(callbacks=getattr(program, "callbacks", None))
         # Set internal fields directly.
@@ -75,50 +75,33 @@ class ProgramWrapper(Module):
         return self._call_wrapper(self._program, **kwargs)
 
     async def acall(self, *args, **kwargs):
-        if hasattr(self._program, "acall"):
-            return await self._program.acall(*args, **kwargs)
-        # Fallback to sync call if no async available
-        return self.__call__(*args, **kwargs)
+        return await self._program.acall(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
-        if hasattr(self._program, "forward"):
-            return self._program.forward(*args, **kwargs)
-        return self._program(*args, **kwargs)
+        return self._program.forward(*args, **kwargs)
 
     async def aforward(self, *args, **kwargs):
-        if hasattr(self._program, "aforward"):
-            return await self._program.aforward(*args, **kwargs)
-        if hasattr(self._program, "acall"):
-            return await self._program.acall(*args, **kwargs)
-        return self.forward(*args, **kwargs)
+        return await self._program.aforward(*args, **kwargs)
 
     # Predictor/LM APIs: delegate to wrapped program to preserve fidelity.
     def named_predictors(self):
-        return self._program.named_predictors() if hasattr(self._program, "named_predictors") else []
+        return self._program.named_predictors()
 
     def predictors(self):
-        return self._program.predictors() if hasattr(self._program, "predictors") else []
+        return self._program.predictors()
 
     def set_lm(self, lm):
-        if hasattr(self._program, "set_lm"):
-            return self._program.set_lm(lm)
-        return super().set_lm(lm)
+        return self._program.set_lm(lm)
 
     def get_lm(self):
-        if hasattr(self._program, "get_lm"):
-            return self._program.get_lm()
-        return super().get_lm()
+        return self._program.get_lm()
 
     def map_named_predictors(self, func):
-        if hasattr(self._program, "map_named_predictors"):
-            self._program.map_named_predictors(func)
-            return self
-        return super().map_named_predictors(func)
+        self._program.map_named_predictors(func)
+        return self
 
     def inspect_history(self, n: int = 1):
-        if hasattr(self._program, "inspect_history"):
-            return self._program.inspect_history(n)
-        return super().inspect_history(n)
+        return self._program.inspect_history(n)
 
     def batch(
         self,
@@ -129,23 +112,14 @@ class ProgramWrapper(Module):
         provide_traceback=None,
         disable_progress_bar=False,
     ):
-        if hasattr(self._program, "batch"):
-            return self._program.batch(
-                examples,
-                num_threads=num_threads,
+        return self._program.batch(
+            examples,
+            num_threads=num_threads,
                 max_errors=max_errors,
                 return_failed_examples=return_failed_examples,
                 provide_traceback=provide_traceback,
                 disable_progress_bar=disable_progress_bar,
             )
-        return super().batch(
-            examples,
-            num_threads=num_threads,
-            max_errors=max_errors,
-            return_failed_examples=return_failed_examples,
-            provide_traceback=provide_traceback,
-            disable_progress_bar=disable_progress_bar,
-        )
 
     # Transparent attribute access with init-safe guards
     def __getattr__(self, name):
