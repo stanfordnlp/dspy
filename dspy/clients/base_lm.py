@@ -48,57 +48,6 @@ class BaseLM:
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
-    def _process_completion(self, response, merged_kwargs):
-        """Process the response of OpenAI chat completion API and extract outputs.
-        
-        Args:
-            response: The OpenAI chat completion response
-                https://platform.openai.com/docs/api-reference/chat/object
-            merged_kwargs: Merged kwargs from self.kwargs and method kwargs
-            
-        Returns:
-            List of processed outputs
-        """
-        outputs = []
-        for c in response.choices:
-            output = {}
-            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
-            if merged_kwargs.get("logprobs"):
-                output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
-            if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
-                output["tool_calls"] = c.message.tool_calls
-            outputs.append(output)
-
-        if all(len(output) == 1 for output in outputs):
-            # Return a list if every output only has "text" key
-            outputs = [output["text"] for output in outputs]
-
-        return outputs
-
-    def _process_response(self, response):
-        """Process the response of OpenAI Response API and extract outputs.
-        
-        Args:
-            response: OpenAI Response API response
-                https://platform.openai.com/docs/api-reference/responses/object
-            merged_kwargs: Merged kwargs from self.kwargs and method kwargs
-            
-        Returns:
-            List of processed outputs
-        """
-        outputs = []
-        tool_calls = []
-        for output_item in response.output:
-            if output_item.type == "message":
-                for content_item in output_item.content:
-                    outputs.append(content_item.text)
-            elif output_item.type == "function_call":
-                tool_calls.append(output_item.model_dump())
-
-        if tool_calls:
-            outputs.append({"tool_calls": tool_calls})
-        return outputs
-
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
 
@@ -204,6 +153,56 @@ class BaseLM:
             if len(module.history) >= settings.max_history_size:
                 module.history.pop(0)
             module.history.append(entry)
+
+    def _process_completion(self, response, merged_kwargs):
+        """Process the response of OpenAI chat completion API and extract outputs.
+        
+        Args:
+            response: The OpenAI chat completion response
+                https://platform.openai.com/docs/api-reference/chat/object
+            merged_kwargs: Merged kwargs from self.kwargs and method kwargs
+            
+        Returns:
+            List of processed outputs
+        """
+        outputs = []
+        for c in response.choices:
+            output = {}
+            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+            if merged_kwargs.get("logprobs"):
+                output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+            if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
+                output["tool_calls"] = c.message.tool_calls
+            outputs.append(output)
+
+        if all(len(output) == 1 for output in outputs):
+            # Return a list if every output only has "text" key
+            outputs = [output["text"] for output in outputs]
+
+        return outputs
+
+    def _process_response(self, response):
+        """Process the response of OpenAI Response API and extract outputs.
+        
+        Args:
+            response: OpenAI Response API response
+                https://platform.openai.com/docs/api-reference/responses/object
+            
+        Returns:
+            List of processed outputs
+        """
+        outputs = []
+        tool_calls = []
+        for output_item in response.output:
+            if output_item.type == "message":
+                for content_item in output_item.content:
+                    outputs.append(content_item.text)
+            elif output_item.type == "function_call":
+                tool_calls.append(output_item.model_dump())
+
+        if tool_calls:
+            outputs.append({"tool_calls": tool_calls})
+        return outputs
 
 
 def inspect_history(n: int = 1):

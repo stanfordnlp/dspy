@@ -390,15 +390,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
 
 def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
-    if "messages" in request:
-        content_blocks = []
-        for msg in request.pop("messages"):
-            c = msg.get("content")
-            if isinstance(c, str):
-                content_blocks.append({"type": "input_text", "text": c})
-            elif isinstance(c, list):
-                content_blocks.extend(c)
-        request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+    request = _convert_chat_request_to_responses_request(request)
 
     return litellm.responses(
         cache=cache,
@@ -410,6 +402,16 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
 
 async def alitellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    request = _convert_chat_request_to_responses_request(request)
+
+    return await litellm.aresponses(
+        cache=cache,
+        num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
+        **request,
+    )
+
+def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     if "messages" in request:
         content_blocks = []
         for msg in request.pop("messages"):
@@ -419,9 +421,4 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
             elif isinstance(c, list):
                 content_blocks.extend(c)
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
-    return await litellm.aresponses(
-        cache=cache,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        **request,
-    )
+    return request
