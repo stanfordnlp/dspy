@@ -14,21 +14,21 @@ import dspy
 from dspy.utils.usage_tracker import track_usage
 
 
-def make_response(output_blocks, *, model="openai/dspy-test-model", tools=None):
+def make_response(output_blocks):
     return ResponsesAPIResponse(
         id="resp_1",
         created_at=0.0,
         error=None,
         incomplete_details=None,
         instructions=None,
-        model=model,
+        model="openai/dspy-test-model",
         object="response",
         output=output_blocks,
         metadata = {},
-        parallel_tool_calls=bool(tools),
+        parallel_tool_calls=False,
         temperature=1.0,
         tool_choice="auto",
-        tools=tools or [],
+        tools=[],
         top_p=1.0,
         max_output_tokens=None,
         previous_response_id=None,
