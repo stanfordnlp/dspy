@@ -78,8 +78,8 @@ class LM(BaseLM):
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
 
-        # Match pattern: o[1,3,4] at the start, optionally followed by -mini and anything else
-        model_pattern = re.match(r"^(?:o([1345])|gpt-(5))(?:-mini)?", model_family)
+        # Recognize OpenAI reasoning models (o1, o3, o4, gpt-5 family)
+        model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
 
         if model_pattern:
             if max_tokens < 20000 or temperature != 1.0:

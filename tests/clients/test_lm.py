@@ -226,6 +226,9 @@ def test_reasoning_model_token_parameter():
         ("openai/o1-2023-01-01", True),
         ("openai/o3", True),
         ("openai/o3-mini-2023-01-01", True),
+        ("openai/gpt-5", True),
+        ("openai/gpt-5-mini", True),
+        ("openai/gpt-5-nano", True),
         ("openai/gpt-4", False),
         ("anthropic/claude-2", False),
     ]
@@ -245,19 +248,22 @@ def test_reasoning_model_token_parameter():
             assert "max_tokens" in lm.kwargs
             assert lm.kwargs["max_tokens"] == 1000
 
-
-def test_reasoning_model_requirements():
+@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano"])
+def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
-    with pytest.raises(ValueError, match="reasoning models require passing temperature=1.0 and max_tokens >= 20000"):
+    with pytest.raises(
+        ValueError,
+        match="reasoning models require passing temperature=1.0 and max_tokens >= 20000",
+    ):
         dspy.LM(
-            model="openai/o1",
+            model=model_name,
             temperature=0.7,  # Should be 1.0
             max_tokens=1000,  # Should be >= 20_000
         )
 
     # Should pass with correct parameters
     lm = dspy.LM(
-        model="openai/o1",
+        model=model_name,
         temperature=1.0,
         max_tokens=20_000,
     )
