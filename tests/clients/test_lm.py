@@ -1,3 +1,4 @@
+import json
 import time
 from unittest import mock
 from unittest.mock import patch
@@ -5,11 +6,39 @@ from unittest.mock import patch
 import litellm
 import pydantic
 import pytest
+from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
 
 import dspy
 from dspy.utils.usage_tracker import track_usage
+
+
+def make_response(output_blocks, *, model="openai/dspy-test-model", tools=None):
+    return ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details=None,
+        instructions=None,
+        model=model,
+        object="response",
+        output=output_blocks,
+        metadata = {},
+        parallel_tool_calls=bool(tools),
+        temperature=1.0,
+        tool_choice="auto",
+        tools=tools or [],
+        top_p=1.0,
+        max_output_tokens=None,
+        previous_response_id=None,
+        reasoning=None,
+        status="completed",
+        text=None,
+        truncation="disabled",
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        user=None,
+    )
 
 
 def test_chat_lms_can_be_queried(litellm_test_server):
@@ -409,3 +438,66 @@ def test_disable_history():
                 choices=[Choices(message=Message(content="test answer"))],
                 model="openai/gpt-4o-mini",
             )
+
+def test_responses_api(litellm_test_server):
+    api_base, _ = litellm_test_server
+    expected_text = "This is a test answer from responses API."
+
+    api_response = make_response(
+        output_blocks=[
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {"type": "output_text", "text": expected_text, "annotations": []}
+                ],
+            }
+        ]
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
+        lm = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base=api_base,
+            api_key="fakekey",
+            model_type="responses",
+            cache=False,
+            cache_in_memory=False,
+        )
+        assert lm("openai query") == [expected_text]
+
+        dspy_responses.assert_called_once()
+        assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
+
+
+def test_responses_api_tool_calls(litellm_test_server):
+    api_base, _ = litellm_test_server
+    expected_tool_call = {
+        "type": "function_call",
+        "name": "get_weather",
+        "arguments": json.dumps({"city": "Paris"}),
+        "call_id": "call_1",
+        "status": "completed",
+        "id": "call_1",
+    }
+    expected_response = [{"tool_calls": [expected_tool_call]}]
+
+    api_response = make_response(
+        output_blocks=[expected_tool_call],
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
+        lm = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base=api_base,
+            api_key="fakekey",
+            model_type="responses",
+            cache=False,
+            cache_in_memory=False,
+        )
+        assert lm("openai query") == expected_response
+
+        dspy_responses.assert_called_once()
+        assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
