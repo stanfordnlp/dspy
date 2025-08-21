@@ -8,7 +8,7 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
-from dspy.teleprompt.bootstrap_finetune import TraceData
+from dspy.teleprompt.bootstrap_trace import TraceData
 
 
 class LoggerAdapter:
@@ -82,7 +82,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
-            from ..bootstrap_finetune import bootstrap_trace_data
+            from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
             trajs = bootstrap_trace_data(
                 program=program,
                 dataset=batch,
@@ -122,7 +122,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
-        from ..bootstrap_finetune import FailedPrediction
+        from dspy.teleprompt.bootstrap_trace import FailedPrediction
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[dict[str, Any]]] = {}
