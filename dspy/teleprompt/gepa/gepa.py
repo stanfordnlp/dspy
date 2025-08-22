@@ -1,6 +1,6 @@
+import inspect
 import logging
 import random
-import inspect
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
 
