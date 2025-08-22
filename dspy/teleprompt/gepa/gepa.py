@@ -266,7 +266,7 @@ class GEPA(Teleprompter):
         except TypeError as e:
             raise TypeError(
                 "GEPA metric must accept five arguments: (gold, pred, trace, pred_name, pred_trace). "
-                "See https://dspy.ai/docs/api/optimizers/GEPA for details."
+                "See https://dspy.ai/api/optimizers/GEPA for details."
             ) from e
 
         self.metric_fn = metric
