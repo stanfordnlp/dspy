@@ -107,7 +107,10 @@ def bootstrap_trace_data(
 
     program.forward = MethodType(patched_forward, program)
 
-    results = evaluator(program, metric=wrapped_metric).results
+    try:
+        results = evaluator(program, metric=wrapped_metric).results
+    finally:
+        program.forward = original_forward
 
     data = []
     for example_ind, (example, prediction, score) in enumerate(results):
