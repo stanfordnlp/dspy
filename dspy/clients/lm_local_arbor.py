@@ -166,7 +166,7 @@ class ArborReinforceJob(ReinforceJob):
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         data = {"job_id": self.provider_job_id, "model": finetune_model, "batch": train_group}
-        url = urljoin(api_base, "fine_tuning/grpo/step")
+        url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/step")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
@@ -192,7 +192,7 @@ class ArborReinforceJob(ReinforceJob):
 
     def save_checkpoint(self, checkpoint_name: str, score: float | None = None):
         api_base = self.lm.kwargs["api_base"]
-        url = urljoin(api_base, "fine_tuning/grpo/checkpoint")
+        url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/checkpoint")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id, "checkpoint_name": checkpoint_name}
         response = requests.post(url, headers=headers, json=body)
@@ -211,7 +211,7 @@ class ArborReinforceJob(ReinforceJob):
     def terminate(self):
         api_base = self.lm.kwargs["api_base"]
 
-        url = urljoin(api_base, "fine_tuning/grpo/terminate")
+        url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/terminate")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id}
         response = requests.post(url, headers=headers, json=body)
@@ -222,14 +222,15 @@ class ArborReinforceJob(ReinforceJob):
         self.lm.model = ArborProvider._add_provider_prefix(current_model)
 
     def cancel(self):
-        if ArborProvider.does_job_exist(self.provider_job_id):
-            status = self.status()
-            if ArborProvider.is_terminal_training_status(status):
-                err_msg = "Jobs that are complete cannot be canceled."
-                err_msg += f" Job with ID {self.provider_job_id} is done."
-                raise Exception(err_msg)
-            openai.fine_tuning.jobs.cancel(self.provider_job_id)
-            self.provider_job_id = None
+        if self.provider_job_id:
+            api_base = self.lm.kwargs["api_base"]
+            url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/cancel")
+            headers = {"Content-Type": "application/json"}
+            response = requests.post(url, headers=headers)
+            if response.status_code == 200:
+                self.provider_job_id = None
+            else:
+                raise Exception(f"Failed to cancel GRPO job: {response.text}")
 
     def status(self) -> TrainingStatus:
         status = ArborProvider.get_training_status(self.provider_job_id)
