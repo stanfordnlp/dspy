@@ -55,7 +55,10 @@ def bootstrap_trace_data(
             return prediction.format_reward or format_failure_score
         return metric(example, prediction, trace) if metric else True
 
+    # Disable the warning that `forward` cannot be called directly.
+    logging.disable(logging.WARNING)
     original_forward = program.forward
+    logging.disable(logging.NOTSET)
 
     def patched_forward(program_to_use: Module, **kwargs):
         with dspy.context(trace=[]):
