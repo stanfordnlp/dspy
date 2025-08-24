@@ -464,6 +464,8 @@ class GEPA(Teleprompter):
             wandb_api_key=self.wandb_api_key,
             wandb_init_kwargs=self.wandb_init_kwargs,
             track_best_outputs=self.track_best_outputs,
+            display_progress_bar=True,
+            raise_on_exception=True,
 
             # Reproducibility
             seed=self.seed,
