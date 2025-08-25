@@ -1,8 +1,24 @@
 import random
+from dataclasses import dataclass
+from typing import Any
 
 from dspy.predict.parameter import Parameter
 from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
+
+
+@dataclass
+class Document:
+    page_content: str
+    metadata: dict[str, Any]
+    type: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "page_content": self.page_content,
+            "metadata": self.metadata,
+            "type": self.type,
+        }
 
 
 def single_query_passage(passages):
@@ -37,15 +53,16 @@ class Retrieve(Parameter):
             setattr(self, name, value)
 
     @with_callbacks
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> Prediction | list[Document]:
         return self.forward(*args, **kwargs)
 
     def forward(
         self,
         query: str,
         k: int | None = None,
+        return_documents: bool = False,
         **kwargs,
-    ) -> list[str] | Prediction | list[Prediction]:
+    ) -> Prediction | list[Document]:
         k = k if k is not None else self.k
 
         import dspy
@@ -56,12 +73,33 @@ class Retrieve(Parameter):
         passages = dspy.settings.rm(query, k=k, **kwargs)
 
         from collections.abc import Iterable
+
         if not isinstance(passages, Iterable):
             # it's not an iterable yet; make it one.
             # TODO: we should unify the type signatures of dspy.Retriever
             passages = [passages]
-        passages = [psg.long_text for psg in passages]
+
+        docs: list[Document] = []
+        for psg in passages:
+            if isinstance(psg, Document):
+                docs.append(psg)
+            elif isinstance(psg, dict):
+                page_content = psg.get("page_content", psg.get("long_text", ""))
+                # support text OR long_text
+                metadata = psg.get("metadata", {})
+                _type = psg.get("type", "Document")
+                docs.append(
+                    Document(page_content=page_content, metadata=metadata, type=_type)
+                )
+            elif isinstance(psg, str):
+                docs.append(Document(page_content=psg, metadata={}, type="Document"))
+
+        if return_documents:
+            return docs
+
+        passages = [psg.page_content for psg in docs]
 
         return Prediction(passages=passages)
+
 
 # TODO: Consider doing Prediction.from_completions with the individual sets of passages (per query) too.
