@@ -21,18 +21,6 @@ class SIMBA(Teleprompter):
     successful examples as demonstrations.
     
     For more details, see: https://dspy.ai/api/optimizers/SIMBA/
-    
-    Attributes:
-        metric: Function that takes an Example and prediction_dict and returns a float score
-        bsize: Mini-batch size for optimization
-        num_candidates: Number of new candidate programs to produce per iteration
-        max_steps: Number of optimization steps to run
-        max_demos: Maximum number of demos a predictor can hold before dropping some
-        demo_input_field_maxlen: Maximum characters to keep in input fields when building demos
-        num_threads: Number of threads for parallel execution
-        temperature_for_sampling: Temperature for picking programs during trajectory sampling
-        temperature_for_candidates: Temperature for picking source programs for new candidates
-        strategies: List of strategies to apply for program improvement
     """
 
     def __init__(
