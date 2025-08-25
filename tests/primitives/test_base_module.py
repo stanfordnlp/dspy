@@ -63,7 +63,16 @@ def test_save_and_load_with_json(tmp_path):
     model = dspy.ChainOfThought(dspy.Signature("q -> a"))
     model.predict.signature = model.predict.signature.with_instructions("You are a helpful assistant.")
     model.predict.demos = [
-        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")
+        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q"),
+        # Nested example
+        dspy.Example(
+            q=[
+                dspy.Example(q="What is the capital of France?"),
+                dspy.Example(q="What is actually the capital of France?"),
+            ],
+            a="Paris",
+            reasoning="n/a",
+        ).with_inputs("q"),
     ]
     save_path = tmp_path / "model.json"
     model.save(save_path)
@@ -72,6 +81,7 @@ def test_save_and_load_with_json(tmp_path):
 
     assert str(new_model.predict.signature) == str(model.predict.signature)
     assert new_model.predict.demos[0] == model.predict.demos[0].toDict()
+    assert new_model.predict.demos[1] == model.predict.demos[1].toDict()
 
 
 @pytest.mark.extra

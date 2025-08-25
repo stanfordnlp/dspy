@@ -4,8 +4,8 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+import orjson
 import requests
-import ujson
 
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory
@@ -265,8 +265,7 @@ def _get_workspace_client() -> "WorkspaceClient":
         from databricks.sdk import WorkspaceClient
     except ImportError:
         raise ImportError(
-            "To use Databricks finetuning, please install the databricks-sdk package via "
-            "`pip install databricks-sdk`."
+            "To use Databricks finetuning, please install the databricks-sdk package via `pip install databricks-sdk`."
         )
     return WorkspaceClient()
 
@@ -311,14 +310,14 @@ def _save_data_to_local_file(train_data: list[dict[str, Any]], data_format: Trai
     finetune_dir = get_finetune_directory()
     file_path = os.path.join(finetune_dir, file_name)
     file_path = os.path.abspath(file_path)
-    with open(file_path, "w") as f:
+    with open(file_path, "wb") as f:
         for item in train_data:
             if data_format == TrainDataFormat.CHAT:
                 _validate_chat_data(item)
             elif data_format == TrainDataFormat.COMPLETION:
                 _validate_completion_data(item)
 
-            f.write(ujson.dumps(item) + "\n")
+            f.write(orjson.dumps(item) + b"\n")
     return file_path
 
 
