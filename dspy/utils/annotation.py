@@ -1,10 +1,16 @@
 import inspect
 import re
 import types
-from typing import Callable, ParamSpec, TypeVar
+from typing import Callable, ParamSpec, TypeVar, overload
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
+@overload
+def experimental(f: Callable[P, R], version: str | None = None) -> Callable[P, R]: ...
+
+@overload
+def experimental(f: None = None, version: str | None = None) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
 
 
 def experimental(
