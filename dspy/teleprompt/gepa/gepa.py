@@ -199,41 +199,48 @@ class GEPA(Teleprompter):
 
     Args:
         metric: The metric function to use for feedback and evaluation.
-        auto: The auto budget to use for the run. Options: "light", "medium", "heavy". 
-            Exactly one of auto, max_full_evals, or max_metric_calls must be provided.
-        max_full_evals: The maximum number of full evaluations to perform. 
-            Alternative to auto budget configuration.
-        max_metric_calls: The maximum number of metric calls to perform. 
-            Alternative to auto budget configuration.
-        reflection_minibatch_size: The number of examples to use for reflection in a single GEPA step. 
-            Default is 3.
-        candidate_selection_strategy: The strategy to use for candidate selection. 
-            Default is "pareto", which stochastically selects candidates from the Pareto frontier 
-            of all validation scores. Options: "pareto", "current_best".
-        reflection_lm: The language model to use for reflection. Required parameter. GEPA benefits 
-            from a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, 
-            max_tokens=32000)` for optimal performance.
+        
+        # Budget configuration (exactly one required)
+        auto: The auto budget to use for the run. Options: "light", "medium", "heavy".
+        max_full_evals: The maximum number of full evaluations to perform.
+        max_metric_calls: The maximum number of metric calls to perform.
+        
+        # Reflection configuration
+        reflection_minibatch_size: The number of examples to use for reflection in a single GEPA step. Default is 3.
+        candidate_selection_strategy: The strategy to use for candidate selection. Default is "pareto", 
+            which stochastically selects candidates from the Pareto frontier of all validation scores. 
+            Options: "pareto", "current_best".
+        reflection_lm: The language model to use for reflection. Required parameter. GEPA benefits from 
+            a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` 
+            for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
+        
+        # Merge-based configuration
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
+        
+        # Evaluation configuration
         num_threads: The number of threads to use for evaluation with `Evaluate`. Optional.
         failure_score: The score to assign to failed examples. Default is 0.0.
-        perfect_score: The maximum score achievable by the metric. Default is 1.0. 
-            Used by GEPA to determine if all examples in a minibatch are perfect.
-        log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all 
-            candidate programs, in this directory. Running GEPA with the same `log_dir` will 
-            resume the run from the last checkpoint.
-        track_stats: Whether to return detailed results and all proposed programs in the 
-            `detailed_results` attribute of the optimized program. Default is False.
+        perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA 
+            to determine if all examples in a minibatch are perfect.
+        
+        # Logging configuration
+        log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all candidate 
+            programs, in this directory. Running GEPA with the same `log_dir` will resume the run 
+            from the last checkpoint.
+        track_stats: Whether to return detailed results and all proposed programs in the `detailed_results` 
+            attribute of the optimized program. Default is False.
         use_wandb: Whether to use wandb for logging. Default is False.
-        wandb_api_key: The API key to use for wandb. If not provided, wandb will use the 
-            API key from the environment variable `WANDB_API_KEY`.
+        wandb_api_key: The API key to use for wandb. If not provided, wandb will use the API key 
+            from the environment variable `WANDB_API_KEY`.
         wandb_init_kwargs: Additional keyword arguments to pass to `wandb.init`.
-        track_best_outputs: Whether to track the best outputs on the validation set. 
-            track_stats must be True if track_best_outputs is True. The optimized program's 
-            `detailed_results.best_outputs_valset` will contain the best outputs for each 
-            task in the validation set.
+        track_best_outputs: Whether to track the best outputs on the validation set. track_stats must 
+            be True if track_best_outputs is True. The optimized program's `detailed_results.best_outputs_valset` 
+            will contain the best outputs for each task in the validation set.
+        
+        # Reproducibility
         seed: The random seed to use for reproducibility. Default is 0.
     """
     def __init__(
