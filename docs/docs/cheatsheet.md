@@ -6,6 +6,8 @@ sidebar_position: 999
 
 This page will contain snippets for frequent usage patterns.
 
+DSPy supports global retry defaults for LM calls via settings so you can centralize transient error handling without adding extra retry layers. Configure once at startup with `dspy.configure(default_num_retries=5, retry_strategy="exponential_backoff_retry")`, override per instance where needed with `dspy.LM(model="openai/gpt-4o-mini", num_retries=1)`, or scope temporary settings to a block using `with dspy.context(default_num_retries=8, retry_strategy="exponential_backoff_retry"):`. The strategy is forwarded to LiteLLM (default remains `"exponential_backoff_retry"`), while per-instance `num_retries` takes precedence.
+
 ## DSPy Programs
 
 ### dspy.Signature
