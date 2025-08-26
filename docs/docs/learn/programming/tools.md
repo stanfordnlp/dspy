@@ -188,7 +188,7 @@ def good_tool(city: str, units: str = "celsius") -> str:
 - You need precise control over tool execution
 - You want custom error handling logic
 - You want to minimize the latency
-- Tour tool does not return anything
+- Your tool returns nothing (void function)
 
 
 Tools in DSPy provide a powerful way to extend language model capabilities beyond text generation. Whether using the fully automated ReAct approach or manual tool handling, you can build sophisticated agents that interact with the world through code.
