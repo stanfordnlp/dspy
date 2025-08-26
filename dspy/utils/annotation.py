@@ -42,8 +42,10 @@ def _experimental(api: Callable[P, R], version: str | None = None) -> Callable[P
         api_type = "class"
     elif inspect.isfunction(api):
         api_type = "function"
-    elif isinstance(api, (property, types.MethodType)):
+    elif isinstance(api, property):
         api_type = "property"
+    elif isinstance(api, types.MethodType):
+        api_type = "method"
     else:
         api_type = str(type(api))
 
