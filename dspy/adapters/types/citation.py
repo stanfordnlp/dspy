@@ -48,33 +48,32 @@ class Citations(Type):
     """
 
     class Citation(Type):
-        """Individual citation with text and source information."""
-        text: str
-        source: str | dict[str, Any] | None = None
-        start: int | None = None
-        end: int | None = None
+        """Individual citation with character location information."""
+        type: str = "char_location"
+        cited_text: str
+        document_index: int
+        document_title: str | None = None
+        start_char_index: int
+        end_char_index: int
 
-        def format(self) -> str:
-            """Format citation as a readable string.
+        def format(self) -> dict[str, Any]:
+            """Format citation as dictionary for LM consumption.
 
             Returns:
-                A formatted citation string showing the quoted text and source.
+                A dictionary in the format expected by citation APIs.
             """
-            source_info = ""
-            if self.source:
-                if isinstance(self.source, str):
-                    source_info = f" ({self.source})"
-                elif isinstance(self.source, dict):
-                    title = self.source.get("title", "")
-                    url = self.source.get("url", "")
-                    if title and url:
-                        source_info = f" ({title}: {url})"
-                    elif title:
-                        source_info = f" ({title})"
-                    elif url:
-                        source_info = f" ({url})"
+            citation_dict = {
+                "type": self.type,
+                "cited_text": self.cited_text,
+                "document_index": self.document_index,
+                "start_char_index": self.start_char_index,
+                "end_char_index": self.end_char_index
+            }
 
-            return f'"{self.text}"{source_info}'
+            if self.document_title:
+                citation_dict["document_title"] = self.document_title
+
+            return citation_dict
 
     citations: list[Citation]
 
@@ -83,8 +82,8 @@ class Citations(Type):
         """Convert a list of dictionaries to a Citations instance.
 
         Args:
-            citations_dicts: A list of dictionaries, where each dictionary should have 'text' key
-                and optionally 'source', 'start', and 'end' keys.
+            citations_dicts: A list of dictionaries, where each dictionary should have 'cited_text' key
+                and 'document_index', 'start_char_index', 'end_char_index' keys.
 
         Returns:
             A Citations instance.
@@ -92,8 +91,13 @@ class Citations(Type):
         Example:
             ```python
             citations_dict = [
-                {"text": "The sky is blue", "source": "Weather Guide"},
-                {"text": "Water boils at 100°C", "source": {"title": "Physics Book", "url": "http://example.com"}}
+                {
+                    "cited_text": "The sky is blue",
+                    "document_index": 0,
+                    "document_title": "Weather Guide",
+                    "start_char_index": 0,
+                    "end_char_index": 15
+                }
             ]
             citations = Citations.from_dict_list(citations_dict)
             ```
@@ -111,15 +115,7 @@ class Citations(Type):
 
     def format(self) -> list[dict[str, Any]]:
         """Format citations as a list of dictionaries."""
-        return [
-            {
-                "text": citation.text,
-                "source": citation.source,
-                "start": citation.start,
-                "end": citation.end,
-            }
-            for citation in self.citations
-        ]
+        return [citation.format() for citation in self.citations]
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -129,7 +125,7 @@ class Citations(Type):
 
         # Handle case where data is a list of dicts with citation info
         if isinstance(data, list) and all(
-            isinstance(item, dict) and "text" in item for item in data
+            isinstance(item, dict) and "cited_text" in item for item in data
         ):
             return {"citations": [cls.Citation(**item) for item in data]}
 
@@ -145,7 +141,7 @@ class Citations(Type):
                             for item in citations_data
                         ]
                     }
-            elif "text" in data:
+            elif "cited_text" in data:
                 # Handle case where data is a single citation dict
                 return {"citations": [cls.Citation(**data)]}
 
