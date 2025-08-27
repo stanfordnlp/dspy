@@ -38,7 +38,7 @@ class Citations(Type):
         ]
 
         # Use with a model that supports citations like Claude
-        lm = dspy.LM("anthropic/claude-3-5-sonnet-20241022")
+        lm = dspy.LM("anthropic/claude-opus-4-1-20250805")
         predictor = dspy.Predict(AnswerWithSources, lm=lm)
         result = predictor(documents=docs, question="What temperature does water boil?")
 
