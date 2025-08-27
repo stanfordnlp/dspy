@@ -47,9 +47,13 @@ def test_document_format():
 
     formatted = doc.format()
 
-    assert formatted["type"] == "document"
-    assert formatted["source"]["type"] == "text"
-    assert formatted["source"]["media_type"] == "text/plain"
-    assert formatted["source"]["data"] == "The sky is blue."
-    assert formatted["title"] == "Color Facts"
-    assert formatted["citations"]["enabled"] is True
+    assert isinstance(formatted, list)
+    assert len(formatted) == 1
+
+    doc_block = formatted[0]
+    assert doc_block["type"] == "document"
+    assert doc_block["source"]["type"] == "text"
+    assert doc_block["source"]["media_type"] == "text/plain"
+    assert doc_block["source"]["data"] == "The sky is blue."
+    assert doc_block["title"] == "Color Facts"
+    assert doc_block["citations"]["enabled"] is True

@@ -27,11 +27,11 @@ class Citations(Type):
         # Create documents to provide as sources
         docs = [
             dspy.Document(
-                content="The Earth orbits the Sun in an elliptical path.",
+                data="The Earth orbits the Sun in an elliptical path.",
                 title="Basic Astronomy Facts"
             ),
             dspy.Document(
-                content="Water boils at 100°C at standard atmospheric pressure.",
+                data="Water boils at 100°C at standard atmospheric pressure.",
                 title="Physics Fundamentals",
                 metadata={"author": "Dr. Smith", "year": 2023}
             )
