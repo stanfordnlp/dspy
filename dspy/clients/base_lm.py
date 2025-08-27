@@ -199,6 +199,7 @@ class BaseLM:
 
     def _extract_citations_from_response(self, response, choice):
         """Extract citations from LiteLLM response if available.
+        Reference: https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
         
         Args:
             response: The LiteLLM response object
@@ -227,32 +228,6 @@ class BaseLM:
                                 }
                                 citations.append(citation_dict)
                             return citations
-
-                # Check for citations directly in the message (fallback)
-                if hasattr(message, "citations") and message.citations:
-                    citations_data = message.citations
-                    if isinstance(citations_data, list):
-                        citations = []
-                        for citation_data in citations_data:
-                            if hasattr(citation_data, "quote"):
-                                citation_dict = {
-                                    "text": citation_data.quote,
-                                    "source": getattr(citation_data, "source", None),
-                                    "start": getattr(citation_data, "start", None),
-                                    "end": getattr(citation_data, "end", None),
-                                }
-                            elif isinstance(citation_data, dict):
-                                citation_dict = {
-                                    "text": citation_data.get("quote", citation_data.get("text", "")),
-                                    "source": citation_data.get("source"),
-                                    "start": citation_data.get("start"),
-                                    "end": citation_data.get("end"),
-                                }
-                            else:
-                                continue
-                            citations.append(citation_dict)
-                        return citations
-
         except Exception:
             # If citation extraction fails, just continue without citations
             pass

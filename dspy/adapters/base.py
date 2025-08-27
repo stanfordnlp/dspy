@@ -110,10 +110,8 @@ class Adapter:
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
             if citations and citation_output_field_names:
-                # Convert citation dictionaries to Citations object using from_dict_list
                 citations_obj = Citations.from_dict_list(citations)
 
-                # Assign to all citation fields found
                 for field_name in citation_output_field_names:
                     value[field_name] = citations_obj
 
