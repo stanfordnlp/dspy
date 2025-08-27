@@ -183,6 +183,12 @@ class BaseLM:
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
                 output["tool_calls"] = c.message.tool_calls
+
+            # Extract citations from LiteLLM response if available
+            citations = self._extract_citations_from_response(response, c)
+            if citations:
+                output["citations"] = citations
+
             outputs.append(output)
 
         if all(len(output) == 1 for output in outputs):
@@ -190,6 +196,68 @@ class BaseLM:
             outputs = [output["text"] for output in outputs]
 
         return outputs
+
+    def _extract_citations_from_response(self, response, choice):
+        """Extract citations from LiteLLM response if available.
+        
+        Args:
+            response: The LiteLLM response object
+            choice: The choice object from response.choices
+            
+        Returns:
+            List of citation dictionaries or None if no citations found
+        """
+        try:
+            # Check for citations in LiteLLM provider_specific_fields
+            if hasattr(response, "choices") and hasattr(choice, "message"):
+                message = choice.message
+                # Check for citations in provider_specific_fields (Anthropic format)
+                if hasattr(message, "provider_specific_fields") and message.provider_specific_fields:
+                    provider_fields = message.provider_specific_fields
+                    if isinstance(provider_fields, dict) and "citations" in provider_fields:
+                        citations_data = provider_fields["citations"]
+                        if isinstance(citations_data, list):
+                            citations = []
+                            for citation_data in citations_data:
+                                citation_dict = {
+                                    "text": citation_data.get("quote", ""),
+                                    "source": citation_data.get("source"),
+                                    "start": citation_data.get("start"),
+                                    "end": citation_data.get("end"),
+                                }
+                                citations.append(citation_dict)
+                            return citations
+
+                # Check for citations directly in the message (fallback)
+                if hasattr(message, "citations") and message.citations:
+                    citations_data = message.citations
+                    if isinstance(citations_data, list):
+                        citations = []
+                        for citation_data in citations_data:
+                            if hasattr(citation_data, "quote"):
+                                citation_dict = {
+                                    "text": citation_data.quote,
+                                    "source": getattr(citation_data, "source", None),
+                                    "start": getattr(citation_data, "start", None),
+                                    "end": getattr(citation_data, "end", None),
+                                }
+                            elif isinstance(citation_data, dict):
+                                citation_dict = {
+                                    "text": citation_data.get("quote", citation_data.get("text", "")),
+                                    "source": citation_data.get("source"),
+                                    "start": citation_data.get("start"),
+                                    "end": citation_data.get("end"),
+                                }
+                            else:
+                                continue
+                            citations.append(citation_dict)
+                        return citations
+
+        except Exception:
+            # If citation extraction fails, just continue without citations
+            pass
+
+        return None
 
     def _process_response(self, response):
         """Process the response of OpenAI Response API and extract outputs.

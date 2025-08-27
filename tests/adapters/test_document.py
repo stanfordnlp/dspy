@@ -1,0 +1,55 @@
+import pydantic
+import pytest
+
+import dspy
+
+
+def test_document_validate_input():
+    # Create a `dspy.Document` instance with valid data.
+    doc = dspy.Document(data="The Earth orbits the Sun.")
+    assert doc.data == "The Earth orbits the Sun."
+
+    with pytest.raises(pydantic.ValidationError):
+        # Try to create a `dspy.Document` instance with invalid type.
+        dspy.Document(data=123)
+
+
+def test_document_in_nested_type():
+    class Wrapper(pydantic.BaseModel):
+        document: dspy.Document
+
+    doc = dspy.Document(data="Hello, world!")
+    wrapper = Wrapper(document=doc)
+    assert wrapper.document.data == "Hello, world!"
+
+
+def test_document_with_all_fields():
+    doc = dspy.Document(
+        data="Water boils at 100°C at standard pressure.",
+        title="Physics Facts",
+        media_type="application/pdf",
+        metadata={"author": "Dr. Smith", "year": 2023},
+        context="Laboratory conditions"
+    )
+    assert doc.data == "Water boils at 100°C at standard pressure."
+    assert doc.title == "Physics Facts"
+    assert doc.media_type == "application/pdf"
+    assert doc.metadata == {"author": "Dr. Smith", "year": 2023}
+    assert doc.context == "Laboratory conditions"
+
+
+def test_document_format():
+    doc = dspy.Document(
+        data="The sky is blue.",
+        title="Color Facts",
+        media_type="text/plain"
+    )
+    
+    formatted = doc.format()
+    
+    assert formatted["type"] == "document"
+    assert formatted["source"]["type"] == "text"
+    assert formatted["source"]["media_type"] == "text/plain"
+    assert formatted["source"]["data"] == "The sky is blue."
+    assert formatted["title"] == "Color Facts"
+    assert formatted["citations"]["enabled"] is True

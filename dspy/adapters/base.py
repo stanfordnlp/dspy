@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, get_origin
 import json_repair
 import litellm
 
-from dspy.adapters.types import History
+from dspy.adapters.types import Citations, History
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.signatures.signature import Signature
@@ -74,16 +74,19 @@ class Adapter:
         values = []
 
         tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
+        citation_output_field_names = self._get_citation_output_field_names(original_signature)
 
         for output in outputs:
             output_logprobs = None
             tool_calls = None
+            citations = None
             text = output
 
             if isinstance(output, dict):
                 text = output["text"]
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
+                citations = output.get("citations")
 
             if text:
                 value = self.parse(processed_signature, text)
@@ -105,6 +108,14 @@ class Adapter:
                     for v in tool_calls
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+
+            if citations and citation_output_field_names:
+                # Convert citation dictionaries to Citations object using from_dict_list
+                citations_obj = Citations.from_dict_list(citations)
+
+                # Assign to all citation fields found
+                for field_name in citation_output_field_names:
+                    value[field_name] = citations_obj
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
@@ -389,6 +400,14 @@ class Adapter:
             if field.annotation == ToolCalls:
                 return name
         return None
+
+    def _get_citation_output_field_names(self, signature: type[Signature]) -> list[str]:
+        """Find all Citations output fields in the signature."""
+        citation_fields = []
+        for name, field in signature.output_fields.items():
+            if field.annotation == Citations:
+                citation_fields.append(name)
+        return citation_fields
 
     def format_conversation_history(
         self,
