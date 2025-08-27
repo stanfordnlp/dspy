@@ -92,7 +92,7 @@ def _get_dspy_cache():
             memory_max_entries=1000000,
         )
     except Exception as e:
-        # If cache creation fails (e.g., in AWS Lambda), create a no-op cache
+        # If cache creation fails (e.g., in AWS Lambda), create a memory-only cache
         logger.warning("Failed to initialize disk cache, falling back to memory-only cache: %s", e)
         _dspy_cache = Cache(
             enable_disk_cache=False,
