@@ -64,16 +64,23 @@ class Document(Type):
         Returns:
             A list containing the document block in the format expected by citation-enabled language models.
         """
-        return {
+        document_block = {
             "type": "document",
             "source": {
                 "type": "text",
                 "media_type": self.media_type,
                 "data": self.data
             },
-            "citations": {"enabled": True},
-            "title": self.title
+            "citations": {"enabled": True}
         }
+
+        if self.title:
+            document_block["title"] = self.title
+
+        if self.context:
+            document_block["context"] = self.context
+
+        return [document_block]
 
 
 

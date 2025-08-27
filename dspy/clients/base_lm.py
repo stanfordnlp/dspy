@@ -221,7 +221,7 @@ class BaseLM:
                             citations = []
                             for citation_data in citations_data:
                                 citation_dict = {
-                                    "type": citation_data.get("type", ""),
+                                    "type": citation_data.get("type", "char_location"),
                                     "cited_text": citation_data.get("cited_text", ""),
                                     "document_index": citation_data.get("document_index", 0),
                                     "document_title": citation_data.get("document_title"),
