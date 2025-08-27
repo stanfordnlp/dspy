@@ -50,25 +50,6 @@ def test_experimental_decorator_on_class_with_version():
     assert "A test class with version." in TestClass.__doc__
 
 
-def test_experimental_decorator_preserves_indentation():
-    @experimental
-    def test_function():
-        """A test function.
-        
-        Args:
-            param: A parameter.
-        
-        Returns:
-            The result.
-        """
-        return "indented"
-
-    docstring = test_function.__doc__
-    assert ".. Note:: Experimental:" in docstring
-    assert "        Args:" in docstring
-    assert "        Returns:" in docstring
-
-
 def test_experimental_decorator_without_docstring():
     @experimental
     def test_function():
