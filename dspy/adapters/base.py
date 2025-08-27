@@ -74,7 +74,7 @@ class Adapter:
         values = []
 
         tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
-        citation_output_field_names = self._get_citation_output_field_names(original_signature)
+        citation_output_field_name = self._get_citation_output_field_name(original_signature)
 
         for output in outputs:
             output_logprobs = None
@@ -109,11 +109,9 @@ class Adapter:
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
-            if citations and citation_output_field_names:
+            if citations and citation_output_field_name:
                 citations_obj = Citations.from_dict_list(citations)
-
-                for field_name in citation_output_field_names:
-                    value[field_name] = citations_obj
+                value[citation_output_field_name] = citations_obj
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
@@ -399,13 +397,12 @@ class Adapter:
                 return name
         return None
 
-    def _get_citation_output_field_names(self, signature: type[Signature]) -> list[str]:
-        """Find all Citations output fields in the signature."""
-        citation_fields = []
+    def _get_citation_output_field_name(self, signature: type[Signature]) -> str | None:
+        """Find the Citations output field in the signature."""
         for name, field in signature.output_fields.items():
             if field.annotation == Citations:
-                citation_fields.append(name)
-        return citation_fields
+                return name
+        return None
 
     def format_conversation_history(
         self,

@@ -1,151 +1,131 @@
-from unittest.mock import MagicMock
+import pydantic
+import pytest
 
 import dspy
-from dspy.adapters.types import Citations
-from dspy.signatures.signature import Signature
 
 
-class CitationSignature(Signature):
-    """Test signature with citations."""
-    question: str = dspy.InputField()
-    answer: str = dspy.OutputField()
-    citations: Citations = dspy.OutputField()
+def test_citation_validate_input():
+    # Create a `dspy.Citations.Citation` instance with valid data.
+    citation = dspy.Citations.Citation(
+        cited_text="The Earth orbits the Sun.",
+        document_index=0,
+        start_char_index=0,
+        end_char_index=23
+    )
+    assert citation.cited_text == "The Earth orbits the Sun."
+    assert citation.document_index == 0
+    assert citation.start_char_index == 0
+    assert citation.end_char_index == 23
+    assert citation.type == "char_location"
+
+    with pytest.raises(pydantic.ValidationError):
+        # Try to create a `dspy.Citations.Citation` instance with missing required field.
+        dspy.Citations.Citation(cited_text="text")
 
 
-def test_citation_type():
-    """Test the individual Citation type."""
-    citation = Citations.Citation(
-        text="The sky is blue",
-        source="Weather Guide",
-        start=10,
-        end=25
+def test_citations_in_nested_type():
+    class Wrapper(pydantic.BaseModel):
+        citations: dspy.Citations
+
+    citation = dspy.Citations.Citation(
+        cited_text="Hello, world!",
+        document_index=0,
+        start_char_index=0,
+        end_char_index=13
+    )
+    citations = dspy.Citations(citations=[citation])
+    wrapper = Wrapper(citations=citations)
+    assert wrapper.citations.citations[0].cited_text == "Hello, world!"
+
+
+def test_citation_with_all_fields():
+    citation = dspy.Citations.Citation(
+        cited_text="Water boils at 100°C.",
+        document_index=1,
+        document_title="Physics Facts",
+        start_char_index=10,
+        end_char_index=31
+    )
+    assert citation.cited_text == "Water boils at 100°C."
+    assert citation.document_index == 1
+    assert citation.document_title == "Physics Facts"
+    assert citation.start_char_index == 10
+    assert citation.end_char_index == 31
+
+
+def test_citation_format():
+    citation = dspy.Citations.Citation(
+        cited_text="The sky is blue.",
+        document_index=0,
+        document_title="Weather Guide",
+        start_char_index=5,
+        end_char_index=21
     )
 
-    assert citation.text == "The sky is blue"
-    assert citation.source == "Weather Guide"
-    assert citation.start == 10
-    assert citation.end == 25
-
-    # Test formatting
     formatted = citation.format()
-    assert '"The sky is blue"' in formatted
-    assert "Weather Guide" in formatted
 
-
-def test_citation_type_with_dict_source():
-    """Test Citation with dict source."""
-    citation = Citations.Citation(
-        text="The sky is blue",
-        source={"title": "Weather Guide", "url": "http://example.com"}
-    )
-
-    formatted = citation.format()
-    assert '"The sky is blue"' in formatted
-    assert "Weather Guide" in formatted
-    assert "http://example.com" in formatted
-
-
-def test_citations_container_type():
-    """Test the Citations container type."""
-    citations_data = [
-        {"text": "The sky is blue", "source": "Weather Guide"},
-        {"text": "Water boils at 100°C", "source": "Physics Book"}
-    ]
-
-    citations = Citations.from_dict_list(citations_data)
-
-    assert len(citations) == 2
-    assert citations[0].text == "The sky is blue"
-    assert citations[1].text == "Water boils at 100°C"
-
-    # Test iteration
-    citation_texts = [c.text for c in citations]
-    assert "The sky is blue" in citation_texts
-    assert "Water boils at 100°C" in citation_texts
-
-
-def test_citations_description():
-    """Test Citations description method."""
-    desc = Citations.description()
-    assert "citation" in desc.lower()
-    assert "source" in desc.lower()
+    assert formatted["type"] == "char_location"
+    assert formatted["cited_text"] == "The sky is blue."
+    assert formatted["document_index"] == 0
+    assert formatted["document_title"] == "Weather Guide"
+    assert formatted["start_char_index"] == 5
+    assert formatted["end_char_index"] == 21
 
 
 def test_citations_format():
-    """Test Citations format method."""
-    citations_data = [
-        {"text": "The sky is blue", "source": "Weather Guide", "start": 10, "end": 25}
-    ]
-    citations = Citations.from_dict_list(citations_data)
+    citations = dspy.Citations(citations=[
+        dspy.Citations.Citation(
+            cited_text="First citation",
+            document_index=0,
+            start_char_index=0,
+            end_char_index=14
+        ),
+        dspy.Citations.Citation(
+            cited_text="Second citation",
+            document_index=1,
+            document_title="Source",
+            start_char_index=20,
+            end_char_index=35
+        )
+    ])
 
     formatted = citations.format()
+
     assert isinstance(formatted, list)
-    assert len(formatted) == 1
-    assert formatted[0]["text"] == "The sky is blue"
-    assert formatted[0]["source"] == "Weather Guide"
+    assert len(formatted) == 2
+    assert formatted[0]["cited_text"] == "First citation"
+    assert formatted[1]["cited_text"] == "Second citation"
+    assert formatted[1]["document_title"] == "Source"
 
 
-def test_citations_validation():
-    """Test Citations validation with different input formats."""
-    # Test with from_dict_list
-    citations1 = Citations.from_dict_list([{"text": "Hello", "source": "World"}])
-    assert len(citations1) == 1
+def test_citations_from_dict_list():
+    citations_data = [
+        {
+            "cited_text": "The sky is blue",
+            "document_index": 0,
+            "document_title": "Weather Guide",
+            "start_char_index": 0,
+            "end_char_index": 15
+        }
+    ]
 
-    # Test direct construction with citations list
-    citations2 = Citations(citations=[Citations.Citation(text="Hello", source="World")])
-    assert len(citations2) == 1
+    citations = dspy.Citations.from_dict_list(citations_data)
 
-
-def test_citation_field_detection():
-    """Test that Citations fields are properly detected by adapter."""
-    from dspy.adapters.chat_adapter import ChatAdapter
-
-    adapter = ChatAdapter()
-
-    # Test citation field detection
-    citation_fields = adapter._get_citation_output_field_names(CitationSignature)
-    assert "citations" in citation_fields
-
-
-def test_citation_extraction_from_lm_response():
-    """Test citation extraction from mock LM response."""
-    from dspy.clients.base_lm import BaseLM
-
-    # Create a mock response with citations
-    mock_response = MagicMock()
-    mock_choice = MagicMock()
-    mock_message = MagicMock()
-
-    # Mock provider_specific_fields with citations (Anthropic format)
-    mock_message.provider_specific_fields = {
-        "citations": [
-            {
-                "quote": "The sky is blue",
-                "source": "Weather Guide",
-                "start": 10,
-                "end": 25
-            }
-        ]
-    }
-
-    mock_choice.message = mock_message
-    mock_response.choices = [mock_choice]
-
-    # Create BaseLM instance and test citation extraction
-    lm = BaseLM(model="test")
-    citations = lm._extract_citations_from_response(mock_response, mock_choice)
-
-    assert citations is not None
-    assert len(citations) == 1
-    assert citations[0]["text"] == "The sky is blue"
-    assert citations[0]["source"] == "Weather Guide"
-    assert citations[0]["start"] == 10
-    assert citations[0]["end"] == 25
+    assert len(citations.citations) == 1
+    assert citations.citations[0].cited_text == "The sky is blue"
+    assert citations.citations[0].document_title == "Weather Guide"
 
 
 def test_citations_postprocessing():
     """Test that citations are properly processed in adapter postprocessing."""
     from dspy.adapters.chat_adapter import ChatAdapter
+    from dspy.signatures.signature import Signature
+
+    class CitationSignature(Signature):
+        """Test signature with citations."""
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        citations: dspy.Citations = dspy.OutputField()
 
     adapter = ChatAdapter()
 
@@ -154,10 +134,11 @@ def test_citations_postprocessing():
         "text": "[[ ## answer ## ]]\nThe answer is blue.\n\n[[ ## citations ## ]]\n[]",
         "citations": [
             {
-                "text": "The sky is blue",
-                "source": "Weather Guide",
-                "start": 10,
-                "end": 25
+                "cited_text": "The sky is blue",
+                "document_index": 0,
+                "document_title": "Weather Guide",
+                "start_char_index": 10,
+                "end_char_index": 25
             }
         ]
     }]
@@ -172,54 +153,47 @@ def test_citations_postprocessing():
     # Should have Citations object in the result
     assert len(result) == 1
     assert "citations" in result[0]
-    assert isinstance(result[0]["citations"], Citations)
+    assert isinstance(result[0]["citations"], dspy.Citations)
     assert len(result[0]["citations"]) == 1
-    assert result[0]["citations"][0].text == "The sky is blue"
+    assert result[0]["citations"][0].cited_text == "The sky is blue"
 
 
-def test_citations_without_citations():
-    """Test that processing works when no citations are present."""
-    from dspy.adapters.chat_adapter import ChatAdapter
+def test_citation_extraction_from_lm_response():
+    """Test citation extraction from mock LM response."""
+    from unittest.mock import MagicMock
 
-    adapter = ChatAdapter()
+    from dspy.clients.base_lm import BaseLM
 
-    # Mock outputs without citations
-    outputs = [{
-        "text": "[[ ## answer ## ]]\nThe answer is blue.\n\n[[ ## citations ## ]]\n[]"
-    }]
+    # Create a mock response with citations in new LiteLLM format
+    mock_response = MagicMock()
+    mock_choice = MagicMock()
+    mock_message = MagicMock()
 
-    # Process with citation signature
-    result = adapter._call_postprocess(
-        CitationSignature,
-        CitationSignature,
-        outputs
-    )
+    # Mock provider_specific_fields with citations (Anthropic format)
+    mock_message.provider_specific_fields = {
+        "citations": [
+            {
+                "type": "char_location",
+                "cited_text": "The sky is blue",
+                "document_index": 0,
+                "document_title": "Weather Guide",
+                "start_char_index": 10,
+                "end_char_index": 25
+            }
+        ]
+    }
 
-    # Should still work, with None for citations (since no citations in LM response)
-    assert len(result) == 1
-    # Note: When no citations are in LM response, citations field should be None
-    # but the field gets set to empty list from parsing. Let's verify it's empty.
-    assert result[0]["citations"] is None or (
-        isinstance(result[0]["citations"], Citations) and len(result[0]["citations"]) == 0
-    )
+    mock_choice.message = mock_message
+    mock_response.choices = [mock_choice]
 
+    # Create BaseLM instance and test citation extraction
+    lm = BaseLM(model="test")
+    citations = lm._extract_citations_from_response(mock_response, mock_choice)
 
-def test_citation_imports():
-    """Test that Citations can be imported from main dspy module."""
-    assert hasattr(dspy, "Citations")
-    assert dspy.Citations is Citations
-
-    # Individual Citation should only be accessible via Citations.Citation
-    assert not hasattr(dspy, "Citation")
-
-
-def test_citation_access_pattern():
-    """Test that Citation class is accessible as Citations.Citation (like ToolCalls pattern)."""
-    # Test that we can create Citation objects via Citations.Citation
-    citation = Citations.Citation(text="Hello", source="World")
-    assert citation.text == "Hello"
-    assert citation.source == "World"
-
-    # Test that Citations.Citation is the correct class
-    assert hasattr(Citations, "Citation")
-    assert isinstance(citation, Citations.Citation)
+    assert citations is not None
+    assert len(citations) == 1
+    assert citations[0]["cited_text"] == "The sky is blue"
+    assert citations[0]["document_index"] == 0
+    assert citations[0]["document_title"] == "Weather Guide"
+    assert citations[0]["start_char_index"] == 10
+    assert citations[0]["end_char_index"] == 25
