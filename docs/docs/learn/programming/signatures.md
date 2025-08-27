@@ -41,7 +41,15 @@ toxicity = dspy.Predict(
         instructions="Mark as 'toxic' if the comment includes insults, harassment, or sarcastic derogatory remarks.",
     )
 )
+comment = "you are beautiful."
+toxicity(comment=comment).toxic
 ```
+
+**Output:**
+```text
+False
+```
+
 
 ### Example A: Sentiment Classification
 
