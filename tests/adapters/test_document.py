@@ -44,9 +44,9 @@ def test_document_format():
         title="Color Facts",
         media_type="text/plain"
     )
-    
+
     formatted = doc.format()
-    
+
     assert formatted["type"] == "document"
     assert formatted["source"]["type"] == "text"
     assert formatted["source"]["media_type"] == "text/plain"
