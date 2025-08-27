@@ -87,3 +87,12 @@ async def test_convert_mcp_tool():
             }
             result = await nested_pydantic_tool.acall(account=account_in_json)
             assert result == "Bob"
+
+            # Check no input parameter current_datetime tool
+            current_datetime_tool = convert_mcp_tool(session, response.tools[4])
+            assert current_datetime_tool.name == "current_datetime"
+            assert current_datetime_tool.desc == "Get the current datetime"
+            assert current_datetime_tool.args == {}
+            assert current_datetime_tool.arg_types == {}
+            assert current_datetime_tool.arg_desc == {}
+            assert await current_datetime_tool.acall() == "2025-07-23T09:10:10.0+00:00"

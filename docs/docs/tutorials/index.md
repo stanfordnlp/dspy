@@ -33,6 +33,14 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Advanced Tool Use](tool_use/index.ipynb)
     - [Finetuning Agents](games/index.ipynb)
 
+
+- Reflective Prompt Evolution with dspy.GEPA:
+    - [Overview](gepa_ai_program/index.md)
+    - [GEPA for AIME](gepa_aime/index.ipynb)
+    - [GEPA for PAPILLON](gepa_papillon/index.ipynb)
+    - [GEPA for Enterprise classification task](gepa_facilitysupportanalyzer/index.ipynb)
+
+
 - Tools, Development, and Deployment
     - [Use MCP in DSPy](mcp/index.md)
     - [Output Refinement](output_refinement/best-of-n-and-refine.md)

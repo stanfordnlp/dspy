@@ -10,7 +10,7 @@ hide:
 
 # _Programming_—not prompting—_LMs_
 
-![PyPI Downloads](https://img.shields.io/pypi/dm/dspy)
+[![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
 
 DSPy is a declarative framework for building modular AI software. It allows you to **iterate fast on structured code**, rather than brittle strings, and offers algorithms that **compile AI programs into effective prompts and weights** for your language models, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
@@ -78,7 +78,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM("ollama_chat/llama3.2", api_base="http://localhost:11434", api_key="")
+        lm = dspy.LM("ollama_chat/llama3.2:1b", api_base="http://localhost:11434", api_key="")
         dspy.configure(lm=lm)
         ```
 
@@ -403,17 +403,20 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
         ```python linenums="1"
         import dspy
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini-2024-07-18"))
+        lm=dspy.LM('openai/gpt-4o-mini-2024-07-18')
 
         # Define the DSPy module for classification. It will use the hint at training time, if available.
         signature = dspy.Signature("text, hint -> label").with_updated_fields("label", type_=Literal[tuple(CLASSES)])
         classify = dspy.ChainOfThought(signature)
+        classify.set_lm(lm)
 
         # Optimize via BootstrapFinetune.
         optimizer = dspy.BootstrapFinetune(metric=(lambda x, y, trace=None: x.label == y.label), num_threads=24)
         optimized = optimizer.compile(classify, trainset=trainset)
 
         optimized(text="What does a pending cash withdrawal mean?")
+        
+        # For a complete fine-tuning tutorial, see: https://dspy.ai/tutorials/classification_finetuning/
         ```
 
         **Possible Output (from the last line):**

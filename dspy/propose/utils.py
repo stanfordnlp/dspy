@@ -7,7 +7,7 @@ import dspy
 try:
     from IPython.core.magics.code import extract_symbols
 except ImportError:
-    # Won't be able to read code from juptyer notebooks
+    # Won't be able to read code from jupyter notebooks
     extract_symbols = None
 
 from dspy.predict.parameter import Parameter
@@ -166,7 +166,10 @@ def get_dspy_source_code(module):
             iterable = [getattr(module, attribute)]
 
         for item in iterable:
-            if item in completed_set:
+            # Skip items that are unhashable (like module history)
+            try:
+                hash(item)
+            except TypeError:
                 continue
             if isinstance(item, Parameter):
                 if hasattr(item, "signature") and item.signature is not None and item.signature.__pydantic_parent_namespace__["signature_name"] + "_sig" not in completed_set:

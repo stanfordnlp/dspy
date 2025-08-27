@@ -1,3 +1,4 @@
+import json
 import time
 from unittest import mock
 from unittest.mock import patch
@@ -5,11 +6,39 @@ from unittest.mock import patch
 import litellm
 import pydantic
 import pytest
+from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
 
 import dspy
 from dspy.utils.usage_tracker import track_usage
+
+
+def make_response(output_blocks):
+    return ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details=None,
+        instructions=None,
+        model="openai/dspy-test-model",
+        object="response",
+        output=output_blocks,
+        metadata = {},
+        parallel_tool_calls=False,
+        temperature=1.0,
+        tool_choice="auto",
+        tools=[],
+        top_p=1.0,
+        max_output_tokens=None,
+        previous_response_id=None,
+        reasoning=None,
+        status="completed",
+        text=None,
+        truncation="disabled",
+        usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        user=None,
+    )
 
 
 def test_chat_lms_can_be_queried(litellm_test_server):
@@ -197,6 +226,9 @@ def test_reasoning_model_token_parameter():
         ("openai/o1-2023-01-01", True),
         ("openai/o3", True),
         ("openai/o3-mini-2023-01-01", True),
+        ("openai/gpt-5", True),
+        ("openai/gpt-5-mini", True),
+        ("openai/gpt-5-nano", True),
         ("openai/gpt-4", False),
         ("anthropic/claude-2", False),
     ]
@@ -216,20 +248,22 @@ def test_reasoning_model_token_parameter():
             assert "max_tokens" in lm.kwargs
             assert lm.kwargs["max_tokens"] == 1000
 
-
-def test_reasoning_model_requirements():
+@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano"])
+def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
-    with pytest.raises(AssertionError) as exc_info:
+    with pytest.raises(
+        ValueError,
+        match="reasoning models require passing temperature=1.0 and max_tokens >= 20000",
+    ):
         dspy.LM(
-            model="openai/o1",
+            model=model_name,
             temperature=0.7,  # Should be 1.0
             max_tokens=1000,  # Should be >= 20_000
         )
-    assert "reasoning models require passing temperature=1.0 and max_tokens >= 20_000" in str(exc_info.value)
 
     # Should pass with correct parameters
     lm = dspy.LM(
-        model="openai/o1",
+        model=model_name,
         temperature=1.0,
         max_tokens=20_000,
     )
@@ -374,3 +408,102 @@ async def test_async_lm_call_with_cache(tmp_path):
         assert mock_alitellm_completion.call_count == 2
 
     dspy.cache = original_cache
+
+
+def test_lm_history_size_limit():
+    lm = dspy.LM(model="openai/gpt-4o-mini")
+    with dspy.context(max_history_size=5):
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="test answer"))],
+                model="openai/gpt-4o-mini",
+            )
+
+            for _ in range(10):
+                lm("query")
+
+    assert len(lm.history) == 5
+
+
+def test_disable_history():
+    lm = dspy.LM(model="openai/gpt-4o-mini")
+    with dspy.context(disable_history=True):
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="test answer"))],
+                model="openai/gpt-4o-mini",
+            )
+            for _ in range(10):
+                lm("query")
+
+    assert len(lm.history) == 0
+
+    with dspy.context(disable_history=False):
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="test answer"))],
+                model="openai/gpt-4o-mini",
+            )
+
+def test_responses_api(litellm_test_server):
+    api_base, _ = litellm_test_server
+    expected_text = "This is a test answer from responses API."
+
+    api_response = make_response(
+        output_blocks=[
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {"type": "output_text", "text": expected_text, "annotations": []}
+                ],
+            }
+        ]
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
+        lm = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base=api_base,
+            api_key="fakekey",
+            model_type="responses",
+            cache=False,
+            cache_in_memory=False,
+        )
+        assert lm("openai query") == [expected_text]
+
+        dspy_responses.assert_called_once()
+        assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
+
+
+def test_responses_api_tool_calls(litellm_test_server):
+    api_base, _ = litellm_test_server
+    expected_tool_call = {
+        "type": "function_call",
+        "name": "get_weather",
+        "arguments": json.dumps({"city": "Paris"}),
+        "call_id": "call_1",
+        "status": "completed",
+        "id": "call_1",
+    }
+    expected_response = [{"tool_calls": [expected_tool_call]}]
+
+    api_response = make_response(
+        output_blocks=[expected_tool_call],
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
+        lm = dspy.LM(
+            model="openai/dspy-test-model",
+            api_base=api_base,
+            api_key="fakekey",
+            model_type="responses",
+            cache=False,
+            cache_in_memory=False,
+        )
+        assert lm("openai query") == expected_response
+
+        dspy_responses.assert_called_once()
+        assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"

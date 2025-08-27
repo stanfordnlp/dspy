@@ -10,9 +10,11 @@ import pydantic
 import pytest
 import ujson
 from litellm import ModelResponse
+from pydantic import BaseModel, HttpUrl
 
 import dspy
 from dspy import Predict, Signature
+from dspy.predict.predict import serialize_object
 from dspy.utils.dummies import DummyLM
 
 
@@ -684,3 +686,81 @@ def test_predicted_outputs_piped_from_predict_to_lm_call():
         program(question="Why did a chicken cross the kitchen?", prediction="To get to the other side!")
 
     assert "prediction" not in mock_completion.call_args[1]
+
+
+def test_dump_state_pydantic_non_primitive_types():
+    class WebsiteInfo(BaseModel):
+        name: str
+        url: HttpUrl
+        description: str | None = None
+        created_at: datetime
+
+    class TestSignature(dspy.Signature):
+        website_info: WebsiteInfo = dspy.InputField()
+        summary: str = dspy.OutputField()
+
+    website_info = WebsiteInfo(
+        name="Example",
+        url="https://www.example.com",
+        description="Test website",
+        created_at=datetime(2021, 1, 1, 12, 0, 0),
+    )
+
+    serialized = serialize_object(website_info)
+
+    assert serialized["url"] == "https://www.example.com/"
+    assert serialized["created_at"] == "2021-01-01T12:00:00"
+
+    json_str = ujson.dumps(serialized)
+    reloaded = ujson.loads(json_str)
+    assert reloaded == serialized
+
+    predictor = Predict(TestSignature)
+    demo = {"website_info": website_info, "summary": "This is a test website."}
+    predictor.demos = [demo]
+
+    state = predictor.dump_state()
+    json_str = ujson.dumps(state)
+    reloaded_state = ujson.loads(json_str)
+
+    demo_data = reloaded_state["demos"][0]
+    assert demo_data["website_info"]["url"] == "https://www.example.com/"
+    assert demo_data["website_info"]["created_at"] == "2021-01-01T12:00:00"
+
+
+def test_trace_size_limit():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]), max_trace_size=3)
+
+    for _ in range(10):
+        program(question="What is the capital of France?")
+
+    assert len(dspy.settings.trace) == 3
+
+
+def test_disable_trace():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]), trace=None)
+
+    for _ in range(10):
+        program(question="What is the capital of France?")
+
+    assert dspy.settings.trace is None
+
+
+def test_per_module_history_size_limit():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]), max_history_size=5)
+
+    for _ in range(10):
+        program(question="What is the capital of France?")
+    assert len(program.history) == 5
+
+
+def test_per_module_history_disabled():
+    program = Predict("question -> answer")
+    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]), disable_history=True)
+
+    for _ in range(10):
+        program(question="What is the capital of France?")
+    assert len(program.history) == 0
