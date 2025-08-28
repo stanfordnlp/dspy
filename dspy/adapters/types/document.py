@@ -16,7 +16,6 @@ class Document(Type):
         data: The text content of the document
         title: Optional title for the document (used in citations)
         media_type: MIME type of the document content (defaults to "text/plain")
-        metadata: Optional additional metadata about the document
         context: Optional context information about the document
 
     Example:
@@ -40,7 +39,6 @@ class Document(Type):
             dspy.Document(
                 data="Water boils at 100°C at standard atmospheric pressure.",
                 title="Physics Fundamentals",
-                metadata={"author": "Dr. Smith", "year": 2023}
             )
         ]
 
@@ -55,7 +53,6 @@ class Document(Type):
     data: str
     title: str | None = None
     media_type: Literal["text/plain", "application/pdf"] = "text/plain"
-    metadata: dict[str, Any] | None = None
     context: str | None = None
 
     def format(self) -> list[dict[str, Any]]:
