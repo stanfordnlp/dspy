@@ -191,15 +191,29 @@ class BaseLM:
         Returns:
             List of processed outputs
         """
+        def _get_attr_or_item(obj, key, default=None):
+            """Helper to get attribute or dict item."""
+            if hasattr(obj, key):
+                return getattr(obj, key)
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return default
+
         outputs = []
         tool_calls = []
         for output_item in response.output:
-            if output_item.type == "message":
-                for content_item in output_item.content:
-                    outputs.append(content_item.text)
-            elif output_item.type == "function_call":
-                tool_calls.append(output_item.model_dump())
-
+            item_type = _get_attr_or_item(output_item, "type")
+            if item_type == "message":
+                content = _get_attr_or_item(output_item, "content", [])
+                for content_item in content:
+                    text = _get_attr_or_item(content_item, "text")
+                    outputs.append(text)
+            elif item_type == "function_call":
+                # Use model_dump if available, else fallback to dict
+                if hasattr(output_item, "model_dump"):
+                    tool_calls.append(output_item.model_dump())
+                elif isinstance(output_item, dict):
+                    tool_calls.append(output_item)
         if tool_calls:
             outputs.append({"tool_calls": tool_calls})
         return outputs
