@@ -29,7 +29,6 @@ except ImportError:
         """
         print(obj)
 
-
     def HTML(x: str) -> str:  # noqa: N802
         """
         Obtain the HTML representation of the specified string.
@@ -38,6 +37,7 @@ except ImportError:
         # environments where IPython is not available. In such environments where IPython is not
         # available, this method will simply return the input string.
         return x
+
 
 # TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),
 # we print the number of failures, the first N examples that failed, and the first N exceptions raised.
@@ -69,19 +69,19 @@ class Evaluate:
     """
 
     def __init__(
-            self,
-            *,
-            devset: list["dspy.Example"],
-            metric: Callable | None = None,
-            num_threads: int | None = None,
-            display_progress: bool = False,
-            display_table: bool | int = False,
-            max_errors: int | None = None,
-            provide_traceback: bool | None = None,
-            failure_score: float = 0.0,
-            save_as_csv: str | None = None,
-            save_as_json: str | None = None,
-            **kwargs,
+        self,
+        *,
+        devset: list["dspy.Example"],
+        metric: Callable | None = None,
+        num_threads: int | None = None,
+        display_progress: bool = False,
+        display_table: bool | int = False,
+        max_errors: int | None = None,
+        provide_traceback: bool | None = None,
+        failure_score: float = 0.0,
+        save_as_csv: str | None = None,
+        save_as_json: str | None = None,
+        **kwargs,
     ):
         """
         Args:
@@ -111,21 +111,20 @@ class Evaluate:
         self.save_as_json = save_as_json
 
         if "return_outputs" in kwargs:
-            raise ValueError(
-                "`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
+            raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
 
     @with_callbacks
     def __call__(
-            self,
-            program: "dspy.Module",
-            metric: Callable | None = None,
-            devset: list["dspy.Example"] | None = None,
-            num_threads: int | None = None,
-            display_progress: bool | None = None,
-            display_table: bool | int | None = None,
-            callback_metadata: dict[str, Any] | None = None,
-            save_as_csv: str | None = None,
-            save_as_json: str | None = None,
+        self,
+        program: "dspy.Module",
+        metric: Callable | None = None,
+        devset: list["dspy.Example"] | None = None,
+        num_threads: int | None = None,
+        display_progress: bool | None = None,
+        display_table: bool | int | None = None,
+        callback_metadata: dict[str, Any] | None = None,
+        save_as_csv: str | None = None,
+        save_as_json: str | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -240,7 +239,7 @@ class Evaluate:
         ]
 
     def _construct_result_table(
-            self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+        self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
     ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
@@ -356,7 +355,7 @@ def display_dataframe(df: "pd.DataFrame"):
     else:
         # Pretty print the DataFrame to the console
         with pd.option_context(
-                "display.max_rows", None, "display.max_columns", None
+            "display.max_rows", None, "display.max_columns", None
         ):  # more options can be specified also
             print(df)
 
@@ -382,6 +381,7 @@ def is_in_ipython_notebook_environment():
         return "IPKernelApp" in getattr(get_ipython(), "config", {})
     except ImportError:
         return False
+
 
 # FIXME: TODO: The merge_dicts stuff above is way too quick and dirty.
 # TODO: the display_table can't handle False but can handle 0!
