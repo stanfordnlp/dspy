@@ -28,13 +28,11 @@ def test_document_with_all_fields():
         data="Water boils at 100°C at standard pressure.",
         title="Physics Facts",
         media_type="application/pdf",
-        metadata={"author": "Dr. Smith", "year": 2023},
         context="Laboratory conditions"
     )
     assert doc.data == "Water boils at 100°C at standard pressure."
     assert doc.title == "Physics Facts"
     assert doc.media_type == "application/pdf"
-    assert doc.metadata == {"author": "Dr. Smith", "year": 2023}
     assert doc.context == "Laboratory conditions"
 
 
