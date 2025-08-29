@@ -173,6 +173,12 @@ class BaseLM:
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
                 output["tool_calls"] = c.message.tool_calls
+
+            # Extract citations from LiteLLM response if available
+            citations = self._extract_citations_from_response(response, c)
+            if citations:
+                output["citations"] = citations
+
             outputs.append(output)
 
         if all(len(output) == 1 for output in outputs):
@@ -180,6 +186,45 @@ class BaseLM:
             outputs = [output["text"] for output in outputs]
 
         return outputs
+
+    def _extract_citations_from_response(self, response, choice):
+        """Extract citations from LiteLLM response if available.
+        Reference: https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
+        
+        Args:
+            response: The LiteLLM response object
+            choice: The choice object from response.choices
+            
+        Returns:
+            List of citation dictionaries or None if no citations found
+        """
+        try:
+            # Check for citations in LiteLLM provider_specific_fields
+            if hasattr(response, "choices") and hasattr(choice, "message"):
+                message = choice.message
+                # Check for citations in provider_specific_fields (Anthropic format)
+                if hasattr(message, "provider_specific_fields") and message.provider_specific_fields:
+                    provider_fields = message.provider_specific_fields
+                    if isinstance(provider_fields, dict) and "citations" in provider_fields:
+                        citations_data = provider_fields["citations"]
+                        if isinstance(citations_data, list):
+                            citations = []
+                            for citation_data in citations_data:
+                                citation_dict = {
+                                    "type": citation_data.get("type", "char_location"),
+                                    "cited_text": citation_data.get("cited_text", ""),
+                                    "document_index": citation_data.get("document_index", 0),
+                                    "document_title": citation_data.get("document_title"),
+                                    "start_char_index": citation_data.get("start_char_index", 0),
+                                    "end_char_index": citation_data.get("end_char_index", 0),
+                                }
+                                citations.append(citation_dict)
+                            return citations
+        except Exception:
+            # If citation extraction fails, just continue without citations
+            pass
+
+        return None
 
     def _process_response(self, response):
         """Process the response of OpenAI Response API and extract outputs.
