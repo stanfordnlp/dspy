@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils.annotation import experimental
 
 if TYPE_CHECKING:
     from gepa import GEPAResult
@@ -21,6 +22,7 @@ AUTO_RUN_SETTINGS = {
     "heavy": {"n": 18},
 }
 
+@experimental(version="3.0.0")
 class GEPAFeedbackMetric(Protocol):
     def __call__(
         gold: Example,
@@ -50,6 +52,7 @@ class GEPAFeedbackMetric(Protocol):
         """
         ...
 
+@experimental(version="3.0.0")
 @dataclass(frozen=True)
 class DspyGEPAResult:
     """
@@ -141,6 +144,7 @@ class DspyGEPAResult:
             seed=gepa_result.seed,
         )
 
+@experimental(version="3.0.0")
 class GEPA(Teleprompter):
     """
     GEPA is an evolutionary optimizer, which uses reflection to evolve text components
