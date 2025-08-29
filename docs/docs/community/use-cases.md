@@ -34,6 +34,7 @@ This list is continuously growing. We regularly add new use cases and welcome co
 | **[Trampoline AI](https://trampoline.ai)** | Uses DSPy to power their data-augmentation and LM pipelines. |
 | **[Pretrain](https://pretrain.com)** | Uses DSPy to automatically optimize AI performance towards user-defined tasks based on uploaded examples. |
 | **[Spindle AI](https://spindle.ai)** | Turns natural-language constrained optimization problems into solvable mathematical programs whose candidate solutions are scenarios. |
+| **[Infinitus](https://www.infinitus.ai/product/ai-agents/)** | Leverages DSPy to build and optimize healthcare AI agents |
 
 This list represents companies that have publicly shared their use cases or have provided permission to be included. It reflects a selection of the many industry applications of DSPy currently in production.
 
