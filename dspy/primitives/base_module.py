@@ -250,8 +250,8 @@ class BaseModule:
         path = Path(path)
 
         if path.suffix == ".json":
-            with open(path, encoding="utf-8") as f:
-                state = orjson.loads(f.read().encode("utf-8"))
+            with open(path, "rb") as f:
+                state = orjson.loads(f.read())
         elif path.suffix == ".pkl":
             with open(path, "rb") as f:
                 state = cloudpickle.load(f)
