@@ -40,6 +40,7 @@ class LM(BaseLM):
         finetuning_model: str | None = None,
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
+        use_developer_role: bool = False,
         **kwargs,
     ):
         """
@@ -74,6 +75,7 @@ class LM(BaseLM):
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
+        self.use_developer_role = use_developer_role
 
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
@@ -120,6 +122,11 @@ class LM(BaseLM):
         enable_memory_cache = kwargs.pop("cache_in_memory", self.cache_in_memory)
 
         messages = messages or [{"role": "user", "content": prompt}]
+        if self.use_developer_role and self.model_type == "responses":
+            messages = [
+                {**m, "role": "developer"} if m.get("role") == "system" else m
+                for m in messages
+            ]
         kwargs = {**self.kwargs, **kwargs}
 
         if self.model_type == "chat":
@@ -148,6 +155,11 @@ class LM(BaseLM):
         enable_memory_cache = kwargs.pop("cache_in_memory", self.cache_in_memory)
 
         messages = messages or [{"role": "user", "content": prompt}]
+        if self.use_developer_role and self.model_type == "responses":
+            messages = [
+                {**m, "role": "developer"} if m.get("role") == "system" else m
+                for m in messages
+            ]
         kwargs = {**self.kwargs, **kwargs}
 
         if self.model_type == "chat":
