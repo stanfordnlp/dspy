@@ -29,7 +29,9 @@ class UsageTracker:
             result["prompt_tokens_details"] = dict(prompt_tokens_details)
         return result
 
-    def _merge_usage_entries(self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None) -> dict[str, Any]:
+    def _merge_usage_entries(
+        self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
+    ) -> dict[str, Any]:
         if usage_entry1 is None or len(usage_entry1) == 0:
             return dict(usage_entry2)
         if usage_entry2 is None or len(usage_entry2) == 0:
@@ -40,6 +42,8 @@ class UsageTracker:
             current_v = result.get(k)
             if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
+            elif hasattr(v, "__dict__") or hasattr(current_v, "__dict__"):
+                result[k] = self._merge_usage_entries(dict(current_v), dict(v))
             else:
                 result[k] = (current_v or 0) + (v or 0)
         return result
