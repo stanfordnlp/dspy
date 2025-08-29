@@ -3,7 +3,7 @@ import logging
 import textwrap
 from typing import Callable
 
-import ujson
+import orjson
 
 import dspy
 from dspy.adapters.utils import get_field_description_string
@@ -120,7 +120,7 @@ def append_a_rule(bucket, system, **kwargs):
         "module_names": module_names,
     }
 
-    kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
+    kwargs = {k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
               for k, v in kwargs.items()}
     advice = dspy.Predict(OfferFeedback)(**kwargs).module_advice
 
@@ -194,9 +194,9 @@ def inspect_modules(program):
 def recursive_mask(o):
     # If the object is already serializable, return it.
     try:
-        ujson.dumps(o)
+        orjson.dumps(o)
         return o
-    except TypeError:
+    except (TypeError, orjson.JSONEncodeError):
         pass
 
     # If it's a dictionary, apply recursively to its values.
