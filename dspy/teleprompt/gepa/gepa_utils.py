@@ -1,13 +1,18 @@
 import logging
 import random
-from typing import Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 from gepa import EvaluationBatch, GEPAAdapter
 
+import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
+from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
+
+if TYPE_CHECKING:
+    from dspy.teleprompt.gepa.instruction_proposal import InstructionProposerProtocol
 from dspy.teleprompt.bootstrap_trace import TraceData
 
 
@@ -58,6 +63,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         num_threads: int | None = None,
         add_format_failure_as_feedback: bool = False,
         rng: random.Random | None = None,
+        reflection_lm=None,
+        custom_instruction_proposer: "InstructionProposerProtocol | None" = None,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -66,6 +73,35 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.num_threads = num_threads
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
+        self.reflection_lm = reflection_lm
+        self.custom_instruction_proposer = custom_instruction_proposer
+
+        if self.custom_instruction_proposer is not None:
+            # We are only overriding the propose_new_texts method when a custom
+            # instruction proposer is provided. Otherwise, we use the GEPA
+            # default propose_new_texts.
+            def custom_propose_new_texts(
+                candidate: dict[str, str],
+                reflective_dataset: dict[str, list[dict[str, Any]]],
+                components_to_update: list[str]
+            ) -> dict[str, str]:
+
+                proposer = self.custom_instruction_proposer
+
+                new_texts: dict[str, str] = {}
+                for name in components_to_update:
+                    current_instruction = candidate[name]
+                    dataset_with_feedback = reflective_dataset[name]
+
+                    with dspy.context(lm=self.reflection_lm):
+                        new_texts[name] = proposer(
+                            current_instruction=current_instruction,
+                            reflective_dataset=dataset_with_feedback
+                        )
+
+                return new_texts
+
+            self.propose_new_texts = custom_propose_new_texts
 
         # Cache predictor names/signatures
         self.named_predictors = list(self.student.named_predictors())
@@ -184,7 +220,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for input_key, input_val in inputs.items():
                     if contains_history and input_key == history_key_name:
                         continue
-                    new_inputs[input_key] = str(input_val)
+
+                    if isinstance(input_val, Type) and self.custom_instruction_proposer is not None:
+                        # Keep original object - will be properly formatted when sent to reflection LM
+                        new_inputs[input_key] = input_val
+                    else:
+                        new_inputs[input_key] = str(input_val)
 
                 if isinstance(outputs, FailedPrediction):
                     s = "Couldn't parse the output as per the expected output format. The model's raw response was:\n"
@@ -227,29 +268,3 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             raise Exception("No valid predictions found for any module.")
 
         return ret_d
-
-    # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.
-    # We can potentially override this, to use the instruction proposal similar to MIPROv2.
-
-    # def propose_new_texts(
-    #     self,
-    #     candidate: Dict[str, str],
-    #     reflective_dataset: Dict[str, List[Dict[str, Any]]],
-    #     components_to_update: List[str]
-    # ) -> Dict[str, str]:
-    #     if self.adapter.propose_new_texts is not None:
-    #         return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
-
-    #     from .instruction_proposal import InstructionProposalSignature
-    #     new_texts: Dict[str, str] = {}
-    #     for name in components_to_update:
-    #         base_instruction = candidate[name]
-    #         dataset_with_feedback = reflective_dataset[name]
-    #         new_texts[name] = InstructionProposalSignature.run(
-    #             lm=self.reflection_lm,
-    #             input_dict={
-    #                 "current_instruction_doc": base_instruction,
-    #                 "dataset_with_feedback": dataset_with_feedback
-    #             }
-    #         )['new_instruction']
-    #     return new_texts

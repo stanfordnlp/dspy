@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from gepa import GEPAResult
 
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+    from dspy.teleprompt.gepa.instruction_proposal import InstructionProposerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +283,8 @@ class GEPA(Teleprompter):
         track_best_outputs: bool = False,
         # Reproducibility
         seed: int | None = 0,
+        # Custom instruction proposer
+        instruction_proposer: "InstructionProposerProtocol | None" = None,
     ):
         try:
             inspect.signature(metric).bind(None, None, None, None, None)
@@ -312,8 +315,8 @@ class GEPA(Teleprompter):
         # Reflection based configuration
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
-        # self.reflection_lm = reflection_lm
         assert reflection_lm is not None, "GEPA requires a reflection language model to be provided. Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model."
+        self._original_reflection_lm = reflection_lm  # Store original for dspy adapter use
         self.reflection_lm = lambda x: reflection_lm(x)[0]
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
@@ -340,6 +343,8 @@ class GEPA(Teleprompter):
 
         # Reproducibility
         self.seed = seed
+
+        self.custom_instruction_proposer = instruction_proposer
 
     def auto_budget(self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5) -> int:
         import numpy as np
@@ -452,6 +457,8 @@ class GEPA(Teleprompter):
             num_threads=self.num_threads,
             add_format_failure_as_feedback=self.add_format_failure_as_feedback,
             rng=rng,
+            reflection_lm=self._original_reflection_lm,
+            custom_instruction_proposer=self.custom_instruction_proposer,
         )
 
         reflection_lm = self.reflection_lm
