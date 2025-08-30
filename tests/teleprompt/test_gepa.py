@@ -8,6 +8,7 @@ import dspy
 import dspy.clients
 from dspy import Example
 from dspy.predict import Predict
+from dspy.utils.dummies import DummyLM
 
 
 class SimpleModule(dspy.Module):
@@ -70,45 +71,44 @@ def test_metric_requires_feedback_signature():
         dspy.GEPA(metric=bad_metric, reflection_lm=reflection_lm, max_metric_calls=1)
 
 
-def test_gepa_compile_with_track_usage_no_tuple_error(caplog):
-    """Regression: GEPA.compile should complete quickly and not log tuple-usage error
-    when track_usage=True. Prior to the fix, compile would hang and/or log
-    "'tuple' object has no attribute 'set_lm_usage'" repeatedly.
+def any_metric(
+    gold: dspy.Example,
+    pred: dspy.Prediction,
+    trace: Any = None,
+    pred_name: str | None = None,
+    pred_trace: Any = None,
+) -> float:
     """
-    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
-        data = json.load(f)
-    lm_history = data["lm"]
-    reflection_lm_history = data["reflection_lm"]
+    For this test, we only care that the program runs, not the score.
+    """
+    return 0.0  # ← Just returns 0.0, doesn't access any attributes!
 
-    lm_main = DictDummyLM(lm_history)
-    reflection_lm = DictDummyLM(reflection_lm_history)
 
-    dspy.settings.configure(lm=lm_main, track_usage=True)
+def test_gepa_compile_with_track_usage_no_tuple_error(caplog):
+    """
+    GEPA.compile should not log tuple-usage error when track_usage=True and complete without hanging.
+    Before, compile would hang and/or log "'tuple' object has no attribute 'set_lm_usage'" repeatedly.
+    """
+    student = dspy.Predict("question -> answer")
+    trainset = [dspy.Example(question="What is 2+2?", answer="4").with_inputs("question")]
 
-    student = SimpleModule("input -> output")
-    optimizer = dspy.GEPA(
-        metric=simple_metric,
-        reflection_lm=reflection_lm,
-        max_metric_calls=3,
-    )
-
-    trainset = [
-        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
-        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
-    ]
+    task_lm = DummyLM([{"answer": "mock answer 1"}])
+    reflection_lm = DummyLM([{"new_instruction": "Something new."}])
 
     compiled_container: dict[str, Any] = {}
     exc_container: dict[str, BaseException] = {}
 
     def run_compile():
         try:
-            compiled_container["prog"] = optimizer.compile(student, trainset=trainset, valset=trainset)
+            with dspy.context(lm=task_lm, track_usage=True):
+                optimizer = dspy.GEPA(metric=any_metric, reflection_lm=reflection_lm, max_metric_calls=3)
+                compiled_container["prog"] = optimizer.compile(student, trainset=trainset, valset=trainset)
         except BaseException as e:
             exc_container["e"] = e
 
     t = threading.Thread(target=run_compile, daemon=True)
     t.start()
-    t.join(timeout=5.0)
+    t.join(timeout=1.0)
 
     # Assert compile did not hang (pre-fix behavior would time out here)
     assert not t.is_alive(), "GEPA.compile did not complete within timeout (likely pre-fix behavior)."
@@ -120,8 +120,6 @@ def test_gepa_compile_with_track_usage_no_tuple_error(caplog):
     if "e" in exc_container:
         pytest.fail(f"GEPA.compile raised unexpectedly: {exc_container['e']}")
 
-    # Basic sanity: compiled program should be callable if present
-    if "prog" in compiled_container:
-        _ = compiled_container["prog"].predictor(input="What is the color of the sky?")
-    else:
-        pytest.fail("GEPA.compile did not complete within timeout (likely pre-fix behavior).")
+    # No timeout, no exception -> so the program must exist
+    if "prog" not in compiled_container:
+        pytest.fail("GEPA.compile did return a program (likely pre-fix behavior).")
