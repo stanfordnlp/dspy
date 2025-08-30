@@ -58,6 +58,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         num_threads: int | None = None,
         add_format_failure_as_feedback: bool = False,
         rng: random.Random | None = None,
+        keep_module_scores: bool = False,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -66,6 +67,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.num_threads = num_threads
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
+        self.keep_module_scores = keep_module_scores
 
         # Cache predictor names/signatures
         self.named_predictors = list(self.student.named_predictors())
@@ -214,8 +216,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         captured_trace=trace,
                     )
                     d["Feedback"] = fb["feedback"]
-                    assert fb["score"] == module_score, f"Currently, GEPA only supports feedback functions that return the same score as the module's score. However, the module-level score is {module_score} and the feedback score is {fb.score}."
-                    # d['score'] = fb.score
+                    if self.keep_module_scores:
+                        d['score'] = module_score
+                    else:
+                        d['score'] = fb['score']
+
                 items.append(d)
 
             if len(items) == 0:
