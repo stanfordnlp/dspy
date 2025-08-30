@@ -1,4 +1,6 @@
 import json
+import threading
+from typing import Any
 
 import pytest
 
@@ -6,6 +8,7 @@ import dspy
 import dspy.clients
 from dspy import Example
 from dspy.predict import Predict
+from dspy.utils.dummies import DummyLM
 
 
 class SimpleModule(dspy.Module):
@@ -66,3 +69,57 @@ def test_metric_requires_feedback_signature():
     reflection_lm = DictDummyLM([])
     with pytest.raises(TypeError):
         dspy.GEPA(metric=bad_metric, reflection_lm=reflection_lm, max_metric_calls=1)
+
+
+def any_metric(
+    gold: dspy.Example,
+    pred: dspy.Prediction,
+    trace: Any = None,
+    pred_name: str | None = None,
+    pred_trace: Any = None,
+) -> float:
+    """
+    For this test, we only care that the program runs, not the score.
+    """
+    return 0.0  # ← Just returns 0.0, doesn't access any attributes!
+
+
+def test_gepa_compile_with_track_usage_no_tuple_error(caplog):
+    """
+    GEPA.compile should not log tuple-usage error when track_usage=True and complete without hanging.
+    Before, compile would hang and/or log "'tuple' object has no attribute 'set_lm_usage'" repeatedly.
+    """
+    student = dspy.Predict("question -> answer")
+    trainset = [dspy.Example(question="What is 2+2?", answer="4").with_inputs("question")]
+
+    task_lm = DummyLM([{"answer": "mock answer 1"}])
+    reflection_lm = DummyLM([{"new_instruction": "Something new."}])
+
+    compiled_container: dict[str, Any] = {}
+    exc_container: dict[str, BaseException] = {}
+
+    def run_compile():
+        try:
+            with dspy.context(lm=task_lm, track_usage=True):
+                optimizer = dspy.GEPA(metric=any_metric, reflection_lm=reflection_lm, max_metric_calls=3)
+                compiled_container["prog"] = optimizer.compile(student, trainset=trainset, valset=trainset)
+        except BaseException as e:
+            exc_container["e"] = e
+
+    t = threading.Thread(target=run_compile, daemon=True)
+    t.start()
+    t.join(timeout=1.0)
+
+    # Assert compile did not hang (pre-fix behavior would time out here)
+    assert not t.is_alive(), "GEPA.compile did not complete within timeout (likely pre-fix behavior)."
+
+    # Assert no tuple-usage error is logged anymore
+    assert "'tuple' object has no attribute 'set_lm_usage'" not in caplog.text
+
+    # If any exception occurred, fail explicitly
+    if "e" in exc_container:
+        pytest.fail(f"GEPA.compile raised unexpectedly: {exc_container['e']}")
+
+    # No timeout, no exception -> so the program must exist
+    if "prog" not in compiled_container:
+        pytest.fail("GEPA.compile did return a program (likely pre-fix behavior).")
