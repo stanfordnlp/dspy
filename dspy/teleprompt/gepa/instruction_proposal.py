@@ -1,7 +1,3 @@
-"""
-dspy.Predict-based Instruction Proposal for GEPA
-"""
-
 from typing import Any, Protocol
 
 import dspy
@@ -23,42 +19,6 @@ class InstructionProposerProtocol(Protocol):
             str: Improved instruction text
         """
         ...
-
-
-class GenerateEnhancedInstructionFromFeedback(dspy.Signature):
-    """I provided an assistant with instructions to perform a task, but the assistant's performance needs improvement based on the examples and feedback below.
-
-    Your task is to write a better instruction for the assistant that addresses the specific issues identified in the feedback.
-
-    ## Analysis Steps:
-    1. **Read the inputs carefully** and identify the input format and infer the detailed task description
-    2. **Read all the assistant responses and corresponding feedback** to understand what went wrong and what worked well
-    3. **Identify all niche and domain-specific factual information** about the task and include it in the instruction, as a lot of it may not be available to the assistant in the future
-    4. **Look for generalizable strategies** the assistant may have used successfully - include these in the instruction as well
-    5. **Address specific issues** mentioned in the feedback to prevent similar mistakes
-
-    ## Instruction Requirements:
-    - **Clear task definition** with input format expectations and output specifications
-    - **Domain-specific knowledge** that the assistant needs to know
-    - **Successful strategies** observed in correct responses
-    - **Error prevention guidance** based on the feedback patterns
-    - **Precise, actionable language** that reduces ambiguity
-
-    Focus on creating an instruction that helps the assistant avoid the specific mistakes shown in the examples while building on successful approaches."""
-
-    current_instruction = dspy.InputField(
-        desc="The current instruction that was provided to the assistant to perform the task"
-    )
-    examples_with_feedback = dspy.InputField(
-        desc="Task examples showing inputs, assistant outputs, and feedback. Read these carefully to "
-        "identify patterns, successful strategies, and specific issues that need to be addressed."
-    )
-
-    improved_instruction = dspy.OutputField(
-        desc="A better instruction for the assistant that addresses the identified issues, includes "
-        "necessary domain-specific knowledge, incorporates successful strategies, and provides "
-        "clear guidance to prevent the mistakes shown in the examples."
-    )
 
 
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
@@ -107,9 +67,7 @@ class MultiModalProposer(dspy.Module):
 
     def __init__(self):
         super().__init__()
-        # MultiModalProposer always uses enhanced multimodal signatures
-        self.propose_instruction = dspy.Predict(GenerateEnhancedInstructionFromFeedback)
-        self.propose_multimodal_instruction = None  # Will be created if needed for multimodal content
+        self.propose_instruction = dspy.Predict(GenerateEnhancedMultimodalInstructionFromFeedback)
 
     def forward(self, current_instruction: str, reflective_dataset: list[dict[str, Any]]) -> str:
         """
@@ -126,28 +84,17 @@ class MultiModalProposer(dspy.Module):
         # Format examples with enhanced pattern recognition
         formatted_examples, image_map = self._format_examples_with_pattern_analysis(reflective_dataset)
 
-        # Choose appropriate predictor based on whether images are present
-        has_images = bool(image_map)
-        if has_images and self.propose_multimodal_instruction is None:
-            # Lazy initialization of multimodal predictor (enhanced multimodal signatures)
-            self.propose_multimodal_instruction = dspy.Predict(GenerateEnhancedMultimodalInstructionFromFeedback)
-
-        # Select the appropriate predictor
-        predictor = self.propose_multimodal_instruction if has_images else self.propose_instruction
-
         # Build kwargs for the prediction call
         predict_kwargs = {
             "current_instruction": current_instruction,
             "examples_with_feedback": formatted_examples,
         }
 
-        # If we have images, add them to the context by including them in the examples_with_feedback
-        if has_images:
-            # Create a rich multimodal examples_with_feedback that includes both text and images
-            predict_kwargs["examples_with_feedback"] = self._create_multimodal_examples(formatted_examples, image_map)
+        # Create a rich multimodal examples_with_feedback that includes both text and images
+        predict_kwargs["examples_with_feedback"] = self._create_multimodal_examples(formatted_examples, image_map)
 
         # Use current dspy LM settings (GEPA will pass reflection_lm via context)
-        result = predictor(**predict_kwargs)
+        result = self.propose_instruction(**predict_kwargs)
 
         return result.improved_instruction
 
@@ -244,7 +191,6 @@ class MultiModalProposer(dspy.Module):
 
         return "\n".join(summary_parts)
 
-    # Reuse the existing proven formatting methods from the original implementation
     def _format_examples_for_instruction_generation(
         self, reflective_dataset: list[dict[str, Any]]
     ) -> tuple[str, dict[int, list[Type]]]:
@@ -259,8 +205,7 @@ class MultiModalProposer(dspy.Module):
             if example_images is None:
                 example_images = []
 
-            if isinstance(value, Type):  # This includes dspy.Image
-                # Don't serialize! Keep reference and add placeholder with proper markdown formatting
+            if isinstance(value, Type):
                 image_idx = len(example_images) + 1
                 example_images.append(value)
                 return f"[IMAGE-{image_idx} - see visual content]\n\n"
@@ -293,7 +238,6 @@ class MultiModalProposer(dspy.Module):
 
             return s, example_images
 
-        # Process all examples with GEPA's markdown formatting + our image tracking
         formatted_parts = []
         image_map = {}
 
@@ -301,13 +245,11 @@ class MultiModalProposer(dspy.Module):
             formatted_example, example_images = convert_sample_to_markdown_with_images(example_data, i + 1)
             formatted_parts.append(formatted_example)
 
-            # Store images for this example
             if example_images:
                 image_map[i] = example_images
 
         formatted_text = "\n\n".join(formatted_parts)
 
-        # Add visual context instruction if images are present
         if image_map:
             total_images = sum(len(imgs) for imgs in image_map.values())
             formatted_text = (
@@ -333,12 +275,6 @@ class MultiModalProposer(dspy.Module):
         for example_images in image_map.values():
             all_images.extend(example_images)
 
-        if len(all_images) == 1:
-            # Simple case: one image total
-            return [formatted_text, all_images[0]]
-        else:
-            # Multiple images: create a rich multimodal structure
-            # The adapter system will interleave these properly in the final message
-            multimodal_content = [formatted_text]
-            multimodal_content.extend(all_images)
-            return multimodal_content
+        multimodal_content = [formatted_text]
+        multimodal_content.extend(all_images)
+        return multimodal_content
