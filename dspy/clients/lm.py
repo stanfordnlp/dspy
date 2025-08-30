@@ -61,6 +61,9 @@ class LM(BaseLM):
             provider: The provider to use. If not specified, the provider will be inferred from the model.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
+            rollout_id: Optional integer that, when changed, forces a cache miss without
+                affecting the underlying LLM request. This value is excluded from the
+                payload sent to the provider.
         """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
@@ -313,6 +316,10 @@ def _get_stream_completion_fn(
 
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    # Copy to avoid mutating the caller's request
+    request = dict(request)
+    # rollout_id is only used for caching and should not be forwarded to the provider
+    request.pop("rollout_id", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
@@ -327,6 +334,10 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
 
 def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    # Copy to avoid mutating the caller's request
+    request = dict(request)
+    # rollout_id is only used for caching and should not be forwarded to the provider
+    request.pop("rollout_id", None)
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -353,6 +364,10 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
 
 async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    # Copy to avoid mutating the caller's request
+    request = dict(request)
+    # rollout_id is only used for caching and should not be forwarded to the provider
+    request.pop("rollout_id", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
@@ -367,6 +382,10 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
 
 async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    # Copy to avoid mutating the caller's request
+    request = dict(request)
+    # rollout_id is only used for caching and should not be forwarded to the provider
+    request.pop("rollout_id", None)
     model = request.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
@@ -390,6 +409,10 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
 
 def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    # Copy to avoid mutating the caller's request
+    request = dict(request)
+    # rollout_id is only used for caching and should not be forwarded to the provider
+    request.pop("rollout_id", None)
     request = _convert_chat_request_to_responses_request(request)
 
     return litellm.responses(
@@ -402,6 +425,10 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
 
 async def alitellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    # Copy to avoid mutating the caller's request
+    request = dict(request)
+    # rollout_id is only used for caching and should not be forwarded to the provider
+    request.pop("rollout_id", None)
     request = _convert_chat_request_to_responses_request(request)
 
     return await litellm.aresponses(

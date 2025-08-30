@@ -173,6 +173,7 @@ class GenerateModuleInstruction(dspy.Module):
         data_summary,
         num_demos_in_context=3,
         tip=None,
+        config=None,
     ):
         def gather_examples_from_sets(candidate_sets, max_examples):
             """Helper function to gather up to augmented examples from given sets."""
@@ -210,11 +211,14 @@ class GenerateModuleInstruction(dspy.Module):
         program_description = "Not available"
         module_code = "Not provided"
         module_description = "Not provided"
+        predict_kwargs = {"config": config} if config is not None else {}
         if self.program_aware:
             try:
                 program_description = strip_prefix(
                     self.describe_program(
-                        program_code=self.program_code_string, program_example=task_demos,
+                        program_code=self.program_code_string,
+                        program_example=task_demos,
+                        **predict_kwargs,
                     ).program_description,
                 )
                 if self.verbose:
@@ -240,6 +244,7 @@ class GenerateModuleInstruction(dspy.Module):
                     program_example=task_demos,
                     module=module_code,
                     max_depth=10,
+                    **predict_kwargs,
                 ).module_description
             except Exception as e:
                 if self.verbose:
@@ -260,6 +265,7 @@ class GenerateModuleInstruction(dspy.Module):
             tip=tip,
             basic_instruction=basic_instruction,
             previous_instructions=previous_instructions,
+            **predict_kwargs,
         )
 
         proposed_instruction = strip_prefix(instruct.proposed_instruction)
@@ -415,13 +421,11 @@ class GroundedProposer(Proposer):
         )
 
         # Generate a new instruction for our predictor, using the temperature specified for this round
-        original_temp = self.prompt_model.kwargs["temperature"]
-
-        epsilon = self.rng.uniform(0.01, 0.05)
-        modified_temp = T + epsilon
-
         with dspy.settings.context(lm=self.prompt_model):
-            self.prompt_model.kwargs["temperature"] = modified_temp
+            lm_config = {
+                "temperature": T,
+                "rollout_id": self.rng.randint(0, 1_000_000),
+            }
             proposed_instruction = instruction_generator(
                 demo_candidates=demo_candidates,
                 pred_i=pred_i,
@@ -429,10 +433,10 @@ class GroundedProposer(Proposer):
                 program=program,
                 data_summary=self.data_summary,
                 previous_instructions=instruction_history,
-                num_demos_in_context = self.num_demos_in_context,
+                num_demos_in_context=self.num_demos_in_context,
                 tip=tip,
+                config=lm_config,
             ).proposed_instruction
-        self.prompt_model.kwargs["temperature"] = original_temp
 
         # Log the trace used to generate the new instruction, along with the new instruction itself
         if self.verbose:

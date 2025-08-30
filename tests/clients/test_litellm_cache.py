@@ -58,6 +58,21 @@ def test_lm_calls_are_cached_across_lm_instances(litellm_test_server, temporary_
     assert len(request_logs) == 3
 
 
+def test_rollout_id_affects_cache_key(litellm_test_server, temporary_blank_cache_dir):
+    api_base, server_log_file_path = litellm_test_server
+
+    lm = dspy.LM(
+        model="openai/dspy-test-model",
+        api_base=api_base,
+        api_key="fakekey",
+    )
+    lm("Example query", rollout_id=1)
+    lm("Example query", rollout_id=2)
+
+    request_logs = read_litellm_test_server_request_logs(server_log_file_path)
+    assert len(request_logs) == 2
+
+
 def test_lm_calls_are_cached_in_memory_when_expected(litellm_test_server, temporary_blank_cache_dir):
     api_base, server_log_file_path = litellm_test_server
 

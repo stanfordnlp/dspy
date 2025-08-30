@@ -200,6 +200,14 @@ def test_retry_number_set_correctly():
     assert mock_completion.call_args.kwargs["num_retries"] == 3
 
 
+def test_rollout_id_not_forwarded():
+    lm = dspy.LM("fakemodel/fake")
+    with mock.patch("litellm.completion") as mock_completion:
+        lm("Example query", rollout_id=123)
+
+    assert "rollout_id" not in mock_completion.call_args.kwargs
+
+
 def test_retry_made_on_system_errors():
     retry_tracking = [0]  # Using a list to track retries
 
