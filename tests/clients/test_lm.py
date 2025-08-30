@@ -208,6 +208,44 @@ def test_rollout_id_not_forwarded():
     assert "rollout_id" not in mock_completion.call_args.kwargs
 
 
+def test_rollout_id_affects_dspy_cache():
+    original_cache = dspy.cache
+    dspy.clients.configure_cache(
+        enable_disk_cache=False,
+        enable_memory_cache=True,
+        enable_litellm_cache=False,
+    )
+
+    lm = dspy.LM(model="fakemodel/fake")
+
+    call_count = 0
+
+    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+        nonlocal call_count
+        call_count += 1
+        return ModelResponse(
+            id="cmpl-1",
+            choices=[Choices(message=Message(content="hi"), finish_reason="stop", index=0)],
+            created=0,
+            model="fakemodel",
+            usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+        )
+
+    with patch("litellm.completion", side_effect=fake_completion):
+        with track_usage() as usage_tracker:
+            lm("Query", rollout_id=1)
+            lm("Query", rollout_id=1)
+        assert call_count == 1
+        assert len(usage_tracker.usage_data) == 1
+
+        with track_usage() as usage_tracker:
+            lm("Query", rollout_id=2)
+        assert call_count == 2
+        assert len(usage_tracker.usage_data) == 1
+
+    dspy.cache = original_cache
+
+
 def test_retry_made_on_system_errors():
     retry_tracking = [0]  # Using a list to track retries
 

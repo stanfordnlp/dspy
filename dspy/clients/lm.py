@@ -61,9 +61,10 @@ class LM(BaseLM):
             provider: The provider to use. If not specified, the provider will be inferred from the model.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
-            rollout_id: Optional integer that, when changed, forces a cache miss without
-                affecting the underlying LLM request. This value is excluded from the
-                payload sent to the provider.
+            rollout_id: Optional integer incorporated into the cache key so that calls
+                with different values are cached separately without changing the
+                request sent to the provider. This value is excluded from the payload
+                sent to the provider.
         """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
