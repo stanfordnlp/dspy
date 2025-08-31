@@ -118,7 +118,7 @@ class Cache:
         if hasattr(response, "usage"):
             # Clear the usage data when cache is hit, because no LM call is made
             response.usage = {}
-        setattr(response, "cache_hit", True)
+        response.cache_hit = True
         return response
 
     def put(
