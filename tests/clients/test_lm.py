@@ -269,12 +269,12 @@ def test_reasoning_model_token_parameter():
         lm = dspy.LM(
             model=model_name,
             temperature=1.0 if is_reasoning_model else 0.7,
-            max_tokens=20_000 if is_reasoning_model else 1000,
+            max_tokens=16_000 if is_reasoning_model else 1000,
         )
         if is_reasoning_model:
             assert "max_completion_tokens" in lm.kwargs
             assert "max_tokens" not in lm.kwargs
-            assert lm.kwargs["max_completion_tokens"] == 20_000
+            assert lm.kwargs["max_completion_tokens"] == 16_000
         else:
             assert "max_completion_tokens" not in lm.kwargs
             assert "max_tokens" in lm.kwargs
@@ -285,21 +285,21 @@ def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
         ValueError,
-        match="reasoning models require passing temperature=1.0 and max_tokens >= 20000",
+        match="reasoning models require passing temperature=1.0 and max_tokens >= 16000",
     ):
         dspy.LM(
             model=model_name,
             temperature=0.7,  # Should be 1.0
-            max_tokens=1000,  # Should be >= 20_000
+            max_tokens=1000,  # Should be >= 16_000
         )
 
     # Should pass with correct parameters
     lm = dspy.LM(
         model=model_name,
         temperature=1.0,
-        max_tokens=20_000,
+        max_tokens=16_000,
     )
-    assert lm.kwargs["max_completion_tokens"] == 20_000
+    assert lm.kwargs["max_completion_tokens"] == 16_000
 
 
 def test_dump_state():
