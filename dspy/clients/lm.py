@@ -86,10 +86,10 @@ class LM(BaseLM):
         model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
 
         if model_pattern:
-            if max_tokens < 20000 or temperature != 1.0:
+            if max_tokens < 15000 or temperature != 1.0:
                 raise ValueError(
-                    "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20000 to "
-                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=20000)"
+                    "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 15000 to "
+                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=15000)"
                 )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
             if self.kwargs.get("rollout_id") is None:
