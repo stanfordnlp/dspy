@@ -27,8 +27,8 @@ class Predict(Module, Parameter):
             invocation by passing a ``config`` dictionary when calling the
             module. For example::
 
-                predict = dspy.Predict("q -> a", rollout_id=1)
-                predict(q="What is 1 + 52?", config={"rollout_id": 2})
+                predict = dspy.Predict("q -> a", rollout_id=1, temperature=1.0)
+                predict(q="What is 1 + 52?", config={"rollout_id": 2, "temperature": 1.0})
     """
 
     def __init__(self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None, **config):

@@ -10,12 +10,13 @@ This page will contain snippets for frequent usage patterns.
 
 ### Forcing fresh LM outputs
 
-DSPy caches LM calls. Provide a unique ``rollout_id`` to bypass an existing
-cache entry while still caching the new result:
+DSPy caches LM calls. Provide a unique ``rollout_id`` and set a non-zero
+``temperature`` (e.g., 1.0) to bypass an existing cache entry while still caching
+the new result:
 
 ```python
 predict = dspy.Predict("question -> answer")
-predict(question="1+1", config={"rollout_id": 1})
+predict(question="1+1", config={"rollout_id": 1, "temperature": 1.0})
 ```
 
 ### dspy.Signature

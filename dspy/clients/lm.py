@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import threading
+import warnings
 from typing import Any, Literal, cast
 
 import litellm
@@ -61,8 +62,9 @@ class LM(BaseLM):
                 from the models available for inference.
             rollout_id: Optional integer used to differentiate cache entries for otherwise
                 identical requests. Different values bypass DSPy's caches while still caching
-                future calls with the same inputs and rollout ID. This argument is stripped
-                before sending requests to the provider.
+                future calls with the same inputs and rollout ID. Note that `rollout_id`
+                only affects generation when `temperature` is non-zero. This argument is
+                stripped before sending requests to the provider.
         """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
@@ -75,6 +77,7 @@ class LM(BaseLM):
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
+        self._warned_zero_temp_rollout = False
 
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
@@ -96,6 +99,20 @@ class LM(BaseLM):
             if self.kwargs.get("rollout_id") is None:
                 self.kwargs.pop("rollout_id", None)
 
+        self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
+
+    def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
+        if (
+            not self._warned_zero_temp_rollout
+            and rollout_id is not None
+            and (temperature is None or temperature == 0)
+        ):
+            warnings.warn(
+                "rollout_id has no effect when temperature=0; set temperature>0 to bypass the cache.",
+                stacklevel=3,
+            )
+            self._warned_zero_temp_rollout = True
+
     def _get_cached_completion_fn(self, completion_fn, cache):
         ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
         if cache:
@@ -115,6 +132,7 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
+        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
             kwargs.pop("rollout_id", None)
 
@@ -145,6 +163,7 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
+        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
             kwargs.pop("rollout_id", None)
 
