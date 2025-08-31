@@ -21,7 +21,7 @@ def test_propose_instructions_for_program(demo_candidates):
 
     proposer = GroundedProposer(prompt_model=prompt_model, program=program, trainset=trainset, verbose=False)
     result = proposer.propose_instructions_for_program(
-        trainset=trainset, program=program, demo_candidates=demo_candidates, trial_logs={}, N=1, T=0.5
+        trainset=trainset, program=program, demo_candidates=demo_candidates, trial_logs={}, N=1
     )
     assert isinstance(result, dict)
     assert len(result) == len(program.predictors())
@@ -45,7 +45,6 @@ def test_propose_instruction_for_predictor(demo_candidates):
         program=program,
         predictor=None,
         pred_i=0,
-        T=0.5,
         demo_candidates=demo_candidates,
         demo_set_i=0,
         trial_logs={},

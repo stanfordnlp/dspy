@@ -14,9 +14,11 @@ logger = logging.getLogger(__name__)
 
 def prepare_models_for_resampling(program: dspy.Module, n: int):
     lm = program.get_lm() or dspy.settings.lm
-    temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / n) for i in range(n)]
-    temps = list(dict.fromkeys(temps))[:n]
-    return [lm.copy(temperature=t) for t in temps]
+    base_rollout = lm.kwargs.get("rollout_id")
+    start = 0 if base_rollout is None else base_rollout
+    rollout_ids = [start + i for i in range(n)]
+    rollout_ids = list(dict.fromkeys(rollout_ids))[:n]
+    return [lm.copy(rollout_id=r) for r in rollout_ids]
 
 
 def wrap_program(program: dspy.Module, metric: Callable):
