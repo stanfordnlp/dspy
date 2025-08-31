@@ -250,76 +250,33 @@ plugins:
           DSPy unifies techniques for prompting, fine-tuning, reasoning, tool use, and evaluation of LMs.
           It provides a systematic approach to building AI applications through composable modules, 
           optimization techniques, and evaluation frameworks.
-        full_output: llms-full.txt
         sections:
           Getting Started:
-            - index.md: DSPy overview and quick start
-            - faqs.md: Frequently asked questions
-            - cheatsheet.md: DSPy cheatsheet
-          Core Learning:
-            - learn/index.md: Learn DSPy fundamentals
-            - learn/programming/*.md: Programming concepts - signatures, modules, language models
-            - learn/evaluation/*.md: Evaluation framework - data handling, metrics, overview
-            - learn/optimization/*.md: Optimization techniques and optimizers
-          Building AI Programs:
-            - tutorials/build_ai_program/index.md: Building AI programs overview
-            - tutorials/conversation_history/index.md: Managing conversation history
-            - tutorials/custom_module/index.ipynb: Customizing DSPy modules
+            - index.md: DSPy overview and quick start guide
+            - cheatsheet.md: DSPy cheatsheet for quick reference
+          Core Concepts:
+            - learn/programming/overview.md: Programming paradigm and philosophy
+            - learn/programming/signatures.md: Signatures - declarative input/output specifications
+            - learn/programming/modules.md: Modules - composable AI components
+            - learn/programming/language_models.md: Language model interfaces and configuration
+          Essential Tutorials:
+            - tutorials/rag/index.ipynb: Retrieval-Augmented Generation (RAG) tutorial
             - tutorials/classification/index.md: Classification with DSPy
-            - tutorials/rag/index.ipynb: Retrieval-Augmented Generation
-            - tutorials/agents/index.ipynb: Building AI agents
-            - tutorials/customer_service_agent/index.ipynb: Customer service agents
-            - tutorials/entity_extraction/index.ipynb: Entity extraction
-            - tutorials/multihop_search/index.ipynb: Multi-hop search and reasoning
-            - tutorials/program_of_thought/index.ipynb: Program of thought reasoning
-            - tutorials/tool_use/index.ipynb: Advanced tool use
-          Optimization and Training:
-            - tutorials/optimize_ai_program/index.md: Optimization overview
-            - tutorials/math/index.ipynb: Math reasoning optimization
-            - tutorials/classification_finetuning/index.ipynb: Classification fine-tuning
-            - tutorials/games/index.ipynb: Agent fine-tuning with games
-            - tutorials/rl_ai_program/index.md: Reinforcement learning overview
-            - tutorials/rl_papillon/index.ipynb: RL for privacy-conscious delegation
-            - tutorials/rl_multihop/index.ipynb: RL for multi-hop research
-          Specialized Use Cases:
-            - tutorials/papillon/index.md: Privacy-conscious delegation
-            - tutorials/image_generation_prompting/index.ipynb: Image generation prompting
-            - tutorials/audio/index.ipynb: Audio processing with DSPy
-            - tutorials/ai_text_game/index.md: Creative text-based AI games
-            - tutorials/email_extraction/index.md: Email information extraction
-            - tutorials/sample_code_generation/index.md: Code generation for libraries
-            - tutorials/llms_txt_generation/index.md: Generating llms.txt files
-            - tutorials/mem0_react_agent/index.md: Memory-enabled ReAct agents
-            - tutorials/yahoo_finance_react/index.md: Financial analysis agents
-          Development and Deployment:
-            - tutorials/core_development/index.md: Development workflow
-            - tutorials/mcp/index.md: Model Context Protocol integration
-            - tutorials/output_refinement/best-of-n-and-refine.md: Output refinement techniques
-            - tutorials/saving/index.md: Saving and loading models
-            - tutorials/cache/index.md: Caching strategies
-            - tutorials/deployment/index.md: Production deployment
+            - tutorials/agents/index.ipynb: Building AI agents with DSPy
+          Optimization:
+            - learn/optimization/overview.md: Optimization techniques overview
+            - tutorials/optimize_ai_program/index.md: Guide to optimizing AI programs
+            - api/optimizers/BootstrapFewShot.md: Bootstrap few-shot optimizer
+          Key Modules API:
+            - api/modules/Predict.md: Basic prediction module
+            - api/modules/ChainOfThought.md: Chain of thought reasoning
+            - api/modules/ReAct.md: ReAct agent module
+          Core API Reference:
+            - api/signatures/Signature.md: Signature system documentation
+            - api/primitives/Example.md: Example primitive for training data
+          Production:
+            - tutorials/deployment/index.md: Production deployment guide
             - tutorials/observability/index.md: Debugging and observability
-            - tutorials/optimizer_tracking/index.md: Tracking optimizer performance
-            - tutorials/streaming/index.md: Streaming responses
-            - tutorials/async/index.md: Asynchronous processing
-            - production/index.md: DSPy in production environments
-          API Reference - Core:
-            - api/index.md: API documentation overview
-            - api/modules/*.md: Core modules - Predict, ChainOfThought, ReAct, etc.
-            - api/signatures/*.md: Signature system - InputField, OutputField, Signature
-            - api/primitives/*.md: Core primitives - Example, Prediction, History, etc.
-          API Reference - Optimizers:
-            - api/optimizers/*.md: All optimizers - BootstrapFewShot, COPRO, MIPROv2, etc.
-          API Reference - Adapters and Tools:
-            - api/adapters/*.md: Input/output adapters - ChatAdapter, JSONAdapter, etc.
-            - api/evaluation/*.md: Evaluation metrics and tools
-            - api/models/*.md: Language model interfaces
-            - api/tools/*.md: Built-in tools - ColBERTv2, Embeddings, PythonInterpreter
-            - api/utils/*.md: Utility functions and helpers
-          Community:
-            - community/community-resources.md: Community resources
-            - community/use-cases.md: Real-world use cases
-            - community/how-to-contribute.md: Contributing guidelines
 
 extra:
     social:
