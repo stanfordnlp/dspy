@@ -1,12 +1,12 @@
 import json
 import time
+import warnings
 from unittest import mock
 from unittest.mock import patch
 
 import litellm
 import pydantic
 import pytest
-import warnings
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
