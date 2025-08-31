@@ -30,44 +30,47 @@ def cache_config(tmp_path):
 @pytest.fixture
 def cache(cache_config):
     """Create a cache instance with the default configuration."""
-    return Cache(**cache_config)
+    cache_instance = Cache(**cache_config)
+    yield cache_instance
+    # Cleanup
+    cache_instance.close()
 
 
 def test_initialization(tmp_path):
     """Test different cache initialization configurations."""
     # Test memory-only cache
-    memory_cache = Cache(
+    with Cache(
         enable_disk_cache=False,
         enable_memory_cache=True,
         disk_cache_dir="",
         disk_size_limit_bytes=0,
         memory_max_entries=50,
-    )
-    assert isinstance(memory_cache.memory_cache, LRUCache)
-    assert memory_cache.memory_cache.maxsize == 50
-    assert memory_cache.disk_cache == {}
+    ) as memory_cache:
+        assert isinstance(memory_cache.memory_cache, LRUCache)
+        assert memory_cache.memory_cache.maxsize == 50
+        assert memory_cache.disk_cache == {}
 
     # Test disk-only cache
-    disk_cache = Cache(
+    with Cache(
         enable_disk_cache=True,
         enable_memory_cache=False,
         disk_cache_dir=str(tmp_path),
         disk_size_limit_bytes=1024,
         memory_max_entries=0,
-    )
-    assert isinstance(disk_cache.disk_cache, FanoutCache)
-    assert disk_cache.memory_cache == {}
+    ) as disk_cache:
+        assert isinstance(disk_cache.disk_cache, FanoutCache)
+        assert disk_cache.memory_cache == {}
 
     # Test disabled cache
-    disabled_cache = Cache(
+    with Cache(
         enable_disk_cache=False,
         enable_memory_cache=False,
         disk_cache_dir="",
         disk_size_limit_bytes=0,
         memory_max_entries=0,
-    )
-    assert disabled_cache.memory_cache == {}
-    assert disabled_cache.disk_cache == {}
+    ) as disabled_cache:
+        assert disabled_cache.memory_cache == {}
+        assert disabled_cache.disk_cache == {}
 
 
 def test_cache_key_generation(cache):
@@ -180,22 +183,21 @@ def test_save_and_load_memory_cache(cache, tmp_path):
     cache.save_memory_cache(str(temp_cache_file))
 
     # Create a new cache instance with disk cache disabled
-    new_cache = Cache(
+    with Cache(
         enable_memory_cache=True,
         enable_disk_cache=False,
         disk_cache_dir=tmp_path / "disk_cache",
         disk_size_limit_bytes=0,
         memory_max_entries=100,
-    )
+    ) as new_cache:
+        # Load the memory cache
+        new_cache.load_memory_cache(str(temp_cache_file))
 
-    # Load the memory cache
-    new_cache.load_memory_cache(str(temp_cache_file))
-
-    # Verify items are in the new memory cache
-    for req in requests:
-        result = new_cache.get(req)
-        assert result is not None
-        assert result == f"Response {requests.index(req)}"
+        # Verify items are in the new memory cache
+        for req in requests:
+            result = new_cache.get(req)
+            assert result is not None
+            assert result == f"Response {requests.index(req)}"
 
 
 def test_request_cache_decorator(cache):
