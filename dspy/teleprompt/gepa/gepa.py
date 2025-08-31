@@ -211,6 +211,13 @@ class GEPA(Teleprompter):
             a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` 
             for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
+        instruction_proposer: Optional custom instruction proposer implementing InstructionProposerProtocol. 
+            If provided, GEPA will use this custom proposer instead of its default instruction proposal 
+            mechanism to generate improved instructions based on feedback from failed examples. This is 
+            particularly useful when you need specialized instruction generation for multimodal inputs 
+            (like dspy.Image) or custom types. Use MultiModalProposer(), located at 
+            dspy.teleprompt.gepa.instruction_proposal, for handling visual content. If None (default), 
+            GEPA uses its built-in text-optimized proposer.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
@@ -267,6 +274,7 @@ class GEPA(Teleprompter):
         reflection_lm: LM | None = None,
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
+        instruction_proposer: "InstructionProposerProtocol | None" = None,
         # Merge-based configuration
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
@@ -283,8 +291,6 @@ class GEPA(Teleprompter):
         track_best_outputs: bool = False,
         # Reproducibility
         seed: int | None = 0,
-        # Custom instruction proposer
-        instruction_proposer: "InstructionProposerProtocol | None" = None,
     ):
         try:
             inspect.signature(metric).bind(None, None, None, None, None)
