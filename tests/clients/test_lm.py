@@ -62,40 +62,6 @@ def test_chat_lms_can_be_queried(litellm_test_server):
     assert azure_openai_lm("azure openai query") == expected_response
 
 
-@pytest.mark.parametrize(
-    ("cache", "cache_in_memory"),
-    [
-        (True, True),
-        (True, False),
-        (False, True),
-        (False, False),
-    ],
-)
-def test_litellm_cache(litellm_test_server, cache, cache_in_memory):
-    api_base, _ = litellm_test_server
-    expected_response = ["Hi!"]
-
-    original_cache = dspy.cache
-    dspy.clients.configure_cache(
-        enable_disk_cache=False,
-        enable_memory_cache=cache_in_memory,
-        enable_litellm_cache=cache,
-    )
-
-    openai_lm = dspy.LM(
-        model="openai/dspy-test-model",
-        api_base=api_base,
-        api_key="fakekey",
-        model_type="chat",
-        cache=cache,
-        cache_in_memory=cache_in_memory,
-    )
-    assert openai_lm("openai query") == expected_response
-
-    # Reset the cache configuration
-    dspy.cache = original_cache
-
-
 def test_dspy_cache(litellm_test_server, tmp_path):
     api_base, _ = litellm_test_server
 
@@ -103,7 +69,6 @@ def test_dspy_cache(litellm_test_server, tmp_path):
     dspy.clients.configure_cache(
         enable_disk_cache=True,
         enable_memory_cache=True,
-        enable_litellm_cache=False,
         disk_cache_dir=tmp_path / ".disk_cache",
     )
     cache = dspy.cache
@@ -288,7 +253,6 @@ def test_dump_state():
         "max_tokens": 100,
         "num_retries": 10,
         "cache": True,
-        "cache_in_memory": True,
         "finetuning_model": None,
         "launch_kwargs": {"temperature": 1},
         "train_kwargs": {"temperature": 5},
@@ -377,7 +341,6 @@ async def test_async_lm_call_with_cache(tmp_path):
     dspy.clients.configure_cache(
         enable_disk_cache=True,
         enable_memory_cache=True,
-        enable_litellm_cache=False,
         disk_cache_dir=tmp_path / ".disk_cache",
     )
     cache = dspy.cache
@@ -400,11 +363,10 @@ async def test_async_lm_call_with_cache(tmp_path):
         # Second call should hit the cache, so no new call to LiteLLM is made.
         assert mock_alitellm_completion.call_count == 1
 
-        # Test that explicitly disabling memory cache works
-        await lm.acall("New query", cache_in_memory=False)
+        # A new query should result in a new LiteLLM call and a new cache entry.
+        await lm.acall("New query")
 
-        # There should be a new call to LiteLLM on new query, but the memory cache shouldn't be written to.
-        assert len(cache.memory_cache) == 1
+        assert len(cache.memory_cache) == 2
         assert mock_alitellm_completion.call_count == 2
 
     dspy.cache = original_cache
@@ -470,7 +432,6 @@ def test_responses_api(litellm_test_server):
             api_key="fakekey",
             model_type="responses",
             cache=False,
-            cache_in_memory=False,
         )
         assert lm("openai query") == [expected_text]
 
@@ -501,7 +462,6 @@ def test_responses_api_tool_calls(litellm_test_server):
             api_key="fakekey",
             model_type="responses",
             cache=False,
-            cache_in_memory=False,
         )
         assert lm("openai query") == expected_response
 

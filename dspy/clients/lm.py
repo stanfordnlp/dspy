@@ -33,7 +33,6 @@ class LM(BaseLM):
         temperature: float = 0.0,
         max_tokens: int = 4000,
         cache: bool = True,
-        cache_in_memory: bool = True,
         callbacks: list[BaseCallback] | None = None,
         num_retries: int = 3,
         provider: Provider | None = None,
@@ -53,7 +52,6 @@ class LM(BaseLM):
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
                    and reduce costs.
-            cache_in_memory (deprecated): To enable additional caching with LRU in memory.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
@@ -66,7 +64,6 @@ class LM(BaseLM):
         self.model = model
         self.model_type = model_type
         self.cache = cache
-        self.cache_in_memory = cache_in_memory
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
         self.history = []
@@ -91,33 +88,21 @@ class LM(BaseLM):
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
 
-    def _get_cached_completion_fn(self, completion_fn, cache, enable_memory_cache):
+    def _get_cached_completion_fn(self, completion_fn, cache):
         ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
-        if cache and enable_memory_cache:
+        if cache:
             completion_fn = request_cache(
                 cache_arg_name="request",
                 ignored_args_for_cache_key=ignored_args_for_cache_key,
             )(completion_fn)
-        elif cache:
-            completion_fn = request_cache(
-                cache_arg_name="request",
-                ignored_args_for_cache_key=ignored_args_for_cache_key,
-                enable_memory_cache=False,
-            )(completion_fn)
-        else:
-            completion_fn = completion_fn
 
-        if not cache or litellm.cache is None:
-            litellm_cache_args = {"no-cache": True, "no-store": True}
-        else:
-            litellm_cache_args = {"no-cache": False, "no-store": False}
+        litellm_cache_args = {"no-cache": True, "no-store": True}
 
         return completion_fn, litellm_cache_args
 
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
-        enable_memory_cache = kwargs.pop("cache_in_memory", self.cache_in_memory)
 
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
@@ -128,7 +113,7 @@ class LM(BaseLM):
             completion = litellm_text_completion
         elif self.model_type == "responses":
             completion = litellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache, enable_memory_cache)
+        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
         results = completion(
             request=dict(model=self.model, messages=messages, **kwargs),
@@ -145,7 +130,6 @@ class LM(BaseLM):
     async def aforward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
         cache = kwargs.pop("cache", self.cache)
-        enable_memory_cache = kwargs.pop("cache_in_memory", self.cache_in_memory)
 
         messages = messages or [{"role": "user", "content": prompt}]
         kwargs = {**self.kwargs, **kwargs}
@@ -156,7 +140,7 @@ class LM(BaseLM):
             completion = alitellm_text_completion
         elif self.model_type == "responses":
             completion = alitellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache, enable_memory_cache)
+        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
         results = await completion(
             request=dict(model=self.model, messages=messages, **kwargs),
@@ -246,7 +230,6 @@ class LM(BaseLM):
             "model",
             "model_type",
             "cache",
-            "cache_in_memory",
             "num_retries",
             "finetuning_model",
             "launch_kwargs",
