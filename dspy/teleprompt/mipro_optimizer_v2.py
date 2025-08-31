@@ -408,7 +408,6 @@ class MIPROv2(Teleprompter):
             program=program,
             demo_candidates=demo_candidates,
             N=self.num_instruct_candidates,
-            T=self.init_temperature,
             trial_logs={},
         )
 

@@ -181,7 +181,7 @@ class BootstrapFewShot(Teleprompter):
         try:
             with dspy.settings.context(trace=[], **self.teacher_settings):
                 lm = dspy.settings.lm
-                lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
+                lm = lm.copy(rollout_id=round_idx) if round_idx > 0 else lm
                 new_settings = {"lm": lm} if round_idx > 0 else {}
 
                 with dspy.settings.context(**new_settings):

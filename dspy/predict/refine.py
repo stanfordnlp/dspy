@@ -48,9 +48,9 @@ class Refine(Module):
         fail_count: int | None = None,
     ):
         """
-        Refines a module by running it up to N times with different temperatures and returns the best prediction.
+        Refines a module by running it up to N times with different rollout IDs and returns the best prediction.
 
-        This module runs the provided module multiple times with varying temperature settings and selects
+        This module runs the provided module multiple times with varying rollout identifiers and selects
         either the first prediction that exceeds the specified threshold or the one with the highest reward.
         If no prediction meets the threshold, it automatically generates feedback to improve future predictions.
 
@@ -96,14 +96,16 @@ class Refine(Module):
 
     def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
-        temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / self.N) for i in range(self.N)]
-        temps = list(dict.fromkeys(temps))[: self.N]
+        base_rollout = lm.kwargs.get("rollout_id")
+        start = 0 if base_rollout is None else base_rollout
+        rollout_ids = [start + i for i in range(self.N)]
+        rollout_ids = list(dict.fromkeys(rollout_ids))[: self.N]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
-        for idx, t in enumerate(temps):
-            lm_ = lm.copy(temperature=t)
+        for idx, rid in enumerate(rollout_ids):
+            lm_ = lm.copy(rollout_id=rid)
             mod = self.module.deepcopy()
             mod.set_lm(lm_)
 
@@ -167,7 +169,7 @@ class Refine(Module):
                 # print(f"Advice for each module: {advice}")
 
             except Exception as e:
-                print(f"Refine: Attempt failed with temperature {t}: {e}")
+                print(f"Refine: Attempt failed with rollout id {rid}: {e}")
                 if idx > self.fail_count:
                     raise e
                 self.fail_count -= 1

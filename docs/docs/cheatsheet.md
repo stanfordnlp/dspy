@@ -463,7 +463,7 @@ dspy.configure_cache(
 
 ### BestofN
 
-Runs a module up to `N` times with different temperatures and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`.
+Runs a module up to `N` times with different rollout IDs (bypassing cache) and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`.
 
 ```python
 import dspy
@@ -478,7 +478,7 @@ best_of_3(question="What is the capital of Belgium?").answer
 
 ### Refine
 
-Refines a module by running it up to `N` times with different temperatures and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`. After each attempt (except the final one), `Refine` automatically generates detailed feedback about the module's performance and uses this feedback as hints for subsequent runs, creating an iterative refinement process.
+Refines a module by running it up to `N` times with different rollout IDs (bypassing cache) and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`. After each attempt (except the final one), `Refine` automatically generates detailed feedback about the module's performance and uses this feedback as hints for subsequent runs, creating an iterative refinement process.
 
 ```python
 import dspy

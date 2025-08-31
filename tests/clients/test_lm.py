@@ -95,6 +95,53 @@ def test_dspy_cache(litellm_test_server, tmp_path):
     dspy.cache = original_cache
 
 
+def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
+    calls: list[dict] = []
+
+    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+        calls.append(request)
+        return ModelResponse(
+            choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            model="openai/dspy-test-model",
+        )
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+
+    original_cache = dspy.cache
+    dspy.clients.configure_cache(
+        enable_disk_cache=True,
+        enable_memory_cache=True,
+        disk_cache_dir=tmp_path / ".disk_cache",
+    )
+
+    lm = dspy.LM(model="openai/dspy-test-model", model_type="chat")
+
+    with track_usage() as usage_tracker:
+        lm(messages=[{"role": "user", "content": "Query"}], rollout_id=1)
+    assert len(usage_tracker.usage_data) == 1
+
+    with track_usage() as usage_tracker:
+        lm(messages=[{"role": "user", "content": "Query"}], rollout_id=1)
+    assert len(usage_tracker.usage_data) == 0
+
+    with track_usage() as usage_tracker:
+        lm(messages=[{"role": "user", "content": "Query"}], rollout_id=2)
+    assert len(usage_tracker.usage_data) == 1
+
+    with track_usage() as usage_tracker:
+        lm(messages=[{"role": "user", "content": "NoRID"}])
+    assert len(usage_tracker.usage_data) == 1
+
+    with track_usage() as usage_tracker:
+        lm(messages=[{"role": "user", "content": "NoRID"}], rollout_id=None)
+    assert len(usage_tracker.usage_data) == 0
+
+    assert len(dspy.cache.memory_cache) == 3
+    assert all("rollout_id" not in r for r in calls)
+    dspy.cache = original_cache
+
+
 def test_text_lms_can_be_queried(litellm_test_server):
     api_base, _ = litellm_test_server
     expected_response = ["Hi!"]
