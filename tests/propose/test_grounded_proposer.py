@@ -37,10 +37,21 @@ def test_propose_instructions_for_program(demo_candidates):
     ],
 )
 def test_propose_instruction_for_predictor(demo_candidates):
-    prompt_model = DummyLM([{"proposed_instruction": "instruction"}] * 10)
+    class TrackingDummyLM(DummyLM):
+        def copy(self, **kwargs):
+            self.last_copy_kwargs = kwargs
+            return super().copy(**kwargs)
+
+    prompt_model = TrackingDummyLM([{"proposed_instruction": "instruction"}] * 10)
     program = Predict("question -> answer")
 
-    proposer = GroundedProposer(prompt_model=prompt_model, program=program, trainset=[], verbose=False)
+    proposer = GroundedProposer(
+        prompt_model=prompt_model,
+        program=program,
+        trainset=[],
+        verbose=False,
+        init_temperature=0.7,
+    )
     result = proposer.propose_instruction_for_predictor(
         program=program,
         predictor=None,
@@ -51,3 +62,4 @@ def test_propose_instruction_for_predictor(demo_candidates):
         tip=None,
     )
     assert result == "instruction"
+    assert prompt_model.last_copy_kwargs["temperature"] == 0.7

@@ -14,8 +14,9 @@ class BestOfN(Module):
         fail_count: int | None = None,
     ):
         """
-        Runs a module up to `N` times with different rollout IDs and returns the best prediction
-        out of `N` attempts or the first prediction that passes the `threshold`.
+        Runs a module up to `N` times with different rollout IDs at `temperature=1.0` and
+        returns the best prediction out of `N` attempts or the first prediction that passes the
+        `threshold`.
 
         Args:
             module (Module): The module to run.
@@ -53,14 +54,12 @@ class BestOfN(Module):
 
     def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
-        base_rollout = lm.kwargs.get("rollout_id")
-        start = 0 if base_rollout is None else base_rollout
+        start = lm.kwargs.get("rollout_id", 0)
         rollout_ids = [start + i for i in range(self.N)]
-        rollout_ids = list(dict.fromkeys(rollout_ids))[: self.N]
         best_pred, best_trace, best_reward = None, None, -float("inf")
 
         for idx, rid in enumerate(rollout_ids):
-            lm_ = lm.copy(rollout_id=rid)
+            lm_ = lm.copy(rollout_id=rid, temperature=1.0)
             mod = self.module.deepcopy()
             mod.set_lm(lm_)
 

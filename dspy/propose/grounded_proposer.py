@@ -284,7 +284,8 @@ class GroundedProposer(Proposer):
         set_tip_randomly=True,
         set_history_randomly=True,
         verbose=False,
-        rng=None
+        rng=None,
+        init_temperature: float = 1.0,
     ):
         super().__init__()
         self.program_aware = program_aware
@@ -299,6 +300,7 @@ class GroundedProposer(Proposer):
         self.rng = rng or random
 
         self.prompt_model = get_prompt_model(prompt_model)
+        self.init_temperature = init_temperature
 
         self.program_code_string = None
         if self.program_aware:
@@ -412,7 +414,10 @@ class GroundedProposer(Proposer):
         )
 
         # Generate a new instruction for our predictor using a unique rollout id to bypass cache
-        rollout_lm = self.prompt_model.copy(rollout_id=self.rng.randint(0, 10**9))
+        rollout_lm = self.prompt_model.copy(
+            rollout_id=self.rng.randint(0, 10**9),
+            temperature=self.init_temperature,
+        )
 
         with dspy.settings.context(lm=rollout_lm):
             proposed_instruction = instruction_generator(
