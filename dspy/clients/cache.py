@@ -118,12 +118,7 @@ class Cache:
         if hasattr(response, "usage"):
             # Clear the usage data when cache is hit, because no LM call is made
             response.usage = {}
-        try:
-            setattr(response, "cache_hit", True)
-        except Exception:
-            # Some cached objects (e.g., lists, strings, numpy arrays) do not support
-            # setting attributes. In those cases, we simply skip marking the cache hit.
-            pass
+            response.cache_hit = True
         return response
 
     def put(
