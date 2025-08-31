@@ -8,6 +8,16 @@ This page will contain snippets for frequent usage patterns.
 
 ## DSPy Programs
 
+### Forcing fresh LM outputs
+
+DSPy caches LM calls. Provide a unique ``rollout_id`` to bypass an existing
+cache entry while still caching the new result:
+
+```python
+predict = dspy.Predict("question -> answer")
+predict(question="1+1", config={"rollout_id": 1})
+```
+
 ### dspy.Signature
 
 ```python

@@ -167,12 +167,33 @@ gpt_4o_mini = dspy.LM('openai/gpt-4o-mini', temperature=0.9, max_tokens=3000, st
 By default LMs in DSPy are cached. If you repeat the same call, you will get the same outputs. But you can turn off caching by setting `cache=False`.
 
 If you want to keep caching enabled but force a new request (for example, to obtain diverse outputs),
-pass a unique `rollout_id` in your call. Different values ensure a different cache entry while
-still caching future calls with the same inputs and `rollout_id`.
+pass a unique `rollout_id` in your call. DSPy hashes both the inputs and the `rollout_id` when
+looking up a cache entry, so different values force a new LM request while
+still caching future calls with the same inputs and `rollout_id`. The ID is also recorded in
+`lm.history`, which makes it easy to track or compare different rollouts during experiments.
 
 ```python linenums="1"
 lm("Say this is a test!", rollout_id=1)
 ```
+
+You can pass these LM kwargs directly to DSPy modules as well. Supplying them at
+initialization sets the defaults for every call:
+
+```python linenums="1"
+predict = dspy.Predict("question -> answer", rollout_id=1)
+```
+
+To override them for a single invocation, provide a ``config`` dictionary when
+calling the module:
+
+```python linenums="1"
+predict = dspy.Predict("question -> answer")
+predict(question="What is 1 + 52?", config={"rollout_id": 5})
+```
+
+In both cases, ``rollout_id`` is forwarded to the underlying LM, affects
+its caching behavior, and is stored alongside each response so you can
+replay or analyze specific rollouts later.
 
 
 ## Inspecting output and usage metadata.
