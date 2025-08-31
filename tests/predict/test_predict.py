@@ -56,7 +56,6 @@ def test_lm_after_dump_and_load_state():
         "max_tokens": 100,
         "num_retries": 10,
         "cache": True,
-        "cache_in_memory": True,
         "finetuning_model": None,
         "launch_kwargs": {},
         "train_kwargs": {},
