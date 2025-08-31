@@ -113,8 +113,8 @@ class BaseLM:
         """Returns a copy of the language model with possibly updated parameters.
 
         Any provided keyword arguments update the corresponding attributes or LM kwargs of
-        the copy. For example, ``lm.copy(rollout_id=1)`` returns an LM whose requests use a
-        different rollout ID to bypass cache collisions.
+        the copy. For example, ``lm.copy(rollout_id=1, temperature=1.0)`` returns an LM whose
+        requests use a different rollout ID at non-zero temperature to bypass cache collisions.
         """
 
         import copy

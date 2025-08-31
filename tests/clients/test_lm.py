@@ -6,6 +6,7 @@ from unittest.mock import patch
 import litellm
 import pydantic
 import pytest
+import warnings
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
@@ -140,6 +141,25 @@ def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
     assert len(dspy.cache.memory_cache) == 3
     assert all("rollout_id" not in r for r in calls)
     dspy.cache = original_cache
+
+
+def test_zero_temperature_rollout_warns_once(monkeypatch):
+    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+        return ModelResponse(
+            choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            model="openai/dspy-test-model",
+        )
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+
+    lm = dspy.LM(model="openai/dspy-test-model", model_type="chat")
+    with pytest.warns(UserWarning, match="rollout_id has no effect"):
+        lm("Query", rollout_id=1)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        lm("Query", rollout_id=2)
+        assert len(record) == 0
 
 
 def test_text_lms_can_be_queried(litellm_test_server):

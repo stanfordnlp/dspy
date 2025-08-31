@@ -48,7 +48,8 @@ class Refine(Module):
         fail_count: int | None = None,
     ):
         """
-        Refines a module by running it up to N times with different rollout IDs and returns the best prediction.
+        Refines a module by running it up to N times with different rollout IDs at `temperature=1.0`
+        and returns the best prediction.
 
         This module runs the provided module multiple times with varying rollout identifiers and selects
         either the first prediction that exceeds the specified threshold or the one with the highest reward.
@@ -96,16 +97,14 @@ class Refine(Module):
 
     def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
-        base_rollout = lm.kwargs.get("rollout_id")
-        start = 0 if base_rollout is None else base_rollout
+        start = lm.kwargs.get("rollout_id", 0)
         rollout_ids = [start + i for i in range(self.N)]
-        rollout_ids = list(dict.fromkeys(rollout_ids))[: self.N]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
         for idx, rid in enumerate(rollout_ids):
-            lm_ = lm.copy(rollout_id=rid)
+            lm_ = lm.copy(rollout_id=rid, temperature=1.0)
             mod = self.module.deepcopy()
             mod.set_lm(lm_)
 
