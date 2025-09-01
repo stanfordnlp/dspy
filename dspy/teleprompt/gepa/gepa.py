@@ -282,6 +282,7 @@ class GEPA(Teleprompter):
         track_best_outputs: bool = False,
         # Reproducibility
         seed: int | None = 0,
+        keep_module_scores: bool = False,
     ):
         try:
             inspect.signature(metric).bind(None, None, None, None, None)
@@ -333,6 +334,8 @@ class GEPA(Teleprompter):
         self.use_wandb = use_wandb
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
+
+        self.keep_module_scores = keep_module_scores
 
         if track_best_outputs:
             assert track_stats, "track_stats must be True if track_best_outputs is True."
@@ -452,6 +455,7 @@ class GEPA(Teleprompter):
             num_threads=self.num_threads,
             add_format_failure_as_feedback=self.add_format_failure_as_feedback,
             rng=rng,
+            keep_module_scores=self.keep_module_scores,
         )
 
         reflection_lm = self.reflection_lm
