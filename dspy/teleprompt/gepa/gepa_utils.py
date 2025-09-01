@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import TYPE_CHECKING, Any, Callable, Protocol
+from typing import Any, Callable, Protocol
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
@@ -11,9 +11,6 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
-
-if TYPE_CHECKING:
-    pass
 from dspy.teleprompt.bootstrap_trace import TraceData
 
 
