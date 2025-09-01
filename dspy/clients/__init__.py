@@ -31,9 +31,7 @@ def configure_cache(
         memory_max_entries: The maximum number of entries in the in-memory cache.
     """
 
-    import dspy
-
-    dspy.cache = Cache(
+    DSPY_CACHE = Cache(
         enable_disk_cache,
         enable_memory_cache,
         disk_cache_dir,
@@ -41,17 +39,39 @@ def configure_cache(
         memory_max_entries,
     )
 
+    import dspy
+    # Update the reference to point to the new cache
+    dspy.cache = DSPY_CACHE
+
 
 litellm.telemetry = False
 litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
 
-DSPY_CACHE = Cache(
-    enable_disk_cache=True,
-    enable_memory_cache=True,
-    disk_cache_dir=DISK_CACHE_DIR,
-    disk_size_limit_bytes=DISK_CACHE_LIMIT,
-    memory_max_entries=1000000,
-)
+def _get_dspy_cache():
+    disk_cache_dir = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
+    disk_cache_limit = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))
+
+    try:
+        _dspy_cache = Cache(
+            enable_disk_cache=True,
+            enable_memory_cache=True,
+            disk_cache_dir=disk_cache_dir,
+            disk_size_limit_bytes=disk_cache_limit,
+            memory_max_entries=1000000,
+        )
+    except Exception as e:
+        # If cache creation fails (e.g., in AWS Lambda), create a memory-only cache
+        logger.warning("Failed to initialize disk cache, falling back to memory-only cache: %s", e)
+        _dspy_cache = Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=True,
+            disk_cache_dir=disk_cache_dir,
+            disk_size_limit_bytes=disk_cache_limit,
+            memory_max_entries=1000000,
+        )
+    return _dspy_cache
+
+DSPY_CACHE = _get_dspy_cache()
 
 if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
     # Accessed at run time by litellm; i.e., fine to keep after import

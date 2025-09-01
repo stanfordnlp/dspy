@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from unittest.mock import patch
 
@@ -317,3 +318,29 @@ def test_cache_consistency_with_lm_call_modifies_the_request(cache):
             )
             is not None
         )
+
+
+def test_cache_fallback_on_restricted_environment():
+    """Test that DSPy gracefully falls back to memory-only cache when disk cache fails."""
+    old_env = os.environ.get("DSPY_CACHEDIR")
+    try:
+        # Set an invalid cache directory that can't be created
+        os.environ["DSPY_CACHEDIR"] = "/dev/null/invalid_path"
+
+        import dspy
+        from dspy.clients import _get_dspy_cache
+
+        dspy.cache = _get_dspy_cache()
+
+        # Cache should work with memory-only fallback despite invalid disk path
+        test_request = {"model": "test", "prompt": "hello"}
+        dspy.cache.put(test_request, "fallback_result")
+        result = dspy.cache.get(test_request)
+
+        assert result == "fallback_result", "Memory cache fallback should work"
+
+    finally:
+        if old_env is None:
+            os.environ.pop("DSPY_CACHEDIR", None)
+        else:
+            os.environ["DSPY_CACHEDIR"] = old_env
