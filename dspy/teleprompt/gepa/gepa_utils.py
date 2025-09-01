@@ -3,6 +3,7 @@ import random
 from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 from gepa import EvaluationBatch, GEPAAdapter
+from gepa.core.adapter import ProposalFn
 
 import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
@@ -12,7 +13,7 @@ from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 
 if TYPE_CHECKING:
-    from dspy.teleprompt.gepa.instruction_proposal import InstructionProposerProtocol
+    pass
 from dspy.teleprompt.bootstrap_trace import TraceData
 
 
@@ -64,7 +65,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         add_format_failure_as_feedback: bool = False,
         rng: random.Random | None = None,
         reflection_lm=None,
-        custom_instruction_proposer: "InstructionProposerProtocol | None" = None,
+        custom_instruction_proposer: "ProposalFn | None" = None,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -77,29 +78,21 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_instruction_proposer = custom_instruction_proposer
 
         if self.custom_instruction_proposer is not None:
-            # We are only overriding the propose_new_texts method when a custom
-            # instruction proposer is provided. Otherwise, we use the GEPA
-            # default propose_new_texts.
+            # We are overriding the propose_new_texts method with the custom
+            # instruction proposer. Otherwise, we use GEPA's default propose_new_texts.
+            assert self.reflection_lm is not None, "reflection_lm must be provided when using custom_instruction_proposer"
+
             def custom_propose_new_texts(
                 candidate: dict[str, str],
                 reflective_dataset: dict[str, list[dict[str, Any]]],
                 components_to_update: list[str]
             ) -> dict[str, str]:
-
-                proposer = self.custom_instruction_proposer
-
-                new_texts: dict[str, str] = {}
-                for name in components_to_update:
-                    current_instruction = candidate[name]
-                    dataset_with_feedback = reflective_dataset[name]
-
-                    with dspy.context(lm=self.reflection_lm):
-                        new_texts[name] = proposer(
-                            current_instruction=current_instruction,
-                            reflective_dataset=dataset_with_feedback
-                        )
-
-                return new_texts
+                with dspy.context(lm=self.reflection_lm):
+                    return self.custom_instruction_proposer(
+                        candidate=candidate,
+                        reflective_dataset=reflective_dataset,
+                        components_to_update=components_to_update
+                    )
 
             self.propose_new_texts = custom_propose_new_texts
 

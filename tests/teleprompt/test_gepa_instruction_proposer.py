@@ -113,7 +113,7 @@ def test_reflection_lm_gets_structured_images():
         metric=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.3,
         max_metric_calls=2,
         reflection_lm=reflection_lm,
-        instruction_proposer=instruction_proposal.MultiModalProposer(),
+        instruction_proposer=instruction_proposal.create_multimodal_proposer(),
     )
 
     gepa.compile(student, trainset=[example], valset=[example])
@@ -132,35 +132,49 @@ def test_image_serialization_into_strings():
     Test that demonstrates the image serialization problem when calling lm directly with serialized image data.
     """
 
-    class InstructionProposerCallingLMDirectly(dspy.Module):
-        def forward(self, current_instruction: str, reflective_dataset: list[dict[str, Any]]) -> str:
-            feedback_analysis = "Feedback analysis:\n"
+    class InstructionProposerCallingLMDirectly:
+        def __call__(
+            self,
+            candidate: dict[str, str],
+            reflective_dataset: dict[str, list[dict[str, Any]]],
+            components_to_update: list[str]
+        ) -> dict[str, str]:
+            updated_components = {}
 
-            for i, example in enumerate(reflective_dataset):
-                feedback_analysis += f"Example {i + 1}:\n"
+            for component_name in components_to_update:
+                if component_name not in candidate or component_name not in reflective_dataset:
+                    continue
 
-                # Non ideal approach: extract and serialize image objects directly
-                inputs = example.get("Inputs", {})
-                for key, value in inputs.items():
-                    feedback_analysis += f"  {key}: {value}\n"
+                current_instruction = candidate[component_name]
+                component_data = reflective_dataset[component_name]
 
-                outputs = example.get("Generated Outputs", {})
-                feedback = example.get("Feedback", "")
-                feedback_analysis += f"  Outputs: {outputs}\n"
-                feedback_analysis += f"  Feedback: {feedback}\n\n"
+                feedback_analysis = "Feedback analysis:\n"
+                for i, example in enumerate(component_data):
+                    feedback_analysis += f"Example {i + 1}:\n"
 
-            context_lm = dspy.settings.lm
-            messages = [
-                {"role": "system", "content": "You are an instruction improvement assistant."},
-                {
-                    "role": "user",
-                    "content": f"Current instruction: {current_instruction}\n\nFeedback: {feedback_analysis}\n\nProvide an improved instruction:",
-                },
-            ]
+                    # Non ideal approach: extract and serialize image objects directly
+                    inputs = example.get("Inputs", {})
+                    for key, value in inputs.items():
+                        feedback_analysis += f"  {key}: {value}\n"
 
-            result = context_lm(messages=messages)
+                    outputs = example.get("Generated Outputs", {})
+                    feedback = example.get("Feedback", "")
+                    feedback_analysis += f"  Outputs: {outputs}\n"
+                    feedback_analysis += f"  Feedback: {feedback}\n\n"
 
-            return result[0]
+                context_lm = dspy.settings.lm
+                messages = [
+                    {"role": "system", "content": "You are an instruction improvement assistant."},
+                    {
+                        "role": "user",
+                        "content": f"Current instruction: {current_instruction}\n\nFeedback: {feedback_analysis}\n\nProvide an improved instruction:",
+                    },
+                ]
+
+                result = context_lm(messages=messages)
+                updated_components[component_name] = result[0]
+
+            return updated_components
 
     direct_lm_call_proposer = InstructionProposerCallingLMDirectly()
 

@@ -1,11 +1,14 @@
 from typing import Any, Protocol
 
+from gepa.core.adapter import ProposalFn
+
 import dspy
 from dspy.adapters.types.base_type import Type
 
 
-class InstructionProposerProtocol(Protocol):
-    """Protocol that instruction proposers must implement for GEPA integration."""
+# Protocol for single-instruction proposers (internal use)
+class SingleInstructionProposer(Protocol):
+    """Protocol for proposers that work on individual instructions."""
 
     def __call__(self, current_instruction: str, reflective_dataset: list[dict[str, Any]]) -> str:
         """Generate improved instruction based on current instruction and feedback examples.
@@ -19,6 +22,55 @@ class InstructionProposerProtocol(Protocol):
             str: Improved instruction text
         """
         ...
+
+
+def default_instruction_proposer_loop(
+    single_proposer: SingleInstructionProposer,
+) -> ProposalFn:
+    """Create a GEPA-compatible ProposalFn from a single-instruction proposer.
+    
+    This default outer loop handles the GEPA protocol by calling the single-instruction
+    proposer for each component that needs to be updated.
+    
+    Args:
+        single_proposer: A proposer that works on individual instructions
+        
+    Returns:
+        ProposalFn: GEPA-compatible proposal function
+    """
+    def proposal_fn(
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[dict[str, Any]]],
+        components_to_update: list[str]
+    ) -> dict[str, str]:
+        """GEPA-compatible proposal function.
+        
+        Args:
+            candidate: Current component name -> instruction mapping
+            reflective_dataset: Component name -> list of reflective examples
+            components_to_update: List of component names to update
+            
+        Returns:
+            dict: Component name -> new instruction mapping
+        """
+        updated_components = {}
+
+        for component_name in components_to_update:
+            if component_name in candidate and component_name in reflective_dataset:
+                current_instruction = candidate[component_name]
+                component_reflective_data = reflective_dataset[component_name]
+
+                # Call the single-instruction proposer
+                new_instruction = single_proposer(
+                    current_instruction=current_instruction,
+                    reflective_dataset=component_reflective_data
+                )
+
+                updated_components[component_name] = new_instruction
+
+        return updated_components
+
+    return proposal_fn
 
 
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
@@ -278,3 +330,14 @@ class MultiModalProposer(dspy.Module):
         multimodal_content = [formatted_text]
         multimodal_content.extend(all_images)
         return multimodal_content
+
+
+# Convenience functions for creating GEPA-compatible proposers
+def create_multimodal_proposer() -> ProposalFn:
+    """Create a GEPA-compatible multimodal instruction proposer.
+    
+    Returns:
+        ProposalFn: GEPA-compatible proposal function for handling multimodal inputs
+    """
+    single_proposer = MultiModalProposer()
+    return default_instruction_proposer_loop(single_proposer)

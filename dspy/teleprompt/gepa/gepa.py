@@ -10,9 +10,9 @@ from dspy.teleprompt.teleprompt import Teleprompter
 
 if TYPE_CHECKING:
     from gepa import GEPAResult
+    from gepa.core.adapter import ProposalFn
 
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
-    from dspy.teleprompt.gepa.instruction_proposal import InstructionProposerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -211,12 +211,12 @@ class GEPA(Teleprompter):
             a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` 
             for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
-        instruction_proposer: Optional custom instruction proposer implementing InstructionProposerProtocol. 
+        instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol. 
             If provided, GEPA will use this custom proposer instead of its default instruction proposal 
             mechanism to generate improved instructions based on feedback from failed examples. This is 
             particularly useful when you need specialized instruction generation for multimodal inputs 
-            (like dspy.Image) or custom types. Use MultiModalProposer(), located at 
-            dspy.teleprompt.gepa.instruction_proposal, for handling visual content. If None (default), 
+            (like dspy.Image) or custom types. Use create_multimodal_proposer() from 
+            dspy.teleprompt.gepa.instruction_proposal for handling visual content. If None (default), 
             GEPA uses its built-in text-optimized proposer.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
@@ -268,13 +268,13 @@ class GEPA(Teleprompter):
         auto: Literal["light", "medium", "heavy"] | None = None,
         max_full_evals: int | None = None,
         max_metric_calls: int | None = None,
-        # Reflection based configuration
+        # Reflection configuration
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
-        instruction_proposer: "InstructionProposerProtocol | None" = None,
+        instruction_proposer: "ProposalFn | None" = None,
         # Merge-based configuration
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
@@ -318,7 +318,7 @@ class GEPA(Teleprompter):
         self.max_full_evals = max_full_evals
         self.max_metric_calls = max_metric_calls
 
-        # Reflection based configuration
+        # Reflection configuration
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
         assert reflection_lm is not None, "GEPA requires a reflection language model to be provided. Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model."
