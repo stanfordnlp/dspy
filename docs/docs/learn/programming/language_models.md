@@ -209,7 +209,7 @@ lm.history[-1].keys()  # access the last call to the LM, with all metadata
 
 **Output:**
 ```text
-dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost'])
+dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost', 'timestamp', 'uuid', 'model', 'response_model', 'model_type])
 ```
 
 ### Advanced: Building custom LMs and writing your own Adapters.
