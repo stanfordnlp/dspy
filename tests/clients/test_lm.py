@@ -506,6 +506,23 @@ def test_responses_api(litellm_test_server):
         assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
 
 
+def test_lm_replaces_system_with_developer_role():
+    with mock.patch(
+        "dspy.clients.lm.litellm_responses_completion", return_value={"choices": []}
+    ) as mock_completion:
+        lm = dspy.LM(
+            "openai/gpt-4o-mini",
+            cache=False,
+            model_type="responses",
+            use_developer_role=True,
+        )
+        lm.forward(messages=[{"role": "system", "content": "hi"}])
+        assert (
+            mock_completion.call_args.kwargs["request"]["messages"][0]["role"]
+            == "developer"
+        )
+
+
 def test_responses_api_tool_calls(litellm_test_server):
     api_base, _ = litellm_test_server
     expected_tool_call = {

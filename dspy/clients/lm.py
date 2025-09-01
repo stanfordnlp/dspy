@@ -40,6 +40,7 @@ class LM(BaseLM):
         finetuning_model: str | None = None,
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
+        use_developer_role: bool = False,
         **kwargs,
     ):
         """
@@ -77,6 +78,7 @@ class LM(BaseLM):
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
+        self.use_developer_role = use_developer_role
         self._warned_zero_temp_rollout = False
 
         # Handle model-specific configuration for different model families
@@ -131,6 +133,11 @@ class LM(BaseLM):
         cache = kwargs.pop("cache", self.cache)
 
         messages = messages or [{"role": "user", "content": prompt}]
+        if self.use_developer_role and self.model_type == "responses":
+            messages = [
+                {**m, "role": "developer"} if m.get("role") == "system" else m
+                for m in messages
+            ]
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
@@ -162,6 +169,11 @@ class LM(BaseLM):
         cache = kwargs.pop("cache", self.cache)
 
         messages = messages or [{"role": "user", "content": prompt}]
+        if self.use_developer_role and self.model_type == "responses":
+            messages = [
+                {**m, "role": "developer"} if m.get("role") == "system" else m
+                for m in messages
+            ]
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
