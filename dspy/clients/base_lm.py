@@ -110,7 +110,12 @@ class BaseLM:
         raise NotImplementedError("Subclasses must implement this method.")
 
     def copy(self, **kwargs):
-        """Returns a copy of the language model with possibly updated parameters."""
+        """Returns a copy of the language model with possibly updated parameters.
+
+        Any provided keyword arguments update the corresponding attributes or LM kwargs of
+        the copy. For example, ``lm.copy(rollout_id=1, temperature=1.0)`` returns an LM whose
+        requests use a different rollout ID at non-zero temperature to bypass cache collisions.
+        """
 
         import copy
 
@@ -121,7 +126,12 @@ class BaseLM:
             if hasattr(self, key):
                 setattr(new_instance, key, value)
             if (key in self.kwargs) or (not hasattr(self, key)):
-                new_instance.kwargs[key] = value
+                if value is None:
+                    new_instance.kwargs.pop(key, None)
+                else:
+                    new_instance.kwargs[key] = value
+        if hasattr(new_instance, "_warned_zero_temp_rollout"):
+            new_instance._warned_zero_temp_rollout = False
 
         return new_instance
 

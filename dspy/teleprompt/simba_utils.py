@@ -3,7 +3,7 @@ import logging
 import textwrap
 from typing import Callable
 
-import ujson
+import orjson
 
 import dspy
 from dspy.adapters.utils import get_field_description_string
@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 def prepare_models_for_resampling(program: dspy.Module, n: int):
     lm = program.get_lm() or dspy.settings.lm
-    temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / n) for i in range(n)]
-    temps = list(dict.fromkeys(temps))[:n]
-    return [lm.copy(temperature=t) for t in temps]
+    start = lm.kwargs.get("rollout_id", 0)
+    rollout_ids = [start + i for i in range(n)]
+    return [lm.copy(rollout_id=r, temperature=1.0) for r in rollout_ids]
 
 
 def wrap_program(program: dspy.Module, metric: Callable):
@@ -120,7 +120,7 @@ def append_a_rule(bucket, system, **kwargs):
         "module_names": module_names,
     }
 
-    kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
+    kwargs = {k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
               for k, v in kwargs.items()}
     advice = dspy.Predict(OfferFeedback)(**kwargs).module_advice
 
@@ -194,9 +194,9 @@ def inspect_modules(program):
 def recursive_mask(o):
     # If the object is already serializable, return it.
     try:
-        ujson.dumps(o)
+        orjson.dumps(o)
         return o
-    except TypeError:
+    except (TypeError, orjson.JSONEncodeError):
         pass
 
     # If it's a dictionary, apply recursively to its values.
