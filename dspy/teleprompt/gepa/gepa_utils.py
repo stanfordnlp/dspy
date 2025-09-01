@@ -258,3 +258,29 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             raise Exception("No valid predictions found for any module.")
 
         return ret_d
+
+    # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.
+    # We can potentially override this, to use the instruction proposal similar to MIPROv2.
+
+    # def propose_new_texts(
+    #     self,
+    #     candidate: Dict[str, str],
+    #     reflective_dataset: Dict[str, List[Dict[str, Any]]],
+    #     components_to_update: List[str]
+    # ) -> Dict[str, str]:
+    #     if self.adapter.propose_new_texts is not None:
+    #         return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
+
+    #     from .instruction_proposal import InstructionProposalSignature
+    #     new_texts: Dict[str, str] = {}
+    #     for name in components_to_update:
+    #         base_instruction = candidate[name]
+    #         dataset_with_feedback = reflective_dataset[name]
+    #         new_texts[name] = InstructionProposalSignature.run(
+    #             lm=self.reflection_lm,
+    #             input_dict={
+    #                 "current_instruction_doc": base_instruction,
+    #                 "dataset_with_feedback": dataset_with_feedback
+    #             }
+    #         )['new_instruction']
+    #     return new_texts
