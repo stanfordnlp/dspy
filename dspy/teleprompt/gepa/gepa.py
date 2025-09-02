@@ -2,17 +2,15 @@ import inspect
 import logging
 import random
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
+from typing import Any, Literal, Optional, Protocol, Union
+
+from gepa import GEPAResult
+from gepa.core.adapter import ProposalFn
 
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
+from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
 from dspy.teleprompt.teleprompt import Teleprompter
-
-if TYPE_CHECKING:
-    from gepa import GEPAResult
-    from gepa.core.adapter import ProposalFn
-
-    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
 
 logger = logging.getLogger(__name__)
 
@@ -215,9 +213,10 @@ class GEPA(Teleprompter):
             If provided, GEPA will use this custom proposer instead of its default instruction proposal 
             mechanism to generate improved instructions based on feedback from failed examples. This is 
             particularly useful when you need specialized instruction generation for multimodal inputs 
-            (like dspy.Image) or custom types. Use MultiModalInstructionProposer() from 
-            dspy.teleprompt.gepa.instruction_proposal for handling visual content. If None (default), 
-            GEPA uses its built-in text-optimized proposer.
+            (like dspy.Image) or custom types. Use `MultiModalInstructionProposer()` from 
+            `dspy.teleprompt.gepa.instruction_proposal` for handling visual content. If None (default), 
+            GEPA uses its built-in text-optimized proposer (see `gepa.strategies.instruction_proposal.InstructionProposalSignature` 
+            for reference implementation).
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
