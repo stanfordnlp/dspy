@@ -45,7 +45,7 @@ class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
     )
 
 
-class MultiModalProposer(dspy.Module):
+class SingleComponentMultiModalProposer(dspy.Module):
     """
     dspy.Module for proposing improved instructions based on feedback.
     """
@@ -265,15 +265,18 @@ class MultiModalProposer(dspy.Module):
         return multimodal_content
 
 
-def create_multimodal_proposer() -> ProposalFn:
-    """Create a GEPA-compatible multimodal instruction proposer.
+class MultiModalInstructionProposer(ProposalFn):
+    """GEPA-compatible multimodal instruction proposer.
 
-    Returns:
-        ProposalFn: GEPA-compatible proposal function for handling multimodal inputs
+    This class handles multimodal inputs (like dspy.Image) during GEPA optimization by using
+    a single-component proposer for each component that needs to be updated.
     """
-    single_proposer = MultiModalProposer()
 
-    def proposal_fn(
+    def __init__(self):
+        self.single_proposer = SingleComponentMultiModalProposer()
+
+    def __call__(
+        self,
         candidate: dict[str, str],
         reflective_dataset: dict[str, list[dict[str, Any]]],
         components_to_update: list[str],
@@ -297,14 +300,12 @@ def create_multimodal_proposer() -> ProposalFn:
 
                 # Call the single-instruction proposer.
                 #
-                # In the future, proposals could consider the entire component's instructions,
+                # In the future, proposals could consider multiple components instructions,
                 # instead of just the current instruction, for more holistic instruction proposals.
-                new_instruction = single_proposer(
+                new_instruction = self.single_proposer(
                     current_instruction=current_instruction, reflective_dataset=component_reflective_data
                 )
 
                 updated_components[component_name] = new_instruction
 
         return updated_components
-
-    return proposal_fn

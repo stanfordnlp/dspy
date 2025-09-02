@@ -215,7 +215,7 @@ class GEPA(Teleprompter):
             If provided, GEPA will use this custom proposer instead of its default instruction proposal 
             mechanism to generate improved instructions based on feedback from failed examples. This is 
             particularly useful when you need specialized instruction generation for multimodal inputs 
-            (like dspy.Image) or custom types. Use create_multimodal_proposer() from 
+            (like dspy.Image) or custom types. Use MultiModalInstructionProposer() from 
             dspy.teleprompt.gepa.instruction_proposal for handling visual content. If None (default), 
             GEPA uses its built-in text-optimized proposer.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.

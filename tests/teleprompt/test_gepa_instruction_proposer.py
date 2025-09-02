@@ -113,7 +113,7 @@ def test_reflection_lm_gets_structured_images():
         metric=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.3,
         max_metric_calls=2,
         reflection_lm=reflection_lm,
-        instruction_proposer=instruction_proposal.create_multimodal_proposer(),
+        instruction_proposer=instruction_proposal.MultiModalInstructionProposer(),
     )
 
     gepa.compile(student, trainset=[example], valset=[example])
