@@ -9,6 +9,9 @@ from dspy.teleprompt.knn_fewshot import KNNFewShot
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.simba import SIMBA
+from dspy.teleprompt.simba_fast import SIMBAFast
+# from dspy.teleprompt.gepa_v2_ import GEPAv2
+# from dspy.teleprompt.gepa import GEPA
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.teleprompt_optuna import BootstrapFewShotWithOptuna
 from dspy.teleprompt.vanilla import LabeledFewShot
@@ -27,4 +30,7 @@ __all__ = [
     "LabeledFewShot",
     "InferRules",
     "SIMBA",
+    "SIMBAFast",
+    # "GEPAv2",
+    # "GEPA",
 ]
