@@ -75,7 +75,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_instruction_proposer = custom_instruction_proposer
 
         if self.custom_instruction_proposer is not None:
-            assert self.reflection_lm is not None, "reflection_lm must be provided when using custom_instruction_proposer"
             # We are only overriding the propose_new_texts method when a custom
             # instruction proposer is provided. Otherwise, we use the GEPA
             # default propose_new_texts.
@@ -85,7 +84,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 reflective_dataset: dict[str, list[dict[str, Any]]],
                 components_to_update: list[str]
             ) -> dict[str, str]:
-                with dspy.context(lm=self.reflection_lm):
+                if self.reflection_lm is not None:
+                    with dspy.context(lm=self.reflection_lm):
+                        return self.custom_instruction_proposer(
+                            candidate=candidate,
+                            reflective_dataset=reflective_dataset,
+                            components_to_update=components_to_update
+                        )
+                else:
                     return self.custom_instruction_proposer(
                         candidate=candidate,
                         reflective_dataset=reflective_dataset,
