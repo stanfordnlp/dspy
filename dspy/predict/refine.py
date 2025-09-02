@@ -1,8 +1,8 @@
 import inspect
 import textwrap
-from typing import Callable, Optional
+from typing import Callable
 
-import ujson
+import orjson
 
 import dspy
 from dspy.adapters.utils import get_field_description_string
@@ -42,15 +42,16 @@ class Refine(Module):
     def __init__(
         self,
         module: Module,
-        N: int,
+        N: int,  # noqa: N803
         reward_fn: Callable[[dict, Prediction], float],
         threshold: float,
-        fail_count: Optional[int] = None,
+        fail_count: int | None = None,
     ):
         """
-        Refines a module by running it up to N times with different temperatures and returns the best prediction.
+        Refines a module by running it up to N times with different rollout IDs at `temperature=1.0`
+        and returns the best prediction.
 
-        This module runs the provided module multiple times with varying temperature settings and selects
+        This module runs the provided module multiple times with varying rollout identifiers and selects
         either the first prediction that exceeds the specified threshold or the one with the highest reward.
         If no prediction meets the threshold, it automatically generates feedback to improve future predictions.
 
@@ -96,14 +97,14 @@ class Refine(Module):
 
     def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
-        temps = [lm.kwargs["temperature"]] + [0.5 + i * (0.5 / self.N) for i in range(self.N)]
-        temps = list(dict.fromkeys(temps))[: self.N]
+        start = lm.kwargs.get("rollout_id", 0)
+        rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
 
-        for idx, t in enumerate(temps):
-            lm_ = lm.copy(temperature=t)
+        for idx, rid in enumerate(rollout_ids):
+            lm_ = lm.copy(rollout_id=rid, temperature=1.0)
             mod = self.module.deepcopy()
             mod.set_lm(lm_)
 
@@ -119,7 +120,7 @@ class Refine(Module):
 
                         class WrapperAdapter(adapter.__class__):
                             def __call__(self, lm, lm_kwargs, signature, demos, inputs):
-                                inputs["hint_"] = advice.get(signature2name[signature], "N/A")
+                                inputs["hint_"] = advice.get(signature2name[signature], "N/A")  # noqa: B023
                                 signature = signature.append(
                                     "hint_", InputField(desc="A hint to the module from an earlier run")
                                 )
@@ -144,23 +145,30 @@ class Refine(Module):
                 if idx == self.N - 1:
                     break
 
-                modules = dict(program_code=self.module_code, modules_defn=inspect_modules(mod))
-                trajectory = [dict(module_name=predictor2name[p], inputs=i, outputs=dict(o)) for p, i, o in trace]
-                trajectory = dict(program_inputs=kwargs, program_trajectory=trajectory, program_outputs=dict(outputs))
-                reward = dict(reward_code=self.reward_fn_code, target_threshold=self.threshold, reward_value=reward)
+                modules = {"program_code": self.module_code, "modules_defn": inspect_modules(mod)}
+                trajectory = [{"module_name": predictor2name[p], "inputs": i, "outputs": dict(o)} for p, i, o in trace]
+                trajectory = {
+                    "program_inputs": kwargs,
+                    "program_trajectory": trajectory,
+                    "program_outputs": dict(outputs),
+                }
+                reward = {
+                    "reward_code": self.reward_fn_code,
+                    "target_threshold": self.threshold,
+                    "reward_value": reward,
+                }
 
                 advise_kwargs = dict(**modules, **trajectory, **reward, module_names=module_names)
-                # advise_kwargs = {k: ujson.dumps(recursive_mask(v), indent=2) for k, v in advise_kwargs.items()}
                 # only dumps if it's a list or dict
                 advise_kwargs = {
-                    k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
+                    k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
                     for k, v in advise_kwargs.items()
                 }
                 advice = dspy.Predict(OfferFeedback)(**advise_kwargs).advice
                 # print(f"Advice for each module: {advice}")
 
             except Exception as e:
-                print(f"Refine: Attempt failed with temperature {t}: {e}")
+                print(f"Refine: Attempt failed with rollout id {rid}: {e}")
                 if idx > self.fail_count:
                     raise e
                 self.fail_count -= 1
@@ -173,7 +181,7 @@ def inspect_modules(program):
     separator = "-" * 80
     output = [separator]
 
-    for idx, (name, predictor) in enumerate(program.named_predictors()):
+    for _, (name, predictor) in enumerate(program.named_predictors()):
         signature = predictor.signature
         instructions = textwrap.dedent(signature.instructions)
         instructions = ("\n" + "\t" * 2).join([""] + instructions.splitlines())
@@ -192,7 +200,7 @@ def inspect_modules(program):
 def recursive_mask(o):
     # If the object is already serializable, return it.
     try:
-        ujson.dumps(o)
+        orjson.dumps(o)
         return o
     except TypeError:
         pass

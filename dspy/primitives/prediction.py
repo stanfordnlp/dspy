@@ -2,6 +2,19 @@ from dspy.primitives.example import Example
 
 
 class Prediction(Example):
+    """A prediction object that contains the output of a DSPy module.
+    
+    Prediction inherits from Example.
+    
+    To allow feedback-augmented scores, Prediction supports comparison operations
+    (<, >, <=, >=) for Predictions with a `score` field. The comparison operations
+    compare the 'score' values as floats. For equality comparison, Predictions are equal
+    if their underlying data stores are equal (inherited from Example).
+    
+    Arithmetic operations (+, /, etc.) are also supported for Predictions with a 'score'
+    field, operating on the score value.
+    """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -26,7 +39,7 @@ class Prediction(Example):
         return obj
 
     def __repr__(self):
-        store_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._store.items())
+        store_repr = ",\n    ".join(f"{k}={v!r}" for k, v in self._store.items())
 
         if self._completions is None or len(self._completions) == 1:
             return f"Prediction(\n    {store_repr}\n)"
@@ -152,7 +165,7 @@ class Completions:
         return key in self._completions
 
     def __repr__(self):
-        items_repr = ",\n    ".join(f"{k}={repr(v)}" for k, v in self._completions.items())
+        items_repr = ",\n    ".join(f"{k}={v!r}" for k, v in self._completions.items())
         return f"Completions(\n    {items_repr}\n)"
 
     def __str__(self):

@@ -1,245 +1,199 @@
+from pathlib import Path
+
 import dspy
-import threading
-from dspy.utils.dummies import DummyLM
-import logging
-from unittest.mock import patch
-import pytest
-import os
+from dspy.primitives.module import Module, set_attribute_by_name  # Adjust the import based on your file structure
+from dspy.utils import DummyLM
 
 
-def test_deepcopy_basic():
-    signature = dspy.Signature("q -> a")
-    cot = dspy.ChainOfThought(signature)
-    cot_copy = cot.deepcopy()
-    assert len(cot.parameters()) == len(cot_copy.parameters())
-    # Parameters should be different objects with the same values.
-    assert id(cot.parameters()[0]) != id(cot_copy.parameters()[0])
-    assert cot.parameters()[0].__dict__ == cot_copy.parameters()[0].__dict__
+class HopModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.predict1 = dspy.Predict("question -> query")
+        self.predict2 = dspy.Predict("query -> answer")
+
+    def forward(self, question):
+        query = self.predict1(question=question).query
+        return self.predict2(query=query)
 
 
-def test_deepcopy_with_uncopyable_modules():
-    class CustomClass(dspy.Module):
-        def __init__(self):
-            self.lock = threading.Lock()  # Non-copyable object.
-            self.cot = dspy.ChainOfThought(dspy.Signature("q -> a"))
-
-    model = CustomClass()
-    model_copy = model.deepcopy()
-    assert len(model.parameters()) == len(model_copy.parameters())
-    # The lock should be refer to the same object (shallow copy).
-    assert id(model.lock) == id(model_copy.lock)
-    # Parameters should be different objects with the same values.
-    assert id(model.parameters()[0]) != id(model_copy.parameters()[0])
-    assert model.parameters()[0].__dict__ == model_copy.parameters()[0].__dict__
+def test_module_initialization():
+    module = Module()
+    assert module._compiled is False, "Module _compiled attribute should be False upon initialization"
 
 
-def test_deepcopy_with_nested_modules():
-    class CustomClass1(dspy.Module):
-        def __init__(self):
-            self.lock = threading.Lock()  # Non-copyable object.
-            self.cot = dspy.ChainOfThought(dspy.Signature("q -> a"))
-
-    class CustomClass2(dspy.Module):
-        def __init__(self):
-            self.submodel = CustomClass1()
-
-    model = CustomClass2()
-    model_copy = model.deepcopy()
-    assert len(model.parameters()) == len(model_copy.parameters())
-    # The lock should be refer to the same object (shallow copy).
-    assert id(model.submodel.lock) == id(model_copy.submodel.lock)
-    # Parameters should be different objects with the same values.
-    assert id(model.parameters()[0]) != id(model_copy.parameters()[0])
-    assert model.parameters()[0].__dict__ == model_copy.parameters()[0].__dict__
+def test_named_predictors():
+    module = HopModule()
+    named_preds = module.named_predictors()
+    assert len(named_preds) == 2, "Should identify correct number of Predict instances"
+    names, preds = zip(*named_preds, strict=False)
+    assert "predict1" in names and "predict2" in names, "Named predictors should include 'predict1' and 'predict2'"
 
 
-def test_save_and_load_with_json(tmp_path):
-    model = dspy.ChainOfThought(dspy.Signature("q -> a"))
-    model.predict.signature = model.predict.signature.with_instructions("You are a helpful assistant.")
-    model.predict.demos = [
-        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")
-    ]
-    save_path = tmp_path / "model.json"
-    model.save(save_path)
-    new_model = dspy.ChainOfThought(dspy.Signature("q -> a"))
-    new_model.load(save_path)
-
-    assert str(new_model.predict.signature) == str(model.predict.signature)
-    assert new_model.predict.demos[0] == model.predict.demos[0].toDict()
+def test_predictors():
+    module = HopModule()
+    preds = module.predictors()
+    assert len(preds) == 2, "Should return correct number of Predict instances"
+    assert all(isinstance(p, dspy.Predict) for p in preds), "All returned items should be instances of PredictMock"
 
 
-def test_save_and_load_with_pkl(tmp_path):
-    import datetime
-
-    # `datetime.date` is not json serializable, so we need to save with pickle.
-    class MySignature(dspy.Signature):
-        """Just a custom signature."""
-
-        current_date: datetime.date = dspy.InputField()
-        target_date: datetime.date = dspy.InputField()
-        date_diff: int = dspy.OutputField(desc="The difference in days between the current_date and the target_date")
-
-    trainset = [
-        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 2), "date_diff": 1},
-        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 3), "date_diff": 2},
-        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 4), "date_diff": 3},
-        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 5), "date_diff": 4},
-        {"current_date": datetime.date(2024, 1, 1), "target_date": datetime.date(2024, 1, 6), "date_diff": 5},
-    ]
-    trainset = [dspy.Example(**example).with_inputs("current_date", "target_date") for example in trainset]
-
+def test_forward():
+    program = HopModule()
     dspy.settings.configure(
-        lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10)
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"query": "let me check"},
+                "let me check": {"answer": "2"},
+            }
+        )
     )
-
-    cot = dspy.ChainOfThought(MySignature)
-    cot(current_date=datetime.date(2024, 1, 1), target_date=datetime.date(2024, 1, 2))
-
-    def dummy_metric(example, pred, trace=None):
-        return True
-
-    optimizer = dspy.BootstrapFewShot(max_bootstrapped_demos=4, max_labeled_demos=4, max_rounds=5, metric=dummy_metric)
-    compiled_cot = optimizer.compile(cot, trainset=trainset)
-    compiled_cot.predict.signature = compiled_cot.predict.signature.with_instructions("You are a helpful assistant.")
-
-    save_path = tmp_path / "program.pkl"
-    compiled_cot.save(save_path)
-
-    new_cot = dspy.ChainOfThought(MySignature)
-    new_cot.load(save_path)
-
-    assert str(new_cot.predict.signature) == str(compiled_cot.predict.signature)
-    assert new_cot.predict.demos == compiled_cot.predict.demos
+    result = program(question="What is 1+1?").answer
+    assert result == "2"
 
 
-def test_load_with_version_mismatch(tmp_path):
-    from dspy.primitives.module import logger
-
-    # Mock versions during save
-    save_versions = {"python": "3.9", "dspy": "2.4.0", "cloudpickle": "2.0"}
-
-    # Mock versions during load
-    load_versions = {"python": "3.10", "dspy": "2.5.0", "cloudpickle": "2.1"}
-
-    predict = dspy.Predict("question->answer")
-
-    # Create a custom handler to capture log messages
-    class ListHandler(logging.Handler):
+def test_nested_named_predictors():
+    class Hop2Module(dspy.Module):
         def __init__(self):
             super().__init__()
-            self.messages = []
+            self.hop = HopModule()
 
-        def emit(self, record):
-            self.messages.append(record.getMessage())
-
-    # Add handler and set level
-    handler = ListHandler()
-    original_level = logger.level
-    logger.addHandler(handler)
-    logger.setLevel(logging.WARNING)
-
-    try:
-        save_path = tmp_path / "program.pkl"
-        # Mock version during save
-        with patch("dspy.primitives.module.get_dependency_versions", return_value=save_versions):
-            predict.save(save_path)
-
-        # Mock version during load
-        with patch("dspy.primitives.module.get_dependency_versions", return_value=load_versions):
-            loaded_predict = dspy.Predict("question->answer")
-            loaded_predict.load(save_path)
-
-        # Assert warnings were logged, and one warning for each mismatched dependency.
-        assert len(handler.messages) == 3
-
-        for msg in handler.messages:
-            assert "There is a mismatch of" in msg
-
-        # Verify the model still loads correctly despite version mismatches
-        assert isinstance(loaded_predict, dspy.Predict)
-        assert str(predict.signature) == str(loaded_predict.signature)
-
-    finally:
-        # Clean up: restore original level and remove handler
-        logger.setLevel(original_level)
-        logger.removeHandler(handler)
+    module = Hop2Module()
+    named_preds = module.named_predictors()
+    assert len(named_preds) == 2
+    names, _preds = zip(*named_preds, strict=False)
+    assert "hop.predict1" in names
+    assert "hop.predict2" in names
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
-def test_single_module_call_with_usage_tracker():
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
-
-    predict = dspy.ChainOfThought("question -> answer")
-    output = predict(question="What is the capital of France?")
-
-    lm_usage = output.get_lm_usage()
-    assert len(lm_usage) == 1
-    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
-    assert lm_usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
-    assert lm_usage["openai/gpt-4o-mini"]["total_tokens"] > 0
-
-    # Test no usage being tracked when cache is enabled
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=True), track_usage=True)
-    for _ in range(2):
-        output = predict(question="What is the capital of France?")
-
-    assert len(output.get_lm_usage()) == 0
+def test_empty_module():
+    module = Module()
+    assert list(module.named_sub_modules()) == [("self", module)]
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
-def test_multi_module_call_with_usage_tracker():
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
-
-    class MyProgram(dspy.Module):
-        def __init__(self):
-            self.predict1 = dspy.ChainOfThought("question -> answer")
-            self.predict2 = dspy.ChainOfThought("question, answer -> score")
-
-        def __call__(self, question: str) -> str:
-            answer = self.predict1(question=question)
-            score = self.predict2(question=question, answer=answer)
-            return score
-
-    program = MyProgram()
-    output = program(question="What is the capital of France?")
-
-    lm_usage = output.get_lm_usage()
-    assert len(lm_usage) == 1
-    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
-    assert lm_usage["openai/gpt-4o-mini"]["prompt_tokens"] > 0
-    assert lm_usage["openai/gpt-4o-mini"]["completion_tokens"] > 0
-    assert lm_usage["openai/gpt-4o-mini"]["total_tokens"] > 0
+def test_single_level():
+    module = Module()
+    module.sub = Module()
+    expected = [("self", module), ("self.sub", module.sub)]
+    assert list(module.named_sub_modules()) == expected
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="Skip the test if OPENAI_API_KEY is not set.")
-def test_usage_tracker_in_parallel():
-    class MyProgram(dspy.Module):
-        def __init__(self, lm):
-            self.lm = lm
-            self.predict1 = dspy.ChainOfThought("question -> answer")
-            self.predict2 = dspy.ChainOfThought("question, answer -> score")
+def test_multiple_levels():
+    module = Module()
+    module.sub = Module()
+    module.sub.subsub = Module()
+    expected = [("self", module), ("self.sub", module.sub), ("self.sub.subsub", module.sub.subsub)]
+    assert list(module.named_sub_modules()) == expected
 
-        def __call__(self, question: str) -> str:
-            with dspy.settings.context(lm=self.lm):
-                answer = self.predict1(question=question)
-                score = self.predict2(question=question, answer=answer)
-                return score
 
-    dspy.settings.configure(track_usage=True)
-    program1 = MyProgram(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
-    program2 = MyProgram(lm=dspy.LM("openai/gpt-3.5-turbo", cache=False))
+def test_multiple_sub_modules():
+    module = Module()
+    module.sub1 = Module()
+    module.sub2 = Module()
+    expected = [("self", module), ("self.sub1", module.sub1), ("self.sub2", module.sub2)]
+    assert sorted(module.named_sub_modules()) == sorted(expected)
 
-    parallelizer = dspy.Parallel()
 
-    results = parallelizer(
-        [
-            (program1, {"question": "What is the meaning of life?"}),
-            (program2, {"question": "why did a chicken cross the kitchen?"}),
-        ]
+def test_non_base_module_attributes():
+    module = Module()
+    module.sub = Module()
+    module.not_a_sub = "Not a self"
+    expected = [("self", module), ("self.sub", module.sub)]
+    assert list(module.named_sub_modules()) == expected
+
+
+def test_complex_module_traversal():
+    root = Module()
+    root.sub_module = Module()
+    root.sub_module.nested_list = [Module(), {"key": Module()}]
+    root.sub_module.nested_tuple = (Module(), [Module(), Module()])
+    expected_names = {
+        "self",
+        "self.sub_module",
+        "self.sub_module.nested_list[0]",
+        "self.sub_module.nested_list[1][key]",
+        "self.sub_module.nested_tuple[0]",
+        "self.sub_module.nested_tuple[1][0]",
+        "self.sub_module.nested_tuple[1][1]",
+    }
+    found_names = {name for name, _ in root.named_sub_modules()}
+
+    assert found_names == expected_names, (
+        f"Missing or extra modules found. Missing: {expected_names - found_names}, Extra: {found_names - expected_names}"
     )
 
-    assert results[0].get_lm_usage() is not None
-    assert results[1].get_lm_usage() is not None
 
-    assert results[0].get_lm_usage().keys() == set(["openai/gpt-4o-mini"])
-    assert results[1].get_lm_usage().keys() == set(["openai/gpt-3.5-turbo"])
+def test_complex_module_traversal_with_same_module():
+    root = Module()
+    root.sub_module = Module()
+    root.sub_module.nested_list = [Module(), {"key": Module()}]
+    same_module = Module()
+    root.sub_module.nested_tuple = (Module(), [same_module, same_module])
+    expected_names = {
+        "self",
+        "self.sub_module",
+        "self.sub_module.nested_list[0]",
+        "self.sub_module.nested_list[1][key]",  # NOTE: named_sub_modules allows recursive structures
+        "self.sub_module.nested_tuple[0]",
+        "self.sub_module.nested_tuple[1][0]",  # NEW: named_sub_modules allows recursive structures, but named_parameters does not
+    }
+    found_names = {name for name, _ in root.named_sub_modules()}
+
+    assert found_names == expected_names, (
+        f"Missing or extra modules found. Missing: {expected_names - found_names}, Extra: {found_names - expected_names}"
+    )
+
+
+def test_complex_module_set_attribute_by_name():
+    root = Module()
+    root.sub_module = Module()
+    root.sub_module.nested_list = [Module(), {"key": Module()}]
+    same_module = Module()
+    root.sub_module.nested_tuple = (Module(), [same_module, same_module])
+
+    set_attribute_by_name(root, "test_attrib", True)
+    assert root.test_attrib is True
+    set_attribute_by_name(root, "sub_module.test_attrib", True)
+    assert root.sub_module.test_attrib is True
+    set_attribute_by_name(root, "sub_module.nested_list[0].test_attrib", True)
+    assert root.sub_module.nested_list[0].test_attrib is True
+    set_attribute_by_name(root, "sub_module.nested_list[1]['key'].test_attrib", True)
+    assert root.sub_module.nested_list[1]["key"].test_attrib is True
+    set_attribute_by_name(root, "sub_module.nested_tuple[0].test_attrib", True)
+    assert root.sub_module.nested_tuple[0].test_attrib is True
+    set_attribute_by_name(root, "sub_module.nested_tuple[1][0].test_attrib", True)
+    assert root.sub_module.nested_tuple[1][0].test_attrib is True
+    assert root.sub_module.nested_tuple[1][1].test_attrib is True
+
+
+class DuplicateModule(Module):
+    def __init__(self):
+        super().__init__()
+        self.p0 = dspy.Predict("question -> answer")
+        self.p1 = self.p0
+
+
+def test_named_parameters_duplicate_references():
+    module = DuplicateModule()
+    # Only testing for whether exceptions are thrown or not
+    # As Module.named_parameters() is recursive, this is mainly for catching infinite recursion
+    module.named_parameters()
+
+
+def test_load_dspy_program_cross_version():
+    """
+    Test backward compatibility for loading a saved DSPy program.
+
+    This test verifies that DSPy can load a program saved in version 3.0.1, ensuring compatibility with older versions.
+    The saved state is located in 'test/primitives/resources/saved_program.json' and represents an optimized
+    `dspy.ReAct` program.
+    """
+    path = Path(__file__).parent / "resources" / "saved_program.json"
+    loaded_react = dspy.ReAct("question->answer", tools=[])
+    loaded_react.load(path)
+    assert (
+        "Imagine you are a detective racing against time to solve a high-profile"
+        in loaded_react.react.signature.instructions
+    )
+    assert "Given the very verbose fields `question`" in loaded_react.extract.predict.signature.instructions
+
+    assert len(loaded_react.react.demos) == 2
+    assert len(loaded_react.extract.predict.demos) == 2

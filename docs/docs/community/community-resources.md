@@ -44,6 +44,15 @@ This is the list of tutorials and blog posts on DSPy. If you would like to add y
 | **Monitoring & Tracing DSPy with Langtrace** | [Link](https://langtrace.ai/blog/announcing-dspy-support-in-langtrace) |
 | **Teaching chat models to solve chess puzzles using DSPy + Finetuning** | [Link](https://raw.sh/posts/chess_puzzles) |
 | **Build Self-Improving AI Agents with DSPy (No Code)** | [Link](https://www.youtube.com/watch?v=UY8OsMlV21Y) |
+| **DSPy 3.0 and DSPy at Databricks** | [Link](https://www.youtube.com/watch?v=grIuzesOwwU) |
+| **Context Engineering with DSPy** | [Link](https://www.youtube.com/watch?v=1I9PoXzvWcs) |
+
+### Slides
+
+| **Name** | **Link** |
+|---|---|
+| **Context Engineering with DSPy** | [Link](https://docs.google.com/presentation/d/1ydssF387l1LsJ14z41_HUqsJwU77tKZJNGnAWPsw-1I/edit?usp=sharing) |
+
 
 ### Podcasts
 
@@ -51,7 +60,7 @@ Weaviate has a directory of 10 amazing notebooks and 6 podcasts!
 Huge shoutout to them for the massive support ❤️. See the [Weaviate DSPy directory](https://weaviate.io/developers/weaviate/more-resources/dspy).
 
 
-TODO: This list in particular is highly incomplete. There are dozens of other good ones. To allow space, divide into opintionated blogs / podcasts / interviews vs. tutorials & talks.
+This list represents a curated selection of DSPy resources. We continuously add new content as it becomes available in the community.
 
 Credit: Some of these resources were originally compiled in the [Awesome DSPy](https://github.com/ganarajpr/awesome-dspy/tree/master) repo.
 

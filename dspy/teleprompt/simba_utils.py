@@ -1,10 +1,10 @@
-import dspy
-import ujson
 import inspect
 import logging
 import textwrap
 import re
+import orjson
 
+import dspy
 from dspy.adapters.utils import get_field_description_string
 from dspy.signatures import InputField, OutputField
 from typing import Callable, Optional, Dict
@@ -14,24 +14,18 @@ logger = logging.getLogger(__name__)
 def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: Optional[Dict] = None):
     lm = program.get_lm() or dspy.settings.lm
 
-    # Check to see if our model is a reasoning model, which means temp must stay as 1.0
-    model_family = lm.model.split("/")[-1].lower() if "/" in lm.model else lm.model.lower()
-    model_pattern = re.match(r"^o([13])(?:-mini)?", model_family)
+    start_rollout_id = lm.kwargs.get("rollout_id", 0)
+    rollout_ids = [start_rollout_id + i for i in range(n)]
 
-    models = []
+
+    start_rollout_idx, models = 0, []
+    # If we have a teacher model, use this as the first model
     if teacher_settings:
-        models.append(dspy.LM(**teacher_settings))
+        models.append(dspy.LM(rollout_id=rollout_ids[start_rollout_idx], **teacher_settings))
+        start_rollout_idx += 1
 
-    if model_pattern: # Vary the seed
-        start_seed = 0 if "seed" not in lm.kwargs else lm.kwargs["seed"]
-        seeds = [start_seed + 1 + i for i in range(n-len(models))]
-        seeds = list(dict.fromkeys(seeds))[:(n-len(models))]
-        models.extend([lm.copy(seed=seed) for seed in seeds])
-    else: # Vary the temperature
-        start_temp = 0 if "temperature" not in lm.kwargs else lm.kwargs["temperature"]
-        temps = [start_temp + 0.5 + i * (0.5 / n) for i in range(n-len(models))]
-        temps = list(dict.fromkeys(temps))[:(n-len(models))]
-        models.extend([lm.copy(temperature=t) for t in temps])
+    # The rest of the models are just copies of the base model
+    models.extend([lm.copy(rollout_id=r, temperature=1.0) for r in rollout_ids[start_rollout_idx:]])
     
     return models
 
@@ -103,7 +97,7 @@ def append_a_demo(demo_input_field_maxlen):
 
         logger.info(f"Added {len(name2demo)} demos (one each) across all predictors.")
         return True
-    
+
     return append_a_demo_
 
 
@@ -132,31 +126,31 @@ def append_a_rule(bucket, system, **kwargs):
             good["prediction"] = {"N/A": "Prediction not available"}
 
     better_trajectory = [
-        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
+        {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
         for p, i, o in good["trace"]
     ]
     worse_trajectory = [
-        dict(module_name=predictor2name[id(p)], inputs=i, outputs=dict(o))
+        {"module_name": predictor2name[id(p)], "inputs": i, "outputs": dict(o)}
         for p, i, o in bad["trace"]
     ]
 
-    kwargs = dict(
-        program_code=inspect.getsource(system.__class__),
-        modules_defn=inspect_modules(system),
-        program_inputs={**example.inputs()},
-        oracle_metadata={**example.labels()},
-        better_program_trajectory=better_trajectory,
-        better_program_outputs=dict(good["prediction"]),
-        worse_program_trajectory=worse_trajectory,
-        worse_program_outputs=dict(bad["prediction"] or {}),
-        worse_reward_value=bad["score"],
-        better_reward_value=good["score"],
-        worse_reward_info=bad["output_metadata"],
-        better_reward_info=good["output_metadata"],
-        module_names=module_names,
-    )
+    kwargs = {
+        "program_code": inspect.getsource(system.__class__),
+        "modules_defn": inspect_modules(system),
+        "program_inputs": {**example.inputs()},
+        "oracle_metadata": {**example.labels()},
+        "better_program_trajectory": better_trajectory,
+        "better_program_outputs": dict(good["prediction"]),
+        "worse_program_trajectory": worse_trajectory,
+        "worse_program_outputs": dict(bad["prediction"] or {}),
+        "worse_reward_value": bad["score"],
+        "better_reward_value": good["score"],
+        "worse_reward_info": bad["output_metadata"],
+        "better_reward_info": good["output_metadata"],
+        "module_names": module_names,
+    }
 
-    kwargs = {k: v if isinstance(v, str) else ujson.dumps(recursive_mask(v), indent=2)
+    kwargs = {k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
               for k, v in kwargs.items()}
 
     advice_program = dspy.Predict(OfferFeedback)
@@ -214,7 +208,7 @@ def inspect_modules(program):
     separator = "-" * 80
     output = [separator]
 
-    for idx, (name, predictor) in enumerate(program.named_predictors()):
+    for name, predictor in program.named_predictors():
         signature = predictor.signature
         instructions = textwrap.dedent(signature.instructions)
         instructions = ("\n" + "\t" * 2).join([""] + instructions.splitlines())
@@ -233,9 +227,9 @@ def inspect_modules(program):
 def recursive_mask(o):
     # If the object is already serializable, return it.
     try:
-        ujson.dumps(o)
+        orjson.dumps(o)
         return o
-    except TypeError:
+    except (TypeError, orjson.JSONEncodeError):
         pass
 
     # If it's a dictionary, apply recursively to its values.

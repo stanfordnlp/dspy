@@ -14,7 +14,7 @@ def test_qa_with_pydantic_answer_model():
         certainty: float = pydantic.Field(
             description="A value between 0 and 1 indicating the model's confidence in the answer."
         )
-        comments: List[str] = pydantic.Field(
+        comments: list[str] = pydantic.Field(
             description="At least two comments providing additional details about the answer."
         )
 

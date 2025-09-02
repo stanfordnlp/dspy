@@ -2,10 +2,10 @@ import logging
 import os
 import re
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
+import orjson
 import requests
-import ujson
 
 from dspy.clients.provider import Provider, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat, get_finetune_directory
@@ -50,9 +50,9 @@ class DatabricksProvider(Provider):
     @staticmethod
     def deploy_finetuned_model(
         model: str,
-        data_format: Optional[TrainDataFormat] = None,
-        databricks_host: Optional[str] = None,
-        databricks_token: Optional[str] = None,
+        data_format: TrainDataFormat | None = None,
+        databricks_host: str | None = None,
+        databricks_token: str | None = None,
         deploy_timeout: int = 900,
     ):
         workspace_client = _get_workspace_client()
@@ -168,9 +168,9 @@ class DatabricksProvider(Provider):
     def finetune(
         job: TrainingJobDatabricks,
         model: str,
-        train_data: List[Dict[str, Any]],
-        train_data_format: Optional[Union[TrainDataFormat, str]] = "chat",
-        train_kwargs: Optional[Dict[str, Any]] = None,
+        train_data: list[dict[str, Any]],
+        train_data_format: TrainDataFormat | str | None = "chat",
+        train_kwargs: dict[str, Any] | None = None,
     ) -> str:
         if isinstance(train_data_format, str):
             if train_data_format == "chat":
@@ -243,7 +243,7 @@ class DatabricksProvider(Provider):
         return f"databricks/{job.endpoint_name}"
 
     @staticmethod
-    def upload_data(train_data: List[Dict[str, Any]], databricks_unity_catalog_path: str, data_format: TrainDataFormat):
+    def upload_data(train_data: list[dict[str, Any]], databricks_unity_catalog_path: str, data_format: TrainDataFormat):
         logger.info("Uploading finetuning data to Databricks Unity Catalog...")
         file_path = _save_data_to_local_file(train_data, data_format)
 
@@ -265,8 +265,7 @@ def _get_workspace_client() -> "WorkspaceClient":
         from databricks.sdk import WorkspaceClient
     except ImportError:
         raise ImportError(
-            "To use Databricks finetuning, please install the databricks-sdk package via "
-            "`pip install databricks-sdk`."
+            "To use Databricks finetuning, please install the databricks-sdk package via `pip install databricks-sdk`."
         )
     return WorkspaceClient()
 
@@ -303,7 +302,7 @@ def _create_directory_in_databricks_unity_catalog(w: "WorkspaceClient", databric
         logger.info(f"Successfully created directory {databricks_unity_catalog_path} in Databricks Unity Catalog!")
 
 
-def _save_data_to_local_file(train_data: List[Dict[str, Any]], data_format: TrainDataFormat):
+def _save_data_to_local_file(train_data: list[dict[str, Any]], data_format: TrainDataFormat):
     import uuid
 
     file_name = f"finetuning_{uuid.uuid4()}.jsonl"
@@ -311,18 +310,18 @@ def _save_data_to_local_file(train_data: List[Dict[str, Any]], data_format: Trai
     finetune_dir = get_finetune_directory()
     file_path = os.path.join(finetune_dir, file_name)
     file_path = os.path.abspath(file_path)
-    with open(file_path, "w") as f:
+    with open(file_path, "wb") as f:
         for item in train_data:
             if data_format == TrainDataFormat.CHAT:
                 _validate_chat_data(item)
             elif data_format == TrainDataFormat.COMPLETION:
                 _validate_completion_data(item)
 
-            f.write(ujson.dumps(item) + "\n")
+            f.write(orjson.dumps(item) + b"\n")
     return file_path
 
 
-def _validate_chat_data(data: Dict[str, Any]):
+def _validate_chat_data(data: dict[str, Any]):
     if "messages" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'messages' key when `task=CHAT_COMPLETION`, but "
@@ -344,7 +343,7 @@ def _validate_chat_data(data: Dict[str, Any]):
             )
 
 
-def _validate_completion_data(data: Dict[str, Any]):
+def _validate_completion_data(data: dict[str, Any]):
     if "prompt" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'prompt' key when `task=INSTRUCTION_FINETUNE`, but "

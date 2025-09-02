@@ -5,6 +5,21 @@ import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
 const pyodide = await pyodideModule.loadPyodide();
 
+try {
+  const env_vars = (Deno.args[0] ?? "").split(",").filter(Boolean);
+  for (const key of env_vars) {
+    const val = Deno.env.get(key);
+    if (val !== undefined) {
+      pyodide.runPython(`
+import os
+os.environ[${JSON.stringify(key)}] = ${JSON.stringify(val)}
+      `);
+    }
+  }
+} catch (e) {
+  console.error("Error setting environment variables in Pyodide:", e);
+}
+
 for await (const line of readLines(Deno.stdin)) {
   let input;
   try {
@@ -16,6 +31,43 @@ for await (const line of readLines(Deno.stdin)) {
     }));
     continue;
   }
+
+  if (input.mount_file) {
+      const hostPath = input.mount_file;
+      const virtualPath = input.virtual_path || hostPath;
+      try {
+          const contents = await Deno.readFile(hostPath);
+          const dirs = virtualPath.split('/').slice(1, -1);
+          let cur = '';
+          for (const d of dirs) {
+              cur += '/' + d;
+              try {
+                  pyodide.FS.mkdir(cur);
+              } catch (e) {
+                  if (!(e && e.message && e.message.includes('File exists'))) {
+                      console.log("[DEBUG] Error creating directory in Pyodide file system:", cur, "|", e.message);
+                  }
+              }
+          }
+          pyodide.FS.writeFile(virtualPath, contents);
+      } catch (e) {
+          console.log(JSON.stringify({error: "Failed to mount file: " + e.message}));
+      }
+      continue;      
+  }
+
+  if (input.sync_file) {
+      const virtualPath = input.sync_file;
+      const hostPath = input.host_file || virtualPath;
+      try {
+          const contents = pyodide.FS.readFile(virtualPath);
+          await Deno.writeFile(hostPath, contents);
+      } catch (e) {
+          console.log("[DEBUG] Failed to sync file:", hostPath, "|", e.message);
+      }
+      continue;
+  }
+
 
   // Expecting an object like { "code": "...", ... }
   if (typeof input !== 'object' || input === null) {
@@ -95,7 +147,11 @@ sys.stderr = old_stderr
       // output += capturedStderr;
     } else {
       // If the code returned a real value, just return that
-      output = result;
+      try {
+        output = result.toJs();
+      } catch (e) {
+        output = result;
+      }
     }
 
     console.log(JSON.stringify({ output }));
@@ -113,7 +169,7 @@ sys.stderr = old_stderr
       // Only python exceptions have args.
       const last_exception_args = pyodide.globals.get("last_exception_args");
       // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
-      // we do a addtional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
+      // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
       errorArgs = JSON.parse(last_exception_args()) || [];
     }
 

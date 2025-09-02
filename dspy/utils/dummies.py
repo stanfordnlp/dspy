@@ -1,6 +1,6 @@
 import random
 from collections import defaultdict
-from typing import Any, Dict, Union
+from typing import Any
 
 import numpy as np
 
@@ -67,7 +67,7 @@ class DummyLM(LM):
 
     """
 
-    def __init__(self, answers: Union[list[dict[str, str]], dict[str, dict[str, str]]], follow_examples: bool = False):
+    def __init__(self, answers: list[dict[str, str]] | dict[str, dict[str, str]], follow_examples: bool = False):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.answers = answers
         if isinstance(answers, list):
@@ -87,13 +87,13 @@ class DummyLM(LM):
 
         # get the output from the last turn that has the output fields as headers
         final_input = messages[-1]["content"].split("\n\n")[0]
-        for input, output in zip(reversed(messages[:-1]), reversed(messages)):
+        for input, output in zip(reversed(messages[:-1]), reversed(messages), strict=False):
             if any(field in output["content"] for field in output_fields) and final_input in input["content"]:
                 return output["content"]
 
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
-        def format_answer_fields(field_names_and_values: Dict[str, Any]):
+        def format_answer_fields(field_names_and_values: dict[str, Any]):
             return ChatAdapter().format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, info=OutputField()): value
@@ -121,13 +121,15 @@ class DummyLM(LM):
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
-            entry = dict(prompt=prompt, messages=messages, kwargs=kwargs)
-            entry = dict(**entry, outputs=outputs, usage=0)
-            entry = dict(**entry, cost=0)
-            self.history.append(entry)
-            self.update_global_history(entry)
+            entry = {"prompt": prompt, "messages": messages, "kwargs": kwargs}
+            entry = {**entry, "outputs": outputs, "usage": 0}
+            entry = {**entry, "cost": 0}
+            self.update_history(entry)
 
         return outputs
+
+    async def acall(self, prompt=None, messages=None, **kwargs):
+        return self.__call__(prompt=prompt, messages=messages, **kwargs)
 
     def get_convo(self, index):
         """Get the prompt + answer from the ith message."""
@@ -138,7 +140,7 @@ def dummy_rm(passages=()) -> callable:
     if not passages:
 
         def inner(query: str, *, k: int, **kwargs):
-            assert False, "No passages defined"
+            raise ValueError("No passages defined")
 
         return inner
     max_length = max(map(len, passages)) + 100
@@ -150,8 +152,8 @@ def dummy_rm(passages=()) -> callable:
         query_vec = vectorizer([query])[0]
         scores = passage_vecs @ query_vec
         largest_idx = (-scores).argsort()[:k]
-        # return dspy.Prediction(passages=[passages[i] for i in largest_idx])
-        return [dotdict(dict(long_text=passages[i])) for i in largest_idx]
+
+        return [dotdict(long_text=passages[i]) for i in largest_idx]
 
     return inner
 
@@ -169,7 +171,7 @@ class DummyVectorizer:
     def _hash(self, gram):
         """Hashes a string using a polynomial hash function."""
         h = 1
-        for coeff, c in zip(self.coeffs, gram):
+        for coeff, c in zip(self.coeffs, gram, strict=False):
             h = h * coeff + ord(c)
             h %= self.P
         return h % self.max_length

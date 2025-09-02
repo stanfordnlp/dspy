@@ -1,9 +1,10 @@
+import logging
+from unittest.mock import patch
+
+import pytest
+
 import dspy
 from dspy.utils import DummyLM
-from unittest.mock import patch
-import pytest
-from dspy.utils.saving import get_dependency_versions
-import logging
 
 
 def test_save_predict(tmp_path):
@@ -32,7 +33,7 @@ def test_save_custom_model(tmp_path):
     assert isinstance(loaded_model, CustomModel)
 
     assert len(model.predictors()) == len(loaded_model.predictors())
-    for predictor, loaded_predictor in zip(model.predictors(), loaded_model.predictors()):
+    for predictor, loaded_predictor in zip(model.predictors(), loaded_model.predictors(), strict=False):
         assert predictor.signature == loaded_predictor.signature
 
 
@@ -56,6 +57,7 @@ def test_save_model_with_custom_signature(tmp_path):
     assert predict.signature == loaded_predict.signature
 
 
+@pytest.mark.extra
 def test_save_compiled_model(tmp_path):
     predict = dspy.Predict("question->answer")
     dspy.settings.configure(lm=DummyLM([{"answer": "blue"}, {"answer": "white"}] * 10))
@@ -108,7 +110,7 @@ def test_load_with_version_mismatch(tmp_path):
 
     try:
         # Mock version during save
-        with patch("dspy.utils.saving.get_dependency_versions", return_value=save_versions):
+        with patch("dspy.primitives.base_module.get_dependency_versions", return_value=save_versions):
             predict.save(tmp_path, save_program=True)
 
         # Mock version during load

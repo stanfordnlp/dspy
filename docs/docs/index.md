@@ -12,10 +12,13 @@ hide:
 
 [![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
 
-DSPy is the framework for _programming—rather than prompting—language models_. It allows you to iterate fast on **building modular AI systems** and offers algorithms for **optimizing their prompts and weights**, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
+DSPy is a declarative framework for building modular AI software. It allows you to **iterate fast on structured code**, rather than brittle strings, and offers algorithms that **compile AI programs into effective prompts and weights** for your language models, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
-DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, you write compositional _Python code_ and use DSPy to **teach your LM to deliver high-quality outputs**. This [lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw) is a good conceptual introduction. Meet the community, seek help, or start contributing via our [GitHub repo](https://github.com/stanfordnlp/dspy) and [Discord server](https://discord.gg/XCGy2WDCQB).
+Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving Python) enables you to **build AI software from natural-language modules** and to _generically compose them_ with different models, inference strategies, or learning algorithms. This makes AI software **more reliable, maintainable, and portable** across models and strategies.
 
+*tl;dr* Think of DSPy as a higher-level language for AI programming ([lecture](https://www.youtube.com/watch?v=JEMYuzrKLUw)), like the shift from assembly to C or pointer arithmetic to SQL. Meet the community, seek help, or start contributing via [GitHub](https://github.com/stanfordnlp/dspy) and [Discord](https://discord.gg/XCGy2WDCQB).
+
+<!-- Its abstractions make your AI software more reliable and maintainable, and allow it to become more portable as new models and learning techniques emerge. It's also just rather elegant! -->
 
 !!! info "Getting Started I: Install DSPy and set up your LM"
 
@@ -28,16 +31,16 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('openai/gpt-4o-mini', api_key='YOUR_OPENAI_API_KEY')
+        lm = dspy.LM("openai/gpt-4o-mini", api_key="YOUR_OPENAI_API_KEY")
         dspy.configure(lm=lm)
         ```
 
     === "Anthropic"
-        You can authenticate by setting the ANTHROPIC_API_KEY env variable or passing `api_key` below.
+        You can authenticate by setting the `ANTHROPIC_API_KEY` env variable or passing `api_key` below.
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('anthropic/claude-3-opus-20240229', api_key='YOUR_ANTHROPIC_API_KEY')
+        lm = dspy.LM("anthropic/claude-3-opus-20240229", api_key="YOUR_ANTHROPIC_API_KEY")
         dspy.configure(lm=lm)
         ```
 
@@ -46,7 +49,20 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('databricks/databricks-meta-llama-3-1-70b-instruct')
+        lm = dspy.LM(
+            "databricks/databricks-llama-4-maverick",
+            api_key="YOUR_DATABRICKS_ACCESS_TOKEN",
+            api_base="YOUR_DATABRICKS_WORKSPACE_URL",  # e.g.: https://dbc-64bf4923-e39e.cloud.databricks.com/serving-endpoints
+        )
+        dspy.configure(lm=lm)
+        ```
+
+    === "Gemini"
+        You can authenticate by setting the `GEMINI_API_KEY` env variable or passing `api_key` below.
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM("gemini/gemini-2.5-flash", api_key="YOUR_GEMINI_API_KEY")
         dspy.configure(lm=lm)
         ```
 
@@ -62,7 +78,7 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('ollama_chat/llama3.2', api_base='http://localhost:11434', api_key='')
+        lm = dspy.LM("ollama_chat/llama3.2:1b", api_base="http://localhost:11434", api_key="")
         dspy.configure(lm=lm)
         ```
 
@@ -83,7 +99,7 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
           ```python linenums="1"
           lm = dspy.LM("openai/meta-llama/Llama-3.1-8B-Instruct",
                        api_base="http://localhost:7501/v1",  # ensure this points to your port
-                       api_key="local", model_type='chat')
+                       api_key="local", model_type="chat")
           dspy.configure(lm=lm)
           ```
 
@@ -102,7 +118,7 @@ DSPy stands for Declarative Self-improving Python. Instead of brittle prompts, y
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
+        lm = dspy.LM("openai/your-model-name", api_key="PROVIDER_API_KEY", api_base="YOUR_PROVIDER_URL")
         dspy.configure(lm=lm)
         ```
 
@@ -145,10 +161,10 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
         ```python linenums="1"       
         def search_wikipedia(query: str) -> list[str]:
-            results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
-            return [x['text'] for x in results]
+            results = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")(query, k=3)
+            return [x["text"] for x in results]
         
-        rag = dspy.ChainOfThought('context, question -> response')
+        rag = dspy.ChainOfThought("context, question -> response")
 
         question = "What's the name of the castle that David Gregory inherited?"
         rag(context=search_wikipedia(question), question=question)
@@ -171,7 +187,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
             """Classify sentiment of a given sentence."""
             
             sentence: str = dspy.InputField()
-            sentiment: Literal['positive', 'negative', 'neutral'] = dspy.OutputField()
+            sentiment: Literal["positive", "negative", "neutral"] = dspy.OutputField()
             confidence: float = dspy.OutputField()
 
         classify = dspy.Predict(Classify)
@@ -223,8 +239,8 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
             return dspy.PythonInterpreter({}).execute(expression)
 
         def search_wikipedia(query: str):
-            results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
-            return [x['text'] for x in results]
+            results = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")(query, k=3)
+            return [x["text"] for x in results]
 
         react = dspy.ReAct("question -> answer: float", tools=[evaluate_math, search_wikipedia])
 
@@ -295,14 +311,14 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
 ??? "Using DSPy in practice: from quick scripting to building sophisticated systems."
 
-    Standard prompts conflate interface (“what should the LM do?”) with implementation (“how do we tell it to do that?”). DSPy isolates the former as _signatures_ so we can infer the latter or learn it from data — in the context of a bigger program.
+    Standard prompts conflate interface ("what should the LM do?") with implementation ("how do we tell it to do that?"). DSPy isolates the former as _signatures_ so we can infer the latter or learn it from data — in the context of a bigger program.
     
     Even before you start using optimizers, DSPy's modules allow you to script effective LM systems as ergonomic, portable _code_. Across many tasks and LMs, we maintain _signature test suites_ that assess the reliability of the built-in DSPy adapters. Adapters are the components that map signatures to prompts prior to optimization. If you find a task where a simple prompt consistently outperforms idiomatic DSPy for your LM, consider that a bug and [file an issue](https://github.com/stanfordnlp/dspy/issues). We'll use this to improve the built-in adapters.
 
 
 ## 2) **Optimizers** tune the prompts and weights of your AI modules.
 
-DSPy provides you with the tools to compile high-level code with natural language annotations into the low-level computations, prompts, or weight updates that align your LM with your program’s structure and metrics. If you change your code or your metrics, you can simply re-compile accordingly.
+DSPy provides you with the tools to compile high-level code with natural language annotations into the low-level computations, prompts, or weight updates that align your LM with your program's structure and metrics. If you change your code or your metrics, you can simply re-compile accordingly.
 
 Given a few tens or hundreds of representative _inputs_ of your task and a _metric_ that can measure the quality of your system's outputs, you can use a DSPy optimizer. Different optimizers in DSPy work by **synthesizing good few-shot examples** for every module, like `dspy.BootstrapRS`,<sup>[1](https://arxiv.org/abs/2310.03714)</sup> **proposing and intelligently exploring better natural-language instructions** for every prompt, like `dspy.MIPROv2`,<sup>[2](https://arxiv.org/abs/2406.11695)</sup> and **building datasets for your modules and using them to finetune the LM weights** in your system, like `dspy.BootstrapFinetune`.<sup>[3](https://arxiv.org/abs/2407.10930)</sup>
 
@@ -310,7 +326,13 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 !!! info "Getting Started III: Optimizing the LM prompts or weights in DSPy programs"
     A typical simple optimization run costs on the order of $2 USD and takes around 20 minutes, but be careful when running optimizers with very large LMs or very large datasets.
     Optimization can cost as little as a few cents or up to tens of dollars, depending on your LM, dataset, and configuration.
-    
+
+    Examples below rely on HuggingFace/datasets, you can install it by the command below.
+
+    ```bash
+    > pip install -U datasets
+    ```
+
     === "Optimizing prompts for a ReAct agent"
         This is a minimal but fully runnable example of setting up a `dspy.ReAct` agent that answers questions via
         search from Wikipedia and then optimizing it using `dspy.MIPROv2` in the cheap `light` mode on 500
@@ -320,11 +342,11 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         import dspy
         from dspy.datasets import HotPotQA
 
-        dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
         def search_wikipedia(query: str) -> list[str]:
-            results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
-            return [x['text'] for x in results]
+            results = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")(query, k=3)
+            return [x["text"] for x in results]
 
         trainset = [x.with_inputs('question') for x in HotPotQA(train_seed=2024, train_size=500).train]
         react = dspy.ReAct("question -> answer", tools=[search_wikipedia])
@@ -342,7 +364,7 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         class RAG(dspy.Module):
             def __init__(self, num_docs=5):
                 self.num_docs = num_docs
-                self.respond = dspy.ChainOfThought('context, question -> response')
+                self.respond = dspy.ChainOfThought("context, question -> response")
 
             def forward(self, question):
                 context = search(question, k=self.num_docs)   # defined in tutorial linked below
@@ -352,26 +374,23 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
         optimized_rag = tp.compile(RAG(), trainset=trainset, max_bootstrapped_demos=2, max_labeled_demos=2)
         ```
 
-        For a complete RAG example that you can run, start this [tutorial](/tutorials/rag/). It improves the quality of a RAG system over a subset of StackExchange communities by 10% relative gain.
+        For a complete RAG example that you can run, start this [tutorial](tutorials/rag/index.ipynb). It improves the quality of a RAG system over a subset of StackExchange communities by 10% relative gain.
 
     === "Optimizing weights for Classification"
-        This is a minimal but fully runnable example of setting up a `dspy.ChainOfThought` module that classifies
-        short texts into one of 77 banking labels and then using `dspy.BootstrapFinetune` with 2000 text-label pairs
-        from the `Banking77` to finetune the weights of GPT-4o-mini for this task. We use the variant
-        `dspy.ChainOfThoughtWithHint`, which takes an optional `hint` at bootstrapping time, to maximize the utility of
-        the training data. Naturally, hints are not available at test time.
-
         <details><summary>Click to show dataset setup code.</summary>
 
         ```python linenums="1"
         import random
         from typing import Literal
-        from dspy.datasets import DataLoader
+
         from datasets import load_dataset
 
+        import dspy
+        from dspy.datasets import DataLoader
+
         # Load the Banking77 dataset.
-        CLASSES = load_dataset("PolyAI/banking77", split="train", trust_remote_code=True).features['label'].names
-        kwargs = dict(fields=("text", "label"), input_keys=("text",), split="train", trust_remote_code=True)
+        CLASSES = load_dataset("PolyAI/banking77", split="train", trust_remote_code=True).features["label"].names
+        kwargs = {"fields": ("text", "label"), "input_keys": ("text",), "split": "train", "trust_remote_code": True}
 
         # Load the first 2000 examples from the dataset, and assign a hint to each *training* example.
         trainset = [
@@ -384,17 +403,20 @@ Given a few tens or hundreds of representative _inputs_ of your task and a _metr
 
         ```python linenums="1"
         import dspy
-        dspy.configure(lm=dspy.LM('openai/gpt-4o-mini-2024-07-18'))
-        
+        lm=dspy.LM('openai/gpt-4o-mini-2024-07-18')
+
         # Define the DSPy module for classification. It will use the hint at training time, if available.
-        signature = dspy.Signature("text -> label").with_updated_fields('label', type_=Literal[tuple(CLASSES)])
-        classify = dspy.ChainOfThoughtWithHint(signature)
+        signature = dspy.Signature("text, hint -> label").with_updated_fields("label", type_=Literal[tuple(CLASSES)])
+        classify = dspy.ChainOfThought(signature)
+        classify.set_lm(lm)
 
         # Optimize via BootstrapFinetune.
         optimizer = dspy.BootstrapFinetune(metric=(lambda x, y, trace=None: x.label == y.label), num_threads=24)
         optimized = optimizer.compile(classify, trainset=trainset)
 
         optimized(text="What does a pending cash withdrawal mean?")
+        
+        # For a complete fine-tuning tutorial, see: https://dspy.ai/tutorials/classification_finetuning/
         ```
 
         **Possible Output (from the last line):**
@@ -428,4 +450,4 @@ Compared to monolithic LMs, DSPy's modular paradigm enables a large community to
 
 The DSPy research effort started at Stanford NLP in Feb 2022, building on what we had learned from developing early [compound LM systems](https://bair.berkeley.edu/blog/2024/02/18/compound-ai-systems/) like [ColBERT-QA](https://arxiv.org/abs/2007.00814), [Baleen](https://arxiv.org/abs/2101.00436), and [Hindsight](https://arxiv.org/abs/2110.07752). The first version was released as [DSP](https://arxiv.org/abs/2212.14024) in Dec 2022 and evolved by Oct 2023 into [DSPy](https://arxiv.org/abs/2310.03714). Thanks to [250 contributors](https://github.com/stanfordnlp/dspy/graphs/contributors), DSPy has introduced tens of thousands of people to building and optimizing modular LM programs.
 
-Since then, DSPy's community has produced a large body of work on optimizers, like [MIPROv2](https://arxiv.org/abs/2406.11695), [BetterTogether](https://arxiv.org/abs/2407.10930), and [LeReT](https://arxiv.org/abs/2410.23214), on program architectures, like [STORM](https://arxiv.org/abs/2402.14207), [IReRa](https://arxiv.org/abs/2401.12178), and [DSPy Assertions](https://arxiv.org/abs/2312.13382), and on successful applications to new problems, like [PAPILLON](https://arxiv.org/abs/2410.17127), [PATH](https://arxiv.org/abs/2406.11706), [WangLab@MEDIQA](https://arxiv.org/abs/2404.14544), [UMD's Prompting Case Study](https://arxiv.org/abs/2406.06608), and [Haize's Red-Teaming Program](https://blog.haizelabs.com/posts/dspy/), in addition to many open-source projects, production applications, and other [use cases](/dspy-usecases/).
+Since then, DSPy's community has produced a large body of work on optimizers, like [MIPROv2](https://arxiv.org/abs/2406.11695), [BetterTogether](https://arxiv.org/abs/2407.10930), and [LeReT](https://arxiv.org/abs/2410.23214), on program architectures, like [STORM](https://arxiv.org/abs/2402.14207), [IReRa](https://arxiv.org/abs/2401.12178), and [DSPy Assertions](https://arxiv.org/abs/2312.13382), and on successful applications to new problems, like [PAPILLON](https://arxiv.org/abs/2410.17127), [PATH](https://arxiv.org/abs/2406.11706), [WangLab@MEDIQA](https://arxiv.org/abs/2404.14544), [UMD's Prompting Case Study](https://arxiv.org/abs/2406.06608), and [Haize's Red-Teaming Program](https://blog.haizelabs.com/posts/dspy/), in addition to many open-source projects, production applications, and other [use cases](community/use-cases.md).

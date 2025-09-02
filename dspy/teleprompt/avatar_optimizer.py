@@ -1,15 +1,14 @@
-import dspy
-
-from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from random import sample
+from typing import Callable
+
 from pydantic import BaseModel
-from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, List, Tuple, Optional
+from tqdm import tqdm
 
-from .teleprompt import Teleprompter
+import dspy
 from dspy.predict.avatar import ActionOutput
-
+from dspy.teleprompt.teleprompt import Teleprompter
 
 DEFAULT_MAX_EXAMPLES = 10
 
@@ -17,7 +16,7 @@ DEFAULT_MAX_EXAMPLES = 10
 class EvalResult(BaseModel):
     example: dict
     score: float
-    actions: Optional[List[ActionOutput]] = None
+    actions: list[ActionOutput] | None = None
 
 
 class Comparator(dspy.Signature):
@@ -32,15 +31,15 @@ Task:
         prefix="Instruction: ",
         desc="Instruction for the actor to execute the task",
     )
-    actions: List[str] = dspy.InputField(
+    actions: list[str] = dspy.InputField(
         prefix="Actions: ",
         desc="Actions actor can take to complete the task",
     )
-    pos_input_with_metrics: List[EvalResult] = dspy.InputField(
+    pos_input_with_metrics: list[EvalResult] = dspy.InputField(
         prefix="Positive Inputs: ",
         desc="Positive inputs along with their score on a evaluation metric and actions taken",
     )
-    neg_input_with_metrics: List[EvalResult] = dspy.InputField(
+    neg_input_with_metrics: list[EvalResult] = dspy.InputField(
         prefix="Negative Inputs: ",
         desc="Negative inputs along with their score on a evaluation metric and actions taken",
     )
@@ -80,8 +79,8 @@ class AvatarOptimizer(Teleprompter):
         max_iters: int = 10,
         lower_bound: int = 0,
         upper_bound: int = 1,
-        max_positive_inputs: int = None,
-        max_negative_inputs: int = None,
+        max_positive_inputs: int | None = None,
+        max_negative_inputs: int | None = None,
         optimize_for: str = "max",
     ):
         assert metric is not None, "`metric` argument cannot be None. Please provide a metric function."
@@ -113,7 +112,7 @@ class AvatarOptimizer(Teleprompter):
 
         except Exception as e:
             print(e)
-            
+
             if return_outputs:
                 return example, None, 0
             else:
@@ -128,7 +127,7 @@ class AvatarOptimizer(Teleprompter):
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = [executor.submit(self.process_example, actor, example, return_outputs) for example in devset]
-            
+
             for future in tqdm(futures, total=total_examples, desc="Processing examples"):
                 result = future.result()
                 if return_outputs:
@@ -137,9 +136,9 @@ class AvatarOptimizer(Teleprompter):
                     results.append((example, prediction, score))
                 else:
                     total_score += result
-        
+
         avg_metric = total_score / total_examples
-        
+
         if return_outputs:
             return avg_metric, results
         else:
@@ -147,13 +146,13 @@ class AvatarOptimizer(Teleprompter):
 
 
     def _get_pos_neg_results(
-        self, 
-        actor: dspy.Module, 
-        trainset: List[dspy.Example]
-    ) -> Tuple[float, List[EvalResult], List[EvalResult]]:
+        self,
+        actor: dspy.Module,
+        trainset: list[dspy.Example]
+    ) -> tuple[float, list[EvalResult], list[EvalResult]]:
         pos_inputs = []
         neg_inputs = []
-        
+
         avg_score, results = self.thread_safe_evaluator(trainset, actor, return_outputs=True)
         print(f"Average Score: {avg_score}")
 
@@ -179,16 +178,16 @@ class AvatarOptimizer(Teleprompter):
             raise ValueError("No positive examples found, try lowering the upper_bound or providing more training data")
         if len(neg_inputs) == 0:
             raise ValueError("No negative examples found, try raising the lower_bound or providing more training data")
-        
+
         return (avg_score, pos_inputs, neg_inputs)
-    
+
 
     def compile(self, student, *, trainset):
         best_actor = deepcopy(student)
         best_score = -999 if self.optimize_for == "max" else 999
-        
+
         for i in range(self.max_iters):
-            print(20*'=')
+            print(20*"=")
             print(f"Iteration {i+1}/{self.max_iters}")
 
             score, pos_inputs, neg_inputs = self._get_pos_neg_results(best_actor, trainset)
@@ -220,7 +219,7 @@ class AvatarOptimizer(Teleprompter):
                 best_actor.actor.signature = best_actor.actor.signature.with_instructions(new_instruction)
                 best_actor.actor_clone = deepcopy(best_actor.actor)
                 best_score = score
-        
+
         print(f"Best Actor: {best_actor}")
 
         return best_actor

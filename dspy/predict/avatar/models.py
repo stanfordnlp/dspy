@@ -1,12 +1,13 @@
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class Tool(BaseModel):
     tool: Any
     name: str
-    desc: Optional[str]
-    input_type: Optional[str] = None
+    desc: str | None
+    input_type: str | None = None
 
     def __str__(self) -> str:
         return f"{self.name}{f'(valid_input: {self.input_type})' if self.input_type else ''}: {self.desc}"

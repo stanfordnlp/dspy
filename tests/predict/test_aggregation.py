@@ -1,12 +1,10 @@
+from dspy.evaluate import normalize_text
 from dspy.predict.aggregation import majority
-from dspy.primitives.prediction import Prediction, Completions
-from dspy.dsp.utils import normalize_text
+from dspy.primitives.prediction import Completions, Prediction
 
 
 def test_majority_with_prediction():
-    prediction = Prediction.from_completions(
-        [{"answer": "2"}, {"answer": "2"}, {"answer": "3"}]
-    )
+    prediction = Prediction.from_completions([{"answer": "2"}, {"answer": "2"}, {"answer": "3"}])
     result = majority(prediction)
     assert result.completions[0]["answer"] == "2"
 
@@ -42,6 +40,4 @@ def test_majority_with_field():
 def test_majority_with_no_majority():
     completions = [{"answer": "2"}, {"answer": "3"}, {"answer": "4"}]
     result = majority(completions)
-    assert (
-        result.completions[0]["answer"] == "2"
-    )  # The first completion is returned in case of a tie
+    assert result.completions[0]["answer"] == "2"  # The first completion is returned in case of a tie

@@ -1,9 +1,13 @@
 import logging
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cloudpickle
-import ujson
+import orjson
+
+if TYPE_CHECKING:
+    from dspy.primitives.module import Module
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +24,7 @@ def get_dependency_versions():
     }
 
 
-def load(path):
+def load(path: str) -> "Module":
     """Load saved DSPy model.
 
     This method is used to load a saved DSPy model with `save_program=True`, i.e., the model is saved with cloudpickle.
@@ -35,8 +39,8 @@ def load(path):
     if not path.exists():
         raise FileNotFoundError(f"The path '{path}' does not exist.")
 
-    with open(path / "metadata.json", "r") as f:
-        metadata = ujson.load(f)
+    with open(path / "metadata.json") as f:
+        metadata = orjson.loads(f.read())
 
     dependency_versions = get_dependency_versions()
     saved_dependency_versions = metadata["dependency_versions"]

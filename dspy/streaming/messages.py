@@ -1,5 +1,7 @@
+import asyncio
+import concurrent.futures
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from asyncer import syncify
 
@@ -12,6 +14,7 @@ class StreamResponse:
     predict_name: str
     signature_field_name: str
     chunk: str
+    is_last_chunk: bool
 
 
 @dataclass
@@ -19,6 +22,32 @@ class StatusMessage:
     """Dataclass that wraps a status message for status streaming."""
 
     message: str
+
+
+def sync_send_to_stream(stream, message):
+    """Send message to stream in a sync context, regardless of event loop state."""
+
+    async def _send():
+        await stream.send(message)
+
+    try:
+        asyncio.get_running_loop()
+
+        # If we're in an event loop, offload to a new thread with its own event loop
+        def run_in_new_loop():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return new_loop.run_until_complete(_send())
+            finally:
+                new_loop.close()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_in_new_loop)
+            return future.result()
+    except RuntimeError:
+        # Not in an event loop, safe to use a new event loop in this thread
+        return syncify(_send)()
 
 
 class StatusMessageProvider:
@@ -41,7 +70,7 @@ class StatusMessageProvider:
     ```
     """
 
-    def tool_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
+    def tool_start_status_message(self, instance: Any, inputs: dict[str, Any]):
         """Status message before a `dspy.Tool` is called."""
         return f"Calling tool {instance.name}..."
 
@@ -49,7 +78,7 @@ class StatusMessageProvider:
         """Status message after a `dspy.Tool` is called."""
         return "Tool calling finished! Querying the LLM with tool calling results..."
 
-    def module_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
+    def module_start_status_message(self, instance: Any, inputs: dict[str, Any]):
         """Status message before a `dspy.Module` or `dspy.Predict` is called."""
         pass
 
@@ -57,7 +86,7 @@ class StatusMessageProvider:
         """Status message after a `dspy.Module` or `dspy.Predict` is called."""
         pass
 
-    def lm_start_status_message(self, instance: Any, inputs: Dict[str, Any]):
+    def lm_start_status_message(self, instance: Any, inputs: dict[str, Any]):
         """Status message before a `dspy.LM` is called."""
         pass
 
@@ -67,113 +96,89 @@ class StatusMessageProvider:
 
 
 class StatusStreamingCallback(BaseCallback):
-    def __init__(self, status_message_provider: Optional[StatusMessageProvider] = None):
+    def __init__(self, status_message_provider: StatusMessageProvider | None = None):
         self.status_message_provider = status_message_provider or StatusMessageProvider()
 
     def on_tool_start(
         self,
         call_id: str,
         instance: Any,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
     ):
         stream = settings.send_stream
         if stream is None or instance.name == "finish":
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.tool_start_status_message(instance, inputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.tool_start_status_message(instance, inputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_tool_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         stream = settings.send_stream
         if stream is None or outputs == "Completed.":
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.tool_end_status_message(outputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.tool_end_status_message(outputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_lm_start(
         self,
         call_id: str,
         instance: Any,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
     ):
         stream = settings.send_stream
         if stream is None:
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.lm_start_status_message(instance, inputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.lm_start_status_message(instance, inputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_lm_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         stream = settings.send_stream
         if stream is None:
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.lm_end_status_message(outputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.lm_end_status_message(outputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_module_start(
         self,
         call_id: str,
         instance: Any,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
     ):
         stream = settings.send_stream
         if stream is None:
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.module_start_status_message(instance, inputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.module_start_status_message(instance, inputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))
 
     def on_module_end(
         self,
         call_id: str,
-        outputs: Optional[Dict[str, Any]],
-        exception: Optional[Exception] = None,
+        outputs: dict[str, Any] | None,
+        exception: Exception | None = None,
     ):
         stream = settings.send_stream
         if stream is None:
             return
 
-        @syncify
-        async def send_status():
-            status_message = self.status_message_provider.module_end_status_message(outputs)
-            if status_message:
-                await stream.send(StatusMessage(status_message))
-
-        send_status()
+        status_message = self.status_message_provider.module_end_status_message(outputs)
+        if status_message:
+            sync_send_to_stream(stream, StatusMessage(status_message))

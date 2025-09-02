@@ -1,10 +1,11 @@
-import os
-import tqdm
 import copy
 import datetime
 import itertools
-
+import os
 from collections import defaultdict
+
+import tqdm
+
 
 def print_message(*s, condition=True, pad=False, sep=None):
     s = " ".join([str(x) for x in s])
@@ -27,7 +28,8 @@ def file_tqdm(file):
     print(f"#> Reading {file.name}")
 
     with tqdm.tqdm(
-        total=os.path.getsize(file.name) / 1024.0 / 1024.0, unit="MiB",
+        total=os.path.getsize(file.name) / 1024.0 / 1024.0,
+        unit="MiB",
     ) as pbar:
         for line in file:
             yield line
@@ -48,36 +50,25 @@ def create_directory(path):
 
 def deduplicate(seq: list[str]) -> list[str]:
     """
-    Source: https://stackoverflow.com/a/480227/1493011
+        From Raymond Hettinger
+        https://twitter.com/raymondh/status/944125570534621185
+        Since Python 3.6 Dict are ordered
+        Benchmark: https://gist.github.com/peterbe/67b9e40af60a1d5bcb1cfb4b2937b088
     """
-
-    seen = set()
-    return [x for x in seq if not (x in seen or seen.add(x))]
-
+    return list(dict.fromkeys(seq))
 
 def batch(group, bsize, provide_offset=False):
     offset = 0
     while offset < len(group):
-        L = group[offset : offset + bsize]
-        yield ((offset, L) if provide_offset else L)
-        offset += len(L)
+        batch_data = group[offset : offset + bsize]
+        yield ((offset, batch_data) if provide_offset else batch_data)
+        offset += len(batch_data)
     return
 
 
-# class dotdict(dict):
-#     """
-#     dot.notation access to dictionary attributes
-#     Credit: derek73 @ https://stackoverflow.com/questions/2352181
-#     """
-
-#     __getattr__ = dict.__getitem__
-#     __setattr__ = dict.__setitem__
-#     __delattr__ = dict.__delitem__
-
-
-class dotdict(dict):
+class dotdict(dict):  # noqa: N801
     def __getattr__(self, key):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             return super().__getattr__(key)
         try:
             return self[key]
@@ -85,13 +76,13 @@ class dotdict(dict):
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __setattr__(self, key, value):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             super().__setattr__(key, value)
         else:
             self[key] = value
 
     def __delattr__(self, key):
-        if key.startswith('__') and key.endswith('__'):
+        if key.startswith("__") and key.endswith("__"):
             super().__delattr__(key)
         else:
             del self[key]
@@ -101,49 +92,47 @@ class dotdict(dict):
         return dotdict(copy.deepcopy(dict(self), memo))
 
 
-class dotdict_lax(dict):
+class dotdict_lax(dict):  # noqa: N801
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
 
-def flatten(L):
-    # return [x for y in L for x in y]
-
+def flatten(data_list):
     result = []
-    for _list in L:
-        result += _list
+    for child_list in data_list:
+        result += child_list
 
     return result
 
 
-def zipstar(L, lazy=False):
+def zipstar(data_list, lazy=False):
     """
     A much faster A, B, C = zip(*[(a, b, c), (a, b, c), ...])
     May return lists or tuples.
     """
 
-    if len(L) == 0:
-        return L
+    if len(data_list) == 0:
+        return data_list
 
-    width = len(L[0])
+    width = len(data_list[0])
 
     if width < 100:
-        return [[elem[idx] for elem in L] for idx in range(width)]
+        return [[elem[idx] for elem in data_list] for idx in range(width)]
 
-    L = zip(*L)
+    zipped_data = zip(*data_list, strict=False)
 
-    return L if lazy else list(L)
+    return zipped_data if lazy else list(zipped_data)
 
 
-def zip_first(L1, L2):
-    length = len(L1) if type(L1) in [tuple, list] else None
+def zip_first(list1, list2):
+    length = len(list1) if type(list1) in [tuple, list] else None
 
-    L3 = list(zip(L1, L2))
+    zipped_data = list(zip(list1, list2, strict=False))
 
-    assert length in [None, len(L3)], "zip_first() failure: length differs!"
+    assert length in [None, len(zipped_data)], "zip_first() failure: length differs!"
 
-    return L3
+    return zipped_data
 
 
 def int_or_float(val):
@@ -178,9 +167,7 @@ def process_grouped_by_first_item(lst):
 
         if started and first != last_group:
             yield (last_group, groups[last_group])
-            assert (
-                first not in groups
-            ), f"{first} seen earlier --- violates precondition."
+            assert first not in groups, f"{first} seen earlier --- violates precondition."
 
         groups[first].append(rest)
 
@@ -232,7 +219,7 @@ def load_batch_backgrounds(args, qids):
     for qid in qids:
         back = args.qid2backgrounds[qid]
 
-        if len(back) and type(back[0]) == int:
+        if len(back) and isinstance(back[0], int):
             x = [args.collection[pid] for pid in back]
         else:
             x = [args.collectionX.get(pid, "") for pid in back]

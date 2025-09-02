@@ -7,9 +7,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-env:
-  POETRY_VERSION: "2.0.0"
-
 jobs:
   fix:
     name: Check Ruff Fix
@@ -20,25 +17,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-      - name: Ruff Fix Attempt
-        id: ruff_fix
-        uses: chartboost/ruff-action@v1
         with:
-          args: check --fix-only --diff --exit-non-zero-on-fix
-        continue-on-error: true
-      - name: Fail Workflow if Ruff Fix Failed
-        if: steps.ruff_fix.outcome == 'failure'
+          python-version: "3.11"
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
         run: |
-          echo "Ruff fix failed, failing the workflow."
-          echo "Please run 'ruff check . --fix-only' locally and push the changes."
-          exit 1
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync --dev -p .venv --extra dev
+      - name: Ruff Check
+        run: |
+          ruff check --fix-only --diff --exit-non-zero-on-fix || (
+            echo ""
+            echo "❌ Ruff found issues that can be fixed automatically."
+            echo "💡 To fix them locally, run:"
+            echo ""
+            echo "    pre-commit run --all-files"
+            echo ""
+            echo "Then commit and push the changes."
+            exit 1
+          )
 
   test:
     name: Run Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,75 +59,100 @@ jobs:
       - name: Install Deno
         run: |
           curl -fsSL https://deno.land/install.sh | sh
-          echo "Deno installed"
-
-      - name: Add Deno to PATH
-        run: echo "${HOME}/.deno/bin" >> $GITHUB_PATH
-
+          echo "${HOME}/.deno/bin" >> $GITHUB_PATH
       - name: Verify Deno installation
         run: deno --version
-
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v3
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
         with:
-          path: ~/.local
-          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-      - name: Install Poetry
-        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
         run: |
-          poetry install --no-interaction
+          uv sync --dev -p .venv --extra dev
+          uv pip list
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
         with:
           args: check --fix-only
       - name: Run tests with pytest
-        run: poetry run pytest tests/
-  build_poetry:
-    name: Build Poetry
+        run: uv run -p .venv pytest -vv tests/
+      - name: Install optional dependencies
+        run: uv sync -p .venv --extra dev --extra test_extras
+      - name: Run extra tests
+        run: uv run -p .venv pytest tests/ -m extra --extra
+  
+  llm_call_test:
+    name: Run Tests with Real LM
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11"]
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - 11434:11434
     steps:
       - uses: actions/checkout@v4
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v3
-        with:
-          path: ~/.local
-          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install Poetry
-        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
-      - name: Build
-        run: poetry build
-      - name: Install built package
-        run: python -m pip install dist/*.whl
-      - name: Test import dspy
-        run: python -c "import dspy"
+          python-version: 3.11
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          uv sync --dev -p .venv --extra dev
+          uv pip list
+      - name: Pull LLM
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
+          curl -X POST http://localhost:11434/api/pull \
+            -H "Content-Type: application/json" \
+            -d '{"name": "llama3.2:3b"}'
+          echo "LM_FOR_TEST=ollama/llama3.2:3b" >> $GITHUB_ENV
+      - name: Run tests
+        run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
 
-  build_setup:
-    name: Build Setup
+  build_package:
+    name: Build Package
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v3
-        with:
-          path: ~/.local
-          key: poetry-${{ env.POETRY_VERSION }}-${{ hashFiles('**/poetry.lock') }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Poetry
-        run: python -m pip install --upgrade "poetry==${{ env.POETRY_VERSION }}"
-      - name: Build the wheel
-        run: python -m build
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync --dev -p .venv --extra dev
+      - name: Build
+        run: uv run -p .venv python -m build
+      - name: Install built package
+        run: uv pip install dist/*.whl -p .venv
+      - name: Test import dspy
+        run: uv run -p .venv python -c "import dspy"
