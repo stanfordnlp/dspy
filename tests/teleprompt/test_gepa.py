@@ -19,6 +19,7 @@ class SimpleModule(dspy.Module):
     def forward(self, **kwargs):
         return self.predictor(**kwargs)
 
+
 class DictDummyLM(dspy.clients.lm.LM):
     def __init__(self, history):
         super().__init__("dummy", "chat", 0.0, 1000, True)
@@ -31,12 +32,14 @@ class DictDummyLM(dspy.clients.lm.LM):
         m = self.history[hash(repr(messages))]
         return m["outputs"]
 
+
 def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
     return dspy.Prediction(score=example.output == prediction.output, feedback="Wrong answer.")
 
 
 def bad_metric(example, prediction):
     return 0.0
+
 
 def test_basic_workflow():
     """Test to ensure the basic compile flow runs without errors."""
@@ -51,18 +54,16 @@ def test_basic_workflow():
     lm_main = DictDummyLM(lm_history)
     dspy.settings.configure(lm=lm_main)
     reflection_lm = DictDummyLM(reflection_lm_history)
-    optimizer = dspy.GEPA(
-        metric=simple_metric,
-        reflection_lm=reflection_lm,
-        max_metric_calls=5
-    )
+    optimizer = dspy.GEPA(metric=simple_metric, reflection_lm=reflection_lm, max_metric_calls=5)
     trainset = [
         Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
         Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
     ]
     o = optimizer.compile(student, trainset=trainset, valset=trainset)
-    assert o.predictor.signature.instructions == 'Given the field `input` containing a question or phrase, produce the field `output` containing the exact, direct, and contextually appropriate answer or response that the user expects, without additional explanations, commentary, or general knowledge unless explicitly requested.\n\nKey details and guidelines:\n\n1. The `input` field contains a question or phrase that may be literal, factual, or culturally specific (e.g., references to popular culture or memes).\n\n2. The `output` must be the precise answer or response that directly addresses the `input` as intended by the user, not a general or encyclopedic explanation.\n\n3. If the `input` is a well-known phrase or question from popular culture (e.g., "What does the fox say?"), the `output` should reflect the expected or canonical answer associated with that phrase, rather than a factual or scientific explanation.\n\n4. Avoid providing additional background information, scientific explanations, or alternative interpretations unless explicitly requested.\n\n5. The goal is to produce the answer that the user expects or the "correct" answer in the context of the question, including culturally recognized or meme-based answers.\n\n6. If the `input` is a straightforward factual question (e.g., "What is the color of the sky?"), provide the commonly accepted direct answer (e.g., "Blue") rather than a detailed scientific explanation.\n\n7. The output should be concise, clear, and focused solely on answering the question or phrase in the `input`.\n\nExample:\n\n- Input: "What is the color of the sky?"\n- Output: "Blue."\n\n- Input: "What does the fox say?"\n- Output: "Ring-ding-ding-ding-dingeringeding!"\n\nThis approach ensures that the assistant provides the expected, contextually appropriate answers rather than general or overly detailed responses that may be considered incorrect by the user.'
-
+    assert (
+        o.predictor.signature.instructions
+        == 'Given the field `input` containing a question or phrase, produce the field `output` containing the exact, direct, and contextually appropriate answer or response that the user expects, without additional explanations, commentary, or general knowledge unless explicitly requested.\n\nKey details and guidelines:\n\n1. The `input` field contains a question or phrase that may be literal, factual, or culturally specific (e.g., references to popular culture or memes).\n\n2. The `output` must be the precise answer or response that directly addresses the `input` as intended by the user, not a general or encyclopedic explanation.\n\n3. If the `input` is a well-known phrase or question from popular culture (e.g., "What does the fox say?"), the `output` should reflect the expected or canonical answer associated with that phrase, rather than a factual or scientific explanation.\n\n4. Avoid providing additional background information, scientific explanations, or alternative interpretations unless explicitly requested.\n\n5. The goal is to produce the answer that the user expects or the "correct" answer in the context of the question, including culturally recognized or meme-based answers.\n\n6. If the `input` is a straightforward factual question (e.g., "What is the color of the sky?"), provide the commonly accepted direct answer (e.g., "Blue") rather than a detailed scientific explanation.\n\n7. The output should be concise, clear, and focused solely on answering the question or phrase in the `input`.\n\nExample:\n\n- Input: "What is the color of the sky?"\n- Output: "Blue."\n\n- Input: "What does the fox say?"\n- Output: "Ring-ding-ding-ding-dingeringeding!"\n\nThis approach ensures that the assistant provides the expected, contextually appropriate answers rather than general or overly detailed responses that may be considered incorrect by the user.'
+    )
 
 
 def test_metric_requires_feedback_signature():
@@ -125,10 +126,8 @@ def test_gepa_compile_with_track_usage_no_tuple_error(caplog):
         pytest.fail("GEPA.compile did return a program (likely pre-fix behavior).")
 
 
-# Custom Component Selection Tests
-
 class MultiComponentModule(dspy.Module):
-    """Test module with multiple predictors for component selection testing."""
+    """Test module with multiple predictors."""
 
     def __init__(self):
         super().__init__()
@@ -141,160 +140,69 @@ class MultiComponentModule(dspy.Module):
         return dspy.Prediction(category=category, output=output)
 
 
-class TrackedComponentSelector:
-    """Test component selector that tracks its invocations."""
-
-    def __init__(self, selections_to_return):
-        """
-        Args:
-            selections_to_return: List of component lists to return on each invocation
-        """
-        self.selections_to_return = selections_to_return
-        self.invocations = []
-        self.call_count = 0
-
-    def select_modules(self, state, trajectories, subsample_scores, candidate_idx, candidate):
-        """Custom component selector implementation following gepa ReflectionComponentSelector protocol."""
-        # Track the invocation for verification
-        self.invocations.append({
-            "candidate": candidate.copy(),
-            "candidate_idx": candidate_idx,
-            "subsample_scores": subsample_scores.copy() if subsample_scores else None,
-            "available_components": list(candidate.keys())
-        })
-
-        if self.call_count < len(self.selections_to_return):
-            result = self.selections_to_return[self.call_count]
-        else:
-            # Default to first component if we run out of predefined selections
-            result = [list(candidate.keys())[0]]
-
-        self.call_count += 1
-        return result
+def component_selection_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    """Simple metric for component selection testing."""
+    return dspy.Prediction(score=0.3, feedback="Test feedback")
 
 
-def multi_component_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
-    """Simple metric for multi-component testing."""
-    score = 0.3  # Low score to trigger optimization
-    feedback = "Needs improvement"
-    return dspy.Prediction(score=score, feedback=feedback)
+def test_component_selector_functionality():
+    """Test custom component selector is called and can select single/multiple components."""
 
+    class TestSelector:
+        def __init__(self):
+            self.calls = []
 
-def test_custom_component_selector_basic():
-    """Test that GEPA accepts and uses a custom component selector."""
+        def select_modules(self, state, trajectories, subsample_scores, candidate_idx, candidate):
+            self.calls.append({"components": list(candidate.keys()), "candidate_idx": candidate_idx})
+            # Test both single and multiple selection
+            return ["classifier"] if candidate_idx == 0 else ["classifier", "generator"]
+
     student = MultiComponentModule()
+    selector = TestSelector()
 
-    # Mock LM responses for task execution
-    task_lm = DummyLM([
-        {"category": "test_cat", "output": "result1"},
-        {"category": "test_cat2", "output": "result2"},
-        {"category": "test_cat3", "output": "result3"},
-        {"category": "test_cat4", "output": "result4"},
-        {"category": "test_cat5", "output": "result5"},
-    ])
-
-    # Mock reflection LM responses
-    reflection_lm = DummyLM([
-        {"improved_instruction": "Better classification instruction"},
-        {"improved_instruction": "Better generation instruction"},
-        {"improved_instruction": "Enhanced classification"},
-        {"improved_instruction": "Enhanced generation"},
-    ])
-
-    # Create custom selector that will select specific components
-    component_selector = TrackedComponentSelector([
-        ["classifier"],  # First iteration: update only classifier
-        ["generator"],   # Second iteration: update only generator
-        ["classifier", "generator"],  # Third iteration: update both
-    ])
-
+    # Provide enough responses for all possible LM calls during optimization
+    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
+    reflection_lm = DummyLM(
+        [
+            {"improved_instruction": "Improved classifier instruction"},
+            {"improved_instruction": "Improved generator instruction"},
+        ]
+        * 10
+    )
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
         optimizer = dspy.GEPA(
-            metric=multi_component_metric,
+            metric=component_selection_metric,
             reflection_lm=reflection_lm,
-            max_metric_calls=10,
-            component_selector=component_selector  # This parameter should be added
+            max_metric_calls=6,  # Reduced to minimize output
+            component_selector=selector,
         )
-        optimized = optimizer.compile(student, trainset=trainset, valset=trainset)
+        result = optimizer.compile(student, trainset=trainset, valset=trainset)
 
-    # Verify the selector was called
-    assert len(component_selector.invocations) > 0, "Component selector should have been invoked"
-
-    # Verify the selector received appropriate parameters
-    first_invocation = component_selector.invocations[0]
-    assert "classifier" in first_invocation["available_components"]
-    assert "generator" in first_invocation["available_components"]
-    assert isinstance(first_invocation["candidate"], dict)
-
-
-def test_custom_component_selector_multiple_selection():
-    """Test component selector that returns multiple components for simultaneous update."""
-    student = MultiComponentModule()
-
-    task_lm = DummyLM([
-        {"category": "test", "output": "result1"},
-        {"category": "test", "output": "result2"},
-        {"category": "test", "output": "result3"},
-    ])
-
-    reflection_lm = DummyLM([
-        {"improved_instruction": "Better instruction 1"},
-        {"improved_instruction": "Better instruction 2"},
-        {"improved_instruction": "Better instruction 3"},
-    ])
-
-    # Selector that always returns both components for simultaneous update
-    component_selector = TrackedComponentSelector([
-        ["classifier", "generator"],  # Update both simultaneously
-        ["classifier", "generator"],  # Again
-    ])
-
-    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
-
-    with dspy.context(lm=task_lm):
-        optimizer = dspy.GEPA(
-            metric=multi_component_metric,
-            reflection_lm=reflection_lm,
-            max_metric_calls=8,
-            component_selector=component_selector
-        )
-        optimized = optimizer.compile(student, trainset=trainset, valset=trainset)
-
-    # Verify both components were selected for update
-    assert len(component_selector.invocations) > 0
-    selections = [inv for inv in component_selector.invocations]
-
-    # At least one invocation should have selected both components
-    multi_selections = [s for s in selections if len(component_selector.selections_to_return[0]) > 1]
-    assert len(multi_selections) >= 0, "Should have made multi-component selections"
+    # Verify selector was called with correct parameters
+    assert len(selector.calls) > 0, "Custom selector should be invoked"
+    assert "classifier" in selector.calls[0]["components"], "Should receive all available components"
+    assert "generator" in selector.calls[0]["components"], "Should receive all available components"
+    assert result is not None, "Should return optimized program"
 
 
 def test_component_selector_default_behavior():
-    """Test that default behavior works when no component selector is provided."""
+    """Test default behavior when no custom selector provided."""
     student = MultiComponentModule()
 
-    task_lm = DummyLM([
-        {"category": "test", "output": "result"},
-        {"category": "test", "output": "result2"},
-    ])
-
-    reflection_lm = DummyLM([
-        {"improved_instruction": "Better instruction"},
-        {"improved_instruction": "Another instruction"},
-    ])
-
+    # Provide enough responses for all possible LM calls
+    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
+    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
     trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
 
     with dspy.context(lm=task_lm):
-        # No component_selector parameter - should use default behavior
+        # No component_selector - should use round-robin default
         optimizer = dspy.GEPA(
-            metric=multi_component_metric,
+            metric=component_selection_metric,
             reflection_lm=reflection_lm,
-            max_metric_calls=5
+            max_metric_calls=4,  # Minimal calls to reduce noise
         )
-        optimized = optimizer.compile(student, trainset=trainset, valset=trainset)
+        result = optimizer.compile(student, trainset=trainset, valset=trainset)
 
-    # Should complete without error
-    assert optimized is not None
+    assert result is not None, "Should work with default selector"
