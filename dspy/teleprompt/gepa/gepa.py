@@ -7,6 +7,16 @@ from typing import Any, Literal, Optional, Protocol, Union
 from gepa import GEPAResult
 from gepa.core.adapter import ProposalFn
 
+# Import component selection types
+try:
+    from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
+except ImportError:
+    # Fallback for older gepa versions that don't have ReflectionComponentSelector
+    from typing import Protocol
+    class ReflectionComponentSelector(Protocol):
+        def select_modules(self, state, trajectories, subsample_scores, candidate_idx, candidate) -> list[str]:
+            ...
+
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
@@ -221,6 +231,12 @@ class GEPA(Teleprompter):
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called 
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer. 
             Custom instruction proposers can invoke their own LLMs if needed.
+        component_selector: Optional custom component selector implementing the ReflectionComponentSelector protocol.
+            Controls which components (predictors) are selected for optimization at each iteration. If None (default), 
+            GEPA uses RoundRobinReflectionComponentSelector which cycles through components one at a time. 
+            Custom selectors can implement strategies like selecting all components simultaneously or using 
+            LLM-driven selection logic based on optimization state and trajectories. See `gepa.strategies.component_selector` 
+            for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
@@ -278,6 +294,8 @@ class GEPA(Teleprompter):
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
+        # Component selection configuration
+        component_selector: "ReflectionComponentSelector | None" = None,
         # Merge-based configuration
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
@@ -359,6 +377,7 @@ class GEPA(Teleprompter):
         self.seed = seed
 
         self.custom_instruction_proposer = instruction_proposer
+        self.component_selector = component_selector
 
     def auto_budget(self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5) -> int:
         import numpy as np
@@ -490,6 +509,9 @@ class GEPA(Teleprompter):
             reflection_minibatch_size=self.reflection_minibatch_size,
 
             perfect_score=self.perfect_score,
+
+            # Component selection configuration
+            module_selector=self.component_selector,
 
             # Merge-based configuration
             use_merge=self.use_merge,

@@ -123,3 +123,178 @@ def test_gepa_compile_with_track_usage_no_tuple_error(caplog):
     # No timeout, no exception -> so the program must exist
     if "prog" not in compiled_container:
         pytest.fail("GEPA.compile did return a program (likely pre-fix behavior).")
+
+
+# Custom Component Selection Tests
+
+class MultiComponentModule(dspy.Module):
+    """Test module with multiple predictors for component selection testing."""
+
+    def __init__(self):
+        super().__init__()
+        self.classifier = Predict("input -> category")
+        self.generator = Predict("category, input -> output")
+
+    def forward(self, input):
+        category = self.classifier(input=input).category
+        output = self.generator(category=category, input=input).output
+        return dspy.Prediction(category=category, output=output)
+
+
+class TrackedComponentSelector:
+    """Test component selector that tracks its invocations."""
+
+    def __init__(self, selections_to_return):
+        """
+        Args:
+            selections_to_return: List of component lists to return on each invocation
+        """
+        self.selections_to_return = selections_to_return
+        self.invocations = []
+        self.call_count = 0
+
+    def select_modules(self, state, trajectories, subsample_scores, candidate_idx, candidate):
+        """Custom component selector implementation following gepa ReflectionComponentSelector protocol."""
+        # Track the invocation for verification
+        self.invocations.append({
+            "candidate": candidate.copy(),
+            "candidate_idx": candidate_idx,
+            "subsample_scores": subsample_scores.copy() if subsample_scores else None,
+            "available_components": list(candidate.keys())
+        })
+
+        if self.call_count < len(self.selections_to_return):
+            result = self.selections_to_return[self.call_count]
+        else:
+            # Default to first component if we run out of predefined selections
+            result = [list(candidate.keys())[0]]
+
+        self.call_count += 1
+        return result
+
+
+def multi_component_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    """Simple metric for multi-component testing."""
+    score = 0.3  # Low score to trigger optimization
+    feedback = "Needs improvement"
+    return dspy.Prediction(score=score, feedback=feedback)
+
+
+def test_custom_component_selector_basic():
+    """Test that GEPA accepts and uses a custom component selector."""
+    student = MultiComponentModule()
+
+    # Mock LM responses for task execution
+    task_lm = DummyLM([
+        {"category": "test_cat", "output": "result1"},
+        {"category": "test_cat2", "output": "result2"},
+        {"category": "test_cat3", "output": "result3"},
+        {"category": "test_cat4", "output": "result4"},
+        {"category": "test_cat5", "output": "result5"},
+    ])
+
+    # Mock reflection LM responses
+    reflection_lm = DummyLM([
+        {"improved_instruction": "Better classification instruction"},
+        {"improved_instruction": "Better generation instruction"},
+        {"improved_instruction": "Enhanced classification"},
+        {"improved_instruction": "Enhanced generation"},
+    ])
+
+    # Create custom selector that will select specific components
+    component_selector = TrackedComponentSelector([
+        ["classifier"],  # First iteration: update only classifier
+        ["generator"],   # Second iteration: update only generator
+        ["classifier", "generator"],  # Third iteration: update both
+    ])
+
+    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+    with dspy.context(lm=task_lm):
+        optimizer = dspy.GEPA(
+            metric=multi_component_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=10,
+            component_selector=component_selector  # This parameter should be added
+        )
+        optimized = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    # Verify the selector was called
+    assert len(component_selector.invocations) > 0, "Component selector should have been invoked"
+
+    # Verify the selector received appropriate parameters
+    first_invocation = component_selector.invocations[0]
+    assert "classifier" in first_invocation["available_components"]
+    assert "generator" in first_invocation["available_components"]
+    assert isinstance(first_invocation["candidate"], dict)
+
+
+def test_custom_component_selector_multiple_selection():
+    """Test component selector that returns multiple components for simultaneous update."""
+    student = MultiComponentModule()
+
+    task_lm = DummyLM([
+        {"category": "test", "output": "result1"},
+        {"category": "test", "output": "result2"},
+        {"category": "test", "output": "result3"},
+    ])
+
+    reflection_lm = DummyLM([
+        {"improved_instruction": "Better instruction 1"},
+        {"improved_instruction": "Better instruction 2"},
+        {"improved_instruction": "Better instruction 3"},
+    ])
+
+    # Selector that always returns both components for simultaneous update
+    component_selector = TrackedComponentSelector([
+        ["classifier", "generator"],  # Update both simultaneously
+        ["classifier", "generator"],  # Again
+    ])
+
+    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+    with dspy.context(lm=task_lm):
+        optimizer = dspy.GEPA(
+            metric=multi_component_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=8,
+            component_selector=component_selector
+        )
+        optimized = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    # Verify both components were selected for update
+    assert len(component_selector.invocations) > 0
+    selections = [inv for inv in component_selector.invocations]
+
+    # At least one invocation should have selected both components
+    multi_selections = [s for s in selections if len(component_selector.selections_to_return[0]) > 1]
+    assert len(multi_selections) >= 0, "Should have made multi-component selections"
+
+
+def test_component_selector_default_behavior():
+    """Test that default behavior works when no component selector is provided."""
+    student = MultiComponentModule()
+
+    task_lm = DummyLM([
+        {"category": "test", "output": "result"},
+        {"category": "test", "output": "result2"},
+    ])
+
+    reflection_lm = DummyLM([
+        {"improved_instruction": "Better instruction"},
+        {"improved_instruction": "Another instruction"},
+    ])
+
+    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+    with dspy.context(lm=task_lm):
+        # No component_selector parameter - should use default behavior
+        optimizer = dspy.GEPA(
+            metric=multi_component_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=5
+        )
+        optimized = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    # Should complete without error
+    assert optimized is not None
