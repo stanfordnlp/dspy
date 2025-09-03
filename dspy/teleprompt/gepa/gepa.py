@@ -509,11 +509,9 @@ class GEPA(Teleprompter):
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
             reflection_minibatch_size=self.reflection_minibatch_size,
+            module_selector=self.component_selector,
 
             perfect_score=self.perfect_score,
-
-            # Component selection configuration
-            module_selector=self.component_selector,
 
             # Merge-based configuration
             use_merge=self.use_merge,
