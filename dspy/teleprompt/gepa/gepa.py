@@ -6,16 +6,7 @@ from typing import Any, Literal, Optional, Protocol, Union
 
 from gepa import GEPAResult
 from gepa.core.adapter import ProposalFn
-
-# Import component selection types
-try:
-    from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
-except ImportError:
-    # Fallback for older gepa versions that don't have ReflectionComponentSelector
-    from typing import Protocol
-    class ReflectionComponentSelector(Protocol):
-        def select_modules(self, state, trajectories, subsample_scores, candidate_idx, candidate) -> list[str]:
-            ...
+from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
@@ -301,7 +292,6 @@ class GEPA(Teleprompter):
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
-        # Component selection configuration
         component_selector: "ReflectionComponentSelector | None" = None,
         # Merge-based configuration
         use_merge: bool = True,
