@@ -320,9 +320,14 @@ class GEPA(Teleprompter):
         # Reflection configuration
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
-        assert reflection_lm is not None, "GEPA requires a reflection language model to be provided. Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model."
-        self._original_reflection_lm = reflection_lm  # Store original for dspy adapter use
-        self.reflection_lm = lambda x: reflection_lm(x)[0]
+
+        assert reflection_lm is not None or instruction_proposer is not None, (
+            "GEPA requires a reflection language model, or custom instruction proposer to be provided. "
+            "Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. "
+            "Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model. "
+        )
+
+        self.reflection_lm = reflection_lm
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
 
@@ -462,11 +467,9 @@ class GEPA(Teleprompter):
             num_threads=self.num_threads,
             add_format_failure_as_feedback=self.add_format_failure_as_feedback,
             rng=rng,
-            reflection_lm=self._original_reflection_lm,
+            reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
         )
-
-        reflection_lm = self.reflection_lm
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
@@ -477,7 +480,7 @@ class GEPA(Teleprompter):
             adapter=adapter,
 
             # Reflection-based configuration
-            reflection_lm=reflection_lm,
+            reflection_lm=(lambda x: self.reflection_lm(x)[0]) if self.reflection_lm is not None else None,
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
             reflection_minibatch_size=self.reflection_minibatch_size,

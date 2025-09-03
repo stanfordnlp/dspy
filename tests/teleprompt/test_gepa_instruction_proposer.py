@@ -127,6 +127,69 @@ def test_reflection_lm_gets_structured_images():
     assert not images_in_history.has_text_serialized_images, "Reflection LM received serialized images in prompts"
 
 
+def test_custom_proposer_without_reflection_lm():
+    """Test that custom instruction proposers can work without reflection_lm when using updated GEPA core."""
+
+    # External reflection LM managed by the custom proposer
+    external_reflection_lm = DummyLM(
+        [
+            {"improved_instruction": "External LM response"},
+            {"improved_instruction": "Enhanced instruction"},
+            {"improved_instruction": "Better guidance"},
+            {"improved_instruction": "Optimized instruction"},
+            {"improved_instruction": "Refined approach"},
+        ]
+    )
+
+    class ProposerWithExternalLM:
+        def __call__(self, candidate, reflective_dataset, components_to_update):
+            # This proposer manages its own external reflection LM
+            with dspy.context(lm=external_reflection_lm):
+                # Use external LM for reflection (optional - could be any custom logic)
+                external_reflection_lm([{"role": "user", "content": "Improve this instruction"}])
+                return {name: f"Externally-improved: {candidate[name]}" for name in components_to_update}
+
+    student = dspy.Predict("text -> label")
+    example = dspy.Example(text="test input", label="test").with_inputs("text")
+
+    # Use a robust dummy LM with enough responses for optimization steps
+    lm = DummyLM(
+        [
+            {"label": "test"},
+            {"label": "result"},
+            {"label": "output"},
+            {"label": "response"},
+            {"label": "classification"},
+            {"label": "prediction"},
+            {"label": "category"},
+            {"label": "type"},
+            {"label": "class"},
+            {"label": "group"},
+            {"label": "kind"},
+            {"label": "variant"},
+            {"label": "form"},
+            {"label": "style"},
+            {"label": "mode"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    # Test the full flexibility: no reflection_lm provided to GEPA at all!
+    # The updated GEPA core library now allows this when using custom proposers
+    gepa = dspy.GEPA(
+        metric=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.7,  # Score to trigger optimization
+        max_metric_calls=5,  # More calls to allow proper optimization
+        reflection_lm=None,  # No reflection_lm provided - this now works!
+        instruction_proposer=ProposerWithExternalLM(),
+    )
+
+    result = gepa.compile(student, trainset=[example], valset=[example])
+
+    assert result is not None
+    assert len(lm.history) > 0, "Main LM should have been called"
+    assert len(external_reflection_lm.history) > 0, "External reflection LM should have been called by custom proposer"
+
+
 def test_image_serialization_into_strings():
     """
     Test that demonstrates the image serialization problem when calling lm directly with serialized image data.
@@ -137,7 +200,7 @@ def test_image_serialization_into_strings():
             self,
             candidate: dict[str, str],
             reflective_dataset: dict[str, list[dict[str, Any]]],
-            components_to_update: list[str]
+            components_to_update: list[str],
         ) -> dict[str, str]:
             updated_components = {}
 
