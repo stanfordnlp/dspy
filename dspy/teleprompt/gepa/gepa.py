@@ -217,6 +217,10 @@ class GEPA(Teleprompter):
             `dspy.teleprompt.gepa.instruction_proposal` for handling visual content. If None (default), 
             GEPA uses its built-in text-optimized proposer (see `gepa.strategies.instruction_proposal.InstructionProposalSignature` 
             for reference implementation).
+            
+            Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called 
+            in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer. 
+            Custom instruction proposers can invoke their own LLMs if needed.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
