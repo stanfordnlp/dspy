@@ -2,7 +2,7 @@ import os
 from enum import Enum
 from typing import Any, Literal, TypedDict
 
-import ujson
+import orjson
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -58,15 +58,15 @@ def get_finetune_directory() -> str:
 
 
 def write_lines(file_path, data):
-    with open(file_path, "w") as f:
+    with open(file_path, "wb") as f:
         for item in data:
-            f.write(ujson.dumps(item) + "\n")
+            f.write(orjson.dumps(item) + b"\n")
 
 
 def save_data(
     data: list[dict[str, Any]],
 ) -> str:
-    from datasets.fingerprint import Hasher
+    from dspy.utils.hasher import Hasher
 
     # Assign a unique name to the file based on the data hash
     hash = Hasher.hash(data)
@@ -75,9 +75,9 @@ def save_data(
     finetune_dir = get_finetune_directory()
     file_path = os.path.join(finetune_dir, file_name)
     file_path = os.path.abspath(file_path)
-    with open(file_path, "w") as f:
+    with open(file_path, "wb") as f:
         for item in data:
-            f.write(ujson.dumps(item) + "\n")
+            f.write(orjson.dumps(item) + b"\n")
     return file_path
 
 

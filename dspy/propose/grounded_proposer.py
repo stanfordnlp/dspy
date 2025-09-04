@@ -284,7 +284,8 @@ class GroundedProposer(Proposer):
         set_tip_randomly=True,
         set_history_randomly=True,
         verbose=False,
-        rng=None
+        rng=None,
+        init_temperature: float = 1.0,
     ):
         super().__init__()
         self.program_aware = program_aware
@@ -299,6 +300,7 @@ class GroundedProposer(Proposer):
         self.rng = rng or random
 
         self.prompt_model = get_prompt_model(prompt_model)
+        self.init_temperature = init_temperature
 
         self.program_code_string = None
         if self.program_aware:
@@ -330,7 +332,6 @@ class GroundedProposer(Proposer):
         demo_candidates,
         trial_logs,
         N, # noqa: N803
-        T, # noqa: N803
     ) -> list[str]:
         """This method is responsible for returning the full set of new instructions for our program, given the specified criteria."""
 
@@ -347,7 +348,7 @@ class GroundedProposer(Proposer):
             if self.verbose:
                 print("No demo candidates provided. Running without task demos.")
             self.use_task_demos = False
-            # When no demo candidates are provided, defailt to N
+            # When no demo candidates are provided, default to N
             num_demos = N
         else:
             num_demos = max(len(demo_candidates[0]), 1)
@@ -375,7 +376,6 @@ class GroundedProposer(Proposer):
                         program=program,
                         predictor=predictor,
                         pred_i=pred_i,
-                        T=T,
                         demo_candidates=demo_candidates,
                         demo_set_i=demo_set_i,
                         trial_logs=trial_logs,
@@ -390,7 +390,6 @@ class GroundedProposer(Proposer):
         program,
         predictor,
         pred_i,
-        T, # noqa: N803
         demo_candidates,
         demo_set_i,
         trial_logs,
@@ -414,14 +413,13 @@ class GroundedProposer(Proposer):
             verbose=self.verbose
         )
 
-        # Generate a new instruction for our predictor, using the temperature specified for this round
-        original_temp = self.prompt_model.kwargs["temperature"]
+        # Generate a new instruction for our predictor using a unique rollout id to bypass cache
+        rollout_lm = self.prompt_model.copy(
+            rollout_id=self.rng.randint(0, 10**9),
+            temperature=self.init_temperature,
+        )
 
-        epsilon = self.rng.uniform(0.01, 0.05)
-        modified_temp = T + epsilon
-
-        with dspy.settings.context(lm=self.prompt_model):
-            self.prompt_model.kwargs["temperature"] = modified_temp
+        with dspy.settings.context(lm=rollout_lm):
             proposed_instruction = instruction_generator(
                 demo_candidates=demo_candidates,
                 pred_i=pred_i,
@@ -432,7 +430,6 @@ class GroundedProposer(Proposer):
                 num_demos_in_context = self.num_demos_in_context,
                 tip=tip,
             ).proposed_instruction
-        self.prompt_model.kwargs["temperature"] = original_temp
 
         # Log the trace used to generate the new instruction, along with the new instruction itself
         if self.verbose:

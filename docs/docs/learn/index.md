@@ -12,4 +12,4 @@ DSPy exposes a very small API that you can learn quickly. However, building a ne
 
 3) **DSPy Optimization.** Once you have a way to evaluate your system, you use DSPy optimizers to tune the prompts or weights in your program.
 
-We suggest learning and applying DSPy in this order. For example, it's unproductive to launch optimization runs using a poorly-design program or a bad metric.
+We suggest learning and applying DSPy in this order. For example, it's unproductive to launch optimization runs using a poorly designed program or a bad metric.

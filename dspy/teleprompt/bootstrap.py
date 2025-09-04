@@ -47,6 +47,9 @@ class BootstrapFewShot(Teleprompter):
         """A Teleprompter class that composes a set of demos/examples to go into a predictor's prompt.
         These demos come from a combination of labeled examples in the training set, and bootstrapped demos.
 
+        Each bootstrap round copies the LM with a new ``rollout_id`` at ``temperature=1.0`` to
+        bypass caches and gather diverse traces.
+
         Args:
             metric (Callable): A function that compares an expected value and predicted value,
                 outputting the result of that comparison.
@@ -181,7 +184,8 @@ class BootstrapFewShot(Teleprompter):
         try:
             with dspy.settings.context(trace=[], **self.teacher_settings):
                 lm = dspy.settings.lm
-                lm = lm.copy(temperature=0.7 + 0.001 * round_idx) if round_idx > 0 else lm
+                # Use a fresh rollout with temperature=1.0 to bypass caches.
+                lm = lm.copy(rollout_id=round_idx, temperature=1.0) if round_idx > 0 else lm
                 new_settings = {"lm": lm} if round_idx > 0 else {}
 
                 with dspy.settings.context(**new_settings):
@@ -241,7 +245,7 @@ class BootstrapFewShot(Teleprompter):
                 # If there are multiple traces for the same predictor in the sample example,
                 # sample 50/50 from the first N-1 traces or the last trace.
                 if len(demos) > 1:
-                    from datasets.fingerprint import Hasher
+                    from dspy.utils.hasher import Hasher
 
                     rng = random.Random(Hasher.hash(tuple(demos)))
                     demos = [rng.choice(demos[:-1]) if rng.random() < 0.5 else demos[-1]]

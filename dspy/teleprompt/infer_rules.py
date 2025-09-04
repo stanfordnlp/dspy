@@ -143,7 +143,10 @@ class RulesInductionProgram(dspy.Module):
 
     def forward(self, examples_text):
         with dspy.settings.context(**self.teacher_settings):
-            lm = dspy.settings.lm.copy(temperature=self.rng.uniform(0.9, 1.0))
+            # Generate rules with a fresh rollout and non-zero temperature.
+            lm = dspy.settings.lm.copy(
+                rollout_id=self.rng.randint(0, 10**9), temperature=1.0
+            )
             with dspy.settings.context(lm=lm):
                 rules = self.rules_induction(examples_text=examples_text).natural_language_rules
 

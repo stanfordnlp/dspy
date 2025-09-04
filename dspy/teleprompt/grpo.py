@@ -12,12 +12,11 @@ from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
 from dspy.teleprompt.bootstrap_finetune import (
-    FailedPrediction,
     FinetuneTeleprompter,
     all_predictors_have_lms,
     assert_structural_equivalency,
-    bootstrap_trace_data,
 )
+from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
 
 logger = logging.getLogger(__name__)
 

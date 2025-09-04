@@ -5,7 +5,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import cloudpickle
-import ujson
+import orjson
 
 from dspy.utils.saving import get_dependency_versions
 
@@ -153,8 +153,8 @@ class BaseModule:
 
         return new_instance
 
-    def dump_state(self):
-        return {name: param.dump_state() for name, param in self.named_parameters()}
+    def dump_state(self, json_mode=True):
+        return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
     def load_state(self, state):
         for name, param in self.named_parameters():
@@ -169,10 +169,10 @@ class BaseModule:
         - `save_program=True`: Save the whole module to a directory via cloudpickle, which contains both the state and
             architecture of the model.
 
-        If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization 
-        with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize the module by value rather 
-        than by reference, ensuring the module is fully preserved along with the saved program. This is useful 
-        when you have custom modules that need to be serialized alongside your program. If None, then no modules 
+        If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization
+        with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize the module by value rather
+        than by reference, ensuring the module is fully preserved along with the saved program. This is useful
+        when you have custom modules that need to be serialized alongside your program. If None, then no modules
         will be registered for serialization.
 
         We also save the dependency versions, so that the loaded model can check if there is a version mismatch on
@@ -215,17 +215,17 @@ class BaseModule:
                     f"Saving failed with error: {e}. Please remove the non-picklable attributes from your DSPy program, "
                     "or consider using state-only saving by setting `save_program=False`."
                 )
-            with open(path / "metadata.json", "w", encoding="utf-8") as f:
-                ujson.dump(metadata, f, indent=2, ensure_ascii=False)
+            with open(path / "metadata.json", "wb") as f:
+                f.write(orjson.dumps(metadata, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE))
 
             return
 
-        state = self.dump_state()
-        state["metadata"] = metadata
         if path.suffix == ".json":
+            state = self.dump_state()
+            state["metadata"] = metadata
             try:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(ujson.dumps(state, indent=2 , ensure_ascii=False))
+                with open(path, "wb") as f:
+                    f.write(orjson.dumps(state, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE))
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to save state to {path} with error: {e}. Your DSPy program may contain non "
@@ -233,6 +233,8 @@ class BaseModule:
                     "with `.pkl`, or saving the whole program by setting `save_program=True`."
                 )
         elif path.suffix == ".pkl":
+            state = self.dump_state(json_mode=False)
+            state["metadata"] = metadata
             with open(path, "wb") as f:
                 cloudpickle.dump(state, f)
         else:
@@ -248,8 +250,8 @@ class BaseModule:
         path = Path(path)
 
         if path.suffix == ".json":
-            with open(path, encoding="utf-8") as f:
-                state = ujson.loads(f.read())
+            with open(path, "rb") as f:
+                state = orjson.loads(f.read())
         elif path.suffix == ".pkl":
             with open(path, "rb") as f:
                 state = cloudpickle.load(f)

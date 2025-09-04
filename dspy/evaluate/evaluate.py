@@ -1,4 +1,6 @@
+import csv
 import importlib
+import json
 import logging
 import types
 from typing import TYPE_CHECKING, Any, Callable
@@ -77,6 +79,8 @@ class Evaluate:
         max_errors: int | None = None,
         provide_traceback: bool | None = None,
         failure_score: float = 0.0,
+        save_as_csv: str | None = None,
+        save_as_json: str | None = None,
         **kwargs,
     ):
         """
@@ -91,6 +95,9 @@ class Evaluate:
                 stopping evaluation. If ``None``, inherits from ``dspy.settings.max_errors``.
             provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
+            save_as_csv (Optional[str]): The file name where the csv will be saved.
+            save_as_json (Optional[str]): The file name where the json will be saved.
+
         """
         self.devset = devset
         self.metric = metric
@@ -100,6 +107,11 @@ class Evaluate:
         self.max_errors = max_errors
         self.provide_traceback = provide_traceback
         self.failure_score = failure_score
+        self.save_as_csv = save_as_csv
+        self.save_as_json = save_as_json
+
+        if "return_outputs" in kwargs:
+            raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
 
     @with_callbacks
     def __call__(
@@ -111,6 +123,8 @@ class Evaluate:
         display_progress: bool | None = None,
         display_table: bool | int | None = None,
         callback_metadata: dict[str, Any] | None = None,
+        save_as_csv: str | None = None,
+        save_as_json: str | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -137,6 +151,8 @@ class Evaluate:
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
         display_table = display_table if display_table is not None else self.display_table
+        save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
+        save_as_json = save_as_json if save_as_json is not None else self.save_as_json
 
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
@@ -176,10 +192,51 @@ class Evaluate:
             else:
                 logger.warning("Skipping table display since `pandas` is not installed.")
 
+        if save_as_csv:
+            metric_name = (
+                metric.__name__
+                if isinstance(metric, types.FunctionType)
+                else metric.__class__.__name__
+            )
+            data = self._prepare_results_output(results, metric_name)
+
+            with open(save_as_csv, "w", newline="") as csvfile:
+                fieldnames = data[0].keys()
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+                writer.writeheader()
+                for row in data:
+                    writer.writerow(row)
+        if save_as_json:
+            metric_name = (
+                metric.__name__
+                if isinstance(metric, types.FunctionType)
+                else metric.__class__.__name__
+            )
+            data = self._prepare_results_output(results, metric_name)
+            with open(
+                    save_as_json,
+                    "w",
+            ) as f:
+                json.dump(data, f)
+
         return EvaluationResult(
             score=round(100 * ncorrect / ntotal, 2),
             results=results,
         )
+
+    @staticmethod
+    def _prepare_results_output(
+            results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+    ):
+        return [
+            (
+                merge_dicts(example, prediction) | {metric_name: score}
+                if prediction_is_dictlike(prediction)
+                else dict(example) | {"prediction": prediction, metric_name: score}
+            )
+            for example, prediction, score in results
+        ]
 
     def _construct_result_table(
         self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
@@ -197,14 +254,7 @@ class Evaluate:
         """
         import pandas as pd
 
-        data = [
-            (
-                merge_dicts(example, prediction) | {"correct": score}
-                if prediction_is_dictlike(prediction)
-                else dict(example) | {"prediction": prediction, "correct": score}
-            )
-            for example, prediction, score in results
-        ]
+        data = self._prepare_results_output(results, metric_name)
 
         # Truncate every cell in the DataFrame (DataFrame.applymap was renamed to DataFrame.map in Pandas 2.1.0)
         result_df = pd.DataFrame(data)

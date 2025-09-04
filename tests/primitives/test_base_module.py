@@ -9,6 +9,7 @@ from litellm import Choices, Message, ModelResponse
 from litellm.types.utils import Usage
 
 import dspy
+from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
 
@@ -62,7 +63,16 @@ def test_save_and_load_with_json(tmp_path):
     model = dspy.ChainOfThought(dspy.Signature("q -> a"))
     model.predict.signature = model.predict.signature.with_instructions("You are a helpful assistant.")
     model.predict.demos = [
-        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q", "a")
+        dspy.Example(q="What is the capital of France?", a="Paris", reasoning="n/a").with_inputs("q"),
+        # Nested example
+        dspy.Example(
+            q=[
+                dspy.Example(q="What is the capital of France?"),
+                dspy.Example(q="What is actually the capital of France?"),
+            ],
+            a="Paris",
+            reasoning="n/a",
+        ).with_inputs("q"),
     ]
     save_path = tmp_path / "model.json"
     model.save(save_path)
@@ -71,6 +81,7 @@ def test_save_and_load_with_json(tmp_path):
 
     assert str(new_model.predict.signature) == str(model.predict.signature)
     assert new_model.predict.demos[0] == model.predict.demos[0].toDict()
+    assert new_model.predict.demos[1] == model.predict.demos[1].toDict()
 
 
 @pytest.mark.extra
@@ -260,7 +271,7 @@ def test_multi_module_call_with_usage_tracker(lm_for_test):
             self.predict1 = dspy.ChainOfThought("question -> answer")
             self.predict2 = dspy.ChainOfThought("question, answer -> score")
 
-        def __call__(self, question: str) -> str:
+        def __call__(self, question: str) -> Prediction:
             answer = self.predict1(question=question)
             score = self.predict2(question=question, answer=answer)
             return score
@@ -285,7 +296,7 @@ def test_usage_tracker_in_parallel():
             self.predict1 = dspy.ChainOfThought("question -> answer")
             self.predict2 = dspy.ChainOfThought("question, answer -> score")
 
-        def __call__(self, question: str) -> str:
+        def __call__(self, question: str) -> Prediction:
             with dspy.settings.context(lm=self.lm):
                 answer = self.predict1(question=question)
                 score = self.predict2(question=question, answer=answer)
@@ -365,13 +376,13 @@ def test_module_history():
             super().__init__(**kwargs)
             self.cot = dspy.ChainOfThought("question -> answer")
 
-        def forward(self, question: str, **kwargs) -> str:
+        def forward(self, question: str, **kwargs) -> Prediction:
             return self.cot(question=question)
 
     with patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
-                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+                Choices(message=Message(content="{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"))
             ],
             model="openai/gpt-4o-mini",
         )
@@ -390,7 +401,7 @@ def test_module_history():
         # The same history entity is shared across all the ancestor callers to reduce memory usage.
         assert id(program.history[0]) == id(program.cot.history[0])
 
-        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         dspy.settings.configure(disable_history=True)
 
@@ -415,7 +426,7 @@ def test_module_history_with_concurrency():
             super().__init__()
             self.cot = dspy.ChainOfThought("question -> answer")
 
-        def forward(self, question: str, **kwargs) -> str:
+        def forward(self, question: str, **kwargs) -> Prediction:
             return self.cot(question=question)
 
     with patch("litellm.completion") as mock_completion:
@@ -446,13 +457,13 @@ async def test_module_history_async():
             super().__init__(**kwargs)
             self.cot = dspy.ChainOfThought("question -> answer")
 
-        async def aforward(self, question: str, **kwargs) -> str:
+        async def aforward(self, question: str, **kwargs) -> Prediction:
             return await self.cot.acall(question=question)
 
     with patch("litellm.acompletion") as mock_completion:
         mock_completion.return_value = ModelResponse(
             choices=[
-                Choices(message=Message(content="{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"))
+                Choices(message=Message(content="{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"))
             ],
             model="openai/gpt-4o-mini",
         )
@@ -471,7 +482,7 @@ async def test_module_history_async():
         # The same history entity is shared across all the ancestor callers to reduce memory usage.
         assert id(program.history[0]) == id(program.cot.history[0])
 
-        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the captial of France', 'answer': 'Paris'}"]
+        assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
         with dspy.context(
             disable_history=True, lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()

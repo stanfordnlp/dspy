@@ -51,19 +51,10 @@ class BaseLM:
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
 
-        outputs = []
-        for c in response.choices:
-            output = {}
-            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
-            if merged_kwargs.get("logprobs"):
-                output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
-            if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
-                output["tool_calls"] = c.message.tool_calls
-            outputs.append(output)
-
-        if all(len(output) == 1 for output in outputs):
-            # Return a list if every output only has "text" key
-            outputs = [output["text"] for output in outputs]
+        if self.model_type == "responses":
+            outputs = self._process_response(response)
+        else:
+            outputs = self._process_completion(response, merged_kwargs)
 
         if settings.disable_history:
             return outputs
@@ -84,11 +75,9 @@ class BaseLM:
             "response_model": response.model,
             "model_type": self.model_type,
         }
-        self.history.append(entry)
-        self.update_global_history(entry)
-        caller_modules = settings.caller_modules or []
-        for module in caller_modules:
-            module.history.append(entry)
+
+        self.update_history(entry)
+
         return outputs
 
     @with_callbacks
@@ -121,7 +110,12 @@ class BaseLM:
         raise NotImplementedError("Subclasses must implement this method.")
 
     def copy(self, **kwargs):
-        """Returns a copy of the language model with possibly updated parameters."""
+        """Returns a copy of the language model with possibly updated parameters.
+
+        Any provided keyword arguments update the corresponding attributes or LM kwargs of
+        the copy. For example, ``lm.copy(rollout_id=1, temperature=1.0)`` returns an LM whose
+        requests use a different rollout ID at non-zero temperature to bypass cache collisions.
+        """
 
         import copy
 
@@ -132,21 +126,93 @@ class BaseLM:
             if hasattr(self, key):
                 setattr(new_instance, key, value)
             if (key in self.kwargs) or (not hasattr(self, key)):
-                new_instance.kwargs[key] = value
+                if value is None:
+                    new_instance.kwargs.pop(key, None)
+                else:
+                    new_instance.kwargs[key] = value
+        if hasattr(new_instance, "_warned_zero_temp_rollout"):
+            new_instance._warned_zero_temp_rollout = False
 
         return new_instance
 
     def inspect_history(self, n: int = 1):
         return pretty_print_history(self.history, n)
 
-    def update_global_history(self, entry):
+    def update_history(self, entry):
         if settings.disable_history:
             return
 
+        # Global LM history
         if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
             GLOBAL_HISTORY.pop(0)
 
         GLOBAL_HISTORY.append(entry)
+
+        if settings.max_history_size == 0:
+            return
+
+        # dspy.LM.history
+        if len(self.history) >= settings.max_history_size:
+            self.history.pop(0)
+
+        self.history.append(entry)
+
+        # Per-module history
+        caller_modules = settings.caller_modules or []
+        for module in caller_modules:
+            if len(module.history) >= settings.max_history_size:
+                module.history.pop(0)
+            module.history.append(entry)
+
+    def _process_completion(self, response, merged_kwargs):
+        """Process the response of OpenAI chat completion API and extract outputs.
+        
+        Args:
+            response: The OpenAI chat completion response
+                https://platform.openai.com/docs/api-reference/chat/object
+            merged_kwargs: Merged kwargs from self.kwargs and method kwargs
+            
+        Returns:
+            List of processed outputs
+        """
+        outputs = []
+        for c in response.choices:
+            output = {}
+            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+            if merged_kwargs.get("logprobs"):
+                output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
+            if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
+                output["tool_calls"] = c.message.tool_calls
+            outputs.append(output)
+
+        if all(len(output) == 1 for output in outputs):
+            # Return a list if every output only has "text" key
+            outputs = [output["text"] for output in outputs]
+
+        return outputs
+
+    def _process_response(self, response):
+        """Process the response of OpenAI Response API and extract outputs.
+        
+        Args:
+            response: OpenAI Response API response
+                https://platform.openai.com/docs/api-reference/responses/object
+            
+        Returns:
+            List of processed outputs
+        """
+        outputs = []
+        tool_calls = []
+        for output_item in response.output:
+            if output_item.type == "message":
+                for content_item in output_item.content:
+                    outputs.append(content_item.text)
+            elif output_item.type == "function_call":
+                tool_calls.append(output_item.model_dump())
+
+        if tool_calls:
+            outputs.append({"tool_calls": tool_calls})
+        return outputs
 
 
 def inspect_history(n: int = 1):

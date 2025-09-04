@@ -8,6 +8,17 @@ This page will contain snippets for frequent usage patterns.
 
 ## DSPy Programs
 
+### Forcing fresh LM outputs
+
+DSPy caches LM calls. Provide a unique ``rollout_id`` and set a non-zero
+``temperature`` (e.g., 1.0) to bypass an existing cache entry while still caching
+the new result:
+
+```python
+predict = dspy.Predict("question -> answer")
+predict(question="1+1", config={"rollout_id": 1, "temperature": 1.0})
+```
+
 ### dspy.Signature
 
 ```python
@@ -307,7 +318,6 @@ optimized_program = teleprompter.compile(
     trainset=trainset,
     max_bootstrapped_demos=3,
     max_labeled_demos=4,
-    requires_permission_to_run=False,
 )
 
 # Save optimize program for future use
@@ -337,7 +347,6 @@ optimized_program = teleprompter.compile(
     trainset=trainset,
     max_bootstrapped_demos=0,
     max_labeled_demos=0,
-    requires_permission_to_run=False,
 )
 
 # Save optimize program for future use
@@ -465,7 +474,7 @@ dspy.configure_cache(
 
 ### BestofN
 
-Runs a module up to `N` times with different temperatures and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`.
+Runs a module up to `N` times with different rollout IDs (bypassing cache) and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`.
 
 ```python
 import dspy
@@ -480,7 +489,7 @@ best_of_3(question="What is the capital of Belgium?").answer
 
 ### Refine
 
-Refines a module by running it up to `N` times with different temperatures and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`. After each attempt (except the final one), `Refine` automatically generates detailed feedback about the module's performance and uses this feedback as hints for subsequent runs, creating an iterative refinement process.
+Refines a module by running it up to `N` times with different rollout IDs (bypassing cache) and returns the best prediction, as defined by the `reward_fn`, or the first prediction that passes the `threshold`. After each attempt (except the final one), `Refine` automatically generates detailed feedback about the module's performance and uses this feedback as hints for subsequent runs, creating an iterative refinement process.
 
 ```python
 import dspy

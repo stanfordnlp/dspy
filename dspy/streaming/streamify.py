@@ -7,7 +7,7 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
 import litellm
-import ujson
+import orjson
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
 from litellm import ModelResponseStream
@@ -203,6 +203,11 @@ def streamify(
                     ):
                         yield value
                     return
+                else:
+                    # This wildcard case allows for customized streaming behavior.
+                    # It is useful when a users have a custom LM which returns stream chunks in a custom format.
+                    # We let those chunks pass through to the user to handle them as needed.
+                    yield value
 
     if async_streaming:
         return async_streamer
@@ -261,10 +266,10 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
     async for value in streamer:
         if isinstance(value, Prediction):
             data = {"prediction": dict(value.items(include_dspy=False))}
-            yield f"data: {ujson.dumps(data)}\n\n"
+            yield f"data: {orjson.dumps(data).decode()}\n\n"
         elif isinstance(value, litellm.ModelResponseStream):
             data = {"chunk": value.json()}
-            yield f"data: {ujson.dumps(data)}\n\n"
+            yield f"data: {orjson.dumps(data).decode()}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):
             # The chunk value is an OpenAI-compatible streaming chunk value,
             # e.g. "data: {"finish_reason": "stop", "index": 0, "is_finished": True, ...}",

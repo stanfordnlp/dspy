@@ -1,9 +1,11 @@
 import asyncio
 import time
+from dataclasses import dataclass
 from unittest import mock
 from unittest.mock import AsyncMock
 
 import pytest
+from asyncer import syncify
 from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
@@ -845,3 +847,30 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
     assert all_chunks[1].predict_name == "predict2"
     assert all_chunks[1].signature_field_name == "judgement"
     assert all_chunks[1].chunk == "The answer is humorous."
+
+
+@pytest.mark.anyio
+async def test_streaming_allows_custom_chunk_types():
+    @dataclass
+    class CustomChunk:
+        text: str
+
+    class MyProgram(dspy.Module):
+        def forward(self, question, **kwargs):
+            async def send_to_stream():
+                chunk = CustomChunk(text="hello")
+                await dspy.settings.send_stream.send(chunk)
+
+            syncified_send_to_stream = syncify(send_to_stream)
+            syncified_send_to_stream()
+            return dspy.Prediction(answer="dummy output")
+
+    program = dspy.streamify(MyProgram())
+
+    output = program(question="why did a chicken cross the kitchen?")
+    all_chunks = []
+    async for value in output:
+        all_chunks.append(value)
+
+    assert isinstance(all_chunks[0], CustomChunk)
+    assert isinstance(all_chunks[1], dspy.Prediction)

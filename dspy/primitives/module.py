@@ -7,6 +7,7 @@ from dspy.dsp.utils.settings import settings, thread_local_overrides
 from dspy.predict.parallel import Parallel
 from dspy.primitives.base_module import BaseModule
 from dspy.primitives.example import Example
+from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 from dspy.utils.usage_tracker import track_usage
@@ -48,8 +49,21 @@ class Module(BaseModule, metaclass=ProgramMeta):
         # LM calling history of the module.
         self.history = []
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("history", None)
+        state.pop("callbacks", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if not hasattr(self, "history"):
+            self.history = []
+        if not hasattr(self, "callbacks"):
+            self.callbacks = []
+
     @with_callbacks
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> Prediction:
         caller_modules = settings.caller_modules or []
         caller_modules = list(caller_modules)
         caller_modules.append(self)
@@ -58,13 +72,27 @@ class Module(BaseModule, metaclass=ProgramMeta):
             if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
                     output = self.forward(*args, **kwargs)
-                output.set_lm_usage(usage_tracker.get_total_tokens())
+                tokens = usage_tracker.get_total_tokens()
+
+                # Some optimizers (e.g., GEPA bootstrap tracing) temporarily patch
+                # module.forward to return a tuple: (prediction, trace).
+                # When usage tracking is enabled, ensure we attach usage to the
+                # prediction object if present.
+                prediction_in_output = None
+                if isinstance(output, Prediction):
+                    prediction_in_output = output
+                elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
+                    prediction_in_output = output[0]
+                if not prediction_in_output:
+                    raise ValueError("No prediction object found in output to call set_lm_usage on.")
+
+                prediction_in_output.set_lm_usage(tokens)
                 return output
 
             return self.forward(*args, **kwargs)
 
     @with_callbacks
-    async def acall(self, *args, **kwargs):
+    async def acall(self, *args, **kwargs) -> Prediction:
         caller_modules = settings.caller_modules or []
         caller_modules = list(caller_modules)
         caller_modules.append(self)

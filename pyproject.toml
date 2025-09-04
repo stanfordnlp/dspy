@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=40.8.0", "wheel"]
+requires = ["setuptools>=77.0.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,16 +8,15 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.0.0b3"
+version="3.0.3"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
-license = { text = "MIT License" }
+license = "MIT"
 requires-python = ">=3.10, <3.14"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3"
 ]
@@ -25,10 +24,8 @@ dependencies = [
     "backoff>=2.2",
     "joblib~=1.3",
     "openai>=0.28.1",
-    "datasets>=2.14.6", # needed for Bootstrap's Hasher
     "regex>=2023.10.3",
-    "datasets>=2.14.6", # needed for Bootstrap's Hasher
-    "ujson>=5.8.0",
+    "orjson>=3.9.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
     "optuna>=3.4.0",
@@ -44,6 +41,8 @@ dependencies = [
     "cloudpickle>=3.0.0",
     "rich>=13.7.1",
     "numpy>=1.26.0",
+    "xxhash>=3.5.0",
+    "gepa[dspy]==0.0.8",
 ]
 
 [project.optional-dependencies]
@@ -111,6 +110,14 @@ exclude_lines = [
     "except",
     "^\\s*self\\.\\w+(:\\s*[^=]+)?\\s*=.*$",
     "continue",
+]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    # litellm uses deprecated pydantic config classes sometimes.
+    # The issue has been fixed repeatedly, but still keeps showing up.
+    # For examples, see litellm PRs #6903, #7300, #8096, #9372, and #12528.
+    "ignore:.+class-based `config` is deprecated, use ConfigDict:DeprecationWarning",
 ]
 
 [tool.ruff]

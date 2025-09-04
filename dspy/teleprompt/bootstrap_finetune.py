@@ -1,6 +1,5 @@
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Any, Callable
 
 import dspy
@@ -9,12 +8,11 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import infer_data_format
 from dspy.dsp.utils.settings import settings
-from dspy.evaluate.evaluate import Evaluate
 from dspy.predict.predict import Predict
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
+from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +79,14 @@ class BootstrapFinetune(FinetuneTeleprompter):
         key_to_data = {}
         for pred_ind, pred in enumerate(student.predictors()):
             data_pred_ind = None if self.multitask else pred_ind
+            if pred.lm is None:
+                raise ValueError(
+                    f"Predictor {pred_ind} does not have an LM assigned. "
+                    f"Please ensure the module's predictors have their LM set before fine-tuning. "
+                    f"You can set it using: your_module.set_lm(your_lm)"
+                )
             training_key = (pred.lm, data_pred_ind)
+
             if training_key not in key_to_data:
                 train_data, data_format = self._prepare_finetune_data(
                     trace_data=trace_data, lm=pred.lm, pred_ind=data_pred_ind
@@ -206,113 +211,6 @@ def build_call_data_from_trace(
         outputs=outputs,
     )
     return call_data
-
-
-@dataclass
-class FailedPrediction:
-    completion_text: str
-    format_reward: float | None = None
-
-
-def bootstrap_trace_data(
-    program: Module,
-    dataset: list[Example],
-    metric: Callable | None = None,
-    num_threads: int | None = None,
-    raise_on_error=True,
-    capture_failed_parses=False,
-    failure_score: float = 0,
-    format_failure_score: float = -1,
-    log_format_failures: bool = False,
-) -> list[dict[str, Any]]:
-    # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
-    # (if metric != None)
-    evaluator = Evaluate(
-        devset=dataset,
-        num_threads=num_threads,
-        display_progress=True,
-        provide_traceback=False,  # TODO(check with team)
-        max_errors=len(dataset) * 10,  # TODO(check with team)
-        failure_score=failure_score,
-    )
-
-    def wrapped_metric(example, prediction, trace=None):
-        prediction, _ = prediction
-        if isinstance(prediction, FailedPrediction):
-            return prediction.format_reward or format_failure_score
-        return metric(example, prediction, trace) if metric else True
-
-    def wrapped_program(**kwargs):
-        with dspy.context(trace=[]):
-            try:
-                return program(**kwargs), dspy.settings.trace.copy()
-            except AdapterParseError as e:
-                completion_str = e.lm_response
-                parsed_result = e.parsed_result
-                failed_signature = e.signature
-                failed_inputs = kwargs
-
-                present = list(parsed_result.keys()) if parsed_result else None
-                expected = list(failed_signature.output_fields.keys())
-
-                found_pred = None
-                for pred in program.predictors():
-                    if pred.signature == failed_signature:
-                        found_pred = pred
-                        break
-                if found_pred is None:
-                    raise ValueError(f"Failed to find the predictor for the failed signature: {failed_signature}")
-
-                trace = dspy.settings.trace.copy()
-                # Trace is Tuple[signature, inputs, prediction outputs]
-                if present:
-                    failed_pred = FailedPrediction(
-                        completion_text=completion_str,
-                        format_reward=format_failure_score
-                        + (failure_score - format_failure_score) * (present / expected),
-                    )
-                else:
-                    failed_pred = FailedPrediction(completion_text=completion_str, format_reward=format_failure_score)
-
-                trace.append(
-                    (
-                        found_pred,
-                        failed_inputs,
-                        failed_pred,
-                    )
-                )
-
-                if log_format_failures:
-                    logging.warning(
-                        "Failed to parse output for example. This is likely due to the LLM response not following the adapter's formatting."
-                    )
-
-                return failed_pred, trace
-
-    results = evaluator(wrapped_program, metric=wrapped_metric).results
-
-    data = []
-    for example_ind, (example, prediction, score) in enumerate(results):
-        try:
-            prediction, trace = prediction
-        except ValueError as ve:
-            # TODO(GRPO Team): Often during GRPO bootstrapping, the LLM response does not follow dspy formatting. This leads to a value error.
-            # To reproduce this issue, try Qwen/Qwen2.5-Coder-0.5B-Instruct with MATH dataset
-            # Proposal(Lakshya): We should capture the incorrectly-formatted LLM response, and store it in the trace, and pass it to in the GRPO group
-            # with a high-negative user-configurable score.
-            logger.warning(
-                "Failed to unpack prediction and trace. This is likely due to the LLM response not following dspy formatting."
-            )
-            if raise_on_error:
-                raise ve
-            else:
-                continue
-        data_dict = {"example": example, "prediction": prediction, "trace": trace, "example_ind": example_ind}
-        if metric:
-            data_dict["score"] = score
-        data.append(data_dict)
-
-    return data
 
 
 # # TODO(PR) check with team
