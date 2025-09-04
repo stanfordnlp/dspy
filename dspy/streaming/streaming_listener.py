@@ -7,6 +7,7 @@ from litellm import ModelResponseStream
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
+from dspy.adapters.types.citation import Citations
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
@@ -100,6 +101,20 @@ class StreamListener:
                 return
         except Exception:
             return
+
+        # Handle anthropic citations. see https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
+        try:
+            if self._is_citation_type():
+                if chunk_citation := chunk.choices[0].delta.provider_specific_fields.get("citation", None):
+                    return StreamResponse(
+                        self.predict_name,
+                        self.signature_field_name,
+                        Citations.from_dict_list([chunk_citation]),
+                        is_last_chunk=False,
+                    )
+        except Exception:
+            pass
+
 
         if chunk_message and start_identifier in chunk_message:
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
@@ -203,6 +218,11 @@ class StreamListener:
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
 
+    def _is_citation_type(self) -> bool:
+        """Check if the signature field is a citations field."""
+        from dspy.predict import Predict
+        return isinstance(self.predict, Predict) and getattr(self.predict.signature.output_fields.get(self.signature_field_name, None), "annotation", None) == Citations
+
 
 def find_predictor_for_stream_listeners(program: "Module", stream_listeners: list[StreamListener]):
     """Find the predictor for each stream listener.
@@ -230,7 +250,7 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
                     "predictor to use for streaming. Please specify the predictor to listen to."
                 )
 
-            if field_info.annotation is not str:
+            if field_info.annotation not in [str, Citations]:
                 raise ValueError(
                     f"Stream listener can only be applied to string output field, but your field {field_name} is of "
                     f"type {field_info.annotation}."
