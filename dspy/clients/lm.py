@@ -280,7 +280,12 @@ class LM(BaseLM):
             "launch_kwargs",
             "train_kwargs",
         ]
-        return {key: getattr(self, key) for key in state_keys} | self.kwargs
+
+        kwargs = self.kwargs
+        if "max_completion_tokens" in kwargs:
+            kwargs["max_tokens"] = kwargs.pop("max_completion_tokens")
+
+        return {key: getattr(self, key) for key in state_keys} | kwargs
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
