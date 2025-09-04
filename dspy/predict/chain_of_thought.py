@@ -3,9 +3,9 @@ from typing import Any
 from pydantic.fields import FieldInfo
 
 import dspy
+from dspy.dsp.utils.settings import settings
 from dspy.primitives.module import Module
 from dspy.signatures.signature import Signature, ensure_signature
-from dspy.dsp.utils.settings import settings
 
 
 class ChainOfThought(Module):
@@ -27,8 +27,8 @@ class ChainOfThought(Module):
         """
         super().__init__()
         signature = ensure_signature(signature)
-        
-        if getattr(settings, 'use_native_reasoning', False):
+
+        if getattr(settings, "use_native_reasoning", False):
             self.predict = dspy.Predict(signature, **config)
         else:
             prefix = "Reasoning: Let's think step by step in order to"
