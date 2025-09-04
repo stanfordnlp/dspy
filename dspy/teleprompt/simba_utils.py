@@ -21,7 +21,9 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings
     start_rollout_idx, models = 0, []
     # If we have a teacher model, use this as the first model
     if teacher_settings:
-        models.append(dspy.LM(rollout_id=rollout_ids[start_rollout_idx], **teacher_settings))
+        teacher_lm = teacher_settings.get("lm") or lm
+        teacher_lm.kwargs["rollout_id"] = rollout_ids[start_rollout_idx]
+        models.append(teacher_lm)
         start_rollout_idx += 1
 
     # The rest of the models are just copies of the base model
@@ -36,7 +38,7 @@ def wrap_program(program: dspy.Module, metric: Callable):
             try:
                 prediction = program(**example.inputs())
             except Exception as e:
-                print(e)
+                logger.info(e)
             trace = dspy.settings.trace.copy()
 
         output = None
@@ -56,7 +58,7 @@ def wrap_program(program: dspy.Module, metric: Callable):
                     k: v for k, v in output._store.items() if k != "score"
                 }
         except Exception as e:
-            print(e)
+            logger.info(e)
 
         return {
             "prediction": prediction,
@@ -77,8 +79,8 @@ def append_a_demo(demo_input_field_maxlen):
         trace = good["trace"]
         name2demo = {}
 
-        if good["score"] < batch_10p_score:
-            logger.info(f"Skipping appending a demo as good score {good['score']} is below the 10th percentile.")
+        if good["score"] <= batch_10p_score:
+            logger.info(f"Skipping appending a demo as good score {good['score']} is at or below the 10th percentile.")
             return False
 
         for step in trace:
@@ -104,15 +106,15 @@ def append_a_demo(demo_input_field_maxlen):
 def append_a_rule(bucket, system, **kwargs):
     predictor2name = kwargs["predictor2name"]
     batch_10p_score, batch_90p_score = kwargs["batch_10p_score"], kwargs["batch_90p_score"]
-    prompt_model = kwargs["prompt_model"]
+    prompt_model = kwargs["prompt_model"] or dspy.settings.lm
 
     module_names = [name for name, _ in system.named_predictors()]
     good, bad = bucket[0], bucket[-1]
     example = good["example"]
 
-    if good["score"] < batch_10p_score or bad["score"] > batch_90p_score:
-        logger.info(f"Skipping rule generation as good score {good['score']} is below the 10th percentile "
-                    f"*or* bad score {bad['score']} is above the 90th percentile.")
+    if good["score"] <= batch_10p_score or bad["score"] >= batch_90p_score:
+        logger.info(f"Skipping rule generation as good score {good['score']} is at or below the 10th percentile "
+                    f"*or* bad score {bad['score']} is at or above the 90th percentile.")
         return False
 
     if good["score"] <= bad["score"]:
@@ -153,8 +155,9 @@ def append_a_rule(bucket, system, **kwargs):
     kwargs = {k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
               for k, v in kwargs.items()}
 
-    advice_program = dspy.Predict(OfferFeedback)
-    advice = advice_program(**kwargs).module_advice
+    with dspy.settings.context(trace=[], lm=prompt_model):
+        advice_program = dspy.Predict(OfferFeedback)
+        advice = advice_program(**kwargs).module_advice
 
     for name, predictor in system.named_predictors():
         if name in advice:
