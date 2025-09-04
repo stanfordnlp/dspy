@@ -222,11 +222,12 @@ class BaseLM:
                             for citation_data in citations_data:
                                 citation_dict = {
                                     "type": citation_data.get("type", "char_location"),
-                                    "cited_text": citation_data.get("cited_text", ""),
-                                    "document_index": citation_data.get("document_index", 0),
+                                    "cited_text": citation_data.get("cited_text"),
+                                    "document_index": citation_data.get("document_index"),
                                     "document_title": citation_data.get("document_title"),
-                                    "start_char_index": citation_data.get("start_char_index", 0),
-                                    "end_char_index": citation_data.get("end_char_index", 0),
+                                    "start_char_index": citation_data.get("start_char_index"),
+                                    "end_char_index": citation_data.get("end_char_index"),
+                                    "supported_text": citation_data.get("supported_text"),
                                 }
                                 citations.append(citation_dict)
                             return citations

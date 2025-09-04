@@ -55,6 +55,7 @@ class Citations(Type):
         document_title: str | None = None
         start_char_index: int
         end_char_index: int
+        supported_text: str | None = None
 
         def format(self) -> dict[str, Any]:
             """Format citation as dictionary for LM consumption.
@@ -72,6 +73,9 @@ class Citations(Type):
 
             if self.document_title:
                 citation_dict["document_title"] = self.document_title
+
+            if self.supported_text:
+                citation_dict["supported_text"] = self.supported_text
 
             return citation_dict
 
@@ -96,7 +100,8 @@ class Citations(Type):
                     "document_index": 0,
                     "document_title": "Weather Guide",
                     "start_char_index": 0,
-                    "end_char_index": 15
+                    "end_char_index": 15,
+                    "supported_text": "The sky was blue yesterday."
                 }
             ]
             citations = Citations.from_dict_list(citations_dict)
