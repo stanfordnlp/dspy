@@ -78,12 +78,14 @@ class Adapter:
         for output in outputs:
             output_logprobs = None
             tool_calls = None
+            reasoning = None
             text = output
 
             if isinstance(output, dict):
                 text = output["text"]
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
+                reasoning = output.get("reasoning")
 
             if text:
                 value = self.parse(processed_signature, text)
@@ -108,6 +110,9 @@ class Adapter:
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
+
+            if reasoning:
+                value["reasoning"] = reasoning
 
             values.append(value)
 
