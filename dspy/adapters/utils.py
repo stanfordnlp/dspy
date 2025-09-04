@@ -4,7 +4,7 @@ import enum
 import inspect
 import json
 from collections.abc import Mapping
-from typing import Any, List, Literal, get_args, get_origin, Union
+from typing import Any, Literal, Union, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -146,7 +146,7 @@ def parse_value(value, annotation):
 
     if value is None:
         return None
-    
+
     if annotation is str:
         return str(value)
 

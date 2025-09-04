@@ -1,17 +1,17 @@
 import inspect
 import logging
 import textwrap
-import re
+from typing import Callable
+
 import orjson
 
 import dspy
 from dspy.adapters.utils import get_field_description_string
 from dspy.signatures import InputField, OutputField
-from typing import Callable, Optional, Dict
 
 logger = logging.getLogger(__name__)
 
-def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: Optional[Dict] = None):
+def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings: dict | None = None):
     lm = program.get_lm() or dspy.settings.lm
 
     start_rollout_id = lm.kwargs.get("rollout_id", 0)
@@ -28,7 +28,7 @@ def prepare_models_for_resampling(program: dspy.Module, n: int, teacher_settings
 
     # The rest of the models are just copies of the base model
     models.extend([lm.copy(rollout_id=r, temperature=1.0) for r in rollout_ids[start_rollout_idx:]])
-    
+
     return models
 
 def wrap_program(program: dspy.Module, metric: Callable):
@@ -50,7 +50,7 @@ def wrap_program(program: dspy.Module, metric: Callable):
             if isinstance(output, (int, float)):
                 score = output
             elif isinstance(output, dspy.Prediction):
-                if not hasattr(output, 'score'):
+                if not hasattr(output, "score"):
                     raise ValueError("dspy.Prediction must contain a 'score' attribute")
                 score = output.score
                 # Just extract fields from _store, excluding 'score'

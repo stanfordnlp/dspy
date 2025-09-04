@@ -1,12 +1,12 @@
 import logging
 import random
+from typing import Any, Callable
 
 import numpy as np
 
 import dspy
+from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
-from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule
-from typing import Optional, Any, Dict, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,8 @@ class SIMBA(Teleprompter):
         num_candidates: int = 6,
         max_steps: int = 8,
         max_demos: int = 4,
-        prompt_model: Optional[Any] = None,
-        teacher_settings: Optional[Dict] = None,
+        prompt_model: Any | None = None,
+        teacher_settings: dict | None = None,
         demo_input_field_maxlen: int = 100_000,
         num_threads: int | None = None,
         temperature_for_sampling: float = 0.2,
