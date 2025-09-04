@@ -1,12 +1,12 @@
 import logging
 import random
-from typing import Any, Callable
 
 import numpy as np
 
 import dspy
-from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.teleprompt.simba_utils import prepare_models_for_resampling, wrap_program, append_a_demo, append_a_rule
+from typing import Optional, Any, Dict, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,8 @@ class SIMBA(Teleprompter):
         num_candidates: int = 6,
         max_steps: int = 8,
         max_demos: int = 4,
+        prompt_model: Optional[Any] = None,
+        teacher_settings: Optional[Dict] = None,
         demo_input_field_maxlen: int = 100_000,
         num_threads: int | None = None,
         temperature_for_sampling: float = 0.2,
@@ -62,6 +64,8 @@ class SIMBA(Teleprompter):
         self.num_candidates = num_candidates
         self.max_steps = max_steps
         self.max_demos = max_demos
+        self.prompt_model = prompt_model if prompt_model else dspy.settings.lm
+        self.teacher_settings = teacher_settings
         self.demo_input_field_maxlen = demo_input_field_maxlen
         self.num_threads = num_threads
 
@@ -175,7 +179,7 @@ class SIMBA(Teleprompter):
 
             # We'll generate (program, model) pairs for the trajectory sampling.
             # Prepare distinct LMs (with different temperatures, etc.) from the baseline=programs[0].
-            models = prepare_models_for_resampling(programs[0], self.num_candidates)
+            models = prepare_models_for_resampling(programs[0], self.num_candidates, self.teacher_settings)
             top_programs = top_k_plus_baseline(self.num_candidates)
 
             exec_pairs = []
@@ -278,6 +282,7 @@ class SIMBA(Teleprompter):
                         name2predictor=name2predictor,
                         batch_10p_score=batch_10th_percentile_score,
                         batch_90p_score=batch_90th_percentile_score,
+                        prompt_model=self.prompt_model,
                     )
                 except Exception as e:
                     logger.error(f"Strategy failed with error: {e}")
