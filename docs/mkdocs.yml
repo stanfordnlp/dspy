@@ -163,6 +163,7 @@ theme:
         - navigation.indexes
         - navigation.expand
         - toc.follow
+        - toc.integrate
         - navigation.top
         - search.suggest
         - search.highlight
@@ -255,6 +256,9 @@ extra_javascript:
     - "js/runllm-widget.js"
 
 markdown_extensions:
+    - toc:
+        permalink: true
+        toc_depth: 3
     - pymdownx.tabbed:
         alternate_style: true
     - pymdownx.highlight:
