@@ -151,7 +151,7 @@ def test_citations_postprocessing():
     }]
 
     result = adapter._call_postprocess(
-        CitationSignature,
+        CitationSignature.delete("citations"),
         CitationSignature,
         outputs
     )
@@ -166,9 +166,7 @@ def test_citations_postprocessing():
 def test_citation_extraction_from_lm_response():
     from unittest.mock import MagicMock
 
-    from dspy.clients.base_lm import BaseLM
-
-    mock_choice = MagicMock(message=MagicMock(provider_specific_fields={"citations": [
+    mock_choice = MagicMock(message=MagicMock(provider_specific_fields={"citations": [[
         {
             "type": "char_location",
             "cited_text": "The sky is blue",
@@ -178,9 +176,9 @@ def test_citation_extraction_from_lm_response():
             "end_char_index": 25,
             "supported_text": "The sky is blue"
         }
-    ]}))
+    ]]}))
 
-    lm = BaseLM(model="test")
+    lm = dspy.LM(model="test")
     citations = lm._extract_citations_from_response(mock_choice)
 
     assert citations is not None
