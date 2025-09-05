@@ -63,6 +63,10 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
+        citation_output_field_name = self._get_citation_output_field_name(signature)
+        if citation_output_field_name:
+            signature = signature.delete(citation_output_field_name)
+
         return signature
 
     def _call_postprocess(

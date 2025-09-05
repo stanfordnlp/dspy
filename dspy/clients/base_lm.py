@@ -175,7 +175,7 @@ class BaseLM:
                 output["tool_calls"] = c.message.tool_calls
 
             # Extract citations from LiteLLM response if available
-            citations = self._extract_citations_from_response(response, c)
+            citations = self._extract_citations_from_response(c)
             if citations:
                 output["citations"] = citations
 
@@ -187,12 +187,11 @@ class BaseLM:
 
         return outputs
 
-    def _extract_citations_from_response(self, response, choice):
+    def _extract_citations_from_response(self, choice):
         """Extract citations from LiteLLM response if available.
         Reference: https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
         
         Args:
-            response: The LiteLLM response object
             choice: The choice object from response.choices
             
         Returns:
@@ -200,7 +199,7 @@ class BaseLM:
         """
         try:
             # Check for citations in LiteLLM provider_specific_fields
-            if hasattr(response, "choices") and hasattr(choice, "message"):
+            if hasattr(choice, "message"):
                 message = choice.message
                 if hasattr(message, "provider_specific_fields") and message.provider_specific_fields:
                     provider_fields = message.provider_specific_fields

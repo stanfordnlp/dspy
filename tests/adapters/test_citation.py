@@ -125,7 +125,6 @@ def test_citations_from_dict_list():
 
 
 def test_citations_postprocessing():
-    """Test that citations are properly processed in adapter postprocessing."""
     from dspy.adapters.chat_adapter import ChatAdapter
     from dspy.signatures.signature import Signature
 
@@ -165,33 +164,24 @@ def test_citations_postprocessing():
 
 
 def test_citation_extraction_from_lm_response():
-    """Test citation extraction from mock LM response."""
     from unittest.mock import MagicMock
 
     from dspy.clients.base_lm import BaseLM
 
-    mock_response = MagicMock()
-    mock_choice = MagicMock()
-    mock_message = MagicMock()
-    mock_message.provider_specific_fields = {
-        "citations": [
-            {
-                "type": "char_location",
-                "cited_text": "The sky is blue",
-                "document_index": 0,
-                "document_title": "Weather Guide",
-                "start_char_index": 10,
-                "end_char_index": 25,
-                "supported_text": "The sky is blue"
-            }
-        ]
-    }
-
-    mock_choice.message = mock_message
-    mock_response.choices = [mock_choice]
+    mock_choice = MagicMock(message=MagicMock(provider_specific_fields={"citations": [
+        {
+            "type": "char_location",
+            "cited_text": "The sky is blue",
+            "document_index": 0,
+            "document_title": "Weather Guide",
+            "start_char_index": 10,
+            "end_char_index": 25,
+            "supported_text": "The sky is blue"
+        }
+    ]}))
 
     lm = BaseLM(model="test")
-    citations = lm._extract_citations_from_response(mock_response, mock_choice)
+    citations = lm._extract_citations_from_response(mock_choice)
 
     assert citations is not None
     assert len(citations) == 1
