@@ -209,14 +209,9 @@ class BaseLM:
         """
         try:
             # Check for citations in LiteLLM provider_specific_fields
-            if hasattr(choice, "message"):
-                message = choice.message
-                if hasattr(message, "provider_specific_fields") and message.provider_specific_fields:
-                    provider_fields = message.provider_specific_fields
-                    if isinstance(provider_fields, dict) and "citations" in provider_fields:
-                        citations_data = provider_fields["citations"]
-                        if isinstance(citations_data, list):
-                            return [citation for citations in citations_data for citation in citations]
+            citations_data = choice.message.provider_specific_fields.get("citations")
+            if isinstance(citations_data, list):
+                return [citation for citations in citations_data for citation in citations]
         except Exception:
             # If citation extraction fails, just continue without citations
             pass
