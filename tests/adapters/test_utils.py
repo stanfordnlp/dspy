@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from dspy.adapters.utils import parse_value
 
 
-class TestModel(BaseModel):
+class Profile(BaseModel):
     name: str
     age: int
 
@@ -25,21 +25,21 @@ def test_parse_value_str_annotation():
 def test_parse_value_pydantic_types():
     # Test with pydantic BaseModel - JSON string input
     json_str = '{"name": "John", "age": 30}'
-    result = parse_value(json_str, TestModel)
-    assert isinstance(result, TestModel)
+    result = parse_value(json_str, Profile)
+    assert isinstance(result, Profile)
     assert result.name == "John"
     assert result.age == 30
 
     # Test with pydantic BaseModel - dict input
     dict_input = {"name": "Jane", "age": 25}
-    result = parse_value(dict_input, TestModel)
-    assert isinstance(result, TestModel)
+    result = parse_value(dict_input, Profile)
+    assert isinstance(result, Profile)
     assert result.name == "Jane"
     assert result.age == 25
 
     # Test with invalid pydantic data
     with pytest.raises(Exception):
-        parse_value('{"name": "John"}', TestModel)  # missing required age field
+        parse_value('{"name": "John"}', Profile)  # missing required age field
 
 
 def test_parse_value_basic_types():
