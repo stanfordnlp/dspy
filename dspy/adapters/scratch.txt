@@ -1,0 +1,16 @@
+really what this is saying is that we need to use the type of the annotation over the type of the value when we are inserting values into the signature.
+
+Does this also need to happen when we parse values out?
+
+Well no because we already use the type of the annotation when we are parsing out from the string.
+
+Which is actually that we need to optionally allow the type of the value to be mutated by the type annotation.
+
+If a value is already of type dspy.Image, we dont need to do anything.
+
+If the annotation is a dspy.Image, we need to wrap the value in a dspy.Image or ignore, but really wrapping a dspy.Image inside a dspy.Image should be ignored.
+
+Our values have to get converted to a string at some point? Where is that point?
+
+All of the default python values implicitly have a converter to and from a string, and none of them care about value coercion because its all built in and also self explanatory to an llm (with the rest of the adapter) in string format.
+
