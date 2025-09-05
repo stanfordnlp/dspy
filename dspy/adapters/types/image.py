@@ -152,8 +152,7 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
                 return image
         else:
             # Unsupported string format
-            print(f"Unsupported file string: {image}")
-            raise ValueError(f"Unsupported file string: {image}")
+            raise ValueError(f"Unrecognized file string: {image}; If this file type should be supported, please open an issue.")
     elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
         # PIL Image
         return _encode_pil_image(image)
