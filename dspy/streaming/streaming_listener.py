@@ -115,7 +115,6 @@ class StreamListener:
         except Exception:
             pass
 
-
         if chunk_message and start_identifier in chunk_message:
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
             # directly end the stream listening. In some models like gemini, each stream chunk can be multiple
