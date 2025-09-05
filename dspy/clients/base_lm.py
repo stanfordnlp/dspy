@@ -212,25 +212,12 @@ class BaseLM:
             # Check for citations in LiteLLM provider_specific_fields
             if hasattr(response, "choices") and hasattr(choice, "message"):
                 message = choice.message
-                # Check for citations in provider_specific_fields (Anthropic format)
                 if hasattr(message, "provider_specific_fields") and message.provider_specific_fields:
                     provider_fields = message.provider_specific_fields
                     if isinstance(provider_fields, dict) and "citations" in provider_fields:
                         citations_data = provider_fields["citations"]
                         if isinstance(citations_data, list):
-                            citations = []
-                            for citation_data in citations_data:
-                                citation_dict = {
-                                    "type": citation_data.get("type", "char_location"),
-                                    "cited_text": citation_data.get("cited_text"),
-                                    "document_index": citation_data.get("document_index"),
-                                    "document_title": citation_data.get("document_title"),
-                                    "start_char_index": citation_data.get("start_char_index"),
-                                    "end_char_index": citation_data.get("end_char_index"),
-                                    "supported_text": citation_data.get("supported_text"),
-                                }
-                                citations.append(citation_dict)
-                            return citations
+                            return citations_data
         except Exception:
             # If citation extraction fails, just continue without citations
             pass
