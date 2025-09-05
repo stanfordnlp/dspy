@@ -904,9 +904,6 @@ async def test_streaming_with_citations():
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" 100°C"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="."))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" citations"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content='[{"type": "char_location", "cited_text": "Water boils at 100°C", "document_index": 0, "document_title": "Physics Facts", "start_char_index": 0, "end_char_index": 19}]'))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(
             content="",
