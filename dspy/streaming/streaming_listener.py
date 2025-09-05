@@ -252,7 +252,7 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
 
             if field_info.annotation not in [str, Citations]:
                 raise ValueError(
-                    f"Stream listener can only be applied to string output field, but your field {field_name} is of "
+                    f"Stream listener can only be applied to string or Citationsoutput field, but your field {field_name} is of "
                     f"type {field_info.annotation}."
                 )
 
