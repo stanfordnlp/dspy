@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.12.4' and sys_platform == 'win32'",
@@ -740,7 +740,7 @@ requires-dist = [
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
-    { name = "gepa", extras = ["dspy"], specifier = "==0.0.8" },
+    { name = "gepa", extras = ["dspy"], specifier = "==0.0.9" },
     { name = "joblib", specifier = "~=1.3" },
     { name = "json-repair", specifier = ">=0.30.0" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
@@ -956,11 +956,11 @@ wheels = [
 
 [[package]]
 name = "gepa"
-version = "0.0.8"
+version = "0.0.9"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0c/19/126e6e897595c0374379dc3d7d34cf60e941e47d278fad3e05b313fc7989/gepa-0.0.8.tar.gz", hash = "sha256:c786bd7eff5547d51930171fb6afb69d6f970807d4dde73f521da08eb36253fe", size = 57149, upload-time = "2025-09-03T01:55:55.724Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b7/59/2fe0d48485ab05957a34d6a2db6a8fd0d8cc5ccda6c6b1f21ec5dfcfc93f/gepa-0.0.9.tar.gz", hash = "sha256:981df23d9ff94926c59dc9013ce3f65f06a3c192fbfaf1ad668252829e27d1a6", size = 59619, upload-time = "2025-09-05T14:40:05.96Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/36/bd/9c3adfbe4a903a80c270e186aeca2989c4cf46fce11a872c583b0e5d3308/gepa-0.0.8-py3-none-any.whl", hash = "sha256:086b40ec8923692af3ff2d563c74f31ddd57dfe8443ce214cd4a3628382252c5", size = 62141, upload-time = "2025-09-03T01:55:54.451Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/49/388e66e46e40efa2eb3f2b106bb33914da1d0f560b32df2567db9bb12c55/gepa-0.0.9-py3-none-any.whl", hash = "sha256:bd42c3d74c3d4717d63a4aa7d30ef08cf9fe66e1491c6f503b455540f8866bda", size = 63174, upload-time = "2025-09-05T14:40:04.878Z" },
 ]
 
 [[package]]
