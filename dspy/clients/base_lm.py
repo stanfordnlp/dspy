@@ -216,7 +216,7 @@ class BaseLM:
                     if isinstance(provider_fields, dict) and "citations" in provider_fields:
                         citations_data = provider_fields["citations"]
                         if isinstance(citations_data, list):
-                            return citations_data
+                            return [citation for citations in citations_data for citation in citations]
         except Exception:
             # If citation extraction fails, just continue without citations
             pass
