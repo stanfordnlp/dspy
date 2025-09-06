@@ -83,7 +83,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
         ```
 
     === "Local LMs on a GPU server"
-          First, install [SGLang](https://sgl-project.github.io/start/install.html) and launch its server with your LM.
+          First, install [SGLang](https://docs.sglang.ai/get_started/install.html) and launch its server with your LM.
 
           ```bash
           > pip install "sglang[all]"
