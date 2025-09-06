@@ -12,6 +12,7 @@ from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
 
 import dspy
+from dspy.dsp.utils.settings import settings
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -551,3 +552,115 @@ def test_responses_api_tool_calls(litellm_test_server):
 
         dspy_responses.assert_called_once()
         assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
+
+
+def test_reasoning_effort_normalization():
+    """Test that reasoning_effort gets normalized to reasoning format for OpenAI models."""
+    with mock.patch("litellm.supports_reasoning", return_value=True):
+        # OpenAI model with Responses API - should normalize
+        lm1 = dspy.LM(
+            model="openai/gpt-5",
+            model_type="responses",
+            reasoning_effort="low",
+            max_tokens=16000,
+            temperature=1.0
+        )
+        assert "reasoning_effort" not in lm1.kwargs
+        assert lm1.kwargs["reasoning"] == {"effort": "low", "summary": "auto"}
+
+        # OpenAI model with Chat API - should normalize
+        lm2 = dspy.LM(
+            model="openai/gpt-5",
+            reasoning_effort="medium",
+            max_tokens=16000,
+            temperature=1.0
+        )
+        assert "reasoning_effort" not in lm2.kwargs
+        assert lm2.kwargs["reasoning"] == {"effort": "medium", "summary": "auto"}
+
+        # Non-OpenAI model - should NOT normalize
+        lm3 = dspy.LM(
+            model="deepseek-ai/DeepSeek-R1",
+            reasoning_effort="low",
+            max_tokens=4000,
+            temperature=0.7
+        )
+        assert "reasoning_effort" in lm3.kwargs
+        assert "reasoning" not in lm3.kwargs
+
+
+@mock.patch("litellm.supports_reasoning")
+@mock.patch("dspy.dsp.utils.settings")
+def test_native_reasoning_flag_setting(mock_settings, mock_supports):
+    """Test that use_native_reasoning flag is set correctly."""
+    mock_supports.return_value = True
+
+    # Should set flag when model supports reasoning and has reasoning param
+    dspy.LM(model="openai/gpt-5", reasoning_effort="low", max_tokens=16000, temperature=1.0)
+    mock_settings.use_native_reasoning = True
+
+    mock_supports.return_value = False
+
+    # Should NOT set flag when model doesn't support reasoning
+    dspy.LM(model="openai/gpt-4", reasoning_effort="low", max_tokens=1000, temperature=0.7)
+
+
+def test_reasoning_content_extraction():
+    """Test that reasoning models can be created with proper configuration."""
+    # Test that reasoning models are properly configured
+    lm = dspy.LM(
+        model="openai/gpt-5",
+        model_type="responses",
+        max_tokens=16000,
+        temperature=1.0,
+        reasoning_effort="low"
+    )
+
+    # Verify reasoning parameters are normalized
+    assert "reasoning" in lm.kwargs
+    assert lm.kwargs["reasoning"]["effort"] == "low"
+    assert "max_completion_tokens" in lm.kwargs
+    assert lm.kwargs["max_completion_tokens"] == 16000
+
+
+def test_chain_of_thought_with_native_reasoning():
+    """Test ChainOfThought with native reasoning vs manual reasoning."""
+
+    class SimpleSignature(dspy.Signature):
+        """Answer the question."""
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # Test with native reasoning enabled
+    settings.use_native_reasoning = True
+    with mock.patch("dspy.Predict") as mock_predict:
+        mock_predict_instance = mock.MagicMock()
+        mock_predict_instance.return_value = dspy.Prediction(answer="42", reasoning="native reasoning")
+        mock_predict.return_value = mock_predict_instance
+
+        cot = dspy.ChainOfThought(SimpleSignature)
+        result = cot(question="What is the answer?")
+
+        # Should use Predict with original signature (no reasoning field added)
+        mock_predict.assert_called_once()
+        call_args = mock_predict.call_args[0]
+        assert call_args[0] == SimpleSignature
+        assert hasattr(result, "reasoning")
+
+    # Reset and test with native reasoning disabled (traditional ChainOfThought)
+    settings.use_native_reasoning = False
+    with mock.patch("dspy.Predict") as mock_predict:
+        mock_predict_instance = mock.MagicMock()
+        mock_predict_instance.return_value = dspy.Prediction(reasoning="step by step...", answer="42")
+        mock_predict.return_value = mock_predict_instance
+
+        cot = dspy.ChainOfThought(SimpleSignature)
+        result = cot(question="What is the answer?")
+
+        # Should use Predict with extended signature (reasoning field added)
+        mock_predict.assert_called_once()
+        call_args = mock_predict.call_args[0]
+        # Check that signature was extended with reasoning field
+        extended_signature = call_args[0]
+        assert "reasoning" in extended_signature.fields
+        assert hasattr(result, "reasoning")
