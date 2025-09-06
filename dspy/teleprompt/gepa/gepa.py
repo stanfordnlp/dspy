@@ -288,9 +288,9 @@ class GEPA(Teleprompter):
         # Logging
         log_dir: str = None,
         track_stats: bool = False,
-        use_wandb: bool = False,
-        wandb_api_key: str | None = None,
-        wandb_init_kwargs: dict[str, Any] | None = None,
+        use_mlflow: bool = False,
+        mlflow_tracking_uri: str | None = None,
+        mlflow_experiment_name: str | None = None,
         track_best_outputs: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -347,9 +347,9 @@ class GEPA(Teleprompter):
         # Logging configuration
         self.log_dir = log_dir
         self.track_stats = track_stats
-        self.use_wandb = use_wandb
-        self.wandb_api_key = wandb_api_key
-        self.wandb_init_kwargs = wandb_init_kwargs
+        self.use_mlflow = use_mlflow
+        self.mlflow_tracking_uri = mlflow_tracking_uri
+        self.mlflow_experiment_name = mlflow_experiment_name
 
         if track_best_outputs:
             assert track_stats, "track_stats must be True if track_best_outputs is True."
@@ -503,9 +503,9 @@ class GEPA(Teleprompter):
             # Logging
             logger=LoggerAdapter(logger),
             run_dir=self.log_dir,
-            use_wandb=self.use_wandb,
-            wandb_api_key=self.wandb_api_key,
-            wandb_init_kwargs=self.wandb_init_kwargs,
+            use_mlflow=self.use_mlflow,
+            mlflow_tracking_uri=self.mlflow_tracking_uri,
+            mlflow_experiment_name=self.mlflow_experiment_name,
             track_best_outputs=self.track_best_outputs,
             display_progress_bar=True,
             raise_on_exception=True,
