@@ -100,8 +100,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
             self.propose_new_texts = custom_propose_new_texts
 
+        #Logger
+        self.logger = logging.getLogger(__name__)
+
         # Cache predictor names/signatures
         self.named_predictors = list(self.student.named_predictors())
+
+        #Avoid repeated logs
+        self.score_mismatch_log_shown = False
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
@@ -252,8 +258,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         captured_trace=trace,
                     )
                     d["Feedback"] = fb["feedback"]
-                    assert fb["score"] == module_score, f"Currently, GEPA only supports feedback functions that return the same score as the module's score. However, the module-level score is {module_score} and the feedback score is {fb.score}."
-                    # d['score'] = fb.score
+                    if fb["score"] != module_score:
+                        if not self.score_mismatch_log_shown:
+                            self.score_mismatch_log_shown = True
+                            self.logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score.")
+                            fb["score"] = module_score                                    
+
                 items.append(d)
 
             if len(items) == 0:
