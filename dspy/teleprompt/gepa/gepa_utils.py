@@ -261,7 +261,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                             self.score_mismatch_log_shown = True
                             logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score.")
                         fb["score"] = module_score
-                        
+
                 items.append(d)
 
             if len(items) == 0:
