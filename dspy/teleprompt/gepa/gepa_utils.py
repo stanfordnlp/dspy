@@ -13,6 +13,8 @@ from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
+logger = logging.getLogger(__name__)
+
 
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
@@ -99,9 +101,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     )
 
             self.propose_new_texts = custom_propose_new_texts
-
-        #Logger
-        self.logger = logging.getLogger(__name__)
 
         # Cache predictor names/signatures
         self.named_predictors = list(self.student.named_predictors())
@@ -261,9 +260,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     if fb["score"] != module_score:
                         if not self.score_mismatch_log_shown:
                             self.score_mismatch_log_shown = True
-                            self.logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score.")
-                            fb["score"] = module_score                                    
-
+                            logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score.")
+                        fb["score"] = module_score
+                    
                 items.append(d)
 
             if len(items) == 0:
