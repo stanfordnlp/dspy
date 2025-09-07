@@ -15,7 +15,6 @@ from dspy.teleprompt.bootstrap_trace import TraceData
 
 logger = logging.getLogger(__name__)
 
-
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
