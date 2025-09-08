@@ -70,10 +70,44 @@ class Type(pydantic.BaseModel):
 
     @classmethod
     def is_streamable(cls) -> bool:
+        """Whether the custom type is streamable."""
         return False
 
     @classmethod
     def parse_stream_chunk(cls, chunk: ModelResponseStream) -> Optional["Type"]:
+        """
+        Parse a stream chunk into the custom type.
+
+        Args:
+            chunk: A stream chunk.
+
+        Returns:
+            A custom type object or None if the chunk is not for this custom type.
+        """
+        return None
+
+    @classmethod
+    def use_native_response(cls, model: str) -> bool:
+        """Whether to use the native response of the LM such as function calling to construct the custom type.
+
+        Args:
+            model: The LM model name.
+
+        Returns:
+            Whether to use the native response of the LM such as function calling to construct the custom type.
+        """
+        return False
+
+    @classmethod
+    def parse_lm_response(cls, response: dict[str, Any]) -> "Type":
+        """Parse a LM response into the custom type.
+
+        Args:
+            response: A LM response.
+
+        Returns:
+            A custom type object.
+        """
         return None
 
 def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

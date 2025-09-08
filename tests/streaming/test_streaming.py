@@ -890,6 +890,14 @@ async def test_streaming_allows_custom_streamable_type():
         def parse_stream_chunk(cls, chunk):
             return CustomType(message=chunk.choices[0].delta.content)
 
+        @classmethod
+        def parse_lm_response(cls, response: dict) -> "CustomType":
+            return CustomType(message=response.split("\n\n")[0])
+
+        @classmethod
+        def use_native_response(cls, model: str) -> bool:
+            return True
+
     class CustomSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: CustomType = dspy.OutputField()
@@ -899,19 +907,11 @@ async def test_streaming_allows_custom_streamable_type():
         stream_listeners=[
             dspy.streaming.StreamListener(signature_field_name="answer"),
         ],
-        include_final_prediction_in_output_stream=False,
     )
 
     async def stream(*args, **kwargs):
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n\n"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="{'message':"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="Hello"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="World"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="}"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
@@ -926,5 +926,8 @@ async def test_streaming_allows_custom_streamable_type():
             async for value in output:
                 if isinstance(value, dspy.streaming.StreamResponse):
                     all_chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    assert isinstance(value.answer, CustomType)
+                    assert value.answer.message == "HelloWorld"
 
     assert all(isinstance(chunk.chunk, CustomType) for chunk in all_chunks)

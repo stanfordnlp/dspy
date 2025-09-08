@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, get_origin
 import json_repair
 import litellm
 
-from dspy.adapters.types import History
+from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.signatures.signature import Signature
@@ -63,6 +63,11 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
+        for name, field in signature.output_fields.items():
+            if isinstance(field.annotation, type) and issubclass(field.annotation, Type):
+                if field.annotation.use_native_response(lm.model):
+                    signature = signature.delete(name)
+
         return signature
 
     def _call_postprocess(
@@ -105,6 +110,11 @@ class Adapter:
                     for v in tool_calls
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+
+            # Parse custom types that does not rely on the adapter parsing
+            for name, field in original_signature.output_fields.items():
+                if isinstance(field.annotation, type) and issubclass(field.annotation, Type):
+                    value[name] = field.annotation.parse_lm_response(output)
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
