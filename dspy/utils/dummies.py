@@ -6,10 +6,10 @@ import numpy as np
 
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
 from dspy.clients.lm import LM
+from dspy.dsp.utils.settings import settings
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
 from dspy.utils.callback import with_callbacks
-from dspy.dsp.utils.settings import settings
 
 
 class DummyLM(LM):

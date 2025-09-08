@@ -26,7 +26,7 @@ class Type(pydantic.BaseModel):
                 return [{"type": "image_url", "image_url": {"url": self.url}}]
         ```
     """
-    
+
     def __class_getitem__(cls, item):
         # Support generics while preserving custom instance check
         result = super().__class_getitem__(item)
@@ -38,13 +38,13 @@ class Type(pydantic.BaseModel):
         # First check normal instance check
         if super(Type, cls).__instancecheck__(instance):
             return True
-        
+
         # Check if instance is a string with custom type format
         # Thoretically we want types to implement their own data validation for whatever comes in the middle
         if isinstance(instance, str):
             pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
             return bool(re.search(pattern, instance))
-        
+
         return False
 
     def format(self) -> list[dict[str, Any]] | str:

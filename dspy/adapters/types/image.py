@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import pydantic
 import requests
 
-from dspy.adapters.types.base_type import Type, CUSTOM_TYPE_START_IDENTIFIER, CUSTOM_TYPE_END_IDENTIFIER
+from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER, Type
 
 try:
     from PIL import Image as PILImage
@@ -242,16 +242,16 @@ def _extract_url_from_custom_type(text: str) -> str:
     """Extract the image URL from custom type format string."""
     pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
     match = re.search(pattern, text, re.DOTALL)
-    
+
     if not match:
         raise ValueError("No custom type format found in string")
-    
+
     custom_content = match.group(1).strip()
-    
+
     try:
         # Try to parse as JSON
         parsed = json.loads(custom_content.replace("'", '"'))
-        
+
         # Extract URL from the image_url structure
         if isinstance(parsed, list) and len(parsed) > 0:
             first_item = parsed[0]
@@ -259,9 +259,9 @@ def _extract_url_from_custom_type(text: str) -> str:
                 image_url_dict = first_item.get("image_url", {})
                 if "url" in image_url_dict:
                     return image_url_dict["url"]
-        
+
         raise ValueError("Could not find image URL in custom type format")
-    
+
     except json.JSONDecodeError:
         raise ValueError(f"Invalid JSON in custom type format: {custom_content}")
 
