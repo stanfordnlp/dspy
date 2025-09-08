@@ -129,10 +129,10 @@ def test_basic_image_operations(test_case):
 @pytest.mark.parametrize(
     "adapter_type",
     [
-        "chat_adapter", 
-        "json_adapter", 
-        # "two_step_adapter", 
-        "baml_adapter", 
+        "chat_adapter",
+        "json_adapter",
+        # "two_step_adapter",
+        "baml_adapter",
         "xml_adapter",
     ],
 )
@@ -502,7 +502,7 @@ def test_from_methods_warn(tmp_path):
 def test_invalid_string_format():
     """Test that invalid string formats raise a ValueError"""
     invalid_string = "this_is_not_a_url_or_file"
-    
+
     # Should raise a ValueError and not pass the string through
     with pytest.raises(ValueError, match="Unrecognized") as warning_info:
         image = dspy.Image(invalid_string)
@@ -510,16 +510,16 @@ def test_invalid_string_format():
 def test_pil_image_with_download_parameter():
     """Test behavior when PIL image is passed with download=True"""
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
-    
+
     # PIL image should be encoded regardless of download parameter
     image_no_download = dspy.Image(sample_pil)
     image_with_download = dspy.Image(sample_pil, download=True)
-    
+
     # Both should result in base64 encoded data URIs
     assert image_no_download.url.startswith("data:")
     assert image_with_download.url.startswith("data:")
     assert "base64," in image_no_download.url
     assert "base64," in image_with_download.url
-    
+
     # They should be identical since PIL images are always encoded
     assert image_no_download.url == image_with_download.url
