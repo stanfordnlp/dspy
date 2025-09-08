@@ -64,6 +64,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         rng: random.Random | None = None,
         reflection_lm=None,
         custom_instruction_proposer: "ProposalFn | None" = None,
+        warn_on_score_mismatch: bool = True
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -73,7 +74,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
         self.reflection_lm = reflection_lm
-        self.custom_instruction_proposer = custom_instruction_proposer
+        self.warn_on_score_mismatch = warn_on_score_mismatch
 
         if self.custom_instruction_proposer is not None:
             # We are only overriding the propose_new_texts method when a custom
@@ -104,8 +105,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         # Cache predictor names/signatures
         self.named_predictors = list(self.student.named_predictors())
 
-        #Avoid repeated logs
-        self.score_mismatch_log_shown = False
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
@@ -257,9 +256,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     )
                     d["Feedback"] = fb["feedback"]
                     if fb["score"] != module_score:
-                        if not self.score_mismatch_log_shown:
-                            self.score_mismatch_log_shown = True
+                        if self.warn_on_score_mismatch:
                             logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score.")
+                            self.warn_on_score_mismatch = False
                         fb["score"] = module_score
 
                 items.append(d)
