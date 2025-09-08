@@ -140,7 +140,7 @@ def test_basic_image_operations(test_case):
     "image_input,description",
     [
         ("pil_image", "PIL Image"),
-        ("dspy_pil_image_with_download", "PIL Image with download=True; This is a slightly adversarial case"),
+        ("dspy_pil_image_with_download", "PIL Image with download=True"), # This case doesn't make sense on purpose, more just userproofing
         ("encoded_pil_image", "encoded PIL image string"),
         ("url_non_dspy_image", "URL of an image"),
         ("dspy_image_download", "dspy.Image with download=True"),
@@ -172,9 +172,6 @@ def test_image_input_formats(
         pytest.xfail("TwoStepAdapter is not known to support image input")
 
     actual_input = input_map[image_input]
-    # TODO(isaacbmiller): Support the cases without direct dspy.Image coercion
-    # if image_input in ["pil_image", "encoded_pil_image", "url_non_dspy_image"]:
-    #     print(f"WIP: {description} not fully supported without dspy.Image coercion")
     signature = "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]"
     expected_output = {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}
     adapter, lm_output = adapter_output_map[adapter_type]

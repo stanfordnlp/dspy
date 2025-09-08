@@ -52,7 +52,7 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True, is_p
     string_value = None
     value = deepcopy(value)
 
-    # If the annotation is a Type instance, but the value is not a instance of that type, force it to be one.
+    # If the annotation is a Type subclass, but the value is not a instance of that type, force it to be one.
     if issubclass(field_info.annotation, Type) and not isinstance(value, field_info.annotation) and not is_placeholder:
         value = field_info.annotation(value)
     
