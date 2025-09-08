@@ -99,7 +99,7 @@ class Type(pydantic.BaseModel):
         return False
 
     @classmethod
-    def parse_lm_response(cls, response: dict[str, Any]) -> "Type":
+    def parse_lm_response(cls, response: str | dict[str, Any]) -> "Type":
         """Parse a LM response into the custom type.
 
         Args:
