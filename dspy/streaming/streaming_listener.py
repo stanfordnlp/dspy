@@ -271,8 +271,10 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
     return predict_id_to_listener
 
 def _is_streamable(field_type: type | None) -> bool:
+    if field_type is None:
+        return False
     if field_type is str:
         return True
-    if hasattr(field_type, "is_streamable"):
+    if issubclass(field_type, Type):
         return field_type.is_streamable()
     return False
