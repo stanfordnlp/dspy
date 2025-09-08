@@ -94,7 +94,7 @@ class Type(pydantic.BaseModel):
             model: The LM model name.
 
         Returns:
-            Whether to use the native response of the LM such as function calling to construct the custom type.
+            Whether to use the native response of the LM.
         """
         return False
 
