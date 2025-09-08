@@ -205,7 +205,7 @@ class BaseLM:
             choice: The choice object from response.choices
             
         Returns:
-            List of citation dictionaries or None if no citations found
+            A list of citation dictionaries or None if no citations found
         """
         try:
             # Check for citations in LiteLLM provider_specific_fields
@@ -214,9 +214,7 @@ class BaseLM:
                 return [citation for citations in citations_data for citation in citations]
         except Exception:
             # If citation extraction fails, just continue without citations
-            pass
-
-        return None
+            return None
 
     def _process_response(self, response):
         """Process the response of OpenAI Response API and extract outputs.

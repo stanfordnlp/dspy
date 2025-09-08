@@ -9,6 +9,7 @@ from asyncer import syncify
 from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
+from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, streaming_response
 
 
@@ -880,10 +881,10 @@ async def test_streaming_allows_custom_chunk_types():
 async def test_streaming_with_citations():
     class AnswerWithSources(dspy.Signature):
         """Answer questions using provided documents with citations."""
-        documents: list[dspy.Document] = dspy.InputField()
+        documents: list[Document] = dspy.InputField()
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
-        citations: dspy.Citations = dspy.OutputField()
+        citations: Citations = dspy.OutputField()
 
     class MyProgram(dspy.Module):
         def __init__(self):
@@ -933,7 +934,7 @@ async def test_streaming_with_citations():
         )
 
         # Create test documents
-        docs = [dspy.Document(data="Water boils at 100°C at standard pressure.", title="Physics Facts")]
+        docs = [Document(data="Water boils at 100°C at standard pressure.", title="Physics Facts")]
 
         with dspy.context(lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False)):
             output = program(documents=docs, question="What temperature does water boil?")
@@ -948,7 +949,7 @@ async def test_streaming_with_citations():
             # Test that we received citation chunks from streaming
             assert len(citation_chunks) > 0
             citation_chunk = citation_chunks[0]
-            assert isinstance(citation_chunk.chunk, dspy.Citations)
+            assert isinstance(citation_chunk.chunk, Citations)
             assert len(citation_chunk.chunk) == 1
             assert citation_chunk.chunk[0].cited_text == "Water boils at 100°C"
             assert citation_chunk.chunk[0].document_title == "Physics Facts"

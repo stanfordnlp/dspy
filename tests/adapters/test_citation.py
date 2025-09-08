@@ -2,10 +2,11 @@ import pydantic
 import pytest
 
 import dspy
+from dspy.experimental import Citations
 
 
 def test_citation_validate_input():
-    citation = dspy.Citations.Citation(
+    citation = Citations.Citation(
         cited_text="The Earth orbits the Sun.",
         document_index=0,
         start_char_index=0,
@@ -20,27 +21,27 @@ def test_citation_validate_input():
     assert citation.supported_text == "The Earth orbits the Sun."
 
     with pytest.raises(pydantic.ValidationError):
-        dspy.Citations.Citation(cited_text="text")
+        Citations.Citation(cited_text="text")
 
 
 def test_citations_in_nested_type():
     class Wrapper(pydantic.BaseModel):
-        citations: dspy.Citations
+        citations: Citations
 
-    citation = dspy.Citations.Citation(
+    citation = Citations.Citation(
         cited_text="Hello, world!",
         document_index=0,
         start_char_index=0,
         end_char_index=13,
         supported_text="Hello, world!"
     )
-    citations = dspy.Citations(citations=[citation])
+    citations = Citations(citations=[citation])
     wrapper = Wrapper(citations=citations)
     assert wrapper.citations.citations[0].cited_text == "Hello, world!"
 
 
 def test_citation_with_all_fields():
-    citation = dspy.Citations.Citation(
+    citation = Citations.Citation(
         cited_text="Water boils at 100°C.",
         document_index=1,
         document_title="Physics Facts",
@@ -57,7 +58,7 @@ def test_citation_with_all_fields():
 
 
 def test_citation_format():
-    citation = dspy.Citations.Citation(
+    citation = Citations.Citation(
         cited_text="The sky is blue.",
         document_index=0,
         document_title="Weather Guide",
@@ -78,15 +79,15 @@ def test_citation_format():
 
 
 def test_citations_format():
-    citations = dspy.Citations(citations=[
-        dspy.Citations.Citation(
+    citations = Citations(citations=[
+        Citations.Citation(
             cited_text="First citation",
             document_index=0,
             start_char_index=0,
             end_char_index=14,
             supported_text="First citation"
         ),
-        dspy.Citations.Citation(
+        Citations.Citation(
             cited_text="Second citation",
             document_index=1,
             document_title="Source",
@@ -117,7 +118,7 @@ def test_citations_from_dict_list():
         }
     ]
 
-    citations = dspy.Citations.from_dict_list(citations_data)
+    citations = Citations.from_dict_list(citations_data)
 
     assert len(citations.citations) == 1
     assert citations.citations[0].cited_text == "The sky is blue"
@@ -132,7 +133,7 @@ def test_citations_postprocessing():
         """Test signature with citations."""
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
-        citations: dspy.Citations = dspy.OutputField()
+        citations: Citations = dspy.OutputField()
 
     adapter = ChatAdapter()
 
@@ -158,7 +159,7 @@ def test_citations_postprocessing():
 
     assert len(result) == 1
     assert "citations" in result[0]
-    assert isinstance(result[0]["citations"], dspy.Citations)
+    assert isinstance(result[0]["citations"], Citations)
     assert len(result[0]["citations"]) == 1
     assert result[0]["citations"][0].cited_text == "The sky is blue"
 

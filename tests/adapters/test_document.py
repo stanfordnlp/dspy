@@ -1,30 +1,30 @@
 import pydantic
 import pytest
 
-import dspy
+from dspy.experimental import Document
 
 
 def test_document_validate_input():
-    # Create a `dspy.Document` instance with valid data.
-    doc = dspy.Document(data="The Earth orbits the Sun.")
+    # Create a `Document` instance with valid data.
+    doc = Document(data="The Earth orbits the Sun.")
     assert doc.data == "The Earth orbits the Sun."
 
     with pytest.raises(pydantic.ValidationError):
-        # Try to create a `dspy.Document` instance with invalid type.
-        dspy.Document(data=123)
+        # Try to create a `Document` instance with invalid type.
+        Document(data=123)
 
 
 def test_document_in_nested_type():
     class Wrapper(pydantic.BaseModel):
-        document: dspy.Document
+        document: Document
 
-    doc = dspy.Document(data="Hello, world!")
+    doc = Document(data="Hello, world!")
     wrapper = Wrapper(document=doc)
     assert wrapper.document.data == "Hello, world!"
 
 
 def test_document_with_all_fields():
-    doc = dspy.Document(
+    doc = Document(
         data="Water boils at 100°C at standard pressure.",
         title="Physics Facts",
         media_type="application/pdf",
@@ -37,7 +37,7 @@ def test_document_with_all_fields():
 
 
 def test_document_format():
-    doc = dspy.Document(
+    doc = Document(
         data="The sky is blue.",
         title="Color Facts",
         media_type="text/plain"

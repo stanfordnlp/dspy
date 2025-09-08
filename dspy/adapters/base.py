@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING, Any, get_origin
 import json_repair
 import litellm
 
-from dspy.adapters.types import Citations, History
+from dspy.adapters.types import History
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.tool import Tool, ToolCalls
+from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 

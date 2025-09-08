@@ -3,8 +3,10 @@ from typing import Any, Literal
 import pydantic
 
 from dspy.adapters.types.base_type import Type
+from dspy.utils.annotation import experimental
 
 
+@experimental(version="3.0.4")
 class Document(Type):
     """A document type for providing content that can be cited by language models.
 
@@ -22,21 +24,22 @@ class Document(Type):
         ```python
         import dspy
         from dspy.signatures import Signature
+        from dspy.experimental import Document, Citations
 
         class AnswerWithSources(Signature):
             '''Answer questions using provided documents with citations.'''
-            documents: list[dspy.Document] = dspy.InputField()
+            documents: list[Document] = dspy.InputField()
             question: str = dspy.InputField()
             answer: str = dspy.OutputField()
-            citations: dspy.Citations = dspy.OutputField()
+            citations: Citations = dspy.OutputField()
 
         # Create documents
         docs = [
-            dspy.Document(
+            Document(
                 data="The Earth orbits the Sun in an elliptical path.",
                 title="Basic Astronomy Facts"
             ),
-            dspy.Document(
+            Document(
                 data="Water boils at 100°C at standard atmospheric pressure.",
                 title="Physics Fundamentals",
             )
@@ -103,7 +106,7 @@ class Document(Type):
         elif isinstance(data, dict):
             return data
 
-        raise ValueError(f"Received invalid value for `dspy.Document`: {data}")
+        raise ValueError(f"Received invalid value for `Document`: {data}")
 
     def __str__(self) -> str:
         """String representation showing title and content length."""

@@ -104,7 +104,7 @@ class StreamListener:
 
         # Handle anthropic citations. see https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
         try:
-            if self._is_citation_type():
+            if self._signature_field_is_citation_type():
                 if chunk_citation := chunk.choices[0].delta.provider_specific_fields.get("citation", None):
                     return StreamResponse(
                         self.predict_name,
@@ -217,7 +217,7 @@ class StreamListener:
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
 
-    def _is_citation_type(self) -> bool:
+    def _signature_field_is_citation_type(self) -> bool:
         """Check if the signature field is a citations field."""
         from dspy.predict import Predict
         return isinstance(self.predict, Predict) and getattr(self.predict.signature.output_fields.get(self.signature_field_name, None), "annotation", None) == Citations

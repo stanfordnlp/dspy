@@ -3,8 +3,10 @@ from typing import Any
 import pydantic
 
 from dspy.adapters.types.base_type import Type
+from dspy.utils.annotation import experimental
 
 
+@experimental(version="3.0.4")
 class Citations(Type):
     """Citations extracted from an LM response with source references.
 
@@ -16,21 +18,22 @@ class Citations(Type):
         ```python
         import dspy
         from dspy.signatures import Signature
+        from dspy.experimental import Citations, Document
 
         class AnswerWithSources(Signature):
             '''Answer questions using provided documents with citations.'''
-            documents: list[dspy.Document] = dspy.InputField()
+            documents: list[Document] = dspy.InputField()
             question: str = dspy.InputField()
             answer: str = dspy.OutputField()
-            citations: dspy.Citations = dspy.OutputField()
+            citations: Citations = dspy.OutputField()
 
         # Create documents to provide as sources
         docs = [
-            dspy.Document(
+            Document(
                 data="The Earth orbits the Sun in an elliptical path.",
                 title="Basic Astronomy Facts"
             ),
-            dspy.Document(
+            Document(
                 data="Water boils at 100°C at standard atmospheric pressure.",
                 title="Physics Fundamentals",
                 metadata={"author": "Dr. Smith", "year": 2023}
@@ -150,7 +153,7 @@ class Citations(Type):
                 # Handle case where data is a single citation dict
                 return {"citations": [cls.Citation(**data)]}
 
-        raise ValueError(f"Received invalid value for `dspy.Citations`: {data}")
+        raise ValueError(f"Received invalid value for `Citations`: {data}")
 
     def __iter__(self):
         """Allow iteration over citations."""
