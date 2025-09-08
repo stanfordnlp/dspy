@@ -249,7 +249,7 @@ class BAMLAdapter(JSONAdapter):
                     formatted_value = value.model_dump_json(indent=2, by_alias=True)
                 else:
                     # Fallback to the original dspy formatter for other types
-                    formatted_value = original_format_field_value(field_info=field_info, value=value)
+                    formatted_value = original_format_field_value(field_info=field_info, value=value, is_placeholder=False)
 
                 messages.append(f"[[ ## {key} ## ]]\n{formatted_value}")
 

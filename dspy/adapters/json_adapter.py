@@ -109,7 +109,7 @@ class JSONAdapter(ChatAdapter):
         def format_signature_fields_for_instructions(fields: dict[str, FieldInfo], role: str):
             return self.format_field_with_value(
                 fields_with_values={
-                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
+                    FieldInfoWithName(name=field_name, is_placeholder=True, info=field_info): translate_field_type(field_name, field_info)
                     for field_name, field_info in fields.items()
                 },
                 role=role,
@@ -141,7 +141,7 @@ class JSONAdapter(ChatAdapter):
         missing_field_message=None,
     ) -> str:
         fields_with_values = {
-            FieldInfoWithName(name=k, info=v): outputs.get(k, missing_field_message)
+            FieldInfoWithName(name=k, is_placeholder=k in outputs, info=v): outputs.get(k, missing_field_message)
             for k, v in signature.output_fields.items()
         }
         return self.format_field_with_value(fields_with_values, role="assistant")
@@ -192,7 +192,7 @@ class JSONAdapter(ChatAdapter):
         if role == "user":
             output = []
             for field, field_value in fields_with_values.items():
-                formatted_field_value = format_field_value(field_info=field.info, value=field_value)
+                formatted_field_value = format_field_value(field_info=field.info, value=field_value, is_placeholder=field.is_placeholder)
                 output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
             return "\n\n".join(output).strip()
         else:
