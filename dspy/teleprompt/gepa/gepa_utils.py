@@ -74,6 +74,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
         self.reflection_lm = reflection_lm
+        self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
 
         if self.custom_instruction_proposer is not None:
