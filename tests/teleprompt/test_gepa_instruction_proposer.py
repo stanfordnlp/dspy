@@ -74,7 +74,7 @@ def test_reflection_lm_gets_structured_images():
     Verify reflection LM receives structured image messages, not serialized text.
     """
     student = dspy.Predict("image: dspy.Image -> label: str")
-    image = dspy.Image.from_url("https://example.com/test.jpg", download=False)
+    image = dspy.Image("https://example.com/test.jpg")
     example = dspy.Example(image=image, label="dog").with_inputs("image")
 
     reflection_lm = DummyLM(
@@ -243,7 +243,7 @@ def test_image_serialization_into_strings():
 
     student = dspy.Predict("image -> label")
 
-    image = dspy.Image.from_url("https://picsum.photos/id/237/200/300", download=False)
+    image = dspy.Image("https://picsum.photos/id/237/200/300")
 
     examples = [
         dspy.Example(image=image, label="cat").with_inputs("image"),
@@ -300,7 +300,7 @@ def test_image_serialization_into_strings():
 def test_default_proposer():
     student = dspy.Predict("image -> label")
 
-    image = dspy.Image.from_url("https://picsum.photos/id/237/200/300", download=False)
+    image = dspy.Image("https://picsum.photos/id/237/200/300")
 
     examples = [
         dspy.Example(image=image, label="cat").with_inputs("image"),
