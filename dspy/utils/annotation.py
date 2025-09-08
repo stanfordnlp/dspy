@@ -53,7 +53,7 @@ def _experimental(api: Callable[P, R], version: str | None = None) -> Callable[P
 
     version_text = f" (introduced in v{version})" if version else ""
     notice = (
-        indent + f".. Note:: Experimental: This {api_type} may change or "
+        indent + f"Experimental: This {api_type} may change or "
         f"be removed in a future release without warning{version_text}."
     )
 
