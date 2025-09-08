@@ -1,9 +1,10 @@
 import json
 import re
-from typing import Any, get_args, get_origin
+from typing import Any, Optional, get_args, get_origin
 
 import json_repair
 import pydantic
+from litellm import ModelResponseStream
 
 CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
 CUSTOM_TYPE_END_IDENTIFIER = "<<CUSTOM-TYPE-END-IDENTIFIER>>"
@@ -67,6 +68,13 @@ class Type(pydantic.BaseModel):
             return f"{CUSTOM_TYPE_START_IDENTIFIER}{formatted}{CUSTOM_TYPE_END_IDENTIFIER}"
         return formatted
 
+    @classmethod
+    def is_streamable(cls) -> bool:
+        return False
+
+    @classmethod
+    def parse_stream_chunk(cls, chunk: ModelResponseStream) -> Optional["Type"]:
+        return None
 
 def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Split user message content into a list of content blocks.
