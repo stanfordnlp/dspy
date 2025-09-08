@@ -240,6 +240,9 @@ class GEPA(Teleprompter):
         track_best_outputs: Whether to track the best outputs on the validation set. track_stats must 
             be True if track_best_outputs is True. The optimized program's `detailed_results.best_outputs_valset` 
             will contain the best outputs for each task in the validation set.
+        warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when 
+            called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
+            raised if a mismatch in module-level and predictor-level score is detected.
         seed: The random seed to use for reproducibility. Default is 0.
         
     Note:
@@ -292,6 +295,7 @@ class GEPA(Teleprompter):
         wandb_api_key: str | None = None,
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
+        warn_on_score_mismatch: bool = True,
         # Reproducibility
         seed: int | None = 0,
     ):
@@ -350,6 +354,7 @@ class GEPA(Teleprompter):
         self.use_wandb = use_wandb
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
+        self.warn_on_score_mismatch = warn_on_score_mismatch
 
         if track_best_outputs:
             assert track_stats, "track_stats must be True if track_best_outputs is True."
@@ -475,6 +480,7 @@ class GEPA(Teleprompter):
             rng=rng,
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
+            warn_on_score_mismatch=self.warn_on_score_mismatch
         )
 
         # Instantiate GEPA with the simpler adapter-based API
