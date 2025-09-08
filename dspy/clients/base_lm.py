@@ -213,7 +213,6 @@ class BaseLM:
             if isinstance(citations_data, list):
                 return [citation for citations in citations_data for citation in citations]
         except Exception:
-            # If citation extraction fails, just continue without citations
             return None
 
     def _process_response(self, response):
