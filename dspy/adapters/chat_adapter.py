@@ -45,7 +45,6 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
                 # adapter.
                 raise e
-            print("fallback to JSONAdapter: ", e)
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
@@ -84,8 +83,8 @@ class ChatAdapter(Adapter):
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
         def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
-            # This is where placeholders are generated. It is weird because we are using the field_name as the value, and that is wrong.
-            # Really we expect that any value going into format_field_with_value is of the annotation type, not we get away with this because we need things as strings.
+            # This is where placeholders are generated. We use the field_name as the value, and that is wrong.
+            # We should be able to expect that any value going into format_field_with_value is of the annotation type, but we get away with this because we need things as strings. This doesn't matter for most default types and we have special handling for pydantic types that go directly to strings, but images potentially need to get transformed into base64 then into the string.
             return self.format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, is_placeholder=True, info=field_info): translate_field_type(field_name, field_info)
