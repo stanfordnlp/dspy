@@ -15,7 +15,7 @@ class XMLAdapter(ChatAdapter):
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []
         for field, field_value in fields_with_values.items():
-            formatted = format_field_value(field_info=field.info, value=field_value)
+            formatted = format_field_value(field_info=field.info, value=field_value, is_placeholder=field.is_placeholder)
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()
 

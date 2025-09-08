@@ -7,9 +7,11 @@ from collections.abc import Mapping
 from typing import Any, Literal, Union, get_args, get_origin
 
 import json_repair
+from litellm.utils import f
 import pydantic
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
+from copy import deepcopy
 
 from dspy.adapters.types.base_type import Type as DspyType
 from dspy.signatures.utils import get_dspy_field_type
@@ -33,18 +35,27 @@ def serialize_for_json(value: Any) -> Any:
         return str(value)
 
 
-def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> str | dict:
+def format_field_value(field_info: FieldInfo, value: Any, assume_text=True, is_placeholder=False) -> str | dict:
     """
     Formats the value of the specified field according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself.
 
+    This is used to format both the placeholder that goes in the system prompt and the actual value itself.
+
     Args:
       field_info: Information about the field, including its DSPy field type and annotation.
       value: The value of the field.
+      is_placeholder: Whether the value is a placeholder for a field.
     Returns:
       The formatted value of the field, represented as a string.
     """
     string_value = None
+    value = deepcopy(value)
+
+    # If the annotation is a Type instance, but the value is not a instance of that type, force it to be one.
+    if issubclass(field_info.annotation, Type) and not isinstance(value, field_info.annotation) and not is_placeholder:
+        value = field_info.annotation(value)
+    
     if isinstance(value, list) and field_info.annotation is str:
         # If the field has no special type requirements, format it as a nice numbered list for the LM.
         string_value = _format_input_list_field_value(value)
