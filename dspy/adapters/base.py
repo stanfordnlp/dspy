@@ -75,6 +75,7 @@ class Adapter:
         processed_signature: type[Signature],
         original_signature: type[Signature],
         outputs: list[dict[str, Any]],
+        lm: "LM",
     ) -> list[dict[str, Any]]:
         values = []
 
@@ -114,7 +115,8 @@ class Adapter:
             # Parse custom types that does not rely on the adapter parsing
             for name, field in original_signature.output_fields.items():
                 if isinstance(field.annotation, type) and issubclass(field.annotation, Type):
-                    value[name] = field.annotation.parse_lm_response(output)
+                    if field.annotation.use_native_response(lm.model):
+                        value[name] = field.annotation.parse_lm_response(output)
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
@@ -135,7 +137,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs)
+        return self._call_postprocess(processed_signature, signature, outputs, lm)
 
     async def acall(
         self,
@@ -149,7 +151,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs)
+        return self._call_postprocess(processed_signature, signature, outputs, lm)
 
     def format(
         self,
