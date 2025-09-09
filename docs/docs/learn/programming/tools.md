@@ -143,8 +143,8 @@ for call in response.outputs.tool_calls:
     print(f"Arguments: {call.args}")
     
     # Execute the tool
-    if call.name in available_tools:
-        result = available_tools[call.name](**call.args)
+    if call.name in tools:
+        result = tools[call.name](**call.args)
         print(f"Result: {result}")
 ```
 
@@ -179,12 +179,14 @@ def good_tool(city: str, units: str = "celsius") -> str:
 ### 2. Choosing Between ReAct and Manual Handling
 
 **Use `dspy.ReAct` when:**
+
 - You want automatic reasoning and tool selection
 - The task requires multiple tool calls
 - You need built-in error recovery
 - You want to focus on tool implementation rather than orchestration
 
 **Use manual tool handling when:**
+
 - You need precise control over tool execution
 - You want custom error handling logic
 - You want to minimize the latency
