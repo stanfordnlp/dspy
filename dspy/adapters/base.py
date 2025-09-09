@@ -63,6 +63,7 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
+        # Handle custom types that use native response
         for name, field in signature.output_fields.items():
             if isinstance(field.annotation, type) and issubclass(field.annotation, Type):
                 if field.annotation.use_native_response(lm.model):
@@ -401,6 +402,7 @@ class Adapter:
             if field.annotation == ToolCalls:
                 return name
         return None
+
 
     def format_conversation_history(
         self,

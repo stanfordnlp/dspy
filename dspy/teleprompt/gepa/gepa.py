@@ -11,6 +11,7 @@ from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils.annotation import experimental
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ AUTO_RUN_SETTINGS = {
     "heavy": {"n": 18},
 }
 
+@experimental(version="3.0.0")
 class GEPAFeedbackMetric(Protocol):
     def __call__(
         gold: Example,
@@ -49,6 +51,7 @@ class GEPAFeedbackMetric(Protocol):
         """
         ...
 
+@experimental(version="3.0.0")
 @dataclass(frozen=True)
 class DspyGEPAResult:
     """
@@ -140,6 +143,7 @@ class DspyGEPAResult:
             seed=gepa_result.seed,
         )
 
+@experimental(version="3.0.0")
 class GEPA(Teleprompter):
     """
     GEPA is an evolutionary optimizer, which uses reflection to evolve text components
@@ -240,6 +244,9 @@ class GEPA(Teleprompter):
         track_best_outputs: Whether to track the best outputs on the validation set. track_stats must 
             be True if track_best_outputs is True. The optimized program's `detailed_results.best_outputs_valset` 
             will contain the best outputs for each task in the validation set.
+        warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when 
+            called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
+            raised if a mismatch in module-level and predictor-level score is detected.
         seed: The random seed to use for reproducibility. Default is 0.
         
     Note:
@@ -292,6 +299,7 @@ class GEPA(Teleprompter):
         wandb_api_key: str | None = None,
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
+        warn_on_score_mismatch: bool = True,
         # Reproducibility
         seed: int | None = 0,
     ):
@@ -350,6 +358,7 @@ class GEPA(Teleprompter):
         self.use_wandb = use_wandb
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
+        self.warn_on_score_mismatch = warn_on_score_mismatch
 
         if track_best_outputs:
             assert track_stats, "track_stats must be True if track_best_outputs is True."
@@ -428,8 +437,10 @@ class GEPA(Teleprompter):
 
         logger.info(f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set.")
 
+        if valset is None:
+            logger.warning("No valset provided; Using trainset as valset. This is useful as an inference-time scaling strategy where you want GEPA to find the best solutions for the provided tasks in the trainse, as it make GEPA overfit prompts to the provided trainset. In order to ensure generalization and perform well on unseen tasks, please provide separate trainset and valset. Provide the smallest valset that is just large enough to match the downstream task distribution, while keeping trainset as large as possible.")
         valset = valset or trainset
-        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
+        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible.")
 
         rng = random.Random(self.seed)
 
@@ -473,6 +484,7 @@ class GEPA(Teleprompter):
             rng=rng,
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
+            warn_on_score_mismatch=self.warn_on_score_mismatch
         )
 
         # Instantiate GEPA with the simpler adapter-based API
