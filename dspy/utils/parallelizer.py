@@ -1,17 +1,285 @@
 import contextlib
 import copy
 import logging
+import os
 import signal
 import sys
 import threading
 import time
 import traceback
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+import collections
 
 import tqdm
+import litellm
+import io
+import json
+import asyncio
+import concurrent.futures
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+from dspy.dsp.utils.settings import settings
+from dspy.clients.base_lm import BaseLM
+from dspy.adapters.batch_adapter import BatchAdapter
 
 logger = logging.getLogger(__name__)
 
+
+class CallCollectorLM(BaseLM):
+    """Intercepts LM calls to enable batch processing across stages."""
+    
+    def __init__(self, num_examples):
+        super().__init__(model="batch_collector", model_type="chat")
+        self.pending_calls = collections.deque()
+        self.results_map = {}
+        self.call_events = {}
+        self.final_results = [None] * num_examples
+        self.barrier = threading.Barrier(num_examples + 1)
+        self.call_counter = 0
+        self._lock = threading.Lock()
+
+    def forward(self, prompt=None, messages=None, **kwargs):
+        """Block until batch processing completes for this call."""
+        # Generate unique call ID under lock
+        with self._lock:
+            call_id = f"batch_call_{self.call_counter}"
+            self.call_counter += 1
+
+        # Store call data for batch processing
+        call_data = {
+            'id': call_id,
+            'prompt': prompt,
+            'messages': messages,
+            **kwargs
+        }
+        self.pending_calls.append(call_data)
+
+        # Create event to wait for this specific call's result
+        event = threading.Event()
+        self.call_events[call_id] = event
+
+        # Signal ready and wait for other threads to reach barrier
+        try:
+            self.barrier.wait()
+        except threading.BrokenBarrierError:
+            logger.error(f"Barrier broken for call {call_id}")
+            raise RuntimeError("Batch execution failed due to worker thread failures")
+        except Exception as e:
+            logger.error(f"Error in barrier for call {call_id}: {e}")
+            raise RuntimeError(f"Batch execution failed: {e}")
+
+        # Block until this call's result is available
+        event.wait()
+        return self.results_map[call_id]
+
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        # For now, just call the sync version
+        return self.forward(prompt=prompt, messages=messages, **kwargs)
+
+
+class BatchAPI:
+    """Handles pure batch API interaction - upload, create, poll, download, parse."""
+    
+    def __init__(self):
+        self.adapter = BatchAdapter()
+    
+    async def process_calls(self, call_data_list):
+        """Complete batch workflow: upload → create → poll → download → parse."""
+        if not call_data_list:
+            return []
+        
+        # Convert call data to provider-specific batch format
+        batch_requests, provider_name = self.adapter.format(call_data_list, settings.lm)
+        
+        # Execute full batch API workflow
+        file_obj = await self._upload_batch_file(batch_requests, provider_name)
+        batch_response = await self._create_batch_job(file_obj, provider_name)
+        content = await self._poll_and_retrieve_results(batch_response, provider_name)
+        
+        # Parse and return results using adapter
+        return self.adapter.parse(content.content.decode("utf-8"), settings.lm)
+    
+
+    async def _upload_batch_file(self, batch_requests, provider_name):
+        """Upload JSONL file to batch API."""
+        jsonl_content = "\n".join(json.dumps(req) for req in batch_requests)
+        logger.info("Uploading batch file to LiteLLM.")
+        file_obj = await litellm.acreate_file(
+            file=io.BytesIO(jsonl_content.encode("utf-8")),
+            purpose="batch",
+            custom_llm_provider=provider_name,
+        )
+        return file_obj
+
+    async def _create_batch_job(self, file_obj, provider_name):
+        """Create batch job with uploaded file."""
+        logger.info(f"Creating batch job with file ID: {file_obj.id}")
+        batch_response = await litellm.acreate_batch(
+            completion_window="24h",
+            endpoint="/v1/chat/completions",
+            input_file_id=file_obj.id,
+            custom_llm_provider=provider_name,
+        )
+        return batch_response
+
+    async def _poll_and_retrieve_results(self, batch_response, provider_name):
+        """Poll for completion and download results."""
+        logger.info(f"Polling for batch completion (ID: {batch_response.id}).")
+        
+        while True:
+            try:
+                retrieved_batch = await litellm.aretrieve_batch(
+                    batch_response.id, custom_llm_provider=provider_name
+                )
+                logger.info(f"Batch status: {retrieved_batch.status}")
+                
+                if retrieved_batch.status == "completed":
+                    logger.info("Batch completed. Retrieving results.")
+                    return await self._download_results_with_retry(retrieved_batch, provider_name)
+                elif retrieved_batch.status in ["failed", "cancelled", "expired"]:
+                    logger.error(f"Batch failed with status: {retrieved_batch.status}")
+                    raise RuntimeError(f"Batch failed: {retrieved_batch.status}")
+                
+            except Exception as e:
+                if "Output file id is None" not in str(e):  # Don't retry on non-litellm errors
+                    logger.error(f"Error polling batch: {e}")
+                    raise
+                # This is a really ugly LiteLLM error happening under the batching hood, hence the ugly check
+                    
+            await asyncio.sleep(5)
+    
+    async def _download_results_with_retry(self, batch, provider_name, max_retries=5):
+        """Download results with retry logic for litellm flakiness."""
+        for attempt in range(max_retries):
+            if not hasattr(batch, 'output_file_id') or batch.output_file_id is None:
+                logger.warning(f"No output file ID, retrying... (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(10)
+                continue
+                
+            try:
+                return await litellm.afile_content(batch.output_file_id, custom_llm_provider=provider_name)
+            except ValueError as e:
+                if "Output file id is None" in str(e):
+                    logger.warning(f"litellm error, retrying... (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(10)
+                    continue
+                raise
+        
+        raise RuntimeError("Failed to download batch results after retries")
+    
+
+
+class BatchExecutor:
+    """Coordinates worker threads with stage-by-stage batch processing."""
+    
+    def __init__(self):
+        self.batch_api = BatchAPI()
+
+    def execute(self, module, exec_pairs: list[tuple[any, any]]) -> list[any]:
+        """Run module across examples using stage-by-stage batching."""
+        try:
+            # Check if we're already in an event loop
+            asyncio.get_running_loop()
+            # If yes, run in separate thread with new loop
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._execute_async(module, exec_pairs))
+                return future.result()
+        except RuntimeError:
+            # No loop running, safe to use asyncio.run directly
+            return asyncio.run(self._execute_async(module, exec_pairs))
+    
+    async def _execute_async(self, module, exec_pairs: list[tuple[any, any]]) -> list[any]:
+        """Async version of batch execution to use single event loop."""
+        num_examples = len(exec_pairs)
+        if num_examples == 0:
+            return []
+        
+        # Create mock LM that intercepts calls and manages coordination state
+        collector_lm = CallCollectorLM(num_examples)
+        
+        # Start worker threads executing module under mock LM context
+        worker_threads = []
+        for i, (program, example) in enumerate(exec_pairs):
+            thread = threading.Thread(
+                target=self._worker,
+                args=(i, module, example, collector_lm)
+            )
+            worker_threads.append(thread)
+            thread.start()
+        
+        # Stage-by-stage batch processing loop
+        try:
+            stage_count = 0
+            while any(thread.is_alive() for thread in worker_threads):
+                stage_count += 1
+                logger.info(f"Stage {stage_count}: Waiting for threads to reach barrier")
+                
+                # Wait for all threads to hit LM call or finish (with timeout for completion detection)
+                try:
+                    collector_lm.barrier.wait(timeout=30)  # TODO: make configurable
+                except threading.BrokenBarrierError as e:
+                    # check if threads completed
+                    if not any(thread.is_alive() for thread in worker_threads):
+                        logger.info("All threads completed - exiting barrier wait")
+                        break
+                    else:
+                        logger.error(f"Barrier broken with threads still alive: {e}")
+                        break
+                
+                # Collect all LM calls from this stage
+                calls = list(collector_lm.pending_calls)
+                collector_lm.pending_calls.clear()
+                
+                if not calls:
+                    logger.info("No more calls - all threads completed")
+                    break
+                    
+                logger.info(f"Processing {len(calls)} calls")
+                
+                # Process all calls as a single batch
+                results = await self.batch_api.process_calls(calls)
+                
+                # Distribute results back to waiting worker threads
+                for result in results:
+                    call_id = result.custom_id
+                    collector_lm.results_map[call_id] = result
+                    if call_id in collector_lm.call_events:
+                        collector_lm.call_events[call_id].set()
+        
+        except Exception as e:
+            logger.error(f"Error in staged execution: {e}")
+            # Signal all waiting threads to stop
+            for event in collector_lm.call_events.values():
+                event.set()            
+            raise
+        
+        for thread in worker_threads:
+            thread.join()
+        
+        successful_count = len([r for r in collector_lm.final_results if r is not None])
+        logger.info(f"Batch execution completed: {successful_count}/{len(collector_lm.final_results)} successful")
+        
+        return collector_lm.final_results
+    
+    def _worker(self, index, module, example, collector_lm):
+        """Execute module within mock LM context for batch coordination."""
+        try:
+            # Execute module with collector_lm intercepting LM calls
+            with settings.context(lm=collector_lm):
+                if hasattr(example, 'inputs'):
+                    inputs = example.inputs()
+                    logger.debug(f"Worker {index} starting with inputs: {inputs}")
+                    result = module(**inputs)
+                else:
+                    logger.debug(f"Worker {index} starting with example: {example}")
+                    result = module(**example)
+                
+                logger.info(f"Worker {index} completed successfully")
+                collector_lm.final_results[index] = result
+        except Exception as e:
+            logger.error(f"Worker {index} failed: {e}")
+            import traceback
+            logger.error(f"Worker {index} traceback: {traceback.format_exc()}")
+            collector_lm.final_results[index] = None
 
 class ParallelExecutor:
     def __init__(
@@ -28,8 +296,6 @@ class ParallelExecutor:
         Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1.
         Handles also straggler timeouts.
         """
-        from dspy.dsp.utils.settings import settings
-
         self.num_threads = num_threads or settings.num_threads
         self.max_errors = settings.max_errors if max_errors is None else max_errors
         self.disable_progress_bar = disable_progress_bar
