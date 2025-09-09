@@ -227,24 +227,59 @@ def test_component_selector_string_round_robin():
 
 
 def test_component_selector_string_all():
-    """Test string-based all selector."""
+    """Test string-based 'all' selector and verify it actually updates all components."""
     student = MultiComponentModule()
 
-    # Provide enough responses for all possible LM calls
-    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
-    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
-    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+    # Store original instructions to verify they get updated
+    original_classifier_instruction = student.classifier.signature.instructions
+    original_generator_instruction = student.generator.signature.instructions
 
-    with dspy.context(lm=task_lm):
-        optimizer = dspy.GEPA(
-            metric=component_selection_metric,
-            reflection_lm=reflection_lm,
-            max_metric_calls=4,
-            component_selector="all"  # String-based selector
-        )
-        result = optimizer.compile(student, trainset=trainset, valset=trainset)
+    def optimize(component_selector):
+        # Metric that progressively improves to encourage GEPA to accept new candidates
+        call_count = [0]
+        def improving_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+            call_count[0] += 1
+            # Score improves with each call to encourage acceptance of new candidates
+            score = min(0.3 + (call_count[0] * 0.1), 1.0)
+            return dspy.Prediction(score=score, feedback="Improving feedback")
 
-    assert result is not None, "Should work with 'all' string selector"
+        # Provide enough responses for all possible LM calls
+        task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
+        reflection_lm = DummyLM([
+            {"improved_instruction": "Updated classifier instruction"},
+            {"improved_instruction": "Updated generator instruction"},
+        ] * 10)
+        trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+        with dspy.context(lm=task_lm):
+            optimizer = dspy.GEPA(
+                metric=improving_metric,
+                reflection_lm=reflection_lm,
+                max_metric_calls=8,
+                component_selector=component_selector,
+                track_stats=True  # Track intermediate results to verify updates
+            )
+            return optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    result_round_robin = optimize(component_selector="round_robin")
+
+    candidates_round_robin = result_round_robin.detailed_results.candidates
+
+    assert (
+        (candidates_round_robin[1].classifier.signature.instructions == original_classifier_instruction
+            and candidates_round_robin[1].generator.signature.instructions != original_generator_instruction)
+        or (candidates_round_robin[1].classifier.signature.instructions != original_classifier_instruction
+            and candidates_round_robin[1].generator.signature.instructions == original_generator_instruction)
+    ), "First candidate should have only one component updated, when using round_robin selector"
+
+    result_all = optimize(component_selector="all")
+
+    candidates_all = result_all.detailed_results.candidates
+
+    assert (
+        candidates_all[1].classifier.signature.instructions != original_classifier_instruction
+        and candidates_all[1].generator.signature.instructions != original_generator_instruction
+    ), "First candidate should have both components updated, when using all selector"
 
 
 def test_component_selector_custom_random():
