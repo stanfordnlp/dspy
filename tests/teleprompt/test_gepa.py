@@ -145,19 +145,17 @@ def component_selection_metric(example, prediction, trace=None, pred_name=None, 
 
 
 def test_component_selector_functionality():
-    """Test custom component selector is called and can select single/multiple components."""
+    """Test custom component selector function can select single/multiple components."""
 
-    class TestSelector:
-        def __init__(self):
-            self.calls = []
+    # Track calls for verification
+    selector_calls = []
 
-        def select_modules(self, state, trajectories, subsample_scores, candidate_idx, candidate):
-            self.calls.append({"components": list(candidate.keys()), "candidate_idx": candidate_idx})
-            # Test both single and multiple selection
-            return ["classifier"] if candidate_idx == 0 else ["classifier", "generator"]
+    def test_selector(state, trajectories, subsample_scores, candidate_idx, candidate):
+        selector_calls.append({"components": list(candidate.keys()), "candidate_idx": candidate_idx})
+        # Test both single and multiple selection
+        return ["classifier"] if candidate_idx == 0 else ["classifier", "generator"]
 
     student = MultiComponentModule()
-    selector = TestSelector()
 
     # Provide enough responses for all possible LM calls during optimization
     task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
@@ -175,14 +173,14 @@ def test_component_selector_functionality():
             metric=component_selection_metric,
             reflection_lm=reflection_lm,
             max_metric_calls=6,  # Reduced to minimize output
-            component_selector=selector,
+            component_selector=test_selector,
         )
         result = optimizer.compile(student, trainset=trainset, valset=trainset)
 
     # Verify selector was called with correct parameters
-    assert len(selector.calls) > 0, "Custom selector should be invoked"
-    assert "classifier" in selector.calls[0]["components"], "Should receive all available components"
-    assert "generator" in selector.calls[0]["components"], "Should receive all available components"
+    assert len(selector_calls) > 0, "Custom selector should be invoked"
+    assert "classifier" in selector_calls[0]["components"], "Should receive all available components"
+    assert "generator" in selector_calls[0]["components"], "Should receive all available components"
     assert result is not None, "Should return optimized program"
 
 
@@ -205,3 +203,75 @@ def test_component_selector_default_behavior():
         result = optimizer.compile(student, trainset=trainset, valset=trainset)
 
     assert result is not None, "Should work with default selector"
+
+
+def test_component_selector_string_round_robin():
+    """Test string-based round_robin selector."""
+    student = MultiComponentModule()
+
+    # Provide enough responses for all possible LM calls
+    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
+    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+    with dspy.context(lm=task_lm):
+        optimizer = dspy.GEPA(
+            metric=component_selection_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=4,
+            component_selector="round_robin"  # String-based selector
+        )
+        result = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    assert result is not None, "Should work with 'round_robin' string selector"
+
+
+def test_component_selector_string_all():
+    """Test string-based all selector."""
+    student = MultiComponentModule()
+
+    # Provide enough responses for all possible LM calls
+    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
+    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+    with dspy.context(lm=task_lm):
+        optimizer = dspy.GEPA(
+            metric=component_selection_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=4,
+            component_selector="all"  # String-based selector
+        )
+        result = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    assert result is not None, "Should work with 'all' string selector"
+
+
+def test_component_selector_custom_random():
+    """Test custom component selector function that randomly samples components."""
+    import random
+
+    # Simple function-based selector
+    def random_component_selector(state, trajectories, subsample_scores, candidate_idx, candidate):
+        """Randomly select half of the available components."""
+        component_names = list(candidate.keys())
+        num_to_select = max(1, len(component_names) // 2)  # At least 1, half of total
+        return random.sample(component_names, num_to_select)
+
+    student = MultiComponentModule()
+
+    # Provide enough responses for all possible LM calls
+    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 15)
+    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 8)
+    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+    with dspy.context(lm=task_lm):
+        optimizer = dspy.GEPA(
+            metric=component_selection_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=4,
+            component_selector=random_component_selector  # Function-based selector
+        )
+        result = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    assert result is not None, "Should work with custom random function selector"

@@ -226,11 +226,13 @@ class GEPA(Teleprompter):
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called 
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer. 
             Custom instruction proposers can invoke their own LLMs if needed.
-        component_selector: Optional custom component selector implementing the ReflectionComponentSelector protocol.
-            Controls which components (predictors) are selected for optimization at each iteration. If None (default), 
-            GEPA uses RoundRobinReflectionComponentSelector which cycles through components one at a time. 
-            Custom selectors can implement strategies like selecting all components simultaneously or using 
-            LLM-driven selection logic based on optimization state and trajectories. See `gepa.strategies.component_selector` 
+        component_selector: Custom component selector implementing the ReflectionComponentSelector protocol,
+            or a string specifying a built-in selector strategy. Controls which components (predictors) are selected 
+            for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components 
+            one at a time. Available string options: 'round_robin' (cycles through components sequentially), 
+            'all' (selects all components for simultaneous optimization). Custom selectors can implement strategies 
+            using LLM-driven selection logic based on optimization state and trajectories. 
+            See [gepa component selectors](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/component_selector.py) 
             for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
@@ -292,7 +294,7 @@ class GEPA(Teleprompter):
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
-        component_selector: "ReflectionComponentSelector | None" = None,
+        component_selector: "ReflectionComponentSelector | str" = "round_robin",
         # Merge-based configuration
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
