@@ -740,7 +740,7 @@ requires-dist = [
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
-    { name = "gepa", extras = ["dspy"], specifier = "==0.0.10" },
+    { name = "gepa", extras = ["dspy"], specifier = "==0.0.11" },
     { name = "joblib", specifier = "~=1.3" },
     { name = "json-repair", specifier = ">=0.30.0" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
@@ -956,11 +956,11 @@ wheels = [
 
 [[package]]
 name = "gepa"
-version = "0.0.10"
+version = "0.0.11"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5b/de/e6ad069af66dd749776cc78bae8216ca7f4f5b9e19429b517b86ca157803/gepa-0.0.10.tar.gz", hash = "sha256:1119a7fe7c81bc31a71b4cdf6e094984c3ffe3e2b14a824d99ebd5149e0579d1", size = 63512, upload-time = "2025-09-05T20:50:46.451Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fb/f9/3c305f1931e316054719cd915742dd2fa42294306666bf14e8ace1f9d333/gepa-0.0.11.tar.gz", hash = "sha256:ba2ed1a58780e16677a4b68566ca5d1c3064afda7a7f831626c461bff0fd9ba2", size = 63867, upload-time = "2025-09-09T00:40:08.077Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/a1/ce140423620a4d0050691e24ce8fea8ad0661906f1823b0a78bec118d161/gepa-0.0.10-py3-none-any.whl", hash = "sha256:ebf965c0a5ccb82bda5a61472eca001f5575070b8bec643b2c008d197f96d1f7", size = 64166, upload-time = "2025-09-05T20:50:44.998Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/48/b10a925e68fded18d01ba77a4116bde39c947db68a440145c1b6694314e5/gepa-0.0.11-py3-none-any.whl", hash = "sha256:e60a8f516f61e1238fa207e23d48cf6e5aceff51ea65b85100f4e80bad51f031", size = 64264, upload-time = "2025-09-09T00:40:06.788Z" },
 ]
 
 [[package]]
