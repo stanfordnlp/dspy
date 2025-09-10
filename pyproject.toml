@@ -42,7 +42,7 @@ dependencies = [
     "rich>=13.7.1",
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
-    "gepa[dspy]>=0.0.10",
+    "gepa[dspy]==0.0.12",
 ]
 
 [project.optional-dependencies]
