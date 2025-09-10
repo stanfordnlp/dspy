@@ -310,6 +310,7 @@ class GEPA(Teleprompter):
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
+        use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
     ):
@@ -369,6 +370,7 @@ class GEPA(Teleprompter):
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.use_mlflow = use_mlflow
 
         if track_best_outputs:
             assert track_stats, "track_stats must be True if track_best_outputs is True."
@@ -528,6 +530,7 @@ class GEPA(Teleprompter):
             use_wandb=self.use_wandb,
             wandb_api_key=self.wandb_api_key,
             wandb_init_kwargs=self.wandb_init_kwargs,
+            use_mlflow=self.use_mlflow,
             track_best_outputs=self.track_best_outputs,
             display_progress_bar=True,
             raise_on_exception=True,
