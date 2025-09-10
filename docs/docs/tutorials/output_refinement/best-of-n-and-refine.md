@@ -1,14 +1,14 @@
 # Output Refinement: BestOfN and Refine
 
-Both `BestOfN` and `Refine` are DSPy modules designed to improve the reliability and quality of predictions by making multiple `LM` calls with different parameter settings. Both modules stop when they have reached `N` attempts or when the `reward_fn` returns an award above the `threshold`.
+Both `BestOfN` and `Refine` are DSPy modules designed to improve the reliability and quality of predictions by making multiple `LM` calls with different rollout IDs to bypass caching. Both modules stop when they have reached `N` attempts or when the `reward_fn` returns an award above the `threshold`.
 
 ## BestOfN
 
-`BestOfN` is a module that runs the provided module multiple times (up to `N`) with different temperature settings. It returns either the first prediction that passes a specified threshold or the one with the highest reward if none meets the threshold.
+`BestOfN` is a module that runs the provided module multiple times (up to `N`) with different rollout IDs. It returns either the first prediction that passes a specified threshold or the one with the highest reward if none meets the threshold.
 
 ### Basic Usage
 
-Lets say we wanted to have the best chance of getting a one word answer from the model. We could use `BestOfN` to try multiple temperature settings and return the best result.
+Lets say we wanted to have the best chance of getting a one word answer from the model. We could use `BestOfN` to try multiple rollout IDs and return the best result.
 
 ```python
 import dspy
@@ -86,7 +86,7 @@ refine = dspy.Refine(
 
 Both modules serve similar purposes but differ in their approach:
 
-- `BestOfN` simply tries different temperature settings and selects the best resulting prediction as defined by the `reward_fn`.
+- `BestOfN` simply tries different rollout IDs and selects the best resulting prediction as defined by the `reward_fn`.
 - `Refine` adds an feedback loop, using the lm to generate a detailed feedback about the module's own performance using the previous prediction and the code in the `reward_fn`. This feedback is then used as hints for subsequent runs.
 
 ## Practical Examples

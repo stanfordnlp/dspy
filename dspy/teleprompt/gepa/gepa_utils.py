@@ -3,13 +3,17 @@ import random
 from typing import Any, Callable, Protocol
 
 from gepa import EvaluationBatch, GEPAAdapter
+from gepa.core.adapter import ProposalFn
 
+import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
+from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
+logger = logging.getLogger(__name__)
 
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
@@ -58,6 +62,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         num_threads: int | None = None,
         add_format_failure_as_feedback: bool = False,
         rng: random.Random | None = None,
+        reflection_lm=None,
+        custom_instruction_proposer: "ProposalFn | None" = None,
+        warn_on_score_mismatch: bool = True
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -66,9 +73,39 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.num_threads = num_threads
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
         self.rng = rng or random.Random(0)
+        self.reflection_lm = reflection_lm
+        self.custom_instruction_proposer = custom_instruction_proposer
+        self.warn_on_score_mismatch = warn_on_score_mismatch
+
+        if self.custom_instruction_proposer is not None:
+            # We are only overriding the propose_new_texts method when a custom
+            # instruction proposer is provided. Otherwise, we use the GEPA
+            # default propose_new_texts.
+
+            def custom_propose_new_texts(
+                candidate: dict[str, str],
+                reflective_dataset: dict[str, list[dict[str, Any]]],
+                components_to_update: list[str]
+            ) -> dict[str, str]:
+                if self.reflection_lm is not None:
+                    with dspy.context(lm=self.reflection_lm):
+                        return self.custom_instruction_proposer(
+                            candidate=candidate,
+                            reflective_dataset=reflective_dataset,
+                            components_to_update=components_to_update
+                        )
+                else:
+                    return self.custom_instruction_proposer(
+                        candidate=candidate,
+                        reflective_dataset=reflective_dataset,
+                        components_to_update=components_to_update
+                    )
+
+            self.propose_new_texts = custom_propose_new_texts
 
         # Cache predictor names/signatures
         self.named_predictors = list(self.student.named_predictors())
+
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
@@ -184,7 +221,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for input_key, input_val in inputs.items():
                     if contains_history and input_key == history_key_name:
                         continue
-                    new_inputs[input_key] = str(input_val)
+
+                    if isinstance(input_val, Type) and self.custom_instruction_proposer is not None:
+                        # Keep original object - will be properly formatted when sent to reflection LM
+                        new_inputs[input_key] = input_val
+                    else:
+                        new_inputs[input_key] = str(input_val)
 
                 if isinstance(outputs, FailedPrediction):
                     s = "Couldn't parse the output as per the expected output format. The model's raw response was:\n"
@@ -214,8 +256,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         captured_trace=trace,
                     )
                     d["Feedback"] = fb["feedback"]
-                    assert fb["score"] == module_score, f"Currently, GEPA only supports feedback functions that return the same score as the module's score. However, the module-level score is {module_score} and the feedback score is {fb.score}."
-                    # d['score'] = fb.score
+                    if fb["score"] != module_score:
+                        if self.warn_on_score_mismatch:
+                            logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score. You can safely ignore this warning if using a semantic metric, however, if this mismatch is caused due to predictor scoring, please return module-level scores. To disable this warning, set warn_on_score_mismatch=False.")
+                            self.warn_on_score_mismatch = False
+                        fb["score"] = module_score
+
                 items.append(d)
 
             if len(items) == 0:

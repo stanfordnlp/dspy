@@ -2,16 +2,17 @@ import inspect
 import logging
 import random
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
+from typing import Any, Literal, Optional, Protocol, Union
+
+from gepa import GEPAResult
+from gepa.core.adapter import ProposalFn
+from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
 from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
+from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
 from dspy.teleprompt.teleprompt import Teleprompter
-
-if TYPE_CHECKING:
-    from gepa import GEPAResult
-
-    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+from dspy.utils.annotation import experimental
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ AUTO_RUN_SETTINGS = {
     "heavy": {"n": 18},
 }
 
+@experimental(version="3.0.0")
 class GEPAFeedbackMetric(Protocol):
     def __call__(
         gold: Example,
@@ -50,6 +52,7 @@ class GEPAFeedbackMetric(Protocol):
         """
         ...
 
+@experimental(version="3.0.0")
 @dataclass(frozen=True)
 class DspyGEPAResult:
     """
@@ -141,6 +144,7 @@ class DspyGEPAResult:
             seed=gepa_result.seed,
         )
 
+@experimental(version="3.0.0")
 class GEPA(Teleprompter):
     """
     GEPA is an evolutionary optimizer, which uses reflection to evolve text components
@@ -210,6 +214,26 @@ class GEPA(Teleprompter):
             a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` 
             for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
+        instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol. 
+            If provided, GEPA will use this custom proposer instead of its default instruction proposal 
+            mechanism to generate improved instructions based on feedback from failed examples. This is 
+            particularly useful when you need specialized instruction generation for multimodal inputs 
+            (like dspy.Image) or custom types. Use `MultiModalInstructionProposer()` from 
+            `dspy.teleprompt.gepa.instruction_proposal` for handling visual content. If None (default), 
+            GEPA uses its built-in text-optimized proposer (see `gepa.strategies.instruction_proposal.InstructionProposalSignature` 
+            for reference implementation).
+            
+            Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called 
+            in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer. 
+            Custom instruction proposers can invoke their own LLMs if needed.
+        component_selector: Custom component selector implementing the ReflectionComponentSelector protocol,
+            or a string specifying a built-in selector strategy. Controls which components (predictors) are selected 
+            for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components 
+            one at a time. Available string options: 'round_robin' (cycles through components sequentially), 
+            'all' (selects all components for simultaneous optimization). Custom selectors can implement strategies 
+            using LLM-driven selection logic based on optimization state and trajectories. 
+            See [gepa component selectors](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/component_selector.py) 
+            for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
@@ -229,6 +253,9 @@ class GEPA(Teleprompter):
         track_best_outputs: Whether to track the best outputs on the validation set. track_stats must 
             be True if track_best_outputs is True. The optimized program's `detailed_results.best_outputs_valset` 
             will contain the best outputs for each task in the validation set.
+        warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when 
+            called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
+            raised if a mismatch in module-level and predictor-level score is detected.
         seed: The random seed to use for reproducibility. Default is 0.
         
     Note:
@@ -260,12 +287,14 @@ class GEPA(Teleprompter):
         auto: Literal["light", "medium", "heavy"] | None = None,
         max_full_evals: int | None = None,
         max_metric_calls: int | None = None,
-        # Reflection based configuration
+        # Reflection configuration
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
+        instruction_proposer: "ProposalFn | None" = None,
+        component_selector: "ReflectionComponentSelector | str" = "round_robin",
         # Merge-based configuration
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
@@ -280,6 +309,8 @@ class GEPA(Teleprompter):
         wandb_api_key: str | None = None,
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
+        warn_on_score_mismatch: bool = True,
+        use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
     ):
@@ -309,12 +340,17 @@ class GEPA(Teleprompter):
         self.max_full_evals = max_full_evals
         self.max_metric_calls = max_metric_calls
 
-        # Reflection based configuration
+        # Reflection configuration
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
-        # self.reflection_lm = reflection_lm
-        assert reflection_lm is not None, "GEPA requires a reflection language model to be provided. Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model."
-        self.reflection_lm = lambda x: reflection_lm(x)[0]
+
+        assert reflection_lm is not None or instruction_proposer is not None, (
+            "GEPA requires a reflection language model, or custom instruction proposer to be provided. "
+            "Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. "
+            "Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model. "
+        )
+
+        self.reflection_lm = reflection_lm
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
 
@@ -333,6 +369,8 @@ class GEPA(Teleprompter):
         self.use_wandb = use_wandb
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
+        self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.use_mlflow = use_mlflow
 
         if track_best_outputs:
             assert track_stats, "track_stats must be True if track_best_outputs is True."
@@ -340,6 +378,9 @@ class GEPA(Teleprompter):
 
         # Reproducibility
         self.seed = seed
+
+        self.custom_instruction_proposer = instruction_proposer
+        self.component_selector = component_selector
 
     def auto_budget(self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5) -> int:
         import numpy as np
@@ -409,8 +450,10 @@ class GEPA(Teleprompter):
 
         logger.info(f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set.")
 
+        if valset is None:
+            logger.warning("No valset provided; Using trainset as valset. This is useful as an inference-time scaling strategy where you want GEPA to find the best solutions for the provided tasks in the trainse, as it make GEPA overfit prompts to the provided trainset. In order to ensure generalization and perform well on unseen tasks, please provide separate trainset and valset. Provide the smallest valset that is just large enough to match the downstream task distribution, while keeping trainset as large as possible.")
         valset = valset or trainset
-        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget.")
+        logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible.")
 
         rng = random.Random(self.seed)
 
@@ -452,9 +495,10 @@ class GEPA(Teleprompter):
             num_threads=self.num_threads,
             add_format_failure_as_feedback=self.add_format_failure_as_feedback,
             rng=rng,
+            reflection_lm=self.reflection_lm,
+            custom_instruction_proposer=self.custom_instruction_proposer,
+            warn_on_score_mismatch=self.warn_on_score_mismatch
         )
-
-        reflection_lm = self.reflection_lm
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
@@ -465,10 +509,11 @@ class GEPA(Teleprompter):
             adapter=adapter,
 
             # Reflection-based configuration
-            reflection_lm=reflection_lm,
+            reflection_lm=(lambda x: self.reflection_lm(x)[0]) if self.reflection_lm is not None else None,
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
             reflection_minibatch_size=self.reflection_minibatch_size,
+            module_selector=self.component_selector,
 
             perfect_score=self.perfect_score,
 
@@ -485,6 +530,7 @@ class GEPA(Teleprompter):
             use_wandb=self.use_wandb,
             wandb_api_key=self.wandb_api_key,
             wandb_init_kwargs=self.wandb_init_kwargs,
+            use_mlflow=self.use_mlflow,
             track_best_outputs=self.track_best_outputs,
             display_progress_bar=True,
             raise_on_exception=True,

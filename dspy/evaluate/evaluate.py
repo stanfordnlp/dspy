@@ -81,8 +81,8 @@ class Evaluate:
         max_errors: int | None = None,
         provide_traceback: bool | None = None,
         failure_score: float = 0.0,
-        save_as_csv=None,
-        save_as_json=None,
+        save_as_csv: str | None = None,
+        save_as_json: str | None = None,
         **kwargs,
     ):
         """
@@ -97,6 +97,9 @@ class Evaluate:
                 stopping evaluation. If ``None``, inherits from ``dspy.settings.max_errors``.
             provide_traceback (Optional[bool]): Whether to provide traceback information during evaluation.
             failure_score (float): The default score to use if evaluation fails due to an exception.
+            save_as_csv (Optional[str]): The file name where the csv will be saved.
+            save_as_json (Optional[str]): The file name where the json will be saved.
+
         """
         self.devset = devset
         self.metric = metric
@@ -150,12 +153,8 @@ class Evaluate:
         metric = metric if metric is not None else self.metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
-        display_progress = (
-            display_progress if display_progress is not None else self.display_progress
-        )
-        display_table = (
-            display_table if display_table is not None else self.display_table
-        )
+        display_progress = display_progress if display_progress is not None else self.display_progress
+        display_table = display_table if display_table is not None else self.display_table
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
 
@@ -245,6 +244,34 @@ class Evaluate:
             ) as f:
                 json.dump(data, f)
 
+        if save_as_csv:
+            metric_name = (
+                metric.__name__
+                if isinstance(metric, types.FunctionType)
+                else metric.__class__.__name__
+            )
+            data = self._prepare_results_output(results, metric_name)
+
+            with open(save_as_csv, "w", newline="") as csvfile:
+                fieldnames = data[0].keys()
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+                writer.writeheader()
+                for row in data:
+                    writer.writerow(row)
+        if save_as_json:
+            metric_name = (
+                metric.__name__
+                if isinstance(metric, types.FunctionType)
+                else metric.__class__.__name__
+            )
+            data = self._prepare_results_output(results, metric_name)
+            with open(
+                    save_as_json,
+                    "w",
+            ) as f:
+                json.dump(data, f)
+
         return EvaluationResult(
             score=round(100 * ncorrect / ntotal, 2),
             results=results,
@@ -252,7 +279,7 @@ class Evaluate:
 
     @staticmethod
     def _prepare_results_output(
-        results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+            results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
     ):
         return [
             (

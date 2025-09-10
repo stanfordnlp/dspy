@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import threading
+import warnings
 from typing import Any, Literal, cast
 
 import litellm
@@ -33,13 +34,13 @@ class LM(BaseLM):
         temperature: float = 0.0,
         max_tokens: int = 4000,
         cache: bool = True,
-        cache_in_memory: bool = True,
         callbacks: list[BaseCallback] | None = None,
         num_retries: int = 3,
         provider: Provider | None = None,
         finetuning_model: str | None = None,
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
+        use_developer_role: bool = False,
         **kwargs,
     ):
         """
@@ -53,7 +54,6 @@ class LM(BaseLM):
             max_tokens: The maximum number of tokens to generate per response.
             cache: Whether to cache the model responses for reuse to improve performance
                    and reduce costs.
-            cache_in_memory (deprecated): To enable additional caching with LRU in memory.
             callbacks: A list of callback functions to run before and after each request.
             num_retries: The number of times to retry a request if it fails transiently due to
                          network error, rate limiting, etc. Requests are retried with exponential
@@ -61,12 +61,16 @@ class LM(BaseLM):
             provider: The provider to use. If not specified, the provider will be inferred from the model.
             finetuning_model: The model to finetune. In some providers, the models available for finetuning is different
                 from the models available for inference.
+            rollout_id: Optional integer used to differentiate cache entries for otherwise
+                identical requests. Different values bypass DSPy's caches while still caching
+                future calls with the same inputs and rollout ID. Note that `rollout_id`
+                only affects generation when `temperature` is non-zero. This argument is
+                stripped before sending requests to the provider.
         """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
         self.cache = cache
-        self.cache_in_memory = cache_in_memory
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
         self.history = []
@@ -74,6 +78,8 @@ class LM(BaseLM):
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
+        self.use_developer_role = use_developer_role
+        self._warned_zero_temp_rollout = False
 
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
@@ -82,45 +88,60 @@ class LM(BaseLM):
         model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
 
         if model_pattern:
-            if max_tokens < 20000 or temperature != 1.0:
+            if max_tokens < 16000 or temperature != 1.0:
                 raise ValueError(
-                    "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 20000 to "
-                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=20000)"
+                    "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 16000 to "
+                    "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)"
                 )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
+            if self.kwargs.get("rollout_id") is None:
+                self.kwargs.pop("rollout_id", None)
         else:
             self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+            if self.kwargs.get("rollout_id") is None:
+                self.kwargs.pop("rollout_id", None)
 
-    def _get_cached_completion_fn(self, completion_fn, cache, enable_memory_cache):
+        self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
+
+    def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
+        if (
+            not self._warned_zero_temp_rollout
+            and rollout_id is not None
+            and (temperature is None or temperature == 0)
+        ):
+            warnings.warn(
+                "rollout_id has no effect when temperature=0; set temperature>0 to bypass the cache.",
+                stacklevel=3,
+            )
+            self._warned_zero_temp_rollout = True
+
+    def _get_cached_completion_fn(self, completion_fn, cache):
         ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
-        if cache and enable_memory_cache:
+        if cache:
             completion_fn = request_cache(
                 cache_arg_name="request",
                 ignored_args_for_cache_key=ignored_args_for_cache_key,
             )(completion_fn)
-        elif cache:
-            completion_fn = request_cache(
-                cache_arg_name="request",
-                ignored_args_for_cache_key=ignored_args_for_cache_key,
-                enable_memory_cache=False,
-            )(completion_fn)
-        else:
-            completion_fn = completion_fn
 
-        if not cache or litellm.cache is None:
-            litellm_cache_args = {"no-cache": True, "no-store": True}
-        else:
-            litellm_cache_args = {"no-cache": False, "no-store": False}
+        litellm_cache_args = {"no-cache": True, "no-store": True}
 
         return completion_fn, litellm_cache_args
 
     def forward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
+        kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
-        enable_memory_cache = kwargs.pop("cache_in_memory", self.cache_in_memory)
 
         messages = messages or [{"role": "user", "content": prompt}]
+        if self.use_developer_role and self.model_type == "responses":
+            messages = [
+                {**m, "role": "developer"} if m.get("role") == "system" else m
+                for m in messages
+            ]
         kwargs = {**self.kwargs, **kwargs}
+        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
+        if kwargs.get("rollout_id") is None:
+            kwargs.pop("rollout_id", None)
 
         if self.model_type == "chat":
             completion = litellm_completion
@@ -128,7 +149,7 @@ class LM(BaseLM):
             completion = litellm_text_completion
         elif self.model_type == "responses":
             completion = litellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache, enable_memory_cache)
+        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
         results = completion(
             request=dict(model=self.model, messages=messages, **kwargs),
@@ -144,11 +165,19 @@ class LM(BaseLM):
 
     async def aforward(self, prompt=None, messages=None, **kwargs):
         # Build the request.
+        kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
-        enable_memory_cache = kwargs.pop("cache_in_memory", self.cache_in_memory)
 
         messages = messages or [{"role": "user", "content": prompt}]
+        if self.use_developer_role and self.model_type == "responses":
+            messages = [
+                {**m, "role": "developer"} if m.get("role") == "system" else m
+                for m in messages
+            ]
         kwargs = {**self.kwargs, **kwargs}
+        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
+        if kwargs.get("rollout_id") is None:
+            kwargs.pop("rollout_id", None)
 
         if self.model_type == "chat":
             completion = alitellm_completion
@@ -156,7 +185,7 @@ class LM(BaseLM):
             completion = alitellm_text_completion
         elif self.model_type == "responses":
             completion = alitellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache, enable_memory_cache)
+        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
         results = await completion(
             request=dict(model=self.model, messages=messages, **kwargs),
@@ -246,7 +275,6 @@ class LM(BaseLM):
             "model",
             "model_type",
             "cache",
-            "cache_in_memory",
             "num_retries",
             "finetuning_model",
             "launch_kwargs",
@@ -313,6 +341,8 @@ def _get_stream_completion_fn(
 
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    request = dict(request)
+    request.pop("rollout_id", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
@@ -327,6 +357,8 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
 
 def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    request = dict(request)
+    request.pop("rollout_id", None)
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -353,6 +385,8 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
 
 async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    request = dict(request)
+    request.pop("rollout_id", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
@@ -367,6 +401,8 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
 
 async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    request = dict(request)
+    request.pop("rollout_id", None)
     model = request.pop("model").split("/", 1)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
@@ -390,6 +426,8 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
 
 def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    request = dict(request)
+    request.pop("rollout_id", None)
     request = _convert_chat_request_to_responses_request(request)
 
     return litellm.responses(
@@ -402,6 +440,8 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
 
 async def alitellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
+    request = dict(request)
+    request.pop("rollout_id", None)
     request = _convert_chat_request_to_responses_request(request)
 
     return await litellm.aresponses(
@@ -412,6 +452,7 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
     )
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
+    request = dict(request)
     if "messages" in request:
         content_blocks = []
         for msg in request.pop("messages"):

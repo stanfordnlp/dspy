@@ -7,6 +7,7 @@ import litellm
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.tool import Tool, ToolCalls
+from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 
@@ -63,6 +64,10 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
+        citation_output_field_name = self._get_citation_output_field_name(signature)
+        if citation_output_field_name:
+            signature = signature.delete(citation_output_field_name)
+
         return signature
 
     def _call_postprocess(
@@ -74,16 +79,19 @@ class Adapter:
         values = []
 
         tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
+        citation_output_field_name = self._get_citation_output_field_name(original_signature)
 
         for output in outputs:
             output_logprobs = None
             tool_calls = None
+            citations = None
             text = output
 
             if isinstance(output, dict):
                 text = output["text"]
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
+                citations = output.get("citations")
 
             if text:
                 value = self.parse(processed_signature, text)
@@ -105,6 +113,10 @@ class Adapter:
                     for v in tool_calls
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+
+            if citations and citation_output_field_name:
+                citations_obj = Citations.from_dict_list(citations)
+                value[citation_output_field_name] = citations_obj
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
@@ -387,6 +399,13 @@ class Adapter:
     def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.output_fields.items():
             if field.annotation == ToolCalls:
+                return name
+        return None
+
+    def _get_citation_output_field_name(self, signature: type[Signature]) -> str | None:
+        """Find the Citations output field in the signature."""
+        for name, field in signature.output_fields.items():
+            if field.annotation == Citations:
                 return name
         return None
 

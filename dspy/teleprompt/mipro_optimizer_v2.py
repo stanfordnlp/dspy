@@ -58,7 +58,7 @@ class MIPROv2(Teleprompter):
         num_threads: int | None = None,
         max_errors: int | None = None,
         seed: int = 9,
-        init_temperature: float = 0.5,
+        init_temperature: float = 1.0,
         verbose: bool = False,
         track_stats: bool = True,
         log_dir: str | None = None,
@@ -400,6 +400,7 @@ class MIPROv2(Teleprompter):
             set_history_randomly=False,
             verbose=self.verbose,
             rng=self.rng,
+            init_temperature=self.init_temperature,
         )
 
         logger.info(f"\nProposing N={self.num_instruct_candidates} instructions...\n")
@@ -408,7 +409,6 @@ class MIPROv2(Teleprompter):
             program=program,
             demo_candidates=demo_candidates,
             N=self.num_instruct_candidates,
-            T=self.init_temperature,
             trial_logs={},
         )
 

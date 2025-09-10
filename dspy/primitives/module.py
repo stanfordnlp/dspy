@@ -72,7 +72,21 @@ class Module(BaseModule, metaclass=ProgramMeta):
             if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
                     output = self.forward(*args, **kwargs)
-                output.set_lm_usage(usage_tracker.get_total_tokens())
+                tokens = usage_tracker.get_total_tokens()
+
+                # Some optimizers (e.g., GEPA bootstrap tracing) temporarily patch
+                # module.forward to return a tuple: (prediction, trace).
+                # When usage tracking is enabled, ensure we attach usage to the
+                # prediction object if present.
+                prediction_in_output = None
+                if isinstance(output, Prediction):
+                    prediction_in_output = output
+                elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
+                    prediction_in_output = output[0]
+                if not prediction_in_output:
+                    raise ValueError("No prediction object found in output to call set_lm_usage on.")
+
+                prediction_in_output.set_lm_usage(tokens)
                 return output
 
             return self.forward(*args, **kwargs)

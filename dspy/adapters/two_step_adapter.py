@@ -30,7 +30,7 @@ class TwoStepAdapter(Adapter):
     Example:
     ```
     import dspy
-    lm = dspy.LM(model="openai/o3-mini", max_tokens=10000, temperature = 1.0)
+    lm = dspy.LM(model="openai/o3-mini", max_tokens=16000, temperature = 1.0)
     adapter = dspy.TwoStepAdapter(dspy.LM("openai/gpt-4o-mini"))
     dspy.configure(lm=lm, adapter=adapter)
     program = dspy.ChainOfThought("question->answer")
