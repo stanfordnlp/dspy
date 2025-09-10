@@ -317,12 +317,13 @@ def test_component_selector_string_all():
 
     def optimize(component_selector):
         # Metric that progressively improves to encourage GEPA to accept new candidates
-        call_count = [0]
+        call_count = 0
 
         def improving_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
-            call_count[0] += 1
+            nonlocal call_count
+            call_count += 1
             # Score improves with each call to encourage acceptance of new candidates
-            score = min(0.3 + (call_count[0] * 0.1), 1.0)
+            score = min(0.3 + (call_count * 0.1), 1.0)
             return dspy.Prediction(score=score, feedback="Improving feedback")
 
         # Provide enough responses for all possible LM calls
