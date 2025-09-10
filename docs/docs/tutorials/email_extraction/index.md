@@ -92,16 +92,6 @@ class ExtractedEntity(BaseModel):
     entity_type: str
     value: str
     confidence: float
-
-class EmailInsight(BaseModel):
-    email_type: EmailType
-    urgency: UrgencyLevel
-    summary: str
-    key_entities: list[ExtractedEntity]
-    action_required: bool
-    deadline: Optional[str] = None
-    amount: Optional[float] = None
-    sender_info: Optional[str] = None
 ```
 
 ## Step 2: Create DSPy Signatures
