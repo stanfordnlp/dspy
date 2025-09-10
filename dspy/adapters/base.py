@@ -65,9 +65,8 @@ class Adapter:
 
         # Handle custom types that use native response
         for name, field in signature.output_fields.items():
-            if isinstance(field.annotation, type) and issubclass(field.annotation, Type):
-                if field.annotation.use_native_response(lm.model):
-                    signature = signature.delete(name)
+            if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation.use_native_response(lm.model):
+                signature = signature.delete(name)
 
         return signature
 
@@ -115,9 +114,8 @@ class Adapter:
 
             # Parse custom types that does not rely on the adapter parsing
             for name, field in original_signature.output_fields.items():
-                if isinstance(field.annotation, type) and issubclass(field.annotation, Type):
-                    if field.annotation.use_native_response(lm.model):
-                        value[name] = field.annotation.parse_lm_response(output)
+                if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation.use_native_response(lm.model):
+                    value[name] = field.annotation.parse_lm_response(output)
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs

@@ -251,7 +251,7 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
 
             if not _is_streamable(field_info.annotation):
                 raise ValueError(
-                    f"Stream listener can only be applied to string or streamable dspy type output field, "
+                    f"Stream listener can only be applied to string or subclass of `dspy.Type` that has `is_streamable() == True`, "
                     f"but your field {field_name} is of type {field_info.annotation}."
                 )
 
