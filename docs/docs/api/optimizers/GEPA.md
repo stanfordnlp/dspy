@@ -188,7 +188,7 @@ class GenerateWordLimitedInstruction(dspy.Signature):
     """Given a current instruction and feedback examples, generate an improved instruction with word limit constraints."""
     
     current_instruction = dspy.InputField(desc="The current instruction that needs improvement")
-    issues_found = dspy.InputField(desc="Feedback and issues identified from examples")
+    feedback_summary = dspy.InputField(desc="Feedback from examples that might include both positive and negative cases")
     max_words = dspy.InputField(desc="Maximum number of words allowed in the new instruction")
     
     improved_instruction = dspy.OutputField(desc="A new instruction that fixes the issues while staying under the max_words limit")
@@ -217,7 +217,7 @@ class WordLimitProposer(ProposalFn):
             # Use the module to improve the instruction
             result = self.instruction_improver(
                 current_instruction=current_instruction,
-                issues_found=feedback_text,
+                feedback_summary=feedback_text,
                 max_words=self.max_words
             )
             
