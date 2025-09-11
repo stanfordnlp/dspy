@@ -131,7 +131,7 @@ Consider implementing a custom instruction proposer when you need:
 
 **Built-in Options:**
 - **Default Proposer**: The standard GEPA instruction proposer (used when `instruction_proposer=None`). The default instruction proposer IS an instruction proposer as well! It is the most general one, that was used for the diverse experiments reported in the GEPA paper and tutorials.
-- **MultiModalInstructionProposer**: Handles `dspy.Image` inputs and structured multimodal content. This proposer has been specifically optimized for tasks that include one or more `dspy.Image` inputs.
+- **MultiModalInstructionProposer**: Handles `dspy.Image` inputs and structured multimodal content.
 
 ```python
 from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
@@ -272,16 +272,14 @@ class RAGInstructionImprover(dspy.Module):
             examples_with_feedback=component_examples
         )
         
-        # Retrieve relevant documentation using multiple queries
         results = self.retrieve.query(
             query_texts=query_result.retrieval_queries,
             n_results=3
         )
         
-        # Format retrieved documentation by query
         relevant_docs_parts = []
         for i, (query, query_docs) in enumerate(zip(query_result.retrieval_queries, results['documents'])):
-            if query_docs:  # Only include queries that found results
+            if query_docs:
                 docs_formatted = "\n".join([f"  - {doc}" for doc in query_docs])
                 relevant_docs_parts.append(
                     f"**Search Query #{i+1}**: {query}\n"
@@ -320,7 +318,6 @@ class DocumentationEnhancedProposer(ProposalFn):
             current_instruction = candidate[component_name]
             component_examples = reflective_dataset[component_name]
             
-            # Use RAG-enhanced improvement
             result = self.instruction_improver(
                 current_instruction=current_instruction,
                 component_examples=component_examples
@@ -330,14 +327,11 @@ class DocumentationEnhancedProposer(ProposalFn):
             
         return updated_components
 
-# Usage - Connect to existing ChromaDB collection
 import chromadb
 
-# Connect to existing ChromaDB collection with instruction guidelines
 client = chromadb.Client()
 collection = client.get_collection("instruction_guidelines")
 
-# Configure the RAG-enhanced proposer
 gepa = dspy.GEPA(
     metric=task_specific_metric,
     reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
@@ -366,7 +360,6 @@ class ExternalLMProposer(ProposalFn):
                 
         return updated_components
 
-# Can work without GEPA's reflection_lm!
 gepa = dspy.GEPA(
     metric=my_metric,
     reflection_lm=None,  # Optional when using custom proposer
