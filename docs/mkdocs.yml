@@ -245,6 +245,39 @@ plugins:
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
             "quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
             "quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
+    - llmstxt:
+        markdown_description: >
+          DSPy is the framework for programming—rather than prompting—language models.
+          DSPy unifies techniques for prompting, fine-tuning, reasoning, tool use, and evaluation of LMs.
+          It provides a systematic approach to building AI applications through composable modules, 
+          optimization techniques, and evaluation frameworks.
+        sections:
+          Getting Started:
+            - index.md: DSPy overview and quick start guide
+            - cheatsheet.md: DSPy cheatsheet for quick reference
+          Core Concepts:
+            - learn/programming/overview.md: Programming paradigm and philosophy
+            - learn/programming/signatures.md: Signatures - declarative input/output specifications
+            - learn/programming/modules.md: Modules - composable AI components
+            - learn/programming/language_models.md: Language model interfaces and configuration
+          Essential Tutorials:
+            - tutorials/rag/index.ipynb: Retrieval-Augmented Generation (RAG) tutorial
+            - tutorials/classification/index.md: Classification with DSPy
+            - tutorials/agents/index.ipynb: Building AI agents with DSPy
+          Optimization:
+            - learn/optimization/overview.md: Optimization techniques overview
+            - tutorials/optimize_ai_program/index.md: Guide to optimizing AI programs
+            - api/optimizers/BootstrapFewShot.md: Bootstrap few-shot optimizer
+          Key Modules API:
+            - api/modules/Predict.md: Basic prediction module
+            - api/modules/ChainOfThought.md: Chain of thought reasoning
+            - api/modules/ReAct.md: ReAct agent module
+          Core API Reference:
+            - api/signatures/Signature.md: Signature system documentation
+            - api/primitives/Example.md: Example primitive for training data
+          Production:
+            - tutorials/deployment/index.md: Production deployment guide
+            - tutorials/observability/index.md: Debugging and observability
 
 extra:
     social:
