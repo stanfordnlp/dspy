@@ -56,7 +56,7 @@ If you're looking to understand the underlying research, this is a set of our pa
 [Dec'23] [DSPy Assertions: Computational Constraints for Self-Refining Language Model Pipelines](https://arxiv.org/abs/2312.13382)   
 [Dec'22] [Demonstrate-Search-Predict: Composing Retrieval & Language Models for Knowledge-Intensive NLP](https://arxiv.org/abs/2212.14024.pdf)
 
-To stay up to date or learn more, follow [@lateinteraction](https://twitter.com/lateinteraction) on Twitter.
+To stay up to date or learn more, follow [@DSPyOSS](https://twitter.com/DSPyOSS) on Twitter or the DSPy page on LinkedIn.
 
 The **DSPy** logo is designed by **Chuyi Zhang**.
 

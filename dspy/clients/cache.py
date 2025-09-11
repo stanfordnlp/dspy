@@ -7,8 +7,8 @@ from hashlib import sha256
 from typing import Any
 
 import cloudpickle
+import orjson
 import pydantic
-import ujson
 from cachetools import LRUCache
 from diskcache import FanoutCache
 
@@ -93,7 +93,7 @@ class Cache:
                 return value
 
         params = {k: transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
-        return sha256(ujson.dumps(params, sort_keys=True).encode()).hexdigest()
+        return sha256(orjson.dumps(params, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
     def get(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
         try:
@@ -118,6 +118,7 @@ class Cache:
         if hasattr(response, "usage"):
             # Clear the usage data when cache is hit, because no LM call is made
             response.usage = {}
+            response.cache_hit = True
         return response
 
     def put(

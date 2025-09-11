@@ -1,0 +1,96 @@
+{
+    "react": {
+      "traces": [],
+      "train": [],
+      "demos": [
+        {
+          "augmented": true,
+          "question": "That Darn Cat! and Never a Dull Moment were both produced by what studio?",
+          "trajectory": "[[ ## thought_0 ## ]]\nI need to find out which studio produced both \"That Darn Cat!\" and \"Never a Dull Moment.\" This information is likely available on Wikipedia, so I will search for it there.\n\n[[ ## tool_name_0 ## ]]\nsearch_wikipedia\n\n[[ ## tool_args_0 ## ]]\n{\"query\": \"That Darn Cat! and Never a Dull Moment studio production\"}\n\n[[ ## observation_0 ## ]]\n[1] «That Darn Cat! | That Darn Cat! is a 1965 American Walt Disney Productions thriller comedy film starring Hayley Mills (in her last of the six films she made for the Walt Disney Studios) and Dean Jones (starring in his first film for Disney) in a story about bank robbers, a kidnapping and a mischievous cat. The film was based on the 1963 novel \"Undercover Cat\" by Gordon and Mildred Gordon and was directed by Robert Stevenson. The title song was written by the Sherman Brothers and sung by Bobby Darin. The 1997 remake includes a cameo appearance by Dean Jones.»\n[2] «Never a Dull Moment (1968 film) | Never a Dull Moment is a 1968 American comedy crime film from Walt Disney Productions starring Dick Van Dyke and Edward G. Robinson and directed by Jerry Paris. The script by AJ Carothers was based on a novel by John Godey. The supporting cast features Dorothy Provine, Henry Silva, Slim Pickens and Jack Elam.»\n[3] «That Darn Cat (1997 film) | That Darn Cat is a 1997 American mystery comedy film starring Christina Ricci and Doug E. Doug. It is a remake of the 1965 film \"That Darn Cat! \", which in turn was based on the book \"Undercover Cat\" by Gordon and Mildred Gordon. It is directed by British TV veteran Bob Spiers (most famous for \"Fawlty Towers\", as well as \"Spice World\") and written by Scott Alexander and Larry Karaszewski, best known for \"Ed Wood\" and the first two \"Problem Child\" films.»",
+          "next_thought": "Both \"That Darn Cat!\" and \"Never a Dull Moment\" were produced by Walt Disney Productions. I have the information I need to answer the question.",
+          "next_tool_name": "finish",
+          "next_tool_args": {}
+        },
+        {
+          "question": "Was Yakov Protazanov or Marcel Duchamp born in 1881",
+          "answer": "Yakov Alexandrovich Protazanov (Russian: Я́ков Алекса́ндрович Протаза́нов ; January 23 (O.S. February 4), 1881",
+          "dspy_uuid": "15118a69-274d-4eea-b3eb-204d05e24012",
+          "dspy_split": "train"
+        }
+      ],
+      "signature": {
+        "instructions": "Imagine you are a detective racing against time to solve a high-profile case involving two famous films: \"That Darn Cat!\" and \"Never a Dull Moment.\" Your mission is to uncover which studio produced these films before the press conference starts in one hour. You have access to a powerful tool: a Wikipedia search. \n\nGiven the fields `question`, produce the fields `answer`.\n\nYou are an Agent. In each episode, you will be given the fields `question` as input. And you can see your past trajectory so far. Your goal is to use one or more of the supplied tools to collect any necessary information for producing `answer`.\n\nTo do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task. After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n\nWhen writing next_thought, you may reason about the current situation and plan for future steps. When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n\n(1) search_wikipedia. It takes arguments {'query': {'type': 'string'}}.\n(2) finish, whose description is <desc>Marks the task as complete. That is, signals that all information for producing the outputs, i.e. `answer`, are now available to be extracted.<\/desc>. It takes arguments {}.\nWhen providing `next_tool_args`, the value inside the field must be in JSON format.",
+        "fields": [
+          {
+            "prefix": "Question:",
+            "description": "${question}"
+          },
+          {
+            "prefix": "Trajectory:",
+            "description": "${trajectory}"
+          },
+          {
+            "prefix": "Next Thought:",
+            "description": "${next_thought}"
+          },
+          {
+            "prefix": "Next Tool Name:",
+            "description": "${next_tool_name}"
+          },
+          {
+            "prefix": "Next Tool Args:",
+            "description": "${next_tool_args}"
+          }
+        ]
+      },
+      "lm": null
+    },
+    "extract.predict": {
+      "traces": [],
+      "train": [],
+      "demos": [
+        {
+          "augmented": true,
+          "question": "That Darn Cat! and Never a Dull Moment were both produced by what studio?",
+          "trajectory": "[[ ## thought_0 ## ]]\nI need to find out which studio produced both \"That Darn Cat!\" and \"Never a Dull Moment.\" This information is likely available on Wikipedia, so I will search for it there.\n\n[[ ## tool_name_0 ## ]]\nsearch_wikipedia\n\n[[ ## tool_args_0 ## ]]\n{\"query\": \"That Darn Cat! and Never a Dull Moment studio production\"}\n\n[[ ## observation_0 ## ]]\n[1] «That Darn Cat! | That Darn Cat! is a 1965 American Walt Disney Productions thriller comedy film starring Hayley Mills (in her last of the six films she made for the Walt Disney Studios) and Dean Jones (starring in his first film for Disney) in a story about bank robbers, a kidnapping and a mischievous cat. The film was based on the 1963 novel \"Undercover Cat\" by Gordon and Mildred Gordon and was directed by Robert Stevenson. The title song was written by the Sherman Brothers and sung by Bobby Darin. The 1997 remake includes a cameo appearance by Dean Jones.»\n[2] «Never a Dull Moment (1968 film) | Never a Dull Moment is a 1968 American comedy crime film from Walt Disney Productions starring Dick Van Dyke and Edward G. Robinson and directed by Jerry Paris. The script by AJ Carothers was based on a novel by John Godey. The supporting cast features Dorothy Provine, Henry Silva, Slim Pickens and Jack Elam.»\n[3] «That Darn Cat (1997 film) | That Darn Cat is a 1997 American mystery comedy film starring Christina Ricci and Doug E. Doug. It is a remake of the 1965 film \"That Darn Cat! \", which in turn was based on the book \"Undercover Cat\" by Gordon and Mildred Gordon. It is directed by British TV veteran Bob Spiers (most famous for \"Fawlty Towers\", as well as \"Spice World\") and written by Scott Alexander and Larry Karaszewski, best known for \"Ed Wood\" and the first two \"Problem Child\" films.»\n\n[[ ## thought_1 ## ]]\nBoth \"That Darn Cat!\" and \"Never a Dull Moment\" were produced by Walt Disney Productions. I have the information I need to answer the question.\n\n[[ ## tool_name_1 ## ]]\nfinish\n\n[[ ## tool_args_1 ## ]]\n{}\n\n[[ ## observation_1 ## ]]\nCompleted.",
+          "reasoning": "Both \"That Darn Cat!\" and \"Never a Dull Moment\" were produced by Walt Disney Productions, as confirmed by the information retrieved from Wikipedia.",
+          "answer": "Walt Disney Productions"
+        },
+        {
+          "question": "Are Smyrnium and Nymania both types of plant?",
+          "answer": "yes",
+          "dspy_uuid": "b57b5933-95c7-472a-801b-3cc9bc0a3b99",
+          "dspy_split": "train"
+        }
+      ],
+      "signature": {
+        "instructions": "Given the very verbose fields `question`, produce the fields `answer`.",
+        "fields": [
+          {
+            "prefix": "Question:",
+            "description": "${question}"
+          },
+          {
+            "prefix": "Trajectory:",
+            "description": "${trajectory}"
+          },
+          {
+            "prefix": "Reasoning: Let's think step by step in order to",
+            "description": "${reasoning}"
+          },
+          {
+            "prefix": "Answer:",
+            "description": "${answer}"
+          }
+        ]
+      },
+      "lm": null
+    },
+    "metadata": {
+      "dependency_versions": {
+        "python": "3.13",
+        "dspy": "3.0.0",
+        "cloudpickle": "3.1"
+      }
+    }
+  }

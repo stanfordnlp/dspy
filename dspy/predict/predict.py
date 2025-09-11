@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 
 
 class Predict(Module, Parameter):
+    """Basic DSPy module that maps inputs to outputs using a language model.
+
+    Args:
+        signature: The input/output signature describing the task.
+        callbacks: Optional list of callbacks for instrumentation.
+        **config: Default keyword arguments forwarded to the underlying
+            language model. These values can be overridden for a single
+            invocation by passing a ``config`` dictionary when calling the
+            module. For example::
+
+                predict = dspy.Predict("q -> a", rollout_id=1, temperature=1.0)
+                predict(q="What is 1 + 52?", config={"rollout_id": 2, "temperature": 1.0})
+    """
+
     def __init__(self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None, **config):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
@@ -30,7 +44,7 @@ class Predict(Module, Parameter):
         self.train = []
         self.demos = []
 
-    def dump_state(self):
+    def dump_state(self, json_mode=True):
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -42,7 +56,10 @@ class Predict(Module, Parameter):
                 # FIXME: Saving BaseModels as strings in examples doesn't matter because you never re-access as an object
                 demo[field] = serialize_object(demo[field])
 
-            state["demos"].append(demo)
+            if isinstance(demo, dict) or not json_mode:
+                state["demos"].append(demo)
+            else:
+                state["demos"].append(demo.toDict())
 
         state["signature"] = self.signature.dump_state()
         state["lm"] = self.lm.dump_state() if self.lm else None
@@ -96,7 +113,7 @@ class Predict(Module, Parameter):
         assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
         signature = ensure_signature(kwargs.pop("signature", self.signature))
         demos = kwargs.pop("demos", self.demos)
-        config = dict(**self.config, **kwargs.pop("config", {}))
+        config = {**self.config, **kwargs.pop("config", {})}
 
         # Get the right LM to use.
         lm = kwargs.pop("lm", self.lm) or settings.lm

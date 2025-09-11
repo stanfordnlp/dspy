@@ -23,7 +23,8 @@ def sample_pil_image():
 
 @pytest.fixture
 def sample_dspy_image_download():
-    return dspy.Image.from_url("https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg", download=True)
+    url = "https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg"
+    return dspy.Image(url, download=True)
 
 
 @pytest.fixture
@@ -33,7 +34,7 @@ def sample_url():
 
 @pytest.fixture
 def sample_dspy_image_no_download():
-    return dspy.Image.from_url("https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg", download=False)
+    return dspy.Image("https://images.dog.ceo/breeds/dane-great/n02109047_8912.jpg")
 
 
 def count_messages_with_image_url_pattern(messages):
@@ -113,7 +114,7 @@ def test_basic_image_operations(test_case):
 
     # Convert string URLs to dspy.Image objects
     inputs = {
-        k: dspy.Image.from_url(v) if isinstance(v, str) and k in ["image", "ui_image"] else v
+        k: dspy.Image(v) if isinstance(v, str) and k in ["image", "ui_image"] else v
         for k, v in test_case["inputs"].items()
     }
 
@@ -152,7 +153,7 @@ def test_image_input_formats(
     actual_input = input_map[image_input]
     # TODO(isaacbmiller): Support the cases without direct dspy.Image coercion
     if image_input in ["pil_image", "encoded_pil_image"]:
-        pytest.xfail(f"{description} not fully supported without dspy.from_PIL")
+        pytest.xfail(f"{description} not fully supported without dspy.Image coercion")
 
     result = predictor(image=actual_input, class_labels=["dog", "cat", "bird"])
     assert result.probabilities == expected["probabilities"]
@@ -163,7 +164,7 @@ def test_predictor_save_load(sample_url, sample_pil_image):
     """Test saving and loading predictors with image fields"""
     signature = "image: dspy.Image -> caption: str"
     examples = [
-        dspy.Example(image=dspy.Image.from_url(sample_url), caption="Example 1"),
+        dspy.Example(image=dspy.Image(sample_url), caption="Example 1"),
         dspy.Example(image=sample_pil_image, caption="Example 2"),
     ]
 
@@ -176,7 +177,7 @@ def test_predictor_save_load(sample_url, sample_pil_image):
         loaded_predictor = dspy.Predict(signature)
         loaded_predictor.load(temp_file.name)
 
-    loaded_predictor(image=dspy.Image.from_url("https://example.com/dog.jpg"))
+    loaded_predictor(image=dspy.Image("https://example.com/dog.jpg"))
     assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 2
     assert "<DSPY_IMAGE_START>" not in str(lm.history[-1]["messages"])
 
@@ -186,8 +187,8 @@ def test_save_load_complex_default_types():
     examples = [
         dspy.Example(
             image_list=[
-                dspy.Image.from_url("https://example.com/dog.jpg"),
-                dspy.Image.from_url("https://example.com/cat.jpg"),
+                dspy.Image("https://example.com/dog.jpg"),
+                dspy.Image("https://example.com/cat.jpg"),
             ],
             caption="Example 1",
         ).with_inputs("image_list"),
@@ -253,9 +254,9 @@ def test_save_load_complex_types(test_case):
     processed_input = {}
     for key, value in test_case["inputs"].items():
         if isinstance(value, str) and "http" in value:
-            processed_input[key] = dspy.Image.from_url(value)
+            processed_input[key] = dspy.Image(value)
         elif isinstance(value, list) and value and isinstance(value[0], str):
-            processed_input[key] = [dspy.Image.from_url(url) for url in value]
+            processed_input[key] = [dspy.Image(url) for url in value]
         else:
             processed_input[key] = value
 
@@ -298,8 +299,8 @@ def test_save_load_pydantic_model():
 
     # Create model instance
     model_input = ImageModel(
-        image=dspy.Image.from_url("https://example.com/dog.jpg"),
-        image_list=[dspy.Image.from_url("https://example.com/cat.jpg")],
+        image=dspy.Image("https://example.com/dog.jpg"),
+        image_list=[dspy.Image("https://example.com/cat.jpg")],
         output="Multiple photos",
     )
 
@@ -343,7 +344,7 @@ def test_pdf_url_support():
     pdf_url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
 
     # Create a dspy.Image object from the PDF URL with download=True
-    pdf_image = dspy.Image.from_url(pdf_url, download=True)
+    pdf_image = dspy.Image(pdf_url, download=True)
 
     # The data URI should contain application/pdf in the MIME type
     assert "data:application/pdf" in pdf_image.url
@@ -421,9 +422,9 @@ def test_pdf_from_file():
 
     try:
         # Create a dspy.Image from the file
-        pdf_image = dspy.Image.from_file(tmp_file_path)
+        pdf_image = dspy.Image(tmp_file_path)
 
-        # Check that the MIME type is correct
+        # The constructor encodes the file into a data URI we can inspect directly
         assert "data:application/pdf" in pdf_image.url
         assert ";base64," in pdf_image.url
 
@@ -447,7 +448,7 @@ def test_pdf_from_file():
 
 def test_image_repr():
     """Test string representation of Image objects"""
-    url_image = dspy.Image.from_url("https://example.com/dog.jpg", download=False)
+    url_image = dspy.Image("https://example.com/dog.jpg")
     assert str(url_image) == (
         "<<CUSTOM-TYPE-START-IDENTIFIER>>"
         "[{'type': 'image_url', 'image_url': {'url': 'https://example.com/dog.jpg'}}]"
@@ -456,7 +457,47 @@ def test_image_repr():
     assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
-    pil_image = dspy.Image.from_PIL(sample_pil)
+    pil_image = dspy.Image(sample_pil)
     assert str(pil_image).startswith("<<CUSTOM-TYPE-START-IDENTIFIER>>[{'type': 'image_url',")
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
     assert "base64" in str(pil_image)
+
+
+def test_from_methods_warn(tmp_path):
+    """Deprecated from_* methods emit warnings"""
+    tmp_file = tmp_path / "test.png"
+    tmp_file.write_bytes(b"pngdata")
+
+    with pytest.warns(DeprecationWarning):
+        dspy.Image.from_url("https://example.com/dog.jpg")
+    with pytest.warns(DeprecationWarning):
+        dspy.Image.from_file(str(tmp_file))
+    sample_pil = PILImage.new("RGB", (10, 10), color="blue")
+    with pytest.warns(DeprecationWarning):
+        dspy.Image.from_PIL(sample_pil)
+
+
+def test_invalid_string_format():
+    """Test that invalid string formats raise a ValueError"""
+    invalid_string = "this_is_not_a_url_or_file"
+
+    # Should raise a ValueError and not pass the string through
+    with pytest.raises(ValueError, match="Unrecognized") as warning_info:
+        image = dspy.Image(invalid_string)
+
+def test_pil_image_with_download_parameter():
+    """Test behavior when PIL image is passed with download=True"""
+    sample_pil = PILImage.new("RGB", (60, 30), color="red")
+
+    # PIL image should be encoded regardless of download parameter
+    image_no_download = dspy.Image(sample_pil)
+    image_with_download = dspy.Image(sample_pil, download=True)
+
+    # Both should result in base64 encoded data URIs
+    assert image_no_download.url.startswith("data:")
+    assert image_with_download.url.startswith("data:")
+    assert "base64," in image_no_download.url
+    assert "base64," in image_with_download.url
+
+    # They should be identical since PIL images are always encoded
+    assert image_no_download.url == image_with_download.url

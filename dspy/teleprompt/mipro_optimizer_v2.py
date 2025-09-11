@@ -58,7 +58,7 @@ class MIPROv2(Teleprompter):
         num_threads: int | None = None,
         max_errors: int | None = None,
         seed: int = 9,
-        init_temperature: float = 0.5,
+        init_temperature: float = 1.0,
         verbose: bool = False,
         track_stats: bool = True,
         log_dir: str | None = None,
@@ -109,9 +109,16 @@ class MIPROv2(Teleprompter):
         view_data_batch_size: int = 10,
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
-        requires_permission_to_run: bool = True, # deprecated
+        requires_permission_to_run: bool | None = None, # deprecated
         provide_traceback: bool | None = None,
     ) -> Any:
+        if requires_permission_to_run == False:
+            logger.warning(
+                "'requires_permission_to_run' is deprecated and will be removed in a future version."
+            )
+        elif requires_permission_to_run == True:
+            raise ValueError("User confirmation is removed from MIPROv2. Please remove the 'requires_permission_to_run' argument.")
+
         effective_max_errors = (
             self.max_errors
             if self.max_errors is not None
@@ -393,6 +400,7 @@ class MIPROv2(Teleprompter):
             set_history_randomly=False,
             verbose=self.verbose,
             rng=self.rng,
+            init_temperature=self.init_temperature,
         )
 
         logger.info(f"\nProposing N={self.num_instruct_candidates} instructions...\n")
@@ -401,7 +409,6 @@ class MIPROv2(Teleprompter):
             program=program,
             demo_candidates=demo_candidates,
             N=self.num_instruct_candidates,
-            T=self.init_temperature,
             trial_logs={},
         )
 

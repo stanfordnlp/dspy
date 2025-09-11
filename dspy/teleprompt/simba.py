@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 
@@ -11,40 +11,50 @@ from dspy.teleprompt.teleprompt import Teleprompter
 logger = logging.getLogger(__name__)
 
 
-# Stochastic Introspective Mini-Batch Ascent
 class SIMBA(Teleprompter):
+    """
+    SIMBA (Stochastic Introspective Mini-Batch Ascent) optimizer for DSPy.
+    
+    SIMBA is a DSPy optimizer that uses the LLM to analyze its own performance and 
+    generate improvement rules. It samples mini-batches, identifies challenging examples 
+    with high output variability, then either creates self-reflective rules or adds 
+    successful examples as demonstrations.
+    
+    For more details, see: https://dspy.ai/api/optimizers/SIMBA/
+    """
+
     def __init__(
         self,
         *,
-        metric: Callable,
-        bsize=32,
-        num_candidates=6,
-        max_steps=8,
-        max_demos=4,
-        demo_input_field_maxlen=100_000,
-        num_threads=None,
-        temperature_for_sampling=0.2,
-        temperature_for_candidates=0.2,
-    ):
+        metric: Callable[[dspy.Example, dict[str, Any]], float],
+        bsize: int = 32,
+        num_candidates: int = 6,
+        max_steps: int = 8,
+        max_demos: int = 4,
+        demo_input_field_maxlen: int = 100_000,
+        num_threads: int | None = None,
+        temperature_for_sampling: float = 0.2,
+        temperature_for_candidates: float = 0.2,
+    ) -> None:
         """
         Initializes SIMBA.
 
         Args:
-            metric (Callable): A function that takes an Example and a prediction_dict
+            metric: A function that takes an Example and a prediction_dict
                 as input and returns a float.
-            bsize (int, optional): Mini-batch size. Defaults to 32.
-            num_candidates (int, optional): Number of new candidate programs to produce
+            bsize: Mini-batch size. Defaults to 32.
+            num_candidates: Number of new candidate programs to produce
                 per iteration. Defaults to 6.
-            max_steps (int, optional): Number of optimization steps to run. Defaults to 8.
-            max_demos (int, optional): Maximum number of demos a predictor can hold
+            max_steps: Number of optimization steps to run. Defaults to 8.
+            max_demos: Maximum number of demos a predictor can hold
                 before dropping some. Defaults to 4.
-            demo_input_field_maxlen (int, optional): Maximum number of characters to keep
+            demo_input_field_maxlen: Maximum number of characters to keep
                 in an input field when building a new demo. Defaults to 100,000.
-            num_threads (int, optional): Number of threads for parallel execution.
+            num_threads: Number of threads for parallel execution.
                 Defaults to None.
-            temperature_for_sampling (float, optional): Temperature used for picking
+            temperature_for_sampling: Temperature used for picking
                 programs during the trajectory-sampling step. Defaults to 0.2.
-            temperature_for_candidates (float, optional): Temperature used for picking
+            temperature_for_candidates: Temperature used for picking
                 the source program for building new candidates. Defaults to 0.2.
         """
         self.metric = metric
@@ -63,7 +73,24 @@ class SIMBA(Teleprompter):
         else:
             self.strategies = [append_a_rule]
 
-    def compile(self, student: dspy.Module, *, trainset: list[dspy.Example], seed: int = 0):
+    def compile(
+        self,
+        student: dspy.Module,
+        *,
+        trainset: list[dspy.Example],
+        seed: int = 0
+    ) -> dspy.Module:
+        """
+        Compile and optimize the student module using SIMBA.
+        
+        Args:
+            student: The module to optimize
+            trainset: Training examples for optimization
+            seed: Random seed for reproducibility
+            
+        Returns:
+            The optimized module with candidate_programs and trial_logs attached
+        """
         # Basic checks
         assert len(trainset) >= self.bsize, f"Trainset too small: {len(trainset)} < {self.bsize}"
 
@@ -107,7 +134,7 @@ class SIMBA(Teleprompter):
             probs = [val / sum_exps for val in exps]
             return rng_obj.choices(program_idxs, weights=probs, k=1)[0]
 
-        def register_new_program(prog: dspy.Module, score_list: list[float]):
+        def register_new_program(prog: dspy.Module, score_list: list[float]) -> None:
             nonlocal next_program_idx
             next_program_idx += 1
             new_idx = next_program_idx
