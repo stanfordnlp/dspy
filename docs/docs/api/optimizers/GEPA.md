@@ -149,17 +149,25 @@ We invite community contributions of new instruction proposers for specialized d
 
 ### How to Implement Custom Instruction Proposers
 
-Custom instruction proposers must implement the `ProposalFn` protocol:
+Custom instruction proposers must implement the `ProposalFn` protocol by defining a callable class or function. GEPA will call your proposer during optimization:
 
 ```python
 from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
 
-def __call__(
-    self,
-    candidate: dict[str, str],                          # Candidate component name -> instruction mapping to be updated in this round
-    reflective_dataset: dict[str, list[ReflectiveExample]],  # Component -> examples with structure: {"Inputs": ..., "Generated Outputs": ..., "Feedback": ...}  
-    components_to_update: list[str]                     # Which components to improve
-) -> dict[str, str]:                                    # Return new instruction mapping only for components being updated
+class CustomInstructionProposer:
+    def __call__(
+        self,
+        candidate: dict[str, str],                          # Candidate component name -> instruction mapping to be updated in this round
+        reflective_dataset: dict[str, list[ReflectiveExample]],  # Component -> examples with structure: {"Inputs": ..., "Generated Outputs": ..., "Feedback": ...}  
+        components_to_update: list[str]                     # Which components to improve
+    ) -> dict[str, str]:                                    # Return new instruction mapping only for components being updated
+        # Your custom instruction generation logic here
+        return updated_instructions
+
+# Or as a function:
+def custom_instruction_proposer(candidate, reflective_dataset, components_to_update):
+    # Your custom instruction generation logic here
+    return updated_instructions
 ```
 
 **Reflective Dataset Structure:**
