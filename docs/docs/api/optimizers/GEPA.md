@@ -382,6 +382,120 @@ gepa = dspy.GEPA(
 - **Mind data serialization**: Serializing everything to strings might not be ideal - handle complex input types (like `dspy.Image`) by maintaining their structure for better LM processing
 - **Test thoroughly**: Test your custom proposer with representative failure cases
 
+## Custom Component Selection
+
+### What is component_selector?
+
+The `component_selector` parameter controls which components (predictors) in your DSPy program are selected for optimization at each GEPA iteration. Instead of the default round-robin approach that updates one component at a time, you can implement custom selection strategies that choose single or multiple components based on optimization state, performance trajectories, and other contextual information.
+
+### Default Behavior
+
+By default, GEPA uses a **round-robin strategy** (`RoundRobinReflectionComponentSelector`) that cycles through components sequentially, optimizing one component per iteration:
+
+```python
+# Default round-robin component selection
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    # component_selector="round_robin"  # This is the default
+    auto="medium"
+)
+```
+
+### Built-in Selection Strategies
+
+**String-based selectors:**
+- `"round_robin"` (default): Cycles through components one at a time
+- `"all"`: Selects all components for simultaneous optimization
+
+```python
+# Optimize all components simultaneously
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=reflection_lm,
+    component_selector="all",  # Update all components together
+    auto="medium"
+)
+
+# Explicit round-robin selection
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=reflection_lm,
+    component_selector="round_robin",  # One component per iteration
+    auto="medium"
+)
+```
+
+### When to Use Custom Component Selection
+
+Consider implementing custom component selection when you need:
+
+- **Dependency-aware optimization**: Update related components together (e.g., a classifier and its input formatter)
+- **LLM-driven selection**: Let an LLM analyze trajectories and decide which components need attention
+- **Resource-conscious optimization**: Balance optimization thoroughness with computational budget
+
+### Custom Component Selector Protocol
+
+Custom selectors must implement the `ReflectionComponentSelector` protocol:
+
+```python
+def __call__(
+    self,
+    state: GEPAState,                    # Complete optimization state with history
+    trajectories: list[Trajectory],      # Execution traces from the current minibatch
+    subsample_scores: list[float],       # Scores for each example in the current minibatch  
+    candidate_idx: int,                  # Index of the current program candidate being optimized
+    candidate: dict[str, str],           # Component name -> instruction mapping
+) -> list[str]:                          # Return list of component names to optimize
+```
+
+### Custom Implementation Example
+
+Here's a simple function that alternates between optimizing different halves of your components:
+
+```python
+def alternating_half_selector(state, trajectories, subsample_scores, candidate_idx, candidate):
+    """Optimize half the components on even iterations, half on odd iterations."""
+    components = list(candidate.keys())
+    
+    # If there's only one component, always optimize it
+    if len(components) <= 1:
+        return components
+    
+    mid_point = len(components) // 2
+    
+    # Use state.i (iteration counter) to alternate between halves
+    if state.i % 2 == 0:
+        # Even iteration: optimize first half
+        return components[:mid_point]
+    else:
+        # Odd iteration: optimize second half  
+        return components[mid_point:]
+
+# Usage
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=reflection_lm,
+    component_selector=alternating_half_selector,
+    auto="medium"
+)
+```
+
+### Integration with Custom Instruction Proposers
+
+Component selectors work seamlessly with custom instruction proposers. The selector determines which components to update, then the instruction proposer generates new instructions for those components:
+
+```python
+# Combined custom selector + custom proposer
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=reflection_lm,
+    component_selector=alternating_half_selector,
+    instruction_proposer=WordLimitProposer(max_words=500),
+    auto="medium"
+)
+```
+
 ## How Does GEPA Work?
 
 ### 1. **Reflective Prompt Mutation**
