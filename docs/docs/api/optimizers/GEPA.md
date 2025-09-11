@@ -101,7 +101,7 @@ Provide the new instructions within ``` blocks.
 
 This template is automatically filled with:
 - `<curr_instructions>`: The current instruction being optimized
-- `<inputs_outputs_feedback>`: Structured markdown containing predictor inputs, generated outputs, and evaluation feedback from failed examples
+- `<inputs_outputs_feedback>`: Structured markdown containing predictor inputs, generated outputs, and evaluation feedback
 
 Example of default behavior:
 ```python
