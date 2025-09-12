@@ -86,17 +86,6 @@ class Type(pydantic.BaseModel):
         """
         return None
 
-    @classmethod
-    def use_native_response(cls, model: str) -> bool:
-        """Whether to use the native response of the LM such as function calling to construct the custom type.
-
-        Args:
-            model: The LM model name.
-
-        Returns:
-            Whether to use the native response of the LM.
-        """
-        return False
 
     @classmethod
     def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Type"]:

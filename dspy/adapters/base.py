@@ -17,9 +17,10 @@ if TYPE_CHECKING:
 
 
 class Adapter:
-    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False):
+    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False, native_response_types: list[type[Type]] | None = None):
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
+        self.native_response_types = native_response_types or []
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -65,7 +66,7 @@ class Adapter:
 
         # Handle custom types that use native response
         for name, field in signature.output_fields.items():
-            if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation.use_native_response(lm.model):
+            if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation in self.native_response_types:
                 signature = signature.delete(name)
 
         return signature
@@ -114,7 +115,7 @@ class Adapter:
 
             # Parse custom types that does not rely on the adapter parsing
             for name, field in original_signature.output_fields.items():
-                if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation.use_native_response(lm.model):
+                if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation in self.native_response_types:
                     value[name] = field.annotation.parse_lm_response(output)
 
             if output_logprobs:

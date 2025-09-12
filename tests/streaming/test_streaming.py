@@ -895,10 +895,6 @@ async def test_streaming_allows_custom_streamable_type():
         def parse_lm_response(cls, response: dict) -> "CustomType":
             return CustomType(message=response.split("\n\n")[0])
 
-        @classmethod
-        def use_native_response(cls, model: str) -> bool:
-            return True
-
     class CustomSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: CustomType = dspy.OutputField()
@@ -921,7 +917,7 @@ async def test_streaming_allows_custom_streamable_type():
 
 
     with mock.patch("litellm.acompletion", side_effect=stream):
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter(native_response_types=[CustomType])):
             output = program(question="why did a chicken cross the kitchen?")
             all_chunks = []
             async for value in output:
@@ -993,7 +989,7 @@ async def test_streaming_with_citations():
         # Create test documents
         docs = [Document(data="Water boils at 100°C at standard pressure.", title="Physics Facts")]
 
-        with dspy.context(lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False)):
+        with dspy.context(lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False), adapter=dspy.ChatAdapter(native_response_types=[Citations])):
             output = program(documents=docs, question="What temperature does water boil?")
             citation_chunks = []
             final_prediction = None

@@ -176,10 +176,10 @@ class Citations(Type):
     def parse_stream_chunk(cls, chunk) -> Optional["Citations"]:
         """
         Parse a stream chunk into Citations.
-        
+
         Args:
             chunk: A stream chunk from the LM.
-            
+
         Returns:
             A Citations object if the chunk contains citation data, None otherwise.
         """
@@ -195,26 +195,14 @@ class Citations(Type):
             pass
         return None
 
-    @classmethod
-    def use_native_response(cls, model: str) -> bool:
-        """Whether to use the native response of the LM for citations.
-        
-        Args:
-            model: The LM model name.
-            
-        Returns:
-            True for models that support native citation responses (like Anthropic Claude).
-        """
-        # Check if the model supports native citations
-        return "claude" in model.lower() or "anthropic" in model.lower()
 
     @classmethod
     def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Citations"]:
         """Parse a LM response into Citations.
-        
+
         Args:
             response: A LM response that may contain citation data.
-            
+
         Returns:
             A Citations object if citation data is found, None otherwise.
         """
