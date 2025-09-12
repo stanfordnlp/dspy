@@ -111,6 +111,8 @@ def get_module_contents(module):
             contents[name] = obj
         elif (
             (inspect.isclass(obj) or (inspect.isroutine(obj) and should_document_method(obj)))
+            # classes or functions in experimental module are not located in dspy/experimental
+            and (obj.__module__.startswith(module.__name__) or module.__name__.startswith("dspy.experimental"))
             and not name.startswith("_")
         ):
             contents[name] = obj
