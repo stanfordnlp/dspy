@@ -51,7 +51,6 @@ class Image(Type):
 
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
         """
-
         if url is not None and "url" not in data:
             # Support a positional argument while allowing ``url=`` in **data.
             if isinstance(url, dict) and set(url.keys()) == {"url"}:
@@ -68,13 +67,37 @@ class Image(Type):
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
 
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, data: Any):
+        """Validate and normalize image input data."""
+        if isinstance(data, cls):
+            return data
+
+        # Handle positional argument case where data is not a dict
+        if not isinstance(data, dict):
+            # Convert non-dict input to dict format
+            data = {"url": data}
+
+        # Handle legacy dict form with single "url" key
+        if isinstance(data.get("url"), dict) and set(data["url"].keys()) == {"url"}:
+            data["url"] = data["url"]["url"]
+
+        # Extract download parameter if present, defaulting to False
+        download = data.pop("download", False) if isinstance(data, dict) else False
+
+        if "url" not in data:
+            raise ValueError("url field is required for Image")
+
+        # Normalize any accepted input into a base64 data URI or plain URL
+        data["url"] = encode_image(data["url"], download_images=download)
+
+        return data
+
     @lru_cache(maxsize=32)
     def format(self) -> list[dict[str, Any]] | str:
-        try:
-            image_url = encode_image(self.url)
-        except Exception as e:
-            raise ValueError(f"Failed to format image for DSPy: {e}")
-        return [{"type": "image_url", "image_url": {"url": image_url}}]
+        # URL is already encoded in the model validator, no need to re-encode
+        return [{"type": "image_url", "image_url": {"url": self.url}}]
 
     @classmethod
     def from_url(cls, url: str, download: bool = False):
