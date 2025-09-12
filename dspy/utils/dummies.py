@@ -9,6 +9,8 @@ from dspy.clients.lm import LM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
 from dspy.utils.callback import with_callbacks
+from dspy.dsp.utils.settings import settings
+
 
 
 class DummyLM(LM):
@@ -94,12 +96,23 @@ class DummyLM(LM):
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         def format_answer_fields(field_names_and_values: dict[str, Any]):
-            return ChatAdapter().format_field_with_value(
-                fields_with_values={
-                    FieldInfoWithName(name=field_name, info=OutputField()): value
-                    for field_name, value in field_names_and_values.items()
-                }
-            )
+            fields_with_values = {
+                FieldInfoWithName(name=field_name, info=OutputField()): value
+                for field_name, value in field_names_and_values.items()
+            }
+            # Use the current adapter if available
+            adapter = settings.adapter
+            if adapter is None:
+                # Fallback to ChatAdapter if no adapter is set
+                from dspy.adapters.chat_adapter import ChatAdapter
+                adapter = ChatAdapter()
+
+            # Try to use role="assistant" if the adapter supports it (like JSONAdapter)
+            try:
+                return adapter.format_field_with_value(fields_with_values, role="assistant")
+            except TypeError:
+                # Fallback for adapters that don't support role parameter (like ChatAdapter)
+                return adapter.format_field_with_value(fields_with_values)
 
         # Build the request.
         outputs = []

@@ -106,18 +106,20 @@ def test_json_adapter_with_structured_outputs_does_not_mutate_original_signature
 
 def test_json_adapter_sync_call():
     signature = dspy.make_signature("question->answer")
-    adapter = dspy.ChatAdapter()
+    adapter = dspy.JSONAdapter()
     lm = dspy.utils.DummyLM([{"answer": "Paris"}])
-    result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+    with dspy.context(adapter=adapter):
+        result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 
 
 @pytest.mark.asyncio
 async def test_json_adapter_async_call():
     signature = dspy.make_signature("question->answer")
-    adapter = dspy.ChatAdapter()
+    adapter = dspy.JSONAdapter()
     lm = dspy.utils.DummyLM([{"answer": "Paris"}])
-    result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
+    with dspy.context(adapter=adapter):
+        result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 
 
