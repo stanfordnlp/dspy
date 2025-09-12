@@ -98,6 +98,9 @@ nav:
             - SemanticF1: api/evaluation/SemanticF1.md
             - answer_exact_match: api/evaluation/answer_exact_match.md
             - answer_passage_match: api/evaluation/answer_passage_match.md
+        - Experimental:
+            - Citations: api/experimental/Citations.md
+            - Document: api/experimental/Document.md
         - Models:
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
