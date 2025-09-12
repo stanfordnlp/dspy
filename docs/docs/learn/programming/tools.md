@@ -75,8 +75,7 @@ class ToolSignature(dspy.Signature):
     """Signature for manual tool handling."""
     question: str = dspy.InputField()
     tools: list[dspy.Tool] = dspy.InputField()
-    tool_calls: dspy.ToolCalls = dspy.OutputField()
-    answer: str = dspy.OutputField()
+    outputs: dspy.ToolCalls = dspy.OutputField()
 
 def weather(city: str) -> str:
     """Get weather information for a city."""
@@ -106,7 +105,7 @@ response = predictor(
 )
 
 # Execute the tool calls
-for call in response.tool_calls.tool_calls:
+for call in response.outputs.tool_calls:
     if call.name in tools:
         result = tools[call.name](**call.args)
         print(f"Tool: {call.name}")
@@ -190,8 +189,6 @@ the screenshot below:
 
 ![native tool calling](../figures/native_tool_call.png)
 
-
-Please note that it's possible that native tool calling produces lower quality than custom tool calling, we encourage you to try both approaches and see which one works better for your use case.
 
 ### Model Compatibility
 
