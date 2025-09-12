@@ -104,7 +104,8 @@ class DummyLM(LM):
                 FieldInfoWithName(name=field_name, info=OutputField()): value
                 for field_name, value in field_names_and_values.items()
             }
-            # Use the instance adapter (ignore context)
+            # The reason why DummyLM needs an adapter is because it needs to know which output format to mimic.
+            # Normally LMs should not have any knowledge of an adapter, because the output format is defined in the prompt.
             adapter = self.adapter
 
             # Try to use role="assistant" if the adapter supports it (like JSONAdapter)
