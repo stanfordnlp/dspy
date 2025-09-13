@@ -66,9 +66,9 @@ def count_messages_with_image_url_pattern(messages):
         return 0
 
 
-def setup_predictor(signature, expected_output):
+def setup_predictor(signature, expected_output, adapter=None):
     """Helper to set up a predictor with DummyLM"""
-    lm = DummyLM([expected_output])
+    lm = DummyLM([expected_output], adapter=adapter)
     dspy.settings.configure(lm=lm)
     return dspy.Predict(signature), lm
 
@@ -175,7 +175,7 @@ def test_image_input_formats(
     signature = "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]"
     expected_output = {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}
     adapter, lm_output = adapter_output_map[adapter_type]
-    predictor, lm = setup_predictor(signature, lm_output)
+    predictor, lm = setup_predictor(signature, lm_output, adapter)
     with dspy.context(adapter=adapter):
         result = predictor(image=actual_input, class_labels=["dog", "cat", "bird"])
     assert result.probabilities == expected_output["probabilities"]
