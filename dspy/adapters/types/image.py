@@ -1,7 +1,9 @@
 import base64
 import io
+import json
 import mimetypes
 import os
+import re
 import warnings
 from typing import Any, Union
 from urllib.parse import urlparse
@@ -9,7 +11,7 @@ from urllib.parse import urlparse
 import pydantic
 import requests
 
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER, Type
 
 try:
     from PIL import Image as PILImage
@@ -48,7 +50,6 @@ class Image(Type):
 
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
         """
-
         if url is not None and "url" not in data:
             # Support a positional argument while allowing ``url=`` in **data.
             if isinstance(url, dict) and set(url.keys()) == {"url"}:
@@ -65,12 +66,36 @@ class Image(Type):
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
 
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, data: Any):
+        """Validate and normalize image input data."""
+        if isinstance(data, cls):
+            return data
+
+        # Handle positional argument case where data is not a dict
+        if not isinstance(data, dict):
+            # Convert non-dict input to dict format
+            data = {"url": data}
+
+        # Handle legacy dict form with single "url" key
+        if isinstance(data.get("url"), dict) and set(data["url"].keys()) == {"url"}:
+            data["url"] = data["url"]["url"]
+
+        # Extract download parameter if present, defaulting to False
+        download = data.pop("download", False) if isinstance(data, dict) else False
+
+        if "url" not in data:
+            raise ValueError("url field is required for Image")
+
+        # Normalize any accepted input into a base64 data URI or plain URL
+        data["url"] = encode_image(data["url"], download_images=download)
+
+        return data
+
     def format(self) -> list[dict[str, Any]] | str:
-        try:
-            image_url = encode_image(self.url)
-        except Exception as e:
-            raise ValueError(f"Failed to format image for DSPy: {e}")
-        return [{"type": "image_url", "image_url": {"url": image_url}}]
+        # URL is already encoded in the model validator, no need to re-encode
+        return [{"type": "image_url", "image_url": {"url": self.url}}]
 
     @classmethod
     def from_url(cls, url: str, download: bool = False):
@@ -140,6 +165,10 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
         if image.startswith("data:"):
             # Already a data URI
             return image
+        elif _is_custom_type_format(image):
+            # Extract image URL from custom type format
+            url = _extract_url_from_custom_type(image)
+            return encode_image(url, download_images)
         elif os.path.isfile(image):
             # File path
             return _encode_image_from_file(image)
@@ -224,12 +253,48 @@ def _get_file_extension(path_or_url: str) -> str:
     return extension or "png"  # Default to 'png' if no extension found
 
 
+def _is_custom_type_format(text: str) -> bool:
+    """Check if the text contains custom type format."""
+    pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
+    return bool(re.search(pattern, text))
+
+
+def _extract_url_from_custom_type(text: str) -> str:
+    """Extract the image URL from custom type format string."""
+    pattern = rf"{CUSTOM_TYPE_START_IDENTIFIER}(.*?){CUSTOM_TYPE_END_IDENTIFIER}"
+    match = re.search(pattern, text, re.DOTALL)
+
+    if not match:
+        raise ValueError("No custom type format found in string")
+
+    custom_content = match.group(1).strip()
+
+    try:
+        # Try to parse as JSON
+        parsed = json.loads(custom_content.replace("'", '"'))
+
+        # Extract URL from the image_url structure
+        if isinstance(parsed, list) and len(parsed) > 0:
+            first_item = parsed[0]
+            if isinstance(first_item, dict) and first_item.get("type") == "image_url":
+                image_url_dict = first_item.get("image_url", {})
+                if "url" in image_url_dict:
+                    return image_url_dict["url"]
+
+        raise ValueError("Could not find image URL in custom type format")
+
+    except json.JSONDecodeError:
+        raise ValueError(f"Invalid JSON in custom type format: {custom_content}")
+
+
 def is_image(obj) -> bool:
     """Check if the object is an image or a valid media file reference."""
     if PIL_AVAILABLE and isinstance(obj, PILImage.Image):
         return True
     if isinstance(obj, str):
         if obj.startswith("data:"):
+            return True
+        elif _is_custom_type_format(obj):
             return True
         elif os.path.isfile(obj):
             return True
