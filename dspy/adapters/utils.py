@@ -143,6 +143,12 @@ def parse_value(value, annotation):
 
     origin = get_origin(annotation)
 
+    if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+
     if origin is Literal:
         allowed = get_args(annotation)
         if value in allowed:
