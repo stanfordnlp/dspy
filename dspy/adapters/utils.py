@@ -52,7 +52,7 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True, is_p
     value = deepcopy(value)
 
     # If the annotation is a Type subclass, but the value is not a instance of that type, force it to be one.
-    if issubclass(field_info.annotation, Type) and not isinstance(value, field_info.annotation) and not is_placeholder:
+    if issubclass(field_info.annotation, DspyType) and not isinstance(value, field_info.annotation) and not is_placeholder:
         # Use model_validate for proper Pydantic validation. Every BaseModel implements this method.
         value = field_info.annotation.model_validate(value)
 
