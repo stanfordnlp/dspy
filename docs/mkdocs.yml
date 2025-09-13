@@ -203,7 +203,7 @@ extra_css:
     - stylesheets/extra.css
 
 plugins:
-    # - social  # Temporarily disabled due to Cairo library issues
+    - social
     - search:
         lang: en
         separator: '[\s\-\.]+'
