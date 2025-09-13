@@ -8,7 +8,7 @@ The `instruction_proposer` is the component responsible for invoking the `reflec
 
 ### Default Implementation
 
-By default, GEPA uses the built-in instruction proposer from the [GEPA library](https://github.com/gepa-ai/gepa), which implements the [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). The default proposer uses this prompt template:
+By default, GEPA uses the built-in instruction proposer from the [GEPA library](https://github.com/gepa-ai/gepa), which implements the [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). The [default proposer](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/reflective_mutation.py#L53-L75) uses this prompt template:
 
 ````
 I provided an assistant with the following instructions to perform a task for me:
@@ -57,7 +57,7 @@ Consider implementing a custom instruction proposer when you need:
 - **Nuanced control on limits and length constraints**: Have more fine-grained control over instruction length, format, and structural requirements
 - **Domain-specific information**: Inject specialized knowledge, terminology, or context that the default proposer lacks and cannot be provided via feedback_func. This is an advanced feature, and most users should not need to use this.
 - **Provider-specific prompting guides**: Optimize instructions for specific LLM providers (OpenAI, Anthropic, etc.) with their unique formatting preferences
-- **Coupled component updates**: Handle situations where 2 or more components need to be updated together in a coordinated manner, rather than optimizing each component independently (refer to component_selector parameter, in Custom Component Selection section, for related functionality)
+- **Coupled component updates**: Handle situations where 2 or more components need to be updated together in a coordinated manner, rather than optimizing each component independently (refer to component_selector parameter, in [Custom Component Selection](#custom-component-selection) section, for related functionality)
 - **External knowledge integration**: Connect to databases, APIs, or knowledge bases during instruction generation
 
 ### Available Options

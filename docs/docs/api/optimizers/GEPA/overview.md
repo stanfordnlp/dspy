@@ -57,7 +57,7 @@ When `track_stats=True`, GEPA returns detailed results about all of the proposed
 
 ## Usage Examples
 
-See GEPA usage tutorials in [GEPA Tutorials](../../tutorials/gepa_ai_program/index.md).
+See GEPA usage tutorials in [GEPA Tutorials](../../../tutorials/gepa_ai_program/index.md).
 
 ### Inference-Time Search
 
@@ -121,4 +121,4 @@ Practical Recipe for GEPA-Friendly Feedback:
 
 - [GEPA Paper: arxiv:2507.19457](https://arxiv.org/abs/2507.19457)
 - [GEPA Github](https://github.com/gepa-ai/gepa) - This repository provides the core GEPA evolution pipeline used by `dspy.GEPA` optimizer.
-- [DSPy Tutorials](../../tutorials/gepa_ai_program/index.md)
+- [DSPy Tutorials](../../../tutorials/gepa_ai_program/index.md)
