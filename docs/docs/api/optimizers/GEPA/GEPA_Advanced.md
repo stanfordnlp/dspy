@@ -374,17 +374,27 @@ Consider implementing custom component selection when you need:
 
 ### Custom Component Selector Protocol
 
-Custom selectors must implement the `ReflectionComponentSelector` protocol:
+Custom component selectors must implement the [`ReflectionComponentSelector`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol by defining a callable class or function. GEPA will call your selector during optimization:
 
 ```python
-def __call__(
-    self,
-    state: GEPAState,                    # Complete optimization state with history
-    trajectories: list[Trajectory],      # Execution traces from the current minibatch
-    subsample_scores: list[float],       # Scores for each example in the current minibatch
-    candidate_idx: int,                  # Index of the current program candidate being optimized
-    candidate: dict[str, str],           # Component name -> instruction mapping
-) -> list[str]:                          # Return list of component names to optimize
+from dspy.teleprompt.gepa.gepa_utils import GEPAState, Trajectory
+
+class CustomComponentSelector:
+    def __call__(
+        self,
+        state: GEPAState,                    # Complete optimization state with history
+        trajectories: list[Trajectory],      # Execution traces from the current minibatch
+        subsample_scores: list[float],       # Scores for each example in the current minibatch
+        candidate_idx: int,                  # Index of the current program candidate being optimized
+        candidate: dict[str, str],           # Component name -> instruction mapping
+    ) -> list[str]:                          # Return list of component names to optimize
+        # Your custom component selection logic here
+        return selected_components
+
+# Or as a function:
+def custom_component_selector(state, trajectories, subsample_scores, candidate_idx, candidate):
+    # Your custom component selection logic here
+    return selected_components
 ```
 
 ### Custom Implementation Example
