@@ -25,7 +25,7 @@ def make_response(output_blocks):
         model="openai/dspy-test-model",
         object="response",
         output=output_blocks,
-        metadata = {},
+        metadata={},
         parallel_tool_calls=False,
         temperature=1.0,
         tool_choice="auto",
@@ -93,6 +93,8 @@ def test_dspy_cache(litellm_test_server, tmp_path):
 
     assert len(usage_tracker.usage_data) == 0
 
+    # Cleanup
+    cache.close()
     dspy.cache = original_cache
 
 
@@ -280,6 +282,7 @@ def test_reasoning_model_token_parameter():
             assert "max_tokens" in lm.kwargs
             assert lm.kwargs["max_tokens"] == 1000
 
+
 @pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano"])
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
@@ -436,6 +439,8 @@ async def test_async_lm_call_with_cache(tmp_path):
         assert len(cache.memory_cache) == 2
         assert mock_alitellm_completion.call_count == 2
 
+    # Cleanup
+    cache.close()
     dspy.cache = original_cache
 
 
@@ -474,6 +479,7 @@ def test_disable_history():
                 model="openai/gpt-4o-mini",
             )
 
+
 def test_responses_api(litellm_test_server):
     api_base, _ = litellm_test_server
     expected_text = "This is a test answer from responses API."
@@ -485,9 +491,7 @@ def test_responses_api(litellm_test_server):
                 "type": "message",
                 "role": "assistant",
                 "status": "completed",
-                "content": [
-                    {"type": "output_text", "text": expected_text, "annotations": []}
-                ],
+                "content": [{"type": "output_text", "text": expected_text, "annotations": []}],
             }
         ]
     )
