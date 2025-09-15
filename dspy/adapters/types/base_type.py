@@ -102,8 +102,6 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
         # DSPy adapter always formats user input into a string content before custom type splitting
         content: str = message["content"]
 
-        print("[split_message_content_for_custom_types] content:", content)
-
         # Look for JSON array patterns that contain custom types
         # Pattern: [..."<<CUSTOM-TYPE-START-IDENTIFIER>>...<<CUSTOM-TYPE-END-IDENTIFIER>>"...]
         json_array_pattern = r"\[([^[\]]*" + re.escape(CUSTOM_TYPE_START_IDENTIFIER) + r".*?" + re.escape(CUSTOM_TYPE_END_IDENTIFIER) + r"[^[\]]*)\]"
@@ -140,7 +138,6 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
 
             if result:
                 message["content"] = result
-                print("[split_message_content_for_custom_types] result:", result)
                 continue
 
         # Original logic for standalone custom types
