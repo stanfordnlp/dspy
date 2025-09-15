@@ -220,6 +220,9 @@ class GEPA(Teleprompter):
             [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). This default 
             proposer is highly capable and was validated across diverse experiments reported in the GEPA 
             paper and tutorials.
+
+            See documentation on custom instruction proposers 
+            [here](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#custom-instruction-proposers).
             
             **Advanced Feature**: Only needed for specialized scenarios:
             - **Multi-modal handling**: Processing dspy.Image inputs alongside textual information
