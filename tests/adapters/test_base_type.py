@@ -49,3 +49,22 @@ def test_extract_custom_type_from_annotation_with_nested_type():
         EventIdentifier,
         Event,
     ]
+
+def test_split_message_content_for_custom_types():
+    from dspy.adapters.types.base_type import split_message_content_for_custom_types
+
+    messages = [
+        {
+            "role": "user",
+            "content":
+            """["<<CUSTOM-TYPE-START-IDENTIFIER>>[{'type': 'document', 'source': {'type': 'text', 'media_type': 'text/plain', 'data': \"test\"}, \
+                'citations': {'enabled': True}, 'title': \"Document 0\", 'context': \"Context for Document 0\"}]<<CUSTOM-TYPE-END-IDENTIFIER>>", \
+                "<<CUSTOM-TYPE-START-IDENTIFIER>>[{'type': 'document', 'source': {'type': 'text', 'media_type': 'text/plain', 'data': \"test\"}, \
+                'citations': {'enabled': True}, 'title': \"Document 1\", 'context': \"Context for Document 1\"}]<<CUSTOM-TYPE-END-IDENTIFIER>>"]"""
+        }
+    ]
+    result = split_message_content_for_custom_types(messages.copy())
+    print(result)
+
+    assert result[0]["content"][0] == {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "test"}, "citations": {"enabled": True}, "title": "Document 0", "context": "Context for Document 0"}
+    assert result[0]["content"][1] == {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "test"}, "citations": {"enabled": True}, "title": "Document 1", "context": "Context for Document 1"}
