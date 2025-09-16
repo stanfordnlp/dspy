@@ -64,7 +64,9 @@ class Type(pydantic.BaseModel):
     def serialize_model(self):
         formatted = self.format()
         if isinstance(formatted, list):
-            return f"{CUSTOM_TYPE_START_IDENTIFIER}{json.dumps(formatted, ensure_ascii=False)}{CUSTOM_TYPE_END_IDENTIFIER}"
+            return (
+                f"{CUSTOM_TYPE_START_IDENTIFIER}{json.dumps(formatted, ensure_ascii=False)}{CUSTOM_TYPE_END_IDENTIFIER}"
+            )
         return formatted
 
 
@@ -148,6 +150,6 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
 def _parse_doubly_quoted_json(json_str: str) -> Any:
     """
     Parse a doubly quoted JSON string into a Python dict.
-    BaseType can be json-encoded twice if included in either list or dict.
+    `dspy.Type` can be json-encoded twice if included in either list or dict, e.g., `list[dspy.experimental.Document]`
     """
     return json.loads(json.loads(f'"{json_str}"'))
