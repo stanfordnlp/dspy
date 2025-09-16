@@ -143,10 +143,6 @@ def parse_value(value, annotation):
 
     origin = get_origin(annotation)
 
-    if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
-        # Handle annotation `str | None`, `Optional[str]`, `Union[str, None]`, etc.
-        return str(value) if value else None
-
     if origin is Literal:
         allowed = get_args(annotation)
         if value in allowed:
@@ -165,6 +161,10 @@ def parse_value(value, annotation):
         raise ValueError(f"{value!r} is not one of {allowed!r}")
 
     if not isinstance(value, str):
+        return TypeAdapter(annotation).validate_python(value)
+
+    if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
+        # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
         return TypeAdapter(annotation).validate_python(value)
 
     candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
