@@ -316,6 +316,29 @@ def test_json_adapter_formats_image_with_nested_images():
     assert expected_image3_content in messages[1]["content"]
 
 
+def test_json_adapter_formats_with_nested_documents():
+    class DocumentWrapper(pydantic.BaseModel):
+        documents: list[dspy.experimental.Document]
+
+    class MySignature(dspy.Signature):
+        document: DocumentWrapper = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    doc1 = dspy.experimental.Document(data="Hello, world!")
+    doc2 = dspy.experimental.Document(data="Hello, world 2!")
+
+    document_wrapper = DocumentWrapper(documents=[doc1, doc2])
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"document": document_wrapper})
+
+    expected_doc1_content = {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world!"}, "citations": {"enabled": True}}
+    expected_doc2_content = {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world 2!"}, "citations": {"enabled": True}}
+
+    assert expected_doc1_content in messages[1]["content"]
+    assert expected_doc2_content in messages[1]["content"]
+
+
 def test_json_adapter_formats_image_with_few_shot_examples_with_nested_images():
     class ImageWrapper(pydantic.BaseModel):
         images: list[dspy.Image]
