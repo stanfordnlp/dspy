@@ -145,7 +145,7 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
     return messages
 
 
-def _parse_doubly_quoted_json(json_str: str) -> dict[str, Any]:
+def _parse_doubly_quoted_json(json_str: str) -> Any:
     """
     Parse a doubly quoted JSON string into a Python dict.
     BaseType can be json-encoded twice if included in either list or dict.
