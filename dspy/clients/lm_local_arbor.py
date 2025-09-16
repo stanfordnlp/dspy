@@ -8,7 +8,7 @@ import requests
 
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data, MultiGPUConfig
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -16,6 +16,11 @@ if TYPE_CHECKING:
 
 class GRPOTrainKwargs(TypedDict):
     num_generations: int
+
+
+class MultiGPUConfig(TypedDict):
+    num_inference_gpus: int
+    num_training_gpus: int  # Number of GPUs to use for training
 
 
 class ArborTrainingJob(TrainingJob):
