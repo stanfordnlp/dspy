@@ -10,6 +10,7 @@ INDEX_NAME = {
     "optimizers": "Optimizers",
     "utils": "Utils",
     "tools": "Tools",
+    "experimental": "Experimental",
 }
 
 

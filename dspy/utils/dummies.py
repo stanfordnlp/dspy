@@ -4,7 +4,7 @@ from typing import Any
 
 import numpy as np
 
-from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName, field_header_pattern
+from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
 from dspy.clients.lm import LM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
@@ -67,12 +67,18 @@ class DummyLM(LM):
 
     """
 
-    def __init__(self, answers: list[dict[str, str]] | dict[str, dict[str, str]], follow_examples: bool = False):
+    def __init__(self, answers: list[dict[str, Any]] | dict[str, dict[str, Any]], follow_examples: bool = False, adapter=None):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.answers = answers
         if isinstance(answers, list):
             self.answers = iter(answers)
         self.follow_examples = follow_examples
+
+        # Set adapter, defaulting to ChatAdapter
+        if adapter is None:
+            from dspy.adapters.chat_adapter import ChatAdapter
+            adapter = ChatAdapter()
+        self.adapter = adapter
 
     def _use_example(self, messages):
         # find all field names
@@ -94,12 +100,20 @@ class DummyLM(LM):
     @with_callbacks
     def __call__(self, prompt=None, messages=None, **kwargs):
         def format_answer_fields(field_names_and_values: dict[str, Any]):
-            return ChatAdapter().format_field_with_value(
-                fields_with_values={
-                    FieldInfoWithName(name=field_name, info=OutputField()): value
-                    for field_name, value in field_names_and_values.items()
-                }
-            )
+            fields_with_values = {
+                FieldInfoWithName(name=field_name, info=OutputField()): value
+                for field_name, value in field_names_and_values.items()
+            }
+            # The reason why DummyLM needs an adapter is because it needs to know which output format to mimic.
+            # Normally LMs should not have any knowledge of an adapter, because the output format is defined in the prompt.
+            adapter = self.adapter
+
+            # Try to use role="assistant" if the adapter supports it (like JSONAdapter)
+            try:
+                return adapter.format_field_with_value(fields_with_values, role="assistant")
+            except TypeError:
+                # Fallback for adapters that don't support role parameter (like ChatAdapter)
+                return adapter.format_field_with_value(fields_with_values)
 
         # Build the request.
         outputs = []

@@ -7,7 +7,9 @@
     handler: python
     options:
         members:
+            - auto_budget
             - compile
+            - get_params
         show_source: true
         show_root_heading: true
         heading_level: 2
