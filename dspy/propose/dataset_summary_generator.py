@@ -11,7 +11,7 @@ class ObservationSummarizer(dspy.Signature):
 
 class DatasetDescriptor(dspy.Signature):
     ("""Given several examples from a dataset please write observations about trends that hold for most or all of the samples. """
-    """Some areas you may consider in your observations: topics, content, syntax, conciceness, etc. """
+    """Some areas you may consider in your observations: topics, content, syntax, conciseness, etc. """
     """It will be useful to make an educated guess as to the nature of the task this dataset will enable. Don't be afraid to be creative""")
 
     examples = dspy.InputField(desc="Sample data points from the dataset")
