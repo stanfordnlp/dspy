@@ -64,7 +64,7 @@ class Type(pydantic.BaseModel):
     def serialize_model(self):
         formatted = self.format()
         if isinstance(formatted, list):
-            return f"{CUSTOM_TYPE_START_IDENTIFIER}{formatted}{CUSTOM_TYPE_END_IDENTIFIER}"
+            return f"{CUSTOM_TYPE_START_IDENTIFIER}{json.dumps(formatted, ensure_ascii=False)}{CUSTOM_TYPE_END_IDENTIFIER}"
         return formatted
 
 
@@ -114,19 +114,21 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
 
             # Parse the JSON inside the block
             custom_type_content = match.group(1).strip()
-            try:
+            parsed = None
+
+            for parse_fn in [json.loads, _parse_doubly_quoted_json, json_repair.loads]:
                 try:
-                    # Replace single quotes with double quotes to make it valid JSON
-                    parsed = json.loads(custom_type_content.replace("'", '"'))
+                    parsed = parse_fn(custom_type_content)
+                    break
                 except json.JSONDecodeError:
-                    parsed = json_repair.loads(custom_type_content)
+                    continue
+
+            if parsed:
                 for custom_type_content in parsed:
                     result.append(custom_type_content)
-
-            except json.JSONDecodeError:
+            else:
                 # fallback to raw string if it's not valid JSON
-                parsed = {"type": "text", "text": custom_type_content}
-                result.append(parsed)
+                result.append({"type": "text", "text": custom_type_content})
 
             last_end = end
 
@@ -141,3 +143,11 @@ def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> li
         message["content"] = result
 
     return messages
+
+
+def _parse_doubly_quoted_json(json_str: str) -> dict[str, Any]:
+    """
+    Parse a doubly quoted JSON string into a Python dict.
+    BaseType can be json-encoded twice if included in either list or dict.
+    """
+    return json.loads(json.loads(f'"{json_str}"'))
