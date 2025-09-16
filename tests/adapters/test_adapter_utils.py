@@ -83,6 +83,7 @@ def test_parse_value_union():
     assert parse_value("test", str | None) == "test"
     assert parse_value(None, Optional[str]) is None
     assert parse_value("text with [placeholder]", Optional[str]) == "text with [placeholder]"
+    assert parse_value("text with [placeholder]", str | None) == "text with [placeholder]"
 
     # Test Union fallback to str
     assert parse_value("fallback", Union[int, str, None]) == "fallback"

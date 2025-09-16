@@ -144,10 +144,8 @@ def parse_value(value, annotation):
     origin = get_origin(annotation)
 
     if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
-        if value is None:
-            return None
-        if isinstance(value, str):
-            return value
+        # Handle annotation `str | None`, `Optional[str]`, `Union[str, None]`, etc.
+        return str(value) if value else None
 
     if origin is Literal:
         allowed = get_args(annotation)
@@ -185,9 +183,6 @@ def parse_value(value, annotation):
                 return TypeAdapter(annotation).validate_python(value)
             except Exception:
                 raise e
-
-        if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
-            return str(candidate)
         raise
 
 
