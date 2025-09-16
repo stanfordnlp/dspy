@@ -103,8 +103,8 @@ class StreamListener:
             return
 
         # Handle custom streamable types
-        if self.output_type and issubclass(self.output_type, Type) and self.output_type.is_streamable():
-            if parsed_chunk := self.output_type.parse_stream_chunk(chunk):
+        if self._output_type and issubclass(self._output_type, Type) and self._output_type.is_streamable():
+            if parsed_chunk := self._output_type.parse_stream_chunk(chunk):
                 return StreamResponse(
                     self.predict_name,
                     self.signature_field_name,
@@ -215,7 +215,7 @@ class StreamListener:
             )
 
     @property
-    def output_type(self) -> type | None:
+    def _output_type(self) -> type | None:
         try:
             return self.predict.signature.output_fields[self.signature_field_name].annotation
         except Exception:
