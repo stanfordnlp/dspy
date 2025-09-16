@@ -135,7 +135,7 @@ def test_citations_postprocessing():
         answer: str = dspy.OutputField()
         citations: Citations = dspy.OutputField()
 
-    adapter = ChatAdapter()
+    adapter = ChatAdapter(native_response_types=[Citations])
 
     outputs = [{
         "text": "[[ ## answer ## ]]\nThe answer is blue.\n\n[[ ## citations ## ]]\n[]",
