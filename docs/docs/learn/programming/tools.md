@@ -100,7 +100,7 @@ predictor = dspy.Predict(ToolSignature)
 
 # Make a prediction
 response = predictor(
-    question="What's the weather in New York?", 
+    question="What's the weather in New York?",
     tools=list(tools.values())
 )
 
@@ -147,6 +147,52 @@ for call in response.outputs.tool_calls:
         result = tools[call.name](**call.args)
         print(f"Result: {result}")
 ```
+
+## Using Native Tool Calling
+
+DSPy adapters support **native function calling**, which leverages the underlying language model's built-in tool calling capabilities rather
+than relying on text-based parsing. This approach can provide more reliable tool execution and better integration with models that support
+native function calling.
+
+!!! warning "Native tool calling doesn't guarantee better quality"
+
+    It's possible that native tool calling produces lower quality than custom tool calling.
+
+### Adapter Behavior
+
+Different DSPy adapters have different defaults for native function calling:
+
+- **`ChatAdapter`** - Uses `use_native_function_calling=False` by default (relies on text parsing)
+- **`JSONAdapter`** - Uses `use_native_function_calling=True` by default (uses native function calling)
+
+You can override these defaults by explicitly setting the `use_native_function_calling` parameter when creating an adapter.
+
+### Configuration
+
+```python
+import dspy
+
+# ChatAdapter with native function calling enabled
+chat_adapter_native = dspy.ChatAdapter(use_native_function_calling=True)
+
+# JSONAdapter with native function calling disabled
+json_adapter_manual = dspy.JSONAdapter(use_native_function_calling=False)
+
+# Configure DSPy to use the adapter
+dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=chat_adapter_native)
+```
+
+You can enable the [MLflow tracing](https://dspy.ai/tutorials/observability/) to check how native tool
+calling is being used. If you use `JSONAdapter` or `ChatAdapter` with native function calling enabled on the code snippet
+as provided in [the section above](tools.md#basic-setup), you should see native function calling arg `tools` is set like
+the screenshot below:
+
+![native tool calling](../figures/native_tool_call.png)
+
+
+### Model Compatibility
+
+Native function calling automatically detects model support using `litellm.supports_function_calling()`. If the model doesn't support native function calling, DSPy will fall back to manual text-based parsing even when `use_native_function_calling=True` is set.
 
 ## Best Practices
 

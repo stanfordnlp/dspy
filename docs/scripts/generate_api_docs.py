@@ -1,9 +1,9 @@
-from pathlib import Path
 import importlib
 import inspect
 import pkgutil
-import shutil
+from pathlib import Path
 from typing import Any
+
 import dspy
 
 API_MAPPING = {
@@ -12,11 +12,14 @@ API_MAPPING = {
         dspy.Embedder,
     ],
     "primitives": [
+        dspy.Audio,
+        dspy.Code,
         dspy.Example,
         dspy.Image,
         dspy.History,
         dspy.Prediction,
         dspy.Tool,
+        dspy.ToolCalls,
     ],
     "signatures": [
         dspy.Signature,
@@ -78,7 +81,11 @@ API_MAPPING = {
         dspy.KNN,
         dspy.KNNFewShot,
         dspy.InferRules,
-        dspy.GEPA
+        dspy.GEPA,
+    ],
+    "experimental": [
+        dspy.experimental.Citations,
+        dspy.experimental.Document,
     ],
 }
 
@@ -87,7 +94,7 @@ def should_document_method(obj):
     name = obj.__name__
     # Exclude methods not defined in dspy, such as `model_dump_json` from pydantic.
     module = getattr(obj, "__module__", "")
-    if not module or not module.startswith(f"dspy"):
+    if not module or not module.startswith("dspy"):
         return False
     # Exclude private and dunder methods, but include `__call__`
     if name == "__call__" or not name.startswith("_"):
@@ -107,7 +114,8 @@ def get_module_contents(module):
             contents[name] = obj
         elif (
             (inspect.isclass(obj) or (inspect.isroutine(obj) and should_document_method(obj)))
-            and obj.__module__.startswith(module.__name__)
+            # classes or functions in experimental module are not located in dspy/experimental
+            and (obj.__module__.startswith(module.__name__) or module.__name__.startswith("dspy.experimental"))
             and not name.startswith("_")
         ):
             contents[name] = obj
