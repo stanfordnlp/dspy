@@ -131,11 +131,14 @@ nav:
             - MIPROv2: api/optimizers/MIPROv2.md
             - SIMBA: api/optimizers/SIMBA.md
         - Primitives:
+            - Audio: api/primitives/Audio.md
+            - Code: api/primitives/Code.md
             - Example: api/primitives/Example.md
             - History: api/primitives/History.md
             - Image: api/primitives/Image.md
             - Prediction: api/primitives/Prediction.md
             - Tool: api/primitives/Tool.md
+            - ToolCalls: api/primitives/ToolCalls.md
         - Signatures:
             - InputField: api/signatures/InputField.md
             - OutputField: api/signatures/OutputField.md
