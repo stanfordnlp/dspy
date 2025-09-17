@@ -216,9 +216,8 @@ class Adapter:
             A list of multiturn messages as expected by the LM.
         """
 
+        # Replace large data with hashes, e.g. image base64 data (speeds up string formatting). Will be restored later.
         data_manager = LargePayloadHashManager()
-
-        # Replae large data with hashes, e.g. image base64 data (speeds up string formatting)
         inputs_hashed = data_manager.replace_large_data(inputs)
         demos_hashed = data_manager.replace_large_data(demos)
 
@@ -256,8 +255,6 @@ class Adapter:
             messages.append({"role": "user", "content": content})
 
         messages = split_message_content_for_custom_types(messages)
-
-        # since some data was replaced with hashes, restore the original data in final messages
         messages = data_manager.restore_large_data(messages)
 
         return messages
