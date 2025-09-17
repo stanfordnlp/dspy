@@ -1,3 +1,4 @@
+import copy
 import logging
 from typing import TYPE_CHECKING, Any, get_origin
 
@@ -18,8 +19,14 @@ if TYPE_CHECKING:
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations]
 
+
 class Adapter:
-    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False, native_response_types: list[type[Type]] | None = None):
+    def __init__(
+        self,
+        callbacks: list[BaseCallback] | None = None,
+        use_native_function_calling: bool = False,
+        native_response_types: list[type[Type]] | None = None,
+    ):
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
@@ -27,7 +34,7 @@ class Adapter:
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
 
-        # Decorate format() and parse() method with with_callbacks
+        # Decorate format() and parse() for callbacks
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
@@ -68,7 +75,11 @@ class Adapter:
 
         # Handle custom types that use native response
         for name, field in signature.output_fields.items():
-            if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation in self.native_response_types:
+            if (
+                isinstance(field.annotation, type)
+                and issubclass(field.annotation, Type)
+                and field.annotation in self.native_response_types
+            ):
                 signature = signature.delete(name)
 
         return signature
@@ -117,7 +128,11 @@ class Adapter:
 
             # Parse custom types that does not rely on the adapter parsing
             for name, field in original_signature.output_fields.items():
-                if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation in self.native_response_types:
+                if (
+                    isinstance(field.annotation, type)
+                    and issubclass(field.annotation, Type)
+                    and field.annotation in self.native_response_types
+                ):
                     value[name] = field.annotation.parse_lm_response(output)
 
             if output_logprobs:
@@ -161,7 +176,7 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Format the input messages for the LM call.
+        """Format input messages for the LM call.
 
         This method converts the DSPy structured input along with few-shot examples and conversation history into
         multiturn messages as expected by the LM. For custom adapters, this method can be overridden to customize
@@ -200,13 +215,20 @@ class Adapter:
         Returns:
             A list of multiturn messages as expected by the LM.
         """
-        inputs_copy = dict(inputs)
 
-        # If the signature and inputs have conversation history, we need to format the conversation history and
-        # remove the history field from the signature.
+        data_manager = LargePayloadHashManager()
+
+        # Replae large data with hashes, e.g. image base64 data (speeds up string formatting)
+        inputs_hashed = data_manager.replace_large_data(inputs)
+        demos_hashed = data_manager.replace_large_data(demos)
+
+        # Work on a shallow copy of inputs
+        inputs_copy = dict(inputs_hashed)
+
+        # If conversation history exists, format it and remove from inputs
         history_field_name = self._get_history_field_name(signature)
         if history_field_name:
-            # In order to format the conversation history, we need to remove the history field from the signature.
+            # Remove history field from signature for content formatting
             signature_without_history = signature.delete(history_field_name)
             conversation_history = self.format_conversation_history(
                 signature_without_history,
@@ -221,7 +243,7 @@ class Adapter:
             f"{self.format_task_description(signature)}"
         )
         messages.append({"role": "system", "content": system_message})
-        messages.extend(self.format_demos(signature, demos))
+        messages.extend(self.format_demos(signature, demos_hashed))
         if history_field_name:
             # Conversation history and current input
             content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
@@ -233,6 +255,10 @@ class Adapter:
             messages.append({"role": "user", "content": content})
 
         messages = split_message_content_for_custom_types(messages)
+
+        # since some data was replaced with hashes, restore the original data in final messages
+        messages = data_manager.restore_large_data(messages)
+
         return messages
 
     def format_field_description(self, signature: type[Signature]) -> str:
@@ -403,7 +429,6 @@ class Adapter:
             if field.annotation == ToolCalls:
                 return name
         return None
-
 
     def format_conversation_history(
         self,

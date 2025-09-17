@@ -280,3 +280,130 @@ def _quoted_string_for_literal_type_annotation(s: str) -> str:
     else:
         # Neither => enclose in single quotes
         return f"'{s}'"
+
+
+class LargePayloadHashManager:
+    """
+    Used by `format` in adapters.base.py
+    That function formats the input prompt as one string, which means it stringifies
+    large data (dspy types like Image, Audio). Then it splits that prompt string into
+    a list, where special types get their own item. But stringifying large data is slow
+    and memory-intensive. Instead, we replace the large data with a hash token before
+    building the prompt, and restore the original data at the end.
+
+    This class facilitates that with these two methods:
+    - replace_large_data: replace large data with hash tokens for inputs, demos, history
+    - restore_large_data: restore the original data from hash token for LLM messages
+
+    Notes:
+    - Non‑destructive: never mutates inputs; returns new structures mirroring shape.
+    - Threshold-based: strings longer than `LARGE_DATA_THRESHOLD` are hashed
+    - Only Image type is implemented - TODO for audio, etc.
+    """
+
+    # Configurable threshold for what constitutes "large" data
+    LARGE_DATA_THRESHOLD = 1000  # characters
+
+    def __init__(self):
+        """Initialize the manager with fresh hash mappings."""
+        self.hash_to_data = {}  # hash_id -> original_data
+        self.data_to_hash = {}  # original_data -> hash_id
+        self.hash_counter = 0
+
+    def replace_large_data(self, obj: Any) -> Any:
+        """Return a copy of `obj` with large string fields replaced by hash tokens."""
+        if isinstance(obj, Type):
+            # Handle DSPy custom types: Images
+            return self._replace_in_custom_type(obj)
+        elif hasattr(obj, "items") and not isinstance(obj, dict):
+            new_mapping: dict[str, Any] = {}
+            for k, v in obj.items():
+                new_mapping[k] = self.replace_large_data(v)
+            return new_mapping
+        elif isinstance(obj, dict):
+            new_dict = {}
+            for k, v in obj.items():
+                new_dict[k] = self.replace_large_data(v)
+            return new_dict
+        elif isinstance(obj, list):
+            new_list = []
+            for item in obj:
+                new_list.append(self.replace_large_data(item))
+            return new_list
+        else:
+            return obj
+
+    def restore_large_data(self, obj: Any) -> Any:
+        """Return a copy of `obj` with hash tokens restored to original data."""
+        if isinstance(obj, dict):
+            if self._is_message_content_with_large_data(obj):
+                return self._restore_in_message_content(obj)
+            else:
+                return {k: self.restore_large_data(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self.restore_large_data(item) for item in obj]
+        elif isinstance(obj, str):
+            if self._is_hash_identifier(obj):
+                return self.hash_to_data.get(obj, obj)
+            else:
+                return obj
+        else:
+            return obj
+
+    def _create_hash_for_data(self, data: str) -> str:
+        """Create a unique hash identifier for large data."""
+        # Check if we've already hashed this exact data (deduplication)
+        if data in self.data_to_hash:
+            return self.data_to_hash[data]
+
+        # Create new hash identifier
+        hash_id = f"__DSPY_LARGE_DATA_HASH_{self.hash_counter}__"
+        self.hash_counter += 1
+
+        # Store bidirectional mapping
+        self.hash_to_data[hash_id] = data
+        self.data_to_hash[data] = hash_id
+
+        return hash_id
+
+    def _is_large_data(self, data: Any) -> bool:
+        """Check if data is large enough to warrant optimization."""
+        if isinstance(data, str):
+            return len(data) > self.LARGE_DATA_THRESHOLD
+        return False
+
+    def _replace_in_custom_type(self, obj: Type) -> Type:
+        """For Image type, replace large payload fields in known custom types; otherwise return `obj`."""
+        if isinstance(obj, History):
+            new_messages = self.replace_large_data(obj.messages)
+            if new_messages is not obj.messages:  # Messages changed
+                return type(obj)(messages=new_messages)
+            else:
+                return obj
+
+        elif hasattr(obj, "url") and self._is_large_data(obj.url):
+            # TODO: it only handles image url, not other types yet
+            hash_url = self._create_hash_for_data(obj.url)
+            return type(obj)(url=hash_url)
+
+        return obj
+
+    def _is_message_content_with_large_data(self, obj: dict) -> bool:
+        """Whether this dict is an image content block with a payload field."""
+        # {"type": "image_url", "image_url": {"url": "hash_id"}}
+        return obj.get("type") == "image_url" and "image_url" in obj and "url" in obj["image_url"]
+
+    def _restore_in_message_content(self, obj: dict) -> dict:
+        """Restore payloads inside image/audio message content blocks."""
+        obj_copy = copy.deepcopy(obj)
+
+        if obj.get("type") == "image_url" and "image_url" in obj:
+            url = obj["image_url"].get("url", "")
+            if self._is_hash_identifier(url):
+                obj_copy["image_url"]["url"] = self.hash_to_data.get(url, url)
+
+        return obj_copy
+
+    def _is_hash_identifier(self, text: str) -> bool:
+        """True if `text` looks like a DSPy large-data hash token."""
+        return isinstance(text, str) and text.startswith("__DSPY_LARGE_DATA_HASH_")
