@@ -81,11 +81,17 @@ def test_parse_value_union():
     # Test Union with None (Optional)
     assert parse_value("test", Optional[str]) == "test"
     assert parse_value("test", str | None) == "test"
+    assert parse_value("5", int | None) == 5
     assert parse_value(None, Optional[str]) is None
+    assert parse_value("text with [placeholder]", Optional[str]) == "text with [placeholder]"
+    assert parse_value("text with [placeholder]", str | None) == "text with [placeholder]"
 
     # Test Union fallback to str
     assert parse_value("fallback", Union[int, str, None]) == "fallback"
+    assert parse_value(5, Union[int, str, None]) == 5
     assert parse_value("fallback", int | str | None) == "fallback"
+    assert parse_value(5, int | str | None) == 5
+    assert parse_value("text with [placeholder]", Union[int, str, None]) == "text with [placeholder]"
 
 
 def test_parse_value_json_repair():

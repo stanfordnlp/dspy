@@ -451,14 +451,14 @@ def test_image_repr():
     url_image = dspy.Image("https://example.com/dog.jpg")
     assert str(url_image) == (
         "<<CUSTOM-TYPE-START-IDENTIFIER>>"
-        "[{'type': 'image_url', 'image_url': {'url': 'https://example.com/dog.jpg'}}]"
+        '[{"type": "image_url", "image_url": {"url": "https://example.com/dog.jpg"}}]'
         "<<CUSTOM-TYPE-END-IDENTIFIER>>"
     )
     assert repr(url_image) == "Image(url='https://example.com/dog.jpg')"
 
     sample_pil = PILImage.new("RGB", (60, 30), color="red")
     pil_image = dspy.Image(sample_pil)
-    assert str(pil_image).startswith("<<CUSTOM-TYPE-START-IDENTIFIER>>[{'type': 'image_url',")
+    assert str(pil_image).startswith('<<CUSTOM-TYPE-START-IDENTIFIER>>[{"type": "image_url",')
     assert str(pil_image).endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>")
     assert "base64" in str(pil_image)
 
