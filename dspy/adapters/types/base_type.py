@@ -1,9 +1,10 @@
 import json
 import re
-from typing import Any, get_args, get_origin
+from typing import Any, Optional, get_args, get_origin
 
 import json_repair
 import pydantic
+from litellm import ModelResponseStream
 
 CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
 CUSTOM_TYPE_END_IDENTIFIER = "<<CUSTOM-TYPE-END-IDENTIFIER>>"
@@ -69,6 +70,36 @@ class Type(pydantic.BaseModel):
             )
         return formatted
 
+    @classmethod
+    def is_streamable(cls) -> bool:
+        """Whether the custom type is streamable."""
+        return False
+
+    @classmethod
+    def parse_stream_chunk(cls, chunk: ModelResponseStream) -> Optional["Type"]:
+        """
+        Parse a stream chunk into the custom type.
+
+        Args:
+            chunk: A stream chunk.
+
+        Returns:
+            A custom type object or None if the chunk is not for this custom type.
+        """
+        return None
+
+
+    @classmethod
+    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Type"]:
+        """Parse a LM response into the custom type.
+
+        Args:
+            response: A LM response.
+
+        Returns:
+            A custom type object.
+        """
+        return None
 
 def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Split user message content into a list of content blocks.
