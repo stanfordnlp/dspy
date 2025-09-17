@@ -35,7 +35,7 @@ class Adapter:
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
 
-        # Decorate format() and parse() for callbacks
+        # Decorate format() and parse() method with with_callbacks
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
@@ -177,7 +177,7 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Format input messages for the LM call.
+        """Format the input messages for the LM call.
 
         This method converts the DSPy structured input along with few-shot examples and conversation history into
         multiturn messages as expected by the LM. For custom adapters, this method can be overridden to customize
@@ -226,10 +226,11 @@ class Adapter:
         # Work on a shallow copy of inputs
         inputs_copy = dict(inputs_hashed)
 
-        # If conversation history exists, format it and remove from inputs
+        # If the signature and inputs have conversation history, we need to format the conversation history and
+        # remove the history field from the signature.
         history_field_name = self._get_history_field_name(signature)
         if history_field_name:
-            # Remove history field from signature for content formatting
+            # In order to format the conversation history, we need to remove the history field from the signature.
             signature_without_history = signature.delete(history_field_name)
             conversation_history = self.format_conversation_history(
                 signature_without_history,
