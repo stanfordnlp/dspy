@@ -6,6 +6,8 @@ import json_repair
 import pydantic
 from litellm import ModelResponseStream
 
+from dspy.utils.annotation import experimental
+
 CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
 CUSTOM_TYPE_END_IDENTIFIER = "<<CUSTOM-TYPE-END-IDENTIFIER>>"
 
@@ -71,11 +73,13 @@ class Type(pydantic.BaseModel):
         return formatted
 
     @classmethod
+    @experimental(version="3.0.4")
     def is_streamable(cls) -> bool:
         """Whether the custom type is streamable."""
         return False
 
     @classmethod
+    @experimental(version="3.0.4")
     def parse_stream_chunk(cls, chunk: ModelResponseStream) -> Optional["Type"]:
         """
         Parse a stream chunk into the custom type.
@@ -90,6 +94,7 @@ class Type(pydantic.BaseModel):
 
 
     @classmethod
+    @experimental(version="3.0.4")
     def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Type"]:
         """Parse a LM response into the custom type.
 
