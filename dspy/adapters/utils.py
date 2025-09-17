@@ -1,4 +1,5 @@
 import ast
+import copy
 import enum
 import inspect
 import json
@@ -12,6 +13,7 @@ from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.types.base_type import Type as DspyType
+from dspy.adapters.types.history import History
 from dspy.signatures.utils import get_dspy_field_type
 
 
@@ -312,7 +314,7 @@ class LargePayloadHashManager:
 
     def replace_large_data(self, obj: Any) -> Any:
         """Return a copy of `obj` with large string fields replaced by hash tokens."""
-        if isinstance(obj, Type):
+        if isinstance(obj, DspyType):
             # Handle DSPy custom types: Images
             return self._replace_in_custom_type(obj)
         elif hasattr(obj, "items") and not isinstance(obj, dict):
@@ -372,7 +374,7 @@ class LargePayloadHashManager:
             return len(data) > self.LARGE_DATA_THRESHOLD
         return False
 
-    def _replace_in_custom_type(self, obj: Type) -> Type:
+    def _replace_in_custom_type(self, obj: DspyType) -> DspyType:
         """For Image type, replace large payload fields in known custom types; otherwise return `obj`."""
         if isinstance(obj, History):
             new_messages = self.replace_large_data(obj.messages)
