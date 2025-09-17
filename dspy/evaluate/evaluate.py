@@ -337,7 +337,7 @@ def stylize_metric_name(df: "pd.DataFrame", metric_name: str) -> "pd.DataFrame":
     :param metric_name: The name of the metric for which to stylize DataFrame cell contents.
     """
     df[metric_name] = df[metric_name].apply(
-        lambda x: f"✔️ [{x:.3f}]" if x and isinstance(x, float) else f"✔️ [{x}]" if x else ""
+        lambda x: f"✔️ [{x:.3f}]" if isinstance(x, float) else f"✔️ [{x}]" if x is not None else ""
     )
     return df
 
