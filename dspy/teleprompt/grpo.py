@@ -6,8 +6,7 @@ from typing import Any, Callable, Literal
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat
-from dspy.clients.lm_local_arbor import MultiGPUConfig
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, MultiGPUConfig
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
