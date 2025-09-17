@@ -1,10 +1,10 @@
+import os
+import pickle
 from typing import Any
 
 import numpy as np
 
 from dspy.utils.unbatchify import Unbatchify
-
-# TODO: Add .save and .load methods!
 
 
 class Embeddings:
@@ -87,3 +87,92 @@ class Embeddings:
     def _normalize(self, embeddings: np.ndarray):
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         return embeddings / np.maximum(norms, 1e-10)
+
+    def save(self, path: str):
+        """
+        Save the embeddings index to disk.
+
+        This saves the corpus, embeddings, FAISS index (if present), and configuration
+        to allow for fast loading without recomputing embeddings.
+
+        Args:
+            path: Directory path where the embeddings will be saved
+        """
+        os.makedirs(path, exist_ok=True)
+
+        # Save configuration and corpus
+        config = {
+            "k": self.k,
+            "normalize": self.normalize,
+            "corpus": self.corpus,
+            "has_faiss_index": self.index is not None,
+        }
+
+        with open(os.path.join(path, "config.pkl"), "wb") as f:
+            pickle.dump(config, f)
+
+        # Save embeddings
+        np.save(os.path.join(path, "corpus_embeddings.npy"), self.corpus_embeddings)
+
+        # Save FAISS index if it exists
+        if self.index is not None:
+            try:
+                import faiss
+                faiss.write_index(self.index, os.path.join(path, "faiss_index.bin"))
+            except ImportError:
+                # If FAISS is not available, we can't save the index
+                # but we can still save the embeddings for brute force search
+                pass
+
+    def load(self, path: str, embedder):
+        """
+        Load the embeddings index from disk.
+
+        Args:
+            path: Directory path where the embeddings were saved
+            embedder: The embedder function to use for new queries
+        """
+        # Load configuration and corpus
+        with open(os.path.join(path, "config.pkl"), "rb") as f:
+            config = pickle.load(f)
+
+        # Restore configuration
+        self.k = config["k"]
+        self.normalize = config["normalize"]
+        self.corpus = config["corpus"]
+        self.embedder = embedder
+
+        # Load embeddings
+        self.corpus_embeddings = np.load(os.path.join(path, "corpus_embeddings.npy"))
+
+        # Load FAISS index if it was saved and FAISS is available
+        faiss_index_path = os.path.join(path, "faiss_index.bin")
+        if config["has_faiss_index"] and os.path.exists(faiss_index_path):
+            try:
+                import faiss
+                self.index = faiss.read_index(faiss_index_path)
+            except ImportError:
+                # If FAISS is not available, fall back to brute force
+                self.index = None
+        else:
+            self.index = None
+
+        # Reinitialize the search function
+        self.search_fn = Unbatchify(self._batch_forward)
+
+    @classmethod
+    def from_saved(cls, path: str, embedder):
+        """
+        Create an Embeddings instance from a saved index.
+
+        Args:
+            path: Directory path where the embeddings were saved
+            embedder: The embedder function to use for new queries
+
+        Returns:
+            Embeddings instance loaded from disk
+        """
+        # Create a minimal instance without triggering embedding computation
+        instance = cls.__new__(cls)
+        instance.load(path, embedder)
+        return instance
