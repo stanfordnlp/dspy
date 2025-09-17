@@ -1,4 +1,3 @@
-import copy
 import logging
 from typing import TYPE_CHECKING, Any, get_origin
 
