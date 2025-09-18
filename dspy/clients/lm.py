@@ -103,25 +103,17 @@ class LM(BaseLM):
 
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
-        # Set flag if model supports native reasoning AND user specified any reasoning parameter
-        reasoning_params = ["reasoning_effort", "reasoning", "thinking"]  # Common reasoning parameter names
-        has_reasoning_param = any(param in self.kwargs for param in reasoning_params)
-        if litellm.supports_reasoning(self.model) and has_reasoning_param:
-            settings.use_native_reasoning = True
-
-        # Normalize reasoning_effort to get reasoning summaries (for OpenAI reasoning models which don't expose reasoning content)
-        if ("reasoning_effort" in self.kwargs and
-            (self.model_type == "responses" or
-             ("openai/" in self.model.lower() and litellm.supports_reasoning(self.model)))):
+        # Normalize reasoning_effort to get reasoning summaries (for OpenAI reasoning models which don't expose
+        # reasoning content)
+        if "reasoning_effort" in self.kwargs and (
+            self.model_type == "responses"
+            or ("openai/" in self.model.lower() and litellm.supports_reasoning(self.model))
+        ):
             effort = self.kwargs.pop("reasoning_effort")
             self.kwargs["reasoning"] = {"effort": effort, "summary": "auto"}
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
-        if (
-            not self._warned_zero_temp_rollout
-            and rollout_id is not None
-            and (temperature is None or temperature == 0)
-        ):
+        if not self._warned_zero_temp_rollout and rollout_id is not None and (temperature is None or temperature == 0):
             warnings.warn(
                 "rollout_id has no effect when temperature=0; set temperature>0 to bypass the cache.",
                 stacklevel=3,
@@ -147,10 +139,7 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         if self.use_developer_role and self.model_type == "responses":
-            messages = [
-                {**m, "role": "developer"} if m.get("role") == "system" else m
-                for m in messages
-            ]
+            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
@@ -183,10 +172,7 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         if self.use_developer_role and self.model_type == "responses":
-            messages = [
-                {**m, "role": "developer"} if m.get("role") == "system" else m
-                for m in messages
-            ]
+            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
@@ -437,6 +423,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
         **request,
     )
 
+
 def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
@@ -463,6 +450,7 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
         retry_strategy="exponential_backoff_retry",
         **request,
     )
+
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     request = dict(request)

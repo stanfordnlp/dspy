@@ -166,12 +166,12 @@ class BaseLM:
 
     def _process_completion(self, response, merged_kwargs):
         """Process the response of OpenAI chat completion API and extract outputs.
-        
+
         Args:
             response: The OpenAI chat completion response
                 https://platform.openai.com/docs/api-reference/chat/object
             merged_kwargs: Merged kwargs from self.kwargs and method kwargs
-            
+
         Returns:
             List of processed outputs
         """
@@ -181,7 +181,7 @@ class BaseLM:
             output["text"] = c.message.content if hasattr(c, "message") else c["text"]
 
             if hasattr(c, "message") and hasattr(c.message, "reasoning_content") and c.message.reasoning_content:
-                output["reasoning"] = c.message.reasoning_content
+                output["reasoning_content"] = c.message.reasoning_content
 
             if merged_kwargs.get("logprobs"):
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
@@ -198,16 +198,15 @@ class BaseLM:
         if all(len(output) == 1 for output in outputs):
             # Return a list if every output only has "text" key
             outputs = [output["text"] for output in outputs]
-
         return outputs
 
     def _extract_citations_from_response(self, choice):
         """Extract citations from LiteLLM response if available.
         Reference: https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
-        
+
         Args:
             choice: The choice object from response.choices
-            
+
         Returns:
             A list of citation dictionaries or None if no citations found
         """
@@ -221,48 +220,41 @@ class BaseLM:
 
     def _process_response(self, response):
         """Process the response of OpenAI Response API and extract outputs.
-        
+
         Args:
             response: OpenAI Response API response
                 https://platform.openai.com/docs/api-reference/responses/object
-            
+
         Returns:
-            List of processed outputs
+            List of processed outputs, which is always of size 1 because the Response API only supports one output.
         """
-        outputs = []
+        text_outputs = []
         tool_calls = []
-        reasoning_content = None
+        reasoning_content = []
 
         for output_item in response.output:
-            if output_item.type == "message":
+            output_item_type = output_item.type
+            if output_item_type == "message":
                 for content_item in output_item.content:
-                    outputs.append(content_item.text)
-            elif output_item.type == "function_call":
+                    text_outputs.append(content_item.text)
+            elif output_item_type == "function_call":
                 tool_calls.append(output_item.model_dump())
-            elif output_item.type == "reasoning":
-                if hasattr(output_item, "content") and output_item.content:
-                    reasoning_content = output_item.content
-                elif hasattr(output_item, "summary") and output_item.summary:
-                    if isinstance(output_item.summary, list):
-                        summary_texts = []
-                        for summary_item in output_item.summary:
-                            if hasattr(summary_item, "text"):
-                                summary_texts.append(summary_item.text)
-                        reasoning_content = "\n\n".join(summary_texts) if summary_texts else output_item.summary
-                    else:
-                        reasoning_content = output_item.summary
+            elif output_item_type == "reasoning":
+                if getattr(output_item, "content", None) and len(output_item.content) > 0:
+                    for content_item in output_item.content:
+                        reasoning_content.append(content_item.text)
+                elif getattr(output_item, "summary", None) and len(output_item.summary) > 0:
+                    for summary_item in output_item.summary:
+                        reasoning_content.append(summary_item.text)
 
-        if reasoning_content:
-            if len(outputs) == 1 and isinstance(outputs[0], str):
-                outputs = [{"text": outputs[0], "reasoning": reasoning_content}]
-            elif outputs and isinstance(outputs[0], str):
-                outputs[0] = {"text": outputs[0], "reasoning": reasoning_content}
-            elif outputs and isinstance(outputs[0], dict):
-                outputs[0]["reasoning"] = reasoning_content
-
-        if tool_calls:
-            outputs.append({"tool_calls": tool_calls})
-        return outputs
+        result = {}
+        if len(text_outputs) > 0:
+            result["text"] = "".join(text_outputs)
+        if len(tool_calls) > 0:
+            result["tool_calls"] = tool_calls
+        if len(reasoning_content) > 0:
+            result["reasoning_content"] = "".join(reasoning_content)
+        return [result]
 
 
 def inspect_history(n: int = 1):

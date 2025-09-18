@@ -2,7 +2,7 @@ import json
 import time
 import warnings
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import litellm
 import pydantic
@@ -10,9 +10,10 @@ import pytest
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
+from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
+from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
-from dspy.dsp.utils.settings import settings
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -26,7 +27,7 @@ def make_response(output_blocks):
         model="openai/dspy-test-model",
         object="response",
         output=output_blocks,
-        metadata = {},
+        metadata={},
         parallel_tool_calls=False,
         temperature=1.0,
         tool_choice="auto",
@@ -281,6 +282,7 @@ def test_reasoning_model_token_parameter():
             assert "max_tokens" in lm.kwargs
             assert lm.kwargs["max_tokens"] == 1000
 
+
 @pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano"])
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
@@ -475,42 +477,54 @@ def test_disable_history():
                 model="openai/gpt-4o-mini",
             )
 
-def test_responses_api(litellm_test_server):
-    api_base, _ = litellm_test_server
-    expected_text = "This is a test answer from responses API."
 
+def test_responses_api():
     api_response = make_response(
         output_blocks=[
-            {
-                "id": "msg_1",
-                "type": "message",
-                "role": "assistant",
-                "status": "completed",
-                "content": [
-                    {"type": "output_text", "text": expected_text, "annotations": []}
-                ],
-            }
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {"type": "output_text", "text": "This is a test answer from responses API.", "annotations": []}
+                    ],
+                },
+            ),
+            ResponseReasoningItem(
+                **{
+                    "id": "reasoning_1",
+                    "type": "reasoning",
+                    "summary": [Summary(**{"type": "summary_text", "text": "This is a dummy reasoning."})],
+                },
+            ),
         ]
     )
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
         lm = dspy.LM(
-            model="openai/dspy-test-model",
-            api_base=api_base,
-            api_key="fakekey",
+            model="openai/gpt-5-mini",
             model_type="responses",
             cache=False,
+            temperature=1.0,
+            max_tokens=16000,
         )
-        assert lm("openai query") == [expected_text]
+        lm_result = lm("openai query")
+
+        assert lm_result == [
+            {
+                "text": "This is a test answer from responses API.",
+                "reasoning_content": "This is a dummy reasoning.",
+            }
+        ]
 
         dspy_responses.assert_called_once()
-        assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
+        assert dspy_responses.call_args.kwargs["model"] == "openai/gpt-5-mini"
 
 
 def test_lm_replaces_system_with_developer_role():
-    with mock.patch(
-        "dspy.clients.lm.litellm_responses_completion", return_value={"choices": []}
-    ) as mock_completion:
+    with mock.patch("dspy.clients.lm.litellm_responses_completion", return_value={"choices": []}) as mock_completion:
         lm = dspy.LM(
             "openai/gpt-4o-mini",
             cache=False,
@@ -518,10 +532,7 @@ def test_lm_replaces_system_with_developer_role():
             use_developer_role=True,
         )
         lm.forward(messages=[{"role": "system", "content": "hi"}])
-        assert (
-            mock_completion.call_args.kwargs["request"]["messages"][0]["role"]
-            == "developer"
-        )
+        assert mock_completion.call_args.kwargs["request"]["messages"][0]["role"] == "developer"
 
 
 def test_responses_api_tool_calls(litellm_test_server):
@@ -559,61 +570,27 @@ def test_reasoning_effort_normalization():
     with mock.patch("litellm.supports_reasoning", return_value=True):
         # OpenAI model with Responses API - should normalize
         lm1 = dspy.LM(
-            model="openai/gpt-5",
-            model_type="responses",
-            reasoning_effort="low",
-            max_tokens=16000,
-            temperature=1.0
+            model="openai/gpt-5", model_type="responses", reasoning_effort="low", max_tokens=16000, temperature=1.0
         )
         assert "reasoning_effort" not in lm1.kwargs
         assert lm1.kwargs["reasoning"] == {"effort": "low", "summary": "auto"}
 
         # OpenAI model with Chat API - should normalize
-        lm2 = dspy.LM(
-            model="openai/gpt-5",
-            reasoning_effort="medium",
-            max_tokens=16000,
-            temperature=1.0
-        )
+        lm2 = dspy.LM(model="openai/gpt-5", reasoning_effort="medium", max_tokens=16000, temperature=1.0)
         assert "reasoning_effort" not in lm2.kwargs
         assert lm2.kwargs["reasoning"] == {"effort": "medium", "summary": "auto"}
 
         # Non-OpenAI model - should NOT normalize
-        lm3 = dspy.LM(
-            model="deepseek-ai/DeepSeek-R1",
-            reasoning_effort="low",
-            max_tokens=4000,
-            temperature=0.7
-        )
+        lm3 = dspy.LM(model="deepseek-ai/DeepSeek-R1", reasoning_effort="low", max_tokens=4000, temperature=0.7)
         assert "reasoning_effort" in lm3.kwargs
         assert "reasoning" not in lm3.kwargs
-
-
-@mock.patch("litellm.supports_reasoning")
-@mock.patch("dspy.dsp.utils.settings")
-def test_native_reasoning_flag_setting(mock_settings, mock_supports):
-    """Test that use_native_reasoning flag is set correctly."""
-    mock_supports.return_value = True
-
-    # Should set flag when model supports reasoning and has reasoning param
-    dspy.LM(model="openai/gpt-5", reasoning_effort="low", max_tokens=16000, temperature=1.0)
-    mock_settings.use_native_reasoning = True
-
-    mock_supports.return_value = False
-
-    # Should NOT set flag when model doesn't support reasoning
-    dspy.LM(model="openai/gpt-4", reasoning_effort="low", max_tokens=1000, temperature=0.7)
 
 
 def test_reasoning_content_extraction():
     """Test that reasoning models can be created with proper configuration."""
     # Test that reasoning models are properly configured
     lm = dspy.LM(
-        model="openai/gpt-5",
-        model_type="responses",
-        max_tokens=16000,
-        temperature=1.0,
-        reasoning_effort="low"
+        model="openai/gpt-5", model_type="responses", max_tokens=16000, temperature=1.0, reasoning_effort="low"
     )
 
     # Verify reasoning parameters are normalized
@@ -623,44 +600,112 @@ def test_reasoning_content_extraction():
     assert lm.kwargs["max_completion_tokens"] == 16000
 
 
-def test_chain_of_thought_with_native_reasoning():
-    """Test ChainOfThought with native reasoning vs manual reasoning."""
+def test_call_reasoning_model_with_chat_api():
+    """Test that Chat API properly handles reasoning models and returns data in correct format."""
+    # Create message with reasoning_content attribute
+    message = Message(content="The answer is 4", role="assistant")
+    # Add reasoning_content attribute
+    message.reasoning_content = "Step 1: I need to add 2 + 2\nStep 2: 2 + 2 = 4\nTherefore, the answer is 4"
 
-    class SimpleSignature(dspy.Signature):
-        """Answer the question."""
-        question: str = dspy.InputField()
-        answer: str = dspy.OutputField()
+    # Create choice with the message
+    mock_choice = Choices(message=message)
 
-    # Test with native reasoning enabled
-    settings.use_native_reasoning = True
-    with mock.patch("dspy.Predict") as mock_predict:
-        mock_predict_instance = mock.MagicMock()
-        mock_predict_instance.return_value = dspy.Prediction(answer="42", reasoning="native reasoning")
-        mock_predict.return_value = mock_predict_instance
+    # Mock response with reasoning content for chat completion
+    mock_response = ModelResponse(
+        choices=[mock_choice],
+        model="openai/gpt-5",
+        usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+    )
 
-        cot = dspy.ChainOfThought(SimpleSignature)
-        result = cot(question="What is the answer?")
+    with mock.patch("litellm.completion", return_value=mock_response) as mock_completion:
+        with mock.patch("litellm.supports_reasoning", return_value=True):
+            # Create reasoning model with chat API
+            lm = dspy.LM(
+                model="openai/gpt-5",
+                model_type="chat",
+                temperature=1.0,
+                max_tokens=16000,
+                reasoning_effort="low",
+                cache=False,
+            )
 
-        # Should use Predict with original signature (no reasoning field added)
-        mock_predict.assert_called_once()
-        call_args = mock_predict.call_args[0]
-        assert call_args[0] == SimpleSignature
-        assert hasattr(result, "reasoning")
+            # Test the call
+            result = lm("What is 2 + 2?")
 
-    # Reset and test with native reasoning disabled (traditional ChainOfThought)
-    settings.use_native_reasoning = False
-    with mock.patch("dspy.Predict") as mock_predict:
-        mock_predict_instance = mock.MagicMock()
-        mock_predict_instance.return_value = dspy.Prediction(reasoning="step by step...", answer="42")
-        mock_predict.return_value = mock_predict_instance
+            # Verify the response format
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], dict)
+            assert "text" in result[0]
+            assert "reasoning_content" in result[0]
+            assert result[0]["text"] == "The answer is 4"
+            assert "Step 1" in result[0]["reasoning_content"]
 
-        cot = dspy.ChainOfThought(SimpleSignature)
-        result = cot(question="What is the answer?")
+            # Verify mock was called with correct parameters
+            mock_completion.assert_called_once()
+            call_kwargs = mock_completion.call_args.kwargs
+            assert call_kwargs["model"] == "openai/gpt-5"
+            assert "reasoning" in call_kwargs
+            assert call_kwargs["reasoning"]["effort"] == "low"
+            assert call_kwargs["reasoning"]["summary"] == "auto"
+            assert "reasoning_effort" not in call_kwargs  # Should be normalized
 
-        # Should use Predict with extended signature (reasoning field added)
-        mock_predict.assert_called_once()
-        call_args = mock_predict.call_args[0]
-        # Check that signature was extended with reasoning field
-        extended_signature = call_args[0]
-        assert "reasoning" in extended_signature.fields
-        assert hasattr(result, "reasoning")
+
+def test_call_reasoning_model_with_responses_api():
+    """Test that Responses API properly handles reasoning models and returns data in correct format."""
+    # Create mock content item for message
+    content_item = Mock()
+    content_item.text = "The answer is 4"
+
+    # Create mock message output item
+    message_item = Mock()
+    message_item.type = "message"
+    message_item.content = [content_item]
+
+    # Create mock reasoning content item
+    reasoning_content_item = Mock()
+    reasoning_content_item.text = "Step 1: I need to add 2 + 2\nStep 2: 2 + 2 = 4\nTherefore, the answer is 4"
+
+    # Create mock reasoning output item
+    reasoning_item = Mock()
+    reasoning_item.type = "reasoning"
+    reasoning_item.content = [reasoning_content_item]
+
+    # Create mock response
+    mock_response = Mock()
+    mock_response.output = [message_item, reasoning_item]
+    mock_response.usage = {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
+    mock_response.model = "openai/gpt-5"
+
+    with mock.patch("litellm.responses", return_value=mock_response) as mock_responses:
+        with mock.patch("litellm.supports_reasoning", return_value=True):
+            # Create reasoning model with responses API
+            lm = dspy.LM(
+                model="openai/gpt-5",
+                model_type="responses",
+                temperature=1.0,
+                max_tokens=16000,
+                reasoning_effort="medium",
+                cache=False,
+            )
+
+            # Test the call
+            result = lm("What is 2 + 2?")
+
+            # Verify the response format
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], dict)
+            assert "text" in result[0]
+            assert "reasoning_content" in result[0]
+            assert result[0]["text"] == "The answer is 4"
+            assert "Step 1" in result[0]["reasoning_content"]
+
+            # Verify mock was called with correct parameters
+            mock_responses.assert_called_once()
+            call_kwargs = mock_responses.call_args.kwargs
+            assert call_kwargs["model"] == "openai/gpt-5"
+            assert "reasoning" in call_kwargs
+            assert call_kwargs["reasoning"]["effort"] == "medium"
+            assert call_kwargs["reasoning"]["summary"] == "auto"
+            assert "reasoning_effort" not in call_kwargs  # Should be normalized

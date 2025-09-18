@@ -332,8 +332,16 @@ def test_json_adapter_formats_with_nested_documents():
     adapter = dspy.JSONAdapter()
     messages = adapter.format(MySignature, [], {"document": document_wrapper})
 
-    expected_doc1_content = {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world!"}, "citations": {"enabled": True}}
-    expected_doc2_content = {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world 2!"}, "citations": {"enabled": True}}
+    expected_doc1_content = {
+        "type": "document",
+        "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world!"},
+        "citations": {"enabled": True},
+    }
+    expected_doc2_content = {
+        "type": "document",
+        "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world 2!"},
+        "citations": {"enabled": True},
+    }
 
     assert expected_doc1_content in messages[1]["content"]
     assert expected_doc2_content in messages[1]["content"]
@@ -816,3 +824,41 @@ def test_json_adapter_toolcalls_no_native_function_calling():
         mock_completion.assert_called_once()
         _, call_kwargs = mock_completion.call_args
         assert call_kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_json_adapter_native_reasoning():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content="{'answer': 'Paris'}",
+                        reasoning_content="Step-by-step thinking about the capital of France",
+                    ),
+                )
+            ],
+            model="anthropic/claude-3-7-sonnet-20250219",
+        )
+        modified_signature = adapter._call_preprocess(
+            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            {},
+            MySignature,
+            {"question": "What is the capital of France?"},
+        )
+        assert "reasoning" not in modified_signature.output_fields
+
+        result = adapter(
+            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            {},
+            MySignature,
+            [],
+            {"question": "What is the capital of France?"},
+        )
+        assert result[0]["reasoning"] == dspy.Reasoning(content="Step-by-step thinking about the capital of France")
