@@ -104,7 +104,7 @@ class Adapter:
             # Parse custom types that does not rely on the adapter parsing
             for name, field in original_signature.output_fields.items():
                 if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation in self.native_response_types:
-                    if name not in value:
+                    if value.get(name) is None:
                         parsed_value = field.annotation.parse_lm_response(output)
                         if parsed_value is not None:
                             value[name] = parsed_value
