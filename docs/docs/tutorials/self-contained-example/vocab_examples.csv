@@ -1,0 +1,155 @@
+source_word,target_word,source_lang,target_lang,expected
+chat,cat,French,English,1
+chien,cat,French,English,0
+book,livre,French,English,1
+manger,to sleep,French,English,0
+regarder,to watch,French,English,1
+apporterai,I have brought.,French,English,0
+cerceaux,skip,French,English,0
+déchirasses,slink,French,English,0
+chien,dog,French,English,1
+livre,book,French,English,1
+eau,water,French,English,1
+rouge,red,French,English,1
+manger,to eat,French,English,1
+boire,to drink,French,English,1
+dormir,to sleep,French,English,1
+courir,to run,French,English,1
+maison,house,French,English,1
+voiture,car,French,English,1
+école,school,French,English,1
+ami,friend,French,English,1
+temps,time,French,English,1
+jour,day,French,English,1
+nuit,night,French,English,1
+soleil,sun,French,English,1
+lune,moon,French,English,1
+chat,dog,French,English,0
+livre,water,French,English,0
+rouge,green,French,English,0
+manger,to run,French,English,0
+boire,to sleep,French,English,0
+dormir,to eat,French,English,0
+maison,car,French,English,0
+voiture,house,French,English,0
+école,friend,French,English,0
+temps,day,French,English,0
+manière,way,French,English,1
+ces,these,French,English,1
+pour,for,French,English,1
+voyait,saw,French,English,1
+comment,how,French,English,1
+dessus,above,French,English,1
+où,where,French,English,1
+église,church,French,English,1
+louis,louis,French,English,1
+fond,bottom,French,English,1
+soldats,soldiers,French,English,1
+an,year,French,English,1
+grand,big,French,English,1
+une,a,French,English,1
+reprit,resumed,French,English,1
+toute,all,French,English,1
+années,years,French,English,1
+elle-même,herself,French,English,1
+tard,late,French,English,1
+ils,they,French,English,1
+es,are,French,English,1
+trouvait,found,French,English,1
+seul,alone,French,English,1
+vint,came,French,English,1
+mais,but,French,English,1
+donne,gives,French,English,1
+jour,day,French,English,1
+mes,my,French,English,1
+toutes,all,French,English,1
+vérité,truth,French,English,1
+furent,were,French,English,1
+plus,more,French,English,1
+auteur,author,French,English,1
+front,forehead,French,English,1
+œil,eye,French,English,1
+français,french,French,English,1
+de,of,French,English,1
+regard,look,French,English,1
+ainsi,thus,French,English,1
+rire,laugh,French,English,1
+note,note,French,English,1
+sorte,sort,French,English,1
+première,first,French,English,1
+triste,sad,French,English,1
+autre,other,French,English,1
+chef,chief,French,English,1
+mis,put,French,English,1
+quant,as for,French,English,1
+vient,comes,French,English,1
+rendre,render,French,English,1
+manière,house,French,English,0
+ces,those,French,English,0
+pour,against,French,English,0
+voyait,heard,French,English,0
+comment,why,French,English,0
+dessus,below,French,English,0
+où,when,French,English,0
+église,hospital,French,English,0
+louis,pierre,French,English,0
+fond,top,French,English,0
+soldats,civilians,French,English,0
+an,month,French,English,0
+grand,small,French,English,0
+une,the,French,English,0
+reprit,started,French,English,0
+toute,some,French,English,0
+années,days,French,English,0
+elle-même,himself,French,English,0
+tard,early,French,English,0
+ils,we,French,English,0
+es,is,French,English,0
+trouvait,lost,French,English,0
+seul,together,French,English,0
+vint,went,French,English,0
+mais,and,French,English,0
+donne,takes,French,English,0
+mes,your,French,English,0
+toutes,some,French,English,0
+vérité,lie,French,English,0
+furent,are,French,English,0
+plus,less,French,English,0
+auteur,reader,French,English,0
+front,back,French,English,0
+œil,ear,French,English,0
+français,english,French,English,0
+de,to,French,English,0
+regard,sound,French,English,0
+ainsi,never,French,English,0
+rire,cry,French,English,0
+note,letter,French,English,0
+sorte,type,French,English,0
+première,last,French,English,0
+triste,happy,French,English,0
+autre,same,French,English,0
+chef,worker,French,English,0
+mis,took,French,English,0
+quant,because,French,English,0
+vient,goes,French,English,0
+rendre,take,French,English,0
+longtemps,long time,French,English,1
+longue,long,French,English,1
+aller,to go,French,English,1
+tour,turn,French,English,1
+tes,your,French,English,1
+main,hand,French,English,1
+femmes,women,French,English,1
+si,if,French,English,1
+faisait,was doing,French,English,1
+oncle,uncle,French,English,1
+longtemps,short time,French,English,0
+longue,short,French,English,0
+aller,to stay,French,English,0
+tour,square,French,English,0
+tes,my,French,English,0
+main,foot,French,English,0
+femmes,men,French,English,0
+si,when,French,English,0
+faisait,was sleeping,French,English,0
+oncle,aunt,French,English,0
