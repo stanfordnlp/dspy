@@ -146,6 +146,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def batch(
         self,
         examples: list[Example],
+        batch_mode: bool = False,
         num_threads: int | None = None,
         max_errors: int | None = None,
         return_failed_examples: bool = False,
@@ -173,6 +174,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         # Create an instance of Parallel
         parallel_executor = Parallel(
             num_threads=num_threads,
+            batch_mode=batch_mode,
             max_errors=max_errors,
             return_failed_examples=return_failed_examples,
             provide_traceback=provide_traceback,
