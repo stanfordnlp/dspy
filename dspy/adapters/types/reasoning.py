@@ -18,10 +18,6 @@ class Reasoning(Type):
     def format(self):
         return f"{self.content}"
 
-    @classmethod
-    def description(cls) -> str:
-        return "Step by step reasoning of the LM in order to generate the response."
-
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, data: Any):
