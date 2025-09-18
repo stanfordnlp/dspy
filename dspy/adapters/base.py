@@ -37,7 +37,7 @@ class Adapter:
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         inputs: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> type[Signature]:
         if self.use_native_function_calling:
             tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
             tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
