@@ -152,6 +152,48 @@ def test_baml_adapter_raise_error_on_circular_references():
     assert "BAMLAdapter cannot handle recursive pydantic models" in str(error.value)
 
 
+def test_baml_adapter_detects_recursive_models_with_union_annotations():
+    """Recursive models wrapped in union types should still be rejected."""
+
+    class RecursiveNode(pydantic.BaseModel):
+        label: str
+        child: "RecursiveNode | None" = None
+
+    RecursiveNode.model_rebuild()
+
+    class TestSignature(dspy.Signature):
+        prompt: str = dspy.InputField()
+        node: RecursiveNode = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    with pytest.raises(ValueError, match="BAMLAdapter cannot handle recursive pydantic models"):
+        adapter.format_field_structure(TestSignature)
+
+
+def test_baml_adapter_detects_deep_recursive_cycles():
+    """Cycles spanning multiple models should be caught even through unions."""
+
+    class StepThree(pydantic.BaseModel):
+        back: "StepTwo | None" = None
+
+    class StepTwo(pydantic.BaseModel):
+        next_step: StepThree | None = None
+
+    StepTwo.model_rebuild()
+    StepThree.model_rebuild()
+
+    class Wrapper(pydantic.BaseModel):
+        branch: StepTwo
+
+    class TestSignature(dspy.Signature):
+        query: str = dspy.InputField()
+        wrapper: Wrapper = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    with pytest.raises(ValueError, match="BAMLAdapter cannot handle recursive pydantic models"):
+        adapter.format_field_structure(TestSignature)
+
+
 def test_baml_adapter_formats_pydantic_inputs_as_clean_json():
     """Test that Pydantic input instances are formatted as clean JSON."""
 

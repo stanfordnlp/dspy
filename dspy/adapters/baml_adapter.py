@@ -52,7 +52,9 @@ def _render_type_str(
     if origin in (types.UnionType, Union):
         non_none_args = [arg for arg in args if arg is not type(None)]
         # Render the non-None part of the union
-        type_render = " or ".join([_render_type_str(arg, depth + 1, indent) for arg in non_none_args])
+        type_render = " or ".join(
+            _render_type_str(arg, depth + 1, indent, seen_models) for arg in non_none_args
+        )
         # Add "or null" if None was part of the union
         if len(non_none_args) < len(args):
             return f"{type_render} or null"
@@ -73,11 +75,14 @@ def _render_type_str(
             current_indent = "  " * indent
             return f"[\n{inner_schema}\n{current_indent}]"
         else:
-            return f"{_render_type_str(inner_type, depth + 1, indent)}[]"
+            return f"{_render_type_str(inner_type, depth + 1, indent, seen_models)}[]"
 
     # dict[T1, T2]
     if origin is dict:
-        return f"dict[{_render_type_str(args[0], depth + 1, indent)}, {_render_type_str(args[1], depth + 1, indent)}]"
+        return (
+            f"dict[{_render_type_str(args[0], depth + 1, indent, seen_models)}, "
+            f"{_render_type_str(args[1], depth + 1, indent, seen_models)}]"
+        )
 
     # fallback
     if hasattr(annotation, "__name__"):
