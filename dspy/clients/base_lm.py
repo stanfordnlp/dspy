@@ -230,7 +230,7 @@ class BaseLM:
         """
         text_outputs = []
         tool_calls = []
-        reasoning_content = []
+        reasoning_contents = []
 
         for output_item in response.output:
             output_item_type = output_item.type
@@ -242,18 +242,18 @@ class BaseLM:
             elif output_item_type == "reasoning":
                 if getattr(output_item, "content", None) and len(output_item.content) > 0:
                     for content_item in output_item.content:
-                        reasoning_content.append(content_item.text)
+                        reasoning_contents.append(content_item.text)
                 elif getattr(output_item, "summary", None) and len(output_item.summary) > 0:
                     for summary_item in output_item.summary:
-                        reasoning_content.append(summary_item.text)
+                        reasoning_contents.append(summary_item.text)
 
         result = {}
         if len(text_outputs) > 0:
             result["text"] = "".join(text_outputs)
         if len(tool_calls) > 0:
             result["tool_calls"] = tool_calls
-        if len(reasoning_content) > 0:
-            result["reasoning_content"] = "".join(reasoning_content)
+        if len(reasoning_contents) > 0:
+            result["reasoning_content"] = "".join(reasoning_contents)
         return [result]
 
 
