@@ -220,6 +220,33 @@ def test_baml_adapter_handles_schema_generation_errors_gracefully():
         pass
 
 
+def test_baml_adapter_handles_model_reuse_in_schema():
+    """Test that the same model can be used multiple times within a schema without recursion issues."""
+
+    class CommonFields(pydantic.BaseModel):
+        name: str = pydantic.Field(description="A descriptive name")
+        metadata: list[str] = pydantic.Field(description="Associated metadata tags")
+
+    class DocumentInfo(pydantic.BaseModel):
+        source: CommonFields = pydantic.Field(description="Source information")
+        target: CommonFields = pydantic.Field(description="Target information")
+        version: int
+
+    class TestSignature(dspy.Signature):
+        query: str = dspy.InputField()
+        document: DocumentInfo = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    schema = adapter.format_field_structure(TestSignature)
+
+    # Should include both instances of CommonFields without treating as recursion
+    assert schema.count("name: string,") == 2  # One for source, one for target
+    assert schema.count("metadata: string[],") == 2
+    assert schema.count(f"{COMMENT_SYMBOL} A descriptive name") == 2  # Field description appears twice
+    assert schema.count(f"{COMMENT_SYMBOL} Associated metadata tags") == 2  # Field description appears twice
+    assert "version: int," in schema  # Top level field exists once
+
+
 def test_baml_adapter_raises_on_missing_fields():
     """Test that missing required fields raise appropriate errors."""
 
