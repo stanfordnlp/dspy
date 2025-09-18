@@ -15,13 +15,15 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
-_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, ToolCalls]
+_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations]
 
 class Adapter:
     def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False, native_response_types: list[type[Type]] | None = None):
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
-        self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
+        self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES.copy()
+        if self.use_native_function_calling:
+            self.native_response_types.append(ToolCalls)
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
