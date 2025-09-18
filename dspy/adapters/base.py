@@ -1,7 +1,6 @@
 import logging
 from typing import TYPE_CHECKING, Any, get_origin
 
-import json_repair
 import litellm
 
 from dspy.adapters.types import History, Type
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
-_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations]
+_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, ToolCalls]
 
 class Adapter:
     def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False, native_response_types: list[type[Type]] | None = None):
@@ -82,17 +81,13 @@ class Adapter:
     ) -> list[dict[str, Any]]:
         values = []
 
-        tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
-
         for output in outputs:
             output_logprobs = None
-            tool_calls = None
             text = output
 
             if isinstance(output, dict):
                 text = output["text"]
                 output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
 
             if text:
                 value = self.parse(processed_signature, text)
@@ -105,20 +100,14 @@ class Adapter:
                 for field_name in original_signature.output_fields.keys():
                     value[field_name] = None
 
-            if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
             # Parse custom types that does not rely on the adapter parsing
             for name, field in original_signature.output_fields.items():
                 if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation in self.native_response_types:
-                    value[name] = field.annotation.parse_lm_response(output)
+                    if name not in value:
+                        parsed_value = field.annotation.parse_lm_response(output)
+                        if parsed_value is not None:
+                            value[name] = parsed_value
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
