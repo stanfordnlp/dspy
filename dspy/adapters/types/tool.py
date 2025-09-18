@@ -289,11 +289,13 @@ class ToolCalls(Type):
 
             if functions is None:
                 # Automatic lookup in caller's globals and locals
-                import inspect
                 frame = inspect.currentframe().f_back
-                caller_globals = frame.f_globals
-                caller_locals = frame.f_locals
-                func = caller_locals.get(self.name) or caller_globals.get(self.name)
+                try:
+                    caller_globals = frame.f_globals
+                    caller_locals = frame.f_locals
+                    func = caller_locals.get(self.name) or caller_globals.get(self.name)
+                finally:
+                    del frame
 
             elif isinstance(functions, dict):
                 func = functions.get(self.name)
@@ -313,7 +315,7 @@ class ToolCalls(Type):
                     result = func()
                 return result
             except Exception as e:
-                raise Exception(f"Error executing tool '{self.name}': {e}") from e
+                raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
 
     tool_calls: list[ToolCall]
 

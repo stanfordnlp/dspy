@@ -600,9 +600,12 @@ def test_tool_call_execute_with_local_functions():
         assert result2 == 28
 
         # Test locals take precedence over globals
-        globals()["local_add"] = lambda a, b: a + b + 1000
-        precedence_call = dspy.ToolCalls.ToolCall(name="local_add", args={"a": 1, "b": 2})
-        result = precedence_call.execute()
-        assert result == 3  # Should use local function (1+2=3), not global (1+2+1000=1003)
+        try:
+            globals()["local_add"] = lambda a, b: a + b + 1000
+            precedence_call = dspy.ToolCalls.ToolCall(name="local_add", args={"a": 1, "b": 2})
+            result = precedence_call.execute()
+            assert result == 3  # Should use local function (1+2=3), not global (1+2+1000=1003)
+        finally:
+            globals().pop("local_add", None)
 
     main()
