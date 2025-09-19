@@ -83,10 +83,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
                     prediction_in_output = output
                 elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
                     prediction_in_output = output[0]
-                if not prediction_in_output:
-                    raise ValueError("No prediction object found in output to call set_lm_usage on.")
-
-                prediction_in_output.set_lm_usage(tokens)
+                if prediction_in_output:
+                    prediction_in_output.set_lm_usage(tokens)
                 return output
 
             return self.forward(*args, **kwargs)
