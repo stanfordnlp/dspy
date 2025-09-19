@@ -1,5 +1,5 @@
+import json
 import os
-import pickle
 from typing import Any
 
 import numpy as np
@@ -108,8 +108,8 @@ class Embeddings:
             "has_faiss_index": self.index is not None,
         }
 
-        with open(os.path.join(path, "config.pkl"), "wb") as f:
-            pickle.dump(config, f)
+        with open(os.path.join(path, "config.json"), "w") as f:
+            json.dump(config, f, indent=2)
 
         # Save embeddings
         np.save(os.path.join(path, "corpus_embeddings.npy"), self.corpus_embeddings)
@@ -126,15 +126,39 @@ class Embeddings:
 
     def load(self, path: str, embedder):
         """
-        Load the embeddings index from disk.
+        Load the embeddings index from disk into the current instance.
 
         Args:
             path: Directory path where the embeddings were saved
             embedder: The embedder function to use for new queries
+
+        Returns:
+            self: Returns self for method chaining
+
+        Raises:
+            FileNotFoundError: If the save directory or required files don't exist
+            ValueError: If the saved config is invalid or incompatible
         """
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Save directory not found: {path}")
+
+        config_path = os.path.join(path, "config.json")
+        embeddings_path = os.path.join(path, "corpus_embeddings.npy")
+
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+        if not os.path.exists(embeddings_path):
+            raise FileNotFoundError(f"Embeddings file not found: {embeddings_path}")
+
         # Load configuration and corpus
-        with open(os.path.join(path, "config.pkl"), "rb") as f:
-            config = pickle.load(f)
+        with open(config_path) as f:
+            config = json.load(f)
+
+        # Validate required config fields
+        required_fields = ["k", "normalize", "corpus", "has_faiss_index"]
+        for field in required_fields:
+            if field not in config:
+                raise ValueError(f"Invalid config: missing required field '{field}'")
 
         # Restore configuration
         self.k = config["k"]
@@ -143,7 +167,7 @@ class Embeddings:
         self.embedder = embedder
 
         # Load embeddings
-        self.corpus_embeddings = np.load(os.path.join(path, "corpus_embeddings.npy"))
+        self.corpus_embeddings = np.load(embeddings_path)
 
         # Load FAISS index if it was saved and FAISS is available
         faiss_index_path = os.path.join(path, "faiss_index.bin")
@@ -157,13 +181,18 @@ class Embeddings:
         else:
             self.index = None
 
-        # Reinitialize the search function
+        # Initialize the search function (required since we bypassed __init__)
         self.search_fn = Unbatchify(self._batch_forward)
+
+        return self
 
     @classmethod
     def from_saved(cls, path: str, embedder):
         """
         Create an Embeddings instance from a saved index.
+
+        This is the recommended way to load saved embeddings as it creates a new
+        instance without unnecessarily computing embeddings.
 
         Args:
             path: Directory path where the embeddings were saved
@@ -171,6 +200,16 @@ class Embeddings:
 
         Returns:
             Embeddings instance loaded from disk
+
+        Example:
+            ```python
+            # Save embeddings
+            embeddings = Embeddings(corpus, embedder)
+            embeddings.save("./saved_embeddings")
+
+            # Load embeddings later
+            loaded_embeddings = Embeddings.from_saved("./saved_embeddings", embedder)
+            ```
         """
         # Create a minimal instance without triggering embedding computation
         instance = cls.__new__(cls)

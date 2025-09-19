@@ -88,7 +88,7 @@ def test_embeddings_save_load():
         original_retriever.save(save_path)
 
         # Verify files were created
-        assert os.path.exists(os.path.join(save_path, "config.pkl"))
+        assert os.path.exists(os.path.join(save_path, "config.json"))
         assert os.path.exists(os.path.join(save_path, "corpus_embeddings.npy"))
         assert not os.path.exists(os.path.join(save_path, "faiss_index.bin"))  # No FAISS for small corpus
 
