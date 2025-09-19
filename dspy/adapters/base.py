@@ -73,13 +73,13 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
-        # Handle custom types that use native response
+        # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
         for name, field in signature.output_fields.items():
             if (
                 isinstance(field.annotation, type)
                 and issubclass(field.annotation, Type)
                 and field.annotation in self.native_response_types
-                and field.annotation.is_natively_supported(lm, lm_kwargs)
+                and field.annotation.adapt_to_native_lm_feature(lm, lm_kwargs)
             ):
                 signature = signature.delete(name)
 
@@ -134,7 +134,7 @@ class Adapter:
                     isinstance(field.annotation, type)
                     and issubclass(field.annotation, Type)
                     and field.annotation in self.native_response_types
-                    and field.annotation.is_natively_supported(lm, lm_kwargs)
+                    and field.annotation.adapt_to_native_lm_feature(lm, lm_kwargs)
                 ):
                     value[name] = field.annotation.parse_lm_response(output)
 

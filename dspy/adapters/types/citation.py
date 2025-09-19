@@ -166,8 +166,7 @@ class Citations(Type):
         return self.citations[index]
 
     @classmethod
-    def is_natively_supported(cls, lm, lm_kwargs) -> bool:
-        """Whether the Citations type is natively supported by the LM."""
+    def adapt_to_native_lm_feature(cls, lm, lm_kwargs) -> bool:
         return lm.model.startswith("anthropic/")
 
     @classmethod

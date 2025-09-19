@@ -40,8 +40,7 @@ class Reasoning(Type):
         raise ValueError(f"Received invalid value for `dspy.Reasoning`: {data}")
 
     @classmethod
-    def is_natively_supported(cls, lm, lm_kwargs) -> bool:
-        """Whether the Reasoning type is natively supported by the LM."""
+    def adapt_to_native_lm_feature(cls, lm, lm_kwargs) -> bool:
         if not litellm.supports_reasoning(lm.model):
             return False
 
@@ -53,7 +52,11 @@ class Reasoning(Type):
         else:
             reasoning_effort = None
 
-        return reasoning_effort is not None
+        if reasoning_effort is None:
+            # Turn on the native reasoning
+            lm_kwargs["reasoning_effort"] = "low"
+
+        return True
 
     @classmethod
     def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Reasoning"]:

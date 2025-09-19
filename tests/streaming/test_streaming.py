@@ -896,7 +896,7 @@ async def test_streaming_allows_custom_streamable_type():
             return CustomType(message=response.split("\n\n")[0])
 
         @classmethod
-        def is_natively_supported(cls, lm, lm_kwargs):
+        def adapt_to_native_lm_feature(cls, lm, lm_kwargs):
             return True
 
     class CustomSignature(dspy.Signature):
