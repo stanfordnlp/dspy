@@ -61,3 +61,12 @@ class Reasoning(Type):
 
     def __repr__(self) -> str:
         return f"{self.content!r}"
+
+    def __str__(self) -> str:
+        return self.content
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Reasoning):
+            return self.content == other.content
+        if isinstance(other, str):
+            return self.content == other
