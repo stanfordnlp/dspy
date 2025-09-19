@@ -150,6 +150,9 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
             else:
                 # Return the URL as is
                 return image
+        elif image.startswith("__DSPY_LARGE_DATA_HASH_"):
+            # DSPy large data hash identifier - return as-is during optimization
+            return image
         else:
             # Unsupported string format
             raise ValueError(f"Unrecognized file string: {image}; If this file type should be supported, please open an issue.")
