@@ -11,6 +11,9 @@ class Reasoning(Type):
 
     This type is useful when you want the DSPy output to include the reasoning of the LM. We build this type so that
     DSPy can support the reasoning model and non-reasoning model with the same code.
+
+    This is a str-like type, you can convert a string directly to a Reasoning object, and from DSPy adapters'
+    perspective, `Reasoning` is treated as a string.
     """
 
     content: str
