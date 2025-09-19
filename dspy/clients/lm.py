@@ -103,6 +103,19 @@ class LM(BaseLM):
 
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
+        # Set flag if model supports native reasoning AND user specified any reasoning parameter
+        reasoning_params = ["reasoning_effort", "reasoning", "thinking"]  # Common reasoning parameter names
+        has_reasoning_param = any(param in self.kwargs for param in reasoning_params)
+        if litellm.supports_reasoning(self.model) and has_reasoning_param:
+            settings.use_native_reasoning = True
+
+        # Normalize reasoning_effort to get reasoning summaries (for OpenAI reasoning models which don't expose reasoning content)
+        if ("reasoning_effort" in self.kwargs and
+            (self.model_type == "responses" or
+             ("openai/" in self.model.lower() and litellm.supports_reasoning(self.model)))):
+            effort = self.kwargs.pop("reasoning_effort")
+            self.kwargs["reasoning"] = {"effort": effort, "summary": "auto"}
+
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if (
             not self._warned_zero_temp_rollout
