@@ -124,6 +124,13 @@ class MIPROv2(Teleprompter):
             if self.max_errors is not None
             else dspy.settings.max_errors
         )
+
+        # Update max demos if specified
+        if max_bootstrapped_demos is not None:
+            self.max_bootstrapped_demos = max_bootstrapped_demos
+        if max_labeled_demos is not None:
+            self.max_labeled_demos = max_labeled_demos
+        
         zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
 
         # If auto is None, and num_trials is not provided (but num_candidates is), raise an error that suggests a good num_trials value
@@ -145,12 +152,6 @@ class MIPROv2(Teleprompter):
         # Set random seeds
         seed = seed or self.seed
         self._set_random_seeds(seed)
-
-        # Update max demos if specified
-        if max_bootstrapped_demos is not None:
-            self.max_bootstrapped_demos = max_bootstrapped_demos
-        if max_labeled_demos is not None:
-            self.max_labeled_demos = max_labeled_demos
 
         # Set training & validation sets
         trainset, valset = self._set_and_validate_datasets(trainset, valset)
