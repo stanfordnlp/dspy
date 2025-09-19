@@ -214,14 +214,31 @@ class GEPA(Teleprompter):
             a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` 
             for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
-        instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol. 
-            If provided, GEPA will use this custom proposer instead of its default instruction proposal 
-            mechanism to generate improved instructions based on feedback from failed examples. This is 
-            particularly useful when you need specialized instruction generation for multimodal inputs 
-            (like dspy.Image) or custom types. Use `MultiModalInstructionProposer()` from 
-            `dspy.teleprompt.gepa.instruction_proposal` for handling visual content. If None (default), 
-            GEPA uses its built-in text-optimized proposer (see `gepa.strategies.instruction_proposal.InstructionProposalSignature` 
-            for reference implementation).
+        instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol.
+            **Default: None (recommended for most users)** - Uses GEPA's proven instruction proposer from 
+            the [GEPA library](https://github.com/gepa-ai/gepa), which implements the 
+            [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). This default 
+            proposer is highly capable and was validated across diverse experiments reported in the GEPA 
+            paper and tutorials.
+
+            See documentation on custom instruction proposers 
+            [here](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#custom-instruction-proposers).
+            
+            **Advanced Feature**: Only needed for specialized scenarios:
+            - **Multi-modal handling**: Processing dspy.Image inputs alongside textual information
+            - **Nuanced control over constraints**: Fine-grained control over instruction length, format, 
+              and structural requirements beyond standard feedback mechanisms
+            - **Domain-specific knowledge injection**: Specialized terminology or context that cannot be 
+              provided through feedback_func alone
+            - **Provider-specific prompting**: Optimizations for specific LLM providers (OpenAI, Anthropic) 
+              with unique formatting preferences
+            - **Coupled component updates**: Coordinated updates of multiple components together rather 
+              than independent optimization
+            - **External knowledge integration**: Runtime access to databases, APIs, or knowledge bases
+            
+            The default proposer handles the vast majority of use cases effectively. Use 
+            MultiModalInstructionProposer() from dspy.teleprompt.gepa.instruction_proposal for visual 
+            content or implement custom ProposalFn for highly specialized requirements.
             
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called 
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer. 
