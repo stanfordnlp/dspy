@@ -257,7 +257,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
     # TRL >= 0.16.0 uses 'max_length' instead of 'max_seq_length' in SFTConfig
     import inspect
     sft_config_params = inspect.signature(SFTConfig.__init__).parameters
-    
+
     # Build config parameters, handling the max_seq_length -> max_length change
     config_kwargs = {
         "output_dir": train_kwargs["output_dir"],
@@ -277,18 +277,18 @@ def train_sft_locally(model_name, train_data, train_kwargs):
             "append_concat_token": False,  # No additional separator needed
         },
     }
-    
+
     # Add the sequence length parameter using the appropriate name for the TRL version
     if "max_seq_length" in sft_config_params:
         # Older TRL versions (< 0.16.0)
         config_kwargs["max_seq_length"] = train_kwargs["max_seq_length"]
     elif "max_length" in sft_config_params:
-        # Newer TRL versions (>= 0.16.0) 
+        # Newer TRL versions (>= 0.16.0)
         config_kwargs["max_length"] = train_kwargs["max_seq_length"]
     else:
         logger.warning("Neither 'max_seq_length' nor 'max_length' parameter found in SFTConfig. "
                       "This may indicate an incompatible TRL version.")
-    
+
     sft_config = SFTConfig(**config_kwargs)
 
     logger.info("Starting training")
