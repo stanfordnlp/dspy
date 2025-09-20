@@ -155,8 +155,12 @@ class StreamListener:
                 chunk_message = concat_message[value_start_index:].lstrip()
 
                 if isinstance(settings.adapter, JSONAdapter):
-                    # For JSONAdapter, we need to keep the start_identifier in the field_accumulated_tokens and add a
-                    # "{" to the beginning for robust partial JSON parsing.
+                    # For JSONAdapter, we rely on partial json parsing to detect the end of the field we are listening
+                    # to, so we need to maintain a few extra states to help us with that.
+                    # 1. We add an extra "{" to the beginning of the field_accumulated_tokens, so we can detect the
+                    #    appearance of the next key.
+                    # 2. We maintain a curly_bracket_diff to help us detect the balance of curly brackets, so we can
+                    #    detect when the streaming for the entire dspy.Predict is finished.
                     self.json_adapter_state["field_accumulated_tokens"] += "{" + start_identifier
                     self.json_adapter_state["curly_bracket_diff"] = 1
 
@@ -189,6 +193,8 @@ class StreamListener:
         self.json_adapter_state["field_accumulated_tokens"] += chunk_message
         self.json_adapter_state["curly_bracket_diff"] += chunk_message.count("{") - chunk_message.count("}")
         if self.json_adapter_state["curly_bracket_diff"] == 0:
+            # We add an extra "{" to the beginning of the field_accumulated_tokens, so if we get a balance of curly
+            # brackets, that means the streaming for the entire dspy.Predict is finished.
             self.stream_end = True
             last_token = self.flush()
             right_curly_bracket_index = last_token.rfind("}")
@@ -200,6 +206,8 @@ class StreamListener:
                 partial_mode="trailing-strings",
             )
             if len(parsed) > 1:
+                # If partial json parsing finds a second key, that means the streaming for the field we are listening to
+                # is finished.
                 self.stream_end = True
                 last_token = self.flush()
 
