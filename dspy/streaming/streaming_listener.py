@@ -188,14 +188,12 @@ class StreamListener:
     def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> str:
         self.json_adapter_state["field_accumulated_tokens"] += chunk_message
         self.json_adapter_state["curly_bracket_diff"] += chunk_message.count("{") - chunk_message.count("}")
-
         if self.json_adapter_state["curly_bracket_diff"] == 0:
             self.stream_end = True
             last_token = self.flush()
             right_curly_bracket_index = last_token.rfind("}")
             token = token + last_token[:right_curly_bracket_index] if token else last_token[:right_curly_bracket_index]
 
-        # Try to parse the accumulated tokens to detect next field
         try:
             parsed = jiter.from_json(
                 self.json_adapter_state["field_accumulated_tokens"].encode("utf-8"),
@@ -214,35 +212,16 @@ class StreamListener:
 
                 last_token_index = last_token.find(next_field_name)
                 token = token + last_token[:last_token_index] if token else last_token[:last_token_index]
-        except (ValueError, Exception):
-            # JSON parsing failed, continue streaming normally
+        except ValueError:
             pass
 
         if token:
-            # Strip quotes from JSON string values for backward compatibility
-            cleaned_token = self._clean_json_string_token(token)
             return StreamResponse(
                 self.predict_name,
                 self.signature_field_name,
-                cleaned_token,
+                token,
                 is_last_chunk=self.stream_end,
             )
-
-    def _clean_json_string_token(self, token: str) -> str:
-        """Clean JSON string tokens by removing quotes and JSON terminators."""
-        # Remove leading quote if present
-        if token.startswith('"'):
-            token = token[1:]
-
-        # Find and remove trailing quotes and JSON terminators
-        match = re.search(r'",|"\s*}', token)
-        if match:
-            boundary_index = match.start()
-            token = token[:boundary_index]
-        elif token.endswith('"'):
-            token = token[:-1]
-
-        return token
 
     def _default_handle_stream_chunk(self, token: str, end_identifier: str) -> str:
         concat_message = "".join(self.field_end_queue.queue).strip()

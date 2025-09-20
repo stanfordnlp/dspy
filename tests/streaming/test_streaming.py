@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from unittest import mock
 from unittest.mock import AsyncMock
 
+import pydantic
 import pytest
 from asyncer import syncify
 from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
@@ -11,7 +12,7 @@ from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 import dspy
 from dspy.adapters.types import Type
 from dspy.experimental import Citations, Document
-from dspy.streaming import StatusMessage, StatusMessageProvider, streaming_response
+from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
 
 
 @pytest.mark.anyio
@@ -451,7 +452,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="answer"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='":'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="To"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"To'))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" get"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
@@ -471,8 +472,8 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="jud"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="gement"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='":"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="The"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='":'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"The'))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" is"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" humorous"))])
@@ -512,18 +513,18 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
 
-        assert all_chunks[0].chunk == "To"
-        assert all_chunks[1].chunk == " get to the other side of the frying pan!"
+        assert all_chunks[0].chunk == '"To'
+        assert all_chunks[1].chunk == ' get to the other side of the frying pan!"'
 
         # Start processing the second listened field.
         assert all_chunks[2].predict_name == "predict2"
         assert all_chunks[2].signature_field_name == "judgement"
-        assert all_chunks[2].chunk == "The"
+        assert all_chunks[2].chunk == '"The'
         assert all_chunks[3].chunk == " answer"
         assert all_chunks[4].chunk == " is"
         assert all_chunks[5].chunk == " humorous"
         assert all_chunks[6].chunk == " and"
-        assert all_chunks[7].chunk == " plays on the very funny and classic joke format."
+        assert all_chunks[7].chunk == ' plays on the very funny and classic joke format."'
 
 
 @pytest.mark.anyio
@@ -656,11 +657,14 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
 
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
-        assert all_chunks[0].chunk == "To get to the other side... of the cutting board!"
+
+        assert all_chunks[0].chunk == '"To get to the other side... of the cutting board!"'
 
         assert all_chunks[1].predict_name == "predict2"
         assert all_chunks[1].signature_field_name == "judgement"
-        assert all_chunks[1].chunk == "The answer provides a humorous and relevant punchline to the classic joke setup."
+        assert (
+            all_chunks[1].chunk == '"The answer provides a humorous and relevant punchline to the classic joke setup."'
+        )
 
 
 @pytest.mark.anyio
@@ -915,9 +919,10 @@ async def test_streaming_allows_custom_streamable_type():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
 
-
     with mock.patch("litellm.acompletion", side_effect=stream):
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter(native_response_types=[CustomType])):
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter(native_response_types=[CustomType])
+        ):
             output = program(question="why did a chicken cross the kitchen?")
             all_chunks = []
             async for value in output:
@@ -934,6 +939,7 @@ async def test_streaming_allows_custom_streamable_type():
 async def test_streaming_with_citations():
     class AnswerWithSources(dspy.Signature):
         """Answer questions using provided documents with citations."""
+
         documents: list[Document] = dspy.InputField()
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
@@ -958,20 +964,36 @@ async def test_streaming_with_citations():
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" 100°C"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="."))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content='[{"type": "char_location", "cited_text": "Water boils at 100°C", "document_index": 0, "document_title": "Physics Facts", "start_char_index": 0, "end_char_index": 19}]'))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(
-            content="",
-            provider_specific_fields={
-                "citation": {
-                    "type": "char_location",
-                    "cited_text": "Water boils at 100°C",
-                    "document_index": 0,
-                    "document_title": "Physics Facts",
-                    "start_char_index": 0,
-                    "end_char_index": 19
-                }
-            }
-        ))])
+        yield ModelResponseStream(
+            model="claude",
+            choices=[
+                StreamingChoices(
+                    delta=Delta(
+                        content='[{"type": "char_location", "cited_text": "Water boils at 100°C", "document_index": 0, "document_title": "Physics Facts", "start_char_index": 0, "end_char_index": 19}]'
+                    )
+                )
+            ],
+        )
+        yield ModelResponseStream(
+            model="claude",
+            choices=[
+                StreamingChoices(
+                    delta=Delta(
+                        content="",
+                        provider_specific_fields={
+                            "citation": {
+                                "type": "char_location",
+                                "cited_text": "Water boils at 100°C",
+                                "document_index": 0,
+                                "document_title": "Physics Facts",
+                                "start_char_index": 0,
+                                "end_char_index": 19,
+                            }
+                        },
+                    )
+                )
+            ],
+        )
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" completed"))])
@@ -989,7 +1011,10 @@ async def test_streaming_with_citations():
         # Create test documents
         docs = [Document(data="Water boils at 100°C at standard pressure.", title="Physics Facts")]
 
-        with dspy.context(lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False), adapter=dspy.ChatAdapter(native_response_types=[Citations])):
+        with dspy.context(
+            lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False),
+            adapter=dspy.ChatAdapter(native_response_types=[Citations]),
+        ):
             output = program(documents=docs, question="What temperature does water boil?")
             citation_chunks = []
             final_prediction = None
@@ -1011,3 +1036,346 @@ async def test_streaming_with_citations():
             assert final_prediction is not None
             assert hasattr(final_prediction, "answer")
             assert hasattr(final_prediction, "citations")
+
+
+# Test Pydantic Models
+class SimpleResponse(pydantic.BaseModel):
+    message: str
+    status: str
+
+
+class NestedResponse(pydantic.BaseModel):
+    title: str
+    content: dict
+    metadata: SimpleResponse
+
+
+class ComplexResponse(pydantic.BaseModel):
+    items: list[str]
+    settings: dict[str, str]
+    active: bool
+
+
+@pytest.mark.anyio
+async def test_chat_adapter_simple_pydantic_streaming():
+    """Test ChatAdapter streaming with a simple pydantic model."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        response: SimpleResponse = dspy.OutputField()
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict = dspy.Predict(TestSignature)
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    async def chat_stream(*args, **kwargs):
+        # Simulate streaming of a pydantic model via ChatAdapter format
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"message": "Hello'))]
+        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=' world!"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status":'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=' "success"}'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
+
+    program = dspy.streamify(
+        MyProgram(),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="response"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=chat_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="Say hello")
+            chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    chunks.append(value)
+
+    # Verify we got chunks for the pydantic field
+    assert len(chunks) > 0
+    assert chunks[0].signature_field_name == "response"
+
+    # Combine all chunks to verify the content
+    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert "Hello world!" in full_content
+    assert "success" in full_content
+
+
+@pytest.mark.anyio
+async def test_chat_adapter_nested_pydantic_streaming():
+    """Test ChatAdapter streaming with nested pydantic model."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        response: NestedResponse = dspy.OutputField()
+
+    async def nested_stream(*args, **kwargs):
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## response ## ]]\n\n"))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"title": "Test"'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "content": {"key": "value"}'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "metadata": {"message": "nested"'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "ok"}}'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+        )
+
+    program = dspy.streamify(
+        dspy.Predict(TestSignature),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="response"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=nested_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="Generate nested response")
+            chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    chunks.append(value)
+
+    assert len(chunks) > 0
+    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert "nested" in full_content
+    assert "Test" in full_content
+
+
+@pytest.mark.anyio
+async def test_chat_adapter_mixed_fields_streaming():
+    """Test ChatAdapter streaming with both pydantic and string fields."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        summary: str = dspy.OutputField()
+        details: SimpleResponse = dspy.OutputField()
+
+    async def mixed_stream(*args, **kwargs):
+        # First output field (summary - string)
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## summary ## ]]\n\n"))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="This is a summary"))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" of the response"))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## details ## ]]\n\n"))]
+        )
+        # Second output field (details - pydantic)
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"message": "Detailed info"'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "complete"}'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
+        )
+
+    program = dspy.streamify(
+        dspy.Predict(TestSignature),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="summary"),
+            dspy.streaming.StreamListener(signature_field_name="details"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=mixed_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="Generate mixed response")
+            summary_chunks = []
+            details_chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    if value.signature_field_name == "summary":
+                        summary_chunks.append(value)
+                    elif value.signature_field_name == "details":
+                        details_chunks.append(value)
+
+    # Verify both field types were streamed
+    assert len(summary_chunks) > 0
+    assert len(details_chunks) > 0
+
+    summary_content = "".join(chunk.chunk for chunk in summary_chunks)
+    details_content = "".join(chunk.chunk for chunk in details_chunks)
+
+    assert "summary" in summary_content
+    assert "Detailed info" in details_content
+
+
+@pytest.mark.anyio
+async def test_json_adapter_simple_pydantic_streaming():
+    """Test JSONAdapter streaming with a simple pydantic model."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        response: SimpleResponse = dspy.OutputField()
+
+    async def json_stream(*args, **kwargs):
+        # Simulate JSON streaming with proper bracket balance tracking
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='response"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=":"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"message"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=': "Hello'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=' JSON!"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=': "ok"}'))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="}"))]
+        )  # Close main object
+
+    program = dspy.streamify(
+        dspy.Predict(TestSignature),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="response"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=json_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+            output = program(question="Say hello in JSON")
+            chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    chunks.append(value)
+
+    assert len(chunks) > 0
+    assert chunks[0].signature_field_name == "response"
+
+    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert "Hello JSON!" in full_content
+
+
+@pytest.mark.anyio
+async def test_json_adapter_bracket_balance_detection():
+    """Test JSONAdapter correctly detects field completion using bracket balance."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        response: ComplexResponse = dspy.OutputField()
+
+    async def complex_json_stream(*args, **kwargs):
+        # Test nested objects and arrays for bracket counting
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='response": {'))]
+        )  # +1 bracket
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"items": ["a"'))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "b"], '))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"settings": {"key"'))]
+        )  # +1 bracket
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=': "value"}, '))]
+        )  # -1 bracket
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"active": true}'))]
+        )  # -1 bracket (should end field)
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="}"))]
+        )  # Close main object
+
+    program = dspy.streamify(
+        dspy.Predict(TestSignature),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="response"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=complex_json_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+            output = program(question="Generate complex JSON")
+            chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    chunks.append(value)
+
+    assert len(chunks) > 0
+    # Check that the last chunk is marked as the last
+    assert chunks[-1].is_last_chunk is True
+
+    full_content = "".join(chunk.chunk for chunk in chunks)
+
+    assert "items" in full_content
+    assert "settings" in full_content
+
+
+@pytest.mark.anyio
+async def test_json_adapter_multiple_fields_detection():
+    """Test JSONAdapter correctly detects when next field starts."""
+
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        first: SimpleResponse = dspy.OutputField()
+        second: SimpleResponse = dspy.OutputField()
+
+    async def multi_field_stream(*args, **kwargs):
+        # First field
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"first": {'))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"message": "first response"'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "ok"}'))]
+        )
+        # Second field starts
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "second": {'))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"message": "second response"'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "done"}}'))]
+        )
+
+    program = dspy.streamify(
+        dspy.Predict(TestSignature),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="first"),
+            dspy.streaming.StreamListener(signature_field_name="second"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=multi_field_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
+            output = program(question="Generate two responses")
+            first_chunks = []
+            second_chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    if value.signature_field_name == "first":
+                        first_chunks.append(value)
+                    elif value.signature_field_name == "second":
+                        second_chunks.append(value)
+
+    # Verify both fields were detected and streamed
+    assert len(first_chunks) > 0
+    assert len(second_chunks) > 0
+
+    first_content = "".join(chunk.chunk for chunk in first_chunks)
+    second_content = "".join(chunk.chunk for chunk in second_chunks)
+
+    assert "first response" in first_content
+    assert "second response" in second_content
