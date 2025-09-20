@@ -119,8 +119,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
-            from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
-            trajs = bootstrap_trace_data(
+            from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
+
+            eval_callback_metadata = {"disable_logging": True}
+            trajs = bootstrap_trace_module.bootstrap_trace_data(
                 program=program,
                 dataset=batch,
                 metric=self.metric_fn,
@@ -129,6 +131,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 capture_failed_parses=True,
                 failure_score=self.failure_score,
                 format_failure_score=self.failure_score,
+                callback_metadata=eval_callback_metadata,
             )
             scores = []
             outputs = []

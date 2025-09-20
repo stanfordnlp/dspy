@@ -43,6 +43,40 @@ def bad_metric(example, prediction):
     return 0.0
 
 
+def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
+    from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
+    from dspy.teleprompt.gepa import gepa_utils
+
+    class DummyModule(dspy.Module):
+        def forward(self, **kwargs):  # pragma: no cover - stub forward
+            return dspy.Prediction()
+
+    # Exercise the adapter evaluate path directly.
+    adapter = gepa_utils.DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+    )
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def dummy_bootstrap_trace_data(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return []
+
+    monkeypatch.setattr(bootstrap_trace_module, "bootstrap_trace_data", dummy_bootstrap_trace_data)
+    monkeypatch.setattr(
+        gepa_utils.DspyAdapter,
+        "build_program",
+        lambda self, candidate: DummyModule(),
+    )
+
+    adapter.evaluate(batch=[], candidate={}, capture_traces=True)
+
+    assert captured_kwargs["callback_metadata"] == {"disable_logging": True}
+
+
 @pytest.fixture
 def mock_mlflow():
     mock_mlflow = mock.MagicMock()

@@ -1,3 +1,4 @@
+from typing import Any
 from unittest import mock
 
 from litellm import Choices, Message, ModelResponse
@@ -118,3 +119,35 @@ def test_bootstrap_trace_data():
         # Each trace entry should be a tuple of (predictor, inputs, prediction)
         for trace_entry in result["trace"]:
             assert len(trace_entry) == 3, "Trace entry should have 3 elements"
+
+
+def test_bootstrap_trace_data_passes_callback_metadata(monkeypatch):
+    from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
+
+    class DummyProgram(dspy.Module):
+        def forward(self, **kwargs):  # pragma: no cover - stub forward
+            return dspy.Prediction()
+
+    captured_metadata: dict[str, Any] = {}
+
+    class DummyEvaluate:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, *args, callback_metadata=None, **kwargs):
+            captured_metadata["value"] = callback_metadata
+
+            class _Result:
+                results: list[Any] = []
+
+            return _Result()
+
+    monkeypatch.setattr(bootstrap_trace_module, "Evaluate", DummyEvaluate)
+
+    bootstrap_trace_module.bootstrap_trace_data(
+        program=DummyProgram(),
+        dataset=[],
+        callback_metadata={"disable_logging": True},
+    )
+
+    assert captured_metadata["value"] == {"disable_logging": True}

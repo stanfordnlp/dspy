@@ -37,6 +37,7 @@ def bootstrap_trace_data(
     failure_score: float = 0,
     format_failure_score: float = -1,
     log_format_failures: bool = False,
+    callback_metadata: dict[str, Any] | None = None,
 ) -> list[TraceData]:
     # Return a list of dicts with the following keys: example_ind, example, prediction, trace, and score
     # (if metric != None)
@@ -110,7 +111,11 @@ def bootstrap_trace_data(
     program.forward = MethodType(patched_forward, program)
 
     try:
-        results = evaluator(program, metric=wrapped_metric).results
+        results = evaluator(
+            program,
+            metric=wrapped_metric,
+            callback_metadata=callback_metadata,
+        ).results
     finally:
         program.forward = original_forward
 
