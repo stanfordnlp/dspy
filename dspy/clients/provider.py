@@ -3,7 +3,7 @@ from concurrent.futures import Future
 from threading import Thread
 from typing import TYPE_CHECKING, Any
 
-from dspy.clients.utils_finetune import TrainDataFormat, MultiGPUConfig
+from dspy.clients.utils_finetune import MultiGPUConfig, TrainDataFormat
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
