@@ -68,6 +68,7 @@ API_MAPPING = {
         dspy.evaluate.answer_passage_match,
         dspy.evaluate.SemanticF1,
         dspy.evaluate.CompleteAndGrounded,
+        dspy.evaluate.EvaluationResult,
     ],
     "optimizers": [
         dspy.LabeledFewShot,

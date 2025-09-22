@@ -95,6 +95,7 @@ nav:
         - Evaluation:
             - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md
             - Evaluate: api/evaluation/Evaluate.md
+            - EvaluationResult: api/evaluation/EvaluationResult.md
             - SemanticF1: api/evaluation/SemanticF1.md
             - answer_exact_match: api/evaluation/answer_exact_match.md
             - answer_passage_match: api/evaluation/answer_passage_match.md
