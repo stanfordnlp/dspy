@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, get_origin
 
 import json_repair
@@ -320,6 +321,7 @@ class Adapter:
         """
         raise NotImplementedError
 
+    @lru_cache(maxsize=64)
     def format_demos(self, signature: type[Signature], demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Format the few-shot examples.
 
