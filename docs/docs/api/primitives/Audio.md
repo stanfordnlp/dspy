@@ -1,6 +1,5 @@
 # dspy.Audio
 
-
 <!-- START_API_REF -->
 ::: dspy.Audio
     handler: python
@@ -12,6 +11,9 @@
             - from_array
             - from_file
             - from_url
+            - is_streamable
+            - parse_lm_response
+            - parse_stream_chunk
             - serialize_model
             - validate_input
         show_source: true

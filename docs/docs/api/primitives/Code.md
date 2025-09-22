@@ -1,6 +1,5 @@
 # dspy.Code
 
-
 <!-- START_API_REF -->
 ::: dspy.Code
     handler: python
@@ -9,6 +8,9 @@
             - description
             - extract_custom_type_from_annotation
             - format
+            - is_streamable
+            - parse_lm_response
+            - parse_stream_chunk
             - serialize_model
             - validate_input
         show_source: true
