@@ -1,5 +1,4 @@
 import logging
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any, get_origin
 
 import json_repair
@@ -17,13 +16,13 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
-_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations]
+_DEFAULT_NATIVE_RESPONSE_TYPES = (Citations, ToolCalls)
 
 class Adapter:
     def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False, native_response_types: list[type[Type]] | None = None):
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
-        self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
+        self.native_response_types = native_response_types or list(_DEFAULT_NATIVE_RESPONSE_TYPES)
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -321,7 +320,6 @@ class Adapter:
         """
         raise NotImplementedError
 
-    @lru_cache(maxsize=64)
     def format_demos(self, signature: type[Signature], demos: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Format the few-shot examples.
 

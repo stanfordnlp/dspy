@@ -1,6 +1,5 @@
 import re
 import textwrap
-from functools import lru_cache
 from typing import Any, NamedTuple
 
 from litellm import ContextWindowExceededError
@@ -67,14 +66,12 @@ class ChatAdapter(Adapter):
                 raise e
             return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
 
-    @lru_cache(maxsize=64)
     def format_field_description(self, signature: type[Signature]) -> str:
         return (
             f"Your input fields are:\n{get_field_description_string(signature.input_fields)}\n"
             f"Your output fields are:\n{get_field_description_string(signature.output_fields)}"
         )
 
-    @lru_cache(maxsize=64)
     def format_field_structure(self, signature: type[Signature]) -> str:
         """
         `ChatAdapter` requires input and output fields to be in their own sections, with section header using markers
@@ -97,7 +94,6 @@ class ChatAdapter(Adapter):
         parts.append("[[ ## completed ## ]]\n")
         return "\n\n".join(parts).strip()
 
-    @lru_cache(maxsize=64)
     def format_task_description(self, signature: type[Signature]) -> str:
         instructions = textwrap.dedent(signature.instructions)
         objective = ("\n" + " " * 8).join([""] + instructions.splitlines())

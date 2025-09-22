@@ -1,6 +1,5 @@
 import json
 import logging
-from functools import lru_cache
 from typing import Any, get_origin
 
 import json_repair
@@ -103,7 +102,6 @@ class JSONAdapter(ChatAdapter):
             lm_kwargs["response_format"] = {"type": "json_object"}
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 
-    @lru_cache(maxsize=64)
     def format_field_structure(self, signature: type[Signature]) -> str:
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
@@ -123,7 +121,6 @@ class JSONAdapter(ChatAdapter):
         parts.append(format_signature_fields_for_instructions(signature.output_fields, role="assistant"))
         return "\n\n".join(parts).strip()
 
-    @lru_cache(maxsize=64)
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
         def type_info(v):
             return (
