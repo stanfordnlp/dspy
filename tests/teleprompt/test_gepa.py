@@ -43,7 +43,11 @@ def bad_metric(example, prediction):
     return 0.0
 
 
-def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
+@pytest.mark.parametrize("full_eval_size, batch, expected_callback_metadata", [
+    (1, [], {"disable_logging": True}),
+    (1, [Example(input="What is the color of the sky?", output="blue")], {"metric_key": "eval_full"}),
+])
+def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, full_eval_size, batch, expected_callback_metadata):
     from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
     from dspy.teleprompt.gepa import gepa_utils
 
@@ -57,6 +61,7 @@ def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
         metric_fn=simple_metric,
         feedback_map={},
         failure_score=0.0,
+        full_eval_size=full_eval_size,
     )
 
     captured_kwargs: dict[str, Any] = {}
@@ -72,9 +77,9 @@ def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
         lambda self, candidate: DummyModule(),
     )
 
-    adapter.evaluate(batch=[], candidate={}, capture_traces=True)
+    adapter.evaluate(batch=batch, candidate={}, capture_traces=True)
 
-    assert captured_kwargs["callback_metadata"] == {"disable_logging": True}
+    assert captured_kwargs["callback_metadata"] == expected_callback_metadata
 
 
 @pytest.fixture
