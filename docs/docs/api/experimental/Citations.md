@@ -9,6 +9,9 @@
             - extract_custom_type_from_annotation
             - format
             - from_dict_list
+            - is_streamable
+            - parse_lm_response
+            - parse_stream_chunk
             - serialize_model
             - validate_input
         show_source: true
