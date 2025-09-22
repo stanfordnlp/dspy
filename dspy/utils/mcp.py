@@ -27,7 +27,7 @@ def _convert_mcp_tool_result(call_tool_result: "mcp.types.CallToolResult") -> st
     return tool_content or non_text_contents
 
 
-def convert_mcp_tool(session: "mcp.client.session.ClientSession", tool: "mcp.types.Tool") -> Tool:
+def convert_mcp_tool(session: "mcp.ClientSession", tool: "mcp.types.Tool") -> Tool:
     """Build a DSPy tool from an MCP tool.
 
     Args:

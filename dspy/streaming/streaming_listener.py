@@ -7,7 +7,7 @@ from litellm import ModelResponseStream
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
-from dspy.adapters.types.citation import Citations
+from dspy.adapters.types import Type
 from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.dsp.utils.settings import settings
 from dspy.streaming.messages import StreamResponse
@@ -102,18 +102,15 @@ class StreamListener:
         except Exception:
             return
 
-        # Handle anthropic citations. see https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
-        try:
-            if self._signature_field_is_citation_type():
-                if chunk_citation := chunk.choices[0].delta.provider_specific_fields.get("citation", None):
-                    return StreamResponse(
-                        self.predict_name,
-                        self.signature_field_name,
-                        Citations.from_dict_list([chunk_citation]),
-                        is_last_chunk=False,
-                    )
-        except Exception:
-            pass
+        # Handle custom streamable types
+        if self._output_type and issubclass(self._output_type, Type) and self._output_type.is_streamable():
+            if parsed_chunk := self._output_type.parse_stream_chunk(chunk):
+                return StreamResponse(
+                    self.predict_name,
+                    self.signature_field_name,
+                    parsed_chunk,
+                    is_last_chunk=self.stream_end,
+                )
 
         if chunk_message and start_identifier in chunk_message:
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
@@ -217,10 +214,13 @@ class StreamListener:
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
 
-    def _signature_field_is_citation_type(self) -> bool:
-        """Check if the signature field is a citations field."""
-        from dspy.predict import Predict
-        return isinstance(self.predict, Predict) and getattr(self.predict.signature.output_fields.get(self.signature_field_name, None), "annotation", None) == Citations
+    @property
+    def _output_type(self) -> type | None:
+        try:
+            return self.predict.signature.output_fields[self.signature_field_name].annotation
+        except Exception:
+            return None
+
 
 
 def find_predictor_for_stream_listeners(program: "Module", stream_listeners: list[StreamListener]):
@@ -249,10 +249,10 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
                     "predictor to use for streaming. Please specify the predictor to listen to."
                 )
 
-            if field_info.annotation not in [str, Citations]:
+            if not _is_streamable(field_info.annotation):
                 raise ValueError(
-                    f"Stream listener can only be applied to string or Citations output field, but your field {field_name} is of "
-                    f"type {field_info.annotation}."
+                    f"Stream listener can only be applied to string or subclass of `dspy.Type` that has `is_streamable() == True`, "
+                    f"but your field {field_name} is of type {field_info.annotation}."
                 )
 
             field_name_to_named_predictor[field_name] = (name, predictor)
@@ -271,3 +271,12 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
         listener.predict_name, listener.predict = field_name_to_named_predictor[listener.signature_field_name]
         predict_id_to_listener[id(listener.predict)].append(listener)
     return predict_id_to_listener
+
+def _is_streamable(field_type: type | None) -> bool:
+    if field_type is None:
+        return False
+    if field_type is str:
+        return True
+    if issubclass(field_type, Type):
+        return field_type.is_streamable()
+    return False
