@@ -44,18 +44,19 @@ class Reasoning(Type):
         if not litellm.supports_reasoning(lm.model):
             return False
 
+        reasoning_effort = "unspecified"
         if "reasoning_effort" in lm_kwargs:
             # `lm_kwargs` overrides `lm.kwargs`
             reasoning_effort = lm_kwargs["reasoning_effort"]
         elif "reasoning_effort" in lm.kwargs:
             reasoning_effort = lm.kwargs["reasoning_effort"]
-        else:
-            reasoning_effort = None
 
         if reasoning_effort is None:
-            # Turn on the native reasoning
-            lm_kwargs["reasoning_effort"] = "low"
+            # If users explicitly set `reasoning_effort` to None, we don't enable native reasoning
+            return False
 
+        # Turn on the native reasoning
+        lm_kwargs["reasoning_effort"] = "low"
         return True
 
     @classmethod

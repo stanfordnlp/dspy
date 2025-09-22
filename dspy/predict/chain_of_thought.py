@@ -1,9 +1,12 @@
+import logging
 from typing import Any
 
 import dspy
 from dspy.primitives.module import Module
 from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, ensure_signature
+
+logger = logging.getLogger(__name__)
 
 
 class ChainOfThought(Module):
@@ -21,6 +24,9 @@ class ChainOfThought(Module):
         """
         super().__init__()
         signature = ensure_signature(signature)
+
+        if "rationale_field" in config or "rationale_field_type" in config:
+            logger.warning("`rationale_field` and `rationale_field_type` are deprecated, they are no-op now.")
 
         from dspy.adapters.types.reasoning import Reasoning
 

@@ -103,15 +103,6 @@ class LM(BaseLM):
 
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
-        # Normalize reasoning_effort to get reasoning summaries (for OpenAI reasoning models which don't expose
-        # reasoning content)
-        if "reasoning_effort" in self.kwargs and (
-            self.model_type == "responses"
-            or ("openai/" in self.model.lower() and litellm.supports_reasoning(self.model))
-        ):
-            effort = self.kwargs.pop("reasoning_effort")
-            self.kwargs["reasoning"] = {"effort": effort, "summary": "auto"}
-
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and (temperature is None or temperature == 0):
             warnings.warn(
@@ -463,4 +454,8 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
             elif isinstance(c, list):
                 content_blocks.extend(c)
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+    # Convert reasoning_effort to reasoning format supported by the Responses API
+    if "reasoning_effort" in request:
+        effort = request.pop("reasoning_effort")
+        request["reasoning"] = {"effort": effort, "summary": "auto"}
     return request

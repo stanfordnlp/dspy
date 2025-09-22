@@ -565,25 +565,17 @@ def test_responses_api_tool_calls(litellm_test_server):
         assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
 
 
-def test_reasoning_effort_normalization():
-    """Test that reasoning_effort gets normalized to reasoning format for OpenAI models."""
-    with mock.patch("litellm.supports_reasoning", return_value=True):
+def test_reasoning_effort_responses_api():
+    """Test that reasoning_effort gets normalized to reasoning format for Responses API."""
+    with mock.patch("litellm.responses") as mock_responses:
         # OpenAI model with Responses API - should normalize
-        lm1 = dspy.LM(
+        lm = dspy.LM(
             model="openai/gpt-5", model_type="responses", reasoning_effort="low", max_tokens=16000, temperature=1.0
         )
-        assert "reasoning_effort" not in lm1.kwargs
-        assert lm1.kwargs["reasoning"] == {"effort": "low", "summary": "auto"}
-
-        # OpenAI model with Chat API - should normalize
-        lm2 = dspy.LM(model="openai/gpt-5", reasoning_effort="medium", max_tokens=16000, temperature=1.0)
-        assert "reasoning_effort" not in lm2.kwargs
-        assert lm2.kwargs["reasoning"] == {"effort": "medium", "summary": "auto"}
-
-        # Non-OpenAI model - should NOT normalize
-        lm3 = dspy.LM(model="deepseek-ai/DeepSeek-R1", reasoning_effort="low", max_tokens=4000, temperature=0.7)
-        assert "reasoning_effort" in lm3.kwargs
-        assert "reasoning" not in lm3.kwargs
+        lm("openai query")
+        call_kwargs = mock_responses.call_args.kwargs
+        assert "reasoning_effort" not in call_kwargs
+        assert call_kwargs["reasoning"] == {"effort": "low", "summary": "auto"}
 
 
 def test_reasoning_content_extraction():
