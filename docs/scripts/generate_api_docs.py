@@ -244,7 +244,6 @@ def generate_md_docs(output_dir: Path, excluded_modules=None):
         file_path = output_dir / category / f"{name}.md"
         if file_path.as_posix() in LOCATION_OVERRIDES:
             file_path = Path(LOCATION_OVERRIDES[file_path.as_posix()])
-        print("file_path", file_path)
         write_doc_file(file_path, f"dspy.{name}", page_content)
 
         objects_processed[f"{obj.__module__}.{name}"] = obj
@@ -298,7 +297,6 @@ def generate_md_docs_submodule(module_path: str, output_dir: Path, objects_proce
             file_path = output_dir / category / f"{name}.md"
             if file_path.as_posix() in LOCATION_OVERRIDES:
                 file_path = Path(LOCATION_OVERRIDES[file_path.as_posix()])
-            print("file_path2", file_path)
             write_doc_file(file_path, f"{module_path}.{name}", page_content)
 
             objects_processed[full_name] = obj
