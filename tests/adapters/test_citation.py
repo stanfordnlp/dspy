@@ -135,7 +135,7 @@ def test_citations_postprocessing():
         answer: str = dspy.OutputField()
         citations: Citations = dspy.OutputField()
 
-    adapter = ChatAdapter()
+    adapter = ChatAdapter(native_response_types=[Citations])
 
     outputs = [{
         "text": "[[ ## answer ## ]]\nThe answer is blue.\n\n[[ ## citations ## ]]\n[]",
@@ -154,7 +154,8 @@ def test_citations_postprocessing():
     result = adapter._call_postprocess(
         CitationSignature.delete("citations"),
         CitationSignature,
-        outputs
+        outputs,
+        dspy.LM(model="claude-3-5-sonnet-20241022")
     )
 
     assert len(result) == 1

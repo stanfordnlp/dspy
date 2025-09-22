@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, get_origin
 import json_repair
 import litellm
 
-from dspy.adapters.types import History
+from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.experimental import Citations
@@ -16,11 +16,13 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
+_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations]
 
 class Adapter:
-    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False):
+    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = False, native_response_types: list[type[Type]] | None = None):
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
+        self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -35,7 +37,7 @@ class Adapter:
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         inputs: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> type[Signature]:
         if self.use_native_function_calling:
             tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
             tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
@@ -64,9 +66,10 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
-        citation_output_field_name = self._get_citation_output_field_name(signature)
-        if citation_output_field_name:
-            signature = signature.delete(citation_output_field_name)
+        # Handle custom types that use native response
+        for name, field in signature.output_fields.items():
+            if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation in self.native_response_types:
+                signature = signature.delete(name)
 
         return signature
 
@@ -75,23 +78,21 @@ class Adapter:
         processed_signature: type[Signature],
         original_signature: type[Signature],
         outputs: list[dict[str, Any]],
+        lm: "LM",
     ) -> list[dict[str, Any]]:
         values = []
 
         tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
-        citation_output_field_name = self._get_citation_output_field_name(original_signature)
 
         for output in outputs:
             output_logprobs = None
             tool_calls = None
-            citations = None
             text = output
 
             if isinstance(output, dict):
                 text = output["text"]
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
-                citations = output.get("citations")
 
             if text:
                 value = self.parse(processed_signature, text)
@@ -114,9 +115,10 @@ class Adapter:
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
-            if citations and citation_output_field_name:
-                citations_obj = Citations.from_dict_list(citations)
-                value[citation_output_field_name] = citations_obj
+            # Parse custom types that does not rely on the adapter parsing
+            for name, field in original_signature.output_fields.items():
+                if isinstance(field.annotation, type) and issubclass(field.annotation, Type) and field.annotation in self.native_response_types:
+                    value[name] = field.annotation.parse_lm_response(output)
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
@@ -137,7 +139,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs)
+        return self._call_postprocess(processed_signature, signature, outputs, lm)
 
     async def acall(
         self,
@@ -151,7 +153,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs)
+        return self._call_postprocess(processed_signature, signature, outputs, lm)
 
     def format(
         self,
@@ -402,12 +404,6 @@ class Adapter:
                 return name
         return None
 
-    def _get_citation_output_field_name(self, signature: type[Signature]) -> str | None:
-        """Find the Citations output field in the signature."""
-        for name, field in signature.output_fields.items():
-            if field.annotation == Citations:
-                return name
-        return None
 
     def format_conversation_history(
         self,

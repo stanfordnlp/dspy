@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import pydantic
 
@@ -166,3 +166,51 @@ class Citations(Type):
     def __getitem__(self, index):
         """Allow indexing into citations."""
         return self.citations[index]
+
+    @classmethod
+    def is_streamable(cls) -> bool:
+        """Whether the Citations type is streamable."""
+        return True
+
+    @classmethod
+    def parse_stream_chunk(cls, chunk) -> Optional["Citations"]:
+        """
+        Parse a stream chunk into Citations.
+
+        Args:
+            chunk: A stream chunk from the LM.
+
+        Returns:
+            A Citations object if the chunk contains citation data, None otherwise.
+        """
+        try:
+            # Check if the chunk has citation data in provider_specific_fields
+            if hasattr(chunk, "choices") and chunk.choices:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, "provider_specific_fields") and delta.provider_specific_fields:
+                    citation_data = delta.provider_specific_fields.get("citation")
+                    if citation_data:
+                        return cls.from_dict_list([citation_data])
+        except Exception:
+            pass
+        return None
+
+
+    @classmethod
+    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Citations"]:
+        """Parse a LM response into Citations.
+
+        Args:
+            response: A LM response that may contain citation data.
+
+        Returns:
+            A Citations object if citation data is found, None otherwise.
+        """
+        if isinstance(response, dict):
+            # Check if the response contains citations in the expected format
+            if "citations" in response:
+                citations_data = response["citations"]
+                if isinstance(citations_data, list):
+                    return cls.from_dict_list(citations_data)
+
+        return None

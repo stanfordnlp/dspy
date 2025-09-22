@@ -163,6 +163,10 @@ def parse_value(value, annotation):
     if not isinstance(value, str):
         return TypeAdapter(annotation).validate_python(value)
 
+    if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
+        # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
+        return TypeAdapter(annotation).validate_python(value)
+
     candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
     if candidate == "" and value != "":
         try:
@@ -179,9 +183,6 @@ def parse_value(value, annotation):
                 return TypeAdapter(annotation).validate_python(value)
             except Exception:
                 raise e
-
-        if origin in (Union, types.UnionType) and type(None) in get_args(annotation) and str in get_args(annotation):
-            return str(candidate)
         raise
 
 
