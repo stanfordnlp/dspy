@@ -13,7 +13,7 @@ import dspy
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import TrainDataFormat
+from dspy.clients.utils_finetune import MultiGPUConfig, TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 
@@ -237,14 +237,14 @@ class LM(BaseLM):
 
         return job
 
-    def reinforce(self, train_kwargs) -> ReinforceJob:
+    def reinforce(self, train_kwargs, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)) -> ReinforceJob:
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
 
         err = f"Provider {self.provider} does not implement the reinforcement learning interface."
         assert self.provider.reinforceable, err
 
-        job = self.provider.ReinforceJob(lm=self, train_kwargs=train_kwargs)
+        job = self.provider.ReinforceJob(lm=self, train_kwargs=train_kwargs, gpu_config=gpu_config)
         job.initialize()
         return job
 
