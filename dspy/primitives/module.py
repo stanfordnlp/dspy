@@ -85,6 +85,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
                     prediction_in_output = output[0]
                 if prediction_in_output:
                     prediction_in_output.set_lm_usage(tokens)
+                else:
+                    logger.warning("Failed to set LM usage. Return `dspy.Prediction` object to enable usage tracking.")
                 return output
 
             return self.forward(*args, **kwargs)
@@ -99,7 +101,16 @@ class Module(BaseModule, metaclass=ProgramMeta):
             if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
                     output = await self.aforward(*args, **kwargs)
-                    output.set_lm_usage(usage_tracker.get_total_tokens())
+                    tokens = usage_tracker.get_total_tokens()
+                    prediction_in_output = None
+                    if isinstance(output, Prediction):
+                        prediction_in_output = output
+                    elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
+                        prediction_in_output = output[0]
+                    if prediction_in_output:
+                        prediction_in_output.set_lm_usage(tokens)
+                    else:
+                        logger.warning("Failed to set LM usage. Return `dspy.Prediction` object to enable usage tracking.")
                     return output
 
             return await self.aforward(*args, **kwargs)
