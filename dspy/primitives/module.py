@@ -86,7 +86,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 if prediction_in_output:
                     prediction_in_output.set_lm_usage(tokens)
                 else:
-                    logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object to enable usage tracking.")
+                    logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
                 return output
 
             return self.forward(*args, **kwargs)
@@ -110,7 +110,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
                     if prediction_in_output:
                         prediction_in_output.set_lm_usage(tokens)
                     else:
-                        logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object to enable usage tracking.")
+                        logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
                     return output
 
             return await self.aforward(*args, **kwargs)
