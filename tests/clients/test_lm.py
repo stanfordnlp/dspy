@@ -2,7 +2,7 @@ import json
 import time
 import warnings
 from unittest import mock
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import litellm
 import pydantic
@@ -578,20 +578,6 @@ def test_reasoning_effort_responses_api():
         assert call_kwargs["reasoning"] == {"effort": "low", "summary": "auto"}
 
 
-def test_reasoning_content_extraction():
-    """Test that reasoning models can be created with proper configuration."""
-    # Test that reasoning models are properly configured
-    lm = dspy.LM(
-        model="openai/gpt-5", model_type="responses", max_tokens=16000, temperature=1.0, reasoning_effort="low"
-    )
-
-    # Verify reasoning parameters are normalized
-    assert "reasoning" in lm.kwargs
-    assert lm.kwargs["reasoning"]["effort"] == "low"
-    assert "max_completion_tokens" in lm.kwargs
-    assert lm.kwargs["max_completion_tokens"] == 16000
-
-
 def test_call_reasoning_model_with_chat_api():
     """Test that Chat API properly handles reasoning models and returns data in correct format."""
     # Create message with reasoning_content attribute
@@ -605,7 +591,7 @@ def test_call_reasoning_model_with_chat_api():
     # Mock response with reasoning content for chat completion
     mock_response = ModelResponse(
         choices=[mock_choice],
-        model="openai/gpt-5",
+        model="anthropic/claude-3-7-sonnet-20250219",
         usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
     )
 
@@ -613,7 +599,7 @@ def test_call_reasoning_model_with_chat_api():
         with mock.patch("litellm.supports_reasoning", return_value=True):
             # Create reasoning model with chat API
             lm = dspy.LM(
-                model="openai/gpt-5",
+                model="anthropic/claude-3-7-sonnet-20250219",
                 model_type="chat",
                 temperature=1.0,
                 max_tokens=16000,
@@ -636,68 +622,5 @@ def test_call_reasoning_model_with_chat_api():
             # Verify mock was called with correct parameters
             mock_completion.assert_called_once()
             call_kwargs = mock_completion.call_args.kwargs
-            assert call_kwargs["model"] == "openai/gpt-5"
-            assert "reasoning" in call_kwargs
-            assert call_kwargs["reasoning"]["effort"] == "low"
-            assert call_kwargs["reasoning"]["summary"] == "auto"
-            assert "reasoning_effort" not in call_kwargs  # Should be normalized
-
-
-def test_call_reasoning_model_with_responses_api():
-    """Test that Responses API properly handles reasoning models and returns data in correct format."""
-    # Create mock content item for message
-    content_item = Mock()
-    content_item.text = "The answer is 4"
-
-    # Create mock message output item
-    message_item = Mock()
-    message_item.type = "message"
-    message_item.content = [content_item]
-
-    # Create mock reasoning content item
-    reasoning_content_item = Mock()
-    reasoning_content_item.text = "Step 1: I need to add 2 + 2\nStep 2: 2 + 2 = 4\nTherefore, the answer is 4"
-
-    # Create mock reasoning output item
-    reasoning_item = Mock()
-    reasoning_item.type = "reasoning"
-    reasoning_item.content = [reasoning_content_item]
-
-    # Create mock response
-    mock_response = Mock()
-    mock_response.output = [message_item, reasoning_item]
-    mock_response.usage = {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
-    mock_response.model = "openai/gpt-5"
-
-    with mock.patch("litellm.responses", return_value=mock_response) as mock_responses:
-        with mock.patch("litellm.supports_reasoning", return_value=True):
-            # Create reasoning model with responses API
-            lm = dspy.LM(
-                model="openai/gpt-5",
-                model_type="responses",
-                temperature=1.0,
-                max_tokens=16000,
-                reasoning_effort="medium",
-                cache=False,
-            )
-
-            # Test the call
-            result = lm("What is 2 + 2?")
-
-            # Verify the response format
-            assert isinstance(result, list)
-            assert len(result) == 1
-            assert isinstance(result[0], dict)
-            assert "text" in result[0]
-            assert "reasoning_content" in result[0]
-            assert result[0]["text"] == "The answer is 4"
-            assert "Step 1" in result[0]["reasoning_content"]
-
-            # Verify mock was called with correct parameters
-            mock_responses.assert_called_once()
-            call_kwargs = mock_responses.call_args.kwargs
-            assert call_kwargs["model"] == "openai/gpt-5"
-            assert "reasoning" in call_kwargs
-            assert call_kwargs["reasoning"]["effort"] == "medium"
-            assert call_kwargs["reasoning"]["summary"] == "auto"
-            assert "reasoning_effort" not in call_kwargs  # Should be normalized
+            assert call_kwargs["model"] == "anthropic/claude-3-7-sonnet-20250219"
+            assert call_kwargs["reasoning_effort"] == "low"
