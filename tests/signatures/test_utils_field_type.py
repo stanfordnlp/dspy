@@ -1,8 +1,8 @@
 import pydantic
 import pytest
 
-from dspy.signatures.utils import get_dspy_field_type
 from dspy import InputField, OutputField
+from dspy.signatures.utils import get_dspy_field_type
 
 
 def test_get_dspy_field_type_input():
