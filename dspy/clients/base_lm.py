@@ -179,6 +179,10 @@ class BaseLM:
         for c in response.choices:
             output = {}
             output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+
+            if hasattr(c, "message") and hasattr(c.message, "reasoning_content") and c.message.reasoning_content:
+                output["reasoning"] = c.message.reasoning_content
+
             if merged_kwargs.get("logprobs"):
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
@@ -227,12 +231,34 @@ class BaseLM:
         """
         outputs = []
         tool_calls = []
+        reasoning_content = None
+
         for output_item in response.output:
             if output_item.type == "message":
                 for content_item in output_item.content:
                     outputs.append(content_item.text)
             elif output_item.type == "function_call":
                 tool_calls.append(output_item.model_dump())
+            elif output_item.type == "reasoning":
+                if hasattr(output_item, "content") and output_item.content:
+                    reasoning_content = output_item.content
+                elif hasattr(output_item, "summary") and output_item.summary:
+                    if isinstance(output_item.summary, list):
+                        summary_texts = []
+                        for summary_item in output_item.summary:
+                            if hasattr(summary_item, "text"):
+                                summary_texts.append(summary_item.text)
+                        reasoning_content = "\n\n".join(summary_texts) if summary_texts else output_item.summary
+                    else:
+                        reasoning_content = output_item.summary
+
+        if reasoning_content:
+            if len(outputs) == 1 and isinstance(outputs[0], str):
+                outputs = [{"text": outputs[0], "reasoning": reasoning_content}]
+            elif outputs and isinstance(outputs[0], str):
+                outputs[0] = {"text": outputs[0], "reasoning": reasoning_content}
+            elif outputs and isinstance(outputs[0], dict):
+                outputs[0]["reasoning"] = reasoning_content
 
         if tool_calls:
             outputs.append({"tool_calls": tool_calls})
