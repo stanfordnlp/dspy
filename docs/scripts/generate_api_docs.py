@@ -90,6 +90,9 @@ API_MAPPING = {
     ],
 }
 
+LOCATION_OVERRIDES = {
+    "docs/api/optimizers/GEPA.md": "docs/api/optimizers/GEPA/overview.md",
+}
 
 def should_document_method(obj):
     name = obj.__name__
@@ -240,6 +243,8 @@ def generate_md_docs(output_dir: Path, excluded_modules=None):
 
         page_content = generate_doc_page(name, "dspy", obj, is_root=True)
         file_path = output_dir / category / f"{name}.md"
+        if file_path.as_posix() in LOCATION_OVERRIDES:
+            file_path = Path(LOCATION_OVERRIDES[file_path.as_posix()])
         write_doc_file(file_path, f"dspy.{name}", page_content)
 
         objects_processed[f"{obj.__module__}.{name}"] = obj
@@ -291,6 +296,8 @@ def generate_md_docs_submodule(module_path: str, output_dir: Path, objects_proce
             # Only generate docs for objects that are not root-level objects.
             page_content = generate_doc_page(name, module_path, obj, is_root=False)
             file_path = output_dir / category / f"{name}.md"
+            if file_path.as_posix() in LOCATION_OVERRIDES:
+                file_path = Path(LOCATION_OVERRIDES[file_path.as_posix()])
             write_doc_file(file_path, f"{module_path}.{name}", page_content)
 
             objects_processed[full_name] = obj

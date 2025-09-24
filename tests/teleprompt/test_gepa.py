@@ -448,3 +448,65 @@ def test_component_selector_custom_random():
         result = optimizer.compile(student, trainset=trainset, valset=trainset)
 
     assert result is not None, "Should work with custom random function selector"
+
+
+def test_alternating_half_component_selector():
+    """Test alternating half selector that optimizes different halves on even/odd iterations."""
+
+    selection_history = []
+
+    def alternating_half_selector(state, trajectories, subsample_scores, candidate_idx, candidate):
+        """Optimize half the components on even iterations, half on odd iterations."""
+        components = list(candidate.keys())
+
+        # If there's only one component, always optimize it
+        if len(components) <= 1:
+            selected = components
+        else:
+            mid_point = len(components) // 2
+
+            # Use state.i (iteration counter) to alternate between halves
+            if state.i % 2 == 0:
+                # Even iteration: optimize first half
+                selected = components[:mid_point]
+            else:
+                # Odd iteration: optimize second half
+                selected = components[mid_point:]
+
+        # Track selections for verification
+        selection_history.append({
+            "iteration": state.i,
+            "selected": selected.copy(),
+            "all_components": components.copy()
+        })
+
+        return selected
+
+    student = MultiComponentModule()  # Has "classifier" and "generator" components
+
+    # Provide enough responses for multiple iterations
+    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
+    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 10)
+    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+    with dspy.context(lm=task_lm):
+        optimizer = dspy.GEPA(
+            metric=component_selection_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=8,  # Allow multiple iterations
+            component_selector=alternating_half_selector,
+        )
+        result = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    assert result is not None, "Should work with alternating half selector"
+    assert len(selection_history) >= 2, "Should have made multiple selections"
+
+    for i, selection in enumerate(selection_history):
+        if selection["iteration"] % 2 == 0:
+            # Even iteration should select first half: ["classifier"]
+            assert "classifier" in selection["selected"], f"Even iteration {selection['iteration']} should include classifier"
+            assert "generator" not in selection["selected"], f"Even iteration {selection['iteration']} should not include generator"
+        else:
+            # Odd iteration should select second half: ["generator"]
+            assert "generator" in selection["selected"], f"Odd iteration {selection['iteration']} should include generator"
+            assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"

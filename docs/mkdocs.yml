@@ -117,6 +117,9 @@ nav:
             - ReAct: api/modules/ReAct.md
             - Refine: api/modules/Refine.md
         - Optimizers:
+            - GEPA:
+                - 1. GEPA Overview: api/optimizers/GEPA/overview.md
+                - 2. GEPA Advanced: api/optimizers/GEPA/GEPA_Advanced.md
             - BetterTogether: api/optimizers/BetterTogether.md
             - BootstrapFewShot: api/optimizers/BootstrapFewShot.md
             - BootstrapFewShotWithRandomSearch: api/optimizers/BootstrapFewShotWithRandomSearch.md
@@ -124,7 +127,6 @@ nav:
             - BootstrapRS: api/optimizers/BootstrapRS.md
             - COPRO: api/optimizers/COPRO.md
             - Ensemble: api/optimizers/Ensemble.md
-            - GEPA: api/optimizers/GEPA.md
             - InferRules: api/optimizers/InferRules.md
             - KNN: api/optimizers/KNN.md
             - KNNFewShot: api/optimizers/KNNFewShot.md
@@ -247,6 +249,7 @@ plugins:
             "deep-dive/optimizers/Ensemble.md": "api/optimizers/Ensemble.md"
             "deep-dive/optimizers/LabeledFewShot.md": "api/optimizers/LabeledFewShot.md"
             "deep-dive/optimizers/miprov2.md": "api/optimizers/MIPROv2.md"
+            "api/optimizers/GEPA/index.md": "api/optimizers/GEPA/overview.md"
 
             "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
