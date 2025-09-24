@@ -274,6 +274,7 @@ class GEPA(Teleprompter):
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
             raised if a mismatch in module-level and predictor-level score is detected.
         seed: The random seed to use for reproducibility. Default is 0.
+        gepa_kwargs: (Optional) provide additional kwargs to be passed to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py) method
         
     Note:
         Budget Configuration: Exactly one of `auto`, `max_full_evals`, or `max_metric_calls` must be provided.
@@ -330,6 +331,8 @@ class GEPA(Teleprompter):
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
+        # GEPA passthrough kwargs
+        gepa_kwargs: dict | None = None
     ):
         try:
             inspect.signature(metric).bind(None, None, None, None, None)
@@ -398,6 +401,7 @@ class GEPA(Teleprompter):
 
         self.custom_instruction_proposer = instruction_proposer
         self.component_selector = component_selector
+        self.gepa_kwargs = gepa_kwargs or {}
 
     def auto_budget(self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5) -> int:
         import numpy as np
@@ -554,6 +558,7 @@ class GEPA(Teleprompter):
 
             # Reproducibility
             seed=self.seed,
+            **self.gepa_kwargs
         )
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
