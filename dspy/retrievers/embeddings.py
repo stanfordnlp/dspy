@@ -181,9 +181,6 @@ class Embeddings:
         else:
             self.index = None
 
-        # Initialize the search function (required since we bypassed __init__)
-        self.search_fn = Unbatchify(self._batch_forward)
-
         return self
 
     @classmethod
@@ -213,5 +210,7 @@ class Embeddings:
         """
         # Create a minimal instance without triggering embedding computation
         instance = cls.__new__(cls)
+        # Initialize the search function (required since we bypassed __init__)
+        instance.search_fn = Unbatchify(instance._batch_forward)
         instance.load(path, embedder)
         return instance
