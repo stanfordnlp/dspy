@@ -1,5 +1,6 @@
 import inspect
 import logging
+from typing import Any
 
 import magicattr
 
@@ -177,7 +178,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             results = parallel_executor.forward(exec_pairs)
             return results
 
-    def _set_lm_usage(self, tokens, output):
+    def _set_lm_usage(self, tokens: dict[str, Any], output: Any):
         # Some optimizers (e.g., GEPA bootstrap tracing) temporarily patch
         # module.forward to return a tuple: (prediction, trace).
         # When usage tracking is enabled, ensure we attach usage to the
