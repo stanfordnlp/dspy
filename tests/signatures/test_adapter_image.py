@@ -163,7 +163,7 @@ def test_image_input_formats(
     adapter_output_map = {
         "chat_adapter": (dspy.ChatAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
         "json_adapter": (dspy.JSONAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
-        "baml_adapter": (dspy.BAMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+        "baml_adapter": (dspy.adapters.baml_adapter.BAMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
         "xml_adapter": (dspy.XMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
         # "two_step_adapter": dspy.TwoStepAdapter(),
     }
