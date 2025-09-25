@@ -38,7 +38,7 @@ def wrap_program(program: dspy.Module, metric: Callable):
             try:
                 prediction = program(**example.inputs())
             except Exception as e:
-                logger.info(e)
+                logger.warning(e)
             trace = dspy.settings.trace.copy()
 
         output = None
@@ -51,14 +51,14 @@ def wrap_program(program: dspy.Module, metric: Callable):
                 score = output
             elif isinstance(output, dspy.Prediction):
                 if not hasattr(output, "score"):
-                    raise ValueError("dspy.Prediction must contain a 'score' attribute")
+                    raise ValueError("When `metric` returns a `dspy.Prediction`, it must contain a `score` field.")
                 score = output.score
-                # Just extract fields from _store, excluding 'score'
+                # Extract fields from the output dspy.Prediction, excluding `score``
                 output_metadata = {
-                    k: v for k, v in output._store.items() if k != "score"
+                    k: v for k, v in output.items() if k != "score"
                 }
         except Exception as e:
-            logger.info(e)
+            logger.warning(e)
 
         return {
             "prediction": prediction,

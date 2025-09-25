@@ -1,4 +1,3 @@
-
 import ast
 import enum
 import inspect
@@ -15,7 +14,6 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.types.base_type import Type as DspyType
 from dspy.signatures.utils import get_dspy_field_type
 
-NoneType = type(None)
 
 def serialize_for_json(value: Any) -> Any:
     """
@@ -135,19 +133,8 @@ def find_enum_member(enum, identifier):
 
     raise ValueError(f"{identifier} is not a valid name or value for the enum {enum.__name__}")
 
-def _strip_optional(ann):
-    """If ann is Union[..., NoneType] return the non‑None part, else ann."""
-    if get_origin(ann) is Union and NoneType in get_args(ann):
-        # keep the first non‑None member (there will be only one in Optional[T])
-        return next(a for a in get_args(ann) if a is not NoneType)
-    return ann
 
 def parse_value(value, annotation):
-    annotation = _strip_optional(annotation)
-
-    if value is None:
-        return None
-
     if annotation is str:
         return str(value)
 

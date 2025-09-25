@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import random
 from typing import Any, Callable
@@ -31,7 +33,7 @@ class SIMBA(Teleprompter):
         num_candidates: int = 6,
         max_steps: int = 8,
         max_demos: int = 4,
-        prompt_model: Any | None = None,
+        prompt_model: dspy.LM | None = None,
         teacher_settings: dict | None = None,
         demo_input_field_maxlen: int = 100_000,
         num_threads: int | None = None,
@@ -50,6 +52,9 @@ class SIMBA(Teleprompter):
             max_steps: Number of optimization steps to run. Defaults to 8.
             max_demos: Maximum number of demos a predictor can hold
                 before dropping some. Defaults to 4.
+            prompt_model: The model to use to evolve the program. When `prompt_model is None`, the globally configured
+                lm is used.
+            teacher_settings: Settings for the teacher model. Defaults to None.
             demo_input_field_maxlen: Maximum number of characters to keep
                 in an input field when building a new demo. Defaults to 100,000.
             num_threads: Number of threads for parallel execution.
@@ -64,7 +69,7 @@ class SIMBA(Teleprompter):
         self.num_candidates = num_candidates
         self.max_steps = max_steps
         self.max_demos = max_demos
-        self.prompt_model = prompt_model if prompt_model else dspy.settings.lm
+        self.prompt_model = prompt_model or dspy.settings.lm
         self.teacher_settings = teacher_settings
         self.demo_input_field_maxlen = demo_input_field_maxlen
         self.num_threads = num_threads
