@@ -106,18 +106,20 @@ def test_json_adapter_with_structured_outputs_does_not_mutate_original_signature
 
 def test_json_adapter_sync_call():
     signature = dspy.make_signature("question->answer")
-    adapter = dspy.ChatAdapter()
-    lm = dspy.utils.DummyLM([{"answer": "Paris"}])
-    result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+    adapter = dspy.JSONAdapter()
+    lm = dspy.utils.DummyLM([{"answer": "Paris"}], adapter=adapter)
+    with dspy.context(adapter=adapter):
+        result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 
 
 @pytest.mark.asyncio
 async def test_json_adapter_async_call():
     signature = dspy.make_signature("question->answer")
-    adapter = dspy.ChatAdapter()
-    lm = dspy.utils.DummyLM([{"answer": "Paris"}])
-    result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
+    adapter = dspy.JSONAdapter()
+    lm = dspy.utils.DummyLM([{"answer": "Paris"}], adapter=adapter)
+    with dspy.context(adapter=adapter):
+        result = await adapter.acall(lm, {}, signature, [], {"question": "What is the capital of France?"})
     assert result == [{"answer": "Paris"}]
 
 
@@ -312,6 +314,29 @@ def test_json_adapter_formats_image_with_nested_images():
     assert expected_image1_content in messages[1]["content"]
     assert expected_image2_content in messages[1]["content"]
     assert expected_image3_content in messages[1]["content"]
+
+
+def test_json_adapter_formats_with_nested_documents():
+    class DocumentWrapper(pydantic.BaseModel):
+        documents: list[dspy.experimental.Document]
+
+    class MySignature(dspy.Signature):
+        document: DocumentWrapper = dspy.InputField()
+        text: str = dspy.OutputField()
+
+    doc1 = dspy.experimental.Document(data="Hello, world!")
+    doc2 = dspy.experimental.Document(data="Hello, world 2!")
+
+    document_wrapper = DocumentWrapper(documents=[doc1, doc2])
+
+    adapter = dspy.JSONAdapter()
+    messages = adapter.format(MySignature, [], {"document": document_wrapper})
+
+    expected_doc1_content = {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world!"}, "citations": {"enabled": True}}
+    expected_doc2_content = {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world 2!"}, "citations": {"enabled": True}}
+
+    assert expected_doc1_content in messages[1]["content"]
+    assert expected_doc2_content in messages[1]["content"]
 
 
 def test_json_adapter_formats_image_with_few_shot_examples_with_nested_images():

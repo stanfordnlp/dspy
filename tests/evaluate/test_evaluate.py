@@ -57,7 +57,11 @@ def test_evaluate_call():
 @pytest.mark.extra
 def test_construct_result_df():
     import pandas as pd
-    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    devset = [
+        new_example("What is 1+1?", "2"),
+        new_example("What is 2+2?", "4"),
+        new_example("What is 3+3?", "-1"),
+    ]
     ev = Evaluate(
         devset=devset,
         metric=answer_exact_match,
@@ -65,16 +69,17 @@ def test_construct_result_df():
     results = [
         (devset[0], {"answer": "2"}, 100.0),
         (devset[1], {"answer": "4"}, 100.0),
+        (devset[2], {"answer": "-1"}, 0.0),
     ]
     result_df = ev._construct_result_table(results, answer_exact_match.__name__)
     pd.testing.assert_frame_equal(
         result_df,
         pd.DataFrame(
             {
-                "question": ["What is 1+1?", "What is 2+2?"],
-                "example_answer": ["2", "4"],
-                "pred_answer": ["2", "4"],
-                "answer_exact_match": [100.0, 100.0],
+                "question": ["What is 1+1?", "What is 2+2?", "What is 3+3?"],
+                "example_answer": ["2", "4", "-1"],
+                "pred_answer": ["2", "4", "-1"],
+                "answer_exact_match": [100.0, 100.0, 0.0],
             }
         ),
     )

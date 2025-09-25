@@ -1,9 +1,9 @@
-from pathlib import Path
 import importlib
 import inspect
 import pkgutil
-import shutil
+from pathlib import Path
 from typing import Any
+
 import dspy
 
 API_MAPPING = {
@@ -12,11 +12,14 @@ API_MAPPING = {
         dspy.Embedder,
     ],
     "primitives": [
+        dspy.Audio,
+        dspy.Code,
         dspy.Example,
         dspy.Image,
         dspy.History,
         dspy.Prediction,
         dspy.Tool,
+        dspy.ToolCalls,
     ],
     "signatures": [
         dspy.Signature,
@@ -65,6 +68,7 @@ API_MAPPING = {
         dspy.evaluate.answer_passage_match,
         dspy.evaluate.SemanticF1,
         dspy.evaluate.CompleteAndGrounded,
+        dspy.evaluate.EvaluationResult,
     ],
     "optimizers": [
         dspy.LabeledFewShot,
@@ -78,16 +82,23 @@ API_MAPPING = {
         dspy.KNN,
         dspy.KNNFewShot,
         dspy.InferRules,
-        dspy.GEPA
+        dspy.GEPA,
+    ],
+    "experimental": [
+        dspy.experimental.Citations,
+        dspy.experimental.Document,
     ],
 }
 
+LOCATION_OVERRIDES = {
+    "docs/api/optimizers/GEPA.md": "docs/api/optimizers/GEPA/overview.md",
+}
 
 def should_document_method(obj):
     name = obj.__name__
     # Exclude methods not defined in dspy, such as `model_dump_json` from pydantic.
     module = getattr(obj, "__module__", "")
-    if not module or not module.startswith(f"dspy"):
+    if not module or not module.startswith("dspy"):
         return False
     # Exclude private and dunder methods, but include `__call__`
     if name == "__call__" or not name.startswith("_"):
@@ -107,7 +118,8 @@ def get_module_contents(module):
             contents[name] = obj
         elif (
             (inspect.isclass(obj) or (inspect.isroutine(obj) and should_document_method(obj)))
-            and obj.__module__.startswith(module.__name__)
+            # classes or functions in experimental module are not located in dspy/experimental
+            and (obj.__module__.startswith(module.__name__) or module.__name__.startswith("dspy.experimental"))
             and not name.startswith("_")
         ):
             contents[name] = obj
@@ -231,6 +243,8 @@ def generate_md_docs(output_dir: Path, excluded_modules=None):
 
         page_content = generate_doc_page(name, "dspy", obj, is_root=True)
         file_path = output_dir / category / f"{name}.md"
+        if file_path.as_posix() in LOCATION_OVERRIDES:
+            file_path = Path(LOCATION_OVERRIDES[file_path.as_posix()])
         write_doc_file(file_path, f"dspy.{name}", page_content)
 
         objects_processed[f"{obj.__module__}.{name}"] = obj
@@ -282,6 +296,8 @@ def generate_md_docs_submodule(module_path: str, output_dir: Path, objects_proce
             # Only generate docs for objects that are not root-level objects.
             page_content = generate_doc_page(name, module_path, obj, is_root=False)
             file_path = output_dir / category / f"{name}.md"
+            if file_path.as_posix() in LOCATION_OVERRIDES:
+                file_path = Path(LOCATION_OVERRIDES[file_path.as_posix()])
             write_doc_file(file_path, f"{module_path}.{name}", page_content)
 
             objects_processed[full_name] = obj

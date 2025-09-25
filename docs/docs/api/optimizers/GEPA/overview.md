@@ -7,7 +7,9 @@
     handler: python
     options:
         members:
+            - auto_budget
             - compile
+            - get_params
         show_source: true
         show_root_heading: true
         heading_level: 2
@@ -55,7 +57,7 @@ When `track_stats=True`, GEPA returns detailed results about all of the proposed
 
 ## Usage Examples
 
-See GEPA usage tutorials in [GEPA Tutorials](../../tutorials/gepa_ai_program/index.md).
+See GEPA usage tutorials in [GEPA Tutorials](../../../tutorials/gepa_ai_program/index.md).
 
 ### Inference-Time Search
 
@@ -115,8 +117,12 @@ Practical Recipe for GEPA-Friendly Feedback:
 - **Multi-Objective Tasks** (e.g., PUPA): Decompose aggregate scores to reveal contributions from each objective, highlighting tradeoffs (e.g., quality vs. privacy).
 - **Stacked Pipelines** (e.g., code generation: parse → compile → run → profile → evaluate): Expose stage-specific failures; natural-language traces often suffice for LLM self-correction.
 
+## Custom Instruction Proposal
+
+For advanced customization of GEPA's instruction proposal mechanism, including custom instruction proposers and component selectors, see [Advanced Features](GEPA_Advanced.md).
+
 ## Further Reading
 
 - [GEPA Paper: arxiv:2507.19457](https://arxiv.org/abs/2507.19457)
 - [GEPA Github](https://github.com/gepa-ai/gepa) - This repository provides the core GEPA evolution pipeline used by `dspy.GEPA` optimizer.
-- [DSPy Tutorials](../../tutorials/gepa_ai_program/index.md)
+- [DSPy Tutorials](../../../tutorials/gepa_ai_program/index.md)

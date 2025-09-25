@@ -212,7 +212,37 @@ lm.history[-1].keys()  # access the last call to the LM, with all metadata
 dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost', 'timestamp', 'uuid', 'model', 'response_model', 'model_type])
 ```
 
-### Advanced: Building custom LMs and writing your own Adapters.
+## Using the Responses API
+
+By default, DSPy calls language models (LMs) using LiteLLM's [Chat Completions API](https://docs.litellm.ai/docs/completion), which is suitable for most standard models and tasks. However, some advanced models, such as OpenAI's reasoning models (e.g., `gpt-5` or other future models), may offer improved quality or additional features when accessed via the [Responses API](https://docs.litellm.ai/docs/response_api), which is supported in DSPy.
+
+**When should you use the Responses API?**
+
+- If you are working with models that support or require the `responses` endpoint (such as OpenAI's reasoning models).
+- When you want to leverage enhanced reasoning, multi-turn, or richer output capabilities provided by certain models.
+
+**How to enable the Responses API in DSPy:**
+
+To enable the Responses API, just set `model_type="responses"` when creating the `dspy.LM` instance.
+
+```python
+import dspy
+
+# Configure DSPy to use the Responses API for your language model
+dspy.settings.configure(
+    lm=dspy.LM(
+        "openai/gpt-5-mini",
+        model_type="responses",
+        temperature=1.0,
+        max_tokens=16000,
+    ),
+)
+```
+
+Please note that not all models or providers support the Responses API, check [LiteLLM's documentation](https://docs.litellm.ai/docs/response_api) for more details.
+
+
+## Advanced: Building custom LMs and writing your own Adapters.
 
 Though rarely needed, you can write custom LMs by inheriting from `dspy.BaseLM`. Another advanced layer in the DSPy ecosystem is that of _adapters_, which sit between DSPy signatures and LMs. A future version of this guide will discuss these advanced features, though you likely don't need them.
 

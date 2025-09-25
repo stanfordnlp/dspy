@@ -183,6 +183,12 @@ class BaseLM:
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
                 output["tool_calls"] = c.message.tool_calls
+
+            # Extract citations from LiteLLM response if available
+            citations = self._extract_citations_from_response(c)
+            if citations:
+                output["citations"] = citations
+
             outputs.append(output)
 
         if all(len(output) == 1 for output in outputs):
@@ -190,6 +196,24 @@ class BaseLM:
             outputs = [output["text"] for output in outputs]
 
         return outputs
+
+    def _extract_citations_from_response(self, choice):
+        """Extract citations from LiteLLM response if available.
+        Reference: https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
+        
+        Args:
+            choice: The choice object from response.choices
+            
+        Returns:
+            A list of citation dictionaries or None if no citations found
+        """
+        try:
+            # Check for citations in LiteLLM provider_specific_fields
+            citations_data = choice.message.provider_specific_fields.get("citations")
+            if isinstance(citations_data, list):
+                return [citation for citations in citations_data for citation in citations]
+        except Exception:
+            return None
 
     def _process_response(self, response):
         """Process the response of OpenAI Response API and extract outputs.

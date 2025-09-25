@@ -43,6 +43,13 @@ class GRPOChatData(TypedDict):
 GRPOGroup = list[GRPOChatData]
 
 
+class MultiGPUConfig(TypedDict):
+    # Number of GPUs to use for inference
+    num_inference_gpus: int
+    # Number of GPUs to use for training
+    num_training_gpus: int
+
+
 def infer_data_format(adapter: Adapter) -> str:
     if isinstance(adapter, dspy.ChatAdapter):
         return TrainDataFormat.CHAT

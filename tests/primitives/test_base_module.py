@@ -370,6 +370,20 @@ async def test_usage_tracker_async_parallel():
         assert lm_usage1["total_tokens"] == 1163
 
 
+def test_usage_tracker_no_side_effect():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict = dspy.Predict("question -> answer")
+
+        def forward(self, question: str, **kwargs) -> str:
+            return self.predict(question=question).answer
+
+    program = MyProgram()
+    with dspy.context(lm=DummyLM([{"answer": "Paris"}]), track_usage=True):
+        result = program(question="What is the capital of France?")
+    assert result == "Paris"
+
+
 def test_module_history():
     class MyProgram(dspy.Module):
         def __init__(self, **kwargs):

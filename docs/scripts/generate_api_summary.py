@@ -10,6 +10,7 @@ INDEX_NAME = {
     "optimizers": "Optimizers",
     "utils": "Utils",
     "tools": "Tools",
+    "experimental": "Experimental",
 }
 
 
@@ -24,6 +25,11 @@ def build_nav_structure(directory: Path, base_path: Path) -> dict:
         if path.suffix == ".md":
             name = path.stem
             nav[name] = str(path.relative_to(base_path))
+        elif path.is_dir() and path.name == "GEPA":
+            nav["GEPA"] = {
+                "2. GEPA Advanced": "api/optimizers/GEPA/GEPA_Advanced.md",
+                "1. GEPA Overview": "api/optimizers/GEPA/overview.md",
+            }
 
     return nav
 

@@ -60,7 +60,7 @@ These optimizers produce optimal instructions for the prompt and, in the case of
 
 7. [**`SIMBA`**](../../api/optimizers/SIMBA.md)
 
-8. [**`GEPA`**](../../api/optimizers/GEPA.md): Uses LM's to reflect on the DSPy program's trajectory, to identify what worked, what didn't and propose prompts addressing the gaps. Additionally, GEPA can leverage domain-specific textual feedback to rapidly improve the DSPy program.
+8. [**`GEPA`**](../../api/optimizers/GEPA/overview.md): Uses LM's to reflect on the DSPy program's trajectory, to identify what worked, what didn't and propose prompts addressing the gaps. Additionally, GEPA can leverage domain-specific textual feedback to rapidly improve the DSPy program. Detailed tutorials on using GEPA are available at [dspy.GEPA Tutorials](../../tutorials/gepa_ai_program/index.md).
 
 ### Automatic Finetuning
 

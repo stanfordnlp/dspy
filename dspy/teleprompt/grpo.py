@@ -6,7 +6,7 @@ from typing import Any, Callable, Literal
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat
+from dspy.clients.utils_finetune import GRPOGroup, MultiGPUConfig, TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
@@ -41,6 +41,7 @@ class GRPO(FinetuneTeleprompter):
         format_failure_score: float = -1,
         variably_invoked_predictor_grouping_mode: Literal["truncate"] | Literal["fill"] | Literal["ragged"] = "truncate",
         variably_invoked_predictor_fill_strategy: Literal["randint"] | Literal["max"] | None = None,
+        gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1),
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -57,6 +58,7 @@ class GRPO(FinetuneTeleprompter):
         self.report_train_scores = report_train_scores
         self.failure_score = failure_score
         self.format_failure_score = format_failure_score
+        self.gpu_config = gpu_config
 
         assert failure_score > format_failure_score, "failure_score must be greater than format_failure_score since the range [format_failure_score, failure_score] is used to provide dspy formatting rewards"
 
@@ -332,7 +334,7 @@ class GRPO(FinetuneTeleprompter):
             job_key = (pred.lm, data_key)
             if job_key not in grpo_training_jobs:
                 train_kwargs = self.train_kwargs[pred.lm]
-                job = pred.lm.reinforce(train_kwargs=train_kwargs)
+                job = pred.lm.reinforce(train_kwargs=train_kwargs, gpu_config=self.gpu_config)
                 grpo_training_jobs[job_key] = job
 
         self.report_validation_metrics(

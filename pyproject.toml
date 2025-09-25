@@ -12,7 +12,7 @@ version="3.0.3"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
-license = "MIT"
+license = {file = "LICENSE"}
 requires-python = ">=3.10, <3.14"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -42,7 +42,7 @@ dependencies = [
     "rich>=13.7.1",
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
-    "gepa[dspy]==0.0.8",
+    "gepa[dspy]==0.0.16",
 ]
 
 [project.optional-dependencies]
