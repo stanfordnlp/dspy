@@ -131,7 +131,6 @@ def test_basic_image_operations(test_case):
     [
         "chat_adapter",
         "json_adapter",
-        # "two_step_adapter",
         "baml_adapter",
         "xml_adapter",
     ],
@@ -165,7 +164,6 @@ def test_image_input_formats(
         "json_adapter": (dspy.JSONAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
         "baml_adapter": (dspy.adapters.baml_adapter.BAMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
         "xml_adapter": (dspy.XMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
-        # "two_step_adapter": dspy.TwoStepAdapter(),
     }
 
     if adapter_type == "two_step_adapter":
