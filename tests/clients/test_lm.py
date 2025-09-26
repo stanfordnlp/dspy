@@ -12,6 +12,7 @@ from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
 
 import dspy
+from dspy.utils.dummies import DummyLM
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -94,6 +95,35 @@ def test_dspy_cache(litellm_test_server, tmp_path):
     assert len(usage_tracker.usage_data) == 0
 
     dspy.cache = original_cache
+
+
+def test_disabled_cache_skips_cache_key(monkeypatch):
+    original_cache = dspy.cache
+    dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
+    cache = dspy.cache
+
+    try:
+        with mock.patch.object(cache, "cache_key", wraps=cache.cache_key) as cache_key_spy, \
+             mock.patch.object(cache, "get", wraps=cache.get) as cache_get_spy, \
+             mock.patch.object(cache, "put", wraps=cache.put) as cache_put_spy:
+
+            def fake_completion(*, cache, num_retries, retry_strategy, **request):
+                return ModelResponse(
+                    choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+                    usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                    model="dummy",
+                )
+
+            monkeypatch.setattr(litellm, "completion", fake_completion)
+
+            dummy_lm = DummyLM([{"answer": "ignored"}])
+            dummy_lm.forward(messages=[{"role": "user", "content": "Hello"}])
+
+            cache_key_spy.assert_not_called()
+            cache_get_spy.assert_called_once()
+            cache_put_spy.assert_called_once()
+    finally:
+        dspy.cache = original_cache
 
 
 def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
