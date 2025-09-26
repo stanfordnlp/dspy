@@ -319,14 +319,14 @@ def _extract_first_json_object(text: str) -> str | None:
             in_string = True
             continue
 
-        if char == '{':
+        if char == "{":
             if depth == 0:
                 start_idx = idx
                 seen_lbrace = True
             depth += 1
             continue
 
-        if char == '}':
+        if char == "}":
             if depth == 0 or start_idx is None:
                 continue
             depth -= 1
