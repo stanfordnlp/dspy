@@ -147,6 +147,7 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
 
         print(f"{len(best_program.candidate_programs)} candidate programs found.")
 
+        best_program._compiled = True
         return best_program
 
 

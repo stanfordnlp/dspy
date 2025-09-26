@@ -120,6 +120,7 @@ class BetterTogether(Teleprompter):
             kill_lms(student)
 
         student.candidate_programs = candidate_programs
+        student._compiled = True
         return student
 
     def _compile_prompt_optimizer(self, student, trainset, valset_ratio) -> Module:
