@@ -589,20 +589,20 @@ class MIPROv2(Teleprompter):
         study.optimize(objective, n_trials=num_trials)
 
         # Attach logs to best program
-        # if best_program is not None and self.track_stats:
-        #     best_program.trial_logs = trial_logs
-        #     best_program.score = best_score
-        #     best_program.prompt_model_total_calls = self.prompt_model_total_calls
-        #     best_program.total_calls = self.total_calls
-        #     sorted_candidate_programs = sorted(score_data, key=lambda x: x["score"], reverse=True)
-        #     # Attach all minibatch programs
-        #     best_program.mb_candidate_programs = [
-        #         score_data for score_data in sorted_candidate_programs if not score_data["full_eval"]
-        #     ]
-        #     # Attach all programs that were evaluated on the full trainset, in descending order of score
-        #     best_program.candidate_programs = [
-        #         score_data for score_data in sorted_candidate_programs if score_data["full_eval"]
-        #     ]
+        if best_program is not None and self.track_stats:
+            best_program.trial_logs = trial_logs
+            best_program.score = best_score
+            best_program.prompt_model_total_calls = self.prompt_model_total_calls
+            best_program.total_calls = self.total_calls
+            sorted_candidate_programs = sorted(score_data, key=lambda x: x["score"], reverse=True)
+            # Attach all minibatch programs
+            best_program.mb_candidate_programs = [
+                score_data for score_data in sorted_candidate_programs if not score_data["full_eval"]
+            ]
+            # Attach all programs that were evaluated on the full trainset, in descending order of score
+            best_program.candidate_programs = [
+                score_data for score_data in sorted_candidate_programs if score_data["full_eval"]
+            ]
 
         logger.info(f"Returning best identified program with score {best_score}!")
 
