@@ -254,12 +254,12 @@ def test_json_adapter_parse_handles_braces_inside_string_values():
     completion = (
         "Here is the review output you asked for:\n\n"
         "{\n"
-        "  \"reasoning\": \"Inspecting the conditional reveals an unmatched brace.\",\n"
-        "  \"issue_list\": [\n"
+        '  "reasoning": "Inspecting the conditional reveals an unmatched brace.",\n'
+        '  "issue_list": [\n'
         "    {\n"
-        "      \"issue_type\": \"style\",\n"
-        "      \"severity_level\": \"fatal\",\n"
-        "      \"problem_code_snippet\": \"if (user) {\"\n"
+        '      "issue_type": "style",\n'
+        '      "severity_level": "fatal",\n'
+        '      "problem_code_snippet": "if (user) {"\n'
         "    }\n"
         "  ]\n"
         "}\n"
