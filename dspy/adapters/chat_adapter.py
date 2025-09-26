@@ -113,7 +113,7 @@ class ChatAdapter(Adapter):
         for k, v in signature.input_fields.items():
             if k in inputs:
                 value = inputs.get(k)
-                formatted_field_value = format_field_value(field_info=v, value=value, is_placeholder=False)
+                formatted_field_value = format_field_value(field_info=v, value=value)
                 messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
 
         if main_request:

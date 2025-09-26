@@ -49,6 +49,14 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
     """
     string_value = None
 
+    # Naive check if the value is the same as the field name with brackets, as is used in all adapters
+    # Tightly coupled to translate_field_type
+    is_placeholder = value.startswith(f"{{{field_info.name}}}")
+    # If the annotation is a Type subclass, but the value is not a instance of that type, force it to be one.
+    if issubclass(field_info.annotation, DspyType) and not isinstance(value, field_info.annotation) and not is_placeholder:
+        # Use model_validate for proper Pydantic validation. Every BaseModel implements this method.
+        raise ValueError(f"Value {value} is not an instance of {field_info.annotation}")
+
     if isinstance(value, list) and field_info.annotation is str:
         # If the field has no special type requirements, format it as a nice numbered list for the LM.
         string_value = _format_input_list_field_value(value)
