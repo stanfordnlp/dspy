@@ -83,8 +83,8 @@ class ChatAdapter(Adapter):
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
 
         def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
-            # This is where placeholders are generated. We use the field_name as the value, and that is wrong.
-            # We should be able to expect that any value going into format_field_with_value is of the annotation type, but we get away with this because we need things as strings. This doesn't matter for most default types and we have special handling for pydantic types that go directly to strings, but images potentially need to get transformed into base64 then into the string.
+            # This is where placeholders are passed in. We use the field_name as the value.
+            # The placeholders are officially generated inside `translate_field_type`
             return self.format_field_with_value(
                 fields_with_values={
                     FieldInfoWithName(name=field_name, is_placeholder=True, info=field_info): translate_field_type(field_name, field_info)
@@ -114,7 +114,7 @@ class ChatAdapter(Adapter):
         for k, v in signature.input_fields.items():
             if k in inputs:
                 value = inputs.get(k)
-                formatted_field_value = format_field_value(field_info=v, value=value, is_placeholder=False)
+                formatted_field_value = format_field_value(field_info=v, value=value)
                 messages.append(f"[[ ## {k} ## ]]\n{formatted_field_value}")
 
         if main_request:

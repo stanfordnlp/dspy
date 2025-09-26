@@ -154,12 +154,9 @@ def test_image_input_formats_valid(
     adapter_output_map = {
         "chat_adapter": (dspy.ChatAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
         "json_adapter": (dspy.JSONAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
-        "baml_adapter": (dspy.adapters.baml_adapter.BAMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+        "baml_adapter": (dspy.adapters.BAMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
         "xml_adapter": (dspy.XMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
     }
-
-    if adapter_type == "two_step_adapter":
-        pytest.xfail("TwoStepAdapter is not known to support image input")
 
     actual_input = input_map[image_input]
     signature = "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]"

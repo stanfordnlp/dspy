@@ -16,7 +16,7 @@ def test_xml_adapter_format_and_parse_basic():
 
     adapter = XMLAdapter()
     # Format output fields as XML
-    fields_with_values = {FieldInfoWithName(name="answer", is_placeholder=False, info=TestSignature.output_fields["answer"]): "Paris"}
+    fields_with_values = {FieldInfoWithName(name="answer", info=TestSignature.output_fields["answer"]): "Paris"}
     xml = adapter.format_field_with_value(fields_with_values)
     assert xml.strip() == "<answer>\nParis\n</answer>"
 
@@ -94,7 +94,7 @@ def test_xml_adapter_format_and_parse_nested_model():
     adapter = XMLAdapter()
     # Format output fields as XML
     fields_with_values = {
-        FieldInfoWithName(name="result", is_placeholder=False, info=TestSignature.output_fields["result"]): InnerModel(value=5, label="foo")
+        FieldInfoWithName(name="result", info=TestSignature.output_fields["result"]): InnerModel(value=5, label="foo")
     }
     xml = adapter.format_field_with_value(fields_with_values)
     # The output will be a JSON string inside the XML tag
@@ -122,7 +122,7 @@ def test_xml_adapter_format_and_parse_list_of_models():
 
     adapter = XMLAdapter()
     items = [Item(name="a", score=1.1), Item(name="b", score=2.2)]
-    fields_with_values = {FieldInfoWithName(name="items", is_placeholder=False, info=TestSignature.output_fields["items"]): items}
+    fields_with_values = {FieldInfoWithName(name="items", info=TestSignature.output_fields["items"]): items}
     xml = adapter.format_field_with_value(fields_with_values)
     assert xml.strip().startswith("<items>")
     assert '"name": "a"' in xml
@@ -158,9 +158,9 @@ def test_xml_adapter_with_tool_like_output():
         ToolCall(name="get_population", args={"country": "Japan", "year": 2023}, result="125M"),
     ]
     fields_with_values = {
-        FieldInfoWithName(name="tool_calls", is_placeholder=False, info=TestSignature.output_fields["tool_calls"]): tool_calls,
+        FieldInfoWithName(name="tool_calls", info=TestSignature.output_fields["tool_calls"]): tool_calls,
         FieldInfoWithName(
-            name="answer", is_placeholder=False, info=TestSignature.output_fields["answer"]
+            name="answer", info=TestSignature.output_fields["answer"]
         ): "The weather is Sunny. Population is 125M.",
     }
     xml = adapter.format_field_with_value(fields_with_values)
