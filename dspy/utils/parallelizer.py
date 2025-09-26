@@ -64,7 +64,7 @@ class ParallelExecutor:
                     logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
                 else:
                     logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
-                return ("__dspy_exception__", e)
+                return e
 
         return safe_func
 
@@ -157,11 +157,12 @@ class ParallelExecutor:
                             pass
                         else:
                             if outcome != job_cancelled and results[index] is None:
-                                # Check if this is an exception marker
-                                if isinstance(outcome, tuple) and len(outcome) == 2 and outcome[0] == "__dspy_exception__":
+                                # Check if this is an exception
+                                if isinstance(outcome, Exception):
                                     with self.error_lock:
                                         self.failed_indices.append(index)
-                                        self.exceptions_map[index] = outcome[1]
+                                        self.exceptions_map[index] = outcome
+                                    results[index] = None  # Keep None for failed examples
                                 else:
                                     results[index] = outcome
 
