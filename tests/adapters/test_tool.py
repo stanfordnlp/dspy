@@ -540,3 +540,72 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
         "bar": "The bar.",
         "baz": "No description provided. (Required)",
     }
+
+
+
+
+def test_tool_call_execute():
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    def add_numbers(a: int, b: int) -> int:
+        return a + b
+
+    tools = [
+        dspy.Tool(get_weather),
+        dspy.Tool(add_numbers)
+    ]
+
+    tool_call = dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Berlin"})
+    result = tool_call.execute(functions=tools)
+    assert result == "The weather in Berlin is sunny"
+
+    # Test individual tool call with function dict
+    tool_call2 = dspy.ToolCalls.ToolCall(name="add_numbers", args={"a": 7, "b": 13})
+    result2 = tool_call2.execute(functions={"add_numbers": add_numbers})
+    assert result2 == 20
+
+    # Test individual tool call with no arguments
+    def get_pi():
+        return 3.14159
+
+    tool_call3 = dspy.ToolCalls.ToolCall(name="get_pi", args={})
+    result3 = tool_call3.execute(functions={"get_pi": get_pi})
+    assert result3 == 3.14159
+
+    # Test error case
+    tool_call4 = dspy.ToolCalls.ToolCall(name="nonexistent", args={})
+    try:
+        tool_call4.execute(functions=tools)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "not found" in str(e)
+
+
+def test_tool_call_execute_with_local_functions():
+    def main():
+        def local_add(a: int, b: int) -> int:
+            return a + b
+
+        def local_multiply(x: int, y: int) -> int:
+            return x * y
+
+        # Test individual execution with local function
+        tool_call1 = dspy.ToolCalls.ToolCall(name="local_add", args={"a": 10, "b": 15})
+        result1 = tool_call1.execute()  # Should find local function automatically
+        assert result1 == 25
+
+        tool_call2 = dspy.ToolCalls.ToolCall(name="local_multiply", args={"x": 4, "y": 7})
+        result2 = tool_call2.execute()  # Should find local function automatically
+        assert result2 == 28
+
+        # Test locals take precedence over globals
+        try:
+            globals()["local_add"] = lambda a, b: a + b + 1000
+            precedence_call = dspy.ToolCalls.ToolCall(name="local_add", args={"a": 1, "b": 2})
+            result = precedence_call.execute()
+            assert result == 3  # Should use local function (1+2=3), not global (1+2+1000=1003)
+        finally:
+            globals().pop("local_add", None)
+
+    main()
