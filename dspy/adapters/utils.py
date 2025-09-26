@@ -4,7 +4,6 @@ import inspect
 import json
 import types
 from collections.abc import Mapping
-from copy import deepcopy
 from typing import Any, Literal, Union, get_args, get_origin
 
 import json_repair

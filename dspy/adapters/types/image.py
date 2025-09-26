@@ -1,9 +1,7 @@
 import base64
 import io
-import json
 import mimetypes
 import os
-import re
 import warnings
 from functools import lru_cache
 from typing import Any, Union
@@ -12,7 +10,7 @@ from urllib.parse import urlparse
 import pydantic
 import requests
 
-from dspy.adapters.types.base_type import CUSTOM_TYPE_END_IDENTIFIER, CUSTOM_TYPE_START_IDENTIFIER, Type
+from dspy.adapters.types.base_type import Type
 
 try:
     from PIL import Image as PILImage
