@@ -101,7 +101,7 @@ class DummyLM(LM):
     def __call__(self, prompt=None, messages=None, **kwargs):
         def format_answer_fields(field_names_and_values: dict[str, Any]):
             fields_with_values = {
-                FieldInfoWithName(name=field_name, info=OutputField()): value
+                FieldInfoWithName(name=field_name, info=OutputField(), is_placeholder=False): value
                 for field_name, value in field_names_and_values.items()
             }
             # The reason why DummyLM needs an adapter is because it needs to know which output format to mimic.
