@@ -22,7 +22,6 @@ field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
 class FieldInfoWithName(NamedTuple):
     name: str
-    is_placeholder: bool
     info: FieldInfo
 
 
@@ -87,7 +86,7 @@ class ChatAdapter(Adapter):
             # We should be able to expect that any value going into format_field_with_value is of the annotation type, but we get away with this because we need things as strings. This doesn't matter for most default types and we have special handling for pydantic types that go directly to strings, but images potentially need to get transformed into base64 then into the string.
             return self.format_field_with_value(
                 fields_with_values={
-                    FieldInfoWithName(name=field_name, is_placeholder=True, info=field_info): translate_field_type(field_name, field_info)
+                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
                     for field_name, field_info in fields.items()
                 },
             )
@@ -162,7 +161,7 @@ class ChatAdapter(Adapter):
     ) -> str:
         assistant_message_content = self.format_field_with_value(
             {
-                FieldInfoWithName(name=k, is_placeholder=k in outputs, info=v): outputs.get(k, missing_field_message)
+                FieldInfoWithName(name=k, info=v): outputs.get(k, missing_field_message)
                 for k, v in signature.output_fields.items()
             },
         )
@@ -221,7 +220,7 @@ class ChatAdapter(Adapter):
         """
         output = []
         for field, field_value in fields_with_values.items():
-            formatted_field_value = format_field_value(field_info=field.info, value=field_value, is_placeholder=field.is_placeholder)
+            formatted_field_value = format_field_value(field_info=field.info, value=field_value)
             output.append(f"[[ ## {field.name} ## ]]\n{formatted_field_value}")
 
         return "\n\n".join(output).strip()
