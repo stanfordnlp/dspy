@@ -265,7 +265,14 @@ def test_json_adapter_parse_handles_braces_inside_string_values():
         "}\n"
     )
 
-    adapter.parse(CodeReview, completion)
+    result = adapter.parse(CodeReview, completion)
+
+    assert result["reasoning"] == "Inspecting the conditional reveals an unmatched brace."
+    assert len(result["issue_list"]) == 1
+    issue = result["issue_list"][0]
+    assert issue.issue_type == "style"
+    assert issue.severity_level == "fatal"
+    assert issue.problem_code_snippet == "if (user) {"
 
 
 def test_json_adapter_formats_image():

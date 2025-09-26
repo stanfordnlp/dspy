@@ -5,7 +5,6 @@ from typing import Any, get_origin
 import json_repair
 import litellm
 import pydantic
-import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
@@ -151,6 +150,9 @@ class JSONAdapter(ChatAdapter):
         return self.format_field_with_value(fields_with_values, role="assistant")
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
+        extracted_object = _extract_first_json_object(completion)
+        if extracted_object:
+            completion = extracted_object
         fields = json_repair.loads(completion)
 
         if not isinstance(fields, dict):
@@ -293,3 +295,42 @@ def _get_structured_outputs_response_format(
     pydantic_model.model_json_schema = lambda *args, **kwargs: schema
 
     return pydantic_model
+
+def _extract_first_json_object(text: str) -> str | None:
+    """Return the first balanced JSON object found in text or None if absent."""
+
+    in_string = False
+    escape = False
+    depth = 0
+    start_idx: int | None = None
+    seen_lbrace = False
+
+    for idx, char in enumerate(text):
+        if seen_lbrace and in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if seen_lbrace and char == '"':
+            in_string = True
+            continue
+
+        if char == '{':
+            if depth == 0:
+                start_idx = idx
+                seen_lbrace = True
+            depth += 1
+            continue
+
+        if char == '}':
+            if depth == 0 or start_idx is None:
+                continue
+            depth -= 1
+            if depth == 0:
+                return text[start_idx : idx + 1]
+
+    return None
