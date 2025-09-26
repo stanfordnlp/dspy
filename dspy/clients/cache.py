@@ -96,10 +96,8 @@ class Cache:
         return sha256(orjson.dumps(params, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
     def get(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
-        use_memory_cache = self.enable_memory_cache
-        use_disk_cache = self.enable_disk_cache
 
-        if not use_memory_cache and not use_disk_cache:
+        if not self.enable_memory_cache and not self.enable_disk_cache:
             return None
 
         try:
@@ -108,13 +106,13 @@ class Cache:
             logger.debug(f"Failed to generate cache key for request: {request}")
             return None
 
-        if use_memory_cache and key in self.memory_cache:
+        if self.enable_memory_cache and key in self.memory_cache:
             with self._lock:
                 response = self.memory_cache[key]
-        elif use_disk_cache and key in self.disk_cache:
+        elif self.enable_disk_cache and key in self.disk_cache:
             # Found on disk but not in memory cache, add to memory cache
             response = self.disk_cache[key]
-            if use_memory_cache:
+            if self.enable_memory_cache:
                 with self._lock:
                     self.memory_cache[key] = response
         else:
@@ -134,11 +132,10 @@ class Cache:
         ignored_args_for_cache_key: list[str] | None = None,
         enable_memory_cache: bool = True,
     ) -> None:
-        write_to_memory_cache = self.enable_memory_cache and enable_memory_cache
-        write_to_disk_cache = self.enable_disk_cache
+        enable_memory_cache = self.enable_memory_cache and enable_memory_cache
 
-        # Early return to avoid computing cache key if it won't be used
-        if not write_to_memory_cache and not write_to_disk_cache:
+        # Early return to avoid computing cache key if both memory and disk cache are disabled
+        if not enable_memory_cache and not self.enable_disk_cache:
             return
 
         try:
@@ -147,11 +144,11 @@ class Cache:
             logger.debug(f"Failed to generate cache key for request: {request}")
             return
 
-        if write_to_memory_cache:
+        if enable_memory_cache:
             with self._lock:
                 self.memory_cache[key] = value
 
-        if write_to_disk_cache:
+        if self.enable_disk_cache:
             try:
                 self.disk_cache[key] = value
             except Exception as e:

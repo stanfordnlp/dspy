@@ -117,7 +117,7 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
             monkeypatch.setattr(litellm, "completion", fake_completion)
 
             dummy_lm = DummyLM([{"answer": "ignored"}])
-            dummy_lm.forward(messages=[{"role": "user", "content": "Hello"}])
+            dummy_lm(messages=[{"role": "user", "content": "Hello"}])
 
             cache_key_spy.assert_not_called()
             cache_get_spy.assert_called_once()
