@@ -239,7 +239,6 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
     )
 
 
-# Issue (#8759)
 def test_json_adapter_parse_handles_braces_inside_string_values():
     class CodeIssue(pydantic.BaseModel):
         issue_type: str
