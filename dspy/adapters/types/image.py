@@ -164,10 +164,6 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
         if image.startswith("data:"):
             # Already a data URI
             return image
-        elif _is_custom_type_format(image):
-            # Extract image URL from custom type format
-            url = _extract_url_from_custom_type(image)
-            return encode_image(url, download_images)
         elif os.path.isfile(image):
             # File path
             return _encode_image_from_file(image)
