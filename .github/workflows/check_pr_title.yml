@@ -1,0 +1,11 @@
+name: Check PR Title
+on: pull_request
+
+jobs:
+  check-pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR Title
+        uses: Slashgear/action-check-pr-title@main
+        with:
+          regexp: '(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([a-z,A-Z,0-9,\-,\_,\/,:]+\)(:)\s{1}([\w\s]+)' # Regex the title should match.
