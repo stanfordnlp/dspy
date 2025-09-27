@@ -567,4 +567,5 @@ class GEPA(Teleprompter):
             dspy_gepa_result = DspyGEPAResult.from_gepa_result(gepa_result, adapter)
             new_prog.detailed_results = dspy_gepa_result
 
+        new_prog._compiled = True
         return new_prog
