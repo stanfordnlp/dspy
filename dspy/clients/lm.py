@@ -35,7 +35,7 @@ class LM(BaseLM):
         max_tokens: int = 4000,
         cache: bool = True,
         callbacks: list[BaseCallback] | None = None,
-        num_retries: int = 3,
+        num_retries: int | None = None,
         provider: Provider | None = None,
         finetuning_model: str | None = None,
         launch_kwargs: dict[str, Any] | None = None,
@@ -74,7 +74,9 @@ class LM(BaseLM):
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
         self.history = []
-        self.num_retries = num_retries
+        self.num_retries = (
+            num_retries if num_retries is not None else dspy.settings.get("default_num_retries", 3)
+        )
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
         self.train_kwargs = train_kwargs or {}
@@ -345,10 +347,11 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     request.pop("rollout_id", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
+        strategy = dspy.settings.get("retry_strategy", "exponential_backoff_retry")
         return litellm.completion(
             cache=cache,
             num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
+            retry_strategy=strategy,
             **request,
         )
 
@@ -371,6 +374,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
+    strategy = dspy.settings.get("retry_strategy", "exponential_backoff_retry")
     return litellm.text_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
@@ -378,7 +382,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
+        retry_strategy=strategy,
         **request,
     )
 
@@ -389,10 +393,11 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     request.pop("rollout_id", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
+        strategy = dspy.settings.get("retry_strategy", "exponential_backoff_retry")
         return await litellm.acompletion(
             cache=cache,
             num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
+            retry_strategy=strategy,
             **request,
         )
 
@@ -413,6 +418,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
+    strategy = dspy.settings.get("retry_strategy", "exponential_backoff_retry")
     return await litellm.atext_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
@@ -420,7 +426,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
         api_base=api_base,
         prompt=prompt,
         num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
+        retry_strategy=strategy,
         **request,
     )
 
