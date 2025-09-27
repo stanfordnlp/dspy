@@ -357,6 +357,30 @@ def test_dump_state():
     }
 
 
+def test_dump_state_with_reasoning_model():
+    lm = dspy.LM(
+        model="openai/gpt-5",
+        model_type="chat",
+        temperature=1,
+        max_tokens=32000,
+        num_retries=10,
+        launch_kwargs={"temperature": 1},
+        train_kwargs={"temperature": 5},
+    )
+
+    assert lm.dump_state() == {
+        "model": "openai/gpt-5",
+        "model_type": "chat",
+        "temperature": 1,
+        "max_tokens": 32000,
+        "num_retries": 10,
+        "cache": True,
+        "finetuning_model": None,
+        "launch_kwargs": {"temperature": 1},
+        "train_kwargs": {"temperature": 5},
+    }
+
+
 def test_exponential_backoff_retry():
     time_counter = []
 
