@@ -24,14 +24,14 @@ class ObjectField(BaseModel):
 
 
 class NestedObjectField(BaseModel):
-    tupleField: Tuple[str, float]
+    tupleField: tuple[str, float]
     enumField: EnumField
     datetimeField: datetime
     literalField: LiteralField
 
 
 class ProgramInputs(BaseModel):
-    tupleField: Tuple[str, float]
+    tupleField: tuple[str, float]
     enumField: EnumField
     datetimeField: datetime
     literalField: LiteralField
@@ -76,7 +76,7 @@ class LiteralField(Enum):
 
 
 class ProcessedNestedObjectField(BaseModel):
-    tupleField: Tuple[str, float]
+    tupleField: tuple[str, float]
     enumField: EnumField
     datetimeField: datetime
     literalField: LiteralField
@@ -84,7 +84,7 @@ class ProcessedNestedObjectField(BaseModel):
 
 
 class ProgramOutputs(BaseModel):
-    processedTupleField: Tuple[str, float]
+    processedTupleField: tuple[str, float]
     processedEnumField: ProcessedEnumField
     processedDatetimeField: datetime
     processedLiteralField: ProcessedLiteralField
