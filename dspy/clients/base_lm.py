@@ -225,15 +225,31 @@ class BaseLM:
         Returns:
             List of processed outputs
         """
+        def _to_dict(obj):
+            """Convert object-like values into plain dicts when possible."""
+            if obj is None:
+                return None
+            if isinstance(obj, dict):
+                return obj
+            if hasattr(obj, "model_dump"):
+                return obj.model_dump()
+            if hasattr(obj, "__dict__") and not isinstance(obj, dict):
+                return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
+            return obj
+
         outputs = []
         tool_calls = []
         for output_item in response.output:
-            if output_item.type == "message":
-                for content_item in output_item.content:
-                    outputs.append(content_item.text)
-            elif output_item.type == "function_call":
-                tool_calls.append(output_item.model_dump())
-
+            output_dict = _to_dict(output_item)
+            item_type = output_dict.get("type")
+            if item_type == "message":
+                content = output_dict.get("content", [])
+                for content_item in content:
+                    content_dict = _to_dict(content_item)
+                    text = content_dict.get("text")
+                    outputs.append(text)
+            elif item_type == "function_call":
+                tool_calls.append(output_dict)
         if tool_calls:
             outputs.append({"tool_calls": tool_calls})
         return outputs
