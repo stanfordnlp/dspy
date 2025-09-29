@@ -654,13 +654,12 @@ def test_json_adapter_json_mode_no_structured_outputs():
         mock_completion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
 
         result = program(question="Dummy question!")
-        # The parse should succeed on the second call
+
         assert mock_completion.call_count == 1
         assert result.answer == "Test output"
 
-        # The first call should have tried structured output
-        _, first_call_kwargs = mock_completion.call_args_list[0]
-        assert first_call_kwargs.get("response_format") == {"type": "json_object"}
+        _, call_kwargs = mock_completion.call_args_list[0]
+        assert call_kwargs.get("response_format") == {"type": "json_object"}
 
 
 @pytest.mark.asyncio
@@ -677,13 +676,12 @@ async def test_json_adapter_json_mode_no_structured_outputs_async():
         mock_acompletion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
 
         result = await program.acall(question="Dummy question!")
-        # The parse should succeed on the second call
+
         assert mock_acompletion.call_count == 1
         assert result.answer == "Test output"
 
-        # The first call should have tried structured output
-        _, first_call_kwargs = mock_acompletion.call_args_list[0]
-        assert first_call_kwargs.get("response_format") == {"type": "json_object"}
+        _, call_kwargs = mock_acompletion.call_args_list[0]
+        assert call_kwargs.get("response_format") == {"type": "json_object"}
 
 
 @pytest.mark.asyncio
