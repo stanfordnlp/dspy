@@ -44,7 +44,13 @@ class JSONAdapter(ChatAdapter):
         super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
-        """Common call logic to be used for both sync and async calls."""
+        """Common call logic to be used for both sync and async calls.
+        
+        A model can support structured outputs and json mode, json mode, or nothing (just ask for json)
+        Prefer structured outputs mode over json mode unless we have dspy.ToolCalls
+
+        This function will either call the "just ask mode" or "json mode" if structured outputs are not supported/desired.
+        """
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
 
@@ -52,11 +58,15 @@ class JSONAdapter(ChatAdapter):
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls):
+        supports_response_schema = litellm.supports_response_schema(model=lm.model, custom_llm_provider=provider)
+
+        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not supports_response_schema:
             # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
             # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
+
+
 
     def __call__(
         self,
