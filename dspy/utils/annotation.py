@@ -1,7 +1,8 @@
 import inspect
 import re
 import types
-from typing import Callable, ParamSpec, TypeVar, overload
+from collections.abc import Callable
+from typing import ParamSpec, TypeVar, overload
 
 P = ParamSpec("P")
 R = TypeVar("R")
