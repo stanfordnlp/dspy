@@ -2,14 +2,17 @@ import re
 
 import litellm
 import pytest
-from PIL import Image
 from pydantic import BaseModel
 
 import dspy
 from dspy.utils.dummies import DummyLM
 
 
+@pytest.mark.extra
 def test_tool_observation_preserves_custom_type():
+    pytest.importorskip("PIL.Image")
+    from PIL import Image
+
     captured_calls = []
 
     class SpyChatAdapter(dspy.ChatAdapter):
