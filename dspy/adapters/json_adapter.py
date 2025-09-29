@@ -45,7 +45,6 @@ class JSONAdapter(ChatAdapter):
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
-
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
 
