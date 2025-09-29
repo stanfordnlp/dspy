@@ -354,5 +354,4 @@ class COPRO(Teleprompter):
             best_program.results_best = results_best
             best_program.results_latest = results_latest
 
-        best_program._compiled = True
         return best_program

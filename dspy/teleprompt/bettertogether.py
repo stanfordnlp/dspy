@@ -106,7 +106,6 @@ class BetterTogether(Teleprompter):
             # TODO: Should we reset or just deepcopy? How does resetting affect
             # the predictor LMs?
             student = student.deepcopy()
-            student._compiled = False
             if step_code == "p":
                 student = self._compile_prompt_optimizer(student, trainset, valset_ratio)
             elif step_code == "w":
@@ -120,7 +119,6 @@ class BetterTogether(Teleprompter):
             kill_lms(student)
 
         student.candidate_programs = candidate_programs
-        student._compiled = True
         return student
 
     def _compile_prompt_optimizer(self, student, trainset, valset_ratio) -> Module:

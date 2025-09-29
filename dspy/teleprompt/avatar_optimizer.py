@@ -222,5 +222,4 @@ class AvatarOptimizer(Teleprompter):
 
         print(f"Best Actor: {best_actor}")
 
-        best_actor._compiled = True
         return best_actor

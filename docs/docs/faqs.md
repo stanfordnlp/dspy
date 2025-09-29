@@ -50,14 +50,14 @@ Compiling DSPy `optimizers` naturally will incur additional LM calls, but we sub
 Here is an example of saving/loading a compiled module:
 
 ```python
-cot_compiled = teleprompter.compile(CoT(), trainset=trainset, valset=devset)
+cot_optimized = teleprompter.compile(CoT(), trainset=trainset, valset=devset)
 
 #Saving
-cot_compiled.save('compiled_cot_gsm8k.json')
+cot_optimized.save('optimized_cot_gsm8k.json')
 
 #Loading:
 cot = CoT()
-cot.load('compiled_cot_gsm8k.json')
+cot.load('optimized_cot_gsm8k.json')
 ```
 
 - **How do I export for deployment?**
@@ -94,7 +94,7 @@ You can parallelize DSPy programs during both compilation and evaluation by spec
 
 - **How do freeze a module?**
 
-Modules can be frozen by setting their `._compiled` attribute to be True, indicating the module has gone through optimizer compilation and should not have its parameters adjusted. This is handled internally in optimizers such as `dspy.BootstrapFewShot` where the student program is ensured to be frozen before the teacher propagates the gathered few-shot demonstrations in the bootstrapping process. 
+Module parameters are automatically managed during optimization. When using optimizers like `dspy.BootstrapFewShot`, the framework ensures proper handling of parameter updates during the compilation process. The framework tracks which modules should have their parameters adjusted during different phases of optimization automatically. 
 
 - **How do I use DSPy assertions?**
 

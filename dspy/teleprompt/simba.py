@@ -363,5 +363,4 @@ class SIMBA(Teleprompter):
         best_program.candidate_programs = candidate_data
         best_program.trial_logs = trial_logs
 
-        best_program._compiled = True
         return best_program

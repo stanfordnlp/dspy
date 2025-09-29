@@ -18,7 +18,9 @@ class HopModule(dspy.Module):
 
 def test_module_initialization():
     module = Module()
-    assert module._compiled is False, "Module _compiled attribute should be False upon initialization"
+    # Module should be properly initialized with callbacks and history
+    assert hasattr(module, "callbacks"), "Module should have callbacks attribute"
+    assert hasattr(module, "history"), "Module should have history attribute"
 
 
 def test_named_predictors():

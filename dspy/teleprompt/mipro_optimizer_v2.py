@@ -606,7 +606,6 @@ class MIPROv2(Teleprompter):
 
         logger.info(f"Returning best identified program with score {best_score}!")
 
-        best_program._compiled = True
         return best_program
 
     def _log_minibatch_eval(

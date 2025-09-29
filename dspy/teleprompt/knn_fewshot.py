@@ -66,5 +66,4 @@ class KNNFewShot(Teleprompter):
             return compiled_program(**kwargs)
 
         student_copy.forward = types.MethodType(forward_pass, student_copy)
-        student_copy._compiled = True
         return student_copy

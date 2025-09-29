@@ -22,7 +22,6 @@ class LabeledFewShot(Teleprompter):
             else:
                 predictor.demos = self.trainset[: min(self.k, len(self.trainset))]
 
-        self.student._compiled = True
         return self.student
 
 

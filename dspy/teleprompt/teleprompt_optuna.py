@@ -73,5 +73,4 @@ class BootstrapFewShotWithOptuna(Teleprompter):
         best_program = study.trials[study.best_trial.number].user_attrs["program"]
         print("Best score:", study.best_value)
         print("Best program:", best_program)
-        best_program._compiled = True
         return best_program
