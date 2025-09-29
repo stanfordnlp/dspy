@@ -16,9 +16,11 @@ class Citations(Type):
 
     Example:
         ```python
+        import os
         import dspy
         from dspy.signatures import Signature
         from dspy.experimental import Citations, Document
+        os.environ["ANTHROPIC_API_KEY"] = "YOUR_ANTHROPIC_API_KEY"
 
         class AnswerWithSources(Signature):
             '''Answer questions using provided documents with citations.'''
@@ -42,8 +44,8 @@ class Citations(Type):
 
         # Use with a model that supports citations like Claude
         lm = dspy.LM("anthropic/claude-opus-4-1-20250805")
-        predictor = dspy.Predict(AnswerWithSources, lm=lm)
-        result = predictor(documents=docs, question="What temperature does water boil?")
+        predictor = dspy.Predict(AnswerWithSources)
+        result = predictor(documents=docs, question="What temperature does water boil?", lm=lm)
 
         for citation in result.citations.citations:
             print(citation.format())
