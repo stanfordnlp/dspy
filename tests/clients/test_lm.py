@@ -263,6 +263,47 @@ def test_retry_number_set_correctly():
     assert mock_completion.call_args.kwargs["num_retries"] == 3
 
 
+def test_global_default_num_retries_when_none():
+    from litellm.utils import Choices, Message, ModelResponse
+
+    with dspy.context(default_num_retries=4):
+        lm = dspy.LM(model="openai/dspy-test-model", cache=False, num_retries=None)
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="answer"))], model="openai/dspy-test-model"
+            )
+            lm("query")
+
+        assert mock_completion.call_args.kwargs["num_retries"] == 4
+
+
+def test_instance_num_retries_overrides_global():
+    from litellm.utils import Choices, Message, ModelResponse
+
+    with dspy.context(default_num_retries=2):
+        lm = dspy.LM(model="openai/dspy-test-model", cache=False, num_retries=7)
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="answer"))], model="openai/dspy-test-model"
+            )
+            lm("query")
+
+        assert mock_completion.call_args.kwargs["num_retries"] == 7
+
+
+def test_retry_strategy_from_settings():
+    from litellm.utils import Choices, Message, ModelResponse
+
+    with dspy.context(retry_strategy="custom_strategy"):
+        lm = dspy.LM(model="openai/dspy-test-model", cache=False)
+        with mock.patch("litellm.completion") as mock_completion:
+            mock_completion.return_value = ModelResponse(
+                choices=[Choices(message=Message(content="answer"))], model="openai/dspy-test-model"
+            )
+            lm("query")
+
+        assert mock_completion.call_args.kwargs["retry_strategy"] == "custom_strategy"
+
 def test_retry_made_on_system_errors():
     retry_tracking = [0]  # Using a list to track retries
 

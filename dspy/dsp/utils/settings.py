@@ -28,6 +28,8 @@ DEFAULT_CONFIG = dotdict(
     allow_tool_async_sync_conversion=False,
     max_history_size=10000,
     max_trace_size=10000,
+    default_num_retries=3,
+    retry_strategy="exponential_backoff_retry",
 )
 
 # Global base configuration and owner tracking
