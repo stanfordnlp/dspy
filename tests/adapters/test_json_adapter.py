@@ -641,6 +641,50 @@ def test_json_adapter_fallback_to_json_mode_on_structured_output_failure():
         _, second_call_kwargs = mock_completion.call_args_list[1]
         assert second_call_kwargs.get("response_format") == {"type": "json_object"}
 
+def test_json_adapter_json_mode_no_structured_outputs():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="String output field")
+
+    dspy.configure(lm=dspy.LM(model="azure_ai/grok-3", cache=False), adapter=dspy.JSONAdapter())
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.completion") as mock_completion:
+        # Call a model that allows json but not structured outputs
+        mock_completion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
+
+        result = program(question="Dummy question!")
+        # The parse should succeed on the second call
+        assert mock_completion.call_count == 1
+        assert result.answer == "Test output"
+
+        # The first call should have tried structured output
+        _, first_call_kwargs = mock_completion.call_args_list[0]
+        assert first_call_kwargs.get("response_format") == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_json_adapter_json_mode_no_structured_outputs_async():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="String output field")
+
+    dspy.configure(lm=dspy.LM(model="azure_ai/grok-3", cache=False), adapter=dspy.JSONAdapter())
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.acompletion") as mock_acompletion:
+        # Call a model that allows json but not structured outputs
+        mock_acompletion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
+
+        result = await program.acall(question="Dummy question!")
+        # The parse should succeed on the second call
+        assert mock_acompletion.call_count == 1
+        assert result.answer == "Test output"
+
+        # The first call should have tried structured output
+        _, first_call_kwargs = mock_acompletion.call_args_list[0]
+        assert first_call_kwargs.get("response_format") == {"type": "json_object"}
+
 
 @pytest.mark.asyncio
 async def test_json_adapter_fallback_to_json_mode_on_structured_output_failure_async():
