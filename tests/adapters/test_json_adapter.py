@@ -72,7 +72,7 @@ def test_json_adapter_falls_back_when_structured_outputs_fails():
         input1: str = dspy.InputField()
         output1: str = dspy.OutputField(desc="String output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.side_effect = [Exception("Bad structured outputs!"), mock_completion.return_value]
@@ -96,7 +96,7 @@ def test_json_adapter_with_structured_outputs_does_not_mutate_original_signature
         output3: OutputField3 = dspy.OutputField(desc="Nested output field")
         output4_unannotated = dspy.OutputField(desc="Unannotated output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
     with mock.patch("litellm.completion"):
         program(input1="Test input")
@@ -142,7 +142,7 @@ def test_json_adapter_on_pydantic_model():
 
     program = dspy.Predict(TestSignature)
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
 
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
@@ -153,7 +153,7 @@ def test_json_adapter_on_pydantic_model():
                     )
                 )
             ],
-            model="openai/gpt4o",
+            model="openai/gpt-4o",
         )
         result = program(
             user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
@@ -218,7 +218,7 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
             choices=[
                 Choices(message=Message(content="{'answer1': 'Paris'}")),
             ],
-            model="openai/gpt4o",
+            model="openai/gpt-4o",
         )
         lm = dspy.LM(model="openai/gpt-4o-mini")
         with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
@@ -554,10 +554,10 @@ async def test_json_adapter_on_pydantic_model_async():
                     )
                 )
             ],
-            model="openai/gpt4o",
+            model="openai/gpt-4o",
         )
 
-        with dspy.context(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
             result = await program.acall(
                 user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
             )
