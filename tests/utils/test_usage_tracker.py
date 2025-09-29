@@ -1,3 +1,5 @@
+from litellm.types.llms.openai import InputTokensDetails, OutputTokensDetails
+
 import dspy
 from dspy.utils.usage_tracker import UsageTracker, track_usage
 
@@ -221,3 +223,121 @@ def test_merge_usage_entries_with_none_values():
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["audio_tokens"] == 1
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["accepted_prediction_tokens"] == 1
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["rejected_prediction_tokens"] == 1
+
+
+def test_merge_input_output_token_details_aggregation():
+    """Ensure input/output token details are aggregated across entries."""
+    tracker = UsageTracker()
+
+    usage_entries = [
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": InputTokensDetails(
+                    audio_tokens=0,
+                    cached_tokens=200,
+                    text_tokens=1000,
+                ),
+                "output_tokens": 300,
+                "output_tokens_details": OutputTokensDetails(
+                    reasoning_tokens=100,
+                    text_tokens=200,
+                ),
+            },
+        },
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "input_tokens": 500,
+                "input_tokens_details": InputTokensDetails(
+                    audio_tokens=10,
+                    cached_tokens=50,
+                    text_tokens=400,
+                ),
+                "output_tokens": 100,
+                "output_tokens_details": OutputTokensDetails(
+                    reasoning_tokens=20,
+                    text_tokens=80,
+                ),
+            },
+        },
+        {
+            # Missing input details entirely; only output parts present
+            "model": "gpt-4o-mini",
+            "usage": {
+                "output_tokens": 1,
+                "output_tokens_details": {"reasoning_tokens": 1},
+            },
+        },
+        {
+            # Input tokens without details to ensure numeric-only fields still sum
+            "model": "gpt-4o-mini",
+            "usage": {
+                "input_tokens": 200,
+            },
+        },
+    ]
+
+    for entry in usage_entries:
+        tracker.add_usage(entry["model"], entry["usage"])
+
+    total_usage = tracker.get_total_tokens()["gpt-4o-mini"]
+
+    # Totals for numeric input/output fields
+    assert total_usage["input_tokens"] == 1700  # 1000 + 500 + 200
+    assert total_usage["output_tokens"] == 401  # 300 + 100 + 1
+
+    # Aggregated details
+    assert total_usage["input_tokens_details"]["audio_tokens"] == 10  # 0 + 10
+    assert total_usage["input_tokens_details"]["cached_tokens"] == 250  # 200 + 50
+    assert total_usage["input_tokens_details"]["text_tokens"] == 1400  # 1000 + 400
+
+    assert total_usage["output_tokens_details"]["reasoning_tokens"] == 121  # 100 + 20 + 1
+    assert total_usage["output_tokens_details"]["text_tokens"] == 280  # 200 + 80
+
+
+def test_merge_input_output_token_details_with_none_values():
+    """None values for details should be ignored while preserving later dict merges."""
+    tracker = UsageTracker()
+
+    usage_entries = [
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 10,
+            },
+        },
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "input_tokens": 50,
+                "input_tokens_details": InputTokensDetails(
+                    audio_tokens=1,
+                    cached_tokens=2,
+                    text_tokens=3,
+                ),
+                "output_tokens": 5,
+                "output_tokens_details": OutputTokensDetails(
+                    reasoning_tokens=4,
+                    text_tokens=6,
+                ),
+            },
+        },
+    ]
+
+    for entry in usage_entries:
+        tracker.add_usage(entry["model"], entry["usage"])
+
+    total_usage = tracker.get_total_tokens()["gpt-4o-mini"]
+
+    assert total_usage["input_tokens"] == 150
+    assert total_usage["output_tokens"] == 15
+
+    assert total_usage["input_tokens_details"]["audio_tokens"] == 1
+    assert total_usage["input_tokens_details"]["cached_tokens"] == 2
+    assert total_usage["input_tokens_details"]["text_tokens"] == 3
+
+    assert total_usage["output_tokens_details"]["reasoning_tokens"] == 4
+    assert total_usage["output_tokens_details"]["text_tokens"] == 6
