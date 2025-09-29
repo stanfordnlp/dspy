@@ -50,6 +50,7 @@ class JSONAdapter(ChatAdapter):
         Prefer structured outputs mode over json mode unless we have dspy.ToolCalls
 
         This function will either call the "just ask mode" or "json mode" if structured outputs are not supported/desired.
+        Follows guidance from: https://docs.litellm.ai/docs/completion/json_mode#check-model-support
         """
         provider = lm.model.split("/", 1)[0] or "openai"
         params = litellm.get_supported_openai_params(model=lm.model, custom_llm_provider=provider)
