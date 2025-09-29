@@ -668,14 +668,14 @@ async def test_json_adapter_json_mode_no_structured_outputs_async():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField(desc="String output field")
 
-    dspy.configure(lm=dspy.LM(model="azure_ai/grok-3", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.acompletion") as mock_acompletion:
         # Call a model that allows json but not structured outputs
         mock_acompletion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
 
-        result = await program.acall(question="Dummy question!")
+        with dspy.context(lm=dspy.LM(model="azure_ai/grok-3", cache=False), adapter=dspy.JSONAdapter()):
+            result = await program.acall(question="Dummy question!")
 
         assert mock_acompletion.call_count == 1
         assert result.answer == "Test output"
