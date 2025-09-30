@@ -261,3 +261,18 @@ def test_xml_adapter_with_code():
             {"question": "Write a python program to print 'Hello, world!'"},
         )
         assert result[0]["code"].code == 'print("Hello, world!")'
+
+
+def test_xml_adapter_user_message_contains_xml_input_tags():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.XMLAdapter()
+    messages = adapter.format(MySignature, [], {"question": "When was Marie Curie born?"})
+
+    assert len(messages) == 2
+    assert messages[1]["role"] == "user"
+    assert "<question>" in messages[1]["content"]
+    assert "</question>" in messages[1]["content"]
+    assert "When was Marie Curie born?" in messages[1]["content"]

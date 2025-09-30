@@ -19,10 +19,68 @@ class XMLAdapter(ChatAdapter):
             output.append(f"<{field.name}>\n{formatted}\n</{field.name}>")
         return "\n\n".join(output).strip()
 
+    def format_field_structure(self, signature: type[Signature]) -> str:
+        """
+        XMLAdapter requires input and output fields to be wrapped in XML tags like `<field_name>`.
+        """
+        from dspy.adapters.utils import translate_field_type
+        from pydantic.fields import FieldInfo
+
+        parts = []
+        parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
+
+        def format_signature_fields_for_instructions(fields: dict[str, FieldInfo]):
+            return self.format_field_with_value(
+                fields_with_values={
+                    FieldInfoWithName(name=field_name, info=field_info): translate_field_type(field_name, field_info)
+                    for field_name, field_info in fields.items()
+                },
+            )
+
+        parts.append(format_signature_fields_for_instructions(signature.input_fields))
+        parts.append(format_signature_fields_for_instructions(signature.output_fields))
+        return "\n\n".join(parts).strip()
+
+    def format_user_message_content(
+        self,
+        signature: type[Signature],
+        inputs: dict[str, Any],
+        prefix: str = "",
+        suffix: str = "",
+        main_request: bool = False,
+    ) -> str:
+        messages = [prefix]
+        for k, v in signature.input_fields.items():
+            if k in inputs:
+                value = inputs.get(k)
+                formatted_field_value = format_field_value(field_info=v, value=value)
+                messages.append(f"<{k}>\n{formatted_field_value}\n</{k}>")
+
+        if main_request:
+            output_requirements = self.user_message_output_requirements(signature)
+            if output_requirements is not None:
+                messages.append(output_requirements)
+
+        messages.append(suffix)
+        return "\n\n".join(messages).strip()
+
+    def format_assistant_message_content(
+        self,
+        signature: type[Signature],
+        outputs: dict[str, Any],
+        missing_field_message=None,
+    ) -> str:
+        return self.format_field_with_value(
+            {
+                FieldInfoWithName(name=k, info=v): outputs.get(k, missing_field_message)
+                for k, v in signature.output_fields.items()
+            },
+        )
+
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
-        message = "Respond with the corresponding output fields wrapped in XML tags"
+        message = "Respond with the corresponding output fields wrapped in XML tags: "
         message += ", then ".join(f"`<{f}>`" for f in signature.output_fields)
-        message += ", and then end with the `<completed>` tag."
+        message += "."
         return message
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
