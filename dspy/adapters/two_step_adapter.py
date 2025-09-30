@@ -1,10 +1,7 @@
 from typing import Any
 
-import json_repair
-
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.adapters.types import ToolCalls
 from dspy.adapters.utils import get_field_description_string
 from dspy.clients import LM
 from dspy.signatures.field import InputField
@@ -119,16 +116,13 @@ class TwoStepAdapter(Adapter):
 
         values = []
 
-        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
         for output in outputs:
             output_logprobs = None
-            tool_calls = None
             text = output
 
             if isinstance(output, dict):
                 text = output["text"]
                 output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
 
             try:
                 # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
@@ -144,15 +138,6 @@ class TwoStepAdapter(Adapter):
             except Exception as e:
                 raise ValueError(f"Failed to parse response from the original completion: {output}") from e
 
-            if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs

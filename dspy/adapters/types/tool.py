@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Type, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, Optional, get_origin, get_type_hints
 
 import pydantic
 from jsonschema import ValidationError, validate
@@ -306,6 +306,32 @@ class ToolCalls(Type):
         return {
             "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
         }
+
+    @classmethod
+    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["ToolCalls"]:
+        """Parse a LM response into ToolCalls.
+
+        Args:
+            response: A LM response that may contain tool call data.
+
+        Returns:
+            A ToolCalls object if tool call data is found, None otherwise.
+        """
+        import json_repair
+
+        if isinstance(response, dict) and "tool_calls" in response:
+            tool_calls_data = response["tool_calls"]
+            if isinstance(tool_calls_data, list):
+                tool_calls = [
+                    {
+                        "name": v["function"]["name"],
+                        "args": json_repair.loads(v["function"]["arguments"]),
+                    }
+                    for v in tool_calls_data
+                ]
+                return ToolCalls.from_dict_list(tool_calls)
+
+        return None
 
     @pydantic.model_validator(mode="before")
     @classmethod
