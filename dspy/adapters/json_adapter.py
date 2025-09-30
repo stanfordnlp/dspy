@@ -52,7 +52,11 @@ class JSONAdapter(ChatAdapter):
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls):
+        # Some models support json mode but not structured outputs
+        # Follows guidance from: https://docs.litellm.ai/docs/completion/json_mode#check-model-support
+        supports_structured_outputs = litellm.supports_response_schema(model=lm.model, custom_llm_provider=provider)
+
+        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not supports_structured_outputs:
             # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
             # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
