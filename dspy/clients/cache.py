@@ -178,6 +178,35 @@ class Cache:
             with open(filepath, "rb") as f:
                 self.memory_cache = cloudpickle.load(f)
 
+    def close(self) -> None:
+        """Close the cache and release all resources."""
+        if self.enable_disk_cache and hasattr(self.disk_cache, "close"):
+            try:
+                self.disk_cache.close()
+            except Exception as e:
+                logger.debug(f"Failed to close disk cache: {e}")
+
+        if self.enable_memory_cache and hasattr(self.memory_cache, "clear"):
+            with self._lock:
+                self.memory_cache.clear()
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures cleanup."""
+        self.close()
+        return False
+
+    def __del__(self):
+        """Destructor to ensure cleanup on garbage collection."""
+        try:
+            self.close()
+        except Exception:
+            # Ignore errors during garbage collection
+            pass
+
 
 def request_cache(
     cache_arg_name: str | None = None,
