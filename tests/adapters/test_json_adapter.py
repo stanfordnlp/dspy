@@ -646,12 +646,16 @@ def test_json_adapter_json_mode_no_structured_outputs():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField(desc="String output field")
 
-    dspy.configure(lm=dspy.LM(model="azure_ai/grok-3", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
 
-    with mock.patch("litellm.completion") as mock_completion:
+    with mock.patch("litellm.completion") as mock_completion, \
+        mock.patch("litellm.get_supported_openai_params") as mock_get_supported_openai_params, \
+        mock.patch("litellm.supports_response_schema") as mock_supports_response_schema:
         # Call a model that allows json but not structured outputs
         mock_completion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
+        mock_get_supported_openai_params.return_value = ["response_format"]
+        mock_supports_response_schema.return_value = False
 
         result = program(question="Dummy question!")
 
@@ -670,11 +674,15 @@ async def test_json_adapter_json_mode_no_structured_outputs_async():
 
     program = dspy.Predict(TestSignature)
 
-    with mock.patch("litellm.acompletion") as mock_acompletion:
+    with mock.patch("litellm.acompletion") as mock_acompletion, \
+        mock.patch("litellm.get_supported_openai_params") as mock_get_supported_openai_params, \
+        mock.patch("litellm.supports_response_schema") as mock_supports_response_schema:
         # Call a model that allows json but not structured outputs
         mock_acompletion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
+        mock_get_supported_openai_params.return_value = ["response_format"]
+        mock_supports_response_schema.return_value = False
 
-        with dspy.context(lm=dspy.LM(model="azure_ai/grok-3", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
             result = await program.acall(question="Dummy question!")
 
         assert mock_acompletion.call_count == 1
