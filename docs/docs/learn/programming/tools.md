@@ -144,14 +144,14 @@ for call in response.outputs.tool_calls:
     
     # Execute individual tool calls with different options:
     
-    # Option 1: Pass tools as a dict (most explicit)
+    # Option 1: Automatic discovery (finds functions in locals/globals)
+    result = call.execute()  # Automatically finds functions by name
+
+    # Option 2: Pass tools as a dict (most explicit)
     result = call.execute(functions={"weather": weather, "calculator": calculator})
     
-    # Option 2: Pass Tool objects as a list
+    # Option 3: Pass Tool objects as a list
     result = call.execute(functions=[dspy.Tool(weather), dspy.Tool(calculator)])
-    
-    # Option 3: Automatic discovery (finds functions in locals/globals)
-    result = call.execute()  # Automatically finds functions by name
     
     print(f"Result: {result}")
 ```

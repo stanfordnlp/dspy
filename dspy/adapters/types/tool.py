@@ -306,14 +306,11 @@ class ToolCalls(Type):
                         break
 
             if func is None:
-                raise ValueError(f"Tool function '{self.name}' not found. Pass the tool functions to the `execute` method.")
+                raise ValueError(f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method.")
 
             try:
-                if self.args:
-                    result = func(**self.args)
-                else:
-                    result = func()
-                return result
+                args = self.args or {}
+                return func(**args)
             except Exception as e:
                 raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
 
