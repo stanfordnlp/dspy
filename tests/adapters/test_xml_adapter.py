@@ -276,3 +276,36 @@ def test_xml_adapter_user_message_contains_xml_input_tags():
     assert "<question>" in messages[1]["content"]
     assert "</question>" in messages[1]["content"]
     assert "When was Marie Curie born?" in messages[1]["content"]
+
+
+def test_xml_adapter_full_prompt():
+    class QA(dspy.Signature):
+        query: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.XMLAdapter()
+    messages = adapter.format(QA, [], {"query": "when was Marie Curie born"})
+
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+
+    expected_system = (
+        "Your input fields are:\n"
+        "1. `query` (str):\n"
+        "Your output fields are:\n"
+        "1. `answer` (str):\n"
+        "All interactions will be structured in the following way, with the appropriate values filled in.\n\n"
+        "<query>\n{query}\n</query>\n\n"
+        "<answer>\n{answer}\n</answer>\n"
+        "In adhering to this structure, your objective is: \n"
+        "        Given the fields `query`, produce the fields `answer`."
+    )
+
+    expected_user = (
+        "<query>\nwhen was Marie Curie born\n</query>\n\n"
+        "Respond with the corresponding output fields wrapped in XML tags: `<answer>`."
+    )
+
+    assert messages[0]["content"] == expected_system
+    assert messages[1]["content"] == expected_user
