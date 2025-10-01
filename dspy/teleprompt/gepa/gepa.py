@@ -63,7 +63,8 @@ class DspyGEPAResult:
     - parents: lineage info; for each candidate i, parents[i] is a list of parent indices or None
     - val_aggregate_scores: per-candidate aggregate score on the validation set (higher is better)
     - val_subscores: per-candidate per-instance scores on the validation set (len == num_val_instances)
-    - per_val_instance_best_candidates: for each val instance t, a set of candidate indices achieving the best score on t
+    - per_val_instance_best_candidates: for each tracked frontier dimension (validation instance or objective),
+        a set of candidate indices achieving the best score on that dimension
     - discovery_eval_counts: Budget (number of metric calls / rollouts) consumed up to the discovery of each candidate
 
     - total_metric_calls: total number of metric calls made across the run
@@ -73,6 +74,11 @@ class DspyGEPAResult:
 
     - best_idx: candidate index with the highest val_aggregate_scores
     - best_candidate: the program text mapping for best_idx
+
+    Additional tracking data:
+    - frontier_type: how GEPA maintained its Pareto frontier ("instance", "objective", or "hybrid")
+    - frontier_dimension_labels: labels for each tracked frontier dimension, aligned with per_val_instance_best_candidates
+    - objective_scores: optional per-candidate objective aggregates used when frontier_type includes "objective"
     """
     # Data about the proposed candidates
     candidates: list[Module]
@@ -84,6 +90,11 @@ class DspyGEPAResult:
 
     # Optional data
     best_outputs_valset: list[list[tuple[int, list[Prediction]]]] | None = None
+
+    # Frontier tracking metadata
+    frontier_type: str = "instance"
+    frontier_dimension_labels: list[str] | None = None
+    objective_scores: list[dict[str, float]] | None = None
 
     # Optimization metadata
     total_metric_calls: int | None = None
@@ -101,11 +112,44 @@ class DspyGEPAResult:
         return self.candidates[self.best_idx]
 
     @property
+    def highest_score_achieved_per_frontier_dimension(self) -> dict[str, float]:
+        labels = self.frontier_dimension_labels
+        if labels is None:
+            labels = [f"instance:{idx}" for idx in range(len(self.per_val_instance_best_candidates))]
+
+        scores_by_dimension: dict[str, float] = {}
+        for dim_idx, label in enumerate(labels):
+            best_candidate_indices = self.per_val_instance_best_candidates[dim_idx]
+            if label.startswith("objective:"):
+                objective_name = label.split(":", 1)[1]
+                dimension_scores: list[float] = []
+                if self.objective_scores is not None:
+                    for cand_idx in best_candidate_indices:
+                        if cand_idx < len(self.objective_scores):
+                            cand_scores = self.objective_scores[cand_idx] or {}
+                            if objective_name in cand_scores:
+                                dimension_scores.append(float(cand_scores[objective_name]))
+                scores_by_dimension[label] = max(dimension_scores) if dimension_scores else 0.0
+            else:
+                # Default to instance-level frontier entries
+                try:
+                    instance_idx = int(label.split(":", 1)[1])
+                except (IndexError, ValueError):
+                    instance_idx = dim_idx
+                dimension_scores = [
+                    self.val_subscores[cand_idx][instance_idx]
+                    for cand_idx in best_candidate_indices
+                    if cand_idx < len(self.val_subscores)
+                    and instance_idx < len(self.val_subscores[cand_idx])
+                ]
+                scores_by_dimension[label] = max(dimension_scores) if dimension_scores else 0.0
+
+        return scores_by_dimension
+
+    @property
     def highest_score_achieved_per_val_task(self) -> list[float]:
-        return [
-            self.val_subscores[list(self.per_val_instance_best_candidates[val_idx])[0]][val_idx]
-            for val_idx in range(len(self.val_subscores[0]))
-        ]
+        """Backwards-compatible list of best scores, aligned with frontier_dimension_labels order."""
+        return list(self.highest_score_achieved_per_frontier_dimension().values())
 
     def to_dict(self) -> dict[str, Any]:
         cands = [
@@ -121,6 +165,9 @@ class DspyGEPAResult:
             val_subscores=self.val_subscores,
             per_val_instance_best_candidates=[list(s) for s in self.per_val_instance_best_candidates],
             discovery_eval_counts=self.discovery_eval_counts,
+            frontier_type=self.frontier_type,
+            frontier_dimension_labels=self.frontier_dimension_labels,
+            objective_scores=self.objective_scores,
             total_metric_calls=self.total_metric_calls,
             num_full_val_evals=self.num_full_val_evals,
             log_dir=self.log_dir,
@@ -138,6 +185,9 @@ class DspyGEPAResult:
             val_subscores=gepa_result.val_subscores,
             per_val_instance_best_candidates=gepa_result.per_val_instance_best_candidates,
             discovery_eval_counts=gepa_result.discovery_eval_counts,
+            frontier_type=gepa_result.frontier_type,
+            frontier_dimension_labels=gepa_result.frontier_dimension_labels,
+            objective_scores=gepa_result.objective_scores,
             total_metric_calls=gepa_result.total_metric_calls,
             num_full_val_evals=gepa_result.num_full_val_evals,
             log_dir=gepa_result.run_dir,
@@ -256,10 +306,13 @@ class GEPA(Teleprompter):
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
         num_threads: The number of threads to use for evaluation with `Evaluate`. Optional.
         failure_score: The score to assign to failed examples. Default is 0.0.
-        perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA 
+        perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA
             to determine if all examples in a minibatch are perfect.
-        log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all candidate 
-            programs, in this directory. Running GEPA with the same `log_dir` will resume the run 
+        frontier_type: Controls how GEPA maintains its Pareto frontier. Options are "instance"
+            (default, per-validation example), "objective" (per-metric subscore), or
+            "hybrid" (track both objective subscores and validation instances).
+        log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all candidate
+            programs, in this directory. Running GEPA with the same `log_dir` will resume the run
             from the last checkpoint.
         track_stats: Whether to return detailed results and all proposed programs in the `detailed_results` 
             attribute of the optimized program. Default is False.
@@ -320,6 +373,7 @@ class GEPA(Teleprompter):
         num_threads: int | None = None,
         failure_score: float = 0.0,
         perfect_score: float = 1.0,
+        frontier_type: Literal["instance", "objective", "hybrid"] = "instance",
         # Logging
         log_dir: str = None,
         track_stats: bool = False,
@@ -383,6 +437,13 @@ class GEPA(Teleprompter):
         self.failure_score = failure_score
         self.perfect_score = perfect_score
 
+        valid_frontier_types = {"instance", "objective", "hybrid"}
+        if frontier_type not in valid_frontier_types:
+            raise ValueError(
+                "frontier_type must be one of {'instance', 'objective', 'hybrid'}"
+            )
+        self.frontier_type = frontier_type
+
         # Logging configuration
         self.log_dir = log_dir
         self.track_stats = track_stats
@@ -401,7 +462,16 @@ class GEPA(Teleprompter):
 
         self.custom_instruction_proposer = instruction_proposer
         self.component_selector = component_selector
-        self.gepa_kwargs = gepa_kwargs or {}
+        incoming_kwargs = dict(gepa_kwargs or {})
+        if (
+            "frontier_type" in incoming_kwargs
+            and incoming_kwargs["frontier_type"] != frontier_type
+        ):
+            raise ValueError(
+                "Conflicting frontier_type values provided in GEPA(..., frontier_type=...) and gepa_kwargs."
+            )
+        incoming_kwargs.setdefault("frontier_type", frontier_type)
+        self.gepa_kwargs = incoming_kwargs
 
     def auto_budget(self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5) -> int:
         import numpy as np

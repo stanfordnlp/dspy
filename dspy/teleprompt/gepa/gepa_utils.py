@@ -40,6 +40,53 @@ class ReflectiveExample(TypedDict):
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str
+    subscores: dict[str, float] | None = None
+
+
+def _extract_score_and_subscores(raw_score: Any) -> tuple[float | None, dict[str, float] | None]:
+    """Normalize metric outputs into scalar scores and optional subscore dictionaries."""
+    if raw_score is None:
+        return None, None
+
+    if isinstance(raw_score, Score):
+        subscores = raw_score.subscores if raw_score.subscores else None
+        return raw_score.scalar, subscores
+
+    scores_attr = getattr(raw_score, "scores", None)
+    if isinstance(scores_attr, Score):
+        subscores = scores_attr.subscores if scores_attr.subscores else None
+        return scores_attr.scalar, subscores
+
+    if isinstance(raw_score, dict):
+        nested_score = raw_score.get("score")
+        nested_scalar, nested_subscores = _extract_score_and_subscores(nested_score) if nested_score is not None else (None, None)
+        subscores = raw_score.get("subscores") or nested_subscores
+        if nested_scalar is not None:
+            return float(nested_scalar), subscores
+        value = raw_score.get("value")
+        if isinstance(value, (int, float)):
+            return float(value), subscores
+        if isinstance(nested_score, (int, float)):
+            return float(nested_score), subscores
+        return None, subscores
+
+    subscores_attr = getattr(raw_score, "subscores", None)
+    subscores = subscores_attr if isinstance(subscores_attr, dict) and subscores_attr else None
+
+    score_attr = getattr(raw_score, "score", None)
+    if isinstance(score_attr, Score):
+        subscores = score_attr.subscores if score_attr.subscores else subscores
+        return score_attr.scalar, subscores
+    if isinstance(score_attr, (int, float)):
+        return float(score_attr), subscores
+
+    if isinstance(raw_score, (int, float)):
+        return float(raw_score), subscores
+
+    try:
+        return float(raw_score), subscores
+    except (TypeError, ValueError):
+        return None, subscores
 
 class PredictorFeedbackFn(Protocol):
     def __call__(
@@ -146,26 +193,18 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 format_failure_score=self.failure_score,
                 callback_metadata=eval_callback_metadata,
             )
-            scores = []
+            scores: list[float] = []
+            subscores: list[dict[str, float] | None] = []
             outputs = []
             for t in trajs:
                 outputs.append(t["prediction"])
-                if hasattr(t["prediction"], "__class__") and t.get("score") is None:
-                    scores.append(self.failure_score)
-                else:
-                    score = t["score"]
-                    if isinstance(score, Score):
-                        score = score.scalar
-                    elif isinstance(score, dict) and "score" in score:
-                        score = score["score"]
-                    else:
-                        attr_score = getattr(score, "score", None)
-                        if isinstance(attr_score, Score):
-                            score = attr_score.scalar
-                        elif attr_score is not None:
-                            score = attr_score
-                    scores.append(score)
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
+                raw_score = t.get("score")
+                scalar_score, subscore_dict = _extract_score_and_subscores(raw_score)
+                if scalar_score is None:
+                    scalar_score = self.failure_score
+                scores.append(scalar_score)
+                subscores.append(subscore_dict)
+            return EvaluationBatch(outputs=outputs, scores=scores, subscores=subscores, trajectories=trajs)
         else:
             evaluator = Evaluate(
                 devset=batch,
@@ -178,23 +217,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             )
             res = evaluator(program)
             outputs = [r[1] for r in res.results]
-            scores = [r[2] for r in res.results]
-            coerced_scores = []
-            for s in scores:
-                if isinstance(s, Score):
-                    coerced_scores.append(s.scalar)
-                elif isinstance(s, dict) and "score" in s:
-                    coerced_scores.append(s["score"])
-                else:
-                    attr_score = getattr(s, "score", None)
-                    if isinstance(attr_score, Score):
-                        coerced_scores.append(attr_score.scalar)
-                    elif attr_score is not None:
-                        coerced_scores.append(attr_score)
-                    else:
-                        coerced_scores.append(s)
-            scores = coerced_scores
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+            scores: list[float] = []
+            subscores: list[dict[str, float] | None] = []
+            for _, _, raw_score in res.results:
+                scalar_score, subscore_dict = _extract_score_and_subscores(raw_score)
+                if scalar_score is None:
+                    scalar_score = self.failure_score
+                scores.append(scalar_score)
+                subscores.append(subscore_dict)
+            return EvaluationBatch(outputs=outputs, scores=scores, subscores=subscores, trajectories=None)
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update) -> dict[str, list[ReflectiveExample]]:
         from dspy.teleprompt.bootstrap_trace import FailedPrediction
@@ -214,17 +245,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 trace = data["trace"]
                 example = data["example"]
                 prediction = data["prediction"]
-                module_score = data["score"]
-                if isinstance(module_score, Score):
-                    module_score = module_score.scalar
-                elif isinstance(module_score, dict) and "score" in module_score:
-                    module_score = module_score["score"]
-                else:
-                    attr_score = getattr(module_score, "score", None)
-                    if isinstance(attr_score, Score):
-                        module_score = attr_score.scalar
-                    elif attr_score is not None:
-                        module_score = attr_score
+                raw_score = data["score"]
+                module_score, _ = _extract_score_and_subscores(raw_score)
+                if module_score is None:
+                    module_score = self.failure_score
 
                 trace_instances = [t for t in trace if t[0].signature.equals(module.signature)]
                 if not self.add_format_failure_as_feedback:

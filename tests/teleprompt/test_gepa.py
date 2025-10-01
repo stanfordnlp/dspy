@@ -8,6 +8,7 @@ import pytest
 import dspy
 import dspy.clients
 from dspy import Example
+from dspy.metrics import subscore
 from dspy.predict import Predict
 from dspy.teleprompt.gepa import instruction_proposal
 from dspy.utils.dummies import DummyLM
@@ -43,6 +44,11 @@ def bad_metric(example, prediction):
     return 0.0
 
 
+def metric_with_subscores(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    score = subscore("acc", 1.0 if example.output == prediction.output else 0.0)
+    return dspy.Prediction(score=score, feedback="")
+
+
 def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
     from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
     from dspy.teleprompt.gepa import gepa_utils
@@ -75,6 +81,33 @@ def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
     adapter.evaluate(batch=[], candidate={}, capture_traces=True)
 
     assert captured_kwargs["callback_metadata"] == {"disable_logging": True}
+
+
+def test_adapter_evaluate_collects_subscores(monkeypatch):
+    from dspy.teleprompt.gepa import gepa_utils
+
+    class EchoModule(dspy.Module):
+        def forward(self, **kwargs):  # pragma: no cover - simple echo module
+            return dspy.Prediction(output=kwargs["input"])
+
+    adapter = gepa_utils.DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=metric_with_subscores,
+        feedback_map={},
+        failure_score=0.0,
+    )
+
+    monkeypatch.setattr(
+        gepa_utils.DspyAdapter,
+        "build_program",
+        lambda self, candidate: EchoModule(),
+    )
+
+    batch = [Example(input="foo", output="foo").with_inputs("input")]
+    evaluation = adapter.evaluate(batch=batch, candidate={}, capture_traces=False)
+
+    assert evaluation.scores == [1.0]
+    assert evaluation.subscores == [{"acc": 1.0}]
 
 
 @pytest.fixture

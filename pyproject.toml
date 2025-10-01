@@ -43,7 +43,7 @@ dependencies = [
     "pillow>=10.1.0",
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
-    "gepa[dspy]==0.0.17",
+    "gepa[dspy] @ git+https://github.com/MatsErdkamp/gepa@f9056ebfc38c99f2bc2e6caa54b72af764d98c1b",
 ]
 
 [project.optional-dependencies]
