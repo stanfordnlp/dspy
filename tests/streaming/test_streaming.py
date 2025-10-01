@@ -949,7 +949,7 @@ async def test_streaming_with_citations():
 
     async def citation_stream(*args, **kwargs):
         # Stream chunks with citation data in provider_specific_fields
-        # To verify the realistic senario with more than 10 chunks in the stream, locate more than 10 chunks before the citation.
+        # To verify the realistic scenario with more than 10 chunks in the stream, include more than 10 chunks before the citation.
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" answer"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
@@ -1008,10 +1008,10 @@ async def test_streaming_with_citations():
             async for value in output:
                 if isinstance(value, dspy.streaming.StreamResponse) and value.signature_field_name == "citations":
                     citation_chunks.append(value)
+                elif isinstance(value, dspy.streaming.StreamResponse) and value.signature_field_name == "answer":
+                    answer_chunks.append(value.chunk)
                 elif isinstance(value, dspy.Prediction):
                     final_prediction = value
-                else:
-                    answer_chunks.append(value.chunk)
 
             # Test that we received citation chunks from streaming
             assert len(citation_chunks) > 0
