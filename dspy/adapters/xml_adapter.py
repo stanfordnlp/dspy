@@ -1,8 +1,10 @@
 import re
 from typing import Any
 
+from pydantic.fields import FieldInfo
+
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
-from dspy.adapters.utils import format_field_value
+from dspy.adapters.utils import format_field_value, translate_field_type
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 
@@ -23,8 +25,6 @@ class XMLAdapter(ChatAdapter):
         """
         XMLAdapter requires input and output fields to be wrapped in XML tags like `<field_name>`.
         """
-        from dspy.adapters.utils import translate_field_type
-        from pydantic.fields import FieldInfo
 
         parts = []
         parts.append("All interactions will be structured in the following way, with the appropriate values filled in.")
@@ -80,7 +80,7 @@ class XMLAdapter(ChatAdapter):
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
         message = "Respond with the corresponding output fields wrapped in XML tags: "
         message += ", then ".join(f"`<{f}>`" for f in signature.output_fields)
-        message += "."
+        message += ", and then end with the `<completed/>` tag."
         return message
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
