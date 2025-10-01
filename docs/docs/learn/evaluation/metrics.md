@@ -77,7 +77,7 @@ When this metric runs during evaluation or optimization, DSPy evaluates the retu
 - `subscores`: the resolved subscores, e.g. `{"accuracy": 1.0, "bleu": 0.73, "latency_s": 0.42}`.
 - `info`: metadata such as the canonical expression string and any per-subscore metadata you provided (bounds, maximize, units, cost, …).
 
-Optimizers can use those subscores directly for Pareto frontiers or constrained search, and evaluation tables will include additional columns for each subscore. If you coerce a subscore to `float()` early, DSPy still records it thanks to an internal collector.
+Optimizers can use those subscores directly for Pareto frontiers or constrained search, and evaluation tables will include additional columns for each subscore.
 
 Metrics that return subscores typically accept a third argument `ctx`, which contains runtime information (latency, token usage, optional seed). If you omit `subscore`, nothing changes—legacy metrics that return a plain float continue to work as before.
 
