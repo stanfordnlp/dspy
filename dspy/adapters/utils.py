@@ -33,10 +33,12 @@ def serialize_for_json(value: Any) -> Any:
         return str(value)
 
 
-def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> str | dict:
+def format_field_value(field_info: FieldInfo, value: Any, assume_text=True, is_placeholder=False) -> str | dict:
     """
     Formats the value of the specified field according to the field's DSPy type (input or output),
     annotation (e.g. str, int, etc.), and the type of the value itself.
+
+    This is used to format both the placeholder that goes in the system prompt and the actual value itself.
 
     Args:
       field_info: Information about the field, including its DSPy field type and annotation.
@@ -45,6 +47,20 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
       The formatted value of the field, represented as a string.
     """
     string_value = None
+
+    # If the annotation is a Type subclass, but the value is not an instance of that type, and not a placeholder,
+    # then check if it's a valid serialized custom type string; otherwise, raise.
+    if (
+        issubclass(field_info.annotation, DspyType)
+        and not isinstance(value, field_info.annotation)
+        and not is_placeholder
+    ):
+        # Allow serialized custom type string (e.g., when loading from saved state)
+        if isinstance(value, str) and value.startswith("<<CUSTOM-TYPE-START-IDENTIFIER>>") and value.endswith("<<CUSTOM-TYPE-END-IDENTIFIER>>"):
+            pass  # Accept as valid serialized custom type
+        else:
+            raise TypeError(f"Value {value} is not an instance of {field_info.annotation}")
+
     if isinstance(value, list) and field_info.annotation is str:
         # If the field has no special type requirements, format it as a nice numbered list for the LM.
         string_value = _format_input_list_field_value(value)
