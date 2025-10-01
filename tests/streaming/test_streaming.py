@@ -949,22 +949,27 @@ async def test_streaming_with_citations():
 
     async def citation_stream(*args, **kwargs):
         # Stream chunks with citation data in provider_specific_fields
+        # To verify the realistic scenario with more than 10 chunks in the stream, include more than 10 chunks before the citation.
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" answer"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="Water"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" boils"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" at"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" 100°C"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="."))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content='[{"type": "char_location", "cited_text": "Water boils at 100°C", "document_index": 0, "document_title": "Physics Facts", "start_char_index": 0, "end_char_index": 19}]'))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="A"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="c"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="c"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="o"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="r"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="d"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="i"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="n"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="g"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" to "))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="the references,"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(
             content="",
             provider_specific_fields={
                 "citation": {
                     "type": "char_location",
-                    "cited_text": "Water boils at 100°C",
+                    "cited_text": "water boils at 100°C",
                     "document_index": 0,
                     "document_title": "Physics Facts",
                     "start_char_index": 0,
@@ -972,6 +977,11 @@ async def test_streaming_with_citations():
                 }
             }
         ))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" water"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" boils"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" at"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" 100°C"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="."))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" completed"))])
@@ -982,6 +992,7 @@ async def test_streaming_with_citations():
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="answer"),
                 dspy.streaming.StreamListener(signature_field_name="citations"),
             ],
         )
@@ -992,10 +1003,13 @@ async def test_streaming_with_citations():
         with dspy.context(lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False), adapter=dspy.ChatAdapter(native_response_types=[Citations])):
             output = program(documents=docs, question="What temperature does water boil?")
             citation_chunks = []
+            answer_chunks = []
             final_prediction = None
             async for value in output:
                 if isinstance(value, dspy.streaming.StreamResponse) and value.signature_field_name == "citations":
                     citation_chunks.append(value)
+                elif isinstance(value, dspy.streaming.StreamResponse) and value.signature_field_name == "answer":
+                    answer_chunks.append(value.chunk)
                 elif isinstance(value, dspy.Prediction):
                     final_prediction = value
 
@@ -1004,10 +1018,14 @@ async def test_streaming_with_citations():
             citation_chunk = citation_chunks[0]
             assert isinstance(citation_chunk.chunk, Citations)
             assert len(citation_chunk.chunk) == 1
-            assert citation_chunk.chunk[0].cited_text == "Water boils at 100°C"
+            assert citation_chunk.chunk[0].cited_text == "water boils at 100°C"
             assert citation_chunk.chunk[0].document_title == "Physics Facts"
+
+            # Verify the answer chunks are correct
+            assert "".join(answer_chunks) == "According to the references, water boils at 100°C."
 
             # Test that prediction contains the expected fields
             assert final_prediction is not None
             assert hasattr(final_prediction, "answer")
             assert hasattr(final_prediction, "citations")
+            assert final_prediction.answer == "According to the references, water boils at 100°C."
