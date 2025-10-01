@@ -7,6 +7,7 @@ import pytest
 import dspy
 from dspy.evaluate.evaluate import Evaluate, EvaluationResult
 from dspy.evaluate.metrics import answer_exact_match
+from dspy.metrics import Scores, subscore
 from dspy.predict import Predict
 from dspy.utils.callback import BaseCallback
 from dspy.utils.dummies import DummyLM
@@ -50,8 +51,42 @@ def test_evaluate_call():
         metric=answer_exact_match,
         display_progress=False,
     )
-    score = ev(program)
-    assert score.score == 100.0
+    result = ev(program)
+    assert result.score == 100.0
+    assert all(isinstance(score_obj, Scores) for *_, score_obj in result.results)
+    assert all(score_obj.aggregate == 1.0 for *_, score_obj in result.results)
+
+
+def test_evaluate_with_subscores():
+    dspy.settings.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+            }
+        )
+    )
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    program = Predict("question -> answer")
+
+    def metric_with_axes(example, pred, ctx=None):
+        acc = subscore("acc", answer_exact_match(example, pred))
+        latency = subscore("latency_s", (ctx.latency_ms or 0) / 1000 if ctx else 0, maximize=False, units="s")
+        return acc - 0.05 * latency
+
+    ev = Evaluate(
+        devset=devset,
+        metric=metric_with_axes,
+        display_progress=False,
+    )
+
+    result = ev(program)
+    assert result.score == pytest.approx(100.0, abs=0.5)
+    for _, _, scores in result.results:
+        assert isinstance(scores, Scores)
+        assert "acc" in scores.axes
+        assert "latency_s" in scores.axes
+        assert scores.info.get("expr") is not None
 
 
 @pytest.mark.extra
@@ -67,9 +102,9 @@ def test_construct_result_df():
         metric=answer_exact_match,
     )
     results = [
-        (devset[0], {"answer": "2"}, 100.0),
-        (devset[1], {"answer": "4"}, 100.0),
-        (devset[2], {"answer": "-1"}, 0.0),
+        (devset[0], {"answer": "2"}, Scores(100.0)),
+        (devset[1], {"answer": "4"}, Scores(100.0)),
+        (devset[2], {"answer": "-1"}, Scores(0.0)),
     ]
     result_df = ev._construct_result_table(results, answer_exact_match.__name__)
     pd.testing.assert_frame_equal(
@@ -98,6 +133,7 @@ def test_multithread_evaluate_call():
     )
     result = ev(program)
     assert result.score == 100.0
+    assert all(isinstance(score_obj, Scores) for *_, score_obj in result.results)
 
 
 def test_multi_thread_evaluate_call_cancelled(monkeypatch):
@@ -259,5 +295,5 @@ def test_evaluate_callback():
     assert callback.end_call_count == 1
 
 def test_evaluation_result_repr():
-    result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])
+    result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, Scores(100.0))])
     assert repr(result) == "EvaluationResult(score=100.0, results=<list of 1 results>)"

@@ -1,4 +1,13 @@
+from __future__ import annotations
+
+from typing import Any, Callable
+
 from dspy.primitives.example import Example
+from dspy.metrics import Scores
+from dspy.metrics._subscores import _begin_collect, _end_collect, finalize_scores
+
+
+ScoreFn = Callable[[Example, "Prediction", Any], Any]
 
 
 class Prediction(Example):
@@ -23,6 +32,16 @@ class Prediction(Example):
 
         self._completions = None
         self._lm_usage = None
+        self._score_value: float | None = None
+        self._score_fn: ScoreFn | None = None
+        self._scores_obj: Scores | None = None
+        self._bound_example: Example | None = None
+        self._resolved_ctx_key: Any = None
+
+        if "score" in self._store:
+            initial_score = self._store.pop("score")
+            if initial_score is not None:
+                self.score = initial_score
 
     def get_lm_usage(self):
         return self._lm_usage
@@ -51,69 +70,143 @@ class Prediction(Example):
         return self.__repr__()
 
     def __float__(self):
-        if "score" not in self._store:
-            raise ValueError("Prediction object does not have a 'score' field to convert to float.")
-        return float(self._store["score"])
+        return float(self._require_numeric_score())
 
     def __add__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() + other
         elif isinstance(other, Prediction):
-            return self.__float__() + float(other)
+            return self._require_numeric_score() + other._require_numeric_score()
         raise TypeError(f"Unsupported type for addition: {type(other)}")
 
     def __radd__(self, other):
         if isinstance(other, (float, int)):
             return other + self.__float__()
         elif isinstance(other, Prediction):
-            return float(other) + self.__float__()
+            return other._require_numeric_score() + self._require_numeric_score()
         raise TypeError(f"Unsupported type for addition: {type(other)}")
 
     def __truediv__(self, other):
         if isinstance(other, (float, int)):
-            return self.__float__() / other
+            return self._require_numeric_score() / other
         elif isinstance(other, Prediction):
-            return self.__float__() / float(other)
+            return self._require_numeric_score() / other._require_numeric_score()
         raise TypeError(f"Unsupported type for division: {type(other)}")
 
     def __rtruediv__(self, other):
         if isinstance(other, (float, int)):
-            return other / self.__float__()
+            return other / self._require_numeric_score()
         elif isinstance(other, Prediction):
-            return float(other) / self.__float__()
+            return other._require_numeric_score() / self._require_numeric_score()
         raise TypeError(f"Unsupported type for division: {type(other)}")
 
     def __lt__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() < other
         elif isinstance(other, Prediction):
-            return self.__float__() < float(other)
+            return self._require_numeric_score() < other._require_numeric_score()
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
 
     def __le__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() <= other
         elif isinstance(other, Prediction):
-            return self.__float__() <= float(other)
+            return self._require_numeric_score() <= other._require_numeric_score()
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
 
     def __gt__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() > other
         elif isinstance(other, Prediction):
-            return self.__float__() > float(other)
+            return self._require_numeric_score() > other._require_numeric_score()
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
 
     def __ge__(self, other):
         if isinstance(other, (float, int)):
             return self.__float__() >= other
         elif isinstance(other, Prediction):
-            return self.__float__() >= float(other)
+            return self._require_numeric_score() >= other._require_numeric_score()
         raise TypeError(f"Unsupported type for comparison: {type(other)}")
 
     @property
     def completions(self):
         return self._completions
+
+    @property
+    def score(self) -> float | ScoreFn | None:
+        if self._score_value is not None:
+            return self._score_value
+        return self._score_fn
+
+    @score.setter
+    def score(self, value: float | ScoreFn | None) -> None:
+        self._scores_obj = None
+        self._resolved_ctx_key = None
+        if callable(value):
+            self._score_fn = value
+            self._score_value = None
+            self._store.pop("score", None)
+        else:
+            self._score_fn = None
+            if value is None:
+                self._score_value = None
+                self._store.pop("score", None)
+            else:
+                self._score_value = float(value)
+                self._store["score"] = self._score_value
+
+    @property
+    def scores(self) -> Scores | None:
+        if self._scores_obj is None and self._score_value is not None:
+            self._scores_obj = Scores(self._score_value)
+        return self._scores_obj
+
+    def bind_example(self, example: Example) -> None:
+        self._bound_example = example
+
+    def resolve_score(self, ctx: Any | None = None, *, force: bool = False) -> Scores | None:
+        if self._score_fn is None:
+            return self.scores
+
+        ctx_key = getattr(ctx, "cache_key", None)
+        if not force and self._scores_obj is not None and self._resolved_ctx_key == ctx_key:
+            return self._scores_obj
+
+        if self._bound_example is None:
+            raise RuntimeError("Cannot resolve score: no bound example. Call bind_example(ex).")
+
+        token = _begin_collect()
+        try:
+            result = self._score_fn(self._bound_example, self, ctx)
+        finally:
+            collector = _end_collect(token)
+
+        ctx_info = {}
+        if ctx is not None:
+            usage = getattr(ctx, "usage", None)
+            latency_ms = getattr(ctx, "latency_ms", None)
+            seed = getattr(ctx, "seed", None)
+            if usage is not None:
+                ctx_info["usage"] = usage
+            if latency_ms is not None:
+                ctx_info["latency_ms"] = latency_ms
+            if seed is not None:
+                ctx_info["seed"] = seed
+
+        scores = finalize_scores(result, collector, ctx_info=ctx_info)
+        self._store_scores(scores, ctx_key)
+        return scores
+
+    def _require_numeric_score(self) -> float:
+        if self._score_value is None:
+            raise TypeError("Prediction score is not resolved to a numeric value.")
+        return float(self._score_value)
+
+    def _store_scores(self, scores: Scores, ctx_key: Any | None = None) -> None:
+        self._scores_obj = scores
+        self._score_value = scores.aggregate
+        self._store["score"] = self._score_value
+        self._resolved_ctx_key = ctx_key
 
 
 class Completions:

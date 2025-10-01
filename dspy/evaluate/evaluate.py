@@ -1,7 +1,10 @@
 import csv
+import dataclasses
 import importlib
+import inspect
 import json
 import logging
+import time
 import types
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -11,6 +14,8 @@ if TYPE_CHECKING:
 import tqdm
 
 import dspy
+from dspy.metrics import Scores
+from dspy.metrics._subscores import _begin_collect, _end_collect, finalize_scores
 from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
 from dspy.utils.parallelizer import ParallelExecutor
@@ -43,6 +48,23 @@ except ImportError:
 # we print the number of failures, the first N examples that failed, and the first N exceptions raised.
 
 logger = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class EvaluationMetricContext:
+    usage: dict | None = None
+    latency_ms: float | None = None
+    seed: int | None = None
+
+    @property
+    def cache_key(self) -> tuple[Any, ...]:
+        usage_key = None
+        if self.usage is not None:
+            try:
+                usage_key = json.dumps(self.usage, sort_keys=True, default=repr)
+            except TypeError:
+                usage_key = repr(self.usage)
+        return (self.latency_ms, usage_key, self.seed)
 
 
 class EvaluationResult(Prediction):
@@ -109,6 +131,7 @@ class Evaluate:
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
+        self._metric_accepts_ctx_cache: dict[int, bool] = {}
 
         if "return_outputs" in kwargs:
             raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
@@ -168,16 +191,31 @@ class Evaluate:
         )
 
         def process_item(example):
+            start_time = time.perf_counter()
             prediction = program(**example.inputs())
-            score = metric(example, prediction)
-            return prediction, score
+            latency_ms = (time.perf_counter() - start_time) * 1000.0
+
+            prediction_obj = _extract_prediction_object(prediction)
+            usage = prediction_obj.get_lm_usage() if isinstance(prediction_obj, Prediction) else None
+            ctx = EvaluationMetricContext(usage=usage, latency_ms=latency_ms)
+
+            if isinstance(prediction_obj, Prediction):
+                prediction_obj.bind_example(example)
+
+            scores = self._execute_metric(metric, example, prediction, ctx)
+
+            if isinstance(prediction_obj, Prediction) and isinstance(scores, Scores):
+                prediction_obj._store_scores(scores, ctx.cache_key)
+
+            return prediction, scores
 
         results = executor.execute(process_item, devset)
         assert len(devset) == len(results)
 
-        results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
+        results = [((dspy.Prediction(), Scores(self.failure_score)) if r is None else r) for r in results]
         results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
-        ncorrect, ntotal = sum(score for *_, score in results), len(devset)
+        aggregates = [score.aggregate for *_, score in results]
+        ncorrect, ntotal = sum(aggregates), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
@@ -227,19 +265,19 @@ class Evaluate:
 
     @staticmethod
     def _prepare_results_output(
-            results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+            results: list[tuple["dspy.Example", "dspy.Example", Scores]], metric_name: str
     ):
         return [
             (
-                merge_dicts(example, prediction) | {metric_name: score}
+                merge_dicts(example, prediction) | _scores_to_row(score, metric_name)
                 if prediction_is_dictlike(prediction)
-                else dict(example) | {"prediction": prediction, metric_name: score}
+                else dict(example) | {"prediction": prediction} | _scores_to_row(score, metric_name)
             )
             for example, prediction, score in results
         ]
 
     def _construct_result_table(
-        self, results: list[tuple["dspy.Example", "dspy.Example", Any]], metric_name: str
+        self, results: list[tuple["dspy.Example", "dspy.Example", Scores]], metric_name: str
     ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
@@ -261,6 +299,49 @@ class Evaluate:
         result_df = result_df.map(truncate_cell) if hasattr(result_df, "map") else result_df.applymap(truncate_cell)
 
         return result_df.rename(columns={"correct": metric_name})
+
+    def _execute_metric(
+        self,
+        metric: Callable | None,
+        example: "dspy.Example",
+        prediction: Any,
+        ctx: EvaluationMetricContext,
+    ) -> Scores:
+        if metric is None:
+            if isinstance(prediction, Prediction):
+                scores = prediction.resolve_score(ctx)
+                if scores is None:
+                    raise ValueError("Prediction does not provide a score and no metric was supplied.")
+                return scores
+            raise ValueError("No metric provided for evaluation.")
+
+        token = _begin_collect()
+        try:
+            if self._metric_accepts_context(metric):
+                result = metric(example, prediction, ctx)
+            else:
+                result = metric(example, prediction)
+        finally:
+            collector = _end_collect(token)
+
+        ctx_info: dict[str, Any] = {}
+        if ctx.usage is not None:
+            ctx_info["usage"] = ctx.usage
+        if ctx.latency_ms is not None:
+            ctx_info["latency_ms"] = ctx.latency_ms
+        if ctx.seed is not None:
+            ctx_info["seed"] = ctx.seed
+
+        return finalize_scores(result, collector, ctx_info=ctx_info)
+
+    def _metric_accepts_context(self, metric: Callable) -> bool:
+        cache_key = id(metric)
+        cached = self._metric_accepts_ctx_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        accepts = _callable_accepts_context(metric)
+        self._metric_accepts_ctx_cache[cache_key] = accepts
+        return accepts
 
     def _display_result_table(self, result_df: "pd.DataFrame", display_table: bool | int, metric_name: str):
         """
@@ -319,6 +400,39 @@ def merge_dicts(d1, d2) -> dict:
             merged[k] = v
 
     return merged
+
+
+def _scores_to_row(scores: Scores, metric_name: str) -> dict[str, Any]:
+    row = {metric_name: scores.aggregate}
+    for axis_name, value in scores.axes.items():
+        row[f"{metric_name}.{axis_name}"] = value
+    expr = scores.info.get("expr") if isinstance(scores.info, dict) else None
+    if expr is not None:
+        row[f"{metric_name}.expr"] = expr
+    return row
+
+
+def _extract_prediction_object(prediction: Any) -> Any:
+    if isinstance(prediction, Prediction):
+        return prediction
+    if isinstance(prediction, tuple) and prediction:
+        first = prediction[0]
+        if isinstance(first, Prediction):
+            return first
+    return prediction
+
+
+def _callable_accepts_context(metric: Callable) -> bool:
+    try:
+        sig = inspect.signature(metric)
+    except (TypeError, ValueError):
+        return True
+
+    params = list(sig.parameters.values())
+    for param in params:
+        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            return True
+    return len(params) >= 3
 
 
 def truncate_cell(content) -> str:

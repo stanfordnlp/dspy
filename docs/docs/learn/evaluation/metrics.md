@@ -55,6 +55,36 @@ def validate_context_and_answer(example, pred, trace=None):
 Defining a good metric is an iterative process, so doing some initial evaluations and looking at your data and outputs is key.
 
 
+## Multi-objective metrics with subscores
+
+Many real systems must balance more than one objective: quality vs. leakage, answer accuracy vs. latency, etc. DSPy metrics now expose a simple helper called [`dspy.metrics.subscore`](../../api/index.md) that lets you declare named subscores inside an ordinary Python metric. Each `subscore` behaves like a float so you can keep writing intuitive math, while DSPy records the axis values, metadata, and the expression you returned.
+
+```python
+from dspy.metrics import subscore
+
+def metric(example, pred, ctx=None):
+    acc = subscore("accuracy", answer_exact_match(example, pred), bounds=(0, 1))
+    bleu = subscore("bleu", bleu_like(example.answer, pred.answer), bounds=(0, 1))
+    latency = subscore(
+        "latency_s",
+        (ctx.latency_ms or 0) / 1000 if ctx else 0,
+        maximize=False,
+        units="s",
+    )
+    return acc**2 + 0.3 * bleu - 0.02 * latency
+```
+
+When this metric runs during evaluation or optimization, DSPy evaluates the returned expression to obtain the aggregate scalar (preserving backwards compatibility), but also keeps a `Scores` object that exposes:
+
+- `aggregate`: the numeric value of the expression (`acc**2 + …`).
+- `axes`: the resolved subscores, e.g. `{"accuracy": 1.0, "bleu": 0.73, "latency_s": 0.42}`.
+- `info`: metadata such as the canonical expression string and any per-axis metadata you provided (bounds, maximize, units, cost, …).
+
+Optimizers can use those axes directly for Pareto frontiers or constrained search, and evaluation tables will include additional columns for each axis. If you coerce a subscore to `float()` early, DSPy still records it thanks to an internal collector.
+
+Metrics that return subscores typically accept a third argument `ctx`, which contains runtime information (latency, token usage, optional seed). If you omit `subscore`, nothing changes—legacy metrics that return a plain float continue to work as before.
+
+
 ## Evaluation
 
 Once you have a metric, you can run evaluations in a simple Python loop.
