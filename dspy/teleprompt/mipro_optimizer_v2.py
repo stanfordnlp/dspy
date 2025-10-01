@@ -185,18 +185,17 @@ class MIPROv2(Teleprompter):
             # Step 1: Bootstrap few-shot examples
             demo_candidates = self._bootstrap_fewshot_examples(program, trainset, seed, teacher)
 
-        with dspy.context(lm=self.prompt_model):
-            # Step 2: Propose instruction candidates
-            instruction_candidates = self._propose_instructions(
-                program,
-                trainset,
-                demo_candidates,
-                view_data_batch_size,
-                program_aware_proposer,
-                data_aware_proposer,
-                tip_aware_proposer,
-                fewshot_aware_proposer,
-            )
+        # Step 2: Propose instruction candidates
+        instruction_candidates = self._propose_instructions(
+            program,
+            trainset,
+            demo_candidates,
+            view_data_batch_size,
+            program_aware_proposer,
+            data_aware_proposer,
+            tip_aware_proposer,
+            fewshot_aware_proposer,
+        )
 
         # If zero-shot, discard demos
         if zeroshot_opt:
