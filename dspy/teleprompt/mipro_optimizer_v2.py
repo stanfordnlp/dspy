@@ -90,6 +90,9 @@ class MIPROv2(Teleprompter):
         self.seed = seed
         self.rng = None
 
+        if not self.prompt_model or not self.task_model:
+            raise ValueError("Either provide both prompt_model and task_model or set a default LM through dspy.configure(lm=...)")
+
     def compile(
         self,
         student: Any,
