@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
 import warnings
+from typing import Any, Callable
 
 from ._subscores import (
     Score,

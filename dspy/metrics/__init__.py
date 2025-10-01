@@ -1,5 +1,6 @@
 """Public helpers for metric subscores and score aggregation."""
 
+from ._resolver import resolve_metric_score
 from ._subscores import (
     Score,
     coerce_metric_value,
@@ -9,7 +10,6 @@ from ._subscores import (
     subscore_max,
     subscore_min,
 )
-from ._resolver import resolve_metric_score
 
 __all__ = [
     "Score",

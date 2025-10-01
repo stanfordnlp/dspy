@@ -7,8 +7,8 @@ import orjson
 
 import dspy
 from dspy.adapters.utils import get_field_description_string
-from dspy.signatures import InputField, OutputField
 from dspy.metrics import resolve_metric_score
+from dspy.signatures import InputField, OutputField
 
 logger = logging.getLogger(__name__)
 

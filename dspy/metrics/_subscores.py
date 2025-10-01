@@ -13,12 +13,11 @@ evaluation (e.g., canonical expressions, metadata, usage statistics).
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import math
 import warnings
 from typing import Any, Iterable
-
-import contextvars
 
 __all__ = [
     "Score",
@@ -66,44 +65,44 @@ class Score:
 class SubscoreExpr:
     """Tiny expression DAG that keeps arithmetic over subscores traceable."""
 
-    __slots__ = ("op", "args")
+    __slots__ = ("args", "op")
 
     def __init__(self, op: str, args: tuple[Any, ...]):
         self.op = op
         self.args = args
 
     # Arithmetic ---------------------------------------------------------
-    def __add__(self, other: Any) -> "SubscoreExpr":
+    def __add__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("add", (self, other))
 
-    def __radd__(self, other: Any) -> "SubscoreExpr":
+    def __radd__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("add", (other, self))
 
-    def __sub__(self, other: Any) -> "SubscoreExpr":
+    def __sub__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("sub", (self, other))
 
-    def __rsub__(self, other: Any) -> "SubscoreExpr":
+    def __rsub__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("sub", (other, self))
 
-    def __mul__(self, other: Any) -> "SubscoreExpr":
+    def __mul__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("mul", (self, other))
 
-    def __rmul__(self, other: Any) -> "SubscoreExpr":
+    def __rmul__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("mul", (other, self))
 
-    def __truediv__(self, other: Any) -> "SubscoreExpr":
+    def __truediv__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("div", (self, other))
 
-    def __rtruediv__(self, other: Any) -> "SubscoreExpr":
+    def __rtruediv__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("div", (other, self))
 
-    def __pow__(self, other: Any) -> "SubscoreExpr":
+    def __pow__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("pow", (self, other))
 
-    def __rpow__(self, other: Any) -> "SubscoreExpr":
+    def __rpow__(self, other: Any) -> SubscoreExpr:
         return SubscoreExpr("pow", (other, self))
 
-    def __neg__(self) -> "SubscoreExpr":
+    def __neg__(self) -> SubscoreExpr:
         return SubscoreExpr("neg", (self,))
 
     def __float__(self) -> float:
@@ -184,7 +183,7 @@ class SubscoreExpr:
 class SubscoreValue(SubscoreExpr):
     """Leaf node representing a named subscore."""
 
-    __slots__ = ("name", "value", "meta")
+    __slots__ = ("meta", "name", "value")
 
     def __init__(self, name: str, value: float, meta: dict[str, Any]):
         self.name = name

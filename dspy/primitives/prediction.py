@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from dspy.primitives.example import Example
 from dspy.metrics import Score
 from dspy.metrics._subscores import _begin_collect, _end_collect, finalize_scores
-
+from dspy.primitives.example import Example
 
 ScoreFn = Callable[[Example, "Prediction", Any], Any]
 
