@@ -163,3 +163,34 @@ def test_nested_batch_method():
         "test output 3",
         "test output 4",
     }
+
+
+def test_batch_with_failed_examples():
+    class FailingModule(dspy.Module):
+        def forward(self, value: int) -> str:
+            if value == 42:
+                raise ValueError("test error")
+            return f"success-{value}"
+
+    module = FailingModule()
+
+    examples = [
+        dspy.Example(value=1).with_inputs("value"),
+        dspy.Example(value=42).with_inputs("value"),  # This will fail
+        dspy.Example(value=3).with_inputs("value"),
+    ]
+
+    results, failed_examples, exceptions = module.batch(
+        examples,
+        return_failed_examples=True,
+        provide_traceback=True,
+    )
+
+    assert results == ["success-1", None, "success-3"]
+
+    assert len(failed_examples) == 1
+    assert failed_examples[0].inputs()["value"] == 42
+
+    assert len(exceptions) == 1
+    assert isinstance(exceptions[0], ValueError)
+    assert str(exceptions[0]) == "test error"

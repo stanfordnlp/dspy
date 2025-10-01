@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.0.3"
+version="3.0.4b1"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
@@ -40,9 +40,10 @@ dependencies = [
     "cachetools>=5.5.0",
     "cloudpickle>=3.0.0",
     "rich>=13.7.1",
+    "pillow>=10.1.0",
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
-    "gepa[dspy]==0.0.12",
+    "gepa[dspy]==0.0.17",
 ]
 
 [project.optional-dependencies]

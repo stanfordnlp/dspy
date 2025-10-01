@@ -683,6 +683,7 @@ dependencies = [
     { name = "openai" },
     { name = "optuna" },
     { name = "orjson" },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "regex" },
     { name = "requests" },

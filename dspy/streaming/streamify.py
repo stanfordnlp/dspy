@@ -185,12 +185,11 @@ def streamify(
                     else:
                         # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
                         # determine if we should yield a value to the user.
-                        output = None
                         for listener in predict_id_to_listener[value.predict_id]:
-                            # There should be at most one listener provides a return value.
-                            output = listener.receive(value) or output
-                        if output:
-                            yield output
+                            # In some special cases such as Citation API, it is possible that multiple listeners
+                            # return values at the same time due to the chunk buffer of the listener.
+                            if output := listener.receive(value):
+                                yield output
                 elif isinstance(value, StatusMessage):
                     yield value
                 elif isinstance(value, Prediction):

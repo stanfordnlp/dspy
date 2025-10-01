@@ -64,7 +64,15 @@ class Parallel:
         # Execute the processing function over the execution pairs
         results = executor.execute(process_pair, exec_pairs)
 
+        # Populate failed examples and exceptions from the executor
         if self.return_failed_examples:
+            for failed_idx in executor.failed_indices:
+                if failed_idx < len(exec_pairs):
+                    _, original_example = exec_pairs[failed_idx]
+                    self.failed_examples.append(original_example)
+                    if exception := executor.exceptions_map.get(failed_idx):
+                        self.exceptions.append(exception)
+
             return results, self.failed_examples, self.exceptions
         else:
             return results

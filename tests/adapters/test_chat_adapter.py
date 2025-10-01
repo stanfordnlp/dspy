@@ -68,7 +68,7 @@ def test_chat_adapter_quotes_literals_as_expected(
 
     program = dspy.Predict(TestSignature)
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
 
     with mock.patch("litellm.completion") as mock_completion:
         program(input_text=input_value)
@@ -121,7 +121,7 @@ def test_chat_adapter_with_pydantic_models():
         question: str = dspy.InputField()
         output: Answer = dspy.OutputField()
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
@@ -157,7 +157,7 @@ def test_chat_adapter_signature_information():
         input2: int = dspy.InputField(desc="Integer Input")
         output: str = dspy.OutputField(desc="String Output")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:

@@ -106,11 +106,11 @@ response = predictor(
 
 # Execute the tool calls
 for call in response.outputs.tool_calls:
-    if call.name in tools:
-        result = tools[call.name](**call.args)
-        print(f"Tool: {call.name}")
-        print(f"Args: {call.args}")
-        print(f"Result: {result}")
+    # Execute the tool call
+    result = call.execute()
+    print(f"Tool: {call.name}")
+    print(f"Args: {call.args}")
+    print(f"Result: {result}")
 ```
 
 ### Understanding `dspy.Tool`
@@ -134,7 +134,7 @@ print(str(tool))        # Full tool description
 
 ### Understanding `dspy.ToolCalls`
 
-The `dspy.ToolCalls` type represents the output from a model that can make tool calls:
+The `dspy.ToolCalls` type represents the output from a model that can make tool calls. Each individual tool call can be executed using the `execute` method:
 
 ```python
 # After getting a response with tool calls
@@ -142,10 +142,18 @@ for call in response.outputs.tool_calls:
     print(f"Tool name: {call.name}")
     print(f"Arguments: {call.args}")
     
-    # Execute the tool
-    if call.name in tools:
-        result = tools[call.name](**call.args)
-        print(f"Result: {result}")
+    # Execute individual tool calls with different options:
+    
+    # Option 1: Automatic discovery (finds functions in locals/globals)
+    result = call.execute()  # Automatically finds functions by name
+
+    # Option 2: Pass tools as a dict (most explicit)
+    result = call.execute(functions={"weather": weather, "calculator": calculator})
+    
+    # Option 3: Pass Tool objects as a list
+    result = call.execute(functions=[dspy.Tool(weather), dspy.Tool(calculator)])
+    
+    print(f"Result: {result}")
 ```
 
 ## Using Native Tool Calling

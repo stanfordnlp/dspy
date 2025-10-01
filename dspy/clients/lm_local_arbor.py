@@ -1,13 +1,14 @@
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
+from urllib.parse import urljoin
 
 import openai
 import requests
 
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data
+from dspy.clients.utils_finetune import GRPOGroup, MultiGPUConfig, TrainDataFormat, TrainingStatus, save_data
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -70,7 +71,7 @@ class ArborReinforceJob(ReinforceJob):
         "lora": False,
     }
 
-    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs):
+    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
         # The teleprompter must ensure that this is set
         if "num_generations" not in train_kwargs:
             raise ValueError("num_generations must be set in the training kwargs")
@@ -80,6 +81,7 @@ class ArborReinforceJob(ReinforceJob):
         self.provider_job_id = None
         self.checkpoints = {}
         self.last_checkpoint = None
+        self.gpu_config = gpu_config
 
     def initialize(self):
         # TODO(GRPO Team): Set provider job ID
@@ -118,6 +120,8 @@ class ArborReinforceJob(ReinforceJob):
         api_base = self.lm.kwargs["api_base"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
+        # Only multi-GPU is supported for now
+        gpu_config_type = "multi"
         data = {
             "model": finetune_model,
             "num_generations": num_generations,
@@ -140,8 +144,12 @@ class ArborReinforceJob(ReinforceJob):
             "logging_steps": logging_steps,
             "max_context_length": max_context_length,
             "lora": lora,
+            "gpu_config": {
+                "type": gpu_config_type,
+                gpu_config_type: self.gpu_config,
+            },
         }
-        url = f"{api_base}fine_tuning/grpo/initialize"
+        url = urljoin(api_base, "fine_tuning/grpo/initialize")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url=url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to initialize GRPO: {response}"
@@ -158,7 +166,7 @@ class ArborReinforceJob(ReinforceJob):
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         data = {"job_id": self.provider_job_id, "model": finetune_model, "batch": train_group}
-        url = f"{api_base}fine_tuning/grpo/step"
+        url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/step")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
@@ -184,7 +192,7 @@ class ArborReinforceJob(ReinforceJob):
 
     def save_checkpoint(self, checkpoint_name: str, score: float | None = None):
         api_base = self.lm.kwargs["api_base"]
-        url = f"{api_base}fine_tuning/grpo/checkpoint"
+        url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/checkpoint")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id, "checkpoint_name": checkpoint_name}
         response = requests.post(url, headers=headers, json=body)
@@ -203,7 +211,7 @@ class ArborReinforceJob(ReinforceJob):
     def terminate(self):
         api_base = self.lm.kwargs["api_base"]
 
-        url = f"{api_base}fine_tuning/grpo/terminate"
+        url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/terminate")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id}
         response = requests.post(url, headers=headers, json=body)
@@ -214,14 +222,15 @@ class ArborReinforceJob(ReinforceJob):
         self.lm.model = ArborProvider._add_provider_prefix(current_model)
 
     def cancel(self):
-        if ArborProvider.does_job_exist(self.provider_job_id):
-            status = self.status()
-            if ArborProvider.is_terminal_training_status(status):
-                err_msg = "Jobs that are complete cannot be canceled."
-                err_msg += f" Job with ID {self.provider_job_id} is done."
-                raise Exception(err_msg)
-            openai.fine_tuning.jobs.cancel(self.provider_job_id)
-            self.provider_job_id = None
+        if self.provider_job_id:
+            api_base = self.lm.kwargs["api_base"]
+            url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/cancel")
+            headers = {"Content-Type": "application/json"}
+            response = requests.post(url, headers=headers)
+            if response.status_code == 200:
+                self.provider_job_id = None
+            else:
+                raise Exception(f"Failed to cancel GRPO job: {response.text}")
 
     def status(self) -> TrainingStatus:
         status = ArborProvider.get_training_status(self.provider_job_id)
@@ -245,7 +254,7 @@ class ArborProvider(Provider):
         launch_kwargs = launch_kwargs or lm.launch_kwargs
 
         # Make request to launch endpoint
-        response = requests.post(f"{api_base}chat/launch", json={"model": model, "launch_kwargs": launch_kwargs})
+        response = requests.post(urljoin(api_base, "chat/launch"), json={"model": model, "launch_kwargs": launch_kwargs})
 
         if response.status_code != 200:
             raise Exception(f"Failed to launch model. Status code: {response.status_code}, Response: {response.text}")
@@ -257,7 +266,7 @@ class ArborProvider(Provider):
         api_base = lm.kwargs["api_base"]
 
         response = requests.post(
-            f"{api_base}chat/kill",
+            urljoin(api_base, "chat/kill"),
         )
 
         if response.status_code != 200:

@@ -254,6 +254,7 @@ class BaseLM:
             result["tool_calls"] = tool_calls
         if len(reasoning_contents) > 0:
             result["reasoning_content"] = "".join(reasoning_contents)
+        # All `response.output` items map to one answer, so we return a list of size 1.
         return [result]
 
 

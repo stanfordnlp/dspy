@@ -8,6 +8,51 @@ import dspy
 from dspy.utils.dummies import DummyLM
 
 
+@pytest.mark.extra
+def test_tool_observation_preserves_custom_type():
+    pytest.importorskip("PIL.Image")
+    from PIL import Image
+
+    captured_calls = []
+
+    class SpyChatAdapter(dspy.ChatAdapter):
+        def format_user_message_content(self, signature, inputs, *args, **kwargs):
+            captured_calls.append((signature, dict(inputs)))
+            return super().format_user_message_content(signature, inputs, *args, **kwargs)
+
+    def make_images():
+        return dspy.Image("https://example.com/test.png"), dspy.Image(Image.new("RGB", (100, 100), "red"))
+
+
+    adapter = SpyChatAdapter()
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should call the image tool.",
+                "next_tool_name": "make_images",
+                "next_tool_args": {},
+            },
+            {
+                "next_thought": "I now have the image so I can finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {"reasoning": "image ready", "answer": "done"},
+        ],
+        adapter=adapter,
+    )
+    dspy.settings.configure(lm=lm, adapter=adapter)
+
+    react = dspy.ReAct("question -> answer", tools=[make_images])
+    react(question="Draw me something red")
+
+    sigs_with_obs = [sig for sig, inputs in captured_calls if "observation_0" in inputs]
+    assert sigs_with_obs, "Expected ReAct to format a trajectory containing observation_0"
+
+    observation_content = lm.history[1]["messages"][1]["content"]
+    assert sum(1 for part in observation_content if isinstance(part, dict) and part.get("type") == "image_url") == 2
+
+
 def test_tool_calling_with_pydantic_args():
     class CalendarEvent(BaseModel):
         name: str
