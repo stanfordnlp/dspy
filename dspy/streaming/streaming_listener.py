@@ -159,12 +159,9 @@ class StreamListener:
                 self.field_start_queue = []
                 return
 
-        if self.stream_start:
+        if self.stream_start and chunk_message:
             # The stream is started, we keep returning the token until we see the start of the next field.
             token = None
-            # Avoid putting empty tokens to the buffer.
-            if chunk_message:
-                self.field_end_queue.put(chunk_message)
             if self.field_end_queue.qsize() > 10:
                 # We keep the last 10 tokens in the buffer to check if they form a valid identifier for end_identifier,
                 # i.e., "[[ ## {next_field_name} ## ]]" for ChatAdapter to identify the end of the current field.
