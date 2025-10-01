@@ -166,12 +166,12 @@ class BaseLM:
 
     def _process_completion(self, response, merged_kwargs):
         """Process the response of OpenAI chat completion API and extract outputs.
-        
+
         Args:
             response: The OpenAI chat completion response
                 https://platform.openai.com/docs/api-reference/chat/object
             merged_kwargs: Merged kwargs from self.kwargs and method kwargs
-            
+
         Returns:
             List of processed outputs
         """
@@ -200,10 +200,10 @@ class BaseLM:
     def _extract_citations_from_response(self, choice):
         """Extract citations from LiteLLM response if available.
         Reference: https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
-        
+
         Args:
             choice: The choice object from response.choices
-            
+
         Returns:
             A list of citation dictionaries or None if no citations found
         """
@@ -253,7 +253,6 @@ class BaseLM:
             result["reasoning_content"] = "".join(reasoning_contents)
         # All `response.output` items map to one answer, so we return a list of size 1.
         return [result]
-
 
 
 def inspect_history(n: int = 1):

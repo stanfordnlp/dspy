@@ -104,11 +104,7 @@ class LM(BaseLM):
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
-        if (
-            not self._warned_zero_temp_rollout
-            and rollout_id is not None
-            and (temperature is None or temperature == 0)
-        ):
+        if not self._warned_zero_temp_rollout and rollout_id is not None and (temperature is None or temperature == 0):
             warnings.warn(
                 "rollout_id has no effect when temperature=0; set temperature>0 to bypass the cache.",
                 stacklevel=3,
@@ -134,10 +130,7 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         if self.use_developer_role and self.model_type == "responses":
-            messages = [
-                {**m, "role": "developer"} if m.get("role") == "system" else m
-                for m in messages
-            ]
+            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
@@ -170,10 +163,7 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         if self.use_developer_role and self.model_type == "responses":
-            messages = [
-                {**m, "role": "developer"} if m.get("role") == "system" else m
-                for m in messages
-            ]
+            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
@@ -237,7 +227,9 @@ class LM(BaseLM):
 
         return job
 
-    def reinforce(self, train_kwargs, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)) -> ReinforceJob:
+    def reinforce(
+        self, train_kwargs, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)
+    ) -> ReinforceJob:
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
 
@@ -424,6 +416,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
         **request,
     )
 
+
 def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
@@ -450,6 +443,7 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
         retry_strategy="exponential_backoff_retry",
         **request,
     )
+
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     request = dict(request)
