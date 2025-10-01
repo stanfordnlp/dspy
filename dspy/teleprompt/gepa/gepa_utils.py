@@ -10,7 +10,7 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
-from dspy.metrics import Scores
+from dspy.metrics import Score
 from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
@@ -154,14 +154,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     scores.append(self.failure_score)
                 else:
                     score = t["score"]
-                    if isinstance(score, Scores):
-                        score = score.aggregate
+                    if isinstance(score, Score):
+                        score = score.scalar
                     elif isinstance(score, dict) and "score" in score:
                         score = score["score"]
                     else:
                         attr_score = getattr(score, "score", None)
-                        if isinstance(attr_score, Scores):
-                            score = attr_score.aggregate
+                        if isinstance(attr_score, Score):
+                            score = attr_score.scalar
                         elif attr_score is not None:
                             score = attr_score
                     scores.append(score)
@@ -181,14 +181,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [r[2] for r in res.results]
             coerced_scores = []
             for s in scores:
-                if isinstance(s, Scores):
-                    coerced_scores.append(s.aggregate)
+                if isinstance(s, Score):
+                    coerced_scores.append(s.scalar)
                 elif isinstance(s, dict) and "score" in s:
                     coerced_scores.append(s["score"])
                 else:
                     attr_score = getattr(s, "score", None)
-                    if isinstance(attr_score, Scores):
-                        coerced_scores.append(attr_score.aggregate)
+                    if isinstance(attr_score, Score):
+                        coerced_scores.append(attr_score.scalar)
                     elif attr_score is not None:
                         coerced_scores.append(attr_score)
                     else:
@@ -215,14 +215,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 example = data["example"]
                 prediction = data["prediction"]
                 module_score = data["score"]
-                if isinstance(module_score, Scores):
-                    module_score = module_score.aggregate
+                if isinstance(module_score, Score):
+                    module_score = module_score.scalar
                 elif isinstance(module_score, dict) and "score" in module_score:
                     module_score = module_score["score"]
                 else:
                     attr_score = getattr(module_score, "score", None)
-                    if isinstance(attr_score, Scores):
-                        module_score = attr_score.aggregate
+                    if isinstance(attr_score, Score):
+                        module_score = attr_score.scalar
                     elif attr_score is not None:
                         module_score = attr_score
 

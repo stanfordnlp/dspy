@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from dspy.primitives.example import Example
-from dspy.metrics import Scores
+from dspy.metrics import Score
 from dspy.metrics._subscores import _begin_collect, _end_collect, finalize_scores
 
 
@@ -34,7 +34,7 @@ class Prediction(Example):
         self._lm_usage = None
         self._score_value: float | None = None
         self._score_fn: ScoreFn | None = None
-        self._scores_obj: Scores | None = None
+        self._scores_obj: Score | None = None
         self._bound_example: Example | None = None
         self._resolved_ctx_key: Any = None
 
@@ -156,15 +156,15 @@ class Prediction(Example):
                 self._store["score"] = self._score_value
 
     @property
-    def scores(self) -> Scores | None:
+    def scores(self) -> Score | None:
         if self._scores_obj is None and self._score_value is not None:
-            self._scores_obj = Scores(self._score_value)
+            self._scores_obj = Score(self._score_value)
         return self._scores_obj
 
     def bind_example(self, example: Example) -> None:
         self._bound_example = example
 
-    def resolve_score(self, ctx: Any | None = None, *, force: bool = False) -> Scores | None:
+    def resolve_score(self, ctx: Any | None = None, *, force: bool = False) -> Score | None:
         if self._score_fn is None:
             return self.scores
 
@@ -202,9 +202,9 @@ class Prediction(Example):
             raise TypeError("Prediction score is not resolved to a numeric value.")
         return float(self._score_value)
 
-    def _store_scores(self, scores: Scores, ctx_key: Any | None = None) -> None:
+    def _store_scores(self, scores: Score, ctx_key: Any | None = None) -> None:
         self._scores_obj = scores
-        self._score_value = scores.aggregate
+        self._score_value = scores.scalar
         self._store["score"] = self._score_value
         self._resolved_ctx_key = ctx_key
 

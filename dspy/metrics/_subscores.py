@@ -6,8 +6,8 @@ resolve arithmetic expressions that combine them.  Users interact with the
 stable name.  Internally, we track subscores in a ``ContextVar`` so concurrent
 evaluations remain isolated.
 
-The module also exposes a :class:`Scores` dataclass that carries the aggregate
-score, the resolved axes, and any auxiliary information collected during
+The module also exposes a :class:`Score` dataclass that carries the resolved
+scalar score, the subscores, and any auxiliary information collected during
 evaluation (e.g., canonical expressions, metadata, usage statistics).
 """
 
@@ -15,17 +15,18 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import warnings
 from typing import Any, Iterable
 
 import contextvars
 
 __all__ = [
-    "Scores",
+    "Score",
     "subscore",
-    "axis_abs",
-    "axis_min",
-    "axis_max",
-    "axis_clip",
+    "subscore_abs",
+    "subscore_min",
+    "subscore_max",
+    "subscore_clip",
     "_begin_collect",
     "_end_collect",
     "finalize_scores",
@@ -33,36 +34,36 @@ __all__ = [
 
 
 @dataclasses.dataclass(frozen=True)
-class Scores:
-    """Resolved aggregate metric information.
+class Score:
+    """Resolved metric information.
 
     Attributes
     ----------
-    aggregate:
+    scalar:
         The scalar score obtained from evaluating the user's arithmetic
         expression.  For backwards compatibility this behaves exactly like the
         previous single metric number.
-    axes:
-        Mapping from axis name to numeric value.  Each axis corresponds to a
-        call to :func:`subscore` that was used in the returned expression (or
+    subscores:
+        Mapping from subscore name to numeric value.  Each entry corresponds to
+        a call to :func:`subscore` that was used in the returned expression (or
         registered during metric execution even if the user coerced it to a
         float early).
     info:
         A free-form dictionary used to carry auxiliary details such as the
-        canonical expression string, per-axis metadata, latency, usage, etc.
+        canonical expression string, per-subscore metadata, latency, usage, etc.
     """
 
-    aggregate: float
-    axes: dict[str, float] = dataclasses.field(default_factory=dict)
+    scalar: float
+    subscores: dict[str, float] = dataclasses.field(default_factory=dict)
     info: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self) -> None:  # pragma: no cover - trivial conversions
-        object.__setattr__(self, "aggregate", float(self.aggregate))
-        axes = {name: float(value) for name, value in self.axes.items()}
-        object.__setattr__(self, "axes", axes)
+        object.__setattr__(self, "scalar", float(self.scalar))
+        subscores = {name: float(value) for name, value in self.subscores.items()}
+        object.__setattr__(self, "subscores", subscores)
 
 
-class AxisExpr:
+class SubscoreExpr:
     """Tiny expression DAG that keeps arithmetic over subscores traceable."""
 
     __slots__ = ("op", "args")
@@ -72,41 +73,70 @@ class AxisExpr:
         self.args = args
 
     # Arithmetic ---------------------------------------------------------
-    def __add__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("add", (self, other))
+    def __add__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("add", (self, other))
 
-    def __radd__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("add", (other, self))
+    def __radd__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("add", (other, self))
 
-    def __sub__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("sub", (self, other))
+    def __sub__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("sub", (self, other))
 
-    def __rsub__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("sub", (other, self))
+    def __rsub__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("sub", (other, self))
 
-    def __mul__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("mul", (self, other))
+    def __mul__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("mul", (self, other))
 
-    def __rmul__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("mul", (other, self))
+    def __rmul__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("mul", (other, self))
 
-    def __truediv__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("div", (self, other))
+    def __truediv__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("div", (self, other))
 
-    def __rtruediv__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("div", (other, self))
+    def __rtruediv__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("div", (other, self))
 
-    def __pow__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("pow", (self, other))
+    def __pow__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("pow", (self, other))
 
-    def __rpow__(self, other: Any) -> "AxisExpr":
-        return AxisExpr("pow", (other, self))
+    def __rpow__(self, other: Any) -> "SubscoreExpr":
+        return SubscoreExpr("pow", (other, self))
 
-    def __neg__(self) -> "AxisExpr":
-        return AxisExpr("neg", (self,))
+    def __neg__(self) -> "SubscoreExpr":
+        return SubscoreExpr("neg", (self,))
 
     def __float__(self) -> float:
         return float(self.eval())
+
+    # Comparisons --------------------------------------------------------
+    def _cmp(self, other: Any, op: str) -> bool:
+        left = self.eval()
+        right = _eval_node(other)
+        if op == "lt":
+            return left < right
+        if op == "le":
+            return left <= right
+        if op == "gt":
+            return left > right
+        if op == "ge":
+            return left >= right
+        raise ValueError(f"Unsupported comparison op: {op}")
+
+    def __lt__(self, other: Any) -> bool:
+        return self._cmp(other, "lt")
+
+    def __le__(self, other: Any) -> bool:
+        return self._cmp(other, "le")
+
+    def __gt__(self, other: Any) -> bool:
+        return self._cmp(other, "gt")
+
+    def __ge__(self, other: Any) -> bool:
+        return self._cmp(other, "ge")
+
+    def __bool__(self) -> bool:
+        return bool(self.eval())
 
     # Evaluation ---------------------------------------------------------
     def eval(self) -> float:
@@ -139,20 +169,20 @@ class AxisExpr:
             return value
         raise ValueError(f"Unsupported operator: {op!r}")
 
-    def used_axes(self) -> dict[str, float]:
-        axes: dict[str, float] = {}
-        _collect_axes(self, axes)
-        return axes
+    def used_subscores(self) -> dict[str, float]:
+        subscores: dict[str, float] = {}
+        _collect_subscores(self, subscores)
+        return subscores
 
     def to_repr(self) -> str:
         return _repr_node(self)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging helper
-        return f"AxisExpr({self.to_repr()})"
+        return f"SubscoreExpr({self.to_repr()})"
 
 
-class AxisValue(AxisExpr):
-    """Leaf node representing a named axis."""
+class SubscoreValue(SubscoreExpr):
+    """Leaf node representing a named subscore."""
 
     __slots__ = ("name", "value", "meta")
 
@@ -160,14 +190,14 @@ class AxisValue(AxisExpr):
         self.name = name
         self.value = float(value)
         self.meta = meta
-        super().__init__("axis", (self,))
+        super().__init__("subscore", (self,))
 
-    # AxisValue inherits operator overloads from AxisExpr via AxisExpr methods.
+    # SubscoreValue inherits operator overloads from SubscoreExpr via SubscoreExpr methods.
 
     def eval(self) -> float:
         return self.value
 
-    def used_axes(self) -> dict[str, float]:
+    def used_subscores(self) -> dict[str, float]:
         return {self.name: self.value}
 
     def to_repr(self) -> str:
@@ -179,7 +209,7 @@ class AxisValue(AxisExpr):
 
 @dataclasses.dataclass
 class _Collector:
-    axes: dict[str, tuple[float, dict[str, Any]]] = dataclasses.field(default_factory=dict)
+    subscores: dict[str, tuple[float, dict[str, Any]]] = dataclasses.field(default_factory=dict)
 
 
 _CONTEXT: contextvars.ContextVar[_Collector | None] = contextvars.ContextVar(
@@ -198,38 +228,38 @@ def _end_collect(token: contextvars.Token) -> _Collector:
     return collector or _Collector()
 
 
-def subscore(name: str, value: float, /, **meta: Any) -> AxisValue:
-    """Register a named axis for the active metric evaluation."""
+def subscore(name: str, value: float, /, **meta: Any) -> SubscoreValue:
+    """Register a named subscore for the active metric evaluation."""
 
     if not isinstance(name, str) or not name:
         raise ValueError("subscore name must be a non-empty string")
     numeric = float(value)
     collector = _CONTEXT.get()
     if collector is not None:
-        if name in collector.axes:
+        if name in collector.subscores:
             raise ValueError(f"Duplicate subscore name: {name}")
-        collector.axes[name] = (numeric, dict(meta))
-    return AxisValue(name, numeric, dict(meta))
+        collector.subscores[name] = (numeric, dict(meta))
+    return SubscoreValue(name, numeric, dict(meta))
 
 
-def axis_abs(value: Any) -> AxisExpr:
-    return AxisExpr("abs", (_ensure_expr(value),))
+def subscore_abs(value: Any) -> SubscoreExpr:
+    return SubscoreExpr("abs", (_ensure_expr(value),))
 
 
-def axis_min(*values: Any) -> AxisExpr:
+def subscore_min(*values: Any) -> SubscoreExpr:
     if not values:
-        raise ValueError("axis_min requires at least one argument")
-    return AxisExpr("min", tuple(_ensure_expr(v) for v in values))
+        raise ValueError("subscore_min requires at least one argument")
+    return SubscoreExpr("min", tuple(_ensure_expr(v) for v in values))
 
 
-def axis_max(*values: Any) -> AxisExpr:
+def subscore_max(*values: Any) -> SubscoreExpr:
     if not values:
-        raise ValueError("axis_max requires at least one argument")
-    return AxisExpr("max", tuple(_ensure_expr(v) for v in values))
+        raise ValueError("subscore_max requires at least one argument")
+    return SubscoreExpr("max", tuple(_ensure_expr(v) for v in values))
 
 
-def axis_clip(value: Any, lower: float | None = None, upper: float | None = None) -> AxisExpr:
-    return AxisExpr("clip", (_ensure_expr(value), lower, upper))
+def subscore_clip(value: Any, lower: float | None = None, upper: float | None = None) -> SubscoreExpr:
+    return SubscoreExpr("clip", (_ensure_expr(value), lower, upper))
 
 
 def finalize_scores(
@@ -237,71 +267,71 @@ def finalize_scores(
     collector: _Collector,
     *,
     ctx_info: dict[str, Any] | None = None,
-) -> Scores:
-    """Convert a metric return value into a :class:`Scores` object."""
+) -> Score:
+    """Convert a metric return value into a :class:`Score` object."""
 
     ctx_info = dict(ctx_info or {})
-    if isinstance(result, Scores):
+    if isinstance(result, Score):
         info = dict(result.info)
         info.update({k: v for k, v in ctx_info.items() if v is not None})
-        return Scores(result.aggregate, dict(result.axes), info)
+        return Score(result.scalar, dict(result.subscores), info)
 
-    if isinstance(result, AxisValue):
-        axes = result.used_axes()
-        meta = {name: collector.axes.get(name, (None, {}))[1] for name in axes}
+    if isinstance(result, SubscoreValue):
+        subscores = result.used_subscores()
+        meta = {name: collector.subscores.get(name, (None, {}))[1] for name in subscores}
         info = {"expr": result.to_repr(), "meta": meta}
         info.update({k: v for k, v in ctx_info.items() if v is not None})
-        _validate_axes(axes)
-        return Scores(result.value, axes, info)
+        _validate_subscores(subscores)
+        return Score(result.value, subscores, info)
 
-    if isinstance(result, AxisExpr):
-        aggregate = float(result.eval())
-        axes = result.used_axes()
-        meta = {name: collector.axes.get(name, (None, {}))[1] for name in axes}
+    if isinstance(result, SubscoreExpr):
+        scalar = float(result.eval())
+        subscores = result.used_subscores()
+        meta = {name: collector.subscores.get(name, (None, {}))[1] for name in subscores}
         info = {"expr": result.to_repr(), "meta": meta}
         info.update({k: v for k, v in ctx_info.items() if v is not None})
-        _validate_axes(axes)
-        _validate_scalar("aggregate", aggregate)
-        return Scores(aggregate, axes, info)
+        _validate_subscores(subscores)
+        _validate_scalar("scalar", scalar)
+        return Score(scalar, subscores, info)
 
-    aggregate = float(result)
-    axes = {name: value for name, (value, _) in collector.axes.items()}
-    meta = {name: meta for name, (_, meta) in collector.axes.items()}
+    scalar = float(result)
+    subscores = {name: value for name, (value, _) in collector.subscores.items()}
+    meta = {name: meta for name, (_, meta) in collector.subscores.items()}
     info = {"expr": None, "meta": meta}
     info.update({k: v for k, v in ctx_info.items() if v is not None})
-    _validate_axes(axes)
-    _validate_scalar("aggregate", aggregate)
-    return Scores(aggregate, axes, info)
+    _validate_subscores(subscores)
+    _validate_scalar("scalar", scalar)
+    return Score(scalar, subscores, info)
 
 
 # Helpers -----------------------------------------------------------------
 
 def _ensure_expr(value: Any) -> Any:
-    if isinstance(value, (AxisExpr, AxisValue)):
+    if isinstance(value, (SubscoreExpr, SubscoreValue)):
         return value
     return value
 
 
 def _eval_node(node: Any) -> float:
-    if isinstance(node, AxisExpr):
+    if isinstance(node, SubscoreExpr):
         return node.eval()
-    if isinstance(node, AxisValue):
+    if isinstance(node, SubscoreValue):
         return node.value
     return float(node)
 
 
-def _collect_axes(node: Any, axes: dict[str, float]) -> None:
-    if isinstance(node, AxisExpr) and node.op != "axis":
+def _collect_subscores(node: Any, subscores: dict[str, float]) -> None:
+    if isinstance(node, SubscoreExpr) and node.op != "subscore":
         for arg in node.args:
-            _collect_axes(arg, axes)
-    elif isinstance(node, AxisValue):
-        axes[node.name] = node.value
+            _collect_subscores(arg, subscores)
+    elif isinstance(node, SubscoreValue):
+        subscores[node.name] = node.value
 
 
 def _repr_node(node: Any) -> str:
-    if isinstance(node, AxisValue):
+    if isinstance(node, SubscoreValue):
         return node.to_repr()
-    if isinstance(node, AxisExpr):
+    if isinstance(node, SubscoreExpr):
         op = node.op
         args = node.args
         if op == "neg":
@@ -315,7 +345,7 @@ def _repr_node(node: Any) -> str:
         if op == "clip":
             value, lower, upper = args
             return f"clip({_repr_node(value)}, {lower!r}, {upper!r})"
-        if op == "axis":
+        if op == "subscore":
             return _repr_node(args[0])
         symbol = {
             "add": "+",
@@ -334,11 +364,11 @@ def _repr_node(node: Any) -> str:
     return repr(node)
 
 
-def _validate_axes(axes: Iterable[tuple[str, float]] | dict[str, float]) -> None:
-    if isinstance(axes, dict):
-        items = axes.items()
+def _validate_subscores(subscores: Iterable[tuple[str, float]] | dict[str, float]) -> None:
+    if isinstance(subscores, dict):
+        items = subscores.items()
     else:
-        items = axes
+        items = subscores
     for name, value in items:
         _validate_scalar(name, value)
 
@@ -347,3 +377,33 @@ def _validate_scalar(name: str, value: float) -> None:
     if not math.isfinite(float(value)):
         raise ValueError(f"Non-finite value for {name}: {value!r}")
 
+
+def coerce_metric_value(value: Any, *, context: str = "metric", warn_on_expression: bool = True) -> Any:
+    """Coerce subscore expressions into scalar values for legacy metric handlers.
+
+    Optimizers that do not capture subscores may invoke metrics that return SubscoreExpr/SubscoreValue.
+    This helper warns once per call (when desired) and evaluates the expression so callers
+    can continue working with numeric scores.
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, Score):
+        return value.scalar
+    if isinstance(value, SubscoreExpr):
+        if warn_on_expression:
+            warnings.warn(
+                f"{context}: metric returned a subscore expression; coercing to float and discarding subscores.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+        return float(value)
+    if isinstance(value, SubscoreValue):
+        if warn_on_expression:
+            warnings.warn(
+                f"{context}: metric returned a subscore component; coercing to float and discarding metadata.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+        return float(value)
+    return value

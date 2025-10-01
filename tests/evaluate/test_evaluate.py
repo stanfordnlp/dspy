@@ -7,7 +7,7 @@ import pytest
 import dspy
 from dspy.evaluate.evaluate import Evaluate, EvaluationResult
 from dspy.evaluate.metrics import answer_exact_match
-from dspy.metrics import Scores, subscore
+from dspy.metrics import Score, subscore
 from dspy.predict import Predict
 from dspy.utils.callback import BaseCallback
 from dspy.utils.dummies import DummyLM
@@ -53,8 +53,8 @@ def test_evaluate_call():
     )
     result = ev(program)
     assert result.score == 100.0
-    assert all(isinstance(score_obj, Scores) for *_, score_obj in result.results)
-    assert all(score_obj.aggregate == 1.0 for *_, score_obj in result.results)
+    assert all(isinstance(score_obj, Score) for *_, score_obj in result.results)
+    assert all(score_obj.scalar == 1.0 for *_, score_obj in result.results)
 
 
 def test_evaluate_with_subscores():
@@ -83,9 +83,9 @@ def test_evaluate_with_subscores():
     result = ev(program)
     assert result.score == pytest.approx(100.0, abs=0.5)
     for _, _, scores in result.results:
-        assert isinstance(scores, Scores)
-        assert "acc" in scores.axes
-        assert "latency_s" in scores.axes
+        assert isinstance(scores, Score)
+        assert "acc" in scores.subscores
+        assert "latency_s" in scores.subscores
         assert scores.info.get("expr") is not None
 
 
@@ -102,9 +102,9 @@ def test_construct_result_df():
         metric=answer_exact_match,
     )
     results = [
-        (devset[0], {"answer": "2"}, Scores(100.0)),
-        (devset[1], {"answer": "4"}, Scores(100.0)),
-        (devset[2], {"answer": "-1"}, Scores(0.0)),
+        (devset[0], {"answer": "2"}, Score(100.0)),
+        (devset[1], {"answer": "4"}, Score(100.0)),
+        (devset[2], {"answer": "-1"}, Score(0.0)),
     ]
     result_df = ev._construct_result_table(results, answer_exact_match.__name__)
     pd.testing.assert_frame_equal(
@@ -133,7 +133,7 @@ def test_multithread_evaluate_call():
     )
     result = ev(program)
     assert result.score == 100.0
-    assert all(isinstance(score_obj, Scores) for *_, score_obj in result.results)
+    assert all(isinstance(score_obj, Score) for *_, score_obj in result.results)
 
 
 def test_multi_thread_evaluate_call_cancelled(monkeypatch):
@@ -295,5 +295,5 @@ def test_evaluate_callback():
     assert callback.end_call_count == 1
 
 def test_evaluation_result_repr():
-    result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, Scores(100.0))])
+    result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, Score(100.0))])
     assert repr(result) == "EvaluationResult(score=100.0, results=<list of 1 results>)"
