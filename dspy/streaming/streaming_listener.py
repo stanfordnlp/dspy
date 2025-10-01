@@ -159,7 +159,7 @@ class StreamListener:
                 self.field_start_queue = []
                 return
 
-        if self.stream_start:
+        if self.stream_start and chunk_message:
             # The stream is started, we keep returning the token until we see the start of the next field.
             token = None
             self.field_end_queue.put(chunk_message)
@@ -168,6 +168,7 @@ class StreamListener:
                 # i.e., "[[ ## {next_field_name} ## ]]" for ChatAdapter to identify the end of the current field.
                 # In most cases 10 tokens are enough to cover the end_identifier for all adapters.
                 token = self.field_end_queue.get()
+
             concat_message = "".join(self.field_end_queue.queue).strip()
             if re.search(end_identifier, concat_message):
                 # The next field is identified, we can end the stream and flush out all tokens in the buffer.
