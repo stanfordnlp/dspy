@@ -10,7 +10,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import tqdm
 
-from dspy.metrics import Scores
+from dspy.metrics import Score
 
 logger = logging.getLogger(__name__)
 
@@ -175,8 +175,8 @@ class ParallelExecutor:
                                     if r is None:
                                         continue
                                     value = r[-1]
-                                    if isinstance(value, Scores):
-                                        vals.append(value.aggregate)
+                                    if isinstance(value, Score):
+                                        vals.append(value.scalar)
                                     else:
                                         vals.append(value)
                                 self._update_progress(pbar, sum(vals), len(vals))

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 import tqdm
 
 import dspy
-from dspy.metrics import Scores
+from dspy.metrics import Score
 from dspy.metrics._subscores import _begin_collect, _end_collect, finalize_scores
 from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
@@ -204,7 +204,7 @@ class Evaluate:
 
             scores = self._execute_metric(metric, example, prediction, ctx)
 
-            if isinstance(prediction_obj, Prediction) and isinstance(scores, Scores):
+            if isinstance(prediction_obj, Prediction) and isinstance(scores, Score):
                 prediction_obj._store_scores(scores, ctx.cache_key)
 
             return prediction, scores
@@ -212,9 +212,9 @@ class Evaluate:
         results = executor.execute(process_item, devset)
         assert len(devset) == len(results)
 
-        results = [((dspy.Prediction(), Scores(self.failure_score)) if r is None else r) for r in results]
+        results = [((dspy.Prediction(), Score(self.failure_score)) if r is None else r) for r in results]
         results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
-        aggregates = [score.aggregate for *_, score in results]
+        aggregates = [score.scalar for *_, score in results]
         ncorrect, ntotal = sum(aggregates), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
@@ -265,7 +265,7 @@ class Evaluate:
 
     @staticmethod
     def _prepare_results_output(
-            results: list[tuple["dspy.Example", "dspy.Example", Scores]], metric_name: str
+            results: list[tuple["dspy.Example", "dspy.Example", Score]], metric_name: str
     ):
         return [
             (
@@ -277,7 +277,7 @@ class Evaluate:
         ]
 
     def _construct_result_table(
-        self, results: list[tuple["dspy.Example", "dspy.Example", Scores]], metric_name: str
+        self, results: list[tuple["dspy.Example", "dspy.Example", Score]], metric_name: str
     ) -> "pd.DataFrame":
         """
         Construct a pandas DataFrame from the specified result list.
@@ -306,7 +306,7 @@ class Evaluate:
         example: "dspy.Example",
         prediction: Any,
         ctx: EvaluationMetricContext,
-    ) -> Scores:
+    ) -> Score:
         if metric is None:
             if isinstance(prediction, Prediction):
                 scores = prediction.resolve_score(ctx)
@@ -402,10 +402,10 @@ def merge_dicts(d1, d2) -> dict:
     return merged
 
 
-def _scores_to_row(scores: Scores, metric_name: str) -> dict[str, Any]:
-    row = {metric_name: scores.aggregate}
-    for axis_name, value in scores.axes.items():
-        row[f"{metric_name}.{axis_name}"] = value
+def _scores_to_row(scores: Score, metric_name: str) -> dict[str, Any]:
+    row = {metric_name: scores.scalar}
+    for subscore_name, value in scores.subscores.items():
+        row[f"{metric_name}.{subscore_name}"] = value
     expr = scores.info.get("expr") if isinstance(scores.info, dict) else None
     if expr is not None:
         row[f"{metric_name}.expr"] = expr

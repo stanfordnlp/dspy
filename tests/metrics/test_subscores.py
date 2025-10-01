@@ -17,12 +17,12 @@ def test_subscore_expression_resolution():
         collector = _end_collect(token)
 
     scores = finalize_scores(result, collector)
-    assert math.isclose(scores.aggregate, 0.8 - 0.1)
-    assert scores.axes == {"acc": 0.8, "latency": 0.2}
+    assert math.isclose(scores.scalar, 0.8 - 0.1)
+    assert scores.subscores == {"acc": 0.8, "latency": 0.2}
     assert "expr" in scores.info and "latency" in scores.info["meta"]
 
 
-def test_subscore_float_cast_keeps_axes():
+def test_subscore_float_cast_keeps_subscores():
     token = _begin_collect()
     try:
         acc = subscore("acc", 1.0)
@@ -31,7 +31,7 @@ def test_subscore_float_cast_keeps_axes():
         collector = _end_collect(token)
 
     scores = finalize_scores(value, collector)
-    assert scores.axes == {"acc": 1.0}
+    assert scores.subscores == {"acc": 1.0}
     assert scores.info["expr"] is None
 
 
@@ -60,6 +60,6 @@ def test_prediction_callable_score_resolution():
         float(prediction)
 
     scores = prediction.resolve_score()
-    assert isinstance(scores.axes, dict) and scores.axes["acc"] == 1.0
+    assert isinstance(scores.subscores, dict) and scores.subscores["acc"] == 1.0
     assert math.isclose(prediction.score, 1.0)
     assert math.isclose(float(prediction), 1.0)
