@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from litellm import ModelResponseStream
 
+from dspy.adapters.baml_adapter import BAMLAdapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.types import Type
@@ -15,7 +16,7 @@ from dspy.streaming.messages import StreamResponse
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
 
-ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
+ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter, BAMLAdapter]
 
 
 class StreamListener:
@@ -64,6 +65,11 @@ class StreamListener:
                 "start_identifier": f"<{self.signature_field_name}>",
                 "end_identifier": re.compile(rf"</{self.signature_field_name}>"),
                 "start_indicator": "<",
+            },
+            "BAMLAdapter": {
+                "start_identifier": f'"{self.signature_field_name}":',
+                "end_identifier": re.compile(r"\w*\"(,|\s*})"),
+                "start_indicator": '"',
             },
         }
 
@@ -145,8 +151,8 @@ class StreamListener:
                 # Keep the part after the start_identifier from the concat_message, we need to write it to the buffer.
                 value_start_index = concat_message.find(start_identifier) + len(start_identifier)
                 chunk_message = concat_message[value_start_index:].lstrip()
-                if isinstance(settings.adapter, JSONAdapter) and chunk_message.startswith('"'):
-                    # For JSONAdapter, we need to remove the leading ". We cannot do this with the start_identifier
+                if isinstance(settings.adapter, (JSONAdapter, BAMLAdapter)) and chunk_message.startswith('"'):
+                    # For JSONAdapter and BAMLAdapter, we need to remove the leading ". We cannot do this with the start_identifier
                     # because there could be a few splitters between ':' and '"', e.g., '"name": "value"'.
                     chunk_message = chunk_message[1:]
 
@@ -194,7 +200,7 @@ class StreamListener:
         """
         last_tokens = "".join(self.field_end_queue.queue)
         self.field_end_queue = Queue()
-        if isinstance(settings.adapter, JSONAdapter):
+        if isinstance(settings.adapter, (JSONAdapter, BAMLAdapter)):
             match = re.search(r'",|"\s*}', last_tokens)
             if match:
                 boundary_index = match.start()
@@ -206,7 +212,7 @@ class StreamListener:
             if boundary_index == -1:
                 boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
-        elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
+        elif isinstance(settings.adapter, (ChatAdapter, BAMLAdapter)) or settings.adapter is None:
             boundary_index = last_tokens.find("[[")
             return last_tokens[:boundary_index]
         else:
