@@ -281,6 +281,7 @@ def test_xml_adapter_user_message_contains_xml_input_tags():
 def test_xml_adapter_full_prompt():
     class QA(dspy.Signature):
         query: str = dspy.InputField()
+        context: str | None = dspy.InputField()
         answer: str = dspy.OutputField()
 
     adapter = dspy.XMLAdapter()
@@ -292,19 +293,21 @@ def test_xml_adapter_full_prompt():
 
     expected_system = (
         "Your input fields are:\n"
-        "1. `query` (str):\n"
+        "1. `query` (str): \n"
+        "2. `context` (UnionType[str, NoneType]):\n"
         "Your output fields are:\n"
         "1. `answer` (str):\n"
         "All interactions will be structured in the following way, with the appropriate values filled in.\n\n"
         "<query>\n{query}\n</query>\n\n"
+        "<context>\n{context}\n</context>\n\n"
         "<answer>\n{answer}\n</answer>\n"
         "In adhering to this structure, your objective is: \n"
-        "        Given the fields `query`, produce the fields `answer`."
+        "        Given the fields `query`, `context`, produce the fields `answer`."
     )
 
     expected_user = (
         "<query>\nwhen was Marie Curie born\n</query>\n\n"
-        "Respond with the corresponding output fields wrapped in XML tags: `<answer>`, and then end with the `<completed/>` tag."
+        "Respond with the corresponding output fields wrapped in XML tags, starting with the field `<answer>`, and then end with the `<completed/>` tag."
     )
 
     assert messages[0]["content"] == expected_system
