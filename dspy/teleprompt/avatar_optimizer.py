@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from tqdm import tqdm
 
 import dspy
+from dspy.metrics import Scores
 from dspy.predict.avatar import ActionOutput
 from dspy.teleprompt.teleprompt import Teleprompter
 
@@ -104,6 +105,16 @@ class AvatarOptimizer(Teleprompter):
         try:
             prediction = actor(**example.inputs().toDict())
             score = self.metric(example, prediction)
+            if isinstance(score, dict) and "score" in score:
+                score = score["score"]
+            elif isinstance(score, Scores):
+                score = score.aggregate
+            else:
+                attr_score = getattr(score, "score", None)
+                if isinstance(attr_score, Scores):
+                    score = attr_score.aggregate
+                elif attr_score is not None:
+                    score = attr_score
 
             if return_outputs:
                 return example, prediction, score
@@ -135,7 +146,16 @@ class AvatarOptimizer(Teleprompter):
                     total_score += score
                     results.append((example, prediction, score))
                 else:
-                    total_score += result
+                    if isinstance(result, Scores):
+                        total_score += result.aggregate
+                    else:
+                        attr_score = getattr(result, "score", None)
+                        if isinstance(attr_score, Scores):
+                            total_score += attr_score.aggregate
+                        elif attr_score is not None:
+                            total_score += attr_score
+                        else:
+                            total_score += result
 
         avg_metric = total_score / total_examples
 

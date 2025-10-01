@@ -10,6 +10,7 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
+from dspy.metrics import Scores
 from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
@@ -153,8 +154,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     scores.append(self.failure_score)
                 else:
                     score = t["score"]
-                    if hasattr(score, "score"):
+                    if isinstance(score, Scores):
+                        score = score.aggregate
+                    elif isinstance(score, dict) and "score" in score:
                         score = score["score"]
+                    else:
+                        attr_score = getattr(score, "score", None)
+                        if isinstance(attr_score, Scores):
+                            score = attr_score.aggregate
+                        elif attr_score is not None:
+                            score = attr_score
                     scores.append(score)
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
         else:
@@ -170,7 +179,21 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             res = evaluator(program)
             outputs = [r[1] for r in res.results]
             scores = [r[2] for r in res.results]
-            scores = [s["score"] if hasattr(s, "score") else s for s in scores]
+            coerced_scores = []
+            for s in scores:
+                if isinstance(s, Scores):
+                    coerced_scores.append(s.aggregate)
+                elif isinstance(s, dict) and "score" in s:
+                    coerced_scores.append(s["score"])
+                else:
+                    attr_score = getattr(s, "score", None)
+                    if isinstance(attr_score, Scores):
+                        coerced_scores.append(attr_score.aggregate)
+                    elif attr_score is not None:
+                        coerced_scores.append(attr_score)
+                    else:
+                        coerced_scores.append(s)
+            scores = coerced_scores
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update) -> dict[str, list[ReflectiveExample]]:
@@ -192,8 +215,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 example = data["example"]
                 prediction = data["prediction"]
                 module_score = data["score"]
-                if hasattr(module_score, "score"):
+                if isinstance(module_score, Scores):
+                    module_score = module_score.aggregate
+                elif isinstance(module_score, dict) and "score" in module_score:
                     module_score = module_score["score"]
+                else:
+                    attr_score = getattr(module_score, "score", None)
+                    if isinstance(attr_score, Scores):
+                        module_score = attr_score.aggregate
+                    elif attr_score is not None:
+                        module_score = attr_score
 
                 trace_instances = [t for t in trace if t[0].signature.equals(module.signature)]
                 if not self.add_format_failure_as_feedback:
