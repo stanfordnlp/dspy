@@ -598,6 +598,70 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
             "mentioned in the question. It is the expected and appropriate response."
         )
 
+@pytest.mark.anyio
+async def test_stream_listener_missing_completion_marker_chat_adapter():
+    """Test that streaming works correctly when LLM response omits a final completion marker.
+
+    This test verifies that:
+    1. All tokens are yielded including those in the buffer
+    2. The last chunk is properly marked with is_last_chunk=True
+    3. No tokens are lost when the completion marker is missing
+    """
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict("question->answer")
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    async def incomplete_stream(*args, **kwargs):
+        """Stream that includes start marker but MISSING completion marker"""
+        # Start marker
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
+
+        # Content tokens - more than 10 to ensure buffering happens
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="This"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" is"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" a"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" test"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" with"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" many"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" tokens"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ensure"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" buffering"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" works"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" correctly"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="."))])
+        # NO COMPLETION MARKER
+
+    with mock.patch("litellm.acompletion", side_effect=incomplete_stream):
+        program = dspy.streamify(
+            MyProgram(),
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="answer"),
+            ],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="Test question")
+            all_chunks = []
+            final_prediction = None
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    final_prediction = value
+
+    full_content = "".join([chunk.chunk for chunk in all_chunks])
+    expected_content = "This is a test response with many tokens to ensure buffering works correctly."
+    assert full_content == expected_content
+    assert final_prediction.answer == expected_content
+
 
 @pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_stream():
