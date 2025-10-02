@@ -9,7 +9,7 @@ import requests
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import GRPOGroup, MultiGPUConfig, TrainDataFormat, TrainingStatus, save_data
-from dspy.teleprompt.grpo_config import GRPOConfig
+from dspy.teleprompt.grpo.grpo_config import GRPOConfig
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
