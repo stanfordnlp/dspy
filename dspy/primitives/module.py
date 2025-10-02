@@ -40,13 +40,11 @@ class ProgramMeta(type):
 
 class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
-        self._compiled = False
         self.callbacks = []
         self.history = []
 
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
-        self._compiled = False
         # LM calling history of the module.
         self.history = []
 

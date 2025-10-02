@@ -86,7 +86,6 @@ class BootstrapFewShot(Teleprompter):
         self._bootstrap()
 
         self.student = self._train()
-        self.student._compiled = True
 
         return self.student
 
@@ -96,9 +95,8 @@ class BootstrapFewShot(Teleprompter):
         # NOTE: behavior change on Oct 28, 2024. Deep copy instead of reset copy for the student-as-teacher.
         self.teacher = teacher.deepcopy() if teacher is not None else student.deepcopy()
 
-        assert getattr(self.student, "_compiled", False) is False, "Student must be uncompiled."
 
-        if self.max_labeled_demos and getattr(self.teacher, "_compiled", False) is False:
+        if self.max_labeled_demos:
             teleprompter = LabeledFewShot(k=self.max_labeled_demos)
             self.teacher = teleprompter.compile(self.teacher.reset_copy(), trainset=self.trainset)
 

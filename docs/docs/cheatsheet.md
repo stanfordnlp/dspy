@@ -178,7 +178,7 @@ evaluate_program(your_dspy_program)
 from dspy.teleprompt import LabeledFewShot
 
 labeled_fewshot_optimizer = LabeledFewShot(k=8)
-your_dspy_program_compiled = labeled_fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
+your_dspy_program_optimized = labeled_fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
 ### BootstrapFewShot
@@ -188,34 +188,34 @@ from dspy.teleprompt import BootstrapFewShot
 
 fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=10)
 
-your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
+your_dspy_program_optimized = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
-#### Using another LM for compilation, specifying in teacher_settings
+#### Using another LM for optimization, specifying in teacher_settings
 
 ```python
 from dspy.teleprompt import BootstrapFewShot
 
 fewshot_optimizer = BootstrapFewShot(metric=your_defined_metric, max_bootstrapped_demos=4, max_labeled_demos=16, max_rounds=1, max_errors=10, teacher_settings=dict(lm=gpt4))
 
-your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
+your_dspy_program_optimized = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset)
 ```
 
-#### Compiling a compiled program - bootstrapping a bootstrapped program
+#### Optimizing an optimized program - bootstrapping a bootstrapped program
 
 ```python
-your_dspy_program_compiledx2 = teleprompter.compile(
+your_dspy_program_optimizedx2 = teleprompter.compile(
     your_dspy_program,
-    teacher=your_dspy_program_compiled,
+    teacher=your_dspy_program_optimized,
     trainset=trainset,
 )
 ```
 
-#### Saving/loading a compiled program
+#### Saving/loading an optimized program
 
 ```python
 save_path = './v1.json'
-your_dspy_program_compiledx2.save(save_path)
+your_dspy_program_optimizedx2.save(save_path)
 ```
 
 ```python
@@ -232,7 +232,7 @@ from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 
 fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=8, num_threads=NUM_THREADS)
 
-your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
+your_dspy_program_optimized = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
 
 ```
 
@@ -245,11 +245,11 @@ from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.ensemble import Ensemble
 
 fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=8, num_threads=NUM_THREADS)
-your_dspy_program_compiled = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
+your_dspy_program_optimized = fewshot_optimizer.compile(student = your_dspy_program, trainset=trainset, valset=devset)
 
 ensemble_optimizer = Ensemble(reduce_fn=dspy.majority)
-programs = [x[-1] for x in your_dspy_program_compiled.candidate_programs]
-your_dspy_program_compiled_ensemble = ensemble_optimizer.compile(programs[:3])
+programs = [x[-1] for x in your_dspy_program_optimized.candidate_programs]
+your_dspy_program_optimized_ensemble = ensemble_optimizer.compile(programs[:3])
 ```
 
 ### BootstrapFinetune
@@ -257,14 +257,14 @@ your_dspy_program_compiled_ensemble = ensemble_optimizer.compile(programs[:3])
 ```python
 from dspy.teleprompt import BootstrapFewShotWithRandomSearch, BootstrapFinetune
 
-#Compile program on current dspy.settings.lm
+#Optimize program on current dspy.settings.lm
 fewshot_optimizer = BootstrapFewShotWithRandomSearch(metric=your_defined_metric, max_bootstrapped_demos=2, num_threads=NUM_THREADS)
-your_dspy_program_compiled = tp.compile(your_dspy_program, trainset=trainset[:some_num], valset=trainset[some_num:])
+your_dspy_program_optimized = tp.compile(your_dspy_program, trainset=trainset[:some_num], valset=trainset[some_num:])
 
 #Configure model to finetune
 config = dict(target=model_to_finetune, epochs=2, bf16=True, bsize=6, accumsteps=2, lr=5e-5)
 
-#Compile program on BootstrapFinetune
+#Optimize program on BootstrapFinetune
 finetune_optimizer = BootstrapFinetune(metric=your_defined_metric)
 finetune_program = finetune_optimizer.compile(your_dspy_program, trainset=some_new_dataset_for_finetuning_model, **config)
 
@@ -290,7 +290,7 @@ eval_kwargs = dict(num_threads=16, display_progress=True, display_table=0)
 
 copro_teleprompter = COPRO(prompt_model=model_to_generate_prompts, metric=your_defined_metric, breadth=num_new_prompts_generated, depth=times_to_generate_prompts, init_temperature=prompt_generation_temperature, verbose=False)
 
-compiled_program_optimized_signature = copro_teleprompter.compile(your_dspy_program, trainset=trainset, eval_kwargs=eval_kwargs)
+optimized_program_optimized_signature = copro_teleprompter.compile(your_dspy_program, trainset=trainset, eval_kwargs=eval_kwargs)
 ```
 
 ### MIPROv2
@@ -367,7 +367,7 @@ from dspy import ChainOfThought
 
 knn_optimizer = KNNFewShot(k=3, trainset=trainset, vectorizer=Embedder(SentenceTransformer("all-MiniLM-L6-v2").encode))
 
-qa_compiled = knn_optimizer.compile(student=ChainOfThought("question -> answer"))
+qa_optimized = knn_optimizer.compile(student=ChainOfThought("question -> answer"))
 ```
 
 ### BootstrapFewShotWithOptuna
@@ -377,7 +377,7 @@ from dspy.teleprompt import BootstrapFewShotWithOptuna
 
 fewshot_optuna_optimizer = BootstrapFewShotWithOptuna(metric=your_defined_metric, max_bootstrapped_demos=2, num_candidate_programs=8, num_threads=NUM_THREADS)
 
-your_dspy_program_compiled = fewshot_optuna_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
+your_dspy_program_optimized = fewshot_optuna_optimizer.compile(student=your_dspy_program, trainset=trainset, valset=devset)
 ```
 
 Other custom configurations are similar to customizing the `dspy.BootstrapFewShot` optimizer.
