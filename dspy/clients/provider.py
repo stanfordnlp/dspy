@@ -36,9 +36,9 @@ class TrainingJob(Future):
 
 
 class ReinforceJob:
-    def __init__(self, lm: "LM", train_kwargs: dict[str, Any] | None = None, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
+    def __init__(self, lm: "LM", config: dict[str, Any] | None = None, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
         self.lm = lm
-        self.train_kwargs = train_kwargs or {}
+        self.config = config or {}
         self.gpu_config = gpu_config
         self.checkpoints = {}
         self.last_checkpoint = None

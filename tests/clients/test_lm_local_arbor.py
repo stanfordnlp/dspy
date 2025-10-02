@@ -94,7 +94,7 @@ class TestArborReinforceJob:
         job = ArborReinforceJob(mock_lm, grpo_config, gpu_config)
         
         assert job.lm == mock_lm
-        assert isinstance(job.train_kwargs, GRPOConfig)
+        assert isinstance(job.config, GRPOConfig)
         
         assert job.provider_job_id is None
         assert job.checkpoints == {}
@@ -102,7 +102,7 @@ class TestArborReinforceJob:
     
     def test_init_with_invalid_train_kwargs(self, mock_lm, gpu_config):
         """Test that init raises TypeError with non-GRPOConfig"""
-        with pytest.raises(TypeError, match="Expected train_kwargs to be of type GRPOConfig"):
+        with pytest.raises(TypeError, match="Expected config to be of type GRPOConfig"):
             ArborReinforceJob(mock_lm, {"invalid": "dict"}, gpu_config)
     
     @patch('requests.post')
@@ -307,8 +307,12 @@ class TestArborProvider:
     
     @patch('dspy.clients.lm_local_arbor.openai.fine_tuning.jobs.retrieve')
     @patch.object(ArborProvider, '_get_arbor_base_api', return_value="http://localhost:8000/v1/")
-    def test_get_training_status(self, mock_api, mock_retrieve):
+    @patch.object(ArborProvider, 'does_job_exist', return_value=True)
+    def test_get_training_status(self, mock_does_job_exist, mock_api, mock_retrieve):
         """Test getting training status."""
+        # Reset the mock to ensure clean state
+        mock_retrieve.reset_mock()
+        
         mock_job = Mock()
         mock_job.status = "running"
         mock_retrieve.return_value = mock_job
@@ -317,6 +321,7 @@ class TestArborProvider:
         
         assert status == TrainingStatus.running
         mock_retrieve.assert_called_once_with("job-123")
+        mock_does_job_exist.assert_called_once_with("job-123", {})
     
     def test_get_training_status_no_job(self):
         """Test getting status when no job exists."""
@@ -331,6 +336,11 @@ class TestArborWorkflows:
     @patch.object(ArborProvider, '_get_arbor_base_api', return_value="http://localhost:8000/v1/")
     def test_grpo_workflow(self, mock_api, mock_retrieve, mock_post, mock_lm, grpo_config, gpu_config):
         """Test a complete GRPO workflow."""
+        # Reset mocks to ensure clean state
+        mock_retrieve.reset_mock()
+        mock_post.reset_mock()
+        
+        # Mock responses
         init_response = Mock()
         init_response.status_code = 200
         init_response.json.return_value = {

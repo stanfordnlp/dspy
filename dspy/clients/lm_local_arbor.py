@@ -44,13 +44,13 @@ class ArborTrainingJob(TrainingJob):
 
 
 class ArborReinforceJob(ReinforceJob):
-    def __init__(self, lm: "LM", train_kwargs: GRPOConfig, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
+    def __init__(self, lm: "LM", config: GRPOConfig, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
         # The teleprompter must ensure that this is set
-        if not isinstance(train_kwargs, GRPOConfig):
-            raise TypeError(f"Expected train_kwargs to be of type GRPOConfig, but got {type(train_kwargs)}")
+        if not isinstance(config, GRPOConfig):
+            raise TypeError(f"Expected config to be of type GRPOConfig, but got {type(config)}")
 
         self.lm = lm
-        self.train_kwargs: GRPOConfig = train_kwargs
+        self.config: GRPOConfig = config
         self.provider_job_id = None
         self.checkpoints = {}
         self.last_checkpoint = None
@@ -65,7 +65,7 @@ class ArborReinforceJob(ReinforceJob):
         gpu_config_type = "multi"
         
         # Create data payload from GRPOConfig
-        data = self.train_kwargs.to_dict()
+        data = self.config.to_dict()
         data["model"] = finetune_model
         data["gpu_config"] = {
             "type": gpu_config_type,
