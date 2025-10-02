@@ -304,10 +304,11 @@ def _get_stream_completion_fn(
         request["stream_options"] = {"include_usage": True}
 
     async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
+        headers = request.pop("headers", None)
         response = await litellm.acompletion(
             cache=cache_kwargs,
             stream=True,
-            headers=_get_headers(),
+            headers=_get_headers(headers),
             **request,
         )
         chunks = []
@@ -336,13 +337,14 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
-            headers=_get_headers(),
+            headers=_get_headers(headers),
             **request,
         )
 
@@ -353,6 +355,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -373,7 +376,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
         prompt=prompt,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_get_headers(),
+        headers=_get_headers(headers),
         **request,
     )
 
@@ -382,13 +385,14 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
-            headers=_get_headers(),
+            headers=_get_headers(headers),
             **request,
         )
 
@@ -400,6 +404,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
     request = dict(request)
     request.pop("rollout_id", None)
     model = request.pop("model").split("/", 1)
+    headers = request.pop("headers", None)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
     # Use the API key and base from the request, or from the environment.
@@ -417,7 +422,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
         prompt=prompt,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_get_headers(),
+        headers=_get_headers(headers),
         **request,
     )
 
@@ -426,13 +431,14 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     request = _convert_chat_request_to_responses_request(request)
 
     return litellm.responses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_get_headers(),
+        headers=_get_headers(headers),
         **request,
     )
 
@@ -441,13 +447,14 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     request = _convert_chat_request_to_responses_request(request)
 
     return await litellm.aresponses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_get_headers(),
+        headers=_get_headers(headers),
         **request,
     )
 
@@ -465,7 +472,9 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
     return request
 
-def _get_headers():
+def _get_headers(headers: dict[str, Any] | None = None):
+    headers = headers or {}
     return {
-        "User-Agent": f"DSPy/{dspy.__version__}"
+        "User-Agent": f"DSPy/{dspy.__version__}",
+        **headers,
     }
