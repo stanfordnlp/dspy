@@ -195,7 +195,7 @@ class Tool(Type):
             return result
 
     @classmethod
-    def from_mcp_tool(cls, session: "mcp.client.session.ClientSession", tool: "mcp.types.Tool") -> "Tool":
+    def from_mcp_tool(cls, session: "mcp.ClientSession", tool: "mcp.types.Tool") -> "Tool":
         """
         Build a DSPy tool from an MCP tool and a ClientSession.
 
