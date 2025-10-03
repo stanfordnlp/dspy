@@ -209,8 +209,7 @@ class StreamListener:
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
             boundary_index = last_tokens.find("[[")
             if boundary_index == -1:
-                # No end marker found, return all tokens
-                return last_tokens
+                boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
         else:
             raise ValueError(
