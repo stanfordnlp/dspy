@@ -1,7 +1,8 @@
 # DSPy Assertions 
 
-!!! warning "This page is outdated and may not be fully accurate in DSPy 2.5"
+!!! warning "Assertions are deprecated and NOT supported. Please use the `dspy.Refine` module instead. (or dspy.Suggest)."
 
+The content below is deprecated, and is scheduled to be removed.
 
 ## Introduction
 
