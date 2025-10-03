@@ -41,29 +41,6 @@ class XMLAdapter(ChatAdapter):
         parts.append(format_signature_fields_for_instructions(signature.output_fields))
         return "\n\n".join(parts).strip()
 
-    def format_user_message_content(
-        self,
-        signature: type[Signature],
-        inputs: dict[str, Any],
-        prefix: str = "",
-        suffix: str = "",
-        main_request: bool = False,
-    ) -> str:
-        messages = [prefix]
-        for k, v in signature.input_fields.items():
-            if k in inputs:
-                value = inputs.get(k)
-                formatted_field_value = format_field_value(field_info=v, value=value)
-                messages.append(f"<{k}>\n{formatted_field_value}\n</{k}>")
-
-        if main_request:
-            output_requirements = self.user_message_output_requirements(signature)
-            if output_requirements is not None:
-                messages.append(output_requirements)
-
-        messages.append(suffix)
-        return "\n\n".join(messages).strip()
-
     def format_assistant_message_content(
         self,
         signature: type[Signature],
