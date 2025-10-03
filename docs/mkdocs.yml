@@ -19,6 +19,7 @@ nav:
             - Modules: learn/programming/modules.md
             - Adapters: learn/programming/adapters.md
             - Tools: learn/programming/tools.md
+            - MCP: learn/programming/mcp.md
         - DSPy Evaluation:
             - Evaluation Overview: learn/evaluation/overview.md
             - Data Handling: learn/evaluation/data.md
