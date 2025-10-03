@@ -114,7 +114,7 @@ class StreamListener:
         # LiteLLM does not send completely empty chunks (https://github.com/BerriAI/litellm/blob/main/litellm/litellm_core_utils/model_response_utils.py#L10),
         # so empty content means it has other native fields such as provider_specific_fields.
         if not chunk_message:
-            if self.stream_start and self.field_end_queue.qsize() > 0:
+            if self.stream_start:
                 if token := self._get_last_token():
                     return StreamResponse(
                         self.predict_name,
