@@ -185,7 +185,12 @@ def streamify(
                     else:
                         # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
                         # determine if we should yield a value to the user.
-                        for listener in predict_id_to_listener[value.predict_id]:
+                        # Reorder listeners so that active (buffering) listeners are processed first
+                        # This ensures buffered chunks are flushed in the correct order.
+                        listeners = predict_id_to_listener[value.predict_id]
+                        listeners.sort(key=lambda x: x.stream_start, reverse=True)
+
+                        for listener in listeners:
                             # In some special cases such as Citation API, it is possible that multiple listeners
                             # return values at the same time due to the chunk buffer of the listener.
                             if output := listener.receive(value):
