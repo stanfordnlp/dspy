@@ -55,7 +55,7 @@ class XMLAdapter(ChatAdapter):
         )
 
     def user_message_output_requirements(self, signature: type[Signature]) -> str:
-        message = "Respond with the corresponding output fields wrapped in XML tags, starting with the field "
+        message = "Respond with the corresponding output fields wrapped in XML tags"
         message += ", then ".join(f"`<{f}>`" for f in signature.output_fields)
         message += "."
         return message
