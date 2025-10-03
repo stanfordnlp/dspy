@@ -1029,3 +1029,81 @@ async def test_streaming_with_citations():
             assert hasattr(final_prediction, "answer")
             assert hasattr(final_prediction, "citations")
             assert final_prediction.answer == "According to the references, water boils at 100°C."
+
+
+@pytest.mark.anyio
+async def test_streaming_citations_skip_buffer():
+    class AnswerWithSources(dspy.Signature):
+        """Answer questions using provided documents with citations."""
+        documents: list[Document] = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        citations: Citations = dspy.OutputField()
+
+    def stream_with_skip_buffer(content):
+        stream = ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=content))])
+        stream._dspy_skip_buffer = True
+        return stream
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict(AnswerWithSources)
+
+        def forward(self, documents, question, **kwargs):
+            return self.predict(documents=documents, question=question, **kwargs)
+
+    async def citation_stream(*args, **kwargs):
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" answer"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
+        yield stream_with_skip_buffer("According ")
+        yield stream_with_skip_buffer("to ")
+        yield stream_with_skip_buffer("the ")
+        yield stream_with_skip_buffer("references,")
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(
+            content="",
+            provider_specific_fields={
+                "citation": {
+                    "type": "char_location",
+                    "cited_text": "water boils at 100°C",
+                    "document_index": 0,
+                    "document_title": "Physics Facts",
+                    "start_char_index": 0,
+                    "end_char_index": 19
+                }
+            }
+        ))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" water"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" boils"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" at"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" 100°C"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="."))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" completed"))])
+        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
+
+    # Mock the final response choice to include provider_specific_fields with citations
+    with mock.patch("litellm.acompletion", return_value=citation_stream()):
+        program = dspy.streamify(
+            MyProgram(),
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="answer"),
+                dspy.streaming.StreamListener(signature_field_name="citations"),
+            ],
+        )
+
+        # Create test documents
+        docs = [Document(data="Water boils at 100°C at standard pressure.", title="Physics Facts")]
+
+        with dspy.context(lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False), adapter=dspy.ChatAdapter(native_response_types=[Citations])):
+            output = program(documents=docs, question="What temperature does water boil?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse) and value.signature_field_name == "citations":
+                    all_chunks.append(f"[{value.chunk[0].document_index}]")
+                elif isinstance(value, dspy.streaming.StreamResponse) and value.signature_field_name == "answer":
+                    all_chunks.append(value.chunk)
+
+            assert "".join(all_chunks) == "According to the references,[0] water boils at 100°C."

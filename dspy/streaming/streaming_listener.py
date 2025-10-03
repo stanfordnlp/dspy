@@ -160,6 +160,14 @@ class StreamListener:
                 return
 
         if self.stream_start and chunk_message:
+            if getattr(chunk, "_dspy_skip_buffer", None):
+                token = self._get_last_token()
+                return StreamResponse(
+                    self.predict_name,
+                    self.signature_field_name,
+                    token  + chunk_message,
+                    is_last_chunk=self.stream_end,
+                )
             # The stream is started, we keep returning the token until we see the start of the next field.
             token = None
             self.field_end_queue.put(chunk_message)
@@ -192,8 +200,7 @@ class StreamListener:
         are in the buffer because we don't directly yield the tokens received by the stream listener
         with the purpose to not yield the end_identifier tokens, e.g., "[[ ## ... ## ]]" for ChatAdapter.
         """
-        last_tokens = "".join(self.field_end_queue.queue)
-        self.field_end_queue = Queue()
+        last_tokens = self._get_last_token()
         if isinstance(settings.adapter, JSONAdapter):
             match = re.search(r'",|"\s*}', last_tokens)
             if match:
@@ -214,6 +221,11 @@ class StreamListener:
                 f"Unsupported adapter for streaming: {settings.adapter}, please use one of the following adapters: "
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
+
+    def _get_last_token(self) -> str:
+        last_tokens = "".join(self.field_end_queue.queue)
+        self.field_end_queue = Queue()
+        return last_tokens
 
     @property
     def _output_type(self) -> type | None:
