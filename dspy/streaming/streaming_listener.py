@@ -97,8 +97,6 @@ class StreamListener:
 
         try:
             chunk_message = chunk.choices[0].delta.content
-            if chunk_message is None:
-                return
         except Exception:
             return
 
@@ -111,6 +109,20 @@ class StreamListener:
                     parsed_chunk,
                     is_last_chunk=self.stream_end,
                 )
+
+        # If we receive an empty chunk but streaming has started, flush the buffer.
+        # LiteLLM does not send completely empty chunks (https://github.com/BerriAI/litellm/blob/main/litellm/litellm_core_utils/model_response_utils.py#L10),
+        # so empty content means it has other native fields such as provider_specific_fields.
+        if not chunk_message:
+            if self.stream_start and self.field_end_queue.qsize() > 0:
+                if token := self._get_last_token():
+                    return StreamResponse(
+                        self.predict_name,
+                        self.signature_field_name,
+                        token,
+                        is_last_chunk=False,
+                    )
+            return
 
         if chunk_message and start_identifier in chunk_message:
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
@@ -192,8 +204,7 @@ class StreamListener:
         are in the buffer because we don't directly yield the tokens received by the stream listener
         with the purpose to not yield the end_identifier tokens, e.g., "[[ ## ... ## ]]" for ChatAdapter.
         """
-        last_tokens = "".join(self.field_end_queue.queue)
-        self.field_end_queue = Queue()
+        last_tokens = self._get_last_token()
         if isinstance(settings.adapter, JSONAdapter):
             match = re.search(r'",|"\s*}', last_tokens)
             if match:
@@ -214,6 +225,12 @@ class StreamListener:
                 f"Unsupported adapter for streaming: {settings.adapter}, please use one of the following adapters: "
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
+
+    def _get_last_token(self) -> str:
+        last_token = "".join(self.field_end_queue.queue)
+        self.field_end_queue = Queue()
+        return last_token
+
 
     @property
     def _output_type(self) -> type | None:

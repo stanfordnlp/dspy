@@ -1004,12 +1004,15 @@ async def test_streaming_with_citations():
             output = program(documents=docs, question="What temperature does water boil?")
             citation_chunks = []
             answer_chunks = []
+            entire_chunks = []
             final_prediction = None
             async for value in output:
                 if isinstance(value, dspy.streaming.StreamResponse) and value.signature_field_name == "citations":
                     citation_chunks.append(value)
+                    entire_chunks.append(f"[{value.chunk[0].document_index}]")
                 elif isinstance(value, dspy.streaming.StreamResponse) and value.signature_field_name == "answer":
                     answer_chunks.append(value.chunk)
+                    entire_chunks.append(value.chunk)
                 elif isinstance(value, dspy.Prediction):
                     final_prediction = value
 
@@ -1023,6 +1026,7 @@ async def test_streaming_with_citations():
 
             # Verify the answer chunks are correct
             assert "".join(answer_chunks) == "According to the references, water boils at 100°C."
+            assert "".join(entire_chunks) == "According to the references,[0] water boils at 100°C."
 
             # Test that prediction contains the expected fields
             assert final_prediction is not None
