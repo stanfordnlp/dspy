@@ -166,9 +166,10 @@ async def test_stream_listener_chat_adapter(lm_for_test):
 
     assert all_chunks[0].predict_name == "predict1"
     assert all_chunks[0].signature_field_name == "answer"
-
-    assert all_chunks[-1].predict_name == "predict2"
-    assert all_chunks[-1].signature_field_name == "judgement"
+    # The last chunk can be from either predictor because sometimes small LMs miss the `[[ ## completed ## ]]` marker,
+    # which results in an extra chunk that flushes out the buffer.
+    assert all_chunks[-2].predict_name == "predict2"
+    assert all_chunks[-2].signature_field_name == "judgement"
 
 
 @pytest.mark.anyio
@@ -299,10 +300,11 @@ def test_sync_streaming(lm_for_test):
     assert all_chunks[0].predict_name == "predict1"
     assert all_chunks[0].signature_field_name == "answer"
     assert all_chunks[0].is_last_chunk is False
-
-    assert all_chunks[-1].predict_name == "predict2"
-    assert all_chunks[-1].signature_field_name == "judgement"
-    assert all_chunks[-1].is_last_chunk is True
+    # The last chunk can be from either predictor because sometimes small LMs miss the `[[ ## completed ## ]]` marker,
+    # which results in an extra chunk that flushes out the buffer.
+    assert all_chunks[-2].predict_name == "predict2"
+    assert all_chunks[-2].signature_field_name == "judgement"
+    assert all_chunks[-2].is_last_chunk is True
 
 
 def test_sync_status_streaming():
@@ -597,6 +599,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
             "The answer provides the standard punchline for this classic joke format, adapted to the specific location "
             "mentioned in the question. It is the expected and appropriate response."
         )
+
 
 @pytest.mark.anyio
 async def test_stream_listener_missing_completion_marker_chat_adapter():
@@ -979,9 +982,10 @@ async def test_streaming_allows_custom_streamable_type():
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
         yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
 
-
     with mock.patch("litellm.acompletion", side_effect=stream):
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter(native_response_types=[CustomType])):
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter(native_response_types=[CustomType])
+        ):
             output = program(question="why did a chicken cross the kitchen?")
             all_chunks = []
             async for value in output:
@@ -998,6 +1002,7 @@ async def test_streaming_allows_custom_streamable_type():
 async def test_streaming_with_citations():
     class AnswerWithSources(dspy.Signature):
         """Answer questions using provided documents with citations."""
+
         documents: list[Document] = dspy.InputField()
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
@@ -1028,19 +1033,26 @@ async def test_streaming_with_citations():
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="g"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" to "))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="the references,"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(
-            content="",
-            provider_specific_fields={
-                "citation": {
-                    "type": "char_location",
-                    "cited_text": "water boils at 100°C",
-                    "document_index": 0,
-                    "document_title": "Physics Facts",
-                    "start_char_index": 0,
-                    "end_char_index": 19
-                }
-            }
-        ))])
+        yield ModelResponseStream(
+            model="claude",
+            choices=[
+                StreamingChoices(
+                    delta=Delta(
+                        content="",
+                        provider_specific_fields={
+                            "citation": {
+                                "type": "char_location",
+                                "cited_text": "water boils at 100°C",
+                                "document_index": 0,
+                                "document_title": "Physics Facts",
+                                "start_char_index": 0,
+                                "end_char_index": 19,
+                            }
+                        },
+                    )
+                )
+            ],
+        )
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" water"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" boils"))])
         yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" at"))])
@@ -1064,7 +1076,10 @@ async def test_streaming_with_citations():
         # Create test documents
         docs = [Document(data="Water boils at 100°C at standard pressure.", title="Physics Facts")]
 
-        with dspy.context(lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False), adapter=dspy.ChatAdapter(native_response_types=[Citations])):
+        with dspy.context(
+            lm=dspy.LM("anthropic/claude-3-5-sonnet-20241022", cache=False),
+            adapter=dspy.ChatAdapter(native_response_types=[Citations]),
+        ):
             output = program(documents=docs, question="What temperature does water boil?")
             citation_chunks = []
             answer_chunks = []
