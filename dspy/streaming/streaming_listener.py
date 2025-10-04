@@ -208,12 +208,40 @@ class StreamListener:
             return last_tokens[:boundary_index]
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
             boundary_index = last_tokens.find("[[")
+            if boundary_index == -1:
+                boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
         else:
             raise ValueError(
                 f"Unsupported adapter for streaming: {settings.adapter}, please use one of the following adapters: "
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
+
+    def finalize(self) -> StreamResponse | None:
+        """Finalize the stream and flush any remaining buffered tokens.
+
+        This should be called when the stream ends.
+        It ensures no tokens are lost from the buffer and marks the final chunk appropriately.
+
+        Returns:
+            A StreamResponse with the remaining buffered tokens and is_last_chunk=True,
+            or None if there are no buffered tokens or the stream hasn't started.
+        """
+        if self.stream_end or not self.stream_start:
+            # Stream already ended or never started, nothing to finalize
+            return None
+
+        self.stream_end = True
+        if self.field_end_queue.qsize() > 0:
+            token = self.flush()
+            if token:
+                return StreamResponse(
+                    self.predict_name,
+                    self.signature_field_name,
+                    token,
+                    is_last_chunk=True,
+                )
+        return None
 
     @property
     def _output_type(self) -> type | None:
@@ -224,7 +252,7 @@ class StreamListener:
 
 
 
-def find_predictor_for_stream_listeners(program: "Module", stream_listeners: list[StreamListener]):
+def find_predictor_for_stream_listeners(program: "Module", stream_listeners: list[StreamListener]) -> dict[int, list[StreamListener]]:
     """Find the predictor for each stream listener.
 
     This is a utility function to automatically find the predictor for each stream listener. It is used when some
