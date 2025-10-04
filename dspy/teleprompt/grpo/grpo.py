@@ -1,12 +1,13 @@
 import logging
 import random
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Any, Callable, Literal
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import GRPOGroup, MultiGPUConfig, TrainDataFormat
+from dspy.teleprompt.grpo.grpo_config import GRPOConfig
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
@@ -26,7 +27,7 @@ class GRPO(FinetuneTeleprompter):
         self,
         metric: Callable | None = None,
         multitask: bool = True,
-        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
+        config: GRPOConfig | dict[LM, GRPOConfig] | None = None,
         adapter: Adapter | dict[LM, Adapter] | None = None,
         exclude_demos: bool = False,
         num_threads: int = 6,
@@ -43,7 +44,8 @@ class GRPO(FinetuneTeleprompter):
         variably_invoked_predictor_fill_strategy: Literal["randint"] | Literal["max"] | None = None,
         gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1),
     ):
-        super().__init__(train_kwargs=train_kwargs)
+        # Store GRPOConfig objects for internal use
+        self.grpo_configs: dict[LM, GRPOConfig] = self._convert_to_grpo_config_dict(config)
         self.metric = metric
         self.multitask = multitask
         self.adapter: dict[LM, Adapter] = self.convert_to_lm_dict(adapter)
@@ -79,6 +81,43 @@ class GRPO(FinetuneTeleprompter):
         self.shuffled_trainset_ids = []
         self.epoch = -1
         self.id_freqs = Counter()
+    
+    def _convert_to_grpo_config_dict(self, config) -> dict[LM, GRPOConfig]:
+        """
+        Convert config to GRPOConfig dict format for internal use.
+        
+        For consistency purposes this returns a defaultdict such that it can be accessed for each LM,  
+        """
+        if config is None:
+            return defaultdict(lambda: GRPOConfig(num_generations=1))  # Default config
+        
+        if isinstance(config, GRPOConfig):
+            return defaultdict(lambda: config)
+        
+        if isinstance(config, dict):
+            # Check if it's a defaultdict first
+            if hasattr(config, 'default_factory'):
+                # It's a defaultdict, check the default factory
+                default_value = config.default_factory()
+                if isinstance(default_value, GRPOConfig):
+                    return config
+                else:
+                    raise ValueError(f"defaultdict default factory must return GRPOConfig, got {type(default_value)}")
+            
+            # Regular dict - check if all keys are LMs
+            if config and all(isinstance(k, LM) for k in config.keys()):
+                # LM dict format
+                result = {}
+                for lm, config_obj in config.items():
+                    if isinstance(config_obj, GRPOConfig):
+                        result[lm] = config_obj
+                    else:
+                        raise ValueError(f"All values in LM dict must be GRPOConfig instances, got {type(config_obj)}")
+                return result
+            else:
+                raise ValueError(f"Dictionary config must have LM keys, got keys of type {type(next(iter(config.keys()))) if config else 'empty dict'}")
+        
+        raise ValueError(f"config must be GRPOConfig, dict[LM, GRPOConfig], or None, got {type(config)}")
 
     def validate_trace_data_and_log_issues(
         self,
@@ -317,12 +356,10 @@ class GRPO(FinetuneTeleprompter):
         for t in teachers:
             disable_lm_cache(program=t, lm_cache_dict=lm_cache_dict)
 
-        # Update train_kwargs
+        # Update config - now using GRPOConfig objects
         for pred in student.predictors():
-            train_kwargs = self.train_kwargs[pred.lm]
-            train_kwargs = {} if train_kwargs is None else train_kwargs
-            train_kwargs["num_generations"] = self.num_rollouts_per_grpo_step
-            self.train_kwargs[pred.lm] = train_kwargs
+            config = self.grpo_configs[pred.lm]
+            config.num_generations = self.num_rollouts_per_grpo_step
 
         # We need to have a separate job for each unique LM x the data
         # collection strategy. This properly handles all combinations of
@@ -333,8 +370,8 @@ class GRPO(FinetuneTeleprompter):
             data_key = None if self.multitask else pred_ind
             job_key = (pred.lm, data_key)
             if job_key not in grpo_training_jobs:
-                train_kwargs = self.train_kwargs[pred.lm]
-                job = pred.lm.reinforce(train_kwargs=train_kwargs, gpu_config=self.gpu_config)
+                config = self.grpo_configs[pred.lm]
+                job = pred.lm.reinforce(config=config, gpu_config=self.gpu_config)
                 grpo_training_jobs[job_key] = job
 
         self.report_validation_metrics(
