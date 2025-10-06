@@ -455,7 +455,6 @@ class MIPROv2(Teleprompter):
         logger.info(
             "We will evaluate the program over a series of trials with different combinations of instructions and few-shot examples to find the optimal combination using Bayesian Optimization.\n"
         )
-        logger.info(f"INSIDE OPTIMIZE PROMPT PARAMS: {demo_candidates}")
 
         # Compute the adjusted total trials that we will run (including full evals)
         run_additional_full_eval_at_end = 1 if num_trials % minibatch_full_eval_steps != 0 else 0
