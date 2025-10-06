@@ -127,6 +127,15 @@ class MIPROv2(Teleprompter):
             if self.max_errors is not None
             else dspy.settings.max_errors
         )
+
+        # Update max demos if specified
+        initial_max_bootstrapped_demos = self.max_bootstrapped_demos
+        if max_bootstrapped_demos is not None:
+            self.max_bootstrapped_demos = max_bootstrapped_demos
+        initial_max_labeled_demos = self.max_labeled_demos
+        if max_labeled_demos is not None:
+            self.max_labeled_demos = max_labeled_demos
+
         zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
 
         # If auto is None, and num_trials is not provided (but num_candidates is), raise an error that suggests a good num_trials value
@@ -149,11 +158,6 @@ class MIPROv2(Teleprompter):
         seed = seed or self.seed
         self._set_random_seeds(seed)
 
-        # Update max demos if specified
-        if max_bootstrapped_demos is not None:
-            self.max_bootstrapped_demos = max_bootstrapped_demos
-        if max_labeled_demos is not None:
-            self.max_labeled_demos = max_labeled_demos
 
         # Set training & validation sets
         trainset, valset = self._set_and_validate_datasets(trainset, valset)
@@ -199,7 +203,10 @@ class MIPROv2(Teleprompter):
 
         # If zero-shot, discard demos
         if zeroshot_opt:
+            logger.info("ZEROSHOT IS TRUE")
             demo_candidates = None
+        else:
+            logger.info("ZEROSHOT IS FALSE")
 
         with dspy.context(lm=self.task_model):
             # Step 3: Find optimal prompt parameters
@@ -215,6 +222,10 @@ class MIPROv2(Teleprompter):
                 minibatch_full_eval_steps,
                 seed,
             )
+
+        # Reset max demos
+        self.max_bootstrapped_demos = initial_max_bootstrapped_demos
+        self.max_labeled_demos = initial_max_labeled_demos
 
         return best_program
 
@@ -447,6 +458,7 @@ class MIPROv2(Teleprompter):
         logger.info(
             "We will evaluate the program over a series of trials with different combinations of instructions and few-shot examples to find the optimal combination using Bayesian Optimization.\n"
         )
+        logger.info(f"INSIDE OPTIMIZE PROMPT PARAMS: {demo_candidates}")
 
         # Compute the adjusted total trials that we will run (including full evals)
         run_additional_full_eval_at_end = 1 if num_trials % minibatch_full_eval_steps != 0 else 0
