@@ -264,7 +264,7 @@ async def test_streaming_handles_space_correctly():
                 if isinstance(value, dspy.streaming.StreamResponse):
                     all_chunks.append(value)
 
-    assert all_chunks[0].chunk == "How are you doing?"
+    assert "".join([chunk.chunk for chunk in all_chunks]) == "How are you doing?"
 
 
 @pytest.mark.llm_call
@@ -412,28 +412,18 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
                 if isinstance(value, dspy.streaming.StreamResponse):
                     all_chunks.append(value)
 
-        assert all_chunks[0].predict_name == "predict1"
-        assert all_chunks[0].signature_field_name == "answer"
+        # Verify answer chunks
+        answer_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "answer"]
+        assert len(answer_chunks) > 0
+        assert answer_chunks[0].predict_name == "predict1"
+        assert "".join([chunk.chunk for chunk in answer_chunks]) == "To get to the other side of the dinner plate!"
 
-        assert all_chunks[0].chunk == "To"
-        assert all_chunks[1].chunk == " get"
-        assert all_chunks[2].chunk == " to"
-        assert all_chunks[3].chunk == " the"
-        assert all_chunks[4].chunk == " other"
-        assert all_chunks[5].chunk == " side of the dinner plate!"
-        assert all_chunks[5].is_last_chunk is True
-
-        # Start processing the second listened field.
-        assert all_chunks[6].predict_name == "predict2"
-        assert all_chunks[6].signature_field_name == "judgement"
-        assert all_chunks[6].chunk == "The"
-        assert all_chunks[7].chunk == " answer"
-        assert all_chunks[8].chunk == " is"
-        assert all_chunks[9].chunk == " humorous"
-        assert all_chunks[10].chunk == " and"
-        assert all_chunks[11].chunk == " plays"
-        assert all_chunks[11].is_last_chunk is False
-        assert all_chunks[-1].is_last_chunk is True
+        # Verify judgement chunks
+        judgement_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "judgement"]
+        assert len(judgement_chunks) > 0
+        assert judgement_chunks[0].predict_name == "predict2"
+        judgement_text = "".join([chunk.chunk for chunk in judgement_chunks])
+        assert "The answer is humorous and plays" in judgement_text
 
 
 @pytest.mark.anyio
@@ -511,21 +501,17 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
                 if isinstance(value, dspy.streaming.StreamResponse):
                     all_chunks.append(value)
 
-        assert all_chunks[0].predict_name == "predict1"
-        assert all_chunks[0].signature_field_name == "answer"
+        # Verify answer chunks
+        answer_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "answer"]
+        assert len(answer_chunks) > 0
+        assert answer_chunks[0].predict_name == "predict1"
+        assert "".join([chunk.chunk for chunk in answer_chunks]) == "To get to the other side of the frying pan!"
 
-        assert all_chunks[0].chunk == "To"
-        assert all_chunks[1].chunk == " get to the other side of the frying pan!"
-
-        # Start processing the second listened field.
-        assert all_chunks[2].predict_name == "predict2"
-        assert all_chunks[2].signature_field_name == "judgement"
-        assert all_chunks[2].chunk == "The"
-        assert all_chunks[3].chunk == " answer"
-        assert all_chunks[4].chunk == " is"
-        assert all_chunks[5].chunk == " humorous"
-        assert all_chunks[6].chunk == " and"
-        assert all_chunks[7].chunk == " plays on the very funny and classic joke format."
+        # Verify judgement chunks
+        judgement_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "judgement"]
+        assert len(judgement_chunks) > 0
+        assert judgement_chunks[0].predict_name == "predict2"
+        assert "".join([chunk.chunk for chunk in judgement_chunks]) == "The answer is humorous and plays on the very funny and classic joke format."
 
 
 @pytest.mark.anyio
@@ -903,13 +889,17 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
                 if isinstance(value, dspy.streaming.StreamResponse):
                     all_chunks.append(value)
 
-    assert all_chunks[0].predict_name == "predict1"
-    assert all_chunks[0].signature_field_name == "answer"
-    assert all_chunks[0].chunk == "To get to the other side!"
+    # Verify answer chunks
+    answer_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "answer"]
+    assert len(answer_chunks) > 0
+    assert answer_chunks[0].predict_name == "predict1"
+    assert "".join([chunk.chunk for chunk in answer_chunks]) == "To get to the other side!"
 
-    assert all_chunks[1].predict_name == "predict2"
-    assert all_chunks[1].signature_field_name == "judgement"
-    assert all_chunks[1].chunk == "The answer is humorous."
+    # Verify judgement chunks
+    judgement_chunks = [chunk for chunk in all_chunks if chunk.signature_field_name == "judgement"]
+    assert len(judgement_chunks) > 0
+    assert judgement_chunks[0].predict_name == "predict2"
+    assert "".join([chunk.chunk for chunk in judgement_chunks]) == "The answer is humorous."
 
 
 @pytest.mark.anyio

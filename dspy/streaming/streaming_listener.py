@@ -209,8 +209,7 @@ class StreamListener:
             if re.search(end_identifier, concat_message):
                 # The next field is identified, we can end the stream and flush out all tokens in the buffer.
                 self.stream_end = True
-                last_token = self.flush()
-                token = last_token
+                token = self.flush()
                 token = token.rstrip()  # Remove the trailing \n\n
             elif not self._could_form_end_identifier(concat_message, adapter_name):
                 # Buffer cannot form end identifier, safe to yield the oldest token
