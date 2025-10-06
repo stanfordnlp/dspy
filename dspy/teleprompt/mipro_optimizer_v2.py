@@ -203,10 +203,7 @@ class MIPROv2(Teleprompter):
 
         # If zero-shot, discard demos
         if zeroshot_opt:
-            logger.info("ZEROSHOT IS TRUE")
             demo_candidates = None
-        else:
-            logger.info("ZEROSHOT IS FALSE")
 
         with dspy.context(lm=self.task_model):
             # Step 3: Find optimal prompt parameters
