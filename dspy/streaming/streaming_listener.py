@@ -93,12 +93,6 @@ class StreamListener:
         Returns:
             True if the message could potentially form part of the end identifier
         """
-        if adapter_name not in self.adapter_identifiers:
-            raise ValueError(
-                f"Unsupported adapter for streaming: {adapter_name}, please use one of the following adapters: "
-                f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
-            )
-
         adapter_config = self.adapter_identifiers[adapter_name]
         end_pattern_prefixes = adapter_config.get("end_pattern_prefixes", [])
         end_pattern_contains = adapter_config.get("end_pattern_contains")
@@ -212,10 +206,8 @@ class StreamListener:
                 token = self.flush()
                 token = token.rstrip()  # Remove the trailing \n\n
             elif not self._could_form_end_identifier(concat_message, adapter_name):
-                # Buffer cannot form end identifier, safe to yield the oldest token
-                # Keep at least 1 token in buffer in case next token creates end pattern
-                if self.field_end_queue.qsize() > 1:
-                    token = self.field_end_queue.get()
+                # Buffer cannot form end identifier, safe to flush out the tokens in the buffer.
+                token = self.flush()
             elif self.field_end_queue.qsize() > 10:
                 # Buffer could form end identifier, but we've exceeded max buffer size
                 # Yield the oldest token to prevent unbounded buffering
