@@ -89,8 +89,11 @@ class LM(BaseLM):
 
         if model_pattern:
             if temperature == 0 and max_tokens == 4000:
-                warnings.warn("Default parameters passed in, but OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 16000 to "
-                             "`dspy.LM(...)`. Altering parameters to match")
+                warnings.warn(
+                    "Default parameters passed in, but OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 16000 to "
+                    "`dspy.LM(...)`. Altering parameters to match",
+                    stacklevel=3,
+                )
                 temperature = 1.0
                 max_tokens = 16000
                 
