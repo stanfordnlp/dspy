@@ -88,7 +88,13 @@ class LM(BaseLM):
         model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
 
         if model_pattern:
-            if max_tokens < 16000 or temperature != 1.0:
+            if temperature == 0 and max_tokens == 4000:
+                warnings.warn("Default parameters passed in, but OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 16000 to "
+                             "`dspy.LM(...)`. Altering parameters to match")
+                temperature = 1.0
+                max_tokens = 16000
+                
+            if temperature != 1.0 or max_tokens < 16000:
                 raise ValueError(
                     "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 16000 to "
                     "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)"
