@@ -95,54 +95,33 @@ class ReAct(Module):
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
-    def _format_payload_trajectory(self, payload: Any):
-        if isinstance(payload, Example):
-            trajectory = payload.get("trajectory")
-            if trajectory and not isinstance(trajectory, str):
-                payload_copy = payload.copy()
-                payload_copy["trajectory"] = self._format_trajectory(trajectory)
-                return payload_copy
-            return payload
-
-        if isinstance(payload, dict):
-            trajectory = payload.get("trajectory")
-            if trajectory and not isinstance(trajectory, str):
-                payload_copy = dict(payload)
-                payload_copy["trajectory"] = self._format_trajectory(trajectory)
-                return payload_copy
-            return payload
-
-        if isinstance(payload, History):
-            formatted_messages = []
-            changed = False
-            for message in payload.messages:
-                formatted = self._format_payload_trajectory(message)
-                if isinstance(formatted, Example):
-                    formatted = dict(formatted.items())
-                    changed = True
-                elif formatted is not message:
-                    changed = True
-                formatted_messages.append(formatted)
-            return History(messages=formatted_messages) if changed else payload
-
-        return payload
-
-    def _get_module_demos(self, module: Any) -> list[Any] | None:
-        if hasattr(module, "demos"):
-            return module.demos
-
-        inner_predict = getattr(module, "predict", None)
-        if inner_predict is not None and hasattr(inner_predict, "demos"):
-            return inner_predict.demos
-
-        return None
-
     def _format_history_with_trajectory(self, history: History | None) -> History | None:
         if history is None or not history.messages:
             return history
 
-        formatted = self._format_payload_trajectory(history)
-        return formatted if isinstance(formatted, History) else history
+        formatted_messages = []
+        changed = False
+
+        for message in history.messages:
+            if isinstance(message, Example):
+                message_data = dict(message.items())
+            elif isinstance(message, dict):
+                message_data = dict(message)
+            else:
+                formatted_messages.append(message)
+                continue
+
+            trajectory_value = message_data.get("trajectory")
+            if trajectory_value and not isinstance(trajectory_value, str):
+                message_data["trajectory"] = self._format_trajectory(trajectory_value)
+                changed = True
+
+            formatted_messages.append(message_data)
+
+        if not changed:
+            return history
+
+        return History(messages=formatted_messages)
 
     def forward(self, **input_args):
         trajectory = {}
@@ -200,12 +179,6 @@ class ReAct(Module):
                 call_kwargs = dict(input_args)
                 call_kwargs["trajectory"] = self._format_trajectory(trajectory)
 
-                demos = self._get_module_demos(module)
-                if demos is not None:
-                    formatted_demos = [self._format_payload_trajectory(demo) for demo in demos]
-                    if any(formatted is not original for formatted, original in zip(formatted_demos, demos, strict=False)):
-                        call_kwargs["demos"] = formatted_demos
-
                 history_value = call_kwargs.get("history")
                 if isinstance(history_value, History):
                     call_kwargs["history"] = self._format_history_with_trajectory(history_value)
@@ -220,12 +193,6 @@ class ReAct(Module):
             try:
                 call_kwargs = dict(input_args)
                 call_kwargs["trajectory"] = self._format_trajectory(trajectory)
-
-                demos = self._get_module_demos(module)
-                if demos is not None:
-                    formatted_demos = [self._format_payload_trajectory(demo) for demo in demos]
-                    if any(formatted is not original for formatted, original in zip(formatted_demos, demos, strict=False)):
-                        call_kwargs["demos"] = formatted_demos
 
                 history_value = call_kwargs.get("history")
                 if isinstance(history_value, History):
