@@ -50,6 +50,143 @@ def test_tool_observation_preserves_custom_type():
     assert sum(1 for part in observation_content if isinstance(part, dict) and part.get("type") == "image_url") == 2
 
 
+def test_react_formats_demos_with_adapter_consistently():
+    captured_inputs: list[tuple[bool, dict]] = []
+
+    class SpyChatAdapter(dspy.ChatAdapter):
+        def format_user_message_content(self, signature, inputs, *args, **kwargs):
+            plain_inputs = inputs
+            if isinstance(inputs, dict):
+                plain_inputs = dict(inputs)
+            elif hasattr(inputs, "items"):
+                plain_inputs = dict(inputs.items())
+
+            captured_inputs.append((kwargs.get("main_request", False), plain_inputs))
+            return super().format_user_message_content(signature, inputs, *args, **kwargs)
+
+    def noop_tool():
+        return "ok"
+
+    adapter = SpyChatAdapter()
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I will finish immediately.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {
+                "reasoning": "Step-by-step notes.",
+                "answer": "All done.",
+            },
+            {
+                "reasoning": "Step-by-step notes.",
+                "answer": "All done.",
+            },
+        ],
+        adapter=adapter,
+    )
+    dspy.settings.configure(lm=lm, adapter=adapter)
+
+    react = dspy.ReAct("question -> answer", tools=[noop_tool])
+
+    demo_trajectory = {
+        "thought_0": "Consider invoking noop_tool.",
+        "tool_name_0": "noop_tool",
+        "tool_args_0": {"reason": "demo"},
+        "observation_0": "ok",
+    }
+
+    demo = {
+        "question": "Demo question",
+        "trajectory": demo_trajectory,
+        "next_thought": "Demo thought",
+        "next_tool_name": "finish",
+        "next_tool_args": {},
+    }
+
+    react.react.demos = [demo]
+
+    react(question="What now?")
+
+    # Ensure the original demo trajectory remains unmodified for downstream callers.
+    assert demo["trajectory"] is demo_trajectory
+
+    demo_inputs = [data for main_request, data in captured_inputs if not main_request and isinstance(data, dict) and "trajectory" in data]
+    assert demo_inputs, "Expected the adapter to format at least one demo example"
+
+    formatted_trajectory = demo_inputs[0]["trajectory"]
+    assert isinstance(formatted_trajectory, str)
+    assert "[[ ## thought_0 ## ]]" in formatted_trajectory
+
+
+def test_history_trajectory_uses_chat_format():
+    def math_tool(expression: str) -> str:
+        return str(eval(expression))
+
+    adapter = dspy.ChatAdapter()
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should use the math tool.",
+                "next_tool_name": "math_tool",
+                "next_tool_args": {"expression": "2+2"},
+            },
+            {
+                "next_thought": "That answers the question; time to finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {
+                "reasoning": "Computed 2+2 with the provided tool.",
+                "answer": "4",
+            },
+            {
+                "next_thought": "Reusing the math tool for another calculation.",
+                "next_tool_name": "math_tool",
+                "next_tool_args": {"expression": "3*4"},
+            },
+            {
+                "next_thought": "I have the second result and can finish now.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {
+                "reasoning": "Computed 3*4 with the provided tool.",
+                "answer": "12",
+            },
+        ],
+        adapter=adapter,
+    )
+
+    dspy.settings.configure(lm=lm, adapter=adapter)
+
+    class HistorySignature(dspy.Signature):
+        history: dspy.History = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    react = dspy.ReAct(HistorySignature, tools=[math_tool])
+
+    history = dspy.History(messages=[])
+
+    q1 = "What is 2+2?"
+    first_outputs = react(history=history, question=q1)
+    history.messages.append({"question": q1, **first_outputs})
+
+    q2 = "Now compute 3*4."
+    react(history=history, question=q2)
+
+    messages = lm.history[-1]["messages"]
+    user_messages = [message for message in messages if message.get("role") == "user"]
+    assert len(user_messages) >= 2
+
+    first_user_content = user_messages[0]["content"]
+    assert "[[ ## trajectory ## ]]" in first_user_content
+    assert "[[ ## thought_0 ## ]]" in first_user_content
+    assert '"thought_0"' not in first_user_content
+
+
 def test_tool_calling_with_pydantic_args():
     class CalendarEvent(BaseModel):
         name: str
