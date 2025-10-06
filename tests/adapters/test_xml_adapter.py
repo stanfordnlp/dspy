@@ -292,7 +292,7 @@ def test_xml_adapter_full_prompt():
 
     expected_user = (
         "[[ ## query ## ]]\nwhen was Marie Curie born\n\n"
-        "Respond with the corresponding output fields wrapped in XML tags"
+        "Respond with the corresponding output fields wrapped in XML tags `<answer>`."
     )
 
     assert messages[0]["content"] == expected_system
