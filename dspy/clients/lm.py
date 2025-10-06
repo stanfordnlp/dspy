@@ -96,7 +96,7 @@ class LM(BaseLM):
                 )
                 temperature = 1.0
                 max_tokens = 16000
-                
+
             if temperature != 1.0 or max_tokens < 16000:
                 raise ValueError(
                     "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 16000 to "
