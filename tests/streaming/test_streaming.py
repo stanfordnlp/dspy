@@ -1102,3 +1102,41 @@ async def test_streaming_with_citations():
             assert hasattr(final_prediction, "answer")
             assert hasattr(final_prediction, "citations")
             assert final_prediction.answer == "According to the references, water boils at 100°C."
+
+
+@pytest.mark.parametrize(
+    ("adapter_name", "message", "expected"),
+    [
+        # ChatAdapter - should return True for partial bracket sequences
+        ("ChatAdapter", "some text [", True),
+        ("ChatAdapter", "some text [[", True),
+        ("ChatAdapter", "some text [[ ", True),
+        ("ChatAdapter", "some text [[ #", True),
+        ("ChatAdapter", "some text [[ ##", True),
+        # ChatAdapter - should return True for partial field names after "[[ ##"
+        ("ChatAdapter", "some text [[ ## com", True),
+        ("ChatAdapter", "some text [[ ## completed", True),
+        # ChatAdapter - should return False for text that cannot form the pattern
+        ("ChatAdapter", "hello world", False),
+        ("ChatAdapter", "some text", False),
+        ("ChatAdapter", "answer: hello", False),
+        # JSONAdapter - should return True for partial quote/brace sequences
+        ("JSONAdapter", 'some text "', True),
+        ("JSONAdapter", 'some text ",', True),
+        ("JSONAdapter", 'some text " ', True),
+        ("JSONAdapter", 'some text "}', True),
+        # JSONAdapter - should return False for text that cannot form the pattern
+        ("JSONAdapter", "hello world", False),
+        ("JSONAdapter", "some text", False),
+        # XMLAdapter - should return True for partial closing tag
+        ("XMLAdapter", "some text <", True),
+        ("XMLAdapter", "some text </", True),
+        ("XMLAdapter", "some text </result", True),
+        # XMLAdapter - should return False for text that cannot form the pattern
+        ("XMLAdapter", "hello world", False),
+        ("XMLAdapter", "some text", False),
+    ],
+)
+def test_stream_listener_could_form_end_identifier(adapter_name, message, expected):
+    listener = dspy.streaming.StreamListener(signature_field_name="answer")
+    assert listener._could_form_end_identifier(message, adapter_name) is expected
