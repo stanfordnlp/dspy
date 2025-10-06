@@ -83,17 +83,17 @@ asyncio.run(main())
 
 ### 2. HTTP Server (Remote)
 
-For remote MCP servers over HTTP, use the SSE (Server-Sent Events) transport:
+For remote MCP servers over HTTP, use the streamable HTTP transport:
 
 ```python
 import asyncio
 import dspy
 from mcp import ClientSession
-from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamablehttp_client
 
 async def main():
     # Connect to HTTP MCP server
-    async with sse_client("http://localhost:8000/sse") as (read, write):
+    async with streamablehttp_client("http://localhost:8000/mcp") as (read, write):
         async with ClientSession(read, write) as session:
             # Initialize the session
             await session.initialize()
