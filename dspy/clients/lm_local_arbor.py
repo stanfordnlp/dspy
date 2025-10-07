@@ -63,7 +63,7 @@ class ArborReinforceJob(ReinforceJob):
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         # Only multi-GPU is supported for now
         gpu_config_type = "multi"
-        
+
         # Create data payload from GRPOConfig
         data = self.config.to_dict()
         data["model"] = finetune_model

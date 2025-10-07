@@ -7,7 +7,6 @@ from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import GRPOGroup, MultiGPUConfig, TrainDataFormat
-from dspy.teleprompt.grpo.grpo_config import GRPOConfig
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
@@ -18,9 +17,36 @@ from dspy.teleprompt.bootstrap_finetune import (
     assert_structural_equivalency,
 )
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
+from dspy.teleprompt.grpo.grpo_config import GRPOConfig
 
 logger = logging.getLogger(__name__)
 
+def _grpo_build_default_defaultdict() -> defaultdict[LM, GRPOConfig]:
+    return defaultdict(lambda: GRPOConfig(num_generations=1))
+
+def _grpo_wrap_single_config(cfg: GRPOConfig) -> defaultdict[LM, GRPOConfig]:
+    return defaultdict(lambda: cfg)
+
+def _grpo_validate_defaultdict(cfg: dict) -> dict[LM, GRPOConfig]:
+    default_value = cfg.default_factory()  # type: ignore[attr-defined]
+    if not isinstance(default_value, GRPOConfig):
+        raise ValueError(
+            f"defaultdict default factory must return GRPOConfig, got {type(default_value)}"
+        )
+    return cfg
+
+def _grpo_validate_lm_dict(cfg: dict[LM, GRPOConfig]) -> dict[LM, GRPOConfig]:
+    if not cfg:
+        raise ValueError("Dictionary config must have LM keys, got keys of type empty dict")
+    if not all(isinstance(k, LM) for k in cfg.keys()):
+        bad_type = type(next(iter(cfg.keys())))
+        raise ValueError(f"Dictionary config must have LM keys, got keys of type {bad_type}")
+    result: dict[LM, GRPOConfig] = {}
+    for lm, v in cfg.items():
+        if not isinstance(v, GRPOConfig):
+            raise ValueError(f"All values in LM dict must be GRPOConfig instances, got {type(v)}")
+        result[lm] = v
+    return result
 
 class GRPO(FinetuneTeleprompter):
     def __init__(
@@ -44,7 +70,6 @@ class GRPO(FinetuneTeleprompter):
         variably_invoked_predictor_fill_strategy: Literal["randint"] | Literal["max"] | None = None,
         gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1),
     ):
-        # Store GRPOConfig objects for internal use
         self.grpo_configs: dict[LM, GRPOConfig] = self._convert_to_grpo_config_dict(config)
         self.metric = metric
         self.multitask = multitask
@@ -81,43 +106,31 @@ class GRPO(FinetuneTeleprompter):
         self.shuffled_trainset_ids = []
         self.epoch = -1
         self.id_freqs = Counter()
-    
-    def _convert_to_grpo_config_dict(self, config) -> dict[LM, GRPOConfig]:
+
+    def _convert_to_grpo_config_dict(
+        self,
+        config: GRPOConfig | dict[LM, GRPOConfig] | None
+    ) -> dict[LM, GRPOConfig]:
         """
-        Convert config to GRPOConfig dict format for internal use.
-        
-        For consistency purposes this returns a defaultdict such that it can be accessed for each LM,  
+        Normalize user-supplied config into a mapping from LM -> GRPOConfig.
+        Returns either a normal dict or a defaultdict
+    
         """
         if config is None:
-            return defaultdict(lambda: GRPOConfig(num_generations=1))  # Default config
-        
+            return _grpo_build_default_defaultdict()
+
         if isinstance(config, GRPOConfig):
-            return defaultdict(lambda: config)
-        
+            return _grpo_wrap_single_config(config)
+
         if isinstance(config, dict):
-            # Check if it's a defaultdict first
-            if hasattr(config, 'default_factory'):
-                # It's a defaultdict, check the default factory
-                default_value = config.default_factory()
-                if isinstance(default_value, GRPOConfig):
-                    return config
-                else:
-                    raise ValueError(f"defaultdict default factory must return GRPOConfig, got {type(default_value)}")
-            
-            # Regular dict - check if all keys are LMs
-            if config and all(isinstance(k, LM) for k in config.keys()):
-                # LM dict format
-                result = {}
-                for lm, config_obj in config.items():
-                    if isinstance(config_obj, GRPOConfig):
-                        result[lm] = config_obj
-                    else:
-                        raise ValueError(f"All values in LM dict must be GRPOConfig instances, got {type(config_obj)}")
-                return result
-            else:
-                raise ValueError(f"Dictionary config must have LM keys, got keys of type {type(next(iter(config.keys()))) if config else 'empty dict'}")
-        
-        raise ValueError(f"config must be GRPOConfig, dict[LM, GRPOConfig], or None, got {type(config)}")
+            if hasattr(config, "default_factory"):
+                return _grpo_validate_defaultdict(config)
+
+            return _grpo_validate_lm_dict(config)
+
+        raise ValueError(
+            f"config must be GRPOConfig, dict[LM, GRPOConfig], or None, got {type(config)}"
+        )
 
     def validate_trace_data_and_log_issues(
         self,

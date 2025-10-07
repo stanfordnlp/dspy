@@ -1,7 +1,9 @@
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
-from dspy.clients.lm import LM
 from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any
+
+from dspy.clients.lm import LM
+
 
 @dataclass
 class GRPOConfig:
@@ -54,15 +56,15 @@ class GRPOConfig:
         metadata={"help": "Maximum gradient norm for gradient clipping."}
     )
     # Model and generation parameters
-    max_prompt_length: Optional[int] = field(
+    max_prompt_length: int | None = field(
         default=None,
         metadata={"help": "Maximum length of input prompts. If None, uses model's default."}
     )
-    max_completion_length: Optional[int] = field(
+    max_completion_length: int | None = field(
         default=None,
         metadata={"help": "Maximum length of generated completions. If None, uses model's default."}
     )
-    max_context_length: Optional[int] = field(
+    max_context_length: int | None = field(
         default=None,
         metadata={"help": "Maximum context length for the model. If None, uses model's maximum."}
     )
@@ -75,7 +77,7 @@ class GRPOConfig:
         default=True,
         metadata={"help": "Whether to scale rewards during training for better stability."}
     )
-    gradient_checkpointing_kwargs: Optional[Dict[str, Any]] = field(
+    gradient_checkpointing_kwargs: dict[str, Any] | None = field(
         default=None,
         metadata={"help": "Additional keyword arguments for gradient checkpointing configuration."}
     )
@@ -97,10 +99,10 @@ class GRPOConfig:
         default=100,
         metadata={"help": "Number of training steps between logging metrics."}
     )
-    
+
     def __post_init__(self):
         """Validate configuration parameters after initialization."""
-        if not hasattr(self, 'num_generations') or self.num_generations is None:
+        if not hasattr(self, "num_generations") or self.num_generations is None:
             raise ValueError("num_generations must be set in the GRPO configuration")
         if self.temperature <= 0:
             raise ValueError(f"Temperature must be positive. Got {self.temperature}.")
@@ -108,8 +110,8 @@ class GRPOConfig:
             raise ValueError(f"Beta (KL coefficient) must be non-negative. Got {self.beta}.")
         if self.learning_rate <= 0:
             raise ValueError(f"Learning rate must be positive. Got {self.learning_rate}.")
-        
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary format for compatibility with existing train_kwargs.
         eg
         "temperature" : .79 
@@ -120,7 +122,7 @@ class GRPOConfig:
             for field in self.__dataclass_fields__.values()
         }
     @classmethod
-    def convert_to_lm_dict(cls, arg) -> Dict[LM, "GRPOConfig"]:
+    def convert_to_lm_dict(cls, arg) -> dict[LM, "GRPOConfig"]:
         """Convert to LM dict, matching the existing DSPy pattern."""
         non_empty_dict = arg and isinstance(arg, dict)
         if non_empty_dict and all(isinstance(k, LM) for k in arg.keys()):
@@ -131,7 +133,7 @@ class GRPOConfig:
             raise ValueError("arg must be a GRPOConfig instance or a dict with LM keys and GRPOConfig values.")
         return defaultdict(lambda: arg)
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> "GRPOConfig":
+    def from_dict(cls, config_dict: dict[str, Any]) -> "GRPOConfig":
         """Create config from dictionary."""
         valid_fields = {field.name for field in cls.__dataclass_fields__.values()}
         filtered_dict = {k: v for k, v in config_dict.items() if k in valid_fields}
