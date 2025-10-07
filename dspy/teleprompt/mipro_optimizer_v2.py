@@ -214,7 +214,6 @@ class MIPROv2(Teleprompter):
         )
 
         with dspy.context(lm=self.task_model):
-
             # Step 1: Bootstrap few-shot examples
             demo_candidates = self._bootstrap_fewshot_examples(
                 program,
