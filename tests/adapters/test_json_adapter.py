@@ -925,5 +925,5 @@ def test_json_adapter_with_responses_api():
     call_kwargs = mock_responses.call_args.kwargs
     assert "response_format" not in call_kwargs
     assert "text" in call_kwargs
-    assert "format" in call_kwargs["text"]
-    assert isinstance(call_kwargs["text"]["format"], type) and issubclass(call_kwargs["text"]["format"], pydantic.BaseModel)
+    assert isinstance(call_kwargs["text"]["format"], type)
+    assert issubclass(call_kwargs["text"]["format"], pydantic.BaseModel)

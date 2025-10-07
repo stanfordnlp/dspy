@@ -474,7 +474,8 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     # Convert response_format to text.format for Responses API
     if "response_format" in request:
         response_format = request.pop("response_format")
-        request["text"] = {"format": response_format}
+        text = request.pop("text", {})
+        request["text"] = {**text, "format": response_format}
 
     return request
 
