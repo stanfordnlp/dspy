@@ -1,18 +1,18 @@
+import logging
 from typing import Any
-
-from pydantic.fields import FieldInfo
 
 import dspy
 from dspy.primitives.module import Module
+from dspy.signatures.field import OutputField
 from dspy.signatures.signature import Signature, ensure_signature
+
+logger = logging.getLogger(__name__)
 
 
 class ChainOfThought(Module):
     def __init__(
         self,
         signature: str | type[Signature],
-        rationale_field: FieldInfo | None = None,
-        rationale_field_type: type = str,
         **config: dict[str, Any],
     ):
         """
@@ -20,17 +20,17 @@ class ChainOfThought(Module):
 
         Args:
             signature (Type[dspy.Signature]): The signature of the module.
-            rationale_field (Optional[Union[dspy.OutputField, pydantic.fields.FieldInfo]]): The field that will contain the reasoning.
-            rationale_field_type (Type): The type of the rationale field.
             **config: The configuration for the module.
         """
         super().__init__()
         signature = ensure_signature(signature)
-        prefix = "Reasoning: Let's think step by step in order to"
-        desc = "${reasoning}"
-        rationale_field_type = rationale_field.annotation if rationale_field else rationale_field_type
-        rationale_field = rationale_field if rationale_field else dspy.OutputField(prefix=prefix, desc=desc)
-        extended_signature = signature.prepend(name="reasoning", field=rationale_field, type_=rationale_field_type)
+
+        if "rationale_field" in config or "rationale_field_type" in config:
+            logger.warning("`rationale_field` and `rationale_field_type` are deprecated, they are no-op now.")
+
+        from dspy.adapters.types.reasoning import Reasoning
+
+        extended_signature = signature.prepend(name="reasoning", field=OutputField(), type_=Reasoning)
         self.predict = dspy.Predict(extended_signature, **config)
 
     def forward(self, **kwargs):

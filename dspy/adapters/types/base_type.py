@@ -71,6 +71,11 @@ class Type(pydantic.BaseModel):
         return formatted
 
     @classmethod
+    def adapt_to_native_lm_feature(cls, lm, lm_kwargs) -> bool:
+        """Check whether the custom type is natively supported by the LM and adapt to the native feature if possible."""
+        return False
+
+    @classmethod
     def is_streamable(cls) -> bool:
         """Whether the custom type is streamable."""
         return False
@@ -88,7 +93,6 @@ class Type(pydantic.BaseModel):
         """
         return None
 
-
     @classmethod
     def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Type"]:
         """Parse a LM response into the custom type.
@@ -100,6 +104,7 @@ class Type(pydantic.BaseModel):
             A custom type object.
         """
         return None
+
 
 def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Split user message content into a list of content blocks.
