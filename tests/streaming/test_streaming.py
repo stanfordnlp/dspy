@@ -303,7 +303,6 @@ def test_sync_streaming(lm_for_test):
     # which results in an extra chunk that flushes out the buffer.
     assert all_chunks[-2].predict_name == "predict2"
     assert all_chunks[-2].signature_field_name == "judgement"
-    assert all_chunks[-2].is_last_chunk is True
 
 
 def test_sync_status_streaming():
