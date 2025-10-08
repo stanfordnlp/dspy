@@ -2,7 +2,9 @@ from unittest import mock
 
 import pydantic
 import pytest
+from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
+from openai.types.responses import ResponseOutputMessage
 
 import dspy
 
@@ -866,3 +868,62 @@ def test_json_adapter_toolcalls_no_native_function_calling():
         mock_completion.assert_called_once()
         _, call_kwargs = mock_completion.call_args
         assert call_kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_json_adapter_with_responses_api():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    api_response = ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details=None,
+        instructions=None,
+        model="openai/gpt-4o",
+        object="response",
+        output=[
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {"type": "output_text", "text": '{"answer": "Washington, D.C."}', "annotations": []}
+                    ],
+                },
+            ),
+        ],
+        metadata={},
+        parallel_tool_calls=False,
+        temperature=1.0,
+        tool_choice="auto",
+        tools=[],
+        top_p=1.0,
+        max_output_tokens=None,
+        previous_response_id=None,
+        reasoning=None,
+        status="completed",
+        text=None,
+        truncation="disabled",
+        usage=ResponseAPIUsage(input_tokens=10, output_tokens=5, total_tokens=15),
+        user=None,
+    )
+
+    lm = dspy.LM(model="openai/gpt-4o", model_type="responses", cache=False)
+    dspy.configure(lm=lm, adapter=dspy.JSONAdapter())
+
+    program = dspy.Predict(TestSignature)
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as mock_responses:
+        result = program(question="What is the capital of the USA?")
+
+    assert result.answer == "Washington, D.C."
+    mock_responses.assert_called_once()
+    # Verify that response_format was converted to text.format
+    call_kwargs = mock_responses.call_args.kwargs
+    assert "response_format" not in call_kwargs
+    assert "text" in call_kwargs
+    assert isinstance(call_kwargs["text"]["format"], type)
+    assert issubclass(call_kwargs["text"]["format"], pydantic.BaseModel)
