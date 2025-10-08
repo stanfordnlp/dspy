@@ -89,7 +89,7 @@ class LM(BaseLM):
 
         if model_pattern:
 
-            if (temperature is not None and temperature != 1.0) or (max_tokens is not None and max_tokens < 16000):
+            if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
                 raise ValueError(
                     "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
                     "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)"
