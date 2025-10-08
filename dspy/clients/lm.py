@@ -471,7 +471,7 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
                 content_blocks.extend(c)
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
 
-    # Convert response_format to text.format for Responses API
+    # Convert `response_format` to `text.format` for Responses API
     if "response_format" in request:
         response_format = request.pop("response_format")
         text = request.pop("text", {})
