@@ -31,8 +31,8 @@ class LM(BaseLM):
         self,
         model: str,
         model_type: Literal["chat", "text", "responses"] = "chat",
-        temperature: float = 0.0,
-        max_tokens: int = 4000,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         cache: bool = True,
         callbacks: list[BaseCallback] | None = None,
         num_retries: int = 3,
@@ -88,9 +88,10 @@ class LM(BaseLM):
         model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
 
         if model_pattern:
-            if max_tokens < 16000 or temperature != 1.0:
+
+            if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
                 raise ValueError(
-                    "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 16000 to "
+                    "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
                     "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)"
                 )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
