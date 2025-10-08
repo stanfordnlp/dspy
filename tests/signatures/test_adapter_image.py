@@ -66,9 +66,9 @@ def count_messages_with_image_url_pattern(messages):
         return 0
 
 
-def setup_predictor(signature, expected_output):
+def setup_predictor(signature, expected_output, adapter=None):
     """Helper to set up a predictor with DummyLM"""
-    lm = DummyLM([expected_output])
+    lm = DummyLM([expected_output], adapter=adapter)
     dspy.settings.configure(lm=lm)
     return dspy.Predict(signature), lm
 
@@ -123,41 +123,95 @@ def test_basic_image_operations(test_case):
     # Check result based on output field name
     output_field = next(f for f in ["probabilities", "generated_code", "bboxes", "captions"] if hasattr(result, f))
     assert getattr(result, output_field) == test_case["expected"][test_case["key_output"]]
+
+
+@pytest.mark.parametrize(
+    "adapter_type",
+    [
+        "chat_adapter",
+        "json_adapter",
+        "baml_adapter",
+        "xml_adapter",
+    ],
+)
+@pytest.mark.parametrize(
+    "image_input,description",
+    [
+        ("dspy_image_download", "dspy.Image with download=True"),
+        ("dspy_pil_image_with_download", "PIL Image with download=True"),
+        ("dspy_image_no_download", "dspy.Image without download"),
+    ],
+)
+def test_image_input_formats_valid(
+    request, sample_url, sample_pil_image, sample_dspy_image_download, sample_dspy_image_no_download, image_input, description, adapter_type
+):
+    """Test valid input formats for image fields"""
+    input_map = {
+        "dspy_image_download": sample_dspy_image_download,
+        "dspy_pil_image_with_download": dspy.Image(sample_pil_image, download=True),
+        "dspy_image_no_download": sample_dspy_image_no_download,
+    }
+    adapter_output_map = {
+        "chat_adapter": (dspy.ChatAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+        "json_adapter": (dspy.JSONAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+        "baml_adapter": (dspy.adapters.BAMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+        "xml_adapter": (dspy.XMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+    }
+
+    actual_input = input_map[image_input]
+    signature = "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]"
+    expected_output = {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}
+    adapter, lm_output = adapter_output_map[adapter_type]
+    predictor, lm = setup_predictor(signature, lm_output, adapter)
+    with dspy.context(adapter=adapter):
+        result = predictor(image=actual_input, class_labels=["dog", "cat", "bird"])
+    assert result.probabilities == expected_output["probabilities"]
     assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 1
 
-
+# Invalid input types: raw PIL image, encoded PIL image string, raw URL string
+@pytest.mark.parametrize(
+    "adapter_type",
+    [
+        "chat_adapter",
+        "json_adapter",
+        "baml_adapter",
+        "xml_adapter",
+    ],
+)
 @pytest.mark.parametrize(
     "image_input,description",
     [
         ("pil_image", "PIL Image"),
         ("encoded_pil_image", "encoded PIL image string"),
-        ("dspy_image_download", "dspy.Image with download=True"),
-        ("dspy_image_no_download", "dspy.Image without download"),
+        ("url_non_dspy_image", "URL of an image"),
     ],
 )
-def test_image_input_formats(
-    request, sample_pil_image, sample_dspy_image_download, sample_dspy_image_no_download, image_input, description
+def test_image_input_formats_invalid(
+    request, sample_url, sample_pil_image, sample_dspy_image_download, sample_dspy_image_no_download, image_input, description, adapter_type
 ):
-    """Test different input formats for image fields"""
-    signature = "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]"
-    expected = {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}
-    predictor, lm = setup_predictor(signature, expected)
-
+    """Test invalid input formats for image fields (should raise ValueError)"""
     input_map = {
         "pil_image": sample_pil_image,
         "encoded_pil_image": encode_image(sample_pil_image),
-        "dspy_image_download": sample_dspy_image_download,
-        "dspy_image_no_download": sample_dspy_image_no_download,
+        "url_non_dspy_image": sample_url,
+    }
+    adapter_output_map = {
+        "chat_adapter": (dspy.ChatAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+        "json_adapter": (dspy.JSONAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+        "baml_adapter": (dspy.adapters.baml_adapter.BAMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
+        "xml_adapter": (dspy.XMLAdapter(), {"probabilities": {"dog": 0.8, "cat": 0.1, "bird": 0.1}}),
     }
 
-    actual_input = input_map[image_input]
-    # TODO(isaacbmiller): Support the cases without direct dspy.Image coercion
-    if image_input in ["pil_image", "encoded_pil_image"]:
-        pytest.xfail(f"{description} not fully supported without dspy.Image coercion")
+    if adapter_type == "two_step_adapter":
+        pytest.xfail("TwoStepAdapter is not known to support image input")
 
-    result = predictor(image=actual_input, class_labels=["dog", "cat", "bird"])
-    assert result.probabilities == expected["probabilities"]
-    assert count_messages_with_image_url_pattern(lm.history[-1]["messages"]) == 1
+    actual_input = input_map[image_input]
+    signature = "image: dspy.Image, class_labels: list[str] -> probabilities: dict[str, float]"
+    adapter, lm_output = adapter_output_map[adapter_type]
+    predictor, lm = setup_predictor(signature, lm_output, adapter)
+    with dspy.context(adapter=adapter):
+        with pytest.raises(TypeError):
+            predictor(image=actual_input, class_labels=["dog", "cat", "bird"])
 
 
 def test_predictor_save_load(sample_url, sample_pil_image):
