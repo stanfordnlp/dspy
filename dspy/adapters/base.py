@@ -7,6 +7,7 @@ import litellm
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.tool import Tool, ToolCalls
+from dspy.adapters.utils import LargePayloadHashManager
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -214,7 +215,14 @@ class Adapter:
         Returns:
             A list of multiturn messages as expected by the LM.
         """
-        inputs_copy = dict(inputs)
+
+        # Replace large data with hashes, e.g. image base64 data (speeds up string formatting). Will be restored later.
+        data_manager = LargePayloadHashManager()
+        inputs_hashed = data_manager.replace_large_data(inputs)
+        demos_hashed = data_manager.replace_large_data(demos)
+
+        # Work on a shallow copy of inputs
+        inputs_copy = dict(inputs_hashed)
 
         # If the signature and inputs have conversation history, we need to format the conversation history and
         # remove the history field from the signature.
@@ -235,7 +243,7 @@ class Adapter:
             f"{self.format_task_description(signature)}"
         )
         messages.append({"role": "system", "content": system_message})
-        messages.extend(self.format_demos(signature, demos))
+        messages.extend(self.format_demos(signature, demos_hashed))
         if history_field_name:
             # Conversation history and current input
             content = self.format_user_message_content(signature_without_history, inputs_copy, main_request=True)
@@ -247,6 +255,8 @@ class Adapter:
             messages.append({"role": "user", "content": content})
 
         messages = split_message_content_for_custom_types(messages)
+        messages = data_manager.restore_large_data(messages)
+
         return messages
 
     def format_field_description(self, signature: type[Signature]) -> str:
