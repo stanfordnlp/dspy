@@ -22,7 +22,7 @@ _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations]
 class Adapter:
     """Base Adapter class.
 
-    The Adapter serves as the interface layer between DSPy module/signature andLanguage Models (LMs). It handles the
+    The Adapter serves as the interface layer between DSPy module/signature and Language Models (LMs). It handles the
     complete transformation pipeline from DSPy inputs to LM calls and back to structured outputs.
 
     Key responsibilities:
