@@ -18,15 +18,56 @@ pip install -U "dspy[mcp]"
 
 MCP enables you to:
 
-- **Use standardized tools** - Connect to any MCP-compatible server
-- **Share tools across stacks** - Use the same tools across different frameworks
-- **Simplify integration** - Convert MCP tools to DSPy tools with one line
+- **Use standardized tools** - Connect to any MCP-compatible server.
+- **Share tools across stacks** - Use the same tools across different frameworks.
+- **Simplify integration** - Convert MCP tools to DSPy tools with one line.
 
-As long as you have an `mcp.ClientSession`, you can use MCP tools with DSPy's `ReAct` module or any other tool-based workflow.
+DSPy does not handle MCP server connections directly. You can use client interfaces of the `mcp` library to establish the connection and pass `mcp.ClientSession` to `dspy.Tool.from_mcp_tool` in order to convert mcp tools into DSPy tools.
 
 ## Using MCP with DSPy
 
-### 1. Stdio Server (Local Process)
+### 1. HTTP Server (Remote)
+
+For remote MCP servers over HTTP, use the streamable HTTP transport:
+
+```python
+import asyncio
+import dspy
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+async def main():
+    # Connect to HTTP MCP server
+    async with streamablehttp_client("http://localhost:8000/mcp") as (read, write):
+        async with ClientSession(read, write) as session:
+            # Initialize the session
+            await session.initialize()
+
+            # List and convert tools
+            response = await session.list_tools()
+            dspy_tools = [
+                dspy.Tool.from_mcp_tool(session, tool)
+                for tool in response.tools
+            ]
+
+            # Create and use ReAct agent
+            class TaskSignature(dspy.Signature):
+                task: str = dspy.InputField()
+                result: str = dspy.OutputField()
+
+            react_agent = dspy.ReAct(
+                signature=TaskSignature,
+                tools=dspy_tools,
+                max_iters=5
+            )
+
+            result = await react_agent.acall(task="Check the weather in Tokyo")
+            print(result.result)
+
+asyncio.run(main())
+```
+
+### 2. Stdio Server (Local Process)
 
 The most common way to use MCP is with a local server process communicating via stdio:
 
@@ -79,81 +120,6 @@ async def main():
 
 # Run the async function
 asyncio.run(main())
-```
-
-### 2. HTTP Server (Remote)
-
-For remote MCP servers over HTTP, use the streamable HTTP transport:
-
-```python
-import asyncio
-import dspy
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-
-async def main():
-    # Connect to HTTP MCP server
-    async with streamablehttp_client("http://localhost:8000/mcp") as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the session
-            await session.initialize()
-
-            # List and convert tools
-            response = await session.list_tools()
-            dspy_tools = [
-                dspy.Tool.from_mcp_tool(session, tool)
-                for tool in response.tools
-            ]
-
-            # Create and use ReAct agent
-            class TaskSignature(dspy.Signature):
-                task: str = dspy.InputField()
-                result: str = dspy.OutputField()
-
-            react_agent = dspy.ReAct(
-                signature=TaskSignature,
-                tools=dspy_tools,
-                max_iters=5
-            )
-
-            result = await react_agent.acall(task="Check the weather in Tokyo")
-            print(result.result)
-
-asyncio.run(main())
-```
-
-## Creating an MCP Server
-
-Here's a simple example of an MCP server using FastMCP:
-
-```python
-from mcp.server.fastmcp import FastMCP
-from datetime import datetime
-
-# Create MCP server
-mcp = FastMCP("My Tools Server")
-
-@mcp.tool()
-def add(a: int, b: int) -> int:
-    """Add two numbers together."""
-    return a + b
-
-@mcp.tool()
-def get_current_time() -> str:
-    """Get the current time."""
-    return datetime.now().isoformat()
-
-@mcp.tool()
-def search_database(query: str, limit: int = 10) -> list[str]:
-    """Search a database with a query string."""
-    # Your search logic here
-    return [f"Result {i} for '{query}'" for i in range(limit)]
-```
-
-Run the server with:
-
-```bash
-python your_server.py
 ```
 
 ## Tool Conversion
