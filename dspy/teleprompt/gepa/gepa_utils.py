@@ -126,15 +126,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
-        
+
         if self.optimize_tool_descriptions:
             for _, module in new_prog.named_sub_modules():
-                if hasattr(module, 'tools'):
+                if hasattr(module, "tools"):
                     for tool_name, tool in module.tools.items():
                         tool_key = f"tool:{tool_name}"
                         if tool_key in candidate:
                             tool.desc = candidate[tool_key]
-        
+
         return new_prog
 
     def evaluate(self, batch, candidate, capture_traces=False):
