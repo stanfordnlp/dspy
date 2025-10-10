@@ -79,32 +79,33 @@ def test_gepa_with_tool_optimization_enabled():
 
 def test_gepa_with_multi_agent_architecture():
     """Test that tool optimization discovers tools from nested subagent modules."""
+
     class MultiAgentSystem(dspy.Module):
         def __init__(self):
             super().__init__()
             # Subagent as module attribute (reuse existing search function)
             search_tool = dspy.Tool(search, name="search", desc="Searches")
             self.subagent = dspy.ReAct("task -> result", tools=[search_tool])
-            
+
             # Main agent with subagent wrapped as tool
             def spawn_subagent(task: str) -> str:
                 return self.subagent(task=task).result
-            
+
             spawn_tool = dspy.Tool(spawn_subagent, name="spawn_subagent", desc="Spawns subagent")
             calc_tool = dspy.Tool(calculator, name="calculator", desc="Does math")
             self.main_agent = dspy.ReAct("q -> a", tools=[spawn_tool, calc_tool])
-    
+
     system = MultiAgentSystem()
-    
+
     # Test extraction using named_sub_modules pattern
     tool_descriptions = {}
     for _, module in system.named_sub_modules():
-        if hasattr(module, 'tools'):
+        if hasattr(module, "tools"):
             for tool_name, tool in module.tools.items():
                 tool_key = f"tool:{tool_name}"
                 if tool_key not in tool_descriptions:
                     tool_descriptions[tool_key] = tool.desc
-    
+
     # All tools from all nested agents should be discovered
     assert "tool:calculator" in tool_descriptions
     assert "tool:spawn_subagent" in tool_descriptions
@@ -114,29 +115,30 @@ def test_gepa_with_multi_agent_architecture():
 
 def test_gepa_optimizes_multi_agent_system_end_to_end():
     """Test GEPA.compile() optimizes ALL tools from nested multi-agent system."""
+
     class MultiAgentSystem(dspy.Module):
         def __init__(self):
             super().__init__()
             search_tool = dspy.Tool(search, name="search", desc="Searches")
             self.subagent = dspy.ReAct("task -> result", tools=[search_tool])
-            
+
             def spawn_subagent(task: str) -> str:
                 return self.subagent(task=task).result
-            
+
             spawn_tool = dspy.Tool(spawn_subagent, name="spawn_subagent", desc="Spawns subagent")
             calc_tool = dspy.Tool(calculator, name="calculator", desc="Does math")
             self.main_agent = dspy.ReAct("q -> a", tools=[spawn_tool, calc_tool])
-        
+
         def forward(self, question):
             return self.main_agent(q=question)
-    
+
     system = MultiAgentSystem()
-    
+
     # Setup LMs
     lm = DummyLM([{"q": "question", "a": "answer"}])
     reflection_lm = DummyLM([{"improved_instruction": "Better"}])
     dspy.settings.configure(lm=lm)
-    
+
     # Run GEPA optimization
     optimizer = dspy.GEPA(
         metric=simple_metric,
@@ -144,10 +146,10 @@ def test_gepa_optimizes_multi_agent_system_end_to_end():
         max_metric_calls=3,
         optimize_tool_descriptions=True,
     )
-    
+
     trainset = [Example(question="test", answer="answer").with_inputs("question")]
     optimized = optimizer.compile(system, trainset=trainset)
-    
+
     # Verify optimized system preserves structure with all tools
     assert "search" in optimized.subagent.tools
     assert "calculator" in optimized.main_agent.tools
