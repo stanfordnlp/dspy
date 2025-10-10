@@ -533,7 +533,7 @@ class GEPA(Teleprompter):
         if self.optimize_tool_descriptions:
             tool_descriptions = {}
             for _, module in student.named_sub_modules():
-                if hasattr(module, 'tools'):
+                if hasattr(module, "tools"):
                     for tool_name, tool in module.tools.items():
                         tool_key = f"tool:{tool_name}"
                         if tool_key not in tool_descriptions:
