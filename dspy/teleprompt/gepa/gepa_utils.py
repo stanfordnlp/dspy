@@ -76,7 +76,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         rng: random.Random | None = None,
         reflection_lm=None,
         custom_instruction_proposer: "ProposalFn | None" = None,
-        warn_on_score_mismatch: bool = True
+        warn_on_score_mismatch: bool = True,
+        optimize_tool_descriptions: bool = False,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -88,6 +89,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.reflection_lm = reflection_lm
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.optimize_tool_descriptions = optimize_tool_descriptions
 
         if self.custom_instruction_proposer is not None:
             # We are only overriding the propose_new_texts method when a custom
@@ -124,6 +126,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
+        
+        if self.optimize_tool_descriptions:
+            for _, module in new_prog.named_sub_modules():
+                if hasattr(module, 'tools'):
+                    for tool_name, tool in module.tools.items():
+                        tool_key = f"tool:{tool_name}"
+                        if tool_key in candidate:
+                            tool.desc = candidate[tool_key]
+        
         return new_prog
 
     def evaluate(self, batch, candidate, capture_traces=False):

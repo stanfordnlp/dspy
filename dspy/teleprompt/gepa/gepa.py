@@ -273,6 +273,9 @@ class GEPA(Teleprompter):
         warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when 
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
             raised if a mismatch in module-level and predictor-level score is detected.
+        optimize_tool_descriptions: Whether to optimize tool descriptions for modules with tools 
+            (e.g., ReAct agents). When enabled, tool descriptions are included in the optimization 
+            process alongside signature instructions. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
         gepa_kwargs: (Optional) provide additional kwargs to be passed to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py) method
         
@@ -328,6 +331,7 @@ class GEPA(Teleprompter):
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
+        optimize_tool_descriptions: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -390,6 +394,7 @@ class GEPA(Teleprompter):
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.optimize_tool_descriptions = optimize_tool_descriptions
         self.use_mlflow = use_mlflow
 
         if track_best_outputs:
@@ -518,11 +523,25 @@ class GEPA(Teleprompter):
             rng=rng,
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
-            warn_on_score_mismatch=self.warn_on_score_mismatch
+            warn_on_score_mismatch=self.warn_on_score_mismatch,
+            optimize_tool_descriptions=self.optimize_tool_descriptions
         )
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+
+        if self.optimize_tool_descriptions:
+            tool_descriptions = {}
+            for _, module in student.named_sub_modules():
+                if hasattr(module, 'tools'):
+                    for tool_name, tool in module.tools.items():
+                        tool_key = f"tool:{tool_name}"
+                        if tool_key not in tool_descriptions:
+                            tool_descriptions[tool_key] = tool.desc
+            if tool_descriptions:
+                logger.info(f"Including {len(tool_descriptions)} tool descriptions for optimization")
+                base_program.update(tool_descriptions)
+
         gepa_result: GEPAResult = optimize(
             seed_candidate=base_program,
             trainset=trainset,
