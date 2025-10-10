@@ -154,3 +154,72 @@ def test_gepa_optimizes_multi_agent_system_end_to_end():
     assert "search" in optimized.subagent.tools
     assert "calculator" in optimized.main_agent.tools
     assert "spawn_subagent" in optimized.main_agent.tools
+
+
+def test_tool_and_signature_optimization_with_proposer_routing():
+    """Test that routing logic correctly splits tools and signatures."""
+    from unittest.mock import Mock, patch
+
+    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
+
+    # Create module with BOTH signature and tools
+    calc_tool = dspy.Tool(calculator, name="calculator", desc="Original calculator description")
+    react = dspy.ReAct("question -> answer", tools=[calc_tool])
+
+    # Create adapter with tool optimization enabled
+    adapter = DspyAdapter(
+        student_module=react,
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+        optimize_tool_descriptions=True,
+        reflection_lm=None,
+    )
+
+    # Verify propose_new_texts was created
+    assert hasattr(adapter, "propose_new_texts"), "Routing logic should have set propose_new_texts"
+
+    # Mock the ToolProposer to verify it gets called with tools only
+    mock_tool_proposer_instance = Mock()
+    mock_tool_proposer_instance.return_value = {"tool:calculator": "Improved calculator description"}
+
+    mock_tool_proposer_class = Mock(return_value=mock_tool_proposer_instance)
+
+    # Mock parent propose_new_texts to verify it gets called with signatures only
+    mock_parent_propose = Mock(return_value={"react": "Improved signature instruction"})
+
+    with patch("dspy.teleprompt.gepa.instruction_proposal.ToolProposer", mock_tool_proposer_class):
+        with patch.object(adapter.__class__.__bases__[0], "propose_new_texts", mock_parent_propose, create=True):
+            # Rebuild adapter to pick up mocked parent
+            adapter_with_mock = DspyAdapter(
+                student_module=react,
+                metric_fn=simple_metric,
+                feedback_map={},
+                failure_score=0.0,
+                optimize_tool_descriptions=True,
+                reflection_lm=None,
+            )
+
+            candidate = {
+                "react": "Original signature",
+                "tool:calculator": "Original tool desc",
+            }
+
+            reflective_dataset = {
+                "react": [{"input": "test"}],
+                "tool:calculator": [{"input": "calc"}],
+            }
+
+            components = ["react", "tool:calculator"]
+
+            result = adapter_with_mock.propose_new_texts(candidate, reflective_dataset, components)
+
+            # Verify routing: ToolProposer was called with tools only
+            assert mock_tool_proposer_instance.called, "ToolProposer should have been called"
+            tool_call_args = mock_tool_proposer_instance.call_args[1]
+            assert "tool:calculator" in tool_call_args["components_to_update"]
+            assert "react" not in tool_call_args["components_to_update"]
+
+            # Verify both components in result
+            assert "react" in result
+            assert "tool:calculator" in result

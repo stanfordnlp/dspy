@@ -310,3 +310,141 @@ class MultiModalInstructionProposer(ProposalFn):
                 updated_components[component_name] = new_instruction
 
         return updated_components
+
+
+class GenerateImprovedToolDescriptionFromFeedback(dspy.Signature):
+    """I provided an assistant with the following description for a tool:
+    ```
+    <current_tool_description>
+    ```
+
+    This tool is available to the assistant. The following are examples of task inputs provided to the assistant, the assistant's decisions about which tools to use, and feedback on whether those decisions were correct:
+    ```
+    <examples_with_feedback>
+    ```
+
+    Your task is to write a better description for this tool.
+
+    Read the examples carefully and identify patterns in when the tool was used successfully versus when it was misused or overlooked. Identify any domain-specific information about the tool's capabilities or appropriate usage that may not be available to the assistant in the future. The assistant may have developed effective patterns for tool selection - if so, ensure the tool description supports those patterns.
+
+    Provide the new tool description within ``` blocks."""
+
+    current_tool_description = dspy.InputField(desc="The current description of the tool")
+    examples_with_feedback = dspy.InputField(desc="Examples showing tool usage decisions and feedback on correctness")
+
+    improved_tool_description = dspy.OutputField(
+        desc="An improved description that helps with tool selection decisions"
+    )
+
+
+class SingleComponentToolProposer(dspy.Module):
+    """dspy.Module for proposing improved tool descriptions based on feedback."""
+
+    def __init__(self):
+        super().__init__()
+        self.propose_description = dspy.Predict(GenerateImprovedToolDescriptionFromFeedback)
+
+    def forward(self, current_tool_description: str, reflective_dataset: list[ReflectiveExample]) -> str:
+        """Generate an improved tool description based on current description and feedback examples.
+
+        Args:
+            current_tool_description: The current description of the tool
+            reflective_dataset: List of examples with inputs, outputs, and feedback
+
+        Returns:
+            str: Improved tool description text
+        """
+        # Reuse formatting from SingleComponentMultiModalProposer
+        formatted_examples, _ = self._format_examples_for_instruction_generation(reflective_dataset)
+
+        result = self.propose_description(
+            current_tool_description=current_tool_description, examples_with_feedback=formatted_examples
+        )
+
+        return result.improved_tool_description
+
+    def _format_examples_for_instruction_generation(
+        self, reflective_dataset: list[ReflectiveExample]
+    ) -> tuple[str, dict[int, list[Type]]]:
+        """Format examples using GEPA's markdown structure.
+
+        Returns:
+            tuple: (formatted_text, image_map) where image_map is always empty for tools
+        """
+
+        def render_value(value, level=3):
+            if isinstance(value, dict):
+                s = ""
+                for k, v in value.items():
+                    s += f"{'#' * level} {k}\n"
+                    s += render_value(v, min(level + 1, 6))
+                if not value:
+                    s += "\n"
+                return s
+            elif isinstance(value, (list, tuple)):
+                s = ""
+                for i, item in enumerate(value):
+                    s += f"{'#' * level} Item {i + 1}\n"
+                    s += render_value(item, min(level + 1, 6))
+                if not value:
+                    s += "\n"
+                return s
+            else:
+                return f"{str(value).strip()}\n\n"
+
+        def convert_sample_to_markdown(sample, example_num):
+            s = f"# Example {example_num}\n"
+            for key, val in sample.items():
+                s += f"## {key}\n"
+                s += render_value(val, level=3)
+            return s
+
+        formatted_parts = []
+        for i, example_data in enumerate(reflective_dataset):
+            formatted_example = convert_sample_to_markdown(example_data, i + 1)
+            formatted_parts.append(formatted_example)
+
+        formatted_text = "\n\n".join(formatted_parts)
+        return formatted_text, {}
+
+
+class ToolProposer(ProposalFn):
+    """GEPA-compatible tool description proposer.
+
+    This class handles tool description optimization during GEPA optimization by using
+    a single-component proposer for each tool that needs to be updated.
+    """
+
+    def __init__(self):
+        self.single_proposer = SingleComponentToolProposer()
+
+    def __call__(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[ReflectiveExample]],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        """GEPA-compatible proposal function.
+
+        Args:
+            candidate: Current component name -> description mapping
+            reflective_dataset: Component name -> list of reflective examples
+            components_to_update: List of component names to update
+
+        Returns:
+            dict: Component name -> new description mapping
+        """
+        updated_components = {}
+
+        for component_name in components_to_update:
+            if component_name in candidate and component_name in reflective_dataset:
+                current_description = candidate[component_name]
+                component_reflective_data = reflective_dataset[component_name]
+
+                new_description = self.single_proposer(
+                    current_tool_description=current_description, reflective_dataset=component_reflective_data
+                )
+
+                updated_components[component_name] = new_description
+
+        return updated_components
