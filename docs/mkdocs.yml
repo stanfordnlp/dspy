@@ -299,6 +299,7 @@ extra:
 
 extra_javascript:
     - "js/runllm-widget.js"
+    - "js/tutorial-nav.js"
 
 markdown_extensions:
     - toc:
