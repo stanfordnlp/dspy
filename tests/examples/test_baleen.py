@@ -94,7 +94,7 @@ def gold_passages_retrieved(example, pred, trace=None):
 
 # @pytest.mark.slow_test
 # TODO: Find a way to make this test run without the slow hotpotqa dataset
-def _test_compiled_baleen():
+def _test_optimized_baleen():
     trainset, devset = load_hotpotqa()
     lm = dspy.OpenAI(model="gpt-3.5-turbo")
     rm = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
@@ -103,7 +103,7 @@ def _test_compiled_baleen():
     uncompiled_baleen = SimplifiedBaleen()  # uncompiled (i.e., zero-shot) program
 
     teleprompter = BootstrapFewShot(metric=validate_context_and_answer_and_hops)
-    compiled_baleen = teleprompter.compile(
+    optimized_baleen = teleprompter.compile(
         SimplifiedBaleen(),
         teacher=SimplifiedBaleen(passages_per_hop=2),
         trainset=trainset,
@@ -115,6 +115,6 @@ def _test_compiled_baleen():
     )
     # assert uncompiled_baleen_retrieval_score / 100 == 18 / 50
 
-    compiled_baleen_retrieval_score = evaluate_on_hotpotqa(compiled_baleen, metric=gold_passages_retrieved)
-    # assert compiled_baleen_retrieval_score / 100 == 27 / 50
-    assert uncompiled_baleen_retrieval_score < compiled_baleen_retrieval_score
+    optimized_baleen_retrieval_score = evaluate_on_hotpotqa(optimized_baleen, metric=gold_passages_retrieved)
+    # assert optimized_baleen_retrieval_score / 100 == 27 / 50
+    assert uncompiled_baleen_retrieval_score < optimized_baleen_retrieval_score

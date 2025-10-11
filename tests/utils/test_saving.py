@@ -58,7 +58,7 @@ def test_save_model_with_custom_signature(tmp_path):
 
 
 @pytest.mark.extra
-def test_save_compiled_model(tmp_path):
+def test_save_optimized_model(tmp_path):
     predict = dspy.Predict("question->answer")
     dspy.settings.configure(lm=DummyLM([{"answer": "blue"}, {"answer": "white"}] * 10))
 
@@ -74,12 +74,12 @@ def test_save_compiled_model(tmp_path):
         return True
 
     optimizer = dspy.BootstrapFewShot(max_bootstrapped_demos=4, max_labeled_demos=4, max_rounds=5, metric=dummy_metric)
-    compiled_predict = optimizer.compile(predict, trainset=trainset)
-    compiled_predict.save(tmp_path, save_program=True)
+    optimized_predict = optimizer.compile(predict, trainset=trainset)
+    optimized_predict.save(tmp_path, save_program=True)
 
     loaded_predict = dspy.load(tmp_path)
-    assert compiled_predict.demos == loaded_predict.demos
-    assert compiled_predict.signature == loaded_predict.signature
+    assert optimized_predict.demos == loaded_predict.demos
+    assert optimized_predict.signature == loaded_predict.signature
 
 
 def test_load_with_version_mismatch(tmp_path):

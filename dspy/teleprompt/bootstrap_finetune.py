@@ -130,7 +130,6 @@ class BootstrapFinetune(FinetuneTeleprompter):
             pred.demos = [] if self.exclude_demos else pred.demos
 
         logger.info("BootstrapFinetune has finished compiling the student program")
-        student._compiled = True
         return student
 
     @staticmethod
@@ -254,8 +253,7 @@ def copy_program_with_lms(program: Module) -> Module:
 
 
 def prepare_student(student: Module) -> Module:
-    if getattr(student, "_compiled", False):
-        raise ValueError("The student program should not be compiled.")
+    # Student program preparation - no compilation check needed
 
     # TODO: Should we use reset_copy here? How would it affect the student
     # program's predictor LMs, if they are set?

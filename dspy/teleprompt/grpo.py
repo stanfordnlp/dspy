@@ -553,7 +553,6 @@ class GRPO(FinetuneTeleprompter):
             recover_lm_cache(program=t, lm_cache_dict=lm_cache_dict)
 
         logger.info("GRPO compiler has finished compiling the student program")
-        student._compiled = True
         return student
 
 
