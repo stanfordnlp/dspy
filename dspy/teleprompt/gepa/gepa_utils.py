@@ -96,76 +96,80 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.optimize_tool_descriptions = optimize_tool_descriptions
 
-        if self.optimize_tool_descriptions or self.custom_instruction_proposer is not None:
-            # Set up combined proposer for tool optimization and/or custom instruction proposer.
-            # This routes components to appropriate proposers based on type:
-            # - Signatures -> custom_instruction_proposer (if provided) OR parent default
-            # - Tools -> ToolProposer (if optimize_tool_descriptions=True)
-
-            # Determine which proposer handles signatures
-            if self.custom_instruction_proposer is not None:
-                signature_proposer = self.custom_instruction_proposer
-            else:
-                signature_proposer = super().propose_new_texts
-
-            def propose_new_texts(
+        if self.custom_instruction_proposer is not None:
+            # Override propose_new_texts when custom proposer provided (following original pattern)
+            def custom_propose_new_texts(
                 candidate: dict[str, str],
                 reflective_dataset: dict[str, list[dict[str, Any]]],
                 components_to_update: list[str],
             ) -> dict[str, str]:
-                """Propose new texts for both signatures and tools.
-
-                Splits components by type (tool: prefix vs signatures), calls appropriate
-                proposers, and merges results. Handles reflection_lm context if provided.
-                """
-                # Split by component type if tool optimization enabled
-                if self.optimize_tool_descriptions:
-                    tool_components = [c for c in components_to_update if c.startswith("tool:")]
-                    sig_components = [c for c in components_to_update if not c.startswith("tool:")]
-                else:
-                    tool_components = []
-                    sig_components = components_to_update
-
-                # Apply reflection_lm context to all proposer calls if provided
                 if self.reflection_lm is not None:
                     with dspy.context(lm=self.reflection_lm):
-                        sig_texts = signature_proposer(
+                        return self.custom_instruction_proposer(
                             candidate=candidate,
                             reflective_dataset=reflective_dataset,
-                            components_to_update=sig_components,
+                            components_to_update=components_to_update,
                         )
+                else:
+                    return self.custom_instruction_proposer(
+                        candidate=candidate,
+                        reflective_dataset=reflective_dataset,
+                        components_to_update=components_to_update,
+                    )
 
-                        if tool_components:
-                            from .instruction_proposal import ToolProposer
-
+            self.propose_new_texts = custom_propose_new_texts
+        elif self.optimize_tool_descriptions:
+            # Override ONLY when tool optimization is enabled without custom proposer
+            # We handle tool components with ToolProposer and signature components with GEPA's default
+            def propose_new_texts_with_tools(
+                candidate: dict[str, str],
+                reflective_dataset: dict[str, list[dict[str, Any]]],
+                components_to_update: list[str],
+            ) -> dict[str, str]:
+                """Route components: tools to ToolProposer, signatures to GEPA's default."""
+                tool_components = [c for c in components_to_update if c.startswith("tool:")]
+                sig_components = [c for c in components_to_update if not c.startswith("tool:")]
+                
+                # Handle signature components - replicate proposer's default behavior
+                sig_texts = {}
+                if sig_components:
+                    from gepa.strategies.instruction_proposal import InstructionProposalSignature
+                    
+                    lm = self.reflection_lm if self.reflection_lm is not None else dspy.settings.lm
+                    
+                    for name in sig_components:
+                        base_instruction = candidate[name]
+                        dataset_with_feedback = reflective_dataset[name]
+                        sig_texts[name] = InstructionProposalSignature.run(
+                            lm=(lambda x: lm(x)[0]),
+                            input_dict={
+                                "current_instruction_doc": base_instruction,
+                                "dataset_with_feedback": dataset_with_feedback,
+                            },
+                        )["new_instruction"]
+                
+                # Handle tool components with ToolProposer
+                tool_texts = {}
+                if tool_components:
+                    from .instruction_proposal import ToolProposer
+                    
+                    if self.reflection_lm is not None:
+                        with dspy.context(lm=self.reflection_lm):
                             tool_texts = ToolProposer()(
                                 candidate=candidate,
                                 reflective_dataset=reflective_dataset,
                                 components_to_update=tool_components,
                             )
-                            return {**sig_texts, **tool_texts}
-                        else:
-                            return sig_texts
-                else:
-                    sig_texts = signature_proposer(
-                        candidate=candidate,
-                        reflective_dataset=reflective_dataset,
-                        components_to_update=sig_components,
-                    )
-
-                    if tool_components:
-                        from .instruction_proposal import ToolProposer
-
+                    else:
                         tool_texts = ToolProposer()(
                             candidate=candidate,
                             reflective_dataset=reflective_dataset,
                             components_to_update=tool_components,
                         )
-                        return {**sig_texts, **tool_texts}
-                    else:
-                        return sig_texts
+                
+                return {**sig_texts, **tool_texts}
 
-            self.propose_new_texts = propose_new_texts
+            self.propose_new_texts = propose_new_texts_with_tools
 
         # Cache predictor names/signatures
         self.named_predictors = list(self.student.named_predictors())
@@ -241,7 +245,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
+        
+        # First pass: Process all non-tool components (including ReAct)
         for pred_name in components_to_update:
+            if pred_name.startswith("tool:"):
+                continue  # Skip tools in first pass
+                
             module = None
             for name, m in program.named_predictors():
                 if name == pred_name:
@@ -349,6 +358,28 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 continue
             ret_d[pred_name] = items
 
+        # Second pass: Process tools by copying ReAct data with annotation
+        react_module_name = None
+        for name in ret_d.keys():
+            if "react" in name.lower():
+                react_module_name = name
+                break
+        
+        if react_module_name:
+            for tool_component in [c for c in components_to_update if c.startswith("tool:")]:
+                tool_name = tool_component.replace("tool:", "")
+                tool_items = []
+                
+                for item in ret_d[react_module_name]:
+                    annotated = {
+                        "Inputs": item["Inputs"],
+                        "Generated Outputs": item["Generated Outputs"],
+                        "Feedback": f"[Optimizing tool: '{tool_name}'] {item['Feedback']}"
+                    }
+                    tool_items.append(annotated)
+                
+                ret_d[tool_component] = tool_items
+        
         if len(ret_d) == 0:
             raise Exception("No valid predictions found for any module.")
 

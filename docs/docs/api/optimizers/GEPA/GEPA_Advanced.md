@@ -483,17 +483,34 @@ When enabled, GEPA:
 
 1. **Discovers all tools**: Traverses your program including nested sub-modules to find all `dspy.Tool` instances
 2. **Categorizes components**: Separates tools (identified by `tool:` prefix) from signature instructions
-3. **Routes to specialized proposers**: 
+3. **Routes components appropriately**:
    - Signature instructions → Default or custom instruction proposer
-   - Tool descriptions → `ToolProposer` with tool-specific reflection prompt
+   - Tool descriptions → ToolProposer (receives ReAct's reflective data with tool-specific annotation)
 4. **Optimizes holistically**: Treats tool descriptions as first-class components in the optimization process
 
-The tool-specific reflection prompt asks the LM to:
+### Implementation Details
 
-- Identify patterns in when the tool was used successfully versus when it was misused or overlooked
-- Extract domain-specific information about the tool's capabilities or appropriate usage
-- Recognize effective tool selection patterns the agent developed
-- Incorporate these insights into an improved tool description
+**Reflective Dataset Construction:**
+
+GEPA's approach to tool optimization is elegantly simple:
+
+1. **ReAct predictors** generate reflective examples containing:
+   - Inputs: `question`, `trajectory` (full agent execution trace with thoughts, tool calls, observations)
+   - Generated Outputs: Agent's next action/tool selection decisions  
+   - Feedback: Task outcome and evaluation from the metric
+
+2. **Tools copy ReAct's data** with annotation:
+   - Each tool receives ReAct's complete reflective examples (same full trajectory context)
+   - Feedback is prefixed: `[Optimizing tool: 'tool_name'] {original_feedback}`
+   - This focuses the reflection LM on improving that specific tool's description
+
+3. **Reflection LM sees full context**:
+   - How the agent reasoned before selecting the tool
+   - What other tools were available and considered
+   - Whether the tool selection was successful  
+   - Full multi-step trajectories showing tool composition patterns
+
+This design allows the reflection LM to understand tool usage in context, leading to descriptions that clarify when and how each tool should be used
 
 ### Usage Examples
 

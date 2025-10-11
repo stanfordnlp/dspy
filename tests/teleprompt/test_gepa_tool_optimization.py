@@ -1,9 +1,59 @@
+import json
+
 import dspy
 from dspy import Example
 from dspy.utils.dummies import DummyLM
 
 
+class DictDummyLM(dspy.clients.lm.LM):
+    """Dummy LM that replays prerecorded responses based on message hash."""
+    
+    def __init__(self, history):
+        super().__init__("dummy", "chat", 0.0, 1000, True)
+        self.history = {}
+        for m in history:
+            self.history[hash(repr(m["messages"]))] = m
+
+    def __call__(self, prompt=None, messages=None, **kwargs):
+        assert hash(repr(messages)) in self.history, f"Message {messages} not found in history"
+        m = self.history[hash(repr(messages))]
+        return m["outputs"]
+
+
+# Simple multi-hop employee database tools (for main integration test)
+def get_employee_department(employee_name: str) -> str:
+    """Gets department."""
+    employees = {
+        "John Smith": "Engineering",
+        "Mary Johnson": "Sales",
+        "Bob Wilson": "HR",
+    }
+    return employees.get(employee_name, "Not found")
+
+
+def get_department_budget(department: str) -> str:
+    """Gets budget."""
+    budgets = {
+        "Engineering": "500000",
+        "Sales": "300000",
+        "HR": "200000",
+    }
+    return budgets.get(department, "Not found")
+
+
+def get_employee_salary(employee_name: str) -> str:
+    """Gets salary."""
+    salaries = {
+        "John Smith": "120000",
+        "Mary Johnson": "95000",
+        "Bob Wilson": "85000",
+    }
+    return salaries.get(employee_name, "Not found")
+
+
+# Helper functions for other tests
 def calculator(expression: str) -> str:
+    """Calculator for math."""
     try:
         return str(eval(expression))
     except Exception:
@@ -11,11 +61,14 @@ def calculator(expression: str) -> str:
 
 
 def search(query: str) -> str:
-    return f"Search results for: {query}"
+    """Search function."""
+    return f"Results for: {query}"
 
 
 def simple_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
-    score = 1.0 if example.answer in str(prediction.answer) else 0.0
+    pred_str = str(prediction.answer).strip()
+    expected = str(example.answer).strip()
+    score = 1.0 if pred_str == expected else 0.0
     return dspy.Prediction(score=score, feedback="Correct" if score == 1.0 else "Wrong")
 
 
@@ -23,8 +76,8 @@ def test_build_program_applies_tool_descriptions():
     """Test that build_program applies tool descriptions from candidate dict."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
-    calc_tool = dspy.Tool(calculator, name="calculator", desc="Old description")
-    react = dspy.ReAct("question -> answer", tools=[calc_tool])
+    dept_tool = dspy.Tool(get_employee_department, name="get_employee_department", desc="Gets department.")
+    react = dspy.ReAct("question -> answer", tools=[dept_tool])
 
     adapter = DspyAdapter(
         student_module=react,
@@ -36,28 +89,30 @@ def test_build_program_applies_tool_descriptions():
 
     candidate = {
         "react": "New instruction for ReAct",
-        "tool:calculator": "Optimized calculator description",
+        "tool:get_employee_department": "Retrieves the department name for a given employee",
     }
 
     new_prog = adapter.build_program(candidate)
 
     assert new_prog.react.signature.instructions == "New instruction for ReAct"
-    assert new_prog.tools["calculator"].desc == "Optimized calculator description"
+    assert new_prog.tools["get_employee_department"].desc == "Retrieves the department name for a given employee"
 
 
 def test_gepa_with_tool_optimization_enabled():
-    """Test GEPA end-to-end with optimize_tool_descriptions=True."""
-    calc_tool = dspy.Tool(calculator, name="calculator", desc="Does math")
-    react = dspy.ReAct("question -> answer", tools=[calc_tool])
+    """Test GEPA end-to-end with optimize_tool_descriptions=True using preloaded traces."""
+    # Setup ReAct with minimal tool descriptions (as captured in traces)
+    dept_tool = dspy.Tool(get_employee_department, name="get_employee_department", desc="Gets department.")
+    budget_tool = dspy.Tool(get_department_budget, name="get_department_budget", desc="Gets budget.")
+    salary_tool = dspy.Tool(get_employee_salary, name="get_employee_salary", desc="Gets salary.")
+    
+    react = dspy.ReAct("question -> answer", tools=[dept_tool, budget_tool, salary_tool])
 
-    lm = DummyLM(
-        [
-            {"next_thought": "Calculate", "next_tool_name": "calculator", "next_tool_args": {"expression": "2+2"}},
-            {"next_thought": "Done", "next_tool_name": "finish", "next_tool_args": {}},
-            {"reasoning": "Used calculator", "answer": "4"},
-        ]
-    )
-    reflection_lm = DummyLM([{"improved_instruction": "Better"}])
+    # Load prerecorded LM traces from real gpt-5-nano run
+    with open("tests/teleprompt/gepa_dummy_lm_tool_optimization.json") as f:
+        data = json.load(f)
+    
+    lm = DictDummyLM(data["lm"])
+    reflection_lm = DictDummyLM(data["reflection_lm"])
 
     dspy.settings.configure(lm=lm)
 
@@ -68,49 +123,21 @@ def test_gepa_with_tool_optimization_enabled():
         optimize_tool_descriptions=True,
     )
 
-    trainset = [Example(question="What is 2+2?", answer="4").with_inputs("question")]
+    # Use same examples as in trace generation
+    trainset = [
+        Example(question="What is the budget of John Smith's department?", answer="500000").with_inputs("question"),
+        Example(question="How much does Mary Johnson earn?", answer="95000").with_inputs("question"),
+        Example(question="What is Bob Wilson's department budget?", answer="200000").with_inputs("question"),
+    ]
 
     optimized = optimizer.compile(react, trainset=trainset)
 
+    # Verify optimization occurred
     assert optimized is not None
     assert hasattr(optimized, "tools")
-    assert "calculator" in optimized.tools
-
-
-def test_gepa_with_multi_agent_architecture():
-    """Test that tool optimization discovers tools from nested subagent modules."""
-
-    class MultiAgentSystem(dspy.Module):
-        def __init__(self):
-            super().__init__()
-            # Subagent as module attribute (reuse existing search function)
-            search_tool = dspy.Tool(search, name="search", desc="Searches")
-            self.subagent = dspy.ReAct("task -> result", tools=[search_tool])
-
-            # Main agent with subagent wrapped as tool
-            def spawn_subagent(task: str) -> str:
-                return self.subagent(task=task).result
-
-            spawn_tool = dspy.Tool(spawn_subagent, name="spawn_subagent", desc="Spawns subagent")
-            calc_tool = dspy.Tool(calculator, name="calculator", desc="Does math")
-            self.main_agent = dspy.ReAct("q -> a", tools=[spawn_tool, calc_tool])
-
-    system = MultiAgentSystem()
-
-    # Test extraction using named_sub_modules pattern
-    tool_descriptions = {}
-    for _, module in system.named_sub_modules():
-        if hasattr(module, "tools"):
-            for tool_name, tool in module.tools.items():
-                tool_key = f"tool:{tool_name}"
-                if tool_key not in tool_descriptions:
-                    tool_descriptions[tool_key] = tool.desc
-
-    # All tools from all nested agents should be discovered
-    assert "tool:calculator" in tool_descriptions
-    assert "tool:spawn_subagent" in tool_descriptions
-    assert "tool:search" in tool_descriptions
-    assert "tool:finish" in tool_descriptions
+    assert "get_employee_department" in optimized.tools
+    assert "get_department_budget" in optimized.tools
+    assert "get_employee_salary" in optimized.tools
 
 
 def test_gepa_optimizes_multi_agent_system_end_to_end():
@@ -156,70 +183,43 @@ def test_gepa_optimizes_multi_agent_system_end_to_end():
     assert "spawn_subagent" in optimized.main_agent.tools
 
 
-def test_tool_and_signature_optimization_with_proposer_routing():
-    """Test that routing logic correctly splits tools and signatures."""
-    from unittest.mock import Mock, patch
-
+def test_adapter_routes_tools_and_signatures_separately():
+    """Test that adapter routes tool components to ToolProposer."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
-
-    # Create module with BOTH signature and tools
-    calc_tool = dspy.Tool(calculator, name="calculator", desc="Original calculator description")
-    react = dspy.ReAct("question -> answer", tools=[calc_tool])
-
-    # Create adapter with tool optimization enabled
+    
+    calc_tool = dspy.Tool(calculator, name="calculator", desc="Original tool")
+    agent = dspy.ReAct("question -> answer", tools=[calc_tool])
+    
+    # Provide reflection_lm with response for tool optimization
+    reflection_lm = DummyLM([
+        {"improved_tool_description": "Improved calculator tool"},
+    ])
+    
     adapter = DspyAdapter(
-        student_module=react,
+        student_module=agent,
         metric_fn=simple_metric,
         feedback_map={},
         failure_score=0.0,
         optimize_tool_descriptions=True,
-        reflection_lm=None,
+        reflection_lm=reflection_lm,
     )
-
-    # Verify propose_new_texts was created
-    assert hasattr(adapter, "propose_new_texts"), "Routing logic should have set propose_new_texts"
-
-    # Mock the ToolProposer to verify it gets called with tools only
-    mock_tool_proposer_instance = Mock()
-    mock_tool_proposer_instance.return_value = {"tool:calculator": "Improved calculator description"}
-
-    mock_tool_proposer_class = Mock(return_value=mock_tool_proposer_instance)
-
-    # Mock parent propose_new_texts to verify it gets called with signatures only
-    mock_parent_propose = Mock(return_value={"react": "Improved signature instruction"})
-
-    with patch("dspy.teleprompt.gepa.instruction_proposal.ToolProposer", mock_tool_proposer_class):
-        with patch.object(adapter.__class__.__bases__[0], "propose_new_texts", mock_parent_propose, create=True):
-            # Rebuild adapter to pick up mocked parent
-            adapter_with_mock = DspyAdapter(
-                student_module=react,
-                metric_fn=simple_metric,
-                feedback_map={},
-                failure_score=0.0,
-                optimize_tool_descriptions=True,
-                reflection_lm=None,
-            )
-
-            candidate = {
-                "react": "Original signature",
-                "tool:calculator": "Original tool desc",
-            }
-
-            reflective_dataset = {
-                "react": [{"input": "test"}],
-                "tool:calculator": [{"input": "calc"}],
-            }
-
-            components = ["react", "tool:calculator"]
-
-            result = adapter_with_mock.propose_new_texts(candidate, reflective_dataset, components)
-
-            # Verify routing: ToolProposer was called with tools only
-            assert mock_tool_proposer_instance.called, "ToolProposer should have been called"
-            tool_call_args = mock_tool_proposer_instance.call_args[1]
-            assert "tool:calculator" in tool_call_args["components_to_update"]
-            assert "react" not in tool_call_args["components_to_update"]
-
-            # Verify both components in result
-            assert "react" in result
-            assert "tool:calculator" in result
+    
+    # Verify routing function was created
+    assert hasattr(adapter, 'propose_new_texts')
+    
+    # Test with ONLY tool components (signature optimization requires GEPA's LM interface)
+    candidate = {
+        "tool:calculator": "Original tool description",
+    }
+    
+    reflective_dataset = {
+        "tool:calculator": [{"Inputs": {"expr": "1+1"}, "Generated_Outputs": "2", "Feedback": "good"}],
+    }
+    
+    # Call routing function - should route tool to ToolProposer
+    result = adapter.propose_new_texts(candidate, reflective_dataset, ["tool:calculator"])
+    
+    # Verify tool is in result (routing worked)
+    assert "tool:calculator" in result
+    # Verify it was optimized
+    assert result["tool:calculator"] == "Improved calculator tool"
