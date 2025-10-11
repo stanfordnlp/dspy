@@ -167,31 +167,25 @@ class ChatAdapter(Adapter):
         return assistant_message_content
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
-        sections = [(None, [])]
-
-        for line in completion.splitlines():
-            match = field_header_pattern.match(line.strip())
-            if match:
-                # If the header pattern is found, split the rest of the line as content
-                header = match.group(1)
-                remaining_content = line[match.end() :].strip()
-                sections.append((header, [remaining_content] if remaining_content else []))
-            else:
-                sections[-1][1].append(line)
-
-        sections = [(k, "\n".join(v).strip()) for k, v in sections]
+        # Split the entire completion by field markers, keeping the headers
+        parts = re.split(field_header_pattern, completion)
 
         fields = {}
-        for k, v in sections:
-            if (k not in fields) and (k in signature.output_fields):
+        # Iterate over captured headers and their bodies
+        for i in range(1, len(parts), 2):
+            header = parts[i]
+            body = parts[i + 1] if i + 1 < len(parts) else ""
+            if (header not in fields) and (header in signature.output_fields):
                 try:
-                    fields[k] = parse_value(v, signature.output_fields[k].annotation)
+                    fields[header] = parse_value(body.strip(), signature.output_fields[header].annotation)
                 except Exception as e:
                     raise AdapterParseError(
                         adapter_name="ChatAdapter",
                         signature=signature,
                         lm_response=completion,
-                        message=f"Failed to parse field {k} with value {v} from the LM response. Error message: {e}",
+                        message=(
+                            f"Failed to parse field {header} with value {body.strip()} from the LM response. Error message: {e}"
+                        ),
                     )
         if fields.keys() != signature.output_fields.keys():
             raise AdapterParseError(
