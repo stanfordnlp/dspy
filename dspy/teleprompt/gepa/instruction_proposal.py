@@ -313,27 +313,24 @@ class MultiModalInstructionProposer(ProposalFn):
 
 
 class GenerateImprovedToolDescriptionFromFeedback(dspy.Signature):
-    """I provided an assistant with the following description for a tool:
-    ```
-    <current_tool_description>
-    ```
+    """You are refining a tool description that the assistant currently uses.
 
-    This tool is available to the assistant. The following are examples of task inputs provided to the assistant, the assistant's decisions about which tools to use, and feedback on whether those decisions were correct:
-    ```
-    <examples_with_feedback>
-    ```
+    Review the current description along with examples of the assistant's tool decisions and the feedback those decisions received.
 
-    Your task is to write a better description for this tool.
+    Focus on the most useful insights, such as:
+    - Decision cues: signals in the task or trajectory that hint the tool should (or should not) be invoked.
+    - Inputs & outputs: the arguments the tool expects, the result it returns, and any setup or constraints.
+    - Failure modes: mistakes, limitations, or edge cases where the tool wastes calls or produces poor outcomes.
+    - Successful patterns: situations where the tool worked well and should stay encouraged.
 
-    Read the examples carefully and identify patterns in when the tool was used successfully versus when it was misused or overlooked. Identify any domain-specific information about the tool's capabilities or appropriate usage that may not be available to the assistant in the future. The assistant may have developed effective patterns for tool selection - if so, ensure the tool description supports those patterns.
-
-    Provide the new tool description within ``` blocks."""
+    If you notice other useful insights, feel free to include them. 
+    Return a concise description that helps the assistant quickly recognize good opportunities for the tool."""
 
     current_tool_description = dspy.InputField(desc="The current description of the tool")
     examples_with_feedback = dspy.InputField(desc="Examples showing tool usage decisions and feedback on correctness")
 
     improved_tool_description = dspy.OutputField(
-        desc="An improved description that helps with tool selection decisions"
+        desc="An improved description that guides correct tool selection and usage"
     )
 
 
