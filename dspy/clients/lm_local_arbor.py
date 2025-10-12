@@ -62,70 +62,18 @@ class ArborReinforceJob(ReinforceJob):
 
     def initialize(self):
         # TODO(GRPO Team): Set provider job ID
-        num_generations = self.train_kwargs.get("num_generations")
-        temperature = self.train_kwargs.get("temperature", self.DEFAULT_TRAIN_KWARGS["temperature"])
-        beta = self.train_kwargs.get("beta", self.DEFAULT_TRAIN_KWARGS["beta"])
-        num_iterations = self.train_kwargs.get("num_iterations", self.DEFAULT_TRAIN_KWARGS["num_iterations"])
-        per_device_train_batch_size = self.train_kwargs.get(
-            "per_device_train_batch_size", self.DEFAULT_TRAIN_KWARGS["per_device_train_batch_size"]
-        )
-        learning_rate = self.train_kwargs.get("learning_rate", self.DEFAULT_TRAIN_KWARGS["learning_rate"])
-        gradient_accumulation_steps = self.train_kwargs.get(
-            "gradient_accumulation_steps", self.DEFAULT_TRAIN_KWARGS["gradient_accumulation_steps"]
-        )
-        gradient_checkpointing = self.train_kwargs.get(
-            "gradient_checkpointing", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing"]
-        )
-        lr_scheduler_type = self.train_kwargs.get("lr_scheduler_type", self.DEFAULT_TRAIN_KWARGS["lr_scheduler_type"])
-        max_prompt_length = self.train_kwargs.get("max_prompt_length", self.DEFAULT_TRAIN_KWARGS["max_prompt_length"])
-        max_completion_length = self.train_kwargs.get(
-            "max_completion_length", self.DEFAULT_TRAIN_KWARGS["max_completion_length"]
-        )
-        bf16 = self.train_kwargs.get("bf16", self.DEFAULT_TRAIN_KWARGS["bf16"])
-        scale_rewards = self.train_kwargs.get("scale_rewards", self.DEFAULT_TRAIN_KWARGS["scale_rewards"])
-        gradient_checkpointing_kwargs = self.train_kwargs.get(
-            "gradient_checkpointing_kwargs", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing_kwargs"]
-        )
-        max_grad_norm = self.train_kwargs.get("max_grad_norm", self.DEFAULT_TRAIN_KWARGS["max_grad_norm"])
-        report_to = self.train_kwargs.get("report_to", self.DEFAULT_TRAIN_KWARGS["report_to"])
-        log_completions = self.train_kwargs.get("log_completions", self.DEFAULT_TRAIN_KWARGS["log_completions"])
-        logging_steps = self.train_kwargs.get("logging_steps", self.DEFAULT_TRAIN_KWARGS["logging_steps"])
-        max_context_length = self.train_kwargs.get(
-            "max_context_length", self.DEFAULT_TRAIN_KWARGS["max_context_length"]
-        )
-        lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
-
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         # Only multi-GPU is supported for now
         gpu_config_type = "multi"
-        data = {
+        data = self.config.to_dict()
+        data.update({
             "model": finetune_model,
-            "num_generations": num_generations,
-            "temperature": temperature,
-            "beta": beta,
-            "num_iterations": num_iterations,
-            "per_device_train_batch_size": per_device_train_batch_size,
-            "learning_rate": learning_rate,
-            "gradient_accumulation_steps": gradient_accumulation_steps,
-            "gradient_checkpointing": gradient_checkpointing,
-            "lr_scheduler_type": lr_scheduler_type,
-            "max_prompt_length": max_prompt_length,
-            "max_completion_length": max_completion_length,
-            "bf16": bf16,
-            "scale_rewards": scale_rewards,
-            "gradient_checkpointing_kwargs": gradient_checkpointing_kwargs,
-            "max_grad_norm": max_grad_norm,
-            "report_to": report_to,
-            "log_completions": log_completions,
-            "logging_steps": logging_steps,
-            "max_context_length": max_context_length,
-            "lora": lora,
             "gpu_config": {
                 "type": gpu_config_type,
                 gpu_config_type: self.gpu_config,
             },
-        }
+        })
         url = urljoin(api_base, "fine_tuning/grpo/initialize")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url=url, headers=headers, json=data)
