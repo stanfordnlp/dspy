@@ -2,10 +2,13 @@ from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
+from dspy import InputField, OutputField, Predict
 from dspy.clients.lm import LM
 from dspy.clients.lm_local_arbor import ArborProvider, ArborReinforceJob, ArborTrainingJob
 from dspy.clients.utils_finetune import GRPOChatData, GRPOGroup, MultiGPUConfig, TrainDataFormat, TrainingStatus
-from dspy.teleprompt.grpo.grpo_config import GRPOConfig
+from dspy.signatures import Signature
+from dspy.teleprompt.arbor_grpo.arbor_grpo import ArborGRPO
+from dspy.teleprompt.arbor_grpo.arbor_grpo_config import ArborGRPOConfig
 
 
 # Fixtures
@@ -23,8 +26,8 @@ def mock_lm():
 
 @pytest.fixture
 def grpo_config():
-    """Create a basic GRPOConfig for testing."""
-    return GRPOConfig(
+    """Create a basic ArborGRPOConfig for testing."""
+    return ArborGRPOConfig(
         num_generations=4,
         temperature=0.9,
         beta=0.04,
@@ -36,6 +39,21 @@ def grpo_config():
 @pytest.fixture
 def gpu_config():
     return MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)
+
+
+@pytest.fixture
+def arbor_grpo(mock_lm, grpo_config, gpu_config):
+    """Create an ArborGRPO instance for testing."""
+    return ArborGRPO(
+        metric=None,
+        multitask=True,
+        config=grpo_config,
+        exclude_demos=True,
+        num_train_steps=1,
+        num_dspy_examples_per_grpo_step=1,
+        num_rollouts_per_grpo_step=1,
+        gpu_config=gpu_config,
+    )
 
 
 class TestArborTrainingJob:
@@ -79,19 +97,19 @@ class TestArborTrainingJob:
 
 class TestArborReinforceJob:
     def test_init_with_grpo_config(self, mock_lm, grpo_config, gpu_config):
-        """Test ArborReinforceJob initialization with GRPOConfig."""
+        """Test ArborReinforceJob initialization with ArborGRPOConfig."""
         job = ArborReinforceJob(mock_lm, grpo_config, gpu_config)
 
         assert job.lm == mock_lm
-        assert isinstance(job.config, GRPOConfig)
+        assert isinstance(job.config, ArborGRPOConfig)
 
         assert job.provider_job_id is None
         assert job.checkpoints == {}
         assert job.last_checkpoint is None
 
     def test_init_with_invalid_train_kwargs(self, mock_lm, gpu_config):
-        """Test that init raises TypeError with non-GRPOConfig"""
-        with pytest.raises(TypeError, match="Expected config to be of type GRPOConfig"):
+        """Test that init raises TypeError with non-ArborGRPOConfig"""
+        with pytest.raises(TypeError, match="Expected config to be of type ArborGRPOConfig"):
             ArborReinforceJob(mock_lm, {"invalid": "dict"}, gpu_config)
 
     @patch("requests.post")
@@ -316,6 +334,80 @@ class TestArborProvider:
         """Test getting status when no job exists."""
         status = ArborProvider.get_training_status(None, {})  # type: ignore
         assert status == TrainingStatus.not_started
+
+
+class TestArborGRPO:
+    """Test ArborGRPO integration with Arbor backend."""
+
+    @patch("requests.post")
+    def test_arbor_grpo_job_creation(self, mock_post, arbor_grpo, mock_lm):
+        """Test that ArborGRPO creates proper ArborReinforceJob instances."""
+        # Mock the initialization response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current_model": "test-model-v1",
+            "job_id": "grpo-job-123"
+        }
+        mock_post.return_value = mock_response
+
+        # Create a simple student program
+
+
+        class TestSignature(Signature):
+            input: str = InputField()
+            output: str = OutputField()
+
+        class TestProgram:
+            def __init__(self, lm):
+                self.lm = lm
+                self.predictor = Predict(TestSignature)
+
+            def predictors(self):
+                return [self.predictor]
+
+            def _compiled(self):
+                return False
+
+        student = TestProgram(mock_lm)
+        student.predictor.set_lm(mock_lm)
+
+        # Mock the setup methods to avoid complex initialization
+        with patch.object(arbor_grpo, "_setup_and_validate_inputs") as mock_setup, \
+             patch.object(arbor_grpo, "_setup_teachers_and_cache") as mock_cache, \
+             patch.object(arbor_grpo, "_setup_training_jobs") as mock_jobs, \
+             patch.object(arbor_grpo, "_create_validation_reporter") as mock_reporter, \
+             patch.object(arbor_grpo, "_collect_trace_data") as mock_collect, \
+             patch.object(arbor_grpo, "_prepare_training_batches") as mock_prepare, \
+             patch.object(arbor_grpo, "_run_training_step") as mock_run, \
+             patch.object(arbor_grpo, "_cleanup_training") as mock_cleanup:
+
+            # Mock the return values
+            mock_setup.return_value = ([student], 1, {}, 1)
+            mock_cache.return_value = {}
+            mock_reporter.return_value = lambda step_idx=-1: None
+            mock_collect.return_value = []
+            mock_prepare.return_value = []
+            mock_jobs.return_value = None
+
+            trainset = [{"input": "test", "output": "response"}]
+            result = arbor_grpo.compile(student, trainset)
+
+            mock_jobs.assert_called_once()
+
+    def test_arbor_grpo_config_handling(self, arbor_grpo, grpo_config):
+        """Test that ArborGRPO properly handles ArborGRPOConfig."""
+        assert hasattr(arbor_grpo, "grpo_configs")
+        assert isinstance(arbor_grpo.grpo_configs, dict)
+
+        default_dict = arbor_grpo._create_default_config_dict()
+        assert isinstance(default_dict, dict)
+
+        single_dict = arbor_grpo._create_single_config_dict(grpo_config)
+        assert isinstance(single_dict, dict)
+
+        test_dict = arbor_grpo._convert_to_grpo_config_dict(grpo_config)
+        assert isinstance(test_dict, dict)
 
 
 # Integration-style tests (still mocked but testing workflows)

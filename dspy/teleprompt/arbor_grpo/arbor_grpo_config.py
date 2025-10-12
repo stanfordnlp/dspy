@@ -6,9 +6,9 @@ from dspy.clients.lm import LM
 
 
 @dataclass
-class GRPOConfig:
+class ArborGRPOConfig:
     """
-    Configuration class for GRPO training.
+    Configuration class for Arbor GRPO training.
     
     This class defines all the parameters needed for GRPO training in DSPy's Arbor implementation,
     matching exactly what the ArborReinforceJob.initialize() method expects
@@ -122,18 +122,18 @@ class GRPOConfig:
             for field in self.__dataclass_fields__.values()
         }
     @classmethod
-    def convert_to_lm_dict(cls, arg) -> dict[LM, "GRPOConfig"]:
+    def convert_to_lm_dict(cls, arg) -> dict[LM, "ArborGRPOConfig"]:
         """Convert to LM dict, matching the existing DSPy pattern."""
         non_empty_dict = arg and isinstance(arg, dict)
         if non_empty_dict and all(isinstance(k, LM) for k in arg.keys()):
-            if not all(isinstance(v, GRPOConfig) for v in arg.values()):
-                raise ValueError("All values in the LM dict must be GRPOConfig instances.")
+            if not all(isinstance(v, ArborGRPOConfig) for v in arg.values()):
+                raise ValueError("All values in the LM dict must be ArborGRPOConfig instances.")
             return arg
-        if not isinstance(arg, GRPOConfig):
-            raise ValueError("arg must be a GRPOConfig instance or a dict with LM keys and GRPOConfig values.")
+        if not isinstance(arg, ArborGRPOConfig):
+            raise ValueError("arg must be a ArborGRPOConfig instance or a dict with LM keys and ArborGRPOConfig values.")
         return defaultdict(lambda: arg)
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "GRPOConfig":
+    def from_dict(cls, config_dict: dict[str, Any]) -> "ArborGRPOConfig":
         """Create config from dictionary."""
         valid_fields = {field.name for field in cls.__dataclass_fields__.values()}
         filtered_dict = {k: v for k, v in config_dict.items() if k in valid_fields}

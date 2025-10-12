@@ -1,4 +1,4 @@
-from dspy.teleprompt.grpo.grpo import GRPO
+from dspy.teleprompt.grpo import GRPO
 
 
 def test_grpo_dataset_shuffler():

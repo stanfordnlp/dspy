@@ -9,7 +9,7 @@ import requests
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import GRPOGroup, MultiGPUConfig, TrainDataFormat, TrainingStatus, save_data
-from dspy.teleprompt.grpo.grpo_config import GRPOConfig
+from dspy.teleprompt.arbor_grpo.arbor_grpo_config import ArborGRPOConfig
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -44,13 +44,13 @@ class ArborTrainingJob(TrainingJob):
 
 
 class ArborReinforceJob(ReinforceJob):
-    def __init__(self, lm: "LM", config: GRPOConfig, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
+    def __init__(self, lm: "LM", config: ArborGRPOConfig, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
         # The teleprompter must ensure that this is set
-        if not isinstance(config, GRPOConfig):
-            raise TypeError(f"Expected config to be of type GRPOConfig, but got {type(config)}")
+        if not isinstance(config, ArborGRPOConfig):
+            raise TypeError(f"Expected config to be of type ArborGRPOConfig, but got {type(config)}")
 
         self.lm = lm
-        self.config: GRPOConfig = config
+        self.config: ArborGRPOConfig = config
         self.provider_job_id = None
         self.checkpoints = {}
         self.last_checkpoint = None
