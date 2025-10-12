@@ -9,6 +9,7 @@ import requests
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import GRPOGroup, MultiGPUConfig, TrainDataFormat, TrainingStatus, save_data
+from dspy.teleprompt.arbor_grpo.arbor_grpo_config import ArborGRPOConfig
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -47,37 +48,13 @@ class ArborTrainingJob(TrainingJob):
 
 
 class ArborReinforceJob(ReinforceJob):
-    DEFAULT_TRAIN_KWARGS = {  # noqa: RUF012
-        "temperature": 0.9,
-        "beta": 0.04,
-        "num_iterations": 1,
-        "per_device_train_batch_size": 8,
-        "learning_rate": 1e-6,
-        "gradient_accumulation_steps": 1,
-        # This is false by default in TRL, but I think it makes sense to be true for us
-        "gradient_checkpointing": True,
-        "lr_scheduler_type": "constant_with_warmup",
-        "max_prompt_length": None,
-        "max_completion_length": None,
-        "gradient_checkpointing_kwargs": None,
-        "bf16": False,
-        "scale_rewards": True,
-        "max_grad_norm": 1.0,
-        "report_to": "none",
-        "log_completions": True,
-        "logging_steps": 100,
-        # By default, none is the model's max context length
-        "max_context_length": None,
-        "lora": False,
-    }
-
-    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
+    def __init__(self, lm: "LM", config: ArborGRPOConfig, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
         # The teleprompter must ensure that this is set
-        if "num_generations" not in train_kwargs:
-            raise ValueError("num_generations must be set in the training kwargs")
+        if not isinstance(config, ArborGRPOConfig):
+            raise TypeError(f"Expected config to be of type ArborGRPOConfig, but got {type(config)}")
 
         self.lm = lm
-        self.train_kwargs = train_kwargs
+        self.config: ArborGRPOConfig = config
         self.provider_job_id = None
         self.checkpoints = {}
         self.last_checkpoint = None

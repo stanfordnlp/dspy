@@ -5,6 +5,7 @@ from dspy.teleprompt.bootstrap_finetune import BootstrapFinetune
 from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
 from dspy.teleprompt.copro_optimizer import COPRO
 from dspy.teleprompt.ensemble import Ensemble
+from dspy.teleprompt.grpo import GRPO
 from dspy.teleprompt.infer_rules import InferRules
 from dspy.teleprompt.knn_fewshot import KNNFewShot
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
@@ -24,6 +25,7 @@ __all__ = [
     "COPRO",
     "Ensemble",
     "GEPA",
+    "GRPO",
     "KNNFewShot",
     "MIPROv2",
     "BootstrapFewShotWithRandomSearch",
