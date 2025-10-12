@@ -450,7 +450,72 @@ gepa = dspy.GEPA(
 
 The `optimize_tool_descriptions` parameter enables GEPA to optimize tool descriptions in addition to signature instructions. This is particularly valuable for ReAct agents and other tool-using systems, where the quality of tool descriptions directly impacts the agent's ability to select appropriate tools for each task.
 
-Unlike signature instructions that guide reasoning strategies, tool descriptions serve a fundamentally different purpose: they help agents decide **which tool to use** in a given situation. GEPA recognizes this categorical difference and applies a specialized reflection prompt tailored for tool selection decisions.
+Unlike signature instructions that guide reasoning strategies, tool descriptions serve a different purpose: they help agents decide **which tool to use** in a given situation. GEPA applies a specialized reflection prompt tailored for tool selection decisions.
+
+### Tool-Specific Reflection Prompt
+
+GEPA uses a dedicated prompt for optimizing tool descriptions. The prompt receives the complete ReAct trajectory (all thoughts, actions, observations) from executions that used the tool being optimized:
+
+```python
+class GenerateImprovedToolDescriptionFromFeedback(dspy.Signature):
+    """You are refining a tool description that the assistant currently uses.
+
+    Review the current description along with examples of the assistant's tool decisions 
+    and the feedback those decisions received.
+
+    Read them together and refine the description.
+    So the agent understands when this tool actually helps, what argument or result matters, 
+    and what misuse the feedback exposed. Keep the tool's voice and only change what the 
+    evidence justifies.
+
+    Return a refined description that helps the assistant quickly recognize good 
+    opportunities for the tool."""
+
+    current_tool_description = dspy.InputField(desc="The current description of the tool")
+    examples_with_feedback = dspy.InputField(
+        desc="Examples showing tool usage decisions and feedback on correctness"
+    )
+
+    improved_tool_description = dspy.OutputField(
+        desc="An improved description that guides correct tool selection and usage"
+    )
+```
+
+The `examples_with_feedback` contains full ReAct trajectories showing the complete context in which each tool was selected and used, enabling the reflection LM to understand tool selection patterns.
+
+**Example: Writing Tool-Aware Metrics**
+
+To provide effective feedback for tool optimization, write metrics that examine the trajectory:
+
+```python
+def tool_feedback_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    """Metric that provides tool-specific feedback for GEPA optimization."""
+    correct = prediction.answer == example.answer
+    score = 1.0 if correct else 0.0
+    
+    # Generate tool-specific feedback if available
+    if hasattr(prediction, 'trajectory'):
+        tools_used = [
+            prediction.trajectory[key] 
+            for key in prediction.trajectory 
+            if key.startswith('tool_name_') and prediction.trajectory[key] != 'finish'
+        ]
+        feedback = f"{'Correct' if correct else 'Wrong'}. Tools: {', '.join(tools_used)}"
+    else:
+        feedback = "Correct" if correct else "Wrong"
+    
+    return dspy.Prediction(score=score, feedback=feedback)
+```
+
+This produces feedback like:
+```
+[Tool 'calculator' from 'agent'] Correct. Tools: calculator
+[Tool 'search' from 'agent'] Wrong. Tools: search, calculator
+```
+
+The tool-specific prefix `[Tool 'calculator' from 'agent']` is automatically added by GEPA to focus the reflection LM on optimizing that particular tool's description.
+
+**Note:** Tool descriptions are treated as components in GEPA's optimization process. The `component_selector` parameter applies to both signature instructions and tool descriptions. For example, `component_selector="all"` optimizes all signatures and tools together, while `component_selector="round_robin"` cycles through them one at a time.
 
 ### Default Behavior
 
