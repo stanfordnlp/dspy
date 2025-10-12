@@ -143,6 +143,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             ) -> dict[str, str]:
                 tool_components = [c for c in components_to_update if c.startswith("tool:")]
                 instruction_components = [c for c in components_to_update if not c.startswith("tool:")]
+
                 results: dict[str, str] = {}
 
                 # Handle signature components.
@@ -264,12 +265,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
-        tool_examples: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
-        # First pass: Process all non-tool components (including ReAct)
+        # First pass: Process all non-tool components (predictors)
         for pred_name in components_to_update:
             if pred_name.startswith("tool:"):
-                continue  # Skip tools in first pass
+                continue  # Skip tools in first pass (tools are processed in the second pass)
 
             module = None
             for name, m in program.named_predictors():
@@ -365,9 +365,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = fb["feedback"]
                     if fb["score"] != module_score:
                         if self.warn_on_score_mismatch:
-                            logger.warning(
-                                "The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score. You can safely ignore this warning if using a semantic metric, however, if this mismatch is caused due to predictor scoring, please return module-level scores. To disable this warning, set warn_on_score_mismatch=False."
-                            )
                             self.warn_on_score_mismatch = False
                         fb["score"] = module_score
 
@@ -378,14 +375,33 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 continue
             ret_d[pred_name] = items
 
-            # Share each predictor's reflections with its tools for tool optimization.
-            if self.optimize_tool_descriptions and hasattr(module, "tools"):
-                for tool_name, _ in module.tools.items():
-                    tool_key = f"tool:{tool_name}"
-                    for item in items:
-                        annotated = deepcopy(item)
-                        annotated["Feedback"] = f"[Tool '{tool_name}' from '{pred_name}'] {item['Feedback']}"
-                        tool_examples[tool_key].append(annotated)
+        # Add tool examples to the reflective dataset
+        tool_examples = defaultdict(list)
+
+        if self.optimize_tool_descriptions:
+            for module_path, sub_module in program.named_sub_modules():
+                # Walk each sub-module to locate its tools and remember the predictor scope
+                # so we can share those reflections with the tool descriptions below
+                tools = getattr(sub_module, "tools", None)
+                if not tools:
+                    continue
+
+                prefix = module_path.removeprefix("self.") if module_path != "self" else ""
+
+                tool_entries = list(tools.items())
+
+                for child_name, _ in sub_module.named_predictors():
+                    predictor_key = child_name if not prefix else f"{prefix}.{child_name}"
+                    reflections = ret_d.get(predictor_key)
+                    if not reflections:
+                        continue
+
+                    for tool_name, _ in tool_entries:
+                        tool_key = f"tool:{tool_name}"
+                        for item in reflections:
+                            annotated = deepcopy(item)
+                            annotated["Feedback"] = f"[Tool '{tool_name}' from '{predictor_key}'] {item['Feedback']}"
+                            tool_examples[tool_key].append(annotated)
 
         # Merge tool examples into main dataset (shared tools get examples from all predictors)
         ret_d.update(tool_examples)
