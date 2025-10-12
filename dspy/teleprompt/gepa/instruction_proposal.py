@@ -317,14 +317,11 @@ class GenerateImprovedToolDescriptionFromFeedback(dspy.Signature):
 
     Review the current description along with examples of the assistant's tool decisions and the feedback those decisions received.
 
-    Focus on the most useful insights, such as:
-    - Decision cues: signals in the task or trajectory that hint the tool should (or should not) be invoked.
-    - Inputs & outputs: the arguments the tool expects, the result it returns, and any setup or constraints.
-    - Failure modes: mistakes, limitations, or edge cases where the tool wastes calls or produces poor outcomes.
-    - Successful patterns: situations where the tool worked well and should stay encouraged.
+    Read them together and refine the description.
+    So the agent understands when this tool actually helps, what argument or result matters, and what misuse the feedback exposed. 
+    Keep the tool's voice and only change what the evidence justifies.
 
-    If you notice other useful insights, feel free to include them. 
-    Return a concise description that helps the assistant quickly recognize good opportunities for the tool."""
+    Return a refined description that helps the assistant quickly recognize good opportunities for the tool."""
 
     current_tool_description = dspy.InputField(desc="The current description of the tool")
     examples_with_feedback = dspy.InputField(desc="Examples showing tool usage decisions and feedback on correctness")
@@ -334,86 +331,16 @@ class GenerateImprovedToolDescriptionFromFeedback(dspy.Signature):
     )
 
 
-class SingleComponentToolProposer(dspy.Module):
-    """dspy.Module for proposing improved tool descriptions based on feedback."""
-
-    def __init__(self):
-        super().__init__()
-        self.propose_description = dspy.Predict(GenerateImprovedToolDescriptionFromFeedback)
-
-    def forward(self, current_tool_description: str, reflective_dataset: list[ReflectiveExample]) -> str:
-        """Generate an improved tool description based on current description and feedback examples.
-
-        Args:
-            current_tool_description: The current description of the tool
-            reflective_dataset: List of examples with inputs, outputs, and feedback
-
-        Returns:
-            str: Improved tool description text
-        """
-        # Reuse formatting from SingleComponentMultiModalProposer
-        formatted_examples, _ = self._format_examples_for_instruction_generation(reflective_dataset)
-
-        result = self.propose_description(
-            current_tool_description=current_tool_description, examples_with_feedback=formatted_examples
-        )
-
-        return result.improved_tool_description
-
-    def _format_examples_for_instruction_generation(
-        self, reflective_dataset: list[ReflectiveExample]
-    ) -> tuple[str, dict[int, list[Type]]]:
-        """Format examples using GEPA's markdown structure.
-
-        Returns:
-            tuple: (formatted_text, image_map) where image_map is always empty for tools
-        """
-
-        def render_value(value, level=3):
-            if isinstance(value, dict):
-                s = ""
-                for k, v in value.items():
-                    s += f"{'#' * level} {k}\n"
-                    s += render_value(v, min(level + 1, 6))
-                if not value:
-                    s += "\n"
-                return s
-            elif isinstance(value, (list, tuple)):
-                s = ""
-                for i, item in enumerate(value):
-                    s += f"{'#' * level} Item {i + 1}\n"
-                    s += render_value(item, min(level + 1, 6))
-                if not value:
-                    s += "\n"
-                return s
-            else:
-                return f"{str(value).strip()}\n\n"
-
-        def convert_sample_to_markdown(sample, example_num):
-            s = f"# Example {example_num}\n"
-            for key, val in sample.items():
-                s += f"## {key}\n"
-                s += render_value(val, level=3)
-            return s
-
-        formatted_parts = []
-        for i, example_data in enumerate(reflective_dataset):
-            formatted_example = convert_sample_to_markdown(example_data, i + 1)
-            formatted_parts.append(formatted_example)
-
-        formatted_text = "\n\n".join(formatted_parts)
-        return formatted_text, {}
-
-
 class ToolProposer(ProposalFn):
     """GEPA-compatible tool description proposer.
 
-    This class handles tool description optimization during GEPA optimization by using
-    a single-component proposer for each tool that needs to be updated.
+    Formats reflective examples into structured markdown and calls
+    `GenerateImprovedToolDescriptionFromFeedback` to produce updated descriptions
+    for each tool that requires refinement.
     """
 
     def __init__(self):
-        self.single_proposer = SingleComponentToolProposer()
+        self.propose_description = dspy.Predict(GenerateImprovedToolDescriptionFromFeedback)
 
     def __call__(
         self,
@@ -438,10 +365,44 @@ class ToolProposer(ProposalFn):
                 current_description = candidate[component_name]
                 component_reflective_data = reflective_dataset[component_name]
 
-                new_description = self.single_proposer(
-                    current_tool_description=current_description, reflective_dataset=component_reflective_data
+                formatted_examples = self._format_examples(component_reflective_data)
+                result = self.propose_description(
+                    current_tool_description=current_description,
+                    examples_with_feedback=formatted_examples,
                 )
 
-                updated_components[component_name] = new_description
+                updated_components[component_name] = result.improved_tool_description
 
         return updated_components
+
+    def _format_examples(self, reflective_dataset: list[ReflectiveExample]) -> str:
+        """Format reflective examples using GEPA's markdown structure."""
+
+        def render_value(value, level=3):
+            if isinstance(value, dict):
+                s = ""
+                for key, val in value.items():
+                    s += f"{'#' * level} {key}\n"
+                    s += render_value(val, min(level + 1, 6))
+                if not value:
+                    s += "\n"
+                return s
+            if isinstance(value, (list, tuple)):
+                s = ""
+                for index, item in enumerate(value):
+                    s += f"{'#' * level} Item {index + 1}\n"
+                    s += render_value(item, min(level + 1, 6))
+                if not value:
+                    s += "\n"
+                return s
+            return f"{str(value).strip()}\n\n"
+
+        def convert_sample_to_markdown(sample, example_num):
+            s = f"# Example {example_num}\n"
+            for key, val in sample.items():
+                s += f"## {key}\n"
+                s += render_value(val, level=3)
+            return s
+
+        formatted_parts = [convert_sample_to_markdown(example, i + 1) for i, example in enumerate(reflective_dataset)]
+        return "\n\n".join(formatted_parts)
