@@ -442,7 +442,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     # - When optimizing tool descriptions of ReAct, reflection LM would capture general pattern of tools and ReAct's decision making process
     # - It's probably better to holistically optimize all tools and ReAct together
 
-    # Proposed Architecture:
+    # Proposed Architecture (Exact details may change):
     # 1. During reflective dataset construction, group tools by their parent ReAct module:
     #    - Walk program.named_sub_modules() to find ReAct predictors
     #    - Extract tools from each ReAct module via getattr(module, "tools", None)
@@ -483,13 +483,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     # - Scales better for agents with 10+ tools
     #
     # Challenges:
-    # - Signature modification at runtime requires careful field naming/parsing
-    # - More output fields → higher chance of LM parsing errors
-    # - Need robust fallback when multi-field output fails
-    # - Requires refactoring GEPA's "one component at a time" architecture
-    # - Tool proposer prompt becomes more complex with multiple tools
+    # - Signature modification at runtime may require careful field naming/parsing
+    # - More output fields → higher chance of LM parsing errors (but user will likely to use powerful LMs for ReAct + tools prompts optimization)
+    # - Need robust fallback when multi-field output fails (DSPy natively implemented fallback logic for this?)
+    # - Requires refactoring GEPA's "one component at a time" architecture (but we can treat ReAct + tools as "one component")
     #
-    # Implementation Notes:
+    # Implementation Notes (Ignore if it's too overengineering):
     # - Start with simple case: all tools from one ReAct module
     # - Add retry logic for malformed multi-field outputs
     # - Consider hybrid approach: joint optimization for <5 tools, separate for more
