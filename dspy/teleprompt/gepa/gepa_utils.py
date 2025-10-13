@@ -379,6 +379,26 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         tool_examples = defaultdict(list)
 
         if self.optimize_tool_descriptions:
+            # Design Decision: Full ReAct Trajectory Sharing for Tools
+            #
+            # Each tool receives the COMPLETE ReAct trajectory (all thoughts, actions, observations)
+            # rather than only the segments where that tool was used. This trades token efficiency
+            # for richer optimization context.
+            #
+            # Rationale:
+            # 1. Tools are interdependent: search results inform calculator usage, API responses
+            #    guide follow-up queries. Full trajectory shows these dependencies.
+            # 2. Reflection LM needs context to understand tool SELECTION patterns:
+            #    - Why did the agent choose this tool over alternatives?
+            #    - When in the reasoning process is this tool most useful?
+            #    - What prior information typically triggers this tool's usage?
+            # 3. Goal is descriptions that guide "when to use" not just "what it does"
+            #
+            # Trade-offs:
+            # - Cost: N tools = N copies of same trajectory (5 tools = 5x duplication)
+            # - Benefit: Descriptions capture tool's role in multi-step workflows
+            #   Example: "Use after search when numerical analysis is needed" vs "Does math"
+            #
             for module_path, sub_module in program.named_sub_modules():
                 # Walk each sub-module to locate its tools and remember the predictor scope
                 # so we can share those reflections with the tool descriptions below
@@ -396,6 +416,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     if not reflections:
                         continue
 
+                    # Share the FULL ReAct trajectory with each tool
                     for tool_name, _ in tool_entries:
                         tool_key = f"tool:{tool_name}"
                         for item in reflections:
@@ -410,6 +431,69 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             raise Exception("No valid predictions found for any module.")
 
         return ret_d
+
+    # Future Work: Joint Tool Optimization with ReAct for Token Efficiency
+    # ===========================================================
+    # Current approach duplicates the same trajectory N times for N tools in a ReAct module.
+    # For multi-tool agents, we could optimize all tools simultaneously to reduce token usage.
+    #
+    # Assumption:
+    # - ReAct module is the only module that uses the tools
+    # - When optimizing tool descriptions of ReAct, reflection LM would capture general pattern of tools and ReAct's decision making process
+    # - It's probably better to holistically optimize all tools and ReAct together
+
+    # Proposed Architecture:
+    # 1. During reflective dataset construction, group tools by their parent ReAct module:
+    #    - Walk program.named_sub_modules() to find ReAct predictors
+    #    - Extract tools from each ReAct module via getattr(module, "tools", None)
+    #    - Build mapping: {module_path: [tool_name1, tool_name2, ...]}
+    #    - Detect when a module has multiple tools
+    #
+    # 2. For multi-tool ReAct modules, choose architectural approach:
+    #
+    #    Option A: Separate tool-specific proposer signature
+    #    - Create custom signature extending GenerateImprovedToolDescriptionFromFeedback
+    #    - Use dspy.Signature.append_field() to add one output field per tool
+    #    - Example: For 3 tools, add fields "improved_search_desc", "improved_calc_desc", "improved_api_desc"
+    #    - Pro: Clean separation between instruction and tool optimization
+    #    - Con: Separate LM call from ReAct instruction optimization
+    #
+    #    Option B: Extend ReAct instruction proposer directly
+    #    - Append tool description fields to existing ReAct instruction proposer
+    #    - Update proposer instructions/docstring to include tool optimization guidance
+    #    - Use dspy.Signature's helper functions to add output fields for each tool
+    #    - Aggregate all tools' input/output fields expected to be updated from that ReAct module
+    #    - Pro: Single LM call optimizes ReAct instructions AND tool descriptions together
+    #    - Pro: Reflection LM sees relationship between instructions and tools holistically
+    #    - Con: More complex signature modification, harder to maintain separation of concerns
+    #
+    # 3. Pass the ReAct trajectory ONCE to generate all tool descriptions and ReAct instruction simultaneously:
+    #    - Single LM call with multi-field output instead of N separate calls
+    #    - Proposer prompt instructs LM to consider tool interactions
+    #
+    # 4. Parse the multi-field output and update each tool's description:
+    #    - Extract each field from the prediction
+    #    - Map back to tool names using the grouping from step 1
+    #    - Handle parsing errors with fallback to current one-at-a-time approach
+    #
+    # Benefits:
+    # - Eliminates trajectory duplication: 1x token cost instead of Nx
+    # - Reflection LM sees all tools holistically, can coordinate descriptions
+    # - Tool descriptions can complement each other ("use search before calculator")
+    # - Scales better for agents with 10+ tools
+    #
+    # Challenges:
+    # - Signature modification at runtime requires careful field naming/parsing
+    # - More output fields → higher chance of LM parsing errors
+    # - Need robust fallback when multi-field output fails
+    # - Requires refactoring GEPA's "one component at a time" architecture
+    # - Tool proposer prompt becomes more complex with multiple tools
+    #
+    # Implementation Notes:
+    # - Start with simple case: all tools from one ReAct module
+    # - Add retry logic for malformed multi-field outputs
+    # - Consider hybrid approach: joint optimization for <5 tools, separate for more
+    # - May need different proposer prompt template for joint vs. individual optimization
 
     # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.
     # We can potentially override this, to use the instruction proposal similar to MIPROv2.
