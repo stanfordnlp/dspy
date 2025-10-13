@@ -718,5 +718,3 @@ gepa = dspy.GEPA(
     auto="medium"
 )
 ```
-
-**Note:** Tool optimization is fully backward compatible. Existing programs without tools, or with `optimize_tool_descriptions=False`, continue to work exactly as before.
