@@ -275,7 +275,9 @@ class GEPA(Teleprompter):
             raised if a mismatch in module-level and predictor-level score is detected.
         optimize_tool_descriptions: Whether to optimize tool descriptions for modules with tools 
             (e.g., ReAct agents). When enabled, tool descriptions are included in the optimization 
-            process alongside signature instructions. Default is False.
+            process alongside signature instructions. See the 
+            [Tool Description Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#tool-description-optimization) 
+            for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
         gepa_kwargs: (Optional) provide additional kwargs to be passed to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py) method
         
