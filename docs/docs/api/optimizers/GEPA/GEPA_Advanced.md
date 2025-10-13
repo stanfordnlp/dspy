@@ -557,25 +557,41 @@ When enabled, GEPA:
 
 **Reflective Dataset Construction:**
 
-GEPA's approach to tool optimization is elegantly simple:
+GEPA constructs the reflective dataset for tool optimization in two passes:
 
-1. **ReAct predictors** generate reflective examples containing:
-   - Inputs: `question`, `trajectory` (full agent execution trace with thoughts, tool calls, observations)
-   - Generated Outputs: Agent's next action/tool selection decisions  
-   - Feedback: Task outcome and evaluation from the metric
+**Pass 1: Build reflective examples for predictors (used by instruction proposer)**
 
-2. **Tools copy ReAct's data** with annotation:
-   - Each tool receives ReAct's complete reflective examples (same full trajectory context)
-   - Feedback is prefixed: `[Optimizing tool: 'tool_name'] {original_feedback}`
-   - This focuses the reflection LM on improving that specific tool's description
+For each predictor (including ReAct modules), GEPA creates reflective examples containing:
+- **Inputs**: The predictor's input fields (e.g., `{"question": "..."}`)
+- **Generated Outputs**: ALL of the predictor's output fields converted to strings
+  - For ReAct: This includes both `answer` AND `trajectory` fields
+  - The trajectory contains the complete execution trace with all thoughts, actions, and observations
+- **Feedback**: Text feedback returned by your metric function
 
-3. **Reflection LM sees full context**:
-   - How the agent reasoned before selecting the tool
-   - What other tools were available and considered
-   - Whether the tool selection was successful  
-   - Full multi-step trajectories showing tool composition patterns
+These examples are used by the instruction proposer to optimize signature instructions.
 
-This design allows the reflection LM to understand tool usage in context, leading to descriptions that clarify when and how each tool should be used
+**Pass 2: Copy reflective examples to tools with annotation (used by tool proposer)**
+
+For each tool being optimized, GEPA:
+- Identifies ALL ReAct predictors (across all nested modules) that have this tool in their toolset
+- Takes ALL reflective examples from those predictors and makes a deep copy for the tool
+- Annotates the feedback: `[Tool 'tool_name' from 'predictor_key'] {original_feedback}`
+- If multiple ReAct modules use the same tool, their reflective examples are aggregated together
+
+These annotated examples are used by the tool proposer (with the tool-specific reflection prompt shown above) to optimize tool descriptions.
+
+This means:
+- A tool receives the FULL ReAct trajectory (thoughts, actions, observations) in the "Generated Outputs" field
+- The metric can optionally examine the trajectory and include tool-specific insights in the feedback text
+- The reflection LM sees complete context about how and when the tool was used
+
+**Component Identification & Proposer Routing:**
+
+Tools are identified with a `tool:` prefix (e.g., `tool:calculator`). GEPA uses independent proposers:
+- **Signature instructions** → Custom instruction proposer (if provided) OR default GEPA proposer
+- **Tool descriptions** (prefixed with `tool:`) → Built-in `ToolProposer` (always used, not customizable)
+
+The custom instruction proposer affects ONLY signature instructions. Tools always use the built-in `ToolProposer`, regardless of whether you provide a custom instruction proposer.
 
 ### Usage Examples
 
