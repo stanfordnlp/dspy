@@ -532,16 +532,6 @@ gepa = dspy.GEPA(
 optimized_program = gepa.compile(student, trainset=examples)
 ```
 
-### When to Use optimize_tool_descriptions
-
-Consider enabling `optimize_tool_descriptions=True` when:
-
-- **Building ReAct agents**: ReAct agents rely on tool descriptions to make action selection decisions
-- **Multi-agent systems**: Systems with nested agents and delegated tools benefit from holistic optimization
-- **Poor tool selection**: Your agent frequently selects wrong tools or overlooks appropriate ones
-- **Complex tool sets**: When managing many tools with overlapping capabilities
-- **Domain-specific tools**: Tools requiring specialized knowledge or context for proper usage
-
 ### How It Works
 
 When enabled, GEPA:
@@ -587,11 +577,27 @@ This means:
 
 **Component Identification & Proposer Routing:**
 
-Tools are identified with a `tool:` prefix (e.g., `tool:calculator`). GEPA uses independent proposers:
+GEPA discovers tools by traversing ReAct modules and extracting their associated `dspy.Tool` instances. Once identified, GEPA routes components to appropriate proposers:
 - **Signature instructions** → Custom instruction proposer (if provided) OR default GEPA proposer
-- **Tool descriptions** (prefixed with `tool:`) → Built-in `ToolProposer` (always used, not customizable)
+- **Tool descriptions** → Built-in `ToolProposer` (always used, not customizable)
 
-The custom instruction proposer affects ONLY signature instructions. Tools always use the built-in `ToolProposer`, regardless of whether you provide a custom instruction proposer.
+The custom instruction proposer affects ONLY signature instructions. Tools always use the specialized `ToolProposer` with the tool-specific reflection prompt, regardless of whether you provide a custom instruction proposer.
+
+### When to Use optimize_tool_descriptions
+
+Enable `optimize_tool_descriptions=True` when you use `dspy.Tool` in your program and need better tool selection. Here are common scenarios:
+
+1. **ReAct agents with multiple tools** - Agent with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA learns from execution feedback to clarify "use search for factual queries, calculator for numerical analysis."
+
+2. **Multi-agent systems with delegation** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes both delegation tools and sub-agent internal tools holistically.
+
+3. **Sequential tool workflows** - Tools like `query_database` → `analyze_results` have dependencies but descriptions don't capture this. GEPA learns the sequence and timing from successful executions.
+
+4. **Domain-specific tools** - Tools like legal vs. medical document search have overlapping but domain-specific purposes. GEPA discovers usage patterns and adds context: "for legal precedents" vs. "for patient records."
+
+5. **Tools with limitations** - Initial description "Does calculations" is too vague. GEPA adds specificity from observed usage: "Use for arithmetic (+, -, *, /, **). Not for date math or string operations."
+
+See the usage examples below for implementations of scenarios 1 and 2.
 
 ### Usage Examples
 
@@ -710,10 +716,19 @@ print(optimized_system.assistant.tools["calculator"].desc)
 
 ### Compatibility with Custom Instruction Proposers
 
-Tool optimization works seamlessly with custom instruction proposers. When both are provided:
+Tool optimization works seamlessly with custom instruction proposers. When you provide a custom instruction proposer AND enable `optimize_tool_descriptions=True`:
 
-- Signature instructions → Custom instruction proposer
-- Tool descriptions → Built-in `ToolProposer`
+**Component routing:**
+- **Signature instructions** → Your custom instruction proposer
+- **Tool descriptions** → Built-in `ToolProposer` with specialized tool reflection prompt
+
+**Key points:**
+- Both operate independently during the same GEPA run
+- Tools receive domain-appropriate optimization guidance (tool selection patterns, usage context)
+- Signatures use your custom logic (task-specific reasoning, formatting, etc.)
+- The built-in tool proposer is not customizable - it always uses `GenerateImprovedToolDescriptionFromFeedback`
+
+This separation ensures tools and signatures get appropriate optimization strategies without interference.
 
 ```python
 from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
