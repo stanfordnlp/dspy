@@ -601,80 +601,88 @@ The custom instruction proposer affects ONLY signature instructions. Tools alway
 import dspy
 
 def search_web(query: str) -> str:
-    """Search the web for information."""
-    # Implementation here
-    return search_results
+    return f"Search results for: {query}"
 
 def calculate(expression: str) -> float:
-    """Evaluate a mathematical expression."""
-    # Implementation here
-    return result
+    return eval(expression)
 
-# Create ReAct agent with tools
-search_tool = dspy.Tool(search_web, name="search", desc="Search the web")
-calc_tool = dspy.Tool(calculate, name="calculator", desc="Do math")
+# Create ReAct agent with tools (poor initial descriptions)
+search_tool = dspy.Tool(search_web, name="search", desc="Finds things")
+calc_tool = dspy.Tool(calculate, name="calculator", desc="Does calculations")
 
 agent = dspy.ReAct("question -> answer", tools=[search_tool, calc_tool])
 
 # Enable tool optimization
 gepa = dspy.GEPA(
     metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
-    optimize_tool_descriptions=True,  # Enable tool optimization
+    reflection_lm=dspy.LM(model="gpt-5-mini"),
+    optimize_tool_descriptions=True,
+    component_selector="all",  # Optimize all components together
     auto="medium"
 )
 
 optimized_agent = gepa.compile(agent, trainset=train_examples, valset=val_examples)
+
+# View optimized tool descriptions
+print("Optimized search tool:", optimized_agent.tools["search"].desc)
+print("Optimized calculator tool:", optimized_agent.tools["calculator"].desc)
+```
+
+**Example output after optimization:**
+```
+Optimized search tool: Use when you need to find current information, facts, or data 
+    from external sources. Provide specific search queries to get relevant results.
+
+Optimized calculator tool: Use for arithmetic operations and mathematical expressions. 
+    Accepts Python-compatible expressions with numbers and operators (+, -, *, /, **). 
+    Do not use for date calculations or string manipulations.
 ```
 
 #### Multi-Agent System
 
-For systems with nested agents, GEPA automatically discovers and optimizes all tools:
+GEPA automatically discovers and optimizes tools in nested agents:
 
 ```python
 import dspy
 
 def search_web(query: str) -> str:
-    """Search the web."""
-    # Implementation here
-    return results
+    return f"Search results for: {query}"
 
 def calculate(expression: str) -> float:
-    """Evaluate math expression."""
-    # Implementation here
-    return result
+    return eval(expression)
 
-# Define tools
-search_tool = dspy.Tool(search_web, name="search", desc="Searches web")
-calc_tool = dspy.Tool(calculate, name="calculator", desc="Does math")
+search_tool = dspy.Tool(search_web, name="search", desc="Searches")
+calc_tool = dspy.Tool(calculate, name="calculator", desc="Computes")
 
 class ResearchAssistant(dspy.Module):
     def __init__(self):
         super().__init__()
-        # Sub-agent with search tool
         self.researcher = dspy.ReAct("query -> findings", tools=[search_tool])
         
-        # Delegation tool wraps sub-agent
         def delegate_research(query: str) -> str:
             return self.researcher(query=query).findings
         
-        research_tool = dspy.Tool(delegate_research, name="research", desc="Research things")
-        
-        # Main agent with calculator and research delegation
+        research_tool = dspy.Tool(delegate_research, name="research", desc="Helps with questions")
         self.assistant = dspy.ReAct("question -> answer", tools=[research_tool, calc_tool])
     
     def forward(self, question):
         return self.assistant(question=question)
 
-# GEPA optimizes ALL tools (calculator, research, search) together
+# Optimizes ALL tools: calculator, research, search
 gepa = dspy.GEPA(
     metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    reflection_lm=dspy.LM(model="gpt-5-mini"),
     optimize_tool_descriptions=True,
+    component_selector="all",
     auto="medium"
 )
 
 optimized_system = gepa.compile(ResearchAssistant(), trainset=train, valset=val)
+
+# View optimized nested tool descriptions
+print(optimized_system.researcher.tools["search"].desc)
+print(optimized_system.assistant.tools["research"].desc)
+print(optimized_system.assistant.tools["calculator"].desc)
 ```
 
 ### Inspecting Optimized Tool Descriptions
