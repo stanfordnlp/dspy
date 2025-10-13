@@ -1,12 +1,14 @@
 import logging
+import time
 import random
 from collections import Counter
 from typing import Any, Callable, Literal
 
+from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import GRPOGroup, MultiGPUConfig, TrainDataFormat
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
@@ -41,7 +43,6 @@ class GRPO(FinetuneTeleprompter):
         format_failure_score: float = -1,
         variably_invoked_predictor_grouping_mode: Literal["truncate"] | Literal["fill"] | Literal["ragged"] = "truncate",
         variably_invoked_predictor_fill_strategy: Literal["randint"] | Literal["max"] | None = None,
-        gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1),
     ):
         super().__init__(train_kwargs=train_kwargs)
         self.metric = metric
@@ -58,7 +59,6 @@ class GRPO(FinetuneTeleprompter):
         self.report_train_scores = report_train_scores
         self.failure_score = failure_score
         self.format_failure_score = format_failure_score
-        self.gpu_config = gpu_config
 
         assert failure_score > format_failure_score, "failure_score must be greater than format_failure_score since the range [format_failure_score, failure_score] is used to provide dspy formatting rewards"
 
@@ -79,6 +79,8 @@ class GRPO(FinetuneTeleprompter):
         self.shuffled_trainset_ids = []
         self.epoch = -1
         self.id_freqs = Counter()
+        self.fulfilled_batch_ids = []
+        self.pending_batch_ids = []
 
     def validate_trace_data_and_log_issues(
         self,
@@ -334,7 +336,7 @@ class GRPO(FinetuneTeleprompter):
             job_key = (pred.lm, data_key)
             if job_key not in grpo_training_jobs:
                 train_kwargs = self.train_kwargs[pred.lm]
-                job = pred.lm.reinforce(train_kwargs=train_kwargs, gpu_config=self.gpu_config)
+                job = pred.lm.reinforce(train_kwargs=train_kwargs)
                 grpo_training_jobs[job_key] = job
 
         self.report_validation_metrics(
@@ -353,6 +355,20 @@ class GRPO(FinetuneTeleprompter):
                 original_trainset=trainset,
                 train_step_idx=train_step_idx,
             )
+            def _check_ready_for_step():
+                for _, job in grpo_training_jobs.items():
+                    grpo_status: GRPOStatus = job.get_status()
+                    pending_batch_ids = grpo_status.pending_batch_ids
+                    available = set(pending_batch_ids) - set(self.fulfilled_batch_ids)
+                    if len(available) > 0:
+                        return available
+                return set()
+
+            while True:
+                available_batch_ids = _check_ready_for_step()
+                if available_batch_ids:
+                    break
+                time.sleep(1)
 
             logger.info("Bootstrapping data...")
             trace_data = [[[] for _ in range(len(teachers))] for _ in range(len(subsample_training_dataset))]
@@ -367,6 +383,7 @@ class GRPO(FinetuneTeleprompter):
                     capture_failed_parses=True,
                     failure_score=self.failure_score,
                     format_failure_score=self.format_failure_score,
+                    log_format_failures=True,
                 )
                 for data_dict in round_data:
                     example_ind_in_subsample = data_dict["example_ind"] % len(subsample_training_dataset)
@@ -448,7 +465,7 @@ class GRPO(FinetuneTeleprompter):
 
                             predictor = trace_instance[0]
                             pred_lm = predictor.lm
-                            adapter = self.adapter[pred_lm] or settings.adapter or ChatAdapter()
+                            adapter = self.adapter[pred_lm] or settings.adapter or XMLAdapter()
                             assert isinstance(adapter, ChatAdapter), f"Adapter {adapter} is not a ChatAdapter. GRPO training is not supported for this adapter."
                             # TODO(Lakshya): Currently we exclude demos from the training data
                             # TODO(GRPO Team): Use build_call_data_from_trace (from bootstrap_finetune) instead of
@@ -530,8 +547,17 @@ class GRPO(FinetuneTeleprompter):
                         while len(group) < self.num_rollouts_per_grpo_step:
                             group.extend(group[:min(self.num_rollouts_per_grpo_step - len(group), len(group))])
                     assert len(group) == self.num_rollouts_per_grpo_step, f"Number of completions {len(group)} does not match the expected number self.num_rollouts_per_grpo_step={self.num_rollouts_per_grpo_step}"
+                # Build GRPOGroup items: one randomly selected group per available batch_id
+                selected_batch_ids = list(available_batch_ids)
+                selected_groups = [self.rng.choice(train_data) for _ in range(len(selected_batch_ids))]
+                final_train_data: list[GRPOGroup] = [
+                    {"batch_id": bid, "group": grp} for bid, grp in zip(selected_batch_ids, selected_groups)
+                ]
 
-                job.step(train_data=train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
+                # Track fulfilled IDs to avoid reuse
+                self.fulfilled_batch_ids.extend(selected_batch_ids)
+
+                job.step(train_data=final_train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
 
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps} completed.")
 

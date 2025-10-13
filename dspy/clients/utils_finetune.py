@@ -40,7 +40,9 @@ class GRPOChatData(TypedDict):
     reward: float
 
 
-GRPOGroup = list[GRPOChatData]
+class GRPOGroup(TypedDict):
+    batch_id: int | None
+    group: list[GRPOChatData]
 
 
 class MultiGPUConfig(TypedDict):
