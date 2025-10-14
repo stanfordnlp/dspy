@@ -8,7 +8,7 @@ from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, GRPOStatus
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
@@ -358,7 +358,7 @@ class GRPO(FinetuneTeleprompter):
             def _check_ready_for_step():
                 for _, job in grpo_training_jobs.items():
                     grpo_status: GRPOStatus = job.get_status()
-                    pending_batch_ids = grpo_status.pending_batch_ids
+                    pending_batch_ids = grpo_status['pending_batch_ids']
                     available = set(pending_batch_ids) - set(self.fulfilled_batch_ids)
                     if len(available) > 0:
                         return available

@@ -10,7 +10,7 @@ import requests
 
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data
+from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data, GRPOStatus
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -207,7 +207,7 @@ class ArborReinforceJob(ReinforceJob):
         body = {"job_id": self.provider_job_id}
         response = requests.post(url, headers=headers, json=body)
         assert response.status_code == 200, f"Failed to get GRPO status: {response.text}"
-        return GRPOStatus.model_validate(response.json())
+        return GRPOStatus(**response.json())
 
     def save_checkpoint(self, checkpoint_name: str, score: float | None = None):
         api_base = self.lm.kwargs["api_base"]

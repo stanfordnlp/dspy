@@ -44,6 +44,13 @@ class GRPOGroup(TypedDict):
     batch_id: int | None
     group: list[GRPOChatData]
 
+class GRPOStatus(TypedDict):
+    job_id: str
+    status: str | None = None
+    current_model: str
+    checkpoints: dict[str, str]
+    last_checkpoint: str | None = None
+    pending_batch_ids: list[int] = []
 
 class MultiGPUConfig(TypedDict):
     # Number of GPUs to use for inference
