@@ -1,14 +1,14 @@
 import logging
-import time
 import random
+import time
 from collections import Counter, deque
 from typing import Any, Callable, Literal
 
-from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
+from dspy.adapters.xml_adapter import XMLAdapter
 from dspy.clients.lm import LM
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, GRPOStatus
+from dspy.clients.utils_finetune import GRPOGroup, GRPOStatus, TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
 from dspy.primitives.example import Example
@@ -346,7 +346,7 @@ class GRPO(FinetuneTeleprompter):
             logger=logger,
             step_idx=-1,
         )
-        
+
         # Queue of GRPO groups per training job; key is (LM, data_key)
         group_queues = {}
         logger.info("Starting the GRPO training loop...")

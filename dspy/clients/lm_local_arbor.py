@@ -1,8 +1,7 @@
-import time
 import json
+import time
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, TypedDict
-
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin
 
 import openai
@@ -10,7 +9,7 @@ import requests
 
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data, GRPOStatus
+from dspy.clients.utils_finetune import GRPOGroup, GRPOStatus, TrainDataFormat, TrainingStatus, save_data
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -115,7 +114,7 @@ class ArborReinforceJob(ReinforceJob):
         max_context_length = self.train_kwargs.get(
             "max_context_length", self.DEFAULT_TRAIN_KWARGS["max_context_length"]
         )
-        max_steps = self.train_kwargs.get("max_steps",500) 
+        max_steps = self.train_kwargs.get("max_steps",500)
         # lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
@@ -176,7 +175,7 @@ class ArborReinforceJob(ReinforceJob):
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         data = {"job_id": self.provider_job_id, "model": finetune_model, "batch": train_group["group"], "batch_id": train_group["batch_id"]}
-        url = urljoin(api_base, f"fine_tuning/grpo/step")
+        url = urljoin(api_base, "fine_tuning/grpo/step")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
@@ -199,7 +198,7 @@ class ArborReinforceJob(ReinforceJob):
         ), f"GRPO only supports the GRPO_CHAT data format. Got {train_data_format} instead."
         for group in train_data:
             self._run_grpo_step_one_group(group, train_data_format)
-    
+
     def get_status(self) -> GRPOStatus:
         api_base = self.lm.kwargs["api_base"]
         url = f"{api_base}fine_tuning/grpo/status"
