@@ -1,7 +1,7 @@
 import logging
 import time
 import random
-from collections import Counter
+from collections import Counter, deque
 from typing import Any, Callable, Literal
 
 from dspy.adapters.xml_adapter import XMLAdapter
@@ -346,7 +346,9 @@ class GRPO(FinetuneTeleprompter):
             logger=logger,
             step_idx=-1,
         )
-
+        
+        # Queue of GRPO groups per training job; key is (LM, data_key)
+        group_queues = {}
         logger.info("Starting the GRPO training loop...")
         for train_step_idx in range(self.num_train_steps):
             logger.info(f"GRPO training step {train_step_idx + 1}/{self.num_train_steps}...")
@@ -355,19 +357,16 @@ class GRPO(FinetuneTeleprompter):
                 original_trainset=trainset,
                 train_step_idx=train_step_idx,
             )
-            def _check_ready_for_step():
+            def _any_available_for_step():
                 for _, job in grpo_training_jobs.items():
                     grpo_status: GRPOStatus = job.get_status()
-                    pending_batch_ids = grpo_status['pending_batch_ids']
+                    pending_batch_ids = grpo_status["pending_batch_ids"]
                     available = set(pending_batch_ids) - set(self.fulfilled_batch_ids)
-                    if len(available) > 0:
-                        return available
-                return set()
+                    if available:
+                        return True
+                return False
 
-            while True:
-                available_batch_ids = _check_ready_for_step()
-                if available_batch_ids:
-                    break
+            while not _any_available_for_step():
                 time.sleep(1)
 
             logger.info("Bootstrapping data...")
@@ -536,26 +535,56 @@ class GRPO(FinetuneTeleprompter):
             #   addition to updating any teacher programs that share the same
             #   LM.
             logger.info("Invoking GRPO training step...")
-            for (_, data_key), job in grpo_training_jobs.items():
+            for (lm_for_job, data_key), job in grpo_training_jobs.items():
                 train_data: list[GRPOGroup] = sum(train_batch_per_predictor, []) if data_key is None else train_batch_per_predictor[data_key] #noqa: RUF017
                 for group in train_data:
                     if len(group) != self.num_rollouts_per_grpo_step:
                         # TODO(GRPO Team): This is very undesirable. This occurs only because in some of the generations, the model does not follow the correct dspy format.
-                        # The ideal solution is to identify the full response string in that predictor's group, and then assign  a high-negative (user-configurable) reward to that group.
-
+                        # The ideal solution is to identify the full response string in that predictor's group, and then assign a high-negative (user-configurable) reward to that group.
                         # Pad the group to the expected number of generations by repeating the whole group, might require multiple iterations
                         while len(group) < self.num_rollouts_per_grpo_step:
                             group.extend(group[:min(self.num_rollouts_per_grpo_step - len(group), len(group))])
                     assert len(group) == self.num_rollouts_per_grpo_step, f"Number of completions {len(group)} does not match the expected number self.num_rollouts_per_grpo_step={self.num_rollouts_per_grpo_step}"
-                # Build GRPOGroup items: one randomly selected group per available batch_id
-                selected_batch_ids = list(available_batch_ids)
-                selected_groups = [self.rng.choice(train_data) for _ in range(len(selected_batch_ids))]
-                final_train_data: list[GRPOGroup] = [
-                    {"batch_id": bid, "group": grp} for bid, grp in zip(selected_batch_ids, selected_groups)
-                ]
+
+                # Determine available batch IDs for this specific job
+                grpo_status: GRPOStatus = job.get_status()
+                pending_batch_ids = grpo_status["pending_batch_ids"]
+                available_batch_ids = list(set(pending_batch_ids) - set(self.fulfilled_batch_ids))
+                if not available_batch_ids:
+                    continue
+
+                # Initialize and (re)fill the queue for this job as needed
+                job_key = (lm_for_job, data_key)
+                q = group_queues.setdefault(job_key, deque())
+
+                # Refill strategy: add randomized copies of current train_data until we can satisfy all batch_ids
+                if len(q) < len(available_batch_ids) and len(train_data) > 0:
+                    need = len(available_batch_ids) - len(q)
+                    while need > 0:
+                        # Shuffle by sampling without replacement
+                        shuffled = self.rng.sample(train_data, k=len(train_data))
+                        q.extend(shuffled)
+                        need -= len(shuffled)
+
+                # Build GRPOGroup items by popping from the queue; fallback to random selection if needed
+                final_train_data: list[GRPOGroup] = []
+                for bid in available_batch_ids:
+                    if q:
+                        grp = q.popleft()
+                    else:
+                        # Fallback: choose randomly from current train_data (or flattened pool) if queue underflows
+                        fallback_pool = train_data if len(train_data) > 0 else sum(train_batch_per_predictor, [])
+                        if len(fallback_pool) == 0:
+                            # Nothing to send for this job
+                            continue
+                        grp = self.rng.choice(fallback_pool)
+                    final_train_data.append({"batch_id": bid, "group": grp})
+
+                if not final_train_data:
+                    continue
 
                 # Track fulfilled IDs to avoid reuse
-                self.fulfilled_batch_ids.extend(selected_batch_ids)
+                self.fulfilled_batch_ids.extend([item["batch_id"] for item in final_train_data])
 
                 job.step(train_data=final_train_data, train_data_format=TrainDataFormat.GRPO_CHAT)
 
