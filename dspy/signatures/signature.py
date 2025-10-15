@@ -245,6 +245,25 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def with_instructions(cls, instructions: str) -> type["Signature"]:
+        """Return a new Signature class with identical fields and new instructions.
+
+        This method does not mutate ``cls``. It constructs a fresh Signature
+        class using the current fields and the provided ``instructions``.
+
+        Args:
+            instructions (str): Instruction text to attach to the new signature.
+
+        Returns:
+            type[Signature]: A new Signature class whose fields match ``cls.fields``
+            and whose instructions equal ``instructions``.
+
+        Example:
+            >>> NewSig = MySig.with_instructions("Translate to French.")
+            >>> NewSig is MySig
+            False
+            >>> NewSig.instructions
+            'Translate to French.'
+        """
         return Signature(cls.fields, instructions)
 
     @classmethod
