@@ -68,7 +68,7 @@ class StreamListener:
                 "end_identifier": re.compile(r"\w*\"(,|\s*})"),
                 "start_indicator": '"',
                 "end_pattern_prefixes": ['"', '",', '" ', '"}'],
-                "end_pattern_contains": None,
+                "end_pattern_contains": "}",
             },
             "XMLAdapter": {
                 "start_identifier": f"<{self.signature_field_name}>",
