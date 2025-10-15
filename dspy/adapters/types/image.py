@@ -3,6 +3,7 @@ import io
 import mimetypes
 import os
 import warnings
+from functools import lru_cache
 from typing import Any, Union
 from urllib.parse import urlparse
 
@@ -65,6 +66,7 @@ class Image(Type):
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
 
+    @lru_cache(maxsize=32)
     def format(self) -> list[dict[str, Any]] | str:
         try:
             image_url = encode_image(self.url)

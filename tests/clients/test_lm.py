@@ -10,8 +10,11 @@ import pytest
 from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import Choices, Message, ModelResponse
 from openai import RateLimitError
+from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
+from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
+from dspy.utils.dummies import DummyLM
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -94,6 +97,36 @@ def test_dspy_cache(litellm_test_server, tmp_path):
     assert len(usage_tracker.usage_data) == 0
 
     dspy.cache = original_cache
+
+
+def test_disabled_cache_skips_cache_key(monkeypatch):
+    original_cache = dspy.cache
+    dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
+    cache = dspy.cache
+
+    try:
+        with mock.patch.object(cache, "cache_key", wraps=cache.cache_key) as cache_key_spy, \
+             mock.patch.object(cache, "get", wraps=cache.get) as cache_get_spy, \
+             mock.patch.object(cache, "put", wraps=cache.put) as cache_put_spy:
+
+            def fake_completion(*, cache, num_retries, retry_strategy, **request):
+                return ModelResponse(
+                    choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+                    usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                    model="dummy",
+                )
+
+            monkeypatch.setattr(litellm, "completion", fake_completion)
+
+            dummy_lm = DummyLM([{"answer": "ignored"}])
+            # TODO(isaacbmiller): Change from dummy_lm.forward to just dummy_lm.__call__ #8864
+            dummy_lm.forward(messages=[{"role": "user", "content": "Hello"}])
+
+            cache_key_spy.assert_not_called()
+            cache_get_spy.assert_called_once()
+            cache_put_spy.assert_called_once()
+    finally:
+        dspy.cache = original_cache
 
 
 def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
@@ -285,7 +318,7 @@ def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
         ValueError,
-        match="reasoning models require passing temperature=1.0 and max_tokens >= 16000",
+        match="reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None",
     ):
         dspy.LM(
             model=model_name,
@@ -300,6 +333,13 @@ def test_reasoning_model_requirements(model_name):
         max_tokens=16_000,
     )
     assert lm.kwargs["max_completion_tokens"] == 16_000
+
+    # Should pass with no parameters
+    lm = dspy.LM(
+        model=model_name,
+    )
+    assert lm.kwargs["temperature"] == None
+    assert lm.kwargs["max_completion_tokens"] == None
 
 
 def test_dump_state():
@@ -474,36 +514,49 @@ def test_disable_history():
                 model="openai/gpt-4o-mini",
             )
 
-def test_responses_api(litellm_test_server):
-    api_base, _ = litellm_test_server
-    expected_text = "This is a test answer from responses API."
-
+def test_responses_api():
     api_response = make_response(
         output_blocks=[
-            {
-                "id": "msg_1",
-                "type": "message",
-                "role": "assistant",
-                "status": "completed",
-                "content": [
-                    {"type": "output_text", "text": expected_text, "annotations": []}
-                ],
-            }
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {"type": "output_text", "text": "This is a test answer from responses API.", "annotations": []}
+                    ],
+                },
+            ),
+            ResponseReasoningItem(
+                **{
+                    "id": "reasoning_1",
+                    "type": "reasoning",
+                    "summary": [Summary(**{"type": "summary_text", "text": "This is a dummy reasoning."})],
+                },
+            ),
         ]
     )
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
         lm = dspy.LM(
-            model="openai/dspy-test-model",
-            api_base=api_base,
-            api_key="fakekey",
+            model="openai/gpt-5-mini",
             model_type="responses",
             cache=False,
+            temperature=1.0,
+            max_tokens=16000,
         )
-        assert lm("openai query") == [expected_text]
+        lm_result = lm("openai query")
+
+        assert lm_result == [
+            {
+                "text": "This is a test answer from responses API.",
+                "reasoning_content": "This is a dummy reasoning.",
+            }
+        ]
 
         dspy_responses.assert_called_once()
-        assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
+        assert dspy_responses.call_args.kwargs["model"] == "openai/gpt-5-mini"
 
 
 def test_lm_replaces_system_with_developer_role():

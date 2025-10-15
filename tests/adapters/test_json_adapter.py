@@ -2,7 +2,9 @@ from unittest import mock
 
 import pydantic
 import pytest
+from litellm.types.llms.openai import ResponseAPIUsage, ResponsesAPIResponse
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
+from openai.types.responses import ResponseOutputMessage
 
 import dspy
 
@@ -72,7 +74,7 @@ def test_json_adapter_falls_back_when_structured_outputs_fails():
         input1: str = dspy.InputField()
         output1: str = dspy.OutputField(desc="String output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.side_effect = [Exception("Bad structured outputs!"), mock_completion.return_value]
@@ -96,7 +98,7 @@ def test_json_adapter_with_structured_outputs_does_not_mutate_original_signature
         output3: OutputField3 = dspy.OutputField(desc="Nested output field")
         output4_unannotated = dspy.OutputField(desc="Unannotated output field")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
     with mock.patch("litellm.completion"):
         program(input1="Test input")
@@ -142,7 +144,7 @@ def test_json_adapter_on_pydantic_model():
 
     program = dspy.Predict(TestSignature)
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
 
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(
@@ -153,7 +155,7 @@ def test_json_adapter_on_pydantic_model():
                     )
                 )
             ],
-            model="openai/gpt4o",
+            model="openai/gpt-4o",
         )
         result = program(
             user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
@@ -218,7 +220,7 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
             choices=[
                 Choices(message=Message(content="{'answer1': 'Paris'}")),
             ],
-            model="openai/gpt4o",
+            model="openai/gpt-4o",
         )
         lm = dspy.LM(model="openai/gpt-4o-mini")
         with pytest.raises(dspy.utils.exceptions.AdapterParseError) as e:
@@ -554,10 +556,10 @@ async def test_json_adapter_on_pydantic_model_async():
                     )
                 )
             ],
-            model="openai/gpt4o",
+            model="openai/gpt-4o",
         )
 
-        with dspy.context(lm=dspy.LM(model="openai/gpt4o", cache=False), adapter=dspy.JSONAdapter()):
+        with dspy.context(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
             result = await program.acall(
                 user={"id": 5, "name": "name_test", "email": "email_test"}, question="What is the capital of France?"
             )
@@ -640,6 +642,56 @@ def test_json_adapter_fallback_to_json_mode_on_structured_output_failure():
         # The second call should have used JSON mode
         _, second_call_kwargs = mock_completion.call_args_list[1]
         assert second_call_kwargs.get("response_format") == {"type": "json_object"}
+
+def test_json_adapter_json_mode_no_structured_outputs():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="String output field")
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.completion") as mock_completion, \
+        mock.patch("litellm.get_supported_openai_params") as mock_get_supported_openai_params, \
+        mock.patch("litellm.supports_response_schema") as mock_supports_response_schema:
+        # Call a model that allows json but not structured outputs
+        mock_completion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
+        mock_get_supported_openai_params.return_value = ["response_format"]
+        mock_supports_response_schema.return_value = False
+
+        result = program(question="Dummy question!")
+
+        assert mock_completion.call_count == 1
+        assert result.answer == "Test output"
+
+        _, call_kwargs = mock_completion.call_args_list[0]
+        assert call_kwargs.get("response_format") == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_json_adapter_json_mode_no_structured_outputs_async():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField(desc="String output field")
+
+    program = dspy.Predict(TestSignature)
+
+    with mock.patch("litellm.acompletion") as mock_acompletion, \
+        mock.patch("litellm.get_supported_openai_params") as mock_get_supported_openai_params, \
+        mock.patch("litellm.supports_response_schema") as mock_supports_response_schema:
+        # Call a model that allows json but not structured outputs
+        mock_acompletion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
+        mock_get_supported_openai_params.return_value = ["response_format"]
+        mock_supports_response_schema.return_value = False
+
+        with dspy.context(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
+            result = await program.acall(question="Dummy question!")
+
+        assert mock_acompletion.call_count == 1
+        assert result.answer == "Test output"
+
+        _, call_kwargs = mock_acompletion.call_args_list[0]
+        assert call_kwargs.get("response_format") == {"type": "json_object"}
 
 
 @pytest.mark.asyncio
@@ -816,3 +868,62 @@ def test_json_adapter_toolcalls_no_native_function_calling():
         mock_completion.assert_called_once()
         _, call_kwargs = mock_completion.call_args
         assert call_kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_json_adapter_with_responses_api():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    api_response = ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details=None,
+        instructions=None,
+        model="openai/gpt-4o",
+        object="response",
+        output=[
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {"type": "output_text", "text": '{"answer": "Washington, D.C."}', "annotations": []}
+                    ],
+                },
+            ),
+        ],
+        metadata={},
+        parallel_tool_calls=False,
+        temperature=1.0,
+        tool_choice="auto",
+        tools=[],
+        top_p=1.0,
+        max_output_tokens=None,
+        previous_response_id=None,
+        reasoning=None,
+        status="completed",
+        text=None,
+        truncation="disabled",
+        usage=ResponseAPIUsage(input_tokens=10, output_tokens=5, total_tokens=15),
+        user=None,
+    )
+
+    lm = dspy.LM(model="openai/gpt-4o", model_type="responses", cache=False)
+    dspy.configure(lm=lm, adapter=dspy.JSONAdapter())
+
+    program = dspy.Predict(TestSignature)
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as mock_responses:
+        result = program(question="What is the capital of the USA?")
+
+    assert result.answer == "Washington, D.C."
+    mock_responses.assert_called_once()
+    # Verify that response_format was converted to text.format
+    call_kwargs = mock_responses.call_args.kwargs
+    assert "response_format" not in call_kwargs
+    assert "text" in call_kwargs
+    assert isinstance(call_kwargs["text"]["format"], type)
+    assert issubclass(call_kwargs["text"]["format"], pydantic.BaseModel)

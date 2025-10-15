@@ -1,20 +1,18 @@
+import json
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any
+from urllib.parse import urljoin
 
 import openai
 import requests
 
 import dspy
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import GRPOGroup, TrainDataFormat, TrainingStatus, save_data
+from dspy.clients.utils_finetune import GRPOGroup, GRPOStatus, TrainDataFormat, TrainingStatus, save_data
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
-
-
-class GRPOTrainKwargs(TypedDict):
-    num_generations: int
 
 
 class ArborTrainingJob(TrainingJob):
@@ -47,7 +45,7 @@ class ArborTrainingJob(TrainingJob):
 
 class ArborReinforceJob(ReinforceJob):
     DEFAULT_TRAIN_KWARGS = {  # noqa: RUF012
-        "temperature": 0.9,
+        "temperature": 1.0,
         "beta": 0.04,
         "num_iterations": 1,
         "per_device_train_batch_size": 8,
@@ -56,6 +54,7 @@ class ArborReinforceJob(ReinforceJob):
         # This is false by default in TRL, but I think it makes sense to be true for us
         "gradient_checkpointing": True,
         "lr_scheduler_type": "constant_with_warmup",
+        "warmup_steps": 10,
         "max_prompt_length": None,
         "max_completion_length": None,
         "gradient_checkpointing_kwargs": None,
@@ -64,13 +63,13 @@ class ArborReinforceJob(ReinforceJob):
         "max_grad_norm": 1.0,
         "report_to": "none",
         "log_completions": True,
-        "logging_steps": 100,
+        "logging_steps": 10,
         # By default, none is the model's max context length
         "max_context_length": None,
         "lora": False,
     }
 
-    def __init__(self, lm: "LM", train_kwargs: GRPOTrainKwargs):
+    def __init__(self, lm: "LM", train_kwargs: dict[str, Any]):
         # The teleprompter must ensure that this is set
         if "num_generations" not in train_kwargs:
             raise ValueError("num_generations must be set in the training kwargs")
@@ -98,6 +97,7 @@ class ArborReinforceJob(ReinforceJob):
             "gradient_checkpointing", self.DEFAULT_TRAIN_KWARGS["gradient_checkpointing"]
         )
         lr_scheduler_type = self.train_kwargs.get("lr_scheduler_type", self.DEFAULT_TRAIN_KWARGS["lr_scheduler_type"])
+        warmup_steps = self.train_kwargs.get("warmup_steps", self.DEFAULT_TRAIN_KWARGS["warmup_steps"])
         max_prompt_length = self.train_kwargs.get("max_prompt_length", self.DEFAULT_TRAIN_KWARGS["max_prompt_length"])
         max_completion_length = self.train_kwargs.get(
             "max_completion_length", self.DEFAULT_TRAIN_KWARGS["max_completion_length"]
@@ -114,37 +114,54 @@ class ArborReinforceJob(ReinforceJob):
         max_context_length = self.train_kwargs.get(
             "max_context_length", self.DEFAULT_TRAIN_KWARGS["max_context_length"]
         )
-        lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
+        max_steps = self.train_kwargs.get("max_steps",500)
+        # lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         data = {
             "model": finetune_model,
-            "num_generations": num_generations,
-            "temperature": temperature,
-            "beta": beta,
-            "num_iterations": num_iterations,
-            "per_device_train_batch_size": per_device_train_batch_size,
-            "learning_rate": learning_rate,
-            "gradient_accumulation_steps": gradient_accumulation_steps,
-            "gradient_checkpointing": gradient_checkpointing,
-            "lr_scheduler_type": lr_scheduler_type,
-            "max_prompt_length": max_prompt_length,
-            "max_completion_length": max_completion_length,
-            "bf16": bf16,
-            "scale_rewards": scale_rewards,
-            "gradient_checkpointing_kwargs": gradient_checkpointing_kwargs,
-            "max_grad_norm": max_grad_norm,
-            "report_to": report_to,
-            "log_completions": log_completions,
-            "logging_steps": logging_steps,
-            "max_context_length": max_context_length,
-            "lora": lora,
+            "trainer_config": {
+                "num_generations": num_generations,
+                "temperature": temperature,
+                "beta": beta,
+                "per_device_train_batch_size": per_device_train_batch_size,
+                "learning_rate": learning_rate,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "gradient_checkpointing": gradient_checkpointing,
+                "lr_scheduler_type": lr_scheduler_type,
+                "warmup_steps": warmup_steps,
+                "max_prompt_length": max_prompt_length,
+                "max_completion_length": max_completion_length,
+                "bf16": bf16,
+                "scale_rewards": scale_rewards,
+                "gradient_checkpointing_kwargs": gradient_checkpointing_kwargs,
+                "max_grad_norm": max_grad_norm,
+                "report_to": report_to,
+                "log_completions": log_completions,
+                "logging_steps": logging_steps,
+                 # "max_context_length": max_context_length,
+                # "max_seq_len": max_context_length,
+                "max_steps": max_steps,
+                # "lora": lora,
+            },
+            "inference_config": {
+                "model": finetune_model,
+                "max_context_length": max_context_length,
+            },
+            "gpu_config": {
+                "type": "multi",
+                "multi": {
+                    "num_inference_gpus": 1,
+                    "num_training_gpus": 1,
+                },
+            },
         }
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {"Content-Type": "application/json"}
         response = requests.post(url=url, headers=headers, json=data)
-        assert response.status_code == 200, f"Failed to initialize GRPO: {response}"
+        print(json.dumps(response.json(), indent=2))
+        response.raise_for_status()
         response = response.json()
         self.lm.model = ArborProvider._add_provider_prefix(response["current_model"])
         self.provider_job_id = response.get("job_id")
@@ -157,8 +174,8 @@ class ArborReinforceJob(ReinforceJob):
         # api_key = self.lm.kwargs["api_key"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
-        data = {"job_id": self.provider_job_id, "model": finetune_model, "batch": train_group}
-        url = f"{api_base}fine_tuning/grpo/step"
+        data = {"job_id": self.provider_job_id, "model": finetune_model, "batch": train_group["group"], "batch_id": train_group["batch_id"]}
+        url = urljoin(api_base, "fine_tuning/grpo/step")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url, headers=headers, json=data)
         assert response.status_code == 200, f"Failed to run a GRPO step: {response.text}"
@@ -182,9 +199,18 @@ class ArborReinforceJob(ReinforceJob):
         for group in train_data:
             self._run_grpo_step_one_group(group, train_data_format)
 
+    def get_status(self) -> GRPOStatus:
+        api_base = self.lm.kwargs["api_base"]
+        url = f"{api_base}fine_tuning/grpo/status"
+        headers = {"Content-Type": "application/json"}
+        body = {"job_id": self.provider_job_id}
+        response = requests.post(url, headers=headers, json=body)
+        assert response.status_code == 200, f"Failed to get GRPO status: {response.text}"
+        return GRPOStatus(**response.json())
+
     def save_checkpoint(self, checkpoint_name: str, score: float | None = None):
         api_base = self.lm.kwargs["api_base"]
-        url = f"{api_base}fine_tuning/grpo/checkpoint"
+        url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/checkpoint")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id, "checkpoint_name": checkpoint_name}
         response = requests.post(url, headers=headers, json=body)
@@ -203,7 +229,7 @@ class ArborReinforceJob(ReinforceJob):
     def terminate(self):
         api_base = self.lm.kwargs["api_base"]
 
-        url = f"{api_base}fine_tuning/grpo/terminate"
+        url = urljoin(api_base, f"fine_tuning/grpo/{self.provider_job_id}/terminate")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id}
         response = requests.post(url, headers=headers, json=body)
@@ -245,7 +271,7 @@ class ArborProvider(Provider):
         launch_kwargs = launch_kwargs or lm.launch_kwargs
 
         # Make request to launch endpoint
-        response = requests.post(f"{api_base}chat/launch", json={"model": model, "launch_kwargs": launch_kwargs})
+        response = requests.post(urljoin(api_base, "chat/launch"), json={"model": model, "launch_kwargs": launch_kwargs})
 
         if response.status_code != 200:
             raise Exception(f"Failed to launch model. Status code: {response.status_code}, Response: {response.text}")
@@ -257,7 +283,7 @@ class ArborProvider(Provider):
         api_base = lm.kwargs["api_base"]
 
         response = requests.post(
-            f"{api_base}chat/kill",
+            urljoin(api_base, "chat/kill"),
         )
 
         if response.status_code != 200:

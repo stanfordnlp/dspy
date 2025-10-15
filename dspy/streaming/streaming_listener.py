@@ -60,16 +60,22 @@ class StreamListener:
                 "start_identifier": f"[[ ## {self.signature_field_name} ## ]]",
                 "end_identifier": re.compile(r"\[\[ ## (\w+) ## \]\]"),
                 "start_indicator": "[",
+                "end_pattern_prefixes": ["[", "[[", "[[ ", "[[ #", "[[ ##"],
+                "end_pattern_contains": "[[ ##",
             },
             "JSONAdapter": {
                 "start_identifier": f'"{self.signature_field_name}":',
                 "end_identifier": re.compile(r"\w*\"(,|\s*})"),
                 "start_indicator": '"',
+                "end_pattern_prefixes": ['"', '",', '" ', '"}'],
+                "end_pattern_contains": None,
             },
             "XMLAdapter": {
                 "start_identifier": f"<{self.signature_field_name}>",
                 "end_identifier": re.compile(rf"</{self.signature_field_name}>"),
                 "start_indicator": "<",
+                "end_pattern_prefixes": ["<", "</"],
+                "end_pattern_contains": "</",  # Any closing tag start
             },
         }
 
@@ -77,6 +83,35 @@ class StreamListener:
         for i in range(len(concat_message)):
             if start_identifier.startswith(concat_message[len(concat_message) - i - 1 :]):
                 return True
+        return False
+
+    def _could_form_end_identifier(self, concat_message: str, adapter_name: str) -> bool:
+        """Check if the buffered message could potentially form the end identifier.
+
+        This prevents unnecessary buffering when the tokens clearly cannot form the end pattern.
+        For example, if buffered message is "hello world" and end pattern is "[[ ## ... ## ]]",
+        we know it cannot form the pattern, so we should yield immediately.
+
+        Args:
+            concat_message: The concatenated buffered message
+            adapter_name: The name of the adapter being used
+
+        Returns:
+            True if the message could potentially form part of the end identifier
+        """
+        adapter_config = self.adapter_identifiers[adapter_name]
+        end_pattern_prefixes = adapter_config.get("end_pattern_prefixes", [])
+        end_pattern_contains = adapter_config.get("end_pattern_contains")
+
+        # First check: does it end with a potential start of the pattern?
+        if any(concat_message.endswith(prefix) for prefix in end_pattern_prefixes):
+            return True
+
+        # Second check: if there's a pattern marker, check if message contains it
+        # This handles cases like "[[ ## com" where we have partial field name
+        if end_pattern_contains and end_pattern_contains in concat_message:
+            return True
+
         return False
 
     def receive(self, chunk: ModelResponseStream):
@@ -173,21 +208,25 @@ class StreamListener:
                 self.field_start_queue = []
                 return
 
-        if self.stream_start:
+        if self.stream_start and chunk_message:
             # The stream is started, we keep returning the token until we see the start of the next field.
             self.field_end_queue.put(chunk_message)
 
             token = None
-            if self.field_end_queue.qsize() > 10:
-                # We keep the last 10 tokens in the buffer to check if they form a valid identifier for end_identifier,
-                # i.e., "[[ ## {next_field_name} ## ]]" for ChatAdapter to identify the end of the current field.
-                # In most cases 10 tokens are enough to cover the end_identifier for all adapters.
+            concat_message = "".join(self.field_end_queue.queue).strip()
+
+            if not self._could_form_end_identifier(concat_message, adapter_name):
+                # Buffer cannot form end identifier, safe to flush out the tokens in the buffer.
+                token = self.flush()
+            elif self.field_end_queue.qsize() > 10:
+                # We keep the last 10 tokens in the buffer to avoid sending the DSPy bolilerplate tokens to users.
+                # 10 is a heuristic number that is sufficient to capture the end_identifier for all LMs.
                 token = self.field_end_queue.get()
 
             if isinstance(settings.adapter, JSONAdapter):
                 return self._json_adapter_handle_stream_chunk(token, chunk_message)
             else:
-                return self._default_handle_stream_chunk(token, end_identifier)
+                return self._default_handle_stream_chunk(token, end_identifier, adapter_name)
 
     def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> str:
         self.json_adapter_state["field_accumulated_tokens"] += chunk_message
@@ -199,6 +238,7 @@ class StreamListener:
             last_token = self.flush()
             right_curly_bracket_index = last_token.rfind("}")
             token = token + last_token[:right_curly_bracket_index] if token else last_token[:right_curly_bracket_index]
+            return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end)
 
         try:
             parsed = jiter.from_json(
@@ -267,12 +307,40 @@ class StreamListener:
             return last_tokens[:boundary_index]
         elif isinstance(settings.adapter, ChatAdapter) or settings.adapter is None:
             boundary_index = last_tokens.find("[[")
+            if boundary_index == -1:
+                boundary_index = len(last_tokens)
             return last_tokens[:boundary_index]
         else:
             raise ValueError(
                 f"Unsupported adapter for streaming: {settings.adapter}, please use one of the following adapters: "
                 f"{', '.join([a.__name__ for a in ADAPTER_SUPPORT_STREAMING])}"
             )
+
+    def finalize(self) -> StreamResponse | None:
+        """Finalize the stream and flush any remaining buffered tokens.
+
+        This should be called when the stream ends.
+        It ensures no tokens are lost from the buffer and marks the final chunk appropriately.
+
+        Returns:
+            A StreamResponse with the remaining buffered tokens and is_last_chunk=True,
+            or None if there are no buffered tokens or the stream hasn't started.
+        """
+        if self.stream_end or not self.stream_start:
+            # Stream already ended or never started, nothing to finalize
+            return None
+
+        self.stream_end = True
+        if self.field_end_queue.qsize() > 0:
+            token = self.flush()
+            if token:
+                return StreamResponse(
+                    self.predict_name,
+                    self.signature_field_name,
+                    token,
+                    is_last_chunk=True,
+                )
+        return None
 
     @property
     def _output_type(self) -> type | None:
@@ -282,7 +350,9 @@ class StreamListener:
             return None
 
 
-def find_predictor_for_stream_listeners(program: "Module", stream_listeners: list[StreamListener]):
+def find_predictor_for_stream_listeners(
+    program: "Module", stream_listeners: list[StreamListener]
+) -> dict[int, list[StreamListener]]:
     """Find the predictor for each stream listener.
 
     This is a utility function to automatically find the predictor for each stream listener. It is used when some

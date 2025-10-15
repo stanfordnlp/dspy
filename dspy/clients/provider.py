@@ -42,6 +42,7 @@ class ReinforceJob:
         self.checkpoints = {}
         self.last_checkpoint = None
 
+
     @abstractmethod
     def initialize(self):
         raise NotImplementedError

@@ -43,6 +43,40 @@ def bad_metric(example, prediction):
     return 0.0
 
 
+def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
+    from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
+    from dspy.teleprompt.gepa import gepa_utils
+
+    class DummyModule(dspy.Module):
+        def forward(self, **kwargs):  # pragma: no cover - stub forward
+            return dspy.Prediction()
+
+    # Exercise the adapter evaluate path directly.
+    adapter = gepa_utils.DspyAdapter(
+        student_module=SimpleModule("input -> output"),
+        metric_fn=simple_metric,
+        feedback_map={},
+        failure_score=0.0,
+    )
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def dummy_bootstrap_trace_data(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return []
+
+    monkeypatch.setattr(bootstrap_trace_module, "bootstrap_trace_data", dummy_bootstrap_trace_data)
+    monkeypatch.setattr(
+        gepa_utils.DspyAdapter,
+        "build_program",
+        lambda self, candidate: DummyModule(),
+    )
+
+    adapter.evaluate(batch=[], candidate={}, capture_traces=True)
+
+    assert captured_kwargs["callback_metadata"] == {"disable_logging": True}
+
+
 @pytest.fixture
 def mock_mlflow():
     mock_mlflow = mock.MagicMock()
@@ -414,3 +448,65 @@ def test_component_selector_custom_random():
         result = optimizer.compile(student, trainset=trainset, valset=trainset)
 
     assert result is not None, "Should work with custom random function selector"
+
+
+def test_alternating_half_component_selector():
+    """Test alternating half selector that optimizes different halves on even/odd iterations."""
+
+    selection_history = []
+
+    def alternating_half_selector(state, trajectories, subsample_scores, candidate_idx, candidate):
+        """Optimize half the components on even iterations, half on odd iterations."""
+        components = list(candidate.keys())
+
+        # If there's only one component, always optimize it
+        if len(components) <= 1:
+            selected = components
+        else:
+            mid_point = len(components) // 2
+
+            # Use state.i (iteration counter) to alternate between halves
+            if state.i % 2 == 0:
+                # Even iteration: optimize first half
+                selected = components[:mid_point]
+            else:
+                # Odd iteration: optimize second half
+                selected = components[mid_point:]
+
+        # Track selections for verification
+        selection_history.append({
+            "iteration": state.i,
+            "selected": selected.copy(),
+            "all_components": components.copy()
+        })
+
+        return selected
+
+    student = MultiComponentModule()  # Has "classifier" and "generator" components
+
+    # Provide enough responses for multiple iterations
+    task_lm = DummyLM([{"category": "test_category", "output": "test_output"}] * 20)
+    reflection_lm = DummyLM([{"improved_instruction": "Better instruction"}] * 10)
+    trainset = [dspy.Example(input="test", output="expected").with_inputs("input")]
+
+    with dspy.context(lm=task_lm):
+        optimizer = dspy.GEPA(
+            metric=component_selection_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=8,  # Allow multiple iterations
+            component_selector=alternating_half_selector,
+        )
+        result = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    assert result is not None, "Should work with alternating half selector"
+    assert len(selection_history) >= 2, "Should have made multiple selections"
+
+    for i, selection in enumerate(selection_history):
+        if selection["iteration"] % 2 == 0:
+            # Even iteration should select first half: ["classifier"]
+            assert "classifier" in selection["selected"], f"Even iteration {selection['iteration']} should include classifier"
+            assert "generator" not in selection["selected"], f"Even iteration {selection['iteration']} should not include generator"
+        else:
+            # Odd iteration should select second half: ["generator"]
+            assert "generator" in selection["selected"], f"Odd iteration {selection['iteration']} should include generator"
+            assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"

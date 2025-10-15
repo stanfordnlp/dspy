@@ -31,8 +31,8 @@ class LM(BaseLM):
         self,
         model: str,
         model_type: Literal["chat", "text", "responses"] = "chat",
-        temperature: float = 0.0,
-        max_tokens: int = 4000,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         cache: bool = True,
         callbacks: list[BaseCallback] | None = None,
         num_retries: int = 3,
@@ -88,9 +88,10 @@ class LM(BaseLM):
         model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
 
         if model_pattern:
-            if max_tokens < 16000 or temperature != 1.0:
+
+            if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
                 raise ValueError(
-                    "OpenAI's reasoning models require passing temperature=1.0 and max_tokens >= 16000 to "
+                    "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
                     "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)"
                 )
             self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
@@ -104,11 +105,7 @@ class LM(BaseLM):
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
-        if (
-            not self._warned_zero_temp_rollout
-            and rollout_id is not None
-            and (temperature is None or temperature == 0)
-        ):
+        if not self._warned_zero_temp_rollout and rollout_id is not None and (temperature is None or temperature == 0):
             warnings.warn(
                 "rollout_id has no effect when temperature=0; set temperature>0 to bypass the cache.",
                 stacklevel=3,
@@ -134,10 +131,7 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         if self.use_developer_role and self.model_type == "responses":
-            messages = [
-                {**m, "role": "developer"} if m.get("role") == "system" else m
-                for m in messages
-            ]
+            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
@@ -170,10 +164,7 @@ class LM(BaseLM):
 
         messages = messages or [{"role": "user", "content": prompt}]
         if self.use_developer_role and self.model_type == "responses":
-            messages = [
-                {**m, "role": "developer"} if m.get("role") == "system" else m
-                for m in messages
-            ]
+            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
         self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
@@ -237,7 +228,9 @@ class LM(BaseLM):
 
         return job
 
-    def reinforce(self, train_kwargs) -> ReinforceJob:
+    def reinforce(
+        self, train_kwargs
+    ) -> ReinforceJob:
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
 
@@ -312,9 +305,11 @@ def _get_stream_completion_fn(
         request["stream_options"] = {"include_usage": True}
 
     async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
+        headers = request.pop("headers", None)
         response = await litellm.acompletion(
             cache=cache_kwargs,
             stream=True,
+            headers=_get_headers(headers),
             **request,
         )
         chunks = []
@@ -343,12 +338,14 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=True)
     if stream_completion is None:
         return litellm.completion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
+            headers=_get_headers(headers),
             **request,
         )
 
@@ -359,6 +356,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     # Extract the provider and model from the model string.
     # TODO: Not all the models are in the format of "provider/model"
     model = request.pop("model").split("/", 1)
@@ -379,6 +377,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
         prompt=prompt,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
+        headers=_get_headers(headers),
         **request,
     )
 
@@ -387,12 +386,14 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     stream_completion = _get_stream_completion_fn(request, cache, sync=False)
     if stream_completion is None:
         return await litellm.acompletion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
+            headers=_get_headers(headers),
             **request,
         )
 
@@ -404,6 +405,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
     request = dict(request)
     request.pop("rollout_id", None)
     model = request.pop("model").split("/", 1)
+    headers = request.pop("headers", None)
     provider, model = model[0] if len(model) > 1 else "openai", model[-1]
 
     # Use the API key and base from the request, or from the environment.
@@ -421,19 +423,23 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
         prompt=prompt,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
+        headers=_get_headers(headers),
         **request,
     )
+
 
 def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     request = _convert_chat_request_to_responses_request(request)
 
     return litellm.responses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
+        headers=_get_headers(headers),
         **request,
     )
 
@@ -442,14 +448,17 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
+    headers = request.pop("headers", None)
     request = _convert_chat_request_to_responses_request(request)
 
     return await litellm.aresponses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
+        headers=_get_headers(headers),
         **request,
     )
+
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     request = dict(request)
@@ -462,4 +471,18 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
             elif isinstance(c, list):
                 content_blocks.extend(c)
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+
+    # Convert `response_format` to `text.format` for Responses API
+    if "response_format" in request:
+        response_format = request.pop("response_format")
+        text = request.pop("text", {})
+        request["text"] = {**text, "format": response_format}
+
     return request
+
+def _get_headers(headers: dict[str, Any] | None = None):
+    headers = headers or {}
+    return {
+        "User-Agent": f"DSPy/{dspy.__version__}",
+        **headers,
+    }

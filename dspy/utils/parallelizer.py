@@ -41,6 +41,8 @@ class ParallelExecutor:
         self.error_count = 0
         self.error_lock = threading.Lock()
         self.cancel_jobs = threading.Event()
+        self.failed_indices = []
+        self.exceptions_map = {}
 
     def execute(self, function, data):
         tqdm.tqdm._instances.clear()
@@ -62,7 +64,7 @@ class ParallelExecutor:
                     logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
                 else:
                     logger.error(f"Error for {item}: {e}. Set `provide_traceback=True` for traceback.")
-                return None
+                return e
 
         return safe_func
 
@@ -155,7 +157,14 @@ class ParallelExecutor:
                             pass
                         else:
                             if outcome != job_cancelled and results[index] is None:
-                                results[index] = outcome
+                                # Check if this is an exception
+                                if isinstance(outcome, Exception):
+                                    with self.error_lock:
+                                        self.failed_indices.append(index)
+                                        self.exceptions_map[index] = outcome
+                                    results[index] = None  # Keep None for failed examples
+                                else:
+                                    results[index] = outcome
 
                             # Update progress
                             if self.compare_results:

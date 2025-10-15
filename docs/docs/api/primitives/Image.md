@@ -11,6 +11,9 @@
             - from_PIL
             - from_file
             - from_url
+            - is_streamable
+            - parse_lm_response
+            - parse_stream_chunk
             - serialize_model
         show_source: true
         show_root_heading: true
