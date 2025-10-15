@@ -294,14 +294,55 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def prepend(cls, name, field, type_=None) -> type["Signature"]:
+        """Insert a field at the start of the appropriate section.
+
+        Equivalent to ``insert(0, name, field, type_)``. The section (inputs vs
+        outputs) is determined by ``field.json_schema_extra["__dspy_field_type"]``.
+        If ``type_`` is omitted, the field's existing ``annotation`` is used; if
+        missing, ``str`` is used.
+
+        Args:
+            name (str): Field name to add.
+            field: InputField or OutputField instance to insert.
+            type_ (type | None): Optional explicit type annotation.
+
+        Returns:
+            type[Signature]: A new Signature class with the field inserted first.
+        """
         return cls.insert(0, name, field, type_)
 
     @classmethod
     def append(cls, name, field, type_=None) -> type["Signature"]:
+        """Insert a field at the end of the appropriate section.
+
+        Equivalent to ``insert(-1, name, field, type_)``. The section (inputs vs
+        outputs) is determined by ``field.json_schema_extra["__dspy_field_type"]``.
+        If ``type_`` is omitted, the field's existing ``annotation`` is used; if
+        missing, ``str`` is used.
+
+        Args:
+            name (str): Field name to add.
+            field: InputField or OutputField instance to insert.
+            type_ (type | None): Optional explicit type annotation.
+
+        Returns:
+            type[Signature]: A new Signature class with the field appended.
+        """
         return cls.insert(-1, name, field, type_)
 
     @classmethod
     def delete(cls, name) -> type["Signature"]:
+        """Return a new Signature class without the given field.
+
+        If ``name`` is not present, the fields are unchanged (no error raised).
+
+        Args:
+            name (str): Field name to remove.
+
+        Returns:
+            type[Signature]: A new Signature class with the field removed (or unchanged
+            if the field was absent).
+        """
         fields = dict(cls.fields)
 
         fields.pop(name, None)
@@ -309,7 +350,28 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields, cls.instructions)
 
     @classmethod
-    def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
+    def insert(
+        cls, index: int, name: str, field, type_: type | None = None
+    ) -> type["Signature"]:
+        """Insert a field at a specific position among inputs or outputs.
+
+        The target section (inputs vs outputs) is determined by
+        ``field.json_schema_extra["__dspy_field_type"]``. Negative indices are
+        supported (e.g., ``-1`` appends). If ``type_`` is omitted, the field's
+        existing ``annotation`` is used; if that is missing, ``str`` is used.
+
+        Args:
+            index (int): Insertion position within the chosen section; negatives append.
+            name (str): Field name to add.
+            field: InputField or OutputField instance to insert.
+            type_ (type | None): Optional explicit type annotation.
+
+        Returns:
+            type[Signature]: A new Signature class with the field inserted.
+
+        Raises:
+            ValueError: If ``index`` falls outside the valid range for the chosen section.
+        """
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
         if type_ is None:
