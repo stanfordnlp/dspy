@@ -273,9 +273,8 @@ class LM(BaseLM):
             "launch_kwargs",
             "train_kwargs",
         ]
-        # Exclude sensitive keys from kwargs to prevent API keys from being saved in plain text
-        sensitive_keys = {"api_key", "api_base", "base_url"}
-        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k not in sensitive_keys}
+        # Exclude api_key from kwargs to prevent API keys from being saved in plain text
+        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k != "api_key"}
         return {key: getattr(self, key) for key in state_keys} | filtered_kwargs
 
     def _check_truncation(self, results):
