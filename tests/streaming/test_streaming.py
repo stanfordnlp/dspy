@@ -516,7 +516,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
 
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
-        assert all_chunks[0].chunk == "To"
+        assert all_chunks[0].chunk == '"To'
         assert all_chunks[1].chunk == " get"
         assert all_chunks[2].chunk == " to"
         assert all_chunks[3].chunk == " the"
@@ -526,12 +526,12 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         assert all_chunks[7].chunk == " the"
         assert all_chunks[8].chunk == " frying"
         assert all_chunks[9].chunk == " pan"
-        assert all_chunks[10].chunk == "!"
+        assert all_chunks[10].chunk == '!"'
         assert all_chunks[10].is_last_chunk is True
 
         assert all_chunks[11].predict_name == "predict2"
         assert all_chunks[11].signature_field_name == "judgement"
-        assert all_chunks[11].chunk == "The"
+        assert all_chunks[11].chunk == '"The'
         assert all_chunks[12].chunk == " answer"
         assert all_chunks[13].chunk == " is"
         assert all_chunks[14].chunk == " humorous"
@@ -545,7 +545,7 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
         assert all_chunks[22].chunk == " classic"
         assert all_chunks[23].chunk == " joke"
         assert all_chunks[24].chunk == " format"
-        assert all_chunks[25].chunk == "."
+        assert all_chunks[25].chunk == '."'
         assert all_chunks[25].is_last_chunk is True
 
 

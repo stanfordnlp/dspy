@@ -224,9 +224,12 @@ class StreamListener:
                 token = self.field_end_queue.get()
 
             if isinstance(settings.adapter, JSONAdapter):
+                # JSONAdapter uses partial json parsing to detect the end of the field we are listening to, instead of
+                # relying on the end_identifier.
                 return self._json_adapter_handle_stream_chunk(token, chunk_message)
             else:
-                return self._default_handle_stream_chunk(token, end_identifier, adapter_name)
+                # Other adapters rely on the end_identifier to detect the end of the field we are listening to.
+                return self._default_handle_stream_chunk(token, end_identifier)
 
     def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> str:
         self.json_adapter_state["field_accumulated_tokens"] += chunk_message
