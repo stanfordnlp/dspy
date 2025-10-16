@@ -31,6 +31,8 @@ class ArborTrainConfig:
     max_context_length: int | None = None
     lora: bool = False
     max_steps: int = 500
+    # Controls how many prompts are generated per batch during async rollouts
+    generation_batch_size: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         # Convert dataclass fields into a plain dict for downstream usage

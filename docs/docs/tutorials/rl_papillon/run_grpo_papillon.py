@@ -52,7 +52,8 @@ def main():
 
     api_base = _extract_api_base(arbor_server_info)
 
-    local_lm_name = "Qwen/Qwen2.5-7B-Instruct"
+    # Prefer a smaller model to reduce memory usage
+    local_lm_name = "Qwen/Qwen2.5-1.5B-Instruct"
     local_lm = dspy.LM(
         model=f"openai/arbor:{local_lm_name}",
         provider=ArborProvider(),
@@ -174,21 +175,35 @@ def main():
     # Load a modest subset to fit into 5–10 minutes
     from datasets import load_dataset
 
-    pupa_new = load_dataset("Columbia-NLP/PUPA", "pupa_new")
-    examples = [
-        dspy.Example(
-            {
-                "target_response": x["target_response"],
-                "user_query": x["user_query"],
-                "pii_str": x["pii_units"],
-            }
-        ).with_inputs("user_query")
-        for x in pupa_new["train"][:256]
-    ]
-    trainset, devset = examples[:128], examples[128:192]
-    print(
-        f"Loaded {len(trainset)} training examples and {len(devset)} dev examples (subset for runtime)."
-    )
+    def load_pupa_small(train_n=128, dev_n=32, test_n=0):
+        ds = load_dataset("Columbia-NLP/PUPA", "pupa_new")
+        train_ds = ds["train"]
+        # Select deterministically without materializing dict-of-lists
+        total = train_n + dev_n + test_n
+        take = min(total, len(train_ds))
+        sel = train_ds.select(range(take))
+        rows = [sel[i] for i in range(len(sel))]
+        examples = [
+            dspy.Example(
+                {
+                    "target_response": r["target_response"],
+                    "user_query": r["user_query"],
+                    "pii_str": r["pii_units"],
+                }
+            ).with_inputs("user_query")
+            for r in rows
+        ]
+        # If dataset is smaller than requested, repeat to meet size for quick runs
+        if len(examples) < total:
+            m = (total + len(examples) - 1) // len(examples)
+            examples = (examples * m)[: total]
+        trainset = examples[:train_n]
+        devset = examples[train_n : train_n + dev_n]
+        testset = examples[train_n + dev_n : train_n + dev_n + test_n]
+        print(f"Loaded {len(trainset)} train, {len(devset)} dev, {len(testset)} test.")
+        return trainset, devset, testset
+
+    trainset, devset, _ = load_pupa_small()
 
     # Zero-shot evaluation (optional)
     zeroshot = PAPILLON(untrusted_model=openai_lm)
@@ -202,7 +217,7 @@ def main():
 
     # Arbor-compatible training config; GRPO will inject num_generations
     arbor_cfg = ArborTrainConfig(
-        per_device_train_batch_size=2,
+        per_device_train_batch_size=1,
         gradient_accumulation_steps=1,
         temperature=1.0,
         beta=0.04,
@@ -212,24 +227,30 @@ def main():
         bf16=True,
         lr_scheduler_type="constant_with_warmup",
         warmup_steps=10,
-        max_prompt_length=None,
-        max_completion_length=None,
+        max_prompt_length=256,
+        max_completion_length=256,
         scale_rewards=True,
         max_grad_norm=0.5,
         lora=True,
         log_completions=True,
         logging_steps=10,
         max_steps=200,  # Trainer cap; outer loop controlled by num_train_steps
+        generation_batch_size=2,
     )
+
+    # Ad-hoc extra keys accepted by Arbor backend to reduce memory
+    train_kwargs = arbor_cfg.to_dict()
+    train_kwargs["max_seq_len"] = 1024
+    train_kwargs["vllm_gpu_memory_utilization"] = 0.2
 
     # Configure GRPO with smaller steps/rollouts for ~5–10 minutes
     compiler = GRPO(
         metric=compute_overall_score,
         multitask=True,
-        num_dspy_examples_per_grpo_step=2,
-        num_rollouts_per_grpo_step=4,
+        num_dspy_examples_per_grpo_step=1,
+        num_rollouts_per_grpo_step=2,
         exclude_demos=True,
-        num_train_steps=60,
+        num_train_steps=40,
         num_threads=8,
         use_train_as_val=False,
         num_steps_for_val=10,

@@ -70,13 +70,37 @@ class ArborReinforceJob(ReinforceJob):
         cfg = self.train_config
         num_generations = cfg.num_generations
         max_context_length = cfg.max_context_length
+        # Build trainer_config with only keys supported by Arbor backend
+        allowed_trainer_keys = {
+            "temperature",
+            "beta",
+            "per_device_train_batch_size",
+            "learning_rate",
+            "gradient_accumulation_steps",
+            "gradient_checkpointing",
+            "lr_scheduler_type",
+            "warmup_steps",
+            "max_prompt_length",
+            "max_completion_length",
+            "bf16",
+            "scale_rewards",
+            "gradient_checkpointing_kwargs",
+            "max_grad_norm",
+            "report_to",
+            "log_completions",
+            "logging_steps",
+            "max_steps",
+            "generation_batch_size",
+        }
+        cfg_dict = cfg.to_dict()
+        trainer_cfg = {k: v for k, v in cfg_dict.items() if k in allowed_trainer_keys and v is not None}
         # lora = self.train_kwargs.get("lora", self.DEFAULT_TRAIN_KWARGS["lora"])
         api_base = self.lm.kwargs["api_base"]
 
         finetune_model = ArborProvider._remove_provider_prefix(self.lm.model)
         data = {
             "model": finetune_model,
-            "trainer_config": {"num_generations": num_generations, **cfg.to_dict()},
+            "trainer_config": {"num_generations": num_generations, **trainer_cfg},
             "inference_config": {
                 "model": finetune_model,
                 "max_context_length": max_context_length,
@@ -92,7 +116,11 @@ class ArborReinforceJob(ReinforceJob):
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {"Content-Type": "application/json"}
         response = requests.post(url=url, headers=headers, json=data)
-        print(json.dumps(response.json(), indent=2))
+        # Best-effort print for debugging without assuming JSON on error
+        try:
+            print(json.dumps(response.json(), indent=2))
+        except Exception:
+            print(f"[Arbor Initialize] status={response.status_code} body={response.text[:500]}")
         response.raise_for_status()
         response = response.json()
         self.lm.model = ArborProvider._add_provider_prefix(response["current_model"])
