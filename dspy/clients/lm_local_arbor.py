@@ -157,7 +157,7 @@ class ArborReinforceJob(ReinforceJob):
                 },
             },
         }
-        url = urljoin(api_base, f"fine_tuning/grpo/initialize")
+        url = urljoin(api_base, "fine_tuning/grpo/initialize")
         headers = {"Content-Type": "application/json"}
         response = requests.post(url=url, headers=headers, json=data)
         print(json.dumps(response.json(), indent=2))
@@ -201,7 +201,7 @@ class ArborReinforceJob(ReinforceJob):
 
     def get_status(self) -> GRPOStatus:
         api_base = self.lm.kwargs["api_base"]
-        url = urljoin(api_base, f"fine_tuning/grpo/status")
+        url = urljoin(api_base, "fine_tuning/grpo/status")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id}
         response = requests.post(url, headers=headers, json=body)
@@ -210,7 +210,7 @@ class ArborReinforceJob(ReinforceJob):
 
     def save_checkpoint(self, checkpoint_name: str, score: float | None = None):
         api_base = self.lm.kwargs["api_base"]
-        url = urljoin(api_base, f"fine_tuning/grpo/checkpoint")
+        url = urljoin(api_base, "fine_tuning/grpo/checkpoint")
         headers = {"Content-Type": "application/json"}
         body = {"checkpoint_name": checkpoint_name, "job_id": self.provider_job_id}
         response = requests.post(url, headers=headers, json=body)
@@ -229,7 +229,7 @@ class ArborReinforceJob(ReinforceJob):
     def terminate(self):
         api_base = self.lm.kwargs["api_base"]
 
-        url = urljoin(api_base, f"fine_tuning/grpo/terminate")
+        url = urljoin(api_base, "fine_tuning/grpo/terminate")
         headers = {"Content-Type": "application/json"}
         body = {"job_id": self.provider_job_id}
         response = requests.post(url, headers=headers, json=body)
