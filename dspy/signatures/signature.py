@@ -258,11 +258,17 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             and whose instructions equal ``instructions``.
 
         Example:
-            >>> NewSig = MySig.with_instructions("Translate to French.")
-            >>> NewSig is MySig
-            False
-            >>> NewSig.instructions
-            'Translate to French.'
+            ```
+            from dspy.signatures import Signature, InputField, OutputField
+
+            class MySig(Signature):
+                input_text: str = InputField(desc="Input text")
+                output_text: str = OutputField(desc="Output text")
+
+            NewSig = MySig.with_instructions("Translate to French.")
+            assert NewSig is not MySig
+            assert NewSig.instructions == "Translate to French."
+            ```
         """
         return Signature(cls.fields, instructions)
 
