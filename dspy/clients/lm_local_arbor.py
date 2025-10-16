@@ -116,11 +116,7 @@ class ArborReinforceJob(ReinforceJob):
         url = f"{api_base}fine_tuning/grpo/initialize"
         headers = {"Content-Type": "application/json"}
         response = requests.post(url=url, headers=headers, json=data)
-        # Best-effort print for debugging without assuming JSON on error
-        try:
-            print(json.dumps(response.json(), indent=2))
-        except Exception:
-            print(f"[Arbor Initialize] status={response.status_code} body={response.text[:500]}")
+  
         response.raise_for_status()
         response = response.json()
         self.lm.model = ArborProvider._add_provider_prefix(response["current_model"])
