@@ -254,7 +254,7 @@ def main():
         num_threads=8,
         use_train_as_val=False,
         num_steps_for_val=10,
-        train_kwargs=arbor_cfg.to_dict(),
+        train_kwargs=arbor_cfg.to_dict(), 
         report_train_scores=False,
     )
 
