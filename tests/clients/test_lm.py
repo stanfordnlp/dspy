@@ -609,7 +609,6 @@ def test_responses_api_tool_calls(litellm_test_server):
 
 
 def test_api_key_not_saved_in_json():
-    """Test that API key is not saved in JSON format."""
     lm = dspy.LM(
         model="openai/gpt-4o-mini",
         model_type="chat",
