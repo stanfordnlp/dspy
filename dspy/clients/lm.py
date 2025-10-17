@@ -273,7 +273,9 @@ class LM(BaseLM):
             "launch_kwargs",
             "train_kwargs",
         ]
-        return {key: getattr(self, key) for key in state_keys} | self.kwargs
+        # Exclude api_key from kwargs to prevent API keys from being saved in plain text
+        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k != "api_key"}
+        return {key: getattr(self, key) for key in state_keys} | filtered_kwargs
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
