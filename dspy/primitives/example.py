@@ -1,10 +1,7 @@
 class Example:
     """A flexible data container for DSPy examples and training data.
 
-    The Example class provides a dictionary-like interface for storing and manipulating
-    structured data used throughout DSPy. It supports initialization from various sources
-    and provides convenient methods for handling input/output separation, which is crucial
-    for DSPy's training and evaluation workflows.
+    The Example class is the standard data format used in DSPy evaluation and optimization.
 
     Key features:
         - Dictionary-like access patterns (item access, iteration, etc.)
@@ -12,13 +9,6 @@ class Example:
         - Input/output field separation for training data
         - Serialization support for saving/loading examples
         - Immutable operations that return new Example instances
-
-    Args:
-        base: Optional base data source. Can be:
-            - Another Example instance (copies its data)
-            - A dictionary (copies its key-value pairs)
-            - None (creates empty Example)
-        **kwargs: Additional key-value pairs to store in the Example
 
     Examples:
         Basic usage with keyword arguments:
@@ -29,7 +19,7 @@ class Example:
         # Create an example with input and output fields
         example = dspy.Example(
             question="What is the capital of France?",
-            answer="Paris"
+            answer="Paris",
         )
         print(example.question)  # "What is the capital of France?"
         print(example.answer)   # "Paris"
@@ -57,7 +47,7 @@ class Example:
         # Mark which fields are inputs for training
         example = dspy.Example(
             question="What is the weather?",
-            answer="It's sunny"
+            answer="It's sunny",
         ).with_inputs("question")
 
         # Get only input fields
@@ -78,9 +68,6 @@ class Example:
         if "name" in example:
             print("Name field exists")
         
-        # Iterate over items
-        for key, value in example.items():
-            print(f"{key}: {value}")
         
         # Get with default value
         city = example.get("city", "Unknown")
@@ -89,6 +76,15 @@ class Example:
     """
 
     def __init__(self, base=None, **kwargs):
+        """Initialize an Example instance.
+
+        Args:
+            base: Optional base data source. Can be:
+                - Another Example instance (copies its data)
+                - A dictionary (copies its key-value pairs)
+                - None (creates empty Example)
+            **kwargs: Additional key-value pairs to store in the Example.
+        """
         # Internal storage and other attributes
         self._store = {}
         self._demos = []
