@@ -1,16 +1,17 @@
 class Example:
     """A flexible data container for DSPy examples and training data.
 
-    The Example class is the standard data format used in DSPy evaluation and optimization.
+    The `Example` class is the standard data format used in DSPy evaluation and optimization.
 
     Key features:
         - Dictionary-like access patterns (item access, iteration, etc.)
-        - Flexible initialization from dictionaries, other Examples, or keyword arguments
+        - Flexible initialization from dictionaries, other `Example` instances, or keyword arguments
         - Input/output field separation for training data
-        - Serialization support for saving/loading examples
-        - Immutable operations that return new Example instances
+        - Serialization support for saving/loading `Example` instances
+        - Immutable operations that return new `Example` instances
 
     Examples:
+
         Basic usage with keyword arguments:
 
         ```python
@@ -63,12 +64,11 @@ class Example:
 
         ```python
         example = dspy.Example(name="Alice", age=30)
-        
+
         # Check if key exists
         if "name" in example:
             print("Name field exists")
-        
-        
+
         # Get with default value
         city = example.get("city", "Unknown")
         print(city)  # "Unknown"
