@@ -258,12 +258,12 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             and whose instructions equal `instructions`.
 
         Example:
-            ```
-            from dspy.signatures import Signature, InputField, OutputField
+            ```python
+            import dspy
 
-            class MySig(Signature):
-                input_text: str = InputField(desc="Input text")
-                output_text: str = OutputField(desc="Output text")
+            class MySig(dspy.Signature):
+                input_text: str = dspy.InputField(desc="Input text")
+                output_text: str = dspy.OutputField(desc="Output text")
 
             NewSig = MySig.with_instructions("Translate to French.")
             assert NewSig is not MySig
@@ -312,6 +312,19 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
         Returns:
             A new `Signature` class with the field inserted first.
+
+        Example:
+            ```python
+            import dspy
+
+            class MySig(dspy.Signature):
+                input_text: str = dspy.InputField(desc="Input sentence")
+                output_text: str = dspy.OutputField(desc="Translated sentence")
+
+            NewSig = MySig.prepend("context", dspy.InputField(desc="Context for translation"))
+            print(list(NewSig.fields.keys()))
+            assert NewSig is not MySig
+            ```
         """
         return cls.insert(0, name, field, type_)
 
@@ -332,6 +345,20 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
         Returns:
             A new Signature class with the field appended.
+
+        Example:
+            ```python
+            import dspy
+
+            class MySig(dspy.Signature):
+                input_text: str = dspy.InputField(desc="Input sentence")
+                output_text: str = dspy.OutputField(desc="Translated sentence")
+
+            NewSig = MySig.append("confidence", dspy.OutputField(desc="Translation confidence"))
+            print(list(NewSig.fields.keys()))
+
+            assert NewSig is not MySig
+            ```
         """
         return cls.insert(-1, name, field, type_)
 
@@ -347,6 +374,24 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         Returns:
             A new Signature class with the field removed (or unchanged
             if the field was absent).
+
+        Example:
+            ```python
+            import dspy
+
+            class MySig(dspy.Signature):
+                input_text: str = dspy.InputField(desc="Input sentence")
+                temp_field: str = dspy.InputField(desc="Temporary debug field")
+                output_text: str = dspy.OutputField(desc="Translated sentence")
+
+            NewSig = MySig.delete("temp_field")
+            print(list(NewSig.fields.keys()))
+
+            Unchanged = NewSig.delete("nonexistent")
+            print(list(Unchanged.fields.keys()))
+
+            assert NewSig is not MySig
+            ```
         """
         fields = dict(cls.fields)
 
@@ -376,6 +421,23 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
         Raises:
             ValueError: If `index` falls outside the valid range for the chosen section.
+        
+        Example:
+            ```python
+            import dspy
+
+            class MySig(dspy.Signature):
+                input_text: str = dspy.InputField(desc="Input sentence")
+                output_text: str = dspy.OutputField(desc="Translated sentence")
+
+            NewSig = MySig.insert(0, "context", dspy.InputField(desc="Context for translation"))
+            print(list(NewSig.fields.keys()))
+
+            NewSig2 = NewSig.insert(-1, "confidence", dspy.OutputField(desc="Translation confidence"))
+            print(list(NewSig2.fields.keys()))
+
+            assert NewSig2 is not MySig
+            ```
         """
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
