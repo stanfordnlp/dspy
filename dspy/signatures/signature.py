@@ -255,7 +255,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
         Returns:
             type[Signature]: A new Signature class whose fields match `cls.fields`
-            and whose instructions equal ``instructions``.
+            and whose instructions equal `instructions`.
 
         Example:
             ```
