@@ -23,7 +23,7 @@ class MultiChainComparison(Module):
             )
 
         signature = signature.prepend(
-            "rationale",
+            "reasoning",
             OutputField(
                 prefix="Accurate Reasoning: Thank you everyone. Let's now holistically",
                 desc="${corrected reasoning}",
