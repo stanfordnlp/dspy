@@ -38,10 +38,8 @@ class BaseModule:
                     named_parameters.append((param_name, param_value))
 
             elif isinstance(param_value, dspy.Module):
-                # When a sub-module is pre-compiled, keep it frozen.
-                if not getattr(param_value, "_compiled", False):
-                    for sub_name, param in param_value.named_parameters():
-                        add_parameter(f"{param_name}.{sub_name}", param)
+                for sub_name, param in param_value.named_parameters():
+                    add_parameter(f"{param_name}.{sub_name}", param)
 
         if isinstance(self, Parameter):
             add_parameter("self", self)
@@ -51,10 +49,8 @@ class BaseModule:
                 add_parameter(name, value)
 
             elif isinstance(value, dspy.Module):
-                # When a sub-module is pre-compiled, keep it frozen.
-                if not getattr(value, "_compiled", False):
-                    for sub_name, param in value.named_parameters():
-                        add_parameter(f"{name}.{sub_name}", param)
+                for sub_name, param in value.named_parameters():
+                    add_parameter(f"{name}.{sub_name}", param)
 
             elif isinstance(value, (list, tuple)):
                 for idx, item in enumerate(value):
@@ -66,7 +62,7 @@ class BaseModule:
 
         return named_parameters
 
-    def named_sub_modules(self, type_=None, skip_compiled=False) -> Generator[tuple[str, "BaseModule"], None, None]:
+    def named_sub_modules(self, type_=None) -> Generator[tuple[str, "BaseModule"], None, None]:
         """Find all sub-modules in the module, as well as their names.
 
         Say `self.children[4]['key'].sub_module` is a sub-module. Then the name will be
@@ -91,8 +87,6 @@ class BaseModule:
                 yield name, item
 
             if isinstance(item, BaseModule):
-                if skip_compiled and getattr(item, "_compiled", False):
-                    continue
                 for sub_name, sub_item in item.__dict__.items():
                     add_to_queue(f"{name}.{sub_name}", sub_item)
 

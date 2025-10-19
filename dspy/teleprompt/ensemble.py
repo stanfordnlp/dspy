@@ -37,4 +37,5 @@ class Ensemble(Teleprompter):
 
                 return outputs
 
-        return EnsembledProgram()
+        ensembled_program = EnsembledProgram()
+        return ensembled_program
