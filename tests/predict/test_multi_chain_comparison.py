@@ -32,7 +32,7 @@ def test_basic_example():
 
     # Call the MultiChainComparison on the completions
     question = "What is the color of the sky?"
-    lm = DummyLM([{"rationale": "my rationale", "answer": "blue"}])
+    lm = DummyLM([{"reasoning": "my rationale", "answer": "blue"}])
     dspy.settings.configure(lm=lm)
     final_pred = compare_answers(completions, question=question)
 
