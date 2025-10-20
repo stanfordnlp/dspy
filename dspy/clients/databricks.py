@@ -17,14 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class TrainingJobDatabricks(TrainingJob):
-    """Tracks the state of a Databricks finetuning job and its deployment."""
-
     def __init__(self, finetuning_run=None, *args, **kwargs):
-        """Initialize a Databricks training job with optional finetuning run reference.
-        
-        The finetuning_run parameter stores a reference to the Databricks finetuning run object
-        that can be used to query the job status.
-        """
         super().__init__(*args, **kwargs)
         self.finetuning_run = finetuning_run
         self.launch_started = False
@@ -32,14 +25,6 @@ class TrainingJobDatabricks(TrainingJob):
         self.endpoint_name = None
 
     def status(self):
-        """Retrieve the current status of the finetuning run from Databricks.
-        
-        Queries the Databricks foundation model API to get the current status of the finetuning run.
-        Returns None if no finetuning run is associated with this job.
-        
-        Raises:
-            ImportError: If the databricks_genai package is not installed.
-        """
         if not self.finetuning_run:
             return None
         try:
@@ -54,18 +39,11 @@ class TrainingJobDatabricks(TrainingJob):
 
 
 class DatabricksProvider(Provider):
-    """Provider implementation for Databricks model finetuning and deployment."""
-
     finetunable = True
     TrainingJob = TrainingJobDatabricks
 
     @staticmethod
     def is_provider_model(model: str) -> bool:
-        """Check if the model string indicates a Databricks model.
-        
-        Always returns False as Databricks is not automatically inferred from model strings.
-        Databricks is not a proprietary model provider, so explicit provider specification is required.
-        """
         # We don't automatically infer Databricks models because Databricks is not a proprietary model provider.
         return False
 
@@ -77,16 +55,6 @@ class DatabricksProvider(Provider):
         databricks_token: str | None = None,
         deploy_timeout: int = 900,
     ):
-        """Deploy a finetuned model to Databricks serving endpoint with provisioned throughput.
-        
-        Creates or updates a serving endpoint for the model, configures provisioned throughput
-        based on the model's optimization info, and waits for the endpoint to become ready.
-        The endpoint is tested with a sample request to verify it's operational.
-        
-        Raises:
-            ValueError: If the model is not eligible for provisioned throughput or if the
-                serving endpoint creation/update fails or doesn't become ready within the timeout.
-        """
         workspace_client = _get_workspace_client()
         model_version = next(workspace_client.model_versions.list(model)).version
 
@@ -204,20 +172,6 @@ class DatabricksProvider(Provider):
         train_data_format: TrainDataFormat | str | None = "chat",
         train_kwargs: dict[str, Any] | None = None,
     ) -> str:
-        """Execute finetuning on Databricks and optionally deploy the resulting model.
-        
-        Uploads training data to Unity Catalog, starts a finetuning run, waits for completion,
-        and deploys the model to a serving endpoint unless skip_deploy is set. The method polls
-        the finetuning run status until it completes or fails.
-        
-        Returns the deployed model name in the format "databricks/<endpoint_name>" or None if
-        deployment is skipped.
-        
-        Raises:
-            ValueError: If train_data_format is invalid, required kwargs are missing, or if the
-                finetuning run fails.
-            ImportError: If the databricks_genai package is not installed.
-        """
         if isinstance(train_data_format, str):
             if train_data_format == "chat":
                 train_data_format = TrainDataFormat.CHAT
@@ -290,15 +244,6 @@ class DatabricksProvider(Provider):
 
     @staticmethod
     def upload_data(train_data: list[dict[str, Any]], databricks_unity_catalog_path: str, data_format: TrainDataFormat):
-        """Save training data locally, validate it, and upload to Databricks Unity Catalog.
-        
-        Creates a local JSONL file with the training data, validates the Unity Catalog path format,
-        ensures the target volume exists, creates the directory if needed, and uploads the file.
-        Returns the full path to the uploaded file in Unity Catalog.
-        
-        Raises:
-            ValueError: If the upload fails or if the Unity Catalog path or volume is invalid.
-        """
         logger.info("Uploading finetuning data to Databricks Unity Catalog...")
         file_path = _save_data_to_local_file(train_data, data_format)
 
@@ -316,14 +261,6 @@ class DatabricksProvider(Provider):
 
 
 def _get_workspace_client() -> "WorkspaceClient":
-    """Create and return a Databricks WorkspaceClient instance.
-    
-    Initializes a WorkspaceClient using the default authentication configuration.
-    The client is used to interact with Databricks workspace APIs.
-    
-    Raises:
-        ImportError: If the databricks-sdk package is not installed.
-    """
     try:
         from databricks.sdk import WorkspaceClient
     except ImportError:
@@ -334,14 +271,6 @@ def _get_workspace_client() -> "WorkspaceClient":
 
 
 def _create_directory_in_databricks_unity_catalog(w: "WorkspaceClient", databricks_unity_catalog_path: str):
-    """Validate the Unity Catalog path format, verify the volume exists, and create the directory if needed.
-    
-    Checks that the path follows the required format '/Volumes/<catalog>/<schema>/<volume>/...',
-    verifies the volume exists in Unity Catalog, and creates the directory if it doesn't already exist.
-    
-    Raises:
-        ValueError: If the path format is invalid or if the specified volume does not exist.
-    """
     pattern = r"^/Volumes/(?P<catalog>[^/]+)/(?P<schema>[^/]+)/(?P<volume>[^/]+)(/[^/]+)+$"
     match = re.match(pattern, databricks_unity_catalog_path)
     if not match:
@@ -374,12 +303,6 @@ def _create_directory_in_databricks_unity_catalog(w: "WorkspaceClient", databric
 
 
 def _save_data_to_local_file(train_data: list[dict[str, Any]], data_format: TrainDataFormat):
-    """Write training data to a local JSONL file after validating each item based on the data format.
-    
-    Creates a uniquely named JSONL file in the finetune directory, validates each training data item
-    according to the specified format (chat or completion), and writes the data line by line.
-    Returns the absolute path to the created file.
-    """
     import uuid
 
     file_name = f"finetuning_{uuid.uuid4()}.jsonl"
@@ -399,14 +322,6 @@ def _save_data_to_local_file(train_data: list[dict[str, Any]], data_format: Trai
 
 
 def _validate_chat_data(data: dict[str, Any]):
-    """Verify that chat data contains a 'messages' list with properly formatted message dictionaries.
-    
-    Checks that the data has a 'messages' key containing a list, and that each message in the list
-    has both 'role' and 'content' keys.
-    
-    Raises:
-        ValueError: If the data structure doesn't match the expected chat format.
-    """
     if "messages" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'messages' key when `task=CHAT_COMPLETION`, but "
@@ -429,14 +344,6 @@ def _validate_chat_data(data: dict[str, Any]):
 
 
 def _validate_completion_data(data: dict[str, Any]):
-    """Verify that completion data contains both 'prompt' and either 'response' or 'completion' keys.
-    
-    Checks that the data has a 'prompt' key and at least one of 'response' or 'completion' keys,
-    which are required for instruction finetuning format.
-    
-    Raises:
-        ValueError: If the data structure doesn't match the expected completion format.
-    """
     if "prompt" not in data:
         raise ValueError(
             "Each finetuning data must be a dict with a 'prompt' key when `task=INSTRUCTION_FINETUNE`, but "
