@@ -248,7 +248,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         """Return a new Signature class with identical fields and new instructions.
 
         This method does not mutate `cls`. It constructs a fresh Signature
-        class using the current fields and the provided ``instructions``.
+        class using the current fields and the provided `instructions`.
 
         Args:
             instructions (str): Instruction text to attach to the new signature.
