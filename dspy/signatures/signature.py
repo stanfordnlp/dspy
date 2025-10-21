@@ -302,13 +302,11 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def prepend(cls, name, field, type_=None) -> type["Signature"]:
         """Insert a field at index 0 of the `inputs` or `outputs` section.
 
-        Equivalent to `insert(0, name, field, type_)`. The section (inputs vs outputs)
-        is determined by `field.json_schema_extra["__dspy_field_type"]`.
-
         Args:
             name (str): Field name to add.
             field: `InputField` or `OutputField` instance to insert.
-            type_ (type | None): Optional explicit type annotation.
+            type_ (type | None): Optional explicit type annotation. If `type_` is `None`, the effective type is
+                resolved by `insert`.
 
         Returns:
             A new `Signature` class with the field inserted first.
@@ -331,16 +329,11 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def append(cls, name, field, type_=None) -> type["Signature"]:
         """Insert a field at the end of the `inputs` or `outputs` section.
 
-        Equivalent to `insert(-1, name, field, type_)`. The section (inputs vs
-        outputs) is determined by `field.json_schema_extra["__dspy_field_type"]`.
-        
-        If `type_` is `None`, the effective type is resolved by `insert`.
-
-
         Args:
             name (str): Field name to add.
             field: `InputField` or `OutputField` instance to insert.
-            type_ (type | None): Optional explicit type annotation.
+            type_ (type | None): Optional explicit type annotation. If `type_` is `None`, the effective type is
+                resolved by `insert`.
 
         Returns:
             A new Signature class with the field appended.
@@ -369,8 +362,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             name (str): Field name to remove.
 
         Returns:
-            A new Signature class with the field removed (or unchanged
-            if the field was absent).
+            A new Signature class with the field removed (or unchanged if the field was absent).
 
         Example:
             ```python
@@ -384,6 +376,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             NewSig = MySig.delete("temp_field")
             print(list(NewSig.fields.keys()))
 
+            # No error is raised if the field is not present
             Unchanged = NewSig.delete("nonexistent")
             print(list(Unchanged.fields.keys()))
             ```
@@ -412,7 +405,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
         Raises:
             ValueError: If `index` falls outside the valid range for the chosen section.
-        
+
         Example:
             ```python
             import dspy
@@ -567,7 +560,9 @@ def make_signature(
         # program of thought and teleprompters, so we just silently default to string.
         if type_ is None:
             type_ = str
-        if not isinstance(type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm, types.UnionType)):
+        if not isinstance(
+            type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm, types.UnionType)
+        ):
             raise ValueError(f"Field types must be types, but received: {type_} of type {type(type_)}.")
         if not isinstance(field, FieldInfo):
             raise ValueError(f"Field values must be Field instances, but received: {field}.")
