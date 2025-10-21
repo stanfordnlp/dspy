@@ -398,9 +398,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
         """Insert a field at a specific position among inputs or outputs.
 
-        The target section (inputs vs outputs) is determined by
-        `field.json_schema_extra["__dspy_field_type"]`. Negative indices are
-        supported (e.g., `-1` appends). If `type_` is omitted, the field's
+        Negative indices are supported (e.g., `-1` appends). If `type_` is omitted, the field's
         existing `annotation` is used; if that is missing, `str` is used.
 
         Args:
