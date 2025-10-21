@@ -323,7 +323,6 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
             NewSig = MySig.prepend("context", dspy.InputField(desc="Context for translation"))
             print(list(NewSig.fields.keys()))
-            assert NewSig is not MySig
             ```
         """
         return cls.insert(0, name, field, type_)
@@ -356,8 +355,6 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
             NewSig = MySig.append("confidence", dspy.OutputField(desc="Translation confidence"))
             print(list(NewSig.fields.keys()))
-
-            assert NewSig is not MySig
             ```
         """
         return cls.insert(-1, name, field, type_)
@@ -389,8 +386,6 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
             Unchanged = NewSig.delete("nonexistent")
             print(list(Unchanged.fields.keys()))
-
-            assert NewSig is not MySig
             ```
         """
         fields = dict(cls.fields)
@@ -435,8 +430,6 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
             NewSig2 = NewSig.insert(-1, "confidence", dspy.OutputField(desc="Translation confidence"))
             print(list(NewSig2.fields.keys()))
-
-            assert NewSig2 is not MySig
             ```
         """
         # It's possible to set the type as annotation=type in pydantic.Field(...)
