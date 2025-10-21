@@ -395,9 +395,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields, cls.instructions)
 
     @classmethod
-    def insert(
-        cls, index: int, name: str, field, type_: type | None = None
-    ) -> type["Signature"]:
+    def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
         """Insert a field at a specific position among inputs or outputs.
 
         The target section (inputs vs outputs) is determined by
