@@ -50,10 +50,7 @@ class StreamListener:
         self.cache_hit = False
         self.allow_reuse = allow_reuse
 
-        self.json_adapter_state = {
-            "field_accumulated_tokens": "",
-            "curly_bracket_diff": 0,
-        }
+        self.json_adapter_state = {"field_accumulated_tokens": ""}
 
         self.adapter_identifiers = {
             "ChatAdapter": {
@@ -133,7 +130,6 @@ class StreamListener:
                 self.field_start_queue = []
                 self.field_end_queue = Queue()
                 self.json_adapter_state["field_accumulated_tokens"] = ""
-                self.json_adapter_state["curly_bracket_diff"] = 0
                 self.stream_start = False
             else:
                 return
@@ -192,12 +188,9 @@ class StreamListener:
                 if isinstance(settings.adapter, JSONAdapter):
                     # For JSONAdapter, we rely on partial json parsing to detect the end of the field we are listening
                     # to, so we need to maintain a few extra states to help us with that.
-                    # 1. We add an extra "{" to the beginning of the field_accumulated_tokens, so we can detect the
-                    #    appearance of the next key.
-                    # 2. We maintain a curly_bracket_diff to help us detect the balance of curly brackets, so we can
-                    #    detect when the streaming for the entire dspy.Predict is finished.
+                    # We add an extra "{" to the beginning of the field_accumulated_tokens, so we can detect the
+                    # appearance of the next key.
                     self.json_adapter_state["field_accumulated_tokens"] += "{" + start_identifier
-                    self.json_adapter_state["curly_bracket_diff"] = 1
 
             elif self._buffered_message_end_with_start_identifier(concat_message.strip(), start_identifier):
                 # If the buffered message ends with part of the start_identifier, we keep looking for the
@@ -233,15 +226,25 @@ class StreamListener:
 
     def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> str:
         self.json_adapter_state["field_accumulated_tokens"] += chunk_message
-        self.json_adapter_state["curly_bracket_diff"] += chunk_message.count("{") - chunk_message.count("}")
-        if self.json_adapter_state["curly_bracket_diff"] == 0:
-            # We add an extra "{" to the beginning of the field_accumulated_tokens, so if we get a balance of curly
-            # brackets, that means the streaming for the entire dspy.Predict is finished.
-            self.stream_end = True
-            last_token = self.flush()
-            right_curly_bracket_index = last_token.rfind("}")
-            token = token + last_token[:right_curly_bracket_index] if token else last_token[:right_curly_bracket_index]
-            return StreamResponse(self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end)
+        if self.json_adapter_state["field_accumulated_tokens"].rstrip().endswith("}"):
+            # When the accumulated tokens ends with a curly bracket, that means the streaming for the predict we are
+            # listening to is probably finished, we need to run a check and decide whether to end the stream.
+            try:
+                # If the parse doesn't raise an error, that means the accumulated tokens is a valid json object. Because
+                # we add an extra "{" to the beginning of the field_accumulated_tokens, so we know the streaming is
+                # finished.
+                jiter.from_json(self.json_adapter_state["field_accumulated_tokens"].encode("utf-8"))
+                self.stream_end = True
+                last_token = self.flush()
+                right_curly_bracket_index = last_token.rfind("}")
+                token = (
+                    token + last_token[:right_curly_bracket_index] if token else last_token[:right_curly_bracket_index]
+                )
+                return StreamResponse(
+                    self.predict_name, self.signature_field_name, token, is_last_chunk=self.stream_end
+                )
+            except Exception:
+                pass
 
         try:
             parsed = jiter.from_json(
