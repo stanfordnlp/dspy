@@ -5,6 +5,7 @@ import threading
 import tqdm
 
 import dspy
+from dspy.metrics import resolve_metric_score
 from dspy.teleprompt.teleprompt import Teleprompter
 
 from .vanilla import LabeledFewShot
@@ -200,11 +201,18 @@ class BootstrapFewShot(Teleprompter):
                         predictor.demos = predictor_cache[name]
 
                 if self.metric:
-                    metric_val = self.metric(example, prediction, trace)
-                    if self.metric_threshold:
+                    score_obj, _ = resolve_metric_score(
+                        self.metric,
+                        example,
+                        prediction,
+                        trace,
+                        context="BootstrapFewShot metric",
+                    )
+                    metric_val = score_obj.scalar
+                    if self.metric_threshold is not None and metric_val is not None:
                         success = metric_val >= self.metric_threshold
                     else:
-                        success = metric_val
+                        success = bool(metric_val)
                 else:
                     success = True
         except Exception as e:
