@@ -1,6 +1,8 @@
 import json
+import tempfile
 import time
 import warnings
+from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
 
@@ -321,7 +323,7 @@ def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
         ValueError,
-        match="reasoning models require passing temperature=1.0 and max_tokens >= 16000",
+        match="reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None",
     ):
         dspy.LM(
             model=model_name,
@@ -336,6 +338,13 @@ def test_reasoning_model_requirements(model_name):
         max_tokens=16_000,
     )
     assert lm.kwargs["max_completion_tokens"] == 16_000
+
+    # Should pass with no parameters
+    lm = dspy.LM(
+        model=model_name,
+    )
+    assert lm.kwargs["temperature"] == None
+    assert lm.kwargs["max_completion_tokens"] == None
 
 
 def test_dump_state():
@@ -657,3 +666,31 @@ def test_call_reasoning_model_with_chat_api():
             call_kwargs = mock_completion.call_args.kwargs
             assert call_kwargs["model"] == "anthropic/claude-3-7-sonnet-20250219"
             assert call_kwargs["reasoning_effort"] == "low"
+
+
+def test_api_key_not_saved_in_json():
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini",
+        model_type="chat",
+        temperature=1.0,
+        max_tokens=100,
+        api_key="sk-test-api-key-12345",
+    )
+
+    predict = dspy.Predict("question -> answer")
+    predict.lm = lm
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_path = Path(tmpdir) / "program.json"
+        predict.save(json_path)
+
+        with open(json_path) as f:
+            saved_state = json.load(f)
+
+        # Verify API key is not in the saved state
+        assert "api_key" not in saved_state.get("lm", {}), "API key should not be saved in JSON"
+
+        # Verify other attributes are saved
+        assert saved_state["lm"]["model"] == "openai/gpt-4o-mini"
+        assert saved_state["lm"]["temperature"] == 1.0
+        assert saved_state["lm"]["max_tokens"] == 100

@@ -20,13 +20,41 @@ if TYPE_CHECKING:
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 
 
+
 class Adapter:
+    """Base Adapter class.
+
+    The Adapter serves as the interface layer between DSPy module/signature and Language Models (LMs). It handles the
+    complete transformation pipeline from DSPy inputs to LM calls and back to structured outputs.
+
+    Key responsibilities:
+        - Transform user inputs and signatures into properly formatted LM prompts, which also instructs the LM to format
+            the response in a specific format.
+        - Parse LM outputs into dictionaries matching the signature's output fields.
+        - Enable/disable native LM features (function calling, citations, etc.) based on configuration.
+        - Handle conversation history, few-shot examples, and custom type processing.
+
+    The adapter pattern allows DSPy to work with different LM interfaces while maintaining a consistent programming
+    model for users.
+    """
+
     def __init__(
         self,
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[Type]] | None = None,
     ):
+        """
+        Args:
+            callbacks: List of callback functions to execute during `format()` and `parse()` methods. Callbacks can be
+                used for logging, monitoring, or custom processing. Defaults to None (empty list).
+            use_native_function_calling: Whether to enable native function calling capabilities when the LM supports it.
+                If True, the adapter will automatically configure function calling when input fields contain `dspy.Tool`
+                or `list[dspy.Tool]` types. Defaults to False.
+            native_response_types: List of output field types that should be handled by native LM features rather than
+                adapter parsing. For example, `dspy.Citations` can be populated directly by citation APIs
+                (e.g., Anthropic's citation feature). Defaults to `[Citations]`.
+        """
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
@@ -153,6 +181,22 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        """
+        Execute the adapter pipeline: format inputs, call LM, and parse outputs.
+
+        Args:
+            lm: The Language Model instance to use for generation. Must be an instance of `dspy.BaseLM`.
+            lm_kwargs: Additional keyword arguments to pass to the LM call (e.g., temperature, max_tokens). These are
+                passed directly to the LM.
+            signature: The DSPy signature associated with this LM call.
+            demos: List of few-shot examples to include in the prompt. Each dictionary should contain keys matching the
+                signature's input and output field names. Examples are formatted as user/assistant message pairs.
+            inputs: The current input values for this call. Keys must match the signature's input field names.
+
+        Returns:
+            List of dictionaries representing parsed LM responses. Each dictionary contains keys matching the
+            signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
+        """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
 

@@ -39,6 +39,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [GEPA for AIME](gepa_aime/index.ipynb)
     - [GEPA for PAPILLON](gepa_papillon/index.ipynb)
     - [GEPA for Enterprise classification task](gepa_facilitysupportanalyzer/index.ipynb)
+    - [GEPA for Code Backdoor Classification (AI control)](gepa_trusted_monitor/index.ipynb)
 
 
 - Tools, Development, and Deployment

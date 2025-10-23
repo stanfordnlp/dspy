@@ -3,7 +3,7 @@ from concurrent.futures import Future
 from threading import Thread
 from typing import TYPE_CHECKING, Any
 
-from dspy.clients.utils_finetune import MultiGPUConfig, TrainDataFormat
+from dspy.clients.utils_finetune import TrainDataFormat
 
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
@@ -36,13 +36,11 @@ class TrainingJob(Future):
 
 
 class ReinforceJob:
-    def __init__(self, lm: "LM", train_kwargs: dict[str, Any] | None = None, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)):
+    def __init__(self, lm: "LM", train_kwargs: dict[str, Any] | None = None):
         self.lm = lm
         self.train_kwargs = train_kwargs or {}
-        self.gpu_config = gpu_config
         self.checkpoints = {}
         self.last_checkpoint = None
-        self.gpu_config = gpu_config
 
 
     @abstractmethod
@@ -55,10 +53,6 @@ class ReinforceJob:
 
     @abstractmethod
     def terminate(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def update_model(self):
         raise NotImplementedError
 
     @abstractmethod

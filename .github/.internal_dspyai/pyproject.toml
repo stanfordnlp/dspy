@@ -2,7 +2,7 @@
 #replace_package_name_marker
 name="dspy-ai"  
 #replace_package_version_marker
-version="3.0.4b1"  
+version="3.0.4b2"  
 description = "DSPy"  
 readme = "README.md"  
 authors = [  
@@ -11,7 +11,7 @@ authors = [
 license = { text = "MIT License" }  
 requires-python = ">=3.9" 
 #replace_dspy_version_marker 
-dependencies = ["dspy>=3.0.4b1"]  
+dependencies = ["dspy>=3.0.4b2"]  
 urls = { "Homepage" = "https://github.com/stanfordnlp/dsp" }  
   
 [build-system]  

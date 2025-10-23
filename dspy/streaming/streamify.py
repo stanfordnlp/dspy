@@ -193,6 +193,11 @@ def streamify(
                 elif isinstance(value, StatusMessage):
                     yield value
                 elif isinstance(value, Prediction):
+                    # Flush remaining buffered tokens before yielding the Prediction instance
+                    for listener in stream_listeners:
+                        if final_chunk := listener.finalize():
+                            yield final_chunk
+
                     if include_final_prediction_in_output_stream:
                         yield value
                     elif (
