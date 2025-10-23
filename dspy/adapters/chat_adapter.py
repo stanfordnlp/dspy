@@ -44,6 +44,13 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
                 # adapter.
                 raise e
+            
+            tools = lm_kwargs.get('tools', [])
+            has_web_search = any(tool.get('type') == 'web_search' for tool in tools if isinstance(tool, dict))
+        
+            if has_web_search:
+                # Don't fall back to JSON mode with web search - raise the original error
+                raise e
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
