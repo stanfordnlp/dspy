@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 
 
-
 class Adapter:
     """Base Adapter class.
 
