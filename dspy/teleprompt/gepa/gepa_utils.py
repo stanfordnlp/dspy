@@ -1,10 +1,8 @@
+import json
 import logging
 import random
-import json
-from collections import defaultdict
-from copy import deepcopy
 from typing import Any, Callable, Protocol, TypedDict
-from dspy.predict.react import ReAct
+
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
 
@@ -13,6 +11,7 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
+from dspy.predict.react import ReAct
 from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
@@ -137,7 +136,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             react_module_proposer = None
             if self.optimize_tool_descriptions:
                 from .instruction_proposal import ReActModuleProposer
-                
+
                 react_module_proposer = ReActModuleProposer()
 
             def propose_component_texts(
@@ -160,7 +159,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                             reflective_dataset=reflective_dataset,
                             components_to_update=components_to_update,
                         )
-                
+
                 # Otherwise, route to appropriate proposers
                 # Separate react_module components from regular instruction components
                 react_module_components = [c for c in components_to_update if c.startswith("react_module")]
@@ -188,7 +187,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         )
                     )
 
-                # Handle ReAct module components 
+                # Handle ReAct module components
                 if react_module_components:
                     logger.debug(f"Routing {len(react_module_components)} react_module components to react_module_proposer")
                     if self.reflection_lm is not None:
@@ -220,7 +219,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
-        
+
         # Apply regular predictor instructions
         for name, pred in new_prog.named_predictors():
             if name in candidate:
@@ -228,52 +227,52 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         # Apply ReAct module updates (JSON configs for ReAct modules: react, extract, tools)
         if self.optimize_tool_descriptions:
-            
+
             for module_path, module in new_prog.named_sub_modules():
                 # Only process ReAct modules
                 if not isinstance(module, ReAct):
                     continue
-                
+
                 # Build module key
                 prefix = module_path.removeprefix("self.") if module_path != "self" else ""
                 module_key = "react_module" if prefix == "" else f"react_module:{prefix}"
-                
+
                 # Check if this module was optimized
                 if module_key not in candidate:
                     continue
-                
+
                 # Deserialize JSON containing optimized module configuration
                 try:
                     module_config = json.loads(candidate[module_key])
                     logger.debug(f"Applying optimized module config to {module_key}")
-                    
+
                     # Apply react instruction
                     if "react" in module_config:
                         module.react.signature = module.react.signature.with_instructions(module_config["react"])
-                        logger.debug(f"  Updated react instruction")
-                    
+                        logger.debug("  Updated react instruction")
+
                     # Apply extract instruction
                     if "extract" in module_config:
                         module.extract.predict.signature = module.extract.predict.signature.with_instructions(module_config["extract"])
-                        logger.debug(f"  Updated extract instruction")
-                    
+                        logger.debug("  Updated extract instruction")
+
                     # Apply tool descriptions
                     if "tools" in module_config:
                         for tool_name, tool_config in module_config["tools"].items():
                             tool = module.tools[tool_name]
-                            
+
                             # Update tool description
                             if tool_config.get("desc"):
                                 tool.desc = tool_config["desc"]
                                 logger.debug(f"  Updated tool '{tool_name}' description")
-                            
+
                             # Update tool arg descriptions
                             arg_desc = tool_config.get("arg_desc")
                             if arg_desc:
                                 tool.arg_desc = tool.arg_desc or {}
                                 tool.arg_desc.update(arg_desc)
                                 logger.debug(f"  Updated tool '{tool_name}' arg descriptions: {list(arg_desc.keys())}")
-                
+
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse JSON config for {module_key}: {e}")
                     raise
@@ -341,14 +340,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         for pred_name in components_to_update:
             logger.info(f"Processing component: {pred_name}")
-            
+
             # Handle ReAct module components - use extract predictor for final outputs
             if pred_name.startswith("react_module"):
                 module_name = pred_name.replace("react_module:", "") if ":" in pred_name else None
                 react_module = getattr(program, module_name) if module_name else program
                 module = react_module.extract.predict
                 logger.debug(f"  ReAct module detected: using {module_name or 'top-level'}.extract for final outputs")
-            
+
             # Regular predictor - find by name
             else:
                 module = None
@@ -449,7 +448,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         actual_pred_name = pred_name.split(":", 1)[1] + ".react" if ":" in pred_name else "react"
                     else:
                         actual_pred_name = pred_name
-                    
+
                     feedback_fn = self.feedback_map[actual_pred_name]
                     fb = feedback_fn(
                         predictor_output=outputs,
@@ -461,11 +460,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = fb["feedback"]
                     if fb["score"] != module_score:
                         if self.warn_on_score_mismatch:
+                            logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score. You can safely ignore this warning if using a semantic metric, however, if this mismatch is caused due to predictor scoring, please return module-level scores. To disable this warning, set warn_on_score_mismatch=False.")
                             self.warn_on_score_mismatch = False
                         fb["score"] = module_score
 
                 items.append(d)
-                
+
                 # Log exact reflective example that reflection LM will see
                 if pred_name.startswith("react_module") and len(items) == 1:
                     logger.info(f"  First reflective example for {pred_name}:")
@@ -480,7 +480,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             if len(items) == 0:
                 logger.warning(f"  No valid reflective examples found for {pred_name}")
                 continue
-            
+
             ret_d[pred_name] = items
             logger.info(f"  Created {len(items)} reflective examples for {pred_name}")
 
