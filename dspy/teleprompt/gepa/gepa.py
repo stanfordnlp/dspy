@@ -1,7 +1,7 @@
 import inspect
+import json
 import logging
 import random
-import json
 from dataclasses import dataclass
 from typing import Any, Literal, Optional, Protocol, Union
 
@@ -540,26 +540,27 @@ class GEPA(Teleprompter):
                 if not isinstance(module, ReAct):
                     continue
                 prefix = module_path.removeprefix("self.") if module_path != "self" else ""
-                
+
                 # Get first predictor name as module identifier
                 for pred_name, _ in module.named_predictors():
                     comp_name = pred_name if not prefix else f"{prefix}.{pred_name}"
                     module_key = f"react_module:{comp_name.split('.')[0]}" if prefix else "react_module"
-                    
-                    # Build JSON config
+
+                    # Build JSON config with tool args for reflection
                     config = {
                         "react": module.react.signature.instructions,
                         "extract": module.extract.predict.signature.instructions,
                         "tools": {
                             tool_name: {
                                 "desc": tool.desc,
+                                "args": tool.args,
                                 "arg_desc": tool.arg_desc or {}
                             }
                             for tool_name, tool in module.tools.items()
                             if tool_name != "finish"
                         }
                     }
-                    
+
                     # Replace predictor keys with module key and extract key to prevent duplicates
                     base_program.pop(comp_name, None)
                     extract_key = f"{prefix}.extract.predict" if prefix else "extract.predict"

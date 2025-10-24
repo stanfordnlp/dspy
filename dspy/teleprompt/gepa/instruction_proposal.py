@@ -322,7 +322,9 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
     """Improve a ReAct agent based on execution examples and feedback.
     
     Analyze the trajectories to identify successful patterns and failure causes.
-    Generate improved instructions and/or improved tool descriptions to help the agent succeed on similar tasks."""
+    Generate improved texts to help the agent succeed on similar tasks. 
+    Place improved texts at their appropriate level of abstraction and specificity.
+    """
 
     current_react_instruction = dspy.InputField(
         desc="Current ReAct module instruction guiding the ReAct agent's reasoning and tool selection"
@@ -331,7 +333,8 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
         desc="Current Extract module instruction for extracting final answers from trajectories"
     )
     current_tools = dspy.InputField(
-        desc="Available tools with current descriptions"
+        annotation=list[dspy.Tool],
+        desc="Available tools with their complete schemas"
     )
     examples_with_feedback = dspy.InputField(
         desc="Execution examples with feedback showing successes and failures"
@@ -410,37 +413,46 @@ class ReActModuleProposer(ProposalFn):
                 logger.error(f"Failed to deserialize config for {module_key}: {e}")
                 continue
 
-            # Build dynamic signature by extending base signature
-            # Extract current tools from config
-            current_tools = current_react_config.get("tools", {})
-            logger.info(f"Found {len(current_tools)} tools: {list(current_tools.keys())}")
+            # Reconstruct Tool objects from serialized schema
+            current_tools_dict = current_react_config.get("tools", {})
+            logger.info(f"Found {len(current_tools_dict)} tools: {list(current_tools_dict.keys())}")
+            tools_list = []
+            for tool_name, tool_info in current_tools_dict.items():
+                tool = dspy.Tool(
+                    func=lambda: None,
+                    name=tool_name,
+                    desc=tool_info.get("desc", ""),
+                )
+                tool.args = tool_info.get("args", {})
+                tool.arg_desc = tool_info.get("arg_desc", {})
+                tools_list.append(tool)
 
             # Build dynamic signature by extending base signature
             signature = GenerateImprovedReActDescriptionsFromFeedback
 
-            logger.debug(f"Building dynamic signature with {len(current_tools)} tools...")
+            logger.debug(f"Building dynamic signature with {len(tools_list)} tools...")
 
             # Add dynamic tool description and arg descriptions output fields
-            for tool_name, tool_info in current_tools.items():
+            for tool in tools_list:
+                tool_name = tool.name
+                tool_info = current_tools_dict[tool_name]
                 sanitized_tool_name = self._sanitize_name(tool_name)
 
-                # Tool description (optional)
                 signature = signature.append(
                     f"improved_tool_{sanitized_tool_name}_desc",
                     dspy.OutputField(
-                        desc=f"Improved description for tool '{tool_name}' (optional - leave empty to keep current)",
-                        default=""  # Make optional
+                        desc=f"Improved description for tool '{tool_name}'",
+                        default=""
                     )
                 )
 
-                # Tool arg descriptions (always available if tool has args, optional)
                 if tool_info.get("args"):
                     for arg_name in tool_info["args"].keys():
                         signature = signature.append(
                             f"improved_tool_{sanitized_tool_name}_arg_{arg_name}_desc",
                             dspy.OutputField(
-                                desc=f"Improved description for parameter '{arg_name}' (optional)",
-                                default=""  # Optional - enables cold start
+                                desc=f"Improved description for parameter '{arg_name}'",
+                                default=""
                             )
                         )
 
@@ -449,13 +461,12 @@ class ReActModuleProposer(ProposalFn):
             logger.info(f"Formatted {len(reflective_dataset[module_key])} reflective examples")
             logger.debug(f"Examples preview: {formatted_examples[:200]}...")
 
-            # Call reflection LM
             logger.info("Calling reflection LM with dynamic signature...")
             propose_descriptions = dspy.Predict(signature)
             result = propose_descriptions(
                 current_react_instruction=current_react_config.get("react", ""),
                 current_extract_instruction=current_react_config.get("extract", ""),
-                current_tools=list(current_tools.items()),  # List of (name, info) tuples
+                current_tools=tools_list,  # List of Tool objects for adapter formatting
                 examples_with_feedback=formatted_examples,
             )
 
@@ -476,7 +487,7 @@ class ReActModuleProposer(ProposalFn):
 
             # Extract improved tool descriptions (only include if improved)
             improved_react_config["tools"] = {}
-            for tool_name, tool_info in current_tools.items():
+            for tool_name, tool_info in current_tools_dict.items():
                 sanitized_tool_name = self._sanitize_name(tool_name)
 
                 # Get improved description
