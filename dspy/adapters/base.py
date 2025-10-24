@@ -6,6 +6,7 @@ import litellm
 
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
+from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
-_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations]
+_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 
 
 class Adapter:
@@ -99,12 +100,13 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
-        # Handle custom types that use native response
+        # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
         for name, field in signature.output_fields.items():
             if (
                 isinstance(field.annotation, type)
                 and issubclass(field.annotation, Type)
                 and field.annotation in self.native_response_types
+                and field.annotation.adapt_to_native_lm_feature(lm, lm_kwargs)
             ):
                 signature = signature.delete(name)
 
@@ -116,6 +118,7 @@ class Adapter:
         original_signature: type[Signature],
         outputs: list[dict[str, Any]],
         lm: "LM",
+        lm_kwargs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         values = []
 
@@ -158,6 +161,7 @@ class Adapter:
                     isinstance(field.annotation, type)
                     and issubclass(field.annotation, Type)
                     and field.annotation in self.native_response_types
+                    and field.annotation.adapt_to_native_lm_feature(lm, lm_kwargs)
                 ):
                     value[name] = field.annotation.parse_lm_response(output)
 
@@ -196,7 +200,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm)
+        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     async def acall(
         self,
@@ -210,7 +214,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm)
+        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     def format(
         self,
