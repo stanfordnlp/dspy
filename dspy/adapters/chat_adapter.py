@@ -39,18 +39,21 @@ class ChatAdapter(Adapter):
         except Exception as e:
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
+            import logging
 
             if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
                 # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
                 # adapter.
                 raise e
             
-            tools = lm_kwargs.get('tools', [])
-            has_web_search = any(tool.get('type') == 'web_search' for tool in tools if isinstance(tool, dict))
-        
-            if has_web_search:
-                # Don't fall back to JSON mode with web search - raise the original error
-                raise e
+            # Log the original error before falling back to JSON mode
+            # This helps with debugging when the JSON fallback also fails
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Structured output failed with error: {type(e).__name__}: {str(e)[:200]}. "
+                f"Falling back to JSON mode."
+            )
+            
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
