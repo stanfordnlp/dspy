@@ -1,6 +1,7 @@
 import inspect
 import logging
 import random
+import json
 from dataclasses import dataclass
 from typing import Any, Literal, Optional, Protocol, Union
 
@@ -9,6 +10,7 @@ from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
 from dspy.clients.lm import LM
+from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
 from dspy.teleprompt.teleprompt import Teleprompter
@@ -526,23 +528,52 @@ class GEPA(Teleprompter):
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
-            optimize_tool_descriptions=self.optimize_tool_descriptions
+            optimize_tool_descriptions=self.optimize_tool_descriptions,
         )
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
 
         if self.optimize_tool_descriptions:
-            tool_descriptions = {}
-            for _, module in student.named_sub_modules():
-                if hasattr(module, "tools"):
-                    for tool_name, tool in module.tools.items():
-                        tool_key = f"tool:{tool_name}"
-                        if tool_key not in tool_descriptions:
-                            tool_descriptions[tool_key] = tool.desc
-            if tool_descriptions:
-                logger.info(f"Including {len(tool_descriptions)} tool descriptions for optimization")
-                base_program.update(tool_descriptions)
+            for module_path, module in student.named_sub_modules():
+                # Only process ReAct modules
+                if not isinstance(module, ReAct):
+                    continue
+                prefix = module_path.removeprefix("self.") if module_path != "self" else ""
+                
+                # Get first predictor name as module identifier
+                for pred_name, _ in module.named_predictors():
+                    comp_name = pred_name if not prefix else f"{prefix}.{pred_name}"
+                    module_key = f"react_module:{comp_name.split('.')[0]}" if prefix else "react_module"
+                    
+                    # Build JSON config
+                    config = {
+                        "react": module.react.signature.instructions,
+                        "extract": module.extract.predict.signature.instructions,
+                        "tools": {
+                            tool_name: {
+                                "desc": tool.desc,
+                                "arg_desc": tool.arg_desc or {}
+                            }
+                            for tool_name, tool in module.tools.items()
+                            if tool_name != "finish"
+                        }
+                    }
+                    
+                    # Replace predictor keys with module key and extract key to prevent duplicates
+                    base_program.pop(comp_name, None)
+                    extract_key = f"{prefix}.extract.predict" if prefix else "extract.predict"
+                    base_program.pop(extract_key, None)
+                    base_program[module_key] = json.dumps(config, indent=2)
+                    break
+
+        # Log base_program keys for debugging
+        logger.info(f"Initialized base_program with {len(base_program)} components:")
+        for key in sorted(base_program.keys()):
+            if key.startswith("react_module"):
+                logger.info(f"  {key}: <ReAct module JSON config>")
+            else:
+                logger.info(f"  {key}: <instruction>")
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=base_program,

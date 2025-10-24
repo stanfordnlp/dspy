@@ -1,9 +1,10 @@
 import logging
 import random
+import json
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Callable, Protocol, TypedDict
-
+from dspy.predict.react import ReAct
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
 
@@ -16,6 +17,10 @@ from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
 logger = logging.getLogger(__name__)
+
+
+# Constants for ReAct module optimization
+REACT_MODULE_PREFIX = "react_module"
 
 
 class LoggerAdapter:
@@ -101,52 +106,70 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         def build_propose_new_texts():
             instruction_proposer = None
 
-            # Init Signature Proposer if custom proposer is provided.
-            # Otherwise, use GEPA default proposer.
+            # Init instruction proposer (custom or default)
             if self.custom_instruction_proposer is not None:
                 instruction_proposer = self.custom_instruction_proposer
             else:
                 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
-                def default_signature_proposer(
+                def default_instruction_proposer(
                     candidate: dict[str, str],
                     reflective_dataset: dict[str, list[dict[str, Any]]],
                     components_to_update: list[str],
                 ) -> dict[str, str]:
                     lm = self.reflection_lm if self.reflection_lm is not None else dspy.settings.lm
-                    sig_texts: dict[str, str] = {}
+                    updated_components: dict[str, str] = {}
                     for name in components_to_update:
                         base_instruction = candidate[name]
                         dataset_with_feedback = reflective_dataset[name]
-                        sig_texts[name] = InstructionProposalSignature.run(
+                        updated_components[name] = InstructionProposalSignature.run(
                             lm=(lambda x: lm(x)[0]),
                             input_dict={
                                 "current_instruction_doc": base_instruction,
                                 "dataset_with_feedback": dataset_with_feedback,
                             },
                         )["new_instruction"]
-                    return sig_texts
+                    return updated_components
 
-                instruction_proposer = default_signature_proposer
+                instruction_proposer = default_instruction_proposer
 
-            # Init Tool Proposer if tool optimization is enabled.
-            tool_proposer = None
-            if self.optimize_tool_descriptions is not None:
-                from .instruction_proposal import ToolProposer
-
-                tool_proposer = ToolProposer()
+            # Init ReAct module proposer if tool optimization is enabled
+            react_module_proposer = None
+            if self.optimize_tool_descriptions:
+                from .instruction_proposal import ReActModuleProposer
+                
+                react_module_proposer = ReActModuleProposer()
 
             def propose_component_texts(
                 candidate: dict[str, str],
                 reflective_dataset: dict[str, list[dict[str, Any]]],
                 components_to_update: list[str],
             ) -> dict[str, str]:
-                tool_components = [c for c in components_to_update if c.startswith("tool:")]
-                instruction_components = [c for c in components_to_update if not c.startswith("tool:")]
+                # If custom proposer provided, override everything with custom proposer
+                if self.custom_instruction_proposer:
+                    if self.reflection_lm is not None:
+                        with dspy.context(lm=self.reflection_lm):
+                            return instruction_proposer(
+                                candidate=candidate,
+                                reflective_dataset=reflective_dataset,
+                                components_to_update=components_to_update,
+                            )
+                    else:
+                        return instruction_proposer(
+                            candidate=candidate,
+                            reflective_dataset=reflective_dataset,
+                            components_to_update=components_to_update,
+                        )
+                
+                # Otherwise, route to appropriate proposers
+                # Separate react_module components from regular instruction components
+                react_module_components = [c for c in components_to_update if c.startswith("react_module")]
+                instruction_components = [c for c in components_to_update if not c.startswith("react_module")]
 
                 results: dict[str, str] = {}
 
-                # Handle signature components.
+                # Handle regular instruction components
+                logger.debug(f"Routing {len(instruction_components)} instruction components to instruction_proposer")
                 if self.reflection_lm is not None:
                     with dspy.context(lm=self.reflection_lm):
                         results.update(
@@ -165,23 +188,24 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         )
                     )
 
-                # Handle tool if tool proposer is provided.
-                if tool_proposer is not None:
+                # Handle ReAct module components 
+                if react_module_components:
+                    logger.debug(f"Routing {len(react_module_components)} react_module components to react_module_proposer")
                     if self.reflection_lm is not None:
                         with dspy.context(lm=self.reflection_lm):
                             results.update(
-                                tool_proposer(
+                                react_module_proposer(
                                     candidate=candidate,
                                     reflective_dataset=reflective_dataset,
-                                    components_to_update=tool_components,
+                                    components_to_update=react_module_components,
                                 )
                             )
                     else:
                         results.update(
-                            tool_proposer(
+                            react_module_proposer(
                                 candidate=candidate,
                                 reflective_dataset=reflective_dataset,
-                                components_to_update=tool_components,
+                                components_to_update=react_module_components,
                             )
                         )
 
@@ -196,17 +220,63 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
+        
+        # Apply regular predictor instructions
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
 
+        # Apply ReAct module updates (JSON configs for ReAct modules: react, extract, tools)
         if self.optimize_tool_descriptions:
-            for _, module in new_prog.named_sub_modules():
-                if hasattr(module, "tools"):
-                    for tool_name, tool in module.tools.items():
-                        tool_key = f"tool:{tool_name}"
-                        if tool_key in candidate:
-                            tool.desc = candidate[tool_key]
+            
+            for module_path, module in new_prog.named_sub_modules():
+                # Only process ReAct modules
+                if not isinstance(module, ReAct):
+                    continue
+                
+                # Build module key
+                prefix = module_path.removeprefix("self.") if module_path != "self" else ""
+                module_key = "react_module" if prefix == "" else f"react_module:{prefix}"
+                
+                # Check if this module was optimized
+                if module_key not in candidate:
+                    continue
+                
+                # Deserialize JSON containing optimized module configuration
+                try:
+                    module_config = json.loads(candidate[module_key])
+                    logger.debug(f"Applying optimized module config to {module_key}")
+                    
+                    # Apply react instruction
+                    if "react" in module_config:
+                        module.react.signature = module.react.signature.with_instructions(module_config["react"])
+                        logger.debug(f"  Updated react instruction")
+                    
+                    # Apply extract instruction
+                    if "extract" in module_config:
+                        module.extract.predict.signature = module.extract.predict.signature.with_instructions(module_config["extract"])
+                        logger.debug(f"  Updated extract instruction")
+                    
+                    # Apply tool descriptions
+                    if "tools" in module_config:
+                        for tool_name, tool_config in module_config["tools"].items():
+                            tool = module.tools[tool_name]
+                            
+                            # Update tool description
+                            if tool_config.get("desc"):
+                                tool.desc = tool_config["desc"]
+                                logger.debug(f"  Updated tool '{tool_name}' description")
+                            
+                            # Update tool arg descriptions
+                            arg_desc = tool_config.get("arg_desc")
+                            if arg_desc:
+                                tool.arg_desc = tool.arg_desc or {}
+                                tool.arg_desc.update(arg_desc)
+                                logger.debug(f"  Updated tool '{tool_name}' arg descriptions: {list(arg_desc.keys())}")
+                
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON config for {module_key}: {e}")
+                    raise
 
         return new_prog
 
@@ -266,17 +336,28 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
-        # First pass: Process all non-tool components (predictors)
-        for pred_name in components_to_update:
-            if pred_name.startswith("tool:"):
-                continue  # Skip tools in first pass (tools are processed in the second pass)
+        # Debug: Log what components we're trying to update
+        logger.info(f"make_reflective_dataset called with components_to_update: {components_to_update}")
 
-            module = None
-            for name, m in program.named_predictors():
-                if name == pred_name:
-                    module = m
-                    break
-            assert module is not None
+        for pred_name in components_to_update:
+            logger.info(f"Processing component: {pred_name}")
+            
+            # Handle ReAct module components - use extract predictor for final outputs
+            if pred_name.startswith("react_module"):
+                module_name = pred_name.replace("react_module:", "") if ":" in pred_name else None
+                react_module = getattr(program, module_name) if module_name else program
+                module = react_module.extract.predict
+                logger.debug(f"  ReAct module detected: using {module_name or 'top-level'}.extract for final outputs")
+            
+            # Regular predictor - find by name
+            else:
+                module = None
+                for name, m in program.named_predictors():
+                    if name == pred_name:
+                        module = m
+                        break
+                assert module is not None
+                logger.debug(f"  Regular predictor: {pred_name}")
 
             items: list[ReflectiveExample] = []
             for data in eval_batch.trajectories or []:
@@ -293,16 +374,24 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 if len(trace_instances) == 0:
                     continue
 
-                selected = None
-                for t in trace_instances:
-                    if isinstance(t[2], FailedPrediction):
-                        selected = t
-                        break
+                # For ReAct modules, use LAST extract invocation (has trajectory + final outputs)
+                if pred_name.startswith("react_module"):
+                    selected = trace_instances[-1]
+                    logger.debug(f"  Using LAST extract call ({len(trace_instances)} total) with trajectory + final outputs")
+                    if "trajectory" in selected[1]:
+                        traj_preview = str(selected[1]["trajectory"])[:100]
+                        logger.debug(f"  Trajectory preview: {traj_preview}...")
+                else:
+                    selected = None
+                    for t in trace_instances:
+                        if isinstance(t[2], FailedPrediction):
+                            selected = t
+                            break
 
-                if selected is None:
-                    if isinstance(prediction, FailedPrediction):
-                        continue
-                    selected = self.rng.choice(trace_instances)
+                    if selected is None:
+                        if isinstance(prediction, FailedPrediction):
+                            continue
+                        selected = self.rng.choice(trace_instances)
 
                 inputs = selected[1]
                 outputs = selected[2]
@@ -354,7 +443,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = "Your output failed to parse. Follow this structure:\n" + structure_instruction
                     # d['score'] = self.failure_score
                 else:
-                    feedback_fn = self.feedback_map[pred_name]
+                    # Map react_module component keys to their react predictor names for feedback lookup
+                    if pred_name.startswith(REACT_MODULE_PREFIX):
+                        # "react_module" → "react", "react_module:salary_agent" → "salary_agent.react"
+                        actual_pred_name = pred_name.split(":", 1)[1] + ".react" if ":" in pred_name else "react"
+                    else:
+                        actual_pred_name = pred_name
+                    
+                    feedback_fn = self.feedback_map[actual_pred_name]
                     fb = feedback_fn(
                         predictor_output=outputs,
                         predictor_inputs=inputs,
@@ -369,130 +465,29 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         fb["score"] = module_score
 
                 items.append(d)
+                
+                # Log exact reflective example that reflection LM will see
+                if pred_name.startswith("react_module") and len(items) == 1:
+                    logger.info(f"  First reflective example for {pred_name}:")
+                    logger.info(f"    Inputs: {list(d['Inputs'].keys())}")
+                    if "trajectory" in d["Inputs"]:
+                        traj = d["Inputs"]["trajectory"]
+                        logger.info(f"    Trajectory length: {len(traj)} chars")
+                        logger.info(f"    Trajectory sample:\n{traj[:300]}...")
+                    logger.info(f"    Outputs: {list(d['Generated Outputs'].keys()) if isinstance(d['Generated Outputs'], dict) else '<string>'}")
+                    logger.info(f"    Feedback: {d['Feedback'][:100]}...")
 
             if len(items) == 0:
-                # raise Exception(f"No valid predictions found for module {module.signature}.")
+                logger.warning(f"  No valid reflective examples found for {pred_name}")
                 continue
+            
             ret_d[pred_name] = items
-
-        # Add tool examples to the reflective dataset
-        tool_examples = defaultdict(list)
-
-        if self.optimize_tool_descriptions:
-            # Design Decision: Full ReAct Trajectory Sharing for Tools
-            #
-            # Each tool receives the COMPLETE ReAct trajectory (all thoughts, actions, observations)
-            # rather than only the segments where that tool was used. This trades token efficiency
-            # for richer optimization context.
-            #
-            # Rationale:
-            # 1. Tools are interdependent: search results inform calculator usage, API responses
-            #    guide follow-up queries. Full trajectory shows these dependencies.
-            # 2. Reflection LM needs context to understand tool SELECTION patterns:
-            #    - Why did the agent choose this tool over alternatives?
-            #    - When in the reasoning process is this tool most useful?
-            #    - What prior information typically triggers this tool's usage?
-            # 3. Goal is descriptions that guide "when to use" not just "what it does"
-            #
-            # Trade-offs:
-            # - Cost: N tools = N copies of same trajectory (5 tools = 5x duplication)
-            # - Benefit: Descriptions capture tool's role in multi-step workflows
-            #   Example: "Use after search when numerical analysis is needed" vs "Does math"
-            #
-            for module_path, sub_module in program.named_sub_modules():
-                # Walk each sub-module to locate its tools and remember the predictor scope
-                # so we can share those reflections with the tool descriptions below
-                tools = getattr(sub_module, "tools", None)
-                if not tools:
-                    continue
-
-                prefix = module_path.removeprefix("self.") if module_path != "self" else ""
-
-                tool_entries = list(tools.items())
-
-                for child_name, _ in sub_module.named_predictors():
-                    predictor_key = child_name if not prefix else f"{prefix}.{child_name}"
-                    reflections = ret_d.get(predictor_key)
-                    if not reflections:
-                        continue
-
-                    # Share the FULL ReAct trajectory with each tool
-                    for tool_name, _ in tool_entries:
-                        tool_key = f"tool:{tool_name}"
-                        for item in reflections:
-                            annotated = deepcopy(item)
-                            annotated["Feedback"] = f"[Tool '{tool_name}' from '{predictor_key}'] {item['Feedback']}"
-                            tool_examples[tool_key].append(annotated)
-
-        # Merge tool examples into main dataset (shared tools get examples from all predictors)
-        ret_d.update(tool_examples)
+            logger.info(f"  Created {len(items)} reflective examples for {pred_name}")
 
         if len(ret_d) == 0:
             raise Exception("No valid predictions found for any module.")
 
         return ret_d
-
-    # Future Work: Joint Tool Optimization with ReAct for Token Efficiency
-    # ===========================================================
-    # Current approach duplicates the same trajectory N times for N tools in a ReAct module.
-    # For multi-tool agents, we could optimize all tools simultaneously to reduce token usage.
-    #
-    # Assumption:
-    # - ReAct module is the only module that uses the tools
-    # - When optimizing tool descriptions of ReAct, reflection LM would capture general pattern of tools and ReAct's decision making process
-    # - It's probably better to holistically optimize all tools and ReAct together
-
-    # Proposed Architecture (Exact details may change):
-    # 1. During reflective dataset construction, group tools by their parent ReAct module:
-    #    - Walk program.named_sub_modules() to find ReAct predictors
-    #    - Extract tools from each ReAct module via getattr(module, "tools", None)
-    #    - Build mapping: {module_path: [tool_name1, tool_name2, ...]}
-    #    - Detect when a module has multiple tools
-    #
-    # 2. For multi-tool ReAct modules, choose architectural approach:
-    #
-    #    Option A: Separate tool-specific proposer signature
-    #    - Create custom signature extending GenerateImprovedToolDescriptionFromFeedback
-    #    - Use dspy.Signature.append_field() to add one output field per tool
-    #    - Example: For 3 tools, add fields "improved_search_desc", "improved_calc_desc", "improved_api_desc"
-    #    - Pro: Clean separation between instruction and tool optimization
-    #    - Con: Separate LM call from ReAct instruction optimization
-    #
-    #    Option B: Extend ReAct instruction proposer directly
-    #    - Append tool description fields to existing ReAct instruction proposer
-    #    - Update proposer instructions/docstring to include tool optimization guidance
-    #    - Use dspy.Signature's helper functions to add output fields for each tool
-    #    - Aggregate all tools' input/output fields expected to be updated from that ReAct module
-    #    - Pro: Single LM call optimizes ReAct instructions AND tool descriptions together
-    #    - Pro: Reflection LM sees relationship between instructions and tools holistically
-    #    - Con: More complex signature modification, harder to maintain separation of concerns
-    #
-    # 3. Pass the ReAct trajectory ONCE to generate all tool descriptions and ReAct instruction simultaneously:
-    #    - Single LM call with multi-field output instead of N separate calls
-    #    - Proposer prompt instructs LM to consider tool interactions
-    #
-    # 4. Parse the multi-field output and update each tool's description:
-    #    - Extract each field from the prediction
-    #    - Map back to tool names using the grouping from step 1
-    #    - Handle parsing errors with fallback to current one-at-a-time approach
-    #
-    # Benefits:
-    # - Eliminates trajectory duplication: 1x token cost instead of Nx
-    # - Reflection LM sees all tools holistically, can coordinate descriptions
-    # - Tool descriptions can complement each other ("use search before calculator")
-    # - Scales better for agents with 10+ tools
-    #
-    # Challenges:
-    # - Signature modification at runtime may require careful field naming/parsing
-    # - More output fields → higher chance of LM parsing errors (but user will likely to use powerful LMs for ReAct + tools prompts optimization)
-    # - Need robust fallback when multi-field output fails (DSPy natively implemented fallback logic for this?)
-    # - Requires refactoring GEPA's "one component at a time" architecture (but we can treat ReAct + tools as "one component")
-    #
-    # Implementation Notes (Ignore if it's too overengineering):
-    # - Start with simple case: all tools from one ReAct module
-    # - Add retry logic for malformed multi-field outputs
-    # - Consider hybrid approach: joint optimization for <5 tools, separate for more
-    # - May need different proposer prompt template for joint vs. individual optimization
 
     # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.
     # We can potentially override this, to use the instruction proposal similar to MIPROv2.

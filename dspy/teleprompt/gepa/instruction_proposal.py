@@ -1,3 +1,5 @@
+import json
+import logging
 from typing import Any
 
 from gepa.core.adapter import ProposalFn
@@ -5,6 +7,11 @@ from gepa.core.adapter import ProposalFn
 import dspy
 from dspy.adapters.types.base_type import Type
 from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
+
+logger = logging.getLogger(__name__)
+
+# Constants for ReAct module optimization
+REACT_MODULE_PREFIX = "react_module"
 
 
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
@@ -311,36 +318,53 @@ class MultiModalInstructionProposer(ProposalFn):
 
         return updated_components
 
+class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
+    """Improve a ReAct agent based on execution examples and feedback.
+    
+    Analyze the trajectories to identify successful patterns and failure causes.
+    Generate improved instructions and/or improved tool descriptions to help the agent succeed on similar tasks."""
 
-class GenerateImprovedToolDescriptionFromFeedback(dspy.Signature):
-    """You are refining a tool description that the assistant currently uses.
+    current_react_instruction = dspy.InputField(
+        desc="Current ReAct module instruction guiding the ReAct agent's reasoning and tool selection"
+    )
+    current_extract_instruction = dspy.InputField(
+        desc="Current Extract module instruction for extracting final answers from trajectories"
+    )
+    current_tools = dspy.InputField(
+        desc="Available tools with current descriptions"
+    )
+    examples_with_feedback = dspy.InputField(
+        desc="Execution examples with feedback showing successes and failures"
+    )
 
-    Review the current description along with examples of the assistant's tool decisions and the feedback those decisions received.
-
-    Read them together and refine the description.
-    So the agent understands when this tool actually helps, what argument or result matters, and what misuse the feedback exposed. 
-    Keep the tool's voice and only change what the evidence justifies.
-
-    Return a refined description that helps the assistant quickly recognize good opportunities for the tool."""
-
-    current_tool_description = dspy.InputField(desc="The current description of the tool")
-    examples_with_feedback = dspy.InputField(desc="Examples showing tool usage decisions and feedback on correctness")
-
-    improved_tool_description = dspy.OutputField(
-        desc="An improved description that guides correct tool selection and usage"
+    improved_react_instruction = dspy.OutputField(
+        desc="Improved ReAct module instruction"
+    )
+    improved_extract_instruction = dspy.OutputField(
+        desc="Improved Extract module instruction",
+        default=""
     )
 
 
-class ToolProposer(ProposalFn):
-    """GEPA-compatible tool description proposer.
 
-    Formats reflective examples into structured markdown and calls
-    `GenerateImprovedToolDescriptionFromFeedback` to produce updated descriptions
-    for each tool that requires refinement.
+
+
+class ReActModuleProposer(ProposalFn):
+    """Proposer for optimizing ReAct module configurations.
+    
+    Jointly optimizes three components of a ReAct module: the react instruction that guides 
+    reasoning and tool selection, the extract instruction for answer extraction from trajectories, 
+    and tool descriptions with their parameters. Uses dynamic signature generation to create 
+    output fields for each tool and parameter, enabling the reflection LM to optimize all parts 
+    cohesively based on execution feedback.
+    
+    This joint optimization approach allows the LM to see how instructions and tool descriptions 
+    work together, leading to more coherent improvements than optimizing each component separately.
     """
 
     def __init__(self):
-        self.propose_description = dspy.Predict(GenerateImprovedToolDescriptionFromFeedback)
+        """Initialize the ReAct module proposer."""
+        pass
 
     def __call__(
         self,
@@ -348,32 +372,149 @@ class ToolProposer(ProposalFn):
         reflective_dataset: dict[str, list[ReflectiveExample]],
         components_to_update: list[str],
     ) -> dict[str, str]:
-        """GEPA-compatible proposal function.
-
+        """Optimize ReAct module components.
+        
         Args:
-            candidate: Current component name -> description mapping
+            candidate: Current component name -> JSON config mapping
             reflective_dataset: Component name -> list of reflective examples
-            components_to_update: List of component names to update
-
+            components_to_update: List of react_module component names to update
+            
         Returns:
-            dict: Component name -> new description mapping
+            dict: Mapping of component names to improved JSON configs
         """
+
+        logger.info("\n=== ReActModuleProposer Called ===")
+        logger.info(f"components_to_update: {components_to_update}")
+        logger.info(f"candidate keys: {list(candidate.keys())}")
+        logger.info(f"reflective_dataset keys: {list(reflective_dataset.keys())}")
+
         updated_components = {}
 
-        for component_name in components_to_update:
-            if component_name in candidate and component_name in reflective_dataset:
-                current_description = candidate[component_name]
-                component_reflective_data = reflective_dataset[component_name]
+        for module_key in components_to_update:
+            # Only handle react_module components
+            if not module_key.startswith(REACT_MODULE_PREFIX):
+                logger.debug(f"Skipping non-react_module component: {module_key}")
+                continue
 
-                formatted_examples = self._format_examples(component_reflective_data)
-                result = self.propose_description(
-                    current_tool_description=current_description,
-                    examples_with_feedback=formatted_examples,
+            if module_key not in candidate or module_key not in reflective_dataset:
+                logger.warning(f"Skipping {module_key}: not in candidate={module_key not in candidate}, not in reflective_dataset={module_key not in reflective_dataset}")
+                continue
+
+            logger.info(f"\nProcessing react_module: {module_key}")
+
+            # Deserialize react module config
+            try:
+                current_react_config = json.loads(candidate[module_key])
+                logger.debug(f"Deserialized config keys: {list(current_react_config.keys())}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to deserialize config for {module_key}: {e}")
+                continue
+
+            # Build dynamic signature by extending base signature
+            # Extract current tools from config
+            current_tools = current_react_config.get("tools", {})
+            logger.info(f"Found {len(current_tools)} tools: {list(current_tools.keys())}")
+
+            # Build dynamic signature by extending base signature
+            signature = GenerateImprovedReActDescriptionsFromFeedback
+
+            logger.debug(f"Building dynamic signature with {len(current_tools)} tools...")
+
+            # Add dynamic tool description and arg descriptions output fields
+            for tool_name, tool_info in current_tools.items():
+                sanitized_tool_name = self._sanitize_name(tool_name)
+
+                # Tool description (optional)
+                signature = signature.append(
+                    f"improved_tool_{sanitized_tool_name}_desc",
+                    dspy.OutputField(
+                        desc=f"Improved description for tool '{tool_name}' (optional - leave empty to keep current)",
+                        default=""  # Make optional
+                    )
                 )
 
-                updated_components[component_name] = result.improved_tool_description
+                # Tool arg descriptions (always available if tool has args, optional)
+                if tool_info.get("args"):
+                    for arg_name in tool_info["args"].keys():
+                        signature = signature.append(
+                            f"improved_tool_{sanitized_tool_name}_arg_{arg_name}_desc",
+                            dspy.OutputField(
+                                desc=f"Improved description for parameter '{arg_name}' (optional)",
+                                default=""  # Optional - enables cold start
+                            )
+                        )
 
+            # Format examples
+            formatted_examples = self._format_examples(reflective_dataset[module_key])
+            logger.info(f"Formatted {len(reflective_dataset[module_key])} reflective examples")
+            logger.debug(f"Examples preview: {formatted_examples[:200]}...")
+
+            # Call reflection LM
+            logger.info("Calling reflection LM with dynamic signature...")
+            propose_descriptions = dspy.Predict(signature)
+            result = propose_descriptions(
+                current_react_instruction=current_react_config.get("react", ""),
+                current_extract_instruction=current_react_config.get("extract", ""),
+                current_tools=list(current_tools.items()),  # List of (name, info) tuples
+                examples_with_feedback=formatted_examples,
+            )
+
+            # Build improved config
+            logger.info("Building improved config from LM response...")
+            improved_react_config = {}
+
+            # Add react instruction (always improved)
+            improved_react_config["react"] = result.improved_react_instruction
+            logger.debug(f"React instruction: {len(result.improved_react_instruction)} chars")
+
+            # Add extract instruction (only if improved)
+            if result.improved_extract_instruction:
+                improved_react_config["extract"] = result.improved_extract_instruction
+                logger.debug(f"Extract instruction: {len(result.improved_extract_instruction)} chars")
+            else:
+                logger.debug("Extract instruction: not improved (keeping original)")
+
+            # Extract improved tool descriptions (only include if improved)
+            improved_react_config["tools"] = {}
+            for tool_name, tool_info in current_tools.items():
+                sanitized_tool_name = self._sanitize_name(tool_name)
+
+                # Get improved description
+                improved_desc = getattr(result, f"improved_tool_{sanitized_tool_name}_desc", "")
+
+                # Only add tool to config if description was improved
+                if not improved_desc:
+                    logger.debug(f"  Tool '{tool_name}': not improved (skipping)")
+                    continue
+
+                improved_tool_info = {
+                    "desc": improved_desc,
+                    "arg_desc": {}
+                }
+
+                # Extract parameter descriptions (if tool has args)
+                if tool_info.get("args"):
+                    for arg_name in tool_info["args"].keys():
+                        field_name = f"improved_tool_{sanitized_tool_name}_arg_{arg_name}_desc"
+                        arg_desc = getattr(result, field_name, "")
+                        if arg_desc:
+                            improved_tool_info["arg_desc"][arg_name] = arg_desc
+
+                improved_react_config["tools"][tool_name] = improved_tool_info
+                logger.debug(f"  Tool '{tool_name}': desc={len(improved_desc)} chars, params={len(improved_tool_info['arg_desc'])}")
+
+            # Serialize back to JSON
+            updated_components[module_key] = json.dumps(improved_react_config, indent=2)
+            logger.info(f"Successfully optimized {module_key}")
+            logger.debug(f"Serialized config length: {len(updated_components[module_key])} chars")
+
+        logger.info(f"\nReActModuleProposer returning {len(updated_components)} components: {list(updated_components.keys())}")
         return updated_components
+
+    def _sanitize_name(self, name: str) -> str:
+        """Convert tool/param name to valid Python identifier."""
+        import re
+        return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
     def _format_examples(self, reflective_dataset: list[ReflectiveExample]) -> str:
         """Format reflective examples using GEPA's markdown structure."""
