@@ -116,7 +116,9 @@ def test_gepa_optimizes_react_module():
     baseline_toolA = program.tools["toolA"].desc
     baseline_toolB = program.tools["toolB"].desc
     baseline_toolC = program.tools["toolC"].desc
-
+    baseline_toolA_arg_desc = program.tools["toolA"].arg_desc
+    baseline_toolB_arg_desc = program.tools["toolB"].arg_desc
+    baseline_toolC_arg_desc = program.tools["toolC"].arg_desc
     def metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
         pred_str = str(getattr(prediction, "answer", prediction)).strip()
         expected = str(example.answer).strip()
@@ -155,3 +157,9 @@ def test_gepa_optimizes_react_module():
         "toolB description should be optimized"
     assert optimized.tools["toolC"].desc != baseline_toolC, \
         "toolC description should be optimized"
+    assert optimized.tools["toolA"].arg_desc != baseline_toolA_arg_desc, \
+        "toolA argument description should be optimized"
+    assert optimized.tools["toolB"].arg_desc != baseline_toolB_arg_desc, \
+        "toolB argument description should be optimized"
+    assert optimized.tools["toolC"].arg_desc != baseline_toolC_arg_desc, \
+        "toolC argument description should be optimized"
