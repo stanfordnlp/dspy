@@ -230,19 +230,50 @@ class BaseLM:
         reasoning_contents = []
 
         for output_item in response.output:
-            output_item_type = output_item.type
+            # Handle both object and dict formats (web_search returns dicts)
+            if isinstance(output_item, dict):
+                output_item_type = output_item.get("type")
+            else:
+                output_item_type = output_item.type
+
             if output_item_type == "message":
-                for content_item in output_item.content:
-                    text_outputs.append(content_item.text)
+                if isinstance(output_item, dict):
+                    content = output_item.get("content", [])
+                else:
+                    content = output_item.content
+                
+                for content_item in content:
+                    if isinstance(content_item, dict):
+                        text_outputs.append(content_item.get("text", ""))
+                    else:
+                        text_outputs.append(content_item.text)
+
             elif output_item_type == "function_call":
-                tool_calls.append(output_item.model_dump())
+                if isinstance(output_item, dict):
+                    tool_calls.append(output_item)
+                else:
+                    tool_calls.append(output_item.model_dump())
+
             elif output_item_type == "reasoning":
-                if getattr(output_item, "content", None) and len(output_item.content) > 0:
-                    for content_item in output_item.content:
-                        reasoning_contents.append(content_item.text)
-                elif getattr(output_item, "summary", None) and len(output_item.summary) > 0:
-                    for summary_item in output_item.summary:
-                        reasoning_contents.append(summary_item.text)
+                if isinstance(output_item, dict):
+                    content = output_item.get("content", [])
+                    summary = output_item.get("summary", [])
+                else:
+                    content = getattr(output_item, "content", None)
+                    summary = getattr(output_item, "summary", None)
+                
+                if content and len(content) > 0:
+                    for content_item in content:
+                        if isinstance(content_item, dict):
+                            reasoning_contents.append(content_item.get("text", ""))
+                        else:
+                            reasoning_contents.append(content_item.text)
+                elif summary and len(summary) > 0:
+                    for summary_item in summary:
+                        if isinstance(summary_item, dict):
+                            reasoning_contents.append(summary_item.get("text", ""))
+                        else:
+                            reasoning_contents.append(summary_item.text)
 
         result = {}
         if len(text_outputs) > 0:
@@ -253,7 +284,6 @@ class BaseLM:
             result["reasoning_content"] = "".join(reasoning_contents)
         # All `response.output` items map to one answer, so we return a list of size 1.
         return [result]
-
 
 def inspect_history(n: int = 1):
     """The global history shared across all LMs."""
