@@ -166,52 +166,68 @@ def streamify(
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
         callbacks.append(status_streaming_callback)
 
-    async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
-            prediction = await program(*args, **kwargs)
+    async def generator(args, kwargs, stream: MemoryObjectSendStream, parent_overrides):
+        from dspy.dsp.utils.settings import thread_local_overrides
+
+        original_overrides = thread_local_overrides.get()
+        token = thread_local_overrides.set({**original_overrides, **parent_overrides})
+        try:
+            with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
+                prediction = await program(*args, **kwargs)
+        finally:
+            thread_local_overrides.reset(token)
 
         await stream.send(prediction)
 
-    async def async_streamer(*args, **kwargs):
-        send_stream, receive_stream = create_memory_object_stream(16)
-        async with create_task_group() as tg, send_stream, receive_stream:
-            tg.start_soon(generator, args, kwargs, send_stream)
+    def async_streamer(*args, **kwargs):
+        from dspy.dsp.utils.settings import thread_local_overrides
 
-            async for value in receive_stream:
-                if isinstance(value, ModelResponseStream):
-                    if len(predict_id_to_listener) == 0:
-                        # No listeners are configured, yield the chunk directly for backwards compatibility.
+        # capture the parent overrides to pass to the generator
+        # this is to keep the contextvars even after the context block exits
+        parent_overrides = thread_local_overrides.get().copy()
+
+        async def _async_streamer_impl():
+            send_stream, receive_stream = create_memory_object_stream(16)
+            async with create_task_group() as tg, send_stream, receive_stream:
+                tg.start_soon(generator, args, kwargs, send_stream, parent_overrides)
+
+                async for value in receive_stream:
+                    if isinstance(value, ModelResponseStream):
+                        if len(predict_id_to_listener) == 0:
+                            # No listeners are configured, yield the chunk directly for backwards compatibility.
+                            yield value
+                        else:
+                            # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
+                            # determine if we should yield a value to the user.
+                            for listener in predict_id_to_listener[value.predict_id]:
+                                # In some special cases such as Citation API, it is possible that multiple listeners
+                                # return values at the same time due to the chunk buffer of the listener.
+                                if output := listener.receive(value):
+                                    yield output
+                    elif isinstance(value, StatusMessage):
                         yield value
+                    elif isinstance(value, Prediction):
+                        # Flush remaining buffered tokens before yielding the Prediction instance
+                        for listener in stream_listeners:
+                            if final_chunk := listener.finalize():
+                                yield final_chunk
+
+                        if include_final_prediction_in_output_stream:
+                            yield value
+                        elif (
+                            len(stream_listeners) == 0
+                            or any(listener.cache_hit for listener in stream_listeners)
+                            or not any(listener.stream_start for listener in stream_listeners)
+                        ):
+                            yield value
+                        return
                     else:
-                        # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
-                        # determine if we should yield a value to the user.
-                        for listener in predict_id_to_listener[value.predict_id]:
-                            # In some special cases such as Citation API, it is possible that multiple listeners
-                            # return values at the same time due to the chunk buffer of the listener.
-                            if output := listener.receive(value):
-                                yield output
-                elif isinstance(value, StatusMessage):
-                    yield value
-                elif isinstance(value, Prediction):
-                    # Flush remaining buffered tokens before yielding the Prediction instance
-                    for listener in stream_listeners:
-                        if final_chunk := listener.finalize():
-                            yield final_chunk
+                        # This wildcard case allows for customized streaming behavior.
+                        # It is useful when a users have a custom LM which returns stream chunks in a custom format.
+                        # We let those chunks pass through to the user to handle them as needed.
+                        yield value
 
-                    if include_final_prediction_in_output_stream:
-                        yield value
-                    elif (
-                        len(stream_listeners) == 0
-                        or any(listener.cache_hit for listener in stream_listeners)
-                        or not any(listener.stream_start for listener in stream_listeners)
-                    ):
-                        yield value
-                    return
-                else:
-                    # This wildcard case allows for customized streaming behavior.
-                    # It is useful when a users have a custom LM which returns stream chunks in a custom format.
-                    # We let those chunks pass through to the user to handle them as needed.
-                    yield value
+        return _async_streamer_impl()
 
     if async_streaming:
         return async_streamer
