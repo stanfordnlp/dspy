@@ -48,6 +48,89 @@ Time elapse:  0.000529
 Total usage: {}
 ```
 
+## Using Provider-Side Prompt Caching
+
+In addition to DSPy's built-in caching mechanism, you can leverage provider-side prompt caching offered by LLM providers like Anthropic and OpenAI. This feature is particularly useful when working with modules like `dspy.ReAct()` that send similar prompts repeatedly, as it reduces both latency and costs by caching prompt prefixes on the provider's servers.
+
+DSPy seamlessly passes configuration parameters to LiteLLM, which in turn supports various provider-specific caching mechanisms. You can enable prompt caching by passing the appropriate parameters directly to `dspy.LM()`.
+
+### Anthropic Prompt Caching
+
+Anthropic's Claude models support prompt caching through the `cache_control` parameter. You can configure where caching breakpoints should be inserted using LiteLLM's `cache_control_injection_points` parameter:
+
+```python
+import dspy
+import os
+
+os.environ["ANTHROPIC_API_KEY"] = "{your_anthropic_key}"
+
+lm = dspy.LM(
+    "anthropic/claude-3-5-sonnet-20240620",
+    cache_control_injection_points=[
+        {
+            "location": "message",
+            "role": "system",
+        }
+    ],
+)
+dspy.configure(lm=lm)
+
+# Use with any DSPy module
+predict = dspy.Predict("question->answer")
+result = predict(question="What is the capital of France?")
+```
+
+This configuration tells LiteLLM to automatically inject cache control markers at system messages, allowing Anthropic to cache the system prompt across multiple requests. This is especially beneficial when:
+
+- Using `dspy.ReAct()` with the same instructions
+- Working with long system prompts that remain constant
+- Making multiple requests with similar context
+
+### OpenAI Prompt Caching
+
+OpenAI also supports prompt caching on certain models. Similar to Anthropic, you can enable it by passing the appropriate parameters:
+
+```python
+import dspy
+import os
+
+os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
+
+lm = dspy.LM(
+    "openai/gpt-4o",
+    cache_control_injection_points=[
+        {
+            "location": "message",
+            "role": "system",
+        }
+    ],
+)
+dspy.configure(lm=lm)
+```
+
+### Additional Configuration Options
+
+LiteLLM's `cache_control_injection_points` parameter accepts a list of dictionaries, each specifying:
+
+- `location`: Where to inject the cache control (typically `"message"`)
+- `role`: The role to target (e.g., `"system"`, `"user"`, `"assistant"`)
+
+You can also specify multiple injection points:
+
+```python
+lm = dspy.LM(
+    "anthropic/claude-3-5-sonnet-20240620",
+    cache_control_injection_points=[
+        {"location": "message", "role": "system"},
+        {"location": "message", "role": "user"},
+    ],
+)
+```
+
+For more information on LiteLLM's prompt caching configuration options, refer to the [LiteLLM documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration).
+
+**Note:** Provider-side prompt caching is different from DSPy's local caching. The provider-side cache is managed by the LLM service (e.g., Anthropic, OpenAI) and caches parts of prompts on their servers, while DSPy's cache stores complete responses locally. Both can be used together for optimal performance and cost savings.
+
 ## Disabling/Enabling DSPy Cache
 
 There are scenarios where you might need to disable caching, either entirely or selectively for in-memory or on-disk caches. For instance:
