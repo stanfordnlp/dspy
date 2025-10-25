@@ -52,8 +52,6 @@ Total usage: {}
 
 In addition to DSPy's built-in caching mechanism, you can leverage provider-side prompt caching offered by LLM providers like Anthropic and OpenAI. This feature is particularly useful when working with modules like `dspy.ReAct()` that send similar prompts repeatedly, as it reduces both latency and costs by caching prompt prefixes on the provider's servers.
 
-DSPy seamlessly passes configuration parameters to LiteLLM, which in turn supports various provider-specific caching mechanisms. You can enable prompt caching by passing the appropriate parameters directly to `dspy.LM()`.
-
 ### Anthropic Prompt Caching
 
 Anthropic's Claude models support prompt caching through the `cache_control` parameter. You can configure where caching breakpoints should be inserted using LiteLLM's `cache_control_injection_points` parameter:
