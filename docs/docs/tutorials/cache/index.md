@@ -95,29 +95,6 @@ This configuration tells LiteLLM to automatically inject cache control markers a
 - Working with long system prompts that remain constant
 - Making multiple requests with similar context
 
-### Additional Configuration Options
-
-LiteLLM's `cache_control_injection_points` parameter accepts a list of dictionaries, each specifying:
-
-- `location`: Where to inject the cache control (typically `"message"`)
-- `role`: The role to target (e.g., `"system"`, `"user"`, `"assistant"`)
-
-You can also specify multiple injection points:
-
-```python
-lm = dspy.LM(
-    "anthropic/claude-3-5-sonnet-20240620",
-    cache_control_injection_points=[
-        {"location": "message", "role": "system"},
-        {"location": "message", "role": "user"},
-    ],
-)
-```
-
-For more information on LiteLLM's prompt caching configuration options, refer to the [LiteLLM documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration).
-
-**Note:** Provider-side prompt caching is different from DSPy's local caching. The provider-side cache is managed by the LLM service (e.g., Anthropic, OpenAI) and caches parts of prompts on their servers, while DSPy's cache stores complete responses locally. Both can be used together for optimal performance and cost savings.
-
 ## Disabling/Enabling DSPy Cache
 
 There are scenarios where you might need to disable caching, either entirely or selectively for in-memory or on-disk caches. For instance:
