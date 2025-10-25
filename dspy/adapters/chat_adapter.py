@@ -1,7 +1,7 @@
 import re
 import textwrap
 from typing import Any, NamedTuple
-
+import logging
 from litellm import ContextWindowExceededError
 from pydantic.fields import FieldInfo
 
@@ -64,6 +64,11 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
                 # adapter.
                 raise e
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Structured output failed with error: {type(e).__name__}: {str(e)[:200]}. "
+                f"Falling back to JSON mode."
+            )
             return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: type[Signature]) -> str:
