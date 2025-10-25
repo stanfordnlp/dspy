@@ -16,12 +16,15 @@ with open("tests/teleprompt/gepa_dummy_lm_react_opt.json") as f:
 
 
 def stable_hash(obj):
-    """Create a stable hash that works across Python processes.
+    """Create a stable hash that works across Python versions.
     
-    Python's built-in hash() is randomized per process (PYTHONHASHSEED),
-    so we use SHA256 for deterministic hashing.
+    Uses JSON serialization with sorted keys for truly stable hashing
+    across Python versions. This avoids repr() formatting differences
+    and dict ordering issues that can occur between Python versions.
     """
-    return hashlib.sha256(repr(obj).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
 
 
 class DictDummyLM(dspy.clients.lm.LM):
