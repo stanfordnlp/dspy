@@ -58,7 +58,6 @@ You can enable prompt caching by passing the `cache_control_injection_points` pa
 import dspy
 import os
 
-# For Anthropic
 os.environ["ANTHROPIC_API_KEY"] = "{your_anthropic_key}"
 lm = dspy.LM(
     "anthropic/claude-3-5-sonnet-20240620",
@@ -69,19 +68,6 @@ lm = dspy.LM(
         }
     ],
 )
-
-# For OpenAI
-os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
-lm = dspy.LM(
-    "openai/gpt-4o",
-    cache_control_injection_points=[
-        {
-            "location": "message",
-            "role": "system",
-        }
-    ],
-)
-
 dspy.configure(lm=lm)
 
 # Use with any DSPy module
@@ -89,7 +75,7 @@ predict = dspy.Predict("question->answer")
 result = predict(question="What is the capital of France?")
 ```
 
-This configuration tells LiteLLM to automatically inject cache control markers at system messages, allowing the provider to cache the system prompt across multiple requests. This is especially beneficial when:
+This is especially beneficial when:
 
 - Using `dspy.ReAct()` with the same instructions
 - Working with long system prompts that remain constant
