@@ -117,6 +117,12 @@ Practical Recipe for GEPA-Friendly Feedback:
 - **Multi-Objective Tasks** (e.g., PUPA): Decompose aggregate scores to reveal contributions from each objective, highlighting tradeoffs (e.g., quality vs. privacy).
 - **Stacked Pipelines** (e.g., code generation: parse → compile → run → profile → evaluate): Expose stage-specific failures; natural-language traces often suffice for LLM self-correction.
 
+## Tool Description Optimization
+
+GEPA can optimize tool descriptions for ReAct agents. When `optimize_tool_descriptions=True`, GEPA discovers all tools in your program (including nested multi-agent systems) and applies a specialized reflection prompt to improve how tools are described. This helps agents make better tool selection decisions by learning from execution traces which tools work well in which contexts.
+
+For details on how tool optimization works, when to use it, and usage examples, see [Tool Description Optimization](GEPA_Advanced.md#tool-description-optimization) in the Advanced Features guide.
+
 ## Custom Instruction Proposal
 
 For advanced customization of GEPA's instruction proposal mechanism, including custom instruction proposers and component selectors, see [Advanced Features](GEPA_Advanced.md).

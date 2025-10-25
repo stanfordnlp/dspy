@@ -1,3 +1,4 @@
+import json
 import logging
 import random
 from typing import Any, Callable, Protocol, TypedDict
@@ -10,10 +11,16 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
+from dspy.predict.react import ReAct
 from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
 logger = logging.getLogger(__name__)
+
+
+# Constants for ReAct module optimization
+REACT_MODULE_PREFIX = "react_module"
+
 
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
@@ -21,6 +28,7 @@ class LoggerAdapter:
 
     def log(self, x: str):
         self.logger.info(x)
+
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
 
@@ -31,14 +39,16 @@ class ReflectiveExample(TypedDict):
 
     Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
     """
-    Inputs: dict[str, Any]                              # Predictor inputs (may include str, dspy.Image, etc.)
-    Generated_Outputs: dict[str, Any] | str             # Success: dict with output fields, Failure: error message string
-    Feedback: str                                       # Always a string - from metric function or parsing error message
+
+    Inputs: dict[str, Any]  # Predictor inputs (may include str, dspy.Image, etc.)
+    Generated_Outputs: dict[str, Any] | str  # Success: dict with output fields, Failure: error message string
+    Feedback: str  # Always a string - from metric function or parsing error message
 
 
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str
+
 
 class PredictorFeedbackFn(Protocol):
     def __call__(
@@ -64,6 +74,7 @@ class PredictorFeedbackFn(Protocol):
         """
         ...
 
+
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def __init__(
         self,
@@ -76,7 +87,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         rng: random.Random | None = None,
         reflection_lm=None,
         custom_instruction_proposer: "ProposalFn | None" = None,
-        warn_on_score_mismatch: bool = True
+        warn_on_score_mismatch: bool = True,
+        optimize_tool_descriptions: bool = False,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -88,42 +100,183 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.reflection_lm = reflection_lm
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.optimize_tool_descriptions = optimize_tool_descriptions
 
-        if self.custom_instruction_proposer is not None:
-            # We are only overriding the propose_new_texts method when a custom
-            # instruction proposer is provided. Otherwise, we use the GEPA
-            # default propose_new_texts.
+        def build_propose_new_texts():
+            instruction_proposer = None
 
-            def custom_propose_new_texts(
+            # Init instruction proposer (custom or default)
+            if self.custom_instruction_proposer is not None:
+                instruction_proposer = self.custom_instruction_proposer
+            else:
+                from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
+                def default_instruction_proposer(
+                    candidate: dict[str, str],
+                    reflective_dataset: dict[str, list[dict[str, Any]]],
+                    components_to_update: list[str],
+                ) -> dict[str, str]:
+                    lm = self.reflection_lm if self.reflection_lm is not None else dspy.settings.lm
+                    updated_components: dict[str, str] = {}
+                    for name in components_to_update:
+                        base_instruction = candidate[name]
+                        dataset_with_feedback = reflective_dataset[name]
+                        updated_components[name] = InstructionProposalSignature.run(
+                            lm=(lambda x: lm(x)[0]),
+                            input_dict={
+                                "current_instruction_doc": base_instruction,
+                                "dataset_with_feedback": dataset_with_feedback,
+                            },
+                        )["new_instruction"]
+                    return updated_components
+
+                instruction_proposer = default_instruction_proposer
+
+            # Init ReAct module proposer if tool optimization is enabled
+            react_module_proposer = None
+            if self.optimize_tool_descriptions:
+                from .instruction_proposal import ReActModuleProposer
+
+                react_module_proposer = ReActModuleProposer()
+
+            def propose_component_texts(
                 candidate: dict[str, str],
                 reflective_dataset: dict[str, list[dict[str, Any]]],
-                components_to_update: list[str]
+                components_to_update: list[str],
             ) -> dict[str, str]:
-                if self.reflection_lm is not None:
-                    with dspy.context(lm=self.reflection_lm):
-                        return self.custom_instruction_proposer(
+                # If custom proposer provided, override everything with custom proposer
+                if self.custom_instruction_proposer:
+                    if self.reflection_lm is not None:
+                        with dspy.context(lm=self.reflection_lm):
+                            return instruction_proposer(
+                                candidate=candidate,
+                                reflective_dataset=reflective_dataset,
+                                components_to_update=components_to_update,
+                            )
+                    else:
+                        return instruction_proposer(
                             candidate=candidate,
                             reflective_dataset=reflective_dataset,
-                            components_to_update=components_to_update
+                            components_to_update=components_to_update,
+                        )
+
+                # Otherwise, route to appropriate proposers
+                # Separate react_module components from regular instruction components
+                react_module_components = [c for c in components_to_update if c.startswith("react_module")]
+                instruction_components = [c for c in components_to_update if not c.startswith("react_module")]
+
+                results: dict[str, str] = {}
+
+                # Handle regular instruction components
+                logger.debug(f"Routing {len(instruction_components)} instruction components to instruction_proposer")
+                if self.reflection_lm is not None:
+                    with dspy.context(lm=self.reflection_lm):
+                        results.update(
+                            instruction_proposer(
+                                candidate=candidate,
+                                reflective_dataset=reflective_dataset,
+                                components_to_update=instruction_components,
+                            )
                         )
                 else:
-                    return self.custom_instruction_proposer(
-                        candidate=candidate,
-                        reflective_dataset=reflective_dataset,
-                        components_to_update=components_to_update
+                    results.update(
+                        instruction_proposer(
+                            candidate=candidate,
+                            reflective_dataset=reflective_dataset,
+                            components_to_update=instruction_components,
+                        )
                     )
 
-            self.propose_new_texts = custom_propose_new_texts
+                # Handle ReAct module components
+                if react_module_components:
+                    logger.debug(f"Routing {len(react_module_components)} react_module components to react_module_proposer")
+                    if self.reflection_lm is not None:
+                        with dspy.context(lm=self.reflection_lm):
+                            results.update(
+                                react_module_proposer(
+                                    candidate=candidate,
+                                    reflective_dataset=reflective_dataset,
+                                    components_to_update=react_module_components,
+                                )
+                            )
+                    else:
+                        results.update(
+                            react_module_proposer(
+                                candidate=candidate,
+                                reflective_dataset=reflective_dataset,
+                                components_to_update=react_module_components,
+                            )
+                        )
+
+                return results
+
+            return propose_component_texts
+
+        self.propose_new_texts = build_propose_new_texts()
 
         # Cache predictor names/signatures
         self.named_predictors = list(self.student.named_predictors())
 
-
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
+
+        # Apply regular predictor instructions
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
+
+        # Apply ReAct module updates (JSON configs for ReAct modules: react, extract, tools)
+        if self.optimize_tool_descriptions:
+
+            for module_path, module in new_prog.named_sub_modules():
+                # Only process ReAct modules
+                if not isinstance(module, ReAct):
+                    continue
+
+                # Build module key
+                prefix = module_path.removeprefix("self.") if module_path != "self" else ""
+                module_key = "react_module" if prefix == "" else f"react_module:{prefix}"
+
+                # Check if this module was optimized
+                if module_key not in candidate:
+                    continue
+
+                # Deserialize JSON containing optimized module configuration
+                try:
+                    module_config = json.loads(candidate[module_key])
+                    logger.debug(f"Applying optimized module config to {module_key}")
+
+                    # Apply react instruction
+                    if "react" in module_config:
+                        module.react.signature = module.react.signature.with_instructions(module_config["react"])
+                        logger.debug("  Updated react instruction")
+
+                    # Apply extract instruction
+                    if "extract" in module_config:
+                        module.extract.predict.signature = module.extract.predict.signature.with_instructions(module_config["extract"])
+                        logger.debug("  Updated extract instruction")
+
+                    # Apply tool descriptions
+                    if "tools" in module_config:
+                        for tool_name, tool_config in module_config["tools"].items():
+                            tool = module.tools[tool_name]
+
+                            # Update tool description
+                            if tool_config.get("desc"):
+                                tool.desc = tool_config["desc"]
+                                logger.debug(f"  Updated tool '{tool_name}' description")
+
+                            # Update tool arg descriptions
+                            arg_desc = tool_config.get("arg_desc")
+                            if arg_desc:
+                                tool.arg_desc = tool.arg_desc or {}
+                                tool.arg_desc.update(arg_desc)
+                                logger.debug(f"  Updated tool '{tool_name}' arg descriptions: {list(arg_desc.keys())}")
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON config for {module_key}: {e}")
+                    raise
+
         return new_prog
 
     def evaluate(self, batch, candidate, capture_traces=False):
@@ -165,7 +318,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 return_all_scores=True,
                 failure_score=self.failure_score,
                 provide_traceback=True,
-                max_errors=len(batch) * 100
+                max_errors=len(batch) * 100,
             )
             res = evaluator(program)
             outputs = [r[1] for r in res.results]
@@ -173,18 +326,37 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [s["score"] if hasattr(s, "score") else s for s in scores]
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
-    def make_reflective_dataset(self, candidate, eval_batch, components_to_update) -> dict[str, list[ReflectiveExample]]:
+    def make_reflective_dataset(
+        self, candidate, eval_batch, components_to_update
+    ) -> dict[str, list[ReflectiveExample]]:
         from dspy.teleprompt.bootstrap_trace import FailedPrediction
+
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
+
+        # Debug: Log what components we're trying to update
+        logger.info(f"make_reflective_dataset called with components_to_update: {components_to_update}")
+
         for pred_name in components_to_update:
-            module = None
-            for name, m in program.named_predictors():
-                if name == pred_name:
-                    module = m
-                    break
-            assert module is not None
+            logger.info(f"Processing component: {pred_name}")
+
+            # Handle ReAct module components - use extract predictor for final outputs
+            if pred_name.startswith("react_module"):
+                module_name = pred_name.replace("react_module:", "") if ":" in pred_name else None
+                react_module = getattr(program, module_name) if module_name else program
+                module = react_module.extract.predict
+                logger.debug(f"  ReAct module detected: using {module_name or 'top-level'}.extract for final outputs")
+
+            # Regular predictor - find by name
+            else:
+                module = None
+                for name, m in program.named_predictors():
+                    if name == pred_name:
+                        module = m
+                        break
+                assert module is not None
+                logger.debug(f"  Regular predictor: {pred_name}")
 
             items: list[ReflectiveExample] = []
             for data in eval_batch.trajectories or []:
@@ -201,16 +373,24 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 if len(trace_instances) == 0:
                     continue
 
-                selected = None
-                for t in trace_instances:
-                    if isinstance(t[2], FailedPrediction):
-                        selected = t
-                        break
+                # For ReAct modules, use LAST extract invocation (has trajectory + final outputs)
+                if pred_name.startswith("react_module"):
+                    selected = trace_instances[-1]
+                    logger.debug(f"  Using LAST extract call ({len(trace_instances)} total) with trajectory + final outputs")
+                    if "trajectory" in selected[1]:
+                        traj_preview = str(selected[1]["trajectory"])[:100]
+                        logger.debug(f"  Trajectory preview: {traj_preview}...")
+                else:
+                    selected = None
+                    for t in trace_instances:
+                        if isinstance(t[2], FailedPrediction):
+                            selected = t
+                            break
 
-                if selected is None:
-                    if isinstance(prediction, FailedPrediction):
-                        continue
-                    selected = self.rng.choice(trace_instances)
+                    if selected is None:
+                        if isinstance(prediction, FailedPrediction):
+                            continue
+                        selected = self.rng.choice(trace_instances)
 
                 inputs = selected[1]
                 outputs = selected[2]
@@ -262,7 +442,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = "Your output failed to parse. Follow this structure:\n" + structure_instruction
                     # d['score'] = self.failure_score
                 else:
-                    feedback_fn = self.feedback_map[pred_name]
+                    # Map react_module component keys to their react predictor names for feedback lookup
+                    if pred_name.startswith(REACT_MODULE_PREFIX):
+                        # "react_module" → "react", "react_module:salary_agent" → "salary_agent.react"
+                        actual_pred_name = pred_name.split(":", 1)[1] + ".react" if ":" in pred_name else "react"
+                    else:
+                        actual_pred_name = pred_name
+
+                    feedback_fn = self.feedback_map[actual_pred_name]
                     fb = feedback_fn(
                         predictor_output=outputs,
                         predictor_inputs=inputs,
@@ -279,10 +466,23 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 items.append(d)
 
+                # Log exact reflective example that reflection LM will see
+                if pred_name.startswith("react_module") and len(items) == 1:
+                    logger.info(f"  First reflective example for {pred_name}:")
+                    logger.info(f"    Inputs: {list(d['Inputs'].keys())}")
+                    if "trajectory" in d["Inputs"]:
+                        traj = d["Inputs"]["trajectory"]
+                        logger.info(f"    Trajectory length: {len(traj)} chars")
+                        logger.info(f"    Trajectory sample:\n{traj[:300]}...")
+                    logger.info(f"    Outputs: {list(d['Generated Outputs'].keys()) if isinstance(d['Generated Outputs'], dict) else '<string>'}")
+                    logger.info(f"    Feedback: {d['Feedback'][:100]}...")
+
             if len(items) == 0:
-                # raise Exception(f"No valid predictions found for module {module.signature}.")
+                logger.warning(f"  No valid reflective examples found for {pred_name}")
                 continue
+
             ret_d[pred_name] = items
+            logger.info(f"  Created {len(items)} reflective examples for {pred_name}")
 
         if len(ret_d) == 0:
             raise Exception("No valid predictions found for any module.")

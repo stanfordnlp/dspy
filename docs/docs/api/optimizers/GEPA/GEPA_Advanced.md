@@ -443,3 +443,301 @@ gepa = dspy.GEPA(
     auto="medium"
 )
 ```
+
+## Tool Description Optimization
+
+### What is optimize_tool_descriptions?
+
+The `optimize_tool_descriptions` parameter enables GEPA to optimize tool descriptions in addition to signature instructions. This is particularly valuable for ReAct agents and other tool-using systems, where the quality of tool descriptions directly impacts the agent's ability to select appropriate tools for each task.
+
+Unlike signature instructions that guide reasoning strategies, tool descriptions serve a different purpose: they help agents decide **which tool to use** in a given situation. GEPA applies a specialized reflection prompt tailored for tool selection decisions.
+
+### Tool-Specific Reflection Prompt
+
+GEPA uses a dedicated prompt for optimizing tool descriptions. The prompt receives the complete ReAct trajectory (all thoughts, actions, observations) from executions that used the tool being optimized:
+
+```python
+class GenerateImprovedToolDescriptionFromFeedback(dspy.Signature):
+    """You are refining a tool description that the assistant currently uses.
+
+    Review the current description along with examples of the assistant's tool decisions 
+    and the feedback those decisions received.
+
+    Read them together and refine the description.
+    So the agent understands when this tool actually helps, what argument or result matters, 
+    and what misuse the feedback exposed. Keep the tool's voice and only change what the 
+    evidence justifies.
+
+    Return a refined description that helps the assistant quickly recognize good 
+    opportunities for the tool."""
+
+    current_tool_description = dspy.InputField(desc="The current description of the tool")
+    examples_with_feedback = dspy.InputField(
+        desc="Examples showing tool usage decisions and feedback on correctness"
+    )
+
+    improved_tool_description = dspy.OutputField(
+        desc="An improved description that guides correct tool selection and usage"
+    )
+```
+
+The `examples_with_feedback` contains full ReAct trajectories showing the complete context in which each tool was selected and used, enabling the reflection LM to understand tool selection patterns.
+
+**Example: Writing Tool-Aware Metrics**
+
+To provide effective feedback for tool optimization, write metrics that examine the trajectory:
+
+```python
+def tool_feedback_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    """Metric that provides tool-specific feedback for GEPA optimization."""
+    correct = prediction.answer == example.answer
+    score = 1.0 if correct else 0.0
+    
+    # Generate tool-specific feedback if available
+    if hasattr(prediction, 'trajectory'):
+        tools_used = [
+            prediction.trajectory[key] 
+            for key in prediction.trajectory 
+            if key.startswith('tool_name_') and prediction.trajectory[key] != 'finish'
+        ]
+        feedback = f"{'Correct' if correct else 'Wrong'}. Tools: {', '.join(tools_used)}"
+    else:
+        feedback = "Correct" if correct else "Wrong"
+    
+    return dspy.Prediction(score=score, feedback=feedback)
+```
+
+This produces feedback like:
+```
+[Tool 'calculator' from 'agent'] Correct. Tools: calculator
+[Tool 'search' from 'agent'] Wrong. Tools: search, calculator
+```
+
+The tool-specific prefix `[Tool 'calculator' from 'agent']` is automatically added by GEPA to focus the reflection LM on optimizing that particular tool's description.
+
+**Note:** Tool descriptions are treated as components in GEPA's optimization process. The `component_selector` parameter applies to both signature instructions and tool descriptions. For example, `component_selector="all"` optimizes all signatures and tools together, while `component_selector="round_robin"` cycles through them one at a time.
+
+### Default Behavior
+
+By default, GEPA only optimizes signature instructions (`optimize_tool_descriptions=False`):
+
+```python
+# Default behavior: only signature optimization
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    # optimize_tool_descriptions=False  # This is the default
+    auto="medium"
+)
+optimized_program = gepa.compile(student, trainset=examples)
+```
+
+### How It Works
+
+When enabled, GEPA:
+
+1. **Discovers all tools**: Traverses your program including nested sub-modules to find all `dspy.Tool` instances
+2. **Categorizes components**: Separates tools (identified by `tool:` prefix) from signature instructions
+3. **Routes components appropriately**:
+   - Signature instructions → Default or custom instruction proposer
+   - Tool descriptions → ToolProposer (receives ReAct's reflective data with tool-specific annotation)
+4. **Optimizes holistically**: Treats tool descriptions as first-class components in the optimization process
+
+### Implementation Details
+
+**Reflective Dataset Construction:**
+
+GEPA constructs the reflective dataset for tool optimization in two passes:
+
+**Pass 1: Build reflective examples for predictors (used by instruction proposer)**
+
+For each predictor (including ReAct modules), GEPA creates reflective examples containing:
+- **Inputs**: The predictor's input fields (e.g., `{"question": "..."}`)
+- **Generated Outputs**: ALL of the predictor's output fields converted to strings
+  - For ReAct: This includes both `answer` AND `trajectory` fields
+  - The trajectory contains the complete execution trace with all thoughts, actions, and observations
+- **Feedback**: Text feedback returned by your metric function
+
+These examples are used by the instruction proposer to optimize signature instructions.
+
+**Pass 2: Copy reflective examples to tools with annotation (used by tool proposer)**
+
+For each tool being optimized, GEPA:
+- Identifies ALL ReAct predictors (across all nested modules) that have this tool in their toolset
+- Takes ALL reflective examples from those predictors and makes a deep copy for the tool
+- Annotates the feedback: `[Tool 'tool_name' from 'predictor_key'] {original_feedback}`
+- If multiple ReAct modules use the same tool, their reflective examples are aggregated together
+
+These annotated examples are used by the tool proposer (with the tool-specific reflection prompt shown above) to optimize tool descriptions.
+
+This means:
+- A tool receives the FULL ReAct trajectory (thoughts, actions, observations) in the "Generated Outputs" field
+- The metric can optionally examine the trajectory and include tool-specific insights in the feedback text
+- The reflection LM sees complete context about how and when the tool was used
+
+**Component Identification & Proposer Routing:**
+
+GEPA discovers tools by traversing ReAct modules and extracting their associated `dspy.Tool` instances. Once identified, GEPA routes components to appropriate proposers:
+- **Signature instructions** → Custom instruction proposer (if provided) OR default GEPA proposer
+- **Tool descriptions** → Built-in `ToolProposer` (always used, not customizable)
+
+The custom instruction proposer affects ONLY signature instructions. Tools always use the specialized `ToolProposer` with the tool-specific reflection prompt, regardless of whether you provide a custom instruction proposer.
+
+### When to Use optimize_tool_descriptions
+
+Enable `optimize_tool_descriptions=True` when you use `dspy.Tool` in your program and need better tool selection. Here are common scenarios:
+
+1. **ReAct agents with multiple tools** - Agent with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA learns from execution feedback to clarify "use search for factual queries, calculator for numerical analysis."
+
+2. **Multi-agent systems with delegation** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes both delegation tools and sub-agent internal tools holistically.
+
+3. **Sequential tool workflows** - Tools like `query_database` → `analyze_results` have dependencies but descriptions don't capture this. GEPA learns the sequence and timing from successful executions.
+
+4. **Domain-specific tools** - Tools like legal vs. medical document search have overlapping but domain-specific purposes. GEPA discovers usage patterns and adds context: "for legal precedents" vs. "for patient records."
+
+5. **Tools with limitations** - Initial description "Does calculations" is too vague. GEPA adds specificity from observed usage: "Use for arithmetic (+, -, *, /, **). Not for date math or string operations."
+
+See the usage examples below for implementations of scenarios 1 and 2.
+
+### Usage Examples
+
+#### Basic ReAct Agent
+
+```python
+import dspy
+
+def search_web(query: str) -> str:
+    return f"Search results for: {query}"
+
+def calculate(expression: str) -> float:
+    return eval(expression)
+
+# Create ReAct agent with tools (poor initial descriptions)
+search_tool = dspy.Tool(search_web, name="search", desc="Finds things")
+calc_tool = dspy.Tool(calculate, name="calculator", desc="Does calculations")
+
+agent = dspy.ReAct("question -> answer", tools=[search_tool, calc_tool])
+
+# Enable tool optimization
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5-mini"),
+    optimize_tool_descriptions=True,
+    component_selector="all",  # Optimize all components together
+    auto="medium"
+)
+
+optimized_agent = gepa.compile(agent, trainset=train_examples, valset=val_examples)
+
+# View optimized tool descriptions
+print("Optimized search tool:", optimized_agent.tools["search"].desc)
+print("Optimized calculator tool:", optimized_agent.tools["calculator"].desc)
+```
+
+**Example output after optimization:**
+```
+Optimized search tool: Use when you need to find current information, facts, or data 
+    from external sources. Provide specific search queries to get relevant results.
+
+Optimized calculator tool: Use for arithmetic operations and mathematical expressions. 
+    Accepts Python-compatible expressions with numbers and operators (+, -, *, /, **). 
+    Do not use for date calculations or string manipulations.
+```
+
+#### Multi-Agent System
+
+GEPA automatically discovers and optimizes tools in nested agents:
+
+```python
+import dspy
+
+def search_web(query: str) -> str:
+    return f"Search results for: {query}"
+
+def calculate(expression: str) -> float:
+    return eval(expression)
+
+search_tool = dspy.Tool(search_web, name="search", desc="Searches")
+calc_tool = dspy.Tool(calculate, name="calculator", desc="Computes")
+
+class ResearchAssistant(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.researcher = dspy.ReAct("query -> findings", tools=[search_tool])
+        
+        def delegate_research(query: str) -> str:
+            return self.researcher(query=query).findings
+        
+        research_tool = dspy.Tool(delegate_research, name="research", desc="Helps with questions")
+        self.assistant = dspy.ReAct("question -> answer", tools=[research_tool, calc_tool])
+    
+    def forward(self, question):
+        return self.assistant(question=question)
+
+# Optimizes ALL tools: calculator, research, search
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5-mini"),
+    optimize_tool_descriptions=True,
+    component_selector="all",
+    auto="medium"
+)
+
+optimized_system = gepa.compile(ResearchAssistant(), trainset=train, valset=val)
+
+# View optimized nested tool descriptions
+print(optimized_system.researcher.tools["search"].desc)
+print(optimized_system.assistant.tools["research"].desc)
+print(optimized_system.assistant.tools["calculator"].desc)
+```
+
+### Inspecting Optimized Tool Descriptions
+
+After optimization, tool descriptions are automatically updated in your program. Access them directly through your module structure:
+
+```python
+optimized_agent = gepa.compile(agent, trainset=train, valset=val)
+
+# Access tools directly - descriptions are already updated
+print(optimized_agent.tools["search"].desc)
+print(optimized_agent.tools["calculator"].desc)
+```
+
+For multi-agent systems, access nested tools through your module hierarchy:
+
+```python
+optimized_system = gepa.compile(ResearchAssistant(), trainset=train, valset=val)
+
+# Access tools at different levels
+print(optimized_system.researcher.tools["search"].desc)  # Sub-agent tool
+print(optimized_system.assistant.tools["research"].desc)  # Main agent tool
+print(optimized_system.assistant.tools["calculator"].desc)
+```
+
+### Compatibility with Custom Instruction Proposers
+
+Tool optimization works seamlessly with custom instruction proposers. When you provide a custom instruction proposer AND enable `optimize_tool_descriptions=True`:
+
+**Component routing:**
+- **Signature instructions** → Your custom instruction proposer
+- **Tool descriptions** → Built-in `ToolProposer` with specialized tool reflection prompt
+
+**Key points:**
+- Both operate independently during the same GEPA run
+- Tools receive domain-appropriate optimization guidance (tool selection patterns, usage context)
+- Signatures use your custom logic (task-specific reasoning, formatting, etc.)
+- The built-in tool proposer is not customizable - it always uses `GenerateImprovedToolDescriptionFromFeedback`
+
+This separation ensures tools and signatures get appropriate optimization strategies without interference.
+
+```python
+from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
+
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
+    instruction_proposer=MultiModalInstructionProposer(),  # For signatures
+    optimize_tool_descriptions=True,  # Enables ToolProposer for tools
+    auto="medium"
+)
+```
