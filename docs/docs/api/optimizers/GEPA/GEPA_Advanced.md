@@ -557,46 +557,6 @@ When `optimize_react_components=True`, GEPA:
 
 Non-ReAct modules (like `dspy.Predict` or `dspy.ChainOfThought`) continue using standard GEPA optimization.
 
-### Implementation Details
-
-**Reflective Dataset Construction:**
-
-GEPA constructs the reflective dataset for tool optimization in two passes:
-
-**Pass 1: Build reflective examples for predictors (used by instruction proposer)**
-
-For each predictor (including ReAct modules), GEPA creates reflective examples containing:
-- **Inputs**: The predictor's input fields (e.g., `{"question": "..."}`)
-- **Generated Outputs**: ALL of the predictor's output fields converted to strings
-  - For ReAct: This includes both `answer` AND `trajectory` fields
-  - The trajectory contains the complete execution trace with all thoughts, actions, and observations
-- **Feedback**: Text feedback returned by your metric function
-
-These examples are used by the instruction proposer to optimize signature instructions.
-
-**Pass 2: Copy reflective examples to tools with annotation (used by tool proposer)**
-
-For each tool being optimized, GEPA:
-- Identifies ALL ReAct predictors (across all nested modules) that have this tool in their toolset
-- Takes ALL reflective examples from those predictors and makes a deep copy for the tool
-- Annotates the feedback: `[Tool 'tool_name' from 'predictor_key'] {original_feedback}`
-- If multiple ReAct modules use the same tool, their reflective examples are aggregated together
-
-These annotated examples are used by the tool proposer (with the tool-specific reflection prompt shown above) to optimize tool descriptions.
-
-This means:
-- A tool receives the FULL ReAct trajectory (thoughts, actions, observations) in the "Generated Outputs" field
-- The metric can optionally examine the trajectory and include tool-specific insights in the feedback text
-- The reflection LM sees complete context about how and when the tool was used
-
-**Component Identification & Proposer Routing:**
-
-GEPA discovers tools by traversing ReAct modules and extracting their associated `dspy.Tool` instances. Once identified, GEPA routes components to appropriate proposers:
-- **Signature instructions** → Custom instruction proposer (if provided) OR default GEPA proposer
-- **Tool descriptions** → Built-in `ToolProposer` (always used, not customizable)
-
-The custom instruction proposer affects ONLY signature instructions. Tools always use the specialized `ToolProposer` with the tool-specific reflection prompt, regardless of whether you provide a custom instruction proposer.
-
 ### When to Use optimize_react_components
 
 Enable `optimize_react_components=True` when you use `dspy.ReAct` in your program and need better agent performance. Here are common scenarios:
