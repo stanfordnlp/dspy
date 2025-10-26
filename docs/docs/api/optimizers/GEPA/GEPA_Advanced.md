@@ -444,13 +444,13 @@ gepa = dspy.GEPA(
 )
 ```
 
-## Tool Description Optimization
+## ReAct Component Optimization
 
-### What is optimize_tool_descriptions?
+### What is optimize_react_components?
 
-The `optimize_tool_descriptions` parameter enables GEPA to optimize tool descriptions in addition to signature instructions. This is particularly valuable for ReAct agents and other tool-using systems, where the quality of tool descriptions directly impacts the agent's ability to select appropriate tools for each task.
+The `optimize_react_components` parameter enables GEPA to holistically optimize ReAct modules by jointly improving all four components: react instructions, extract instructions, tool descriptions, and tool argument descriptions.
 
-Unlike signature instructions that guide reasoning strategies, tool descriptions serve a different purpose: they help agents decide **which tool to use** in a given situation. GEPA applies a specialized reflection prompt tailored for tool selection decisions.
+This is particularly valuable for ReAct agents where these components must work together harmoniously. Unlike optimizing signature instructions alone, ReAct component optimization ensures that reasoning strategies, tool selection, and answer extraction are all aligned and mutually supportive.
 
 ### Tool-Specific Reflection Prompt
 
@@ -519,14 +519,14 @@ The tool-specific prefix `[Tool 'calculator' from 'agent']` is automatically add
 
 ### Default Behavior
 
-By default, GEPA only optimizes signature instructions (`optimize_tool_descriptions=False`):
+By default, GEPA only optimizes signature instructions (`optimize_react_components=False`):
 
 ```python
 # Default behavior: only signature optimization
 gepa = dspy.GEPA(
     metric=my_metric,
     reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
-    # optimize_tool_descriptions=False  # This is the default
+    # optimize_react_components=False  # This is the default
     auto="medium"
 )
 optimized_program = gepa.compile(student, trainset=examples)
@@ -583,9 +583,9 @@ GEPA discovers tools by traversing ReAct modules and extracting their associated
 
 The custom instruction proposer affects ONLY signature instructions. Tools always use the specialized `ToolProposer` with the tool-specific reflection prompt, regardless of whether you provide a custom instruction proposer.
 
-### When to Use optimize_tool_descriptions
+### When to Use optimize_react_components
 
-Enable `optimize_tool_descriptions=True` when you use `dspy.Tool` in your program and need better tool selection. Here are common scenarios:
+Enable `optimize_react_components=True` when you use `dspy.ReAct` in your program and need better agent performance. Here are common scenarios:
 
 1. **ReAct agents with multiple tools** - Agent with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA learns from execution feedback to clarify "use search for factual queries, calculator for numerical analysis."
 
@@ -622,7 +622,7 @@ agent = dspy.ReAct("question -> answer", tools=[search_tool, calc_tool])
 gepa = dspy.GEPA(
     metric=my_metric,
     reflection_lm=dspy.LM(model="gpt-5-mini"),
-    optimize_tool_descriptions=True,
+    optimize_react_components=True,
     component_selector="all",  # Optimize all components together
     auto="medium"
 )
@@ -678,7 +678,7 @@ class ResearchAssistant(dspy.Module):
 gepa = dspy.GEPA(
     metric=my_metric,
     reflection_lm=dspy.LM(model="gpt-5-mini"),
-    optimize_tool_descriptions=True,
+    optimize_react_components=True,
     component_selector="all",
     auto="medium"
 )
@@ -716,7 +716,7 @@ print(optimized_system.assistant.tools["calculator"].desc)
 
 ### Compatibility with Custom Instruction Proposers
 
-Tool optimization works seamlessly with custom instruction proposers. When you provide a custom instruction proposer AND enable `optimize_tool_descriptions=True`:
+ReAct component optimization works seamlessly with custom instruction proposers. When you provide a custom instruction proposer AND enable `optimize_react_components=True`:
 
 **Component routing:**
 - **Signature instructions** → Your custom instruction proposer
@@ -737,7 +737,7 @@ gepa = dspy.GEPA(
     metric=my_metric,
     reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
     instruction_proposer=MultiModalInstructionProposer(),  # For signatures
-    optimize_tool_descriptions=True,  # Enables ToolProposer for tools
+    optimize_react_components=True,  # Enables ReActModuleProposer
     auto="medium"
 )
 ```

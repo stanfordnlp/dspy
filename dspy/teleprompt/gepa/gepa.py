@@ -275,10 +275,10 @@ class GEPA(Teleprompter):
         warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when 
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
             raised if a mismatch in module-level and predictor-level score is detected.
-        optimize_tool_descriptions: Whether to optimize tool descriptions for modules with tools 
-            (e.g., ReAct agents). When enabled, tool descriptions are included in the optimization 
-            process alongside signature instructions. See the 
-            [Tool Description Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#tool-description-optimization) 
+        optimize_react_components: Whether to optimize ReAct module components including react 
+            instructions, extract instructions, tool descriptions, and tool argument descriptions. 
+            When enabled, GEPA jointly optimizes all four components of ReAct modules. See the 
+            [ReAct Component Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#react-component-optimization) 
             for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
         gepa_kwargs: (Optional) provide additional kwargs to be passed to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py) method
@@ -335,7 +335,7 @@ class GEPA(Teleprompter):
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
-        optimize_tool_descriptions: bool = False,
+        optimize_react_components: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -398,7 +398,7 @@ class GEPA(Teleprompter):
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
-        self.optimize_tool_descriptions = optimize_tool_descriptions
+        self.optimize_react_components = optimize_react_components
         self.use_mlflow = use_mlflow
 
         if track_best_outputs:
@@ -528,13 +528,13 @@ class GEPA(Teleprompter):
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
-            optimize_tool_descriptions=self.optimize_tool_descriptions,
+            optimize_react_components=self.optimize_react_components,
         )
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
 
-        if self.optimize_tool_descriptions:
+        if self.optimize_react_components:
             for module_path, module in student.named_sub_modules():
                 # Only process ReAct modules
                 if not isinstance(module, ReAct):

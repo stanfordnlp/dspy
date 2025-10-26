@@ -133,7 +133,7 @@ def test_gepa_optimizes_react_module():
         metric=metric,
         reflection_lm=reflection_lm,
         max_metric_calls=5,
-        optimize_tool_descriptions=True,
+        optimize_react_components=True,
     )
 
     trainset = [
