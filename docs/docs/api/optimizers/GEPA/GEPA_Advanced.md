@@ -454,7 +454,7 @@ A [`dspy.ReAct`](../../learn/programming/tools.md#approach-1-using-dspyreact-ful
 
 **What gets optimized for ReAct modules:**
 
-GEPA can improve textual components across all three parts:
+GEPA can improve textual components across all parts:
 - **React instruction** - Guides reasoning and tool selection (always optimized)
 - **Extract instruction** - Guides answer extraction from trajectories (optional)
 - **Tool descriptions** - Describes what each tool does (optional)
@@ -468,85 +468,80 @@ Unlike optimizing signature instructions alone (which improves individual predic
 
 ReAct agents often fail when their components contradict each other. A clear tool description doesn't help if the react instruction never considers using that tool. GEPA analyzes execution traces to learn how all components should work together.
 
-### Tool-Specific Reflection Prompt
+### ReAct Optimization Prompt
 
-GEPA uses a dedicated prompt for optimizing tool descriptions. The prompt receives the complete ReAct trajectory (all thoughts, actions, observations) from executions that used the tool being optimized:
+GEPA uses a specialized prompt to jointly optimize all ReAct components. The prompt receives complete ReAct trajectories and current component texts:
 
 ```python
-class GenerateImprovedToolDescriptionFromFeedback(dspy.Signature):
-    """You are refining a tool description that the assistant currently uses.
+class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
+    """Improve a ReAct agent based on execution examples and feedback.
+    
+    Analyze the trajectories to identify successful patterns and failure causes.
+    Generate improved texts to help the agent succeed on similar tasks. 
+    Place improved texts at their appropriate level of abstraction and specificity.
+    """
 
-    Review the current description along with examples of the assistant's tool decisions 
-    and the feedback those decisions received.
-
-    Read them together and refine the description.
-    So the agent understands when this tool actually helps, what argument or result matters, 
-    and what misuse the feedback exposed. Keep the tool's voice and only change what the 
-    evidence justifies.
-
-    Return a refined description that helps the assistant quickly recognize good 
-    opportunities for the tool."""
-
-    current_tool_description = dspy.InputField(desc="The current description of the tool")
+    current_react_instruction = dspy.InputField(
+        desc="Current ReAct module instruction guiding the ReAct agent's reasoning and tool selection"
+    )
+    current_extract_instruction = dspy.InputField(
+        desc="Current Extract module instruction for extracting final answers from trajectories"
+    )
+    current_tools = dspy.InputField(
+        annotation=list[dspy.Tool],
+        desc="Available tools with their complete schemas"
+    )
     examples_with_feedback = dspy.InputField(
-        desc="Examples showing tool usage decisions and feedback on correctness"
+        desc="Execution examples with feedback showing successes and failures"
     )
 
-    improved_tool_description = dspy.OutputField(
-        desc="An improved description that guides correct tool selection and usage"
+    improved_react_instruction = dspy.OutputField(
+        desc="Improved ReAct module instruction"
     )
+    improved_extract_instruction = dspy.OutputField(
+        desc="Improved Extract module instruction",
+        default=""
+    )
+    # Note: Tool descriptions and arg descriptions are added dynamically via signature.append()
 ```
 
-The `examples_with_feedback` contains full ReAct trajectories showing the complete context in which each tool was selected and used, enabling the reflection LM to understand tool selection patterns.
+The reflection LM receives all current components and execution traces, then decides which components to improve. Tool-specific fields (`improved_tool_{name}_desc`, `improved_tool_{name}_arg_{param}_desc`) are generated dynamically for each tool and parameter.
 
-**Example: Writing Tool-Aware Metrics**
+**Example: Writing Effective Metrics**
 
-To provide effective feedback for tool optimization, write metrics that examine the trajectory:
+To help GEPA optimize ReAct modules, write metrics that provide trajectory feedback:
 
 ```python
-def tool_feedback_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
-    """Metric that provides tool-specific feedback for GEPA optimization."""
+def react_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    """Metric that provides trajectory feedback for ReAct optimization."""
     correct = prediction.answer == example.answer
     score = 1.0 if correct else 0.0
     
-    # Generate tool-specific feedback if available
-    if hasattr(prediction, 'trajectory'):
-        tools_used = [
-            prediction.trajectory[key] 
-            for key in prediction.trajectory 
-            if key.startswith('tool_name_') and prediction.trajectory[key] != 'finish'
-        ]
-        feedback = f"{'Correct' if correct else 'Wrong'}. Tools: {', '.join(tools_used)}"
+    # Extract tool calls from trajectory
+    trajectory = getattr(prediction, 'trajectory', {})
+    tool_calls = [
+        trajectory[key] 
+        for key in trajectory 
+        if key.startswith('tool_name_') and trajectory[key] != 'finish'
+    ]
+    
+    if tool_calls:
+        all_tool_names = ', '.join(tool_calls)
+        num_calls = len(tool_calls)
+        feedback = f"{'Correct Answer' if correct else 'Wrong Answer'}. Used {num_calls} tool calls: {all_tool_names}. Try to minimize tool calls."
     else:
-        feedback = "Correct" if correct else "Wrong"
+        feedback = "Correct Answer" if correct else "Wrong Answer"
     
     return dspy.Prediction(score=score, feedback=feedback)
 ```
 
 This produces feedback like:
 ```
-[Tool 'calculator' from 'agent'] Correct. Tools: calculator
-[Tool 'search' from 'agent'] Wrong. Tools: search, calculator
+Correct Answer. Used 2 tool calls: web_search, summarize. Try to minimize tool calls.
+Wrong Answer. Used 5 tool calls: web_search, web_search, read_file, web_search, read_file. Try to minimize tool calls.
 ```
 
-The tool-specific prefix `[Tool 'calculator' from 'agent']` is automatically added by GEPA to focus the reflection LM on optimizing that particular tool's description.
-
-**Note:** Tool descriptions are treated as components in GEPA's optimization process. The `component_selector` parameter applies to both signature instructions and tool descriptions. For example, `component_selector="all"` optimizes all signatures and tools together, while `component_selector="round_robin"` cycles through them one at a time.
-
-### Default Behavior
-
-By default, GEPA only optimizes signature instructions (`optimize_react_components=False`):
-
-```python
-# Default behavior: only signature optimization
-gepa = dspy.GEPA(
-    metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000, api_key=api_key),
-    # optimize_react_components=False  # This is the default
-    auto="medium"
-)
-optimized_program = gepa.compile(student, trainset=examples)
-```
+This feedback helps GEPA learn to reduce unnecessary tool calls while maintaining correct outputs. The reflection LM uses these insights to jointly improve react instructions, tool descriptions, and extraction logic.
 
 ### How It Works
 
