@@ -665,27 +665,25 @@ print(optimized_system.assistant.tools["research"].desc)
 print(optimized_system.assistant.tools["calculator"].desc)
 ```
 
-### Inspecting Optimized Tool Descriptions
+### Inspecting Optimized ReAct Components
 
-After optimization, tool descriptions are automatically updated in your program. Access them directly through your module structure:
+After optimization, all ReAct components are automatically updated in your program. Access them directly:
 
 ```python
 optimized_agent = gepa.compile(agent, trainset=train, valset=val)
 
-# Access tools directly - descriptions are already updated
-print(optimized_agent.tools["search"].desc)
-print(optimized_agent.tools["calculator"].desc)
-```
+# ReAct instruction (guides reasoning and tool selection)
+print("React instruction:", optimized_agent.react.signature.instructions)
 
-For multi-agent systems, access nested tools through your module hierarchy:
+# Extract instruction (guides answer extraction from trajectory)
+print("Extract instruction:", optimized_agent.extract.predict.signature.instructions)
 
-```python
-optimized_system = gepa.compile(ResearchAssistant(), trainset=train, valset=val)
-
-# Access tools at different levels
-print(optimized_system.researcher.tools["search"].desc)  # Sub-agent tool
-print(optimized_system.assistant.tools["research"].desc)  # Main agent tool
-print(optimized_system.assistant.tools["calculator"].desc)
+# Tool descriptions
+for tool_name, tool in optimized_agent.tools.items():
+    if tool_name != 'finish':  # Skip the built-in finish tool
+        print(f"Tool '{tool_name}' description:", tool.desc)
+        # Tool argument descriptions
+        print(f"  Argument descriptions:", tool.arg_desc)
 ```
 
 ### Compatibility with Custom Instruction Proposers
