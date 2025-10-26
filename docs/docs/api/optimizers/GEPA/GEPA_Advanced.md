@@ -545,14 +545,17 @@ This feedback helps GEPA learn to reduce unnecessary tool calls while maintainin
 
 ### How It Works
 
-When enabled, GEPA:
+When `optimize_react_components=True`, GEPA:
 
-1. **Discovers all tools**: Traverses your program including nested sub-modules to find all `dspy.Tool` instances
-2. **Categorizes components**: Separates tools (identified by `tool:` prefix) from signature instructions
-3. **Routes components appropriately**:
-   - Signature instructions → Default or custom instruction proposer
-   - Tool descriptions → ToolProposer (receives ReAct's reflective data with tool-specific annotation)
-4. **Optimizes holistically**: Treats tool descriptions as first-class components in the optimization process
+1. **Discovers ReAct modules** - Finds all `dspy.ReAct` instances in your program (including nested modules)
+2. **Extracts components** - Collects react instructions, extract instructions, and tool schemas from each ReAct module
+3. **Routes to proposers** - Separates components by type and routes them appropriately:
+   - **With custom `instruction_proposer`**: Your custom proposer overrides the default routing and receives all components (both regular instructions and ReAct components)
+   - **With default proposer**: Regular instructions use default instruction proposer, ReAct components use specialized `ReActModuleProposer`
+4. **Optimizes jointly** - ReAct proposer improves all four components together based on execution feedback
+5. **Applies updates** - Updates your ReAct modules with improved instructions and tool descriptions
+
+Non-ReAct modules (like `dspy.Predict` or `dspy.ChainOfThought`) continue using standard GEPA optimization.
 
 ### Implementation Details
 
