@@ -448,9 +448,25 @@ gepa = dspy.GEPA(
 
 ### What is optimize_react_components?
 
-The `optimize_react_components` parameter enables GEPA to holistically optimize ReAct modules by jointly improving all four components: react instructions, extract instructions, tool descriptions, and tool argument descriptions.
+Enable `optimize_react_components=True` to apply specialized optimization to `dspy.ReAct` modules while using default optimization for other modules.
 
-This is particularly valuable for ReAct agents where these components must work together harmoniously. Unlike optimizing signature instructions alone, ReAct component optimization ensures that reasoning strategies, tool selection, and answer extraction are all aligned and mutually supportive.
+A [`dspy.ReAct`](../../learn/programming/tools.md#approach-1-using-dspyreact-fully-managed) module has three parts: a **react predictor** (iteratively reasons and selects tools), an **extract predictor** (extracts final answers from trajectories), and **tools** with their schemas.
+
+**What gets optimized for ReAct modules:**
+
+GEPA can improve textual components across all three parts:
+- **React instruction** - Guides reasoning and tool selection (always optimized)
+- **Extract instruction** - Guides answer extraction from trajectories (optional)
+- **Tool descriptions** - Describes what each tool does (optional)
+- **Tool argument descriptions** - Describes tool parameters (optional)
+
+The reflection LM decides which optional components to improve based on observed failures. Non-ReAct modules in your program are optimized using GEPA's default signature optimization.
+
+**Why this matters:**
+
+Unlike optimizing signature instructions alone (which improves individual predictors), ReAct optimization improves the **entire agent workflow** - from initial reasoning through tool execution to final answer extraction.
+
+ReAct agents often fail when their components contradict each other. A clear tool description doesn't help if the react instruction never considers using that tool. GEPA analyzes execution traces to learn how all components should work together.
 
 ### Tool-Specific Reflection Prompt
 
