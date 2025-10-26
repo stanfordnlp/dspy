@@ -241,7 +241,6 @@ class BaseLM:
                     content = output_item.get("content", [])
                 else:
                     content = output_item.content
-                
                 for content_item in content:
                     if isinstance(content_item, dict):
                         text_outputs.append(content_item.get("text", ""))
@@ -261,7 +260,6 @@ class BaseLM:
                 else:
                     content = getattr(output_item, "content", None)
                     summary = getattr(output_item, "summary", None)
-                
                 if content and len(content) > 0:
                     for content_item in content:
                         if isinstance(content_item, dict):
