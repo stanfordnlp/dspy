@@ -559,17 +559,17 @@ Non-ReAct modules (like `dspy.Predict` or `dspy.ChainOfThought`) continue using 
 
 ### When to Use optimize_react_components
 
-Enable `optimize_react_components=True` when you use `dspy.ReAct` in your program and need better agent performance. Here are common scenarios:
+Enable `optimize_react_components=True` when you use `dspy.ReAct` in your program and need better agent performance. GEPA jointly optimizes all ReAct components (react instruction, extract instruction, tool descriptions, tool argument descriptions) based on execution feedback. Common scenarios:
 
-1. **ReAct agents with multiple tools** - Agent with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA learns from execution feedback to clarify "use search for factual queries, calculator for numerical analysis."
+1. **Agent loops with repeated tool calls** - Agent keeps calling `web_search` multiple times with similar queries instead of synthesizing information. GEPA improves react instruction to encourage synthesis and tool descriptions to clarify when searches are sufficient.
 
-2. **Multi-agent systems with delegation** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes both delegation tools and sub-agent internal tools holistically.
+2. **Wrong tool selection** - Agent with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA refines react instruction and tool descriptions to clarify "use search for factual queries, calculator for numerical analysis."
 
-3. **Sequential tool workflows** - Tools like `query_database` → `analyze_results` have dependencies but descriptions don't capture this. GEPA learns the sequence and timing from successful executions.
+3. **Agent gives up without trying tools** - Agent responds "I don't know" without using available tools that could answer the question. GEPA improves react instruction to be more proactive about tool usage.
 
-4. **Domain-specific tools** - Tools like legal vs. medical document search have overlapping but domain-specific purposes. GEPA discovers usage patterns and adds context: "for legal precedents" vs. "for patient records."
+4. **Extraction failures** - Agent executes tools correctly but fails to extract the final answer from the trajectory. GEPA improves extract instruction to better identify and format answers from tool outputs.
 
-5. **Tools with limitations** - Initial description "Does calculations" is too vague. GEPA adds specificity from observed usage: "Use for arithmetic (+, -, *, /, **). Not for date math or string operations."
+5. **Multi-agent delegation issues** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes all ReAct components across both parent and sub-agent modules for coherent delegation.
 
 See the usage examples below for implementations of scenarios 1 and 2.
 
