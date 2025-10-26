@@ -571,7 +571,7 @@ Enable `optimize_react_components=True` when you use `dspy.ReAct` in your progra
 
 5. **Multi-agent delegation issues** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes all ReAct components across both parent and sub-agent modules for coherent delegation.
 
-See the usage examples below for implementations of scenarios 1 and 2.
+See the usage examples below for basic ReAct agents and multi-agent systems.
 
 ### Usage Examples
 
