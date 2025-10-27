@@ -1,4 +1,4 @@
-from litellm.types.utils import CacheCreationTokenDetails, PromptTokensDetailsWrapper
+from pydantic import BaseModel
 
 import dspy
 from dspy.utils.usage_tracker import UsageTracker, track_usage
@@ -228,6 +228,19 @@ def test_merge_usage_entries_with_none_values():
 def test_merge_usage_entries_with_pydantic_models():
     """Test merging usage entries with Pydantic model objects, like `PromptTokensDetailsWrapper` from litellm."""
     tracker = UsageTracker()
+
+    # Here we define a simplified version of the Pydantic models from litellm to avoid the dependency change on litellm.
+    class CacheCreationTokenDetails(BaseModel):
+        ephemeral_5m_input_tokens: int
+        ephemeral_1h_input_tokens: int
+
+    class PromptTokensDetailsWrapper(BaseModel):
+        audio_tokens: int | None
+        cached_tokens: int
+        text_tokens: int | None
+        image_tokens: int | None
+        cache_creation_tokens: int
+        cache_creation_token_details: CacheCreationTokenDetails
 
     # Add usage entries for different models
     usage_entries = [
