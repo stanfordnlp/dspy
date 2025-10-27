@@ -343,10 +343,24 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
             # Handle ReAct module components - use extract predictor for final outputs
             if pred_name.startswith("react_module"):
-                module_name = pred_name.replace("react_module:", "") if ":" in pred_name else None
-                react_module = getattr(program, module_name) if module_name else program
+                # Extract the target path from the key
+                target_path = pred_name.replace("react_module:", "") if ":" in pred_name else ""
+
+                # Find the ReAct module by traversing program structure (same as regular predictors)
+                react_module = None
+                for module_path, m in program.named_sub_modules():
+                    clean_path = module_path.removeprefix("self.")
+                    # For top-level ReAct (target_path=""), match "self" or empty string
+                    if isinstance(m, ReAct) and (clean_path == target_path or (target_path == "" and clean_path == "self")):
+                        react_module = m
+                        break
+
+                if react_module is None:
+                    logger.warning(f"ReAct module not found for key: {pred_name}")
+                    continue
+
                 module = react_module.extract.predict
-                logger.debug(f"  ReAct module detected: using {module_name or 'top-level'}.extract for final outputs")
+                logger.debug(f"  ReAct module detected: using {target_path or 'top-level'}.extract for final outputs")
 
             # Regular predictor - find by name
             else:
@@ -367,10 +381,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 if hasattr(module_score, "score"):
                     module_score = module_score["score"]
 
+                logger.debug(f"  Processing trace with {len(trace)} entries for example: {example}")
                 trace_instances = [t for t in trace if t[0].signature.equals(module.signature)]
+                logger.debug(f"    Found {len(trace_instances)} matching trace instances for signature: {module.signature}")
                 if not self.add_format_failure_as_feedback:
                     trace_instances = [t for t in trace_instances if not isinstance(t[2], FailedPrediction)]
+                    logger.debug(f"    After filtering FailedPrediction: {len(trace_instances)} instances")
                 if len(trace_instances) == 0:
+                    logger.debug("    Skipping example - no matching trace instances")
                     continue
 
                 # For ReAct modules, use LAST extract invocation (has trajectory + final outputs)

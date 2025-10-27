@@ -436,10 +436,9 @@ class ReActModuleProposer(ProposalFn):
             for tool in tools_list:
                 tool_name = tool.name
                 tool_info = current_tools_dict[tool_name]
-                sanitized_tool_name = self._sanitize_name(tool_name)
 
                 signature = signature.append(
-                    f"improved_tool_{sanitized_tool_name}_desc",
+                    f"improved_tool_{tool_name}_desc",
                     dspy.OutputField(
                         desc=f"Improved description for tool '{tool_name}'",
                         default=""
@@ -449,7 +448,7 @@ class ReActModuleProposer(ProposalFn):
                 if tool_info.get("args"):
                     for arg_name in tool_info["args"].keys():
                         signature = signature.append(
-                            f"improved_tool_{sanitized_tool_name}_arg_{arg_name}_desc",
+                            f"improved_tool_{tool_name}_arg_{arg_name}_desc",
                             dspy.OutputField(
                                 desc=f"Improved description for parameter '{arg_name}'",
                                 default=""
@@ -488,10 +487,8 @@ class ReActModuleProposer(ProposalFn):
             # Extract improved tool descriptions (only include if improved)
             improved_react_config["tools"] = {}
             for tool_name, tool_info in current_tools_dict.items():
-                sanitized_tool_name = self._sanitize_name(tool_name)
-
                 # Get improved description
-                improved_desc = getattr(result, f"improved_tool_{sanitized_tool_name}_desc", "")
+                improved_desc = getattr(result, f"improved_tool_{tool_name}_desc", "")
 
                 # Only add tool to config if description was improved
                 if not improved_desc:
@@ -506,7 +503,7 @@ class ReActModuleProposer(ProposalFn):
                 # Extract parameter descriptions (if tool has args)
                 if tool_info.get("args"):
                     for arg_name in tool_info["args"].keys():
-                        field_name = f"improved_tool_{sanitized_tool_name}_arg_{arg_name}_desc"
+                        field_name = f"improved_tool_{tool_name}_arg_{arg_name}_desc"
                         arg_desc = getattr(result, field_name, "")
                         if arg_desc:
                             improved_tool_info["arg_desc"][arg_name] = arg_desc
@@ -521,11 +518,6 @@ class ReActModuleProposer(ProposalFn):
 
         logger.info(f"\nReActModuleProposer returning {len(updated_components)} components: {list(updated_components.keys())}")
         return updated_components
-
-    def _sanitize_name(self, name: str) -> str:
-        """Convert tool/param name to valid Python identifier."""
-        import re
-        return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
     def _format_examples(self, reflective_dataset: list[ReflectiveExample]) -> str:
         """Format reflective examples using GEPA's markdown structure."""

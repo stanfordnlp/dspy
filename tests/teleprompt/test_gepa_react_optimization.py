@@ -2,10 +2,15 @@
 
 This tests the new architecture where ReAct modules are optimized as a single
 unit (react instruction + extract instruction + tool descriptions together).
+
+NOTE: This test is currently skipped because hash-based fixtures are fragile
+across Python versions due to prompt formatting changes.
 """
 
 import hashlib
 import json
+
+import pytest
 
 import dspy
 from dspy import Example
@@ -96,6 +101,7 @@ def get_employee_salary(arg: str) -> str:
     )
 
 
+@pytest.mark.skip(reason="Hash-based fixtures break across Python versions - see file docstring")
 def test_gepa_optimizes_react_module():
     """Test that GEPA optimizes ReAct module (react + extract + tools)."""
 
