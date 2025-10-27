@@ -42,7 +42,7 @@ class UsageTracker:
         self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
     ) -> dict[str, Any]:
         if usage_entry1 is None or len(usage_entry1) == 0:
-            return dict(usage_entry2)
+            return dict(usage_entry2) if usage_entry2 is not None else {}
         if usage_entry2 is None or len(usage_entry2) == 0:
             return dict(usage_entry1)
 
