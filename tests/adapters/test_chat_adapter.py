@@ -442,6 +442,23 @@ def test_chat_adapter_fallback_to_json_adapter_on_exception():
         result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
         assert result == [{"answer": "Paris"}]
 
+def test_chat_adapter_respects_use_json_adapter_fallback_flag():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="nonsense"))],
+            model="openai/gpt-4o-mini",
+        )
+
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+            with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+                adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+        mock_json_adapter_call.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_chat_adapter_fallback_to_json_adapter_on_exception_async():
