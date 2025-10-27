@@ -42,6 +42,16 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [GEPA for Code Backdoor Classification (AI control)](gepa_trusted_monitor/index.ipynb)
 
 
+- Real-World Examples:
+    - [Overview](real_world_examples/index.md)
+    - [Generating llms.txt](llms_txt_generation/index.md)
+    - [Email Information Extraction](email_extraction/index.md)
+    - [Memory-Enabled ReAct Agents with Mem0](mem0_react_agent/index.md)
+    - [Financial Analysis with Yahoo Finance](yahoo_finance_react/index.md)
+    - [Automated Code Generation from Documentation](sample_code_generation/index.md)
+    - [Building a Creative Text-Based AI Game](ai_text_game/index.md)
+
+
 - Tools, Development, and Deployment
     - [Use MCP in DSPy](mcp/index.md)
     - [Output Refinement](output_refinement/best-of-n-and-refine.md)
