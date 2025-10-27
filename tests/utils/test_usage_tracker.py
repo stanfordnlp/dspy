@@ -1,3 +1,5 @@
+from litellm.types.utils import CacheCreationTokenDetails, PromptTokensDetailsWrapper
+
 import dspy
 from dspy.utils.usage_tracker import UsageTracker, track_usage
 
@@ -225,55 +227,88 @@ def test_merge_usage_entries_with_none_values():
 
 def test_merge_usage_entries_with_pydantic_models():
     """Test merging usage entries with Pydantic model objects (e.g., Anthropic CacheCreation)."""
-    try:
-        from anthropic.types import CacheCreation
-    except ImportError:
-        # Skip if anthropic is not installed
-        import pytest
-
-        pytest.skip("anthropic package not available")
-
     tracker = UsageTracker()
 
-    # Simulate Anthropic usage with CacheCreation objects
-    usage_entry1 = {
-        "input_tokens": 100,
-        "output_tokens": 50,
-        "cache_creation_input_tokens": CacheCreation(ephemeral_1h_input_tokens=1024, ephemeral_5m_input_tokens=512),
-        "cache_read_input_tokens": None,
-    }
+    # Add usage entries for different models
+    usage_entries = [
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "prompt_tokens": 1117,
+                "completion_tokens": 46,
+                "total_tokens": 1163,
+                "prompt_tokens_details": PromptTokensDetailsWrapper(
+                    audio_tokens=None,
+                    cached_tokens=3,
+                    text_tokens=None,
+                    image_tokens=None,
+                    cache_creation_tokens=0,
+                    cache_creation_token_details=CacheCreationTokenDetails(
+                        ephemeral_5m_input_tokens=5, ephemeral_1h_input_tokens=0
+                    ),
+                ),
+                "completion_tokens_details": {},
+            },
+        },
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "prompt_tokens": 800,
+                "completion_tokens": 100,
+                "total_tokens": 900,
+                "prompt_tokens_details": PromptTokensDetailsWrapper(
+                    audio_tokens=None,
+                    cached_tokens=3,
+                    text_tokens=None,
+                    image_tokens=None,
+                    cache_creation_tokens=0,
+                    cache_creation_token_details=CacheCreationTokenDetails(
+                        ephemeral_5m_input_tokens=5, ephemeral_1h_input_tokens=0
+                    ),
+                ),
+                "completion_tokens_details": None,
+            },
+        },
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "prompt_tokens": 800,
+                "completion_tokens": 100,
+                "total_tokens": 900,
+                "prompt_tokens_details": PromptTokensDetailsWrapper(
+                    audio_tokens=None,
+                    cached_tokens=3,
+                    text_tokens=None,
+                    image_tokens=None,
+                    cache_creation_tokens=0,
+                    cache_creation_token_details=CacheCreationTokenDetails(
+                        ephemeral_5m_input_tokens=5, ephemeral_1h_input_tokens=0
+                    ),
+                ),
+                "completion_tokens_details": {
+                    "reasoning_tokens": 1,
+                    "audio_tokens": 1,
+                    "accepted_prediction_tokens": 1,
+                    "rejected_prediction_tokens": 1,
+                },
+            },
+        },
+    ]
 
-    usage_entry2 = {
-        "input_tokens": 200,
-        "output_tokens": 75,
-        "cache_creation_input_tokens": CacheCreation(ephemeral_1h_input_tokens=2048, ephemeral_5m_input_tokens=1024),
-        "cache_read_input_tokens": None,
-    }
-
-    usage_entry3 = {
-        "input_tokens": 150,
-        "output_tokens": 60,
-        "cache_creation_input_tokens": CacheCreation(ephemeral_1h_input_tokens=512, ephemeral_5m_input_tokens=256),
-        "cache_read_input_tokens": 100,
-    }
-
-    tracker.add_usage("claude-sonnet-4", usage_entry1)
-    tracker.add_usage("claude-sonnet-4", usage_entry2)
-    tracker.add_usage("claude-sonnet-4", usage_entry3)
+    for entry in usage_entries:
+        tracker.add_usage(entry["model"], entry["usage"])
 
     total_usage = tracker.get_total_tokens()
 
-    # Verify basic token counts
-    assert total_usage["claude-sonnet-4"]["input_tokens"] == 450  # 100 + 200 + 150
-    assert total_usage["claude-sonnet-4"]["output_tokens"] == 185  # 50 + 75 + 60
-
-    # Verify CacheCreation objects were merged correctly
+    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 2717
+    assert total_usage["gpt-4o-mini"]["completion_tokens"] == 246
+    assert total_usage["gpt-4o-mini"]["total_tokens"] == 2963
+    assert total_usage["gpt-4o-mini"]["prompt_tokens_details"]["cached_tokens"] == 9
     assert (
-        total_usage["claude-sonnet-4"]["cache_creation_input_tokens"]["ephemeral_1h_input_tokens"] == 3584
-    )  # 1024 + 2048 + 512
-    assert (
-        total_usage["claude-sonnet-4"]["cache_creation_input_tokens"]["ephemeral_5m_input_tokens"] == 1792
-    )  # 512 + 1024 + 256
-
-    # Verify cache read tokens
-    assert total_usage["claude-sonnet-4"]["cache_read_input_tokens"] == 100
+        total_usage["gpt-4o-mini"]["prompt_tokens_details"]["cache_creation_token_details"]["ephemeral_5m_input_tokens"]
+        == 15
+    )
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["reasoning_tokens"] == 1
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["audio_tokens"] == 1
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["accepted_prediction_tokens"] == 1
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["rejected_prediction_tokens"] == 1

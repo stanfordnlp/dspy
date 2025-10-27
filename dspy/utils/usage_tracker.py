@@ -25,15 +25,9 @@ class UsageTracker:
     def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, Any]:
         result = {}
         for key, value in usage_entry.items():
-            # Convert Pydantic models to dicts
             if isinstance(value, BaseModel):
+                # Convert Pydantic models to dicts, like `PromptTokensDetailsWrapper` from litellm.
                 result[key] = value.model_dump()
-            # Try converting dict-like objects to dicts (for OpenAI-style usage)
-            elif key in ("completion_tokens_details", "prompt_tokens_details") and value is not None:
-                try:
-                    result[key] = dict(value)
-                except (TypeError, ValueError):
-                    result[key] = value
             else:
                 result[key] = value
         return result
@@ -42,19 +36,13 @@ class UsageTracker:
         self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
     ) -> dict[str, Any]:
         if usage_entry1 is None or len(usage_entry1) == 0:
-            return dict(usage_entry2) if usage_entry2 is not None else {}
+            return dict(usage_entry2)
         if usage_entry2 is None or len(usage_entry2) == 0:
             return dict(usage_entry1)
 
         result = dict(usage_entry2)
         for k, v in usage_entry1.items():
             current_v = result.get(k)
-
-            # Convert Pydantic models to dicts for merging
-            if isinstance(v, BaseModel):
-                v = v.model_dump()
-            if isinstance(current_v, BaseModel):
-                current_v = current_v.model_dump()
 
             if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
