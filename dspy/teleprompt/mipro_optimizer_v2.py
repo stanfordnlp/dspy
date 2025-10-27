@@ -2,9 +2,7 @@ import logging
 import random
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Literal
-
 import numpy as np
-
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.propose import GroundedProposer
@@ -20,7 +18,6 @@ from dspy.teleprompt.utils import (
     set_signature,
 )
 
-from optuna.samplers import BaseSampler
 from mpromptune import qEI
 
 if TYPE_CHECKING:
@@ -117,8 +114,7 @@ class MIPROv2(Teleprompter):
         fewshot_aware_proposer: bool = True,
         requires_permission_to_run: bool | None = None, # deprecated
         provide_traceback: bool | None = None,
-        sampler: BaseSampler | None = None,
-        n_jobs: int = 1
+        **kwargs
     ) -> Any:
         if requires_permission_to_run == False:
             logger.warning(
@@ -219,8 +215,7 @@ class MIPROv2(Teleprompter):
                 minibatch_size,
                 minibatch_full_eval_steps,
                 seed,
-                sampler,
-                n_jobs
+                kwargs
             )
 
         return best_program
@@ -445,8 +440,7 @@ class MIPROv2(Teleprompter):
         minibatch_size: int,
         minibatch_full_eval_steps: int,
         seed: int,
-        sampler: BaseSampler,
-        n_jobs: int
+        kwargs: dict
     ) -> Any | None:
         import optuna
 
@@ -586,15 +580,20 @@ class MIPROv2(Teleprompter):
 
             return score
 
-        if sampler:
-            _sampler = sampler
-            if type(_sampler) == qEI.Sampler:
-                _sampler.create_search_space(instruction_candidates, demo_candidates)
+        if 'sampler' in kwargs.keys():
+            if kwargs['sampler'] == 'qei':
+                sampler = qEI.Sampler(instruction_candidates, demo_candidates, kwargs['max_space_size'],
+                                      kwargs['n_batches'], kwargs['batch_size'], kwargs['min_cold_start'])
+                n_jobs = kwargs['n_jobs']
+            elif kwargs['sampler'] == 'tpe':
+                # backwards compaitable
+                sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
+                n_jobs = 1
         else:
-            # backwards compaitable
-            _sampler= optuna.samplers.TPESampler(seed=seed, multivariate=True)
+            sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
+            n_jobs = 1
 
-        study = optuna.create_study(direction="maximize", sampler=_sampler)
+        study = optuna.create_study(direction="maximize", sampler=sampler)
 
         default_params = {f"{i}_predictor_instruction": 0 for i in range(len(program.predictors()))}
         if demo_candidates:
@@ -607,7 +606,7 @@ class MIPROv2(Teleprompter):
             value=default_score,
         )
         study.add_trial(trial)
-        study.optimize(objective, n_trials=n_trials, n_jobs=n_jobs)
+        study.optimize(objective, n_trials=num_trials, n_jobs=n_jobs)
         self.study = study
 
         # Attach logs to best program
