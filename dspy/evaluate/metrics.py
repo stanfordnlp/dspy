@@ -24,13 +24,15 @@ def EM(prediction, answers_list):  # noqa: N802
 
     Example:
         ```python
-        EM("The Eiffel Tower", ["Eiffel Tower", "Louvre"])
-        # True
+        EM("The Eiffel Tower", ["Eiffel Tower", "Louvre"])  # True
 
-        EM("paris", ["Paris"])
-        # True
+        EM("paris", ["Paris"])  # True
+        EM("paris", ["Paris, France"])  # False
         ```
     """
+    if not isinstance(answers_list, list):
+        raise ValueError(f"`answers_list` must be a list, got {type(answers_list)}")
+
     return max(em_score(prediction, ans) for ans in answers_list)
 
 
@@ -49,10 +51,12 @@ def F1(prediction, answers_list):  # noqa: N802
 
     Example:
         ```python
-        round(F1("Eiffel Tower is in Paris", ["Paris"]), 2)
-        # 0.33
+        round(F1("Eiffel Tower is in Paris", ["Paris"]), 2)  # 0.33
         ```
     """
+    if not isinstance(answers_list, list):
+        raise ValueError(f"`answers_list` must be a list, got {type(answers_list)}")
+
     return max(f1_score(prediction, ans) for ans in answers_list)
 
 
@@ -71,10 +75,12 @@ def HotPotF1(prediction, answers_list):  # noqa: N802
 
     Example:
         ```python
-        HotPotF1("yes", ["no"])
-        # 0.0
+        HotPotF1("yes", ["no"])  # 0.0
         ```
     """
+    if not isinstance(answers_list, list):
+        raise ValueError(f"`answers_list` must be a list, got {type(answers_list)}")
+
     return max(hotpot_f1_score(prediction, ans) for ans in answers_list)
 
 
@@ -82,11 +88,11 @@ def normalize_text(s):
     """Normalize text for string and token comparisons.
 
     Steps:
-        1) Unicode NFD normalization,
-        2) lowercasing,
-        3) punctuation removal,
-        4) English article removal ("a", "an", "the"),
-        5) whitespace collapse.
+        1) Unicode NFD normalization
+        2) lowercasing
+        3) punctuation removal
+        4) English article removal ("a", "an", "the")
+        5) whitespace collapse
 
     Args:
         s (str): Input string.
@@ -96,8 +102,7 @@ def normalize_text(s):
 
     Example:
         ```python
-        normalize_text("The,  Eiffel  Tower!")
-        # "eiffel tower"
+        normalize_text("The,  Eiffel  Tower!")  # "eiffel tower"
         ```
     """
     s = unicodedata.normalize("NFD", s)
@@ -130,8 +135,7 @@ def em_score(prediction, ground_truth):
 
     Example:
         ```python
-        em_score("Paris", "paris")
-        # True
+        em_score("Paris", "paris")  # True
         ```
     """
     return normalize_text(prediction) == normalize_text(ground_truth)
@@ -153,8 +157,7 @@ def f1_score(prediction, ground_truth):
 
     Example:
         ```python
-        round(f1_score("the Eiffel Tower", "Eiffel Tower"), 2)
-        # 1.0
+        round(f1_score("the Eiffel Tower", "Eiffel Tower"), 2)  # 1.0
         ```
     """
     prediction_tokens = normalize_text(prediction).split()
@@ -164,9 +167,8 @@ def f1_score(prediction, ground_truth):
     num_same = sum(common.values())
 
     if len(prediction_tokens) == len(ground_truth_tokens) == 0:
-        print_message(
-            "\n#> F1 Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n"
-        )
+        # Unlike most tasks, QReCC and SQuAD-2.0 assign 1.0 in this edge case. We don't for uniformity.
+        print_message("\n#> F1 Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n")
 
     if num_same == 0:
         return 0
@@ -193,8 +195,7 @@ def hotpot_f1_score(prediction, ground_truth):
 
     Example:
         ```python
-        hotpot_f1_score("no", "yes")
-        # 0.0
+        hotpot_f1_score("no", "yes")  # 0.0
         ```
     """
     normalized_prediction = normalize_text(prediction)
@@ -233,8 +234,7 @@ def precision_score(prediction, ground_truth):
 
     Example:
         ```python
-        precision_score("eiffel tower in paris", "eiffel tower")
-        # 0.67
+        precision_score("eiffel tower in paris", "eiffel tower")  # 0.67
         ```
     """
     prediction_tokens = normalize_text(prediction).split()
@@ -244,6 +244,7 @@ def precision_score(prediction, ground_truth):
     num_same = sum(common.values())
 
     if len(prediction_tokens) == len(ground_truth_tokens) == 0:
+        # Unlike most tasks, QReCC and SQuAD-2.0 assign 1.0 in this edge case. We don't for uniformity.
         print_message(
             "\n#> Precision Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n"
         )
@@ -289,8 +290,8 @@ def answer_exact_match(example, pred, trace=None, frac=1.0):
     otherwise require that the maximum F1 across references is at least `frac`.
 
     Args:
-        example: Object with attribute `answer` (str or list[str]).
-        pred: Object with attribute `answer` (str).
+        example: `dspy.Example` object with field `answer` (str or list[str]).
+        pred: `dspy.Prediction` object with field `answer` (str).
         trace: Unused; reserved for compatibility.
         frac (float, optional): Threshold in [0.0, 1.0]. `1.0` means EM.
 
@@ -299,16 +300,13 @@ def answer_exact_match(example, pred, trace=None, frac=1.0):
 
     Example:
         ```python
-        from types import SimpleNamespace
+        import dspy
 
-        ex = SimpleNamespace(answer=["Eiffel Tower", "Louvre"])
-        pr = SimpleNamespace(answer="The Eiffel Tower")
+        example = dspy.Example(answer=["Eiffel Tower", "Louvre"])
+        pred = dspy.Prediction(answer="The Eiffel Tower")
 
-        answer_exact_match(ex, pr, frac=1.0)  # EM
-        # True
-
-        answer_exact_match(ex, pr, frac=0.5)  # F1 threshold
-        # True
+        answer_exact_match(example, pred, frac=1.0)  # equivalent to EM, True
+        answer_exact_match(example, pred, frac=0.5)  # True
         ```
     """
     if isinstance(example.answer, str):
@@ -325,8 +323,8 @@ def answer_passage_match(example, pred, trace=None):
     Strings are normalized (and passages also use DPR normalization internally).
 
     Args:
-        example: Object with attribute `answer` (str or list[str]).
-        pred: Object with attribute `context` (list[str]) containing passages.
+        example: `dspy.Example` object with field `answer` (str or list[str]).
+        pred: `dspy.Prediction` object with field `context` (list[str]) containing passages.
         trace: Unused; reserved for compatibility.
 
     Returns:
@@ -334,13 +332,12 @@ def answer_passage_match(example, pred, trace=None):
 
     Example:
         ```python
-        from types import SimpleNamespace
+        import dspy
 
-        ex = SimpleNamespace(answer="Eiffel Tower")
-        pr = SimpleNamespace(context=["The Eiffel Tower is in Paris.", "..."])
+        example = dspy.Example(answer="Eiffel Tower")
+        pred = dspy.Prediction(context=["The Eiffel Tower is in Paris.", "..."])
 
-        answer_passage_match(ex, pr)
-        # True
+        answer_passage_match(example, pred)  # True
         ```
     """
     if isinstance(example.answer, str):
