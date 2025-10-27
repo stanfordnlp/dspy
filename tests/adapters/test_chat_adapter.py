@@ -442,9 +442,9 @@ def test_chat_adapter_fallback_to_json_adapter_on_exception():
         result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
         assert result == [{"answer": "Paris"}]
 
-def test_chat_adapter_respects_disable_adapter_fallback_flag():
+def test_chat_adapter_respects_use_json_adapter_fallback_flag():
     signature = dspy.make_signature("question->answer")
-    adapter = dspy.ChatAdapter(disable_adapter_fallback=True)
+    adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)
 
     with mock.patch("litellm.completion") as mock_completion:
         mock_completion.return_value = ModelResponse(

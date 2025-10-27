@@ -1,4 +1,3 @@
-import logging
 import re
 import textwrap
 from typing import Any, NamedTuple
@@ -18,8 +17,6 @@ from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
 from dspy.utils.exceptions import AdapterParseError
 
-logger = logging.getLogger(__name__)
-
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
 
@@ -34,14 +31,14 @@ class ChatAdapter(Adapter):
         callbacks=None,
         use_native_function_calling: bool = False,
         native_response_types=None,
-        disable_adapter_fallback: bool = False,
+        use_json_adapter_fallback: bool = True,
     ):
         super().__init__(
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
             native_response_types=native_response_types,
         )
-        self.disable_adapter_fallback = disable_adapter_fallback
+        self.use_json_adapter_fallback = use_json_adapter_fallback
 
     def __call__(
         self,
@@ -60,12 +57,11 @@ class ChatAdapter(Adapter):
             if (
                 isinstance(e, ContextWindowExceededError)
                 or isinstance(self, JSONAdapter)
-                or self.disable_adapter_fallback
+                or not self.use_json_adapter_fallback
             ):
-                logger.info(f"Skipping json fallback for adapter {self.__class__.__name__}")
-                # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
-                # adapter.
-                raise
+                # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
+                # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
+                raise e
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
@@ -85,11 +81,11 @@ class ChatAdapter(Adapter):
             if (
                 isinstance(e, ContextWindowExceededError)
                 or isinstance(self, JSONAdapter)
-                or self.disable_adapter_fallback
+                or not self.use_json_adapter_fallback
             ):
-                # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
-                # adapter.
-                raise
+                # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
+                # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
+                raise e
             return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: type[Signature]) -> str:
