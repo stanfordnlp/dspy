@@ -4,6 +4,8 @@ from collections import defaultdict
 from contextlib import contextmanager
 from typing import Any, Generator
 
+from pydantic import BaseModel
+
 from dspy.dsp.utils.settings import settings
 
 
@@ -29,7 +31,9 @@ class UsageTracker:
             result["prompt_tokens_details"] = dict(prompt_tokens_details)
         return result
 
-    def _merge_usage_entries(self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None) -> dict[str, Any]:
+    def _merge_usage_entries(
+        self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
+    ) -> dict[str, Any]:
         if usage_entry1 is None or len(usage_entry1) == 0:
             return dict(usage_entry2)
         if usage_entry2 is None or len(usage_entry2) == 0:
@@ -38,6 +42,13 @@ class UsageTracker:
         result = dict(usage_entry2)
         for k, v in usage_entry1.items():
             current_v = result.get(k)
+
+            # Convert Pydantic models to dicts for merging
+            if isinstance(v, BaseModel):
+                v = v.model_dump()
+            if isinstance(current_v, BaseModel):
+                current_v = current_v.model_dump()
+
             if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
             else:

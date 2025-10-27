@@ -221,3 +221,59 @@ def test_merge_usage_entries_with_none_values():
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["audio_tokens"] == 1
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["accepted_prediction_tokens"] == 1
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["rejected_prediction_tokens"] == 1
+
+
+def test_merge_usage_entries_with_pydantic_models():
+    """Test merging usage entries with Pydantic model objects (e.g., Anthropic CacheCreation)."""
+    try:
+        from anthropic.types import CacheCreation
+    except ImportError:
+        # Skip if anthropic is not installed
+        import pytest
+
+        pytest.skip("anthropic package not available")
+
+    tracker = UsageTracker()
+
+    # Simulate Anthropic usage with CacheCreation objects
+    usage_entry1 = {
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "cache_creation_input_tokens": CacheCreation(ephemeral_1h_input_tokens=1024, ephemeral_5m_input_tokens=512),
+        "cache_read_input_tokens": None,
+    }
+
+    usage_entry2 = {
+        "input_tokens": 200,
+        "output_tokens": 75,
+        "cache_creation_input_tokens": CacheCreation(ephemeral_1h_input_tokens=2048, ephemeral_5m_input_tokens=1024),
+        "cache_read_input_tokens": None,
+    }
+
+    usage_entry3 = {
+        "input_tokens": 150,
+        "output_tokens": 60,
+        "cache_creation_input_tokens": CacheCreation(ephemeral_1h_input_tokens=512, ephemeral_5m_input_tokens=256),
+        "cache_read_input_tokens": 100,
+    }
+
+    tracker.add_usage("claude-sonnet-4", usage_entry1)
+    tracker.add_usage("claude-sonnet-4", usage_entry2)
+    tracker.add_usage("claude-sonnet-4", usage_entry3)
+
+    total_usage = tracker.get_total_tokens()
+
+    # Verify basic token counts
+    assert total_usage["claude-sonnet-4"]["input_tokens"] == 450  # 100 + 200 + 150
+    assert total_usage["claude-sonnet-4"]["output_tokens"] == 185  # 50 + 75 + 60
+
+    # Verify CacheCreation objects were merged correctly
+    assert (
+        total_usage["claude-sonnet-4"]["cache_creation_input_tokens"]["ephemeral_1h_input_tokens"] == 3584
+    )  # 1024 + 2048 + 512
+    assert (
+        total_usage["claude-sonnet-4"]["cache_creation_input_tokens"]["ephemeral_5m_input_tokens"] == 1792
+    )  # 512 + 1024 + 256
+
+    # Verify cache read tokens
+    assert total_usage["claude-sonnet-4"]["cache_read_input_tokens"] == 100
