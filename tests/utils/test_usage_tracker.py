@@ -226,7 +226,7 @@ def test_merge_usage_entries_with_none_values():
 
 
 def test_merge_usage_entries_with_pydantic_models():
-    """Test merging usage entries with Pydantic model objects (e.g., Anthropic CacheCreation)."""
+    """Test merging usage entries with Pydantic model objects, like `PromptTokensDetailsWrapper` from litellm."""
     tracker = UsageTracker()
 
     # Add usage entries for different models
