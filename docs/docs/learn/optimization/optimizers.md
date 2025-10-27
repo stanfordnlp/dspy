@@ -35,7 +35,7 @@ Different optimizers in DSPy will tune your program's quality by **synthesizing 
 
 ## What DSPy Optimizers are currently available?
 
-Optimizers can be accessed directly as `dspy.<OptimizerName>` (e.g., `dspy.MIPROv2`, `dspy.BootstrapFewShot`) or via `from dspy import <OptimizerName>`.
+Optimizers can be accessed as `dspy.<OptimizerName>` (e.g., `dspy.MIPROv2`, `dspy.BootstrapFewShot`).
 
 ### Automatic Few-Shot Learning
 
@@ -93,13 +93,13 @@ They all share this general interface, with some differences in the keyword argu
 Let's see this with the most common one, `BootstrapFewShotWithRandomSearch`.
 
 ```python
-from dspy import BootstrapFewShotWithRandomSearch
+import dspy
 
 # Set up the optimizer: we want to "bootstrap" (i.e., self-generate) 8-shot examples of your program's steps.
 # The optimizer will repeat this 10 times (plus some initial attempts) before selecting its best attempt on the devset.
 config = dict(max_bootstrapped_demos=4, max_labeled_demos=4, num_candidate_programs=10, num_threads=4)
 
-teleprompter = BootstrapFewShotWithRandomSearch(metric=YOUR_METRIC_HERE, **config)
+teleprompter = dspy.BootstrapFewShotWithRandomSearch(metric=YOUR_METRIC_HERE, **config)
 optimized_program = teleprompter.compile(YOUR_PROGRAM_HERE, trainset=YOUR_TRAINSET_HERE)
 ```
 
