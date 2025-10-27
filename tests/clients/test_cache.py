@@ -77,7 +77,11 @@ def test_cache_key_generation(cache):
     request = {"prompt": "Hello", "model": "openai/gpt-4o-mini", "temperature": 0.7}
     key = cache.cache_key(request)
     assert isinstance(key, str)
-    assert len(key) == 64  # SHA-256 hash is 64 characters
+    assert len(key) == 16  # xxhash64 produces 16 character hex string
+    
+    # Test determinism - same input should produce same key
+    key2 = cache.cache_key(request)
+    assert key == key2, "Cache keys must be deterministic"
 
     # Test with pydantic model
     class TestModel(pydantic.BaseModel):
