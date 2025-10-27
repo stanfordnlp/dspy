@@ -23,12 +23,19 @@ class UsageTracker:
         self.usage_data = defaultdict(list)
 
     def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, Any]:
-        result = dict(usage_entry)
-
-        if completion_tokens_details := result.get("completion_tokens_details"):
-            result["completion_tokens_details"] = dict(completion_tokens_details)
-        if prompt_tokens_details := result.get("prompt_tokens_details"):
-            result["prompt_tokens_details"] = dict(prompt_tokens_details)
+        result = {}
+        for key, value in usage_entry.items():
+            # Convert Pydantic models to dicts
+            if isinstance(value, BaseModel):
+                result[key] = value.model_dump()
+            # Try converting dict-like objects to dicts (for OpenAI-style usage)
+            elif key in ("completion_tokens_details", "prompt_tokens_details") and value is not None:
+                try:
+                    result[key] = dict(value)
+                except (TypeError, ValueError):
+                    result[key] = value
+            else:
+                result[key] = value
         return result
 
     def _merge_usage_entries(
