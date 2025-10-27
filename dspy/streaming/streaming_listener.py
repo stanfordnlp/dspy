@@ -212,8 +212,9 @@ class StreamListener:
                 # Buffer cannot form end identifier, safe to flush out the tokens in the buffer.
                 token = self.flush()
             elif self.field_end_queue.qsize() > 10:
-                # We keep the last 10 tokens in the buffer to avoid sending the DSPy bolilerplate tokens to users.
-                # 10 is a heuristic number that is sufficient to capture the end_identifier for all LMs.
+                # We keep the last 10 tokens in the buffer if they can potentially form the end_identifier to avoid
+                # sending the DSPy bolilerplate tokens to users. 10 is a heuristic number that is sufficient to capture
+                # the end_identifier for all LMs.
                 token = self.field_end_queue.get()
 
             if isinstance(settings.adapter, JSONAdapter):
@@ -224,10 +225,10 @@ class StreamListener:
                 # Other adapters rely on the end_identifier to detect the end of the field we are listening to.
                 return self._default_handle_stream_chunk(token, end_identifier)
 
-    def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> str:
+    def _json_adapter_handle_stream_chunk(self, token: str, chunk_message: str) -> StreamResponse | None:
         self.json_adapter_state["field_accumulated_tokens"] += chunk_message
         if self.json_adapter_state["field_accumulated_tokens"].rstrip().endswith("}"):
-            # When the accumulated tokens ends with a curly bracket, that means the streaming for the predict we are
+            # When the accumulated tokens ends with a curly b   racket, that means the streaming for the predict we are
             # listening to is probably finished, we need to run a check and decide whether to end the stream.
             try:
                 # If the parse doesn't raise an error, that means the accumulated tokens is a valid json object. Because
@@ -277,7 +278,7 @@ class StreamListener:
                 is_last_chunk=self.stream_end,
             )
 
-    def _default_handle_stream_chunk(self, token: str, end_identifier: str) -> str:
+    def _default_handle_stream_chunk(self, token: str, end_identifier: str) -> StreamResponse | None:
         concat_message = "".join(self.field_end_queue.queue).strip()
 
         if re.search(end_identifier, concat_message):
