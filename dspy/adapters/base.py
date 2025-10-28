@@ -106,9 +106,8 @@ class Adapter:
                 isinstance(field.annotation, type)
                 and issubclass(field.annotation, Type)
                 and field.annotation in self.native_response_types
-                and field.annotation.adapt_to_native_lm_feature(lm, lm_kwargs)
             ):
-                signature = signature.delete(name)
+                signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
         return signature
 
@@ -155,15 +154,16 @@ class Adapter:
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
-            # Parse custom types that does not rely on the adapter parsing
+            # Parse custom types that does not rely on the `Adapter.parse()` method
             for name, field in original_signature.output_fields.items():
                 if (
                     isinstance(field.annotation, type)
                     and issubclass(field.annotation, Type)
                     and field.annotation in self.native_response_types
-                    and field.annotation.adapt_to_native_lm_feature(lm, lm_kwargs)
                 ):
-                    value[name] = field.annotation.parse_lm_response(output)
+                    parsed_value = field.annotation.parse_lm_response(output)
+                    if parsed_value is not None:
+                        value[name] = parsed_value
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs

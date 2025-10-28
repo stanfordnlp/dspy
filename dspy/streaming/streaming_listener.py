@@ -130,13 +130,6 @@ class StreamListener:
             else:
                 return
 
-        try:
-            chunk_message = chunk.choices[0].delta.content
-            if chunk_message is None:
-                return
-        except Exception:
-            return
-
         # Handle custom streamable types
         if self._output_type and issubclass(self._output_type, Type) and self._output_type.is_streamable():
             if parsed_chunk := self._output_type.parse_stream_chunk(chunk):
@@ -146,6 +139,13 @@ class StreamListener:
                     parsed_chunk,
                     is_last_chunk=self.stream_end,
                 )
+
+        try:
+            chunk_message = chunk.choices[0].delta.content
+            if chunk_message is None:
+                return
+        except Exception:
+            return
 
         if chunk_message and start_identifier in chunk_message:
             # If the cache is hit, the chunk_message could be the full response. When it happens we can
@@ -287,8 +287,9 @@ class StreamListener:
             return None
 
 
-
-def find_predictor_for_stream_listeners(program: "Module", stream_listeners: list[StreamListener]) -> dict[int, list[StreamListener]]:
+def find_predictor_for_stream_listeners(
+    program: "Module", stream_listeners: list[StreamListener]
+) -> dict[int, list[StreamListener]]:
     """Find the predictor for each stream listener.
 
     This is a utility function to automatically find the predictor for each stream listener. It is used when some
@@ -336,6 +337,7 @@ def find_predictor_for_stream_listeners(program: "Module", stream_listeners: lis
         listener.predict_name, listener.predict = field_name_to_named_predictor[listener.signature_field_name]
         predict_id_to_listener[id(listener.predict)].append(listener)
     return predict_id_to_listener
+
 
 def _is_streamable(field_type: type | None) -> bool:
     if field_type is None:
