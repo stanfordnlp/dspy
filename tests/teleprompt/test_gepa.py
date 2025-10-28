@@ -80,6 +80,7 @@ def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
 @pytest.fixture
 def mock_mlflow():
     mock_mlflow = mock.MagicMock()
+    mock_mlflow.active_run.return_value = None
     with mock.patch.dict("sys.modules", {"mlflow": mock_mlflow}):
         yield mock_mlflow
 
