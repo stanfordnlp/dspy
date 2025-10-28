@@ -162,8 +162,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 # Otherwise, route to appropriate proposers
                 # Separate react_module components from regular instruction components
-                react_module_components = [c for c in components_to_update if c.startswith("react_module")]
-                instruction_components = [c for c in components_to_update if not c.startswith("react_module")]
+                react_module_components = [c for c in components_to_update if c.startswith(REACT_MODULE_PREFIX)]
+                instruction_components = [c for c in components_to_update if not c.startswith(REACT_MODULE_PREFIX)]
 
                 results: dict[str, str] = {}
 
@@ -234,8 +234,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     continue
 
                 # Build module key
-                prefix = module_path.removeprefix("self.") if module_path != "self" else ""
-                module_key = "react_module" if prefix == "" else f"react_module:{prefix}"
+                normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
+                module_key = REACT_MODULE_PREFIX if normalized_path == "" else f"{REACT_MODULE_PREFIX}:{normalized_path}"
 
                 # Check if this module was optimized
                 if module_key not in candidate:
@@ -342,16 +342,19 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             logger.info(f"Processing component: {pred_name}")
 
             # Handle ReAct module components - use extract predictor for final outputs
-            if pred_name.startswith("react_module"):
+            if pred_name.startswith(REACT_MODULE_PREFIX):
                 # Extract the target path from the key
-                target_path = pred_name.replace("react_module:", "") if ":" in pred_name else ""
+                target_path = pred_name.removeprefix(f"{REACT_MODULE_PREFIX}:") if ":" in pred_name else ""
 
                 # Find the ReAct module by traversing program structure (same as regular predictors)
                 react_module = None
                 for module_path, m in program.named_sub_modules():
-                    clean_path = module_path.removeprefix("self.")
-                    # For top-level ReAct (target_path=""), match "self" or empty string
-                    if isinstance(m, ReAct) and (clean_path == target_path or (target_path == "" and clean_path == "self")):
+                    if not isinstance(m, ReAct):
+                        continue
+                    
+                    # Normalize path (same pattern as build_program)
+                    normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
+                    if normalized_path == target_path:
                         react_module = m
                         break
 
@@ -392,7 +395,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     continue
 
                 # For ReAct modules, use LAST extract invocation (has trajectory + final outputs)
-                if pred_name.startswith("react_module"):
+                if pred_name.startswith(REACT_MODULE_PREFIX):
                     selected = trace_instances[-1]
                     logger.debug(f"  Using LAST extract call ({len(trace_instances)} total) with trajectory + final outputs")
                     if "trajectory" in selected[1]:
@@ -485,7 +488,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 items.append(d)
 
                 # Log exact reflective example that reflection LM will see
-                if pred_name.startswith("react_module") and len(items) == 1:
+                if pred_name.startswith(REACT_MODULE_PREFIX) and len(items) == 1:
                     logger.info(f"  First reflective example for {pred_name}:")
                     logger.info(f"    Inputs: {list(d['Inputs'].keys())}")
                     if "trajectory" in d["Inputs"]:

@@ -12,7 +12,7 @@ from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 from dspy.clients.lm import LM
 from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, REACT_MODULE_PREFIX, ScoreWithFeedback
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -539,12 +539,14 @@ class GEPA(Teleprompter):
                 # Only process ReAct modules
                 if not isinstance(module, ReAct):
                     continue
-                prefix = module_path.removeprefix("self.") if module_path != "self" else ""
+                normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
 
                 # Get first predictor name as module identifier
                 for pred_name, _ in module.named_predictors():
-                    comp_name = pred_name if not prefix else f"{prefix}.{pred_name}"
-                    module_key = f"react_module:{comp_name.split('.')[0]}" if prefix else "react_module"
+                    comp_name = pred_name if not normalized_path else f"{normalized_path}.{pred_name}"
+                    # Use full normalized path to avoid collapsing nested modules
+                    # e.g., "multi_agent.coordinator" not "multi_agent"
+                    module_key = f"{REACT_MODULE_PREFIX}:{normalized_path}" if normalized_path else REACT_MODULE_PREFIX
 
                     # Build JSON config with tool args for reflection
                     config = {
@@ -563,7 +565,7 @@ class GEPA(Teleprompter):
 
                     # Replace predictor keys with module key and extract key to prevent duplicates
                     base_program.pop(comp_name, None)
-                    extract_key = f"{prefix}.extract.predict" if prefix else "extract.predict"
+                    extract_key = f"{normalized_path}.extract.predict" if normalized_path else "extract.predict"
                     base_program.pop(extract_key, None)
                     base_program[module_key] = json.dumps(config, indent=2)
                     break
@@ -571,7 +573,7 @@ class GEPA(Teleprompter):
         # Log base_program keys for debugging
         logger.info(f"Initialized base_program with {len(base_program)} components:")
         for key in sorted(base_program.keys()):
-            if key.startswith("react_module"):
+            if key.startswith(REACT_MODULE_PREFIX):
                 logger.info(f"  {key}: <ReAct module JSON config>")
             else:
                 logger.info(f"  {key}: <instruction>")
