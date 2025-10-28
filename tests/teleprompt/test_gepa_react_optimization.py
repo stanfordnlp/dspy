@@ -191,17 +191,24 @@ def setup_spy_for_base_program(monkeypatch):
     return captured_base_program
 
 
+def simple_metric_for_detection(example, pred, trace=None, pred_name=None, pred_trace=None):
+    """Simple metric for GEPA detection tests."""
+    return dspy.Prediction(score=0.5, feedback="ok")
+
+
+def simple_metric_for_reconstruction(example, pred, trace=None):
+    """Simple metric for adapter reconstruction tests."""
+    return 0.5
+
+
 def create_gepa_optimizer_for_detection():
     """Create GEPA optimizer with standard test configuration."""
     task_lm = DummyLM([{"answer": "test"}] * 10)
     reflection_lm = DummyLM([{"improved_instruction": "optimized"}] * 10)
     dspy.settings.configure(lm=task_lm)
     
-    def simple_metric(example, pred, trace=None, pred_name=None, pred_trace=None):
-        return dspy.Prediction(score=0.5, feedback="ok")
-    
     optimizer = dspy.GEPA(
-        metric=simple_metric,
+        metric=simple_metric_for_detection,
         reflection_lm=reflection_lm,
         max_metric_calls=2,
         optimize_react_components=True,
@@ -244,12 +251,68 @@ def assert_regular_module_detected(captured_base_program, module_key):
     return instruction
 
 
-def test_single_react_module_detection(monkeypatch):
-    """Test GEPA detects a single top-level ReAct module."""
+def assert_react_module_updated(react_module, expected_react_instruction, expected_extract_instruction, expected_tool_descriptions):
+    """Assert that a ReAct module was properly updated with optimized instructions.
+    
+    Args:
+        react_module: The ReAct module instance to check
+        expected_react_instruction: Expected react instruction text
+        expected_extract_instruction: Expected extract instruction text
+        expected_tool_descriptions: Dict of {tool_name: {"desc": desc, "arg_desc": {arg: desc}}}
+    """
+    assert react_module.react.signature.instructions == expected_react_instruction, \
+        f"React instruction mismatch: got {react_module.react.signature.instructions}"
+    
+    assert react_module.extract.predict.signature.instructions == expected_extract_instruction, \
+        f"Extract instruction mismatch: got {react_module.extract.predict.signature.instructions}"
+    
+    for tool_name, tool_desc in expected_tool_descriptions.items():
+        tool = react_module.tools[tool_name]
+        
+        if "desc" in tool_desc:
+            assert tool.desc == tool_desc["desc"], \
+                f"Tool '{tool_name}' desc mismatch: got {tool.desc}"
+        
+        if "arg_desc" in tool_desc:
+            for arg_name, expected_arg_desc in tool_desc["arg_desc"].items():
+                assert tool.arg_desc.get(arg_name) == expected_arg_desc, \
+                    f"Tool '{tool_name}' arg '{arg_name}' desc mismatch"
+
+
+def assert_regular_module_updated(predictor, expected_instruction):
+    """Assert that a regular (non-ReAct) predictor was updated with optimized instruction."""
+    assert predictor.signature.instructions == expected_instruction, \
+        f"Instruction mismatch: expected '{expected_instruction}', got '{predictor.signature.instructions}'"
+
+
+def mock_optimized_react_module(optimized_candidate, module_path, react_instruction, extract_instruction, tool_descriptions):
+    """Helper to mock an optimized ReAct module in the candidate dict.
+    
+    Args:
+        optimized_candidate: The candidate dict to modify
+        module_path: Module path (e.g., "multi_agent.orchestrator" or "" for top-level)
+        react_instruction: New react instruction
+        extract_instruction: New extract instruction
+        tool_descriptions: Dict of {tool_name: {"desc": desc, "arg_desc": {arg: desc}}}
+    """
     from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
     
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    module_key = REACT_MODULE_PREFIX if module_path == "" else f"{REACT_MODULE_PREFIX}:{module_path}"
+    config = json.loads(optimized_candidate[module_key])
+    config["react"] = react_instruction
+    config["extract"] = extract_instruction
     
+    for tool_name, tool_desc in tool_descriptions.items():
+        if "desc" in tool_desc:
+            config["tools"][tool_name]["desc"] = tool_desc["desc"]
+        if "arg_desc" in tool_desc:
+            config["tools"][tool_name]["arg_desc"] = tool_desc["arg_desc"]
+    
+    optimized_candidate[module_key] = json.dumps(config)
+
+
+def create_single_react_program():
+    """Create a simple single ReAct module program."""
     def search_tool(query: str) -> str:
         """Search for information."""
         return f"Results for: {query}"
@@ -258,7 +321,7 @@ def test_single_react_module_detection(monkeypatch):
         """Calculate math expression."""
         return "42"
     
-    program = dspy.ReAct(
+    return dspy.ReAct(
         "question -> answer",
         tools=[
             dspy.Tool(search_tool, name="search", desc="Search the web"),
@@ -266,30 +329,10 @@ def test_single_react_module_detection(monkeypatch):
         ],
         max_iters=3
     )
-    
-    optimizer, trainset = create_gepa_optimizer_for_detection()
-    
-    try:
-        optimizer.compile(program, trainset=trainset, valset=trainset)
-    except:
-        pass
-    
-    module_key = REACT_MODULE_PREFIX
-    assert module_key in captured_base_program, f"Expected '{module_key}' to be detected"
-    
-    assert_react_module_detected(
-        captured_base_program, 
-        "",
-        {"search": "Search the web", "calc": "Calculate math"}
-    )
 
 
-def test_multi_react_workflow_detection(monkeypatch):
-    """Test GEPA detects multiple ReAct modules (tests bug fix for path truncation)."""
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
-    
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
-    
+def create_multi_react_workflow_program():
+    """Create a mixed workflow program with 2 ReAct + 1 ChainOfThought."""
     class ResearchWorkflow(dspy.Module):
         def __init__(self):
             super().__init__()
@@ -328,32 +371,11 @@ def test_multi_react_workflow_detection(monkeypatch):
         def forward(self, question):
             return self.workflow(question=question)
     
-    program = MixedWorkflowSystem()
-    
-    optimizer, trainset = create_gepa_optimizer_for_detection()
-    
-    try:
-        optimizer.compile(program, trainset=trainset, valset=trainset)
-    except:
-        pass
-    
-    assert f"{REACT_MODULE_PREFIX}:workflow.coordinator" in captured_base_program
-    assert f"{REACT_MODULE_PREFIX}:workflow.researcher" in captured_base_program
-    
-    react_modules = [k for k in captured_base_program.keys() if k.startswith(REACT_MODULE_PREFIX)]
-    assert len(react_modules) == 2, f"Expected 2 ReAct modules, got {len(react_modules)}"
-    
-    assert_react_module_detected(captured_base_program, "workflow.coordinator", {"search": "Search tool"})
-    assert_react_module_detected(captured_base_program, "workflow.researcher", {"analyze": "Analysis tool"})
-    assert_regular_module_detected(captured_base_program, "workflow.summarizer.predict")
+    return MixedWorkflowSystem()
 
 
-def test_nested_react_orchestrator_worker_detection(monkeypatch):
-    """Test GEPA detects orchestrator with 2 worker ReAct modules as tools."""
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
-    
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
-    
+def create_orchestrator_with_workers_program():
+    """Create orchestrator with 2 worker ReAct modules as tools."""
     class OrchestratorWorkerSystem(dspy.Module):
         def __init__(self):
             super().__init__()
@@ -409,7 +431,75 @@ def test_nested_react_orchestrator_worker_detection(monkeypatch):
         def forward(self, question):
             return self.multi_agent(question=question)
     
-    program = MultiAgentSystem()
+    return MultiAgentSystem()
+
+
+def test_single_react_module_detection(monkeypatch):
+    """Test GEPA detects a single top-level ReAct module."""
+    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
+    
+    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    program = create_single_react_program()
+    
+    optimizer, trainset = create_gepa_optimizer_for_detection()
+    
+    try:
+        optimizer.compile(program, trainset=trainset, valset=trainset)
+    except:
+        pass
+    
+    module_key = REACT_MODULE_PREFIX
+    assert module_key in captured_base_program, f"Expected '{module_key}' to be detected"
+    
+    assert_react_module_detected(
+        captured_base_program=captured_base_program,
+        module_path="",
+        expected_tools={"search": "Search the web", "calc": "Calculate math"}
+    )
+
+
+def test_multi_react_workflow_detection(monkeypatch):
+    """Test GEPA detects multiple ReAct modules (tests bug fix for path truncation)."""
+    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
+    
+    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    program = create_multi_react_workflow_program()
+    
+    optimizer, trainset = create_gepa_optimizer_for_detection()
+    
+    try:
+        optimizer.compile(program, trainset=trainset, valset=trainset)
+    except:
+        pass
+    
+    assert f"{REACT_MODULE_PREFIX}:workflow.coordinator" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:workflow.researcher" in captured_base_program
+    
+    react_modules = [k for k in captured_base_program.keys() if k.startswith(REACT_MODULE_PREFIX)]
+    assert len(react_modules) == 2, f"Expected 2 ReAct modules, got {len(react_modules)}"
+    
+    assert_react_module_detected(
+        captured_base_program=captured_base_program,
+        module_path="workflow.coordinator",
+        expected_tools={"search": "Search tool"}
+    )
+    assert_react_module_detected(
+        captured_base_program=captured_base_program,
+        module_path="workflow.researcher",
+        expected_tools={"analyze": "Analysis tool"}
+    )
+    assert_regular_module_detected(
+        captured_base_program=captured_base_program,
+        module_key="workflow.summarizer.predict"
+    )
+
+
+def test_nested_react_orchestrator_worker_detection(monkeypatch):
+    """Test GEPA detects orchestrator with 2 worker ReAct modules as tools."""
+    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
+    
+    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    program = create_orchestrator_with_workers_program()
     
     optimizer, trainset = create_gepa_optimizer_for_detection()
     
@@ -426,9 +516,224 @@ def test_nested_react_orchestrator_worker_detection(monkeypatch):
     assert len(react_modules) == 3, f"Expected 3 ReAct modules, got {len(react_modules)}"
     
     assert_react_module_detected(
-        captured_base_program,
-        "multi_agent.orchestrator",
-        {"search": "Search tool", "analyst": "Use analyst", "researcher": "Use researcher"}
+        captured_base_program=captured_base_program,
+        module_path="multi_agent.orchestrator",
+        expected_tools={"search": "Search tool", "analyst": "Use analyst", "researcher": "Use researcher"}
     )
-    assert_react_module_detected(captured_base_program, "multi_agent.analyst", {"analyze": "Analyze data"})
-    assert_react_module_detected(captured_base_program, "multi_agent.researcher", {"research": "Research topic"})
+    assert_react_module_detected(
+        captured_base_program=captured_base_program,
+        module_path="multi_agent.analyst",
+        expected_tools={"analyze": "Analyze data"}
+    )
+    assert_react_module_detected(
+        captured_base_program=captured_base_program,
+        module_path="multi_agent.researcher",
+        expected_tools={"research": "Research topic"}
+    )
+
+
+def test_build_program_single_react(monkeypatch):
+    """Test build_program applies optimizations to single top-level ReAct module."""
+    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, DspyAdapter
+    
+    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    program = create_single_react_program()
+    
+    optimizer, trainset = create_gepa_optimizer_for_detection()
+    
+    try:
+        optimizer.compile(program, trainset=trainset, valset=trainset)
+    except:
+        pass
+    
+    # Mock optimized candidate
+    optimized_candidate = dict(captured_base_program)
+    mock_optimized_react_module(
+        optimized_candidate=optimized_candidate,
+        module_path="",
+        react_instruction="OPTIMIZED: React instruction",
+        extract_instruction="OPTIMIZED: Extract instruction",
+        tool_descriptions={
+            "search": {"desc": "OPTIMIZED: Search description"},
+            "calc": {"desc": "OPTIMIZED: Calc description"}
+        }
+    )
+    
+    # Build program
+    adapter = DspyAdapter(
+        student_module=program,
+        metric_fn=simple_metric_for_reconstruction,
+        feedback_map={},
+        optimize_react_components=True
+    )
+    rebuilt_program = adapter.build_program(optimized_candidate)
+    
+    # Assert updates applied
+    assert_react_module_updated(
+        react_module=rebuilt_program,
+        expected_react_instruction="OPTIMIZED: React instruction",
+        expected_extract_instruction="OPTIMIZED: Extract instruction",
+        expected_tool_descriptions={
+            "search": {"desc": "OPTIMIZED: Search description"},
+            "calc": {"desc": "OPTIMIZED: Calc description"}
+        }
+    )
+    
+    # Verify original unchanged
+    assert program.react.signature.instructions != "OPTIMIZED: React instruction"
+
+
+def test_build_program_multi_react_workflow(monkeypatch):
+    """Test build_program applies optimizations to mixed ReAct + non-ReAct workflow."""
+    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, DspyAdapter
+    
+    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    program = create_multi_react_workflow_program()
+    
+    optimizer, trainset = create_gepa_optimizer_for_detection()
+    
+    try:
+        optimizer.compile(program, trainset=trainset, valset=trainset)
+    except:
+        pass
+    
+    # Mock optimized candidate
+    optimized_candidate = dict(captured_base_program)
+    
+    mock_optimized_react_module(
+        optimized_candidate=optimized_candidate,
+        module_path="workflow.coordinator",
+        react_instruction="OPTIMIZED: Coordinator react",
+        extract_instruction="OPTIMIZED: Coordinator extract",
+        tool_descriptions={"search": {"desc": "OPTIMIZED: Search tool"}}
+    )
+    
+    mock_optimized_react_module(
+        optimized_candidate=optimized_candidate,
+        module_path="workflow.researcher",
+        react_instruction="OPTIMIZED: Researcher react",
+        extract_instruction="OPTIMIZED: Researcher extract",
+        tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}}
+    )
+    
+    # Optimize summarizer (non-ReAct ChainOfThought)
+    optimized_candidate["workflow.summarizer.predict"] = "OPTIMIZED: Summarizer instruction"
+    
+    # Build program
+    adapter = DspyAdapter(
+        student_module=program,
+        metric_fn=simple_metric_for_reconstruction,
+        feedback_map={},
+        optimize_react_components=True
+    )
+    rebuilt_program = adapter.build_program(optimized_candidate)
+    
+    # Assert ReAct modules updated
+    assert_react_module_updated(
+        react_module=rebuilt_program.workflow.coordinator,
+        expected_react_instruction="OPTIMIZED: Coordinator react",
+        expected_extract_instruction="OPTIMIZED: Coordinator extract",
+        expected_tool_descriptions={"search": {"desc": "OPTIMIZED: Search tool"}}
+    )
+    
+    assert_react_module_updated(
+        react_module=rebuilt_program.workflow.researcher,
+        expected_react_instruction="OPTIMIZED: Researcher react",
+        expected_extract_instruction="OPTIMIZED: Researcher extract",
+        expected_tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}}
+    )
+    
+    # Assert non-ReAct module updated
+    assert_regular_module_updated(
+        predictor=rebuilt_program.workflow.summarizer.predict,
+        expected_instruction="OPTIMIZED: Summarizer instruction"
+    )
+    
+    # Verify original unchanged
+    assert program.workflow.coordinator.react.signature.instructions != "OPTIMIZED: Coordinator react"
+
+
+def test_build_program_orchestrator_with_workers(monkeypatch):
+    """Test build_program applies optimizations to orchestrator with worker ReAct modules."""
+    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, DspyAdapter
+    
+    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    program = create_orchestrator_with_workers_program()
+    
+    optimizer, trainset = create_gepa_optimizer_for_detection()
+    
+    try:
+        optimizer.compile(program, trainset=trainset, valset=trainset)
+    except:
+        pass
+    
+    # Mock optimized candidate
+    optimized_candidate = dict(captured_base_program)
+    
+    mock_optimized_react_module(
+        optimized_candidate=optimized_candidate,
+        module_path="multi_agent.orchestrator",
+        react_instruction="OPTIMIZED: Orchestrator react",
+        extract_instruction="OPTIMIZED: Orchestrator extract",
+        tool_descriptions={
+            "search": {
+                "desc": "OPTIMIZED: Search tool",
+                "arg_desc": {"query": "OPTIMIZED: Query param"}
+            }
+        }
+    )
+    
+    mock_optimized_react_module(
+        optimized_candidate=optimized_candidate,
+        module_path="multi_agent.analyst",
+        react_instruction="OPTIMIZED: Analyst react",
+        extract_instruction="OPTIMIZED: Analyst extract",
+        tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}}
+    )
+    
+    mock_optimized_react_module(
+        optimized_candidate=optimized_candidate,
+        module_path="multi_agent.researcher",
+        react_instruction="OPTIMIZED: Researcher react",
+        extract_instruction="OPTIMIZED: Researcher extract",
+        tool_descriptions={"research": {"desc": "OPTIMIZED: Research tool"}}
+    )
+    
+    # Build program
+    adapter = DspyAdapter(
+        student_module=program,
+        metric_fn=simple_metric_for_reconstruction,
+        feedback_map={},
+        optimize_react_components=True
+    )
+    rebuilt_program = adapter.build_program(optimized_candidate)
+    
+    # Assert all modules updated
+    assert_react_module_updated(
+        react_module=rebuilt_program.multi_agent.orchestrator,
+        expected_react_instruction="OPTIMIZED: Orchestrator react",
+        expected_extract_instruction="OPTIMIZED: Orchestrator extract",
+        expected_tool_descriptions={
+            "search": {
+                "desc": "OPTIMIZED: Search tool",
+                "arg_desc": {"query": "OPTIMIZED: Query param"}
+            }
+        }
+    )
+    
+    assert_react_module_updated(
+        react_module=rebuilt_program.multi_agent.analyst,
+        expected_react_instruction="OPTIMIZED: Analyst react",
+        expected_extract_instruction="OPTIMIZED: Analyst extract",
+        expected_tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}}
+    )
+    
+    assert_react_module_updated(
+        react_module=rebuilt_program.multi_agent.researcher,
+        expected_react_instruction="OPTIMIZED: Researcher react",
+        expected_extract_instruction="OPTIMIZED: Researcher extract",
+        expected_tool_descriptions={"research": {"desc": "OPTIMIZED: Research tool"}}
+    )
+    
+    # Verify original unchanged
+    assert program.multi_agent.orchestrator.react.signature.instructions != "OPTIMIZED: Orchestrator react"
