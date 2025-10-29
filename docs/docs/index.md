@@ -40,7 +40,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM("anthropic/claude-3-opus-20240229", api_key="YOUR_ANTHROPIC_API_KEY")
+        lm = dspy.LM("anthropic/claude-sonnet-4-5-20250929", api_key="YOUR_ANTHROPIC_API_KEY")
         dspy.configure(lm=lm)
         ```
 
