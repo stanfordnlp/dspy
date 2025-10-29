@@ -468,7 +468,9 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
             if isinstance(c, str):
                 content_blocks.append({"type": "input_text", "text": c})
             elif isinstance(c, list):
-                content_blocks.extend(c)
+                # Convert each content item from Chat API format to Responses API format
+                for item in c:
+                    content_blocks.append(_convert_content_item_to_responses_format(item))
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
 
     # Convert `response_format` to `text.format` for Responses API
@@ -478,6 +480,53 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
         request["text"] = {**text, "format": response_format}
 
     return request
+
+
+def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
+    """
+    Convert a content item from Chat API format to Responses API format.
+    
+    For images, converts from:
+        {"type": "image_url", "image_url": {"url": "..."}}
+    To:
+        {"type": "input_image", "source": {"type": "url", "url": "..."}}
+    or:
+        {"type": "input_image", "source": {"type": "base64", "media_type": "...", "data": "..."}}
+    
+    For text and other types, passes through as-is (already in correct format).
+    """
+    if item.get("type") == "image_url":
+        image_url = item.get("image_url", {}).get("url", "")
+        
+        # Check if it's a base64 data URI
+        if image_url.startswith("data:"):
+            # Extract media type and base64 data
+            # Format: data:image/png;base64,iVBORw0KG...
+            parts = image_url.split(",", 1)
+            if len(parts) == 2:
+                header, data = parts
+                # Extract media type from header (e.g., "data:image/png;base64" -> "image/png")
+                media_type = header.split(";")[0].replace("data:", "")
+                return {
+                    "type": "input_image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": data,
+                    }
+                }
+        
+        # Otherwise treat as URL
+        return {
+            "type": "input_image",
+            "source": {
+                "type": "url",
+                "url": image_url,
+            }
+        }
+    
+    # For non-image items, return as-is
+    return item
 
 
 def _get_headers(headers: dict[str, Any] | None = None):
