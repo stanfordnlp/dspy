@@ -719,6 +719,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "regex" },
     { name = "requests" },
+    { name = "tenacity" },
     { name = "tqdm" },
     { name = "xxhash" },
 ]
@@ -795,6 +796,7 @@ requires-dist = [
     { name = "regex", specifier = ">=2023.10.3" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
+    { name = "tenacity", specifier = ">=8.2.3" },
     { name = "tqdm", specifier = ">=4.66.1" },
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = "~=4.5.4" },
     { name = "xxhash", specifier = ">=3.5.0" },
