@@ -6,17 +6,15 @@ sidebar_position: 5
 
 DSPy is a machine learning framework, so you must think about your **automatic metrics** for evaluation (to track your progress) and optimization (so DSPy can make your programs more effective).
 
-
 ## What is a metric and how do I define a metric for my task?
 
-A metric is just a function that will take examples from your data and the output of your system and return a score that quantifies how good the output is. What makes outputs from your system good or bad? 
+A metric is just a function that will take examples from your data and the output of your system and return a score that quantifies how good the output is. What makes outputs from your system good or bad?
 
 For simple tasks, this could be just "accuracy" or "exact match" or "F1 score". This may be the case for simple classification or short-form QA tasks.
 
 However, for most applications, your system will output long-form outputs. There, your metric should probably be a smaller DSPy program that checks multiple properties of the output (quite possibly using AI feedback from LMs).
 
-Getting this right on the first try is unlikely, but you should start with something simple and iterate. 
-
+Getting this right on the first try is unlikely, but you should start with something simple and iterate.
 
 ## Simple metrics
 
@@ -54,6 +52,34 @@ def validate_context_and_answer(example, pred, trace=None):
 
 Defining a good metric is an iterative process, so doing some initial evaluations and looking at your data and outputs is key.
 
+## Multi-objective metrics with subscores
+
+Many real systems must balance more than one objective: quality vs. leakage, answer accuracy vs. latency, etc. DSPy metrics now expose a simple helper called [`dspy.metrics.subscore`](../../api/index.md) that lets you declare named subscores inside an ordinary Python metric. Each `subscore` behaves like a float so you can keep writing intuitive math, while DSPy records the subscore values, metadata, and the expression you returned.
+
+```python
+from dspy.metrics import subscore
+
+def metric(example, pred, ctx=None):
+    acc = subscore("accuracy", answer_exact_match(example, pred), bounds=(0, 1))
+    bleu = subscore("bleu", bleu_like(example.answer, pred.answer), bounds=(0, 1))
+    latency = subscore(
+        "latency_s",
+        (ctx.latency_ms or 0) / 1000 if ctx else 0,
+        maximize=False,
+        units="s",
+    )
+    return acc**2 + 0.3 * bleu - 0.02 * latency
+```
+
+When this metric runs during evaluation or optimization, DSPy evaluates the returned expression to obtain the aggregate scalar (preserving backwards compatibility), but also keeps a `Score` object that exposes:
+
+- `scalar`: the numeric value of the expression (`acc**2 + …`).
+- `subscores`: the resolved subscores, e.g. `{"accuracy": 1.0, "bleu": 0.73, "latency_s": 0.42}`.
+- `info`: metadata such as the canonical expression string and any per-subscore metadata you provided (bounds, maximize, units, cost, …).
+
+Optimizers can use those subscores directly for Pareto frontiers or constrained search, and evaluation tables will include additional columns for each subscore.
+
+Metrics that return subscores typically accept a third argument `ctx`, which contains runtime information (latency, token usage, optional seed). If you omit `subscore`, nothing changes—legacy metrics that return a plain float continue to work as before.
 
 ## Evaluation
 
@@ -79,7 +105,6 @@ evaluator = Evaluate(devset=YOUR_DEVSET, num_threads=1, display_progress=True, d
 evaluator(YOUR_PROGRAM, metric=YOUR_METRIC)
 ```
 
-
 ## Intermediate: Using AI feedback for your metric
 
 For most applications, your system will output long-form outputs, so your metric should check multiple dimensions of the output using AI feedback from LMs.
@@ -104,7 +129,7 @@ def metric(gold, pred, trace=None):
 
     engaging = "Does the assessed text make for a self-contained, engaging tweet?"
     correct = f"The text should answer `{question}` with `{answer}`. Does the assessed text contain this answer?"
-    
+
     correct =  dspy.Predict(Assess)(assessed_text=tweet, assessment_question=correct)
     engaging = dspy.Predict(Assess)(assessed_text=tweet, assessment_question=engaging)
 
@@ -117,19 +142,15 @@ def metric(gold, pred, trace=None):
 
 When compiling, `trace is not None`, and we want to be strict about judging things, so we will only return `True` if `score >= 2`. Otherwise, we return a score out of 1.0 (i.e., `score / 2.0`).
 
-
 ## Advanced: Using a DSPy program as your metric
 
 If your metric is itself a DSPy program, one of the most powerful ways to iterate is to compile (optimize) your metric itself. That's usually easy because the output of the metric is usually a simple value (e.g., a score out of 5) so the metric's metric is easy to define and optimize by collecting a few examples.
-
-
 
 ### Advanced: Accessing the `trace`
 
 When your metric is used during evaluation runs, DSPy will not try to track the steps of your program.
 
 But during compiling (optimization), DSPy will trace your LM calls. The trace will contain inputs/outputs to each DSPy predictor and you can leverage that to validate intermediate steps for optimization.
-
 
 ```python
 def validate_hops(example, pred, trace=None):
