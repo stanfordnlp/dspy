@@ -39,6 +39,7 @@ dependencies = [
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
     "gepa[dspy]==0.0.18",
+    "pillow>=10.1.0",
 ]
 
 [project.optional-dependencies]
