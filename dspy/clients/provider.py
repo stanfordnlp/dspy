@@ -56,10 +56,6 @@ class ReinforceJob:
         raise NotImplementedError
 
     @abstractmethod
-    def update_model(self):
-        raise NotImplementedError
-
-    @abstractmethod
     def save_checkpoint(self, checkpoint_name: str):
         raise NotImplementedError
 

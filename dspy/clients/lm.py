@@ -88,7 +88,6 @@ class LM(BaseLM):
         model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
 
         if model_pattern:
-
             if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
                 raise ValueError(
                     "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
@@ -228,9 +227,7 @@ class LM(BaseLM):
 
         return job
 
-    def reinforce(
-        self, train_kwargs
-    ) -> ReinforceJob:
+    def reinforce(self, train_kwargs) -> ReinforceJob:
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
 
@@ -273,7 +270,9 @@ class LM(BaseLM):
             "launch_kwargs",
             "train_kwargs",
         ]
-        return {key: getattr(self, key) for key in state_keys} | self.kwargs
+        # Exclude api_key from kwargs to prevent API keys from being saved in plain text
+        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k != "api_key"}
+        return {key: getattr(self, key) for key in state_keys} | filtered_kwargs
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
@@ -479,6 +478,7 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
         request["text"] = {**text, "format": response_format}
 
     return request
+
 
 def _get_headers(headers: dict[str, Any] | None = None):
     headers = headers or {}

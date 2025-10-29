@@ -12,3 +12,6 @@ This tutorial explores how GEPA leverages predictor-level feedback to improve GP
 
 ### [GEPA for Privacy-Conscious Delegation](../gepa_papillon/index.ipynb)
 This tutorial explores how GEPA can improve rapidly in as few as 1 iteration, while leveraging a simple feedback provided by a LLM-as-a-judge metric. The tutorial also explores how GEPA benefits from the textual feedback showing a breakdown of aggregate metrics into sub-components, allowing the reflection LM to identify what aspects of the task need improvement.
+
+### [GEPA for Code Backdoor Classification (AI control)](../gepa_trusted_monitor/index.ipynb)
+This tutorial explores how GEPA can optimize a GPT-4.1 Nano classifier to identify backdoors in code written by a larger LM, using `dspy.GEPA` and a comparative metric! The comparative metric allows the prompt optimizer to create a prompt that identifies the signals in the code that are indicative of a backdoor, teasing apart positive samples from negative samples.
