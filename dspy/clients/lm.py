@@ -506,7 +506,14 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
             if len(parts) == 2:
                 header, data = parts
                 # Extract media type from header (e.g., "data:image/png;base64" -> "image/png")
-                media_type = header.split(";")[0].replace("data:", "")
+                # Handle both "data:image/png;base64" and "data:image/png" formats
+                media_type_parts = header.split(";")[0].replace("data:", "")
+                if media_type_parts:
+                    media_type = media_type_parts
+                else:
+                    # Fallback to a default media type if extraction fails
+                    media_type = "image/png"
+
                 return {
                     "type": "input_image",
                     "source": {
@@ -515,6 +522,7 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
                         "data": data,
                     }
                 }
+            # If data URI is malformed (doesn't have comma separator), fall through to URL handling
 
         # Otherwise treat as URL
         return {
