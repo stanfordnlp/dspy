@@ -343,8 +343,8 @@ def test_reasoning_model_requirements(model_name):
     lm = dspy.LM(
         model=model_name,
     )
-    assert lm.kwargs["temperature"] == None
-    assert lm.kwargs["max_completion_tokens"] == None
+    assert lm.kwargs["temperature"] is None
+    assert lm.kwargs["max_completion_tokens"] is None
 
 
 def test_dump_state():
@@ -638,7 +638,7 @@ def test_api_key_not_saved_in_json():
 def test_responses_api_converts_images_correctly():
     """Test that image_url format is converted to input_image format for Responses API."""
     from dspy.clients.lm import _convert_chat_request_to_responses_request
-    
+
     # Test with base64 image
     request_with_base64_image = {
         "model": "openai/gpt-5-mini",
@@ -657,26 +657,26 @@ def test_responses_api_converts_images_correctly():
             }
         ]
     }
-    
+
     result = _convert_chat_request_to_responses_request(request_with_base64_image)
-    
+
     assert "input" in result
     assert len(result["input"]) == 1
     assert result["input"][0]["role"] == "user"
-    
+
     content = result["input"][0]["content"]
     assert len(content) == 2
-    
+
     # First item should be text (passed through as-is since it's already in correct format)
     assert content[0]["type"] == "text"
     assert content[0]["text"] == "What's in this image?"
-    
+
     # Second item should be converted to input_image format
     assert content[1]["type"] == "input_image"
     assert content[1]["source"]["type"] == "base64"
     assert content[1]["source"]["media_type"] == "image/png"
     assert content[1]["source"]["data"] == "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    
+
     # Test with URL image
     request_with_url_image = {
         "model": "openai/gpt-5-mini",
@@ -694,9 +694,9 @@ def test_responses_api_converts_images_correctly():
             }
         ]
     }
-    
+
     result = _convert_chat_request_to_responses_request(request_with_url_image)
-    
+
     content = result["input"][0]["content"]
     assert len(content) == 1
     assert content[0]["type"] == "input_image"
@@ -730,7 +730,7 @@ def test_responses_api_with_image_input():
             temperature=1.0,
             max_tokens=16000,
         )
-        
+
         # Test with messages containing an image
         messages = [
             {
@@ -746,18 +746,18 @@ def test_responses_api_with_image_input():
                 ]
             }
         ]
-        
+
         lm_result = lm(messages=messages)
 
         assert lm_result == [{"text": "This is a test answer with image input."}]
 
         dspy_responses.assert_called_once()
         call_args = dspy_responses.call_args.kwargs
-        
+
         # Verify the request was converted correctly
         assert "input" in call_args
         content = call_args["input"][0]["content"]
-        
+
         # Check that image was converted to input_image format
         image_content = [c for c in content if c.get("type") == "input_image"]
         assert len(image_content) == 1

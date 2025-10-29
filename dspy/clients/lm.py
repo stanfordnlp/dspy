@@ -485,19 +485,19 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
 def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
     """
     Convert a content item from Chat API format to Responses API format.
-    
+
     For images, converts from:
         {"type": "image_url", "image_url": {"url": "..."}}
     To:
         {"type": "input_image", "source": {"type": "url", "url": "..."}}
     or:
         {"type": "input_image", "source": {"type": "base64", "media_type": "...", "data": "..."}}
-    
+
     For text and other types, passes through as-is (already in correct format).
     """
     if item.get("type") == "image_url":
         image_url = item.get("image_url", {}).get("url", "")
-        
+
         # Check if it's a base64 data URI
         if image_url.startswith("data:"):
             # Extract media type and base64 data
@@ -515,7 +515,7 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
                         "data": data,
                     }
                 }
-        
+
         # Otherwise treat as URL
         return {
             "type": "input_image",
@@ -524,7 +524,7 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
                 "url": image_url,
             }
         }
-    
+
     # For non-image items, return as-is
     return item
 
