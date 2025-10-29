@@ -60,7 +60,7 @@ import os
 
 os.environ["ANTHROPIC_API_KEY"] = "{your_anthropic_key}"
 lm = dspy.LM(
-    "anthropic/claude-3-5-sonnet-20240620",
+    "anthropic/claude-sonnet-4-5-20250929",
     cache_control_injection_points=[
         {
             "location": "message",
