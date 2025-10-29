@@ -140,6 +140,7 @@ class StreamListener:
                     is_last_chunk=self.stream_end,
                 )
 
+        # For non-custom streamable types, the streaming chunks come from the content field of the ModelResponseStream.
         try:
             chunk_message = chunk.choices[0].delta.content
             if chunk_message is None:
