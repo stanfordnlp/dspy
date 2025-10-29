@@ -271,6 +271,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                             if arg_desc:
                                 tool.arg_desc = tool.arg_desc or {}
                                 tool.arg_desc.update(arg_desc)
+                                # Propagate to tool.args
+                                for arg_name, description in arg_desc.items():
+                                    if arg_name in tool.args:
+                                        tool.args[arg_name]["description"] = description
                                 logger.debug(f"  Updated tool '{tool_name}' arg descriptions: {list(arg_desc.keys())}")
 
                 except json.JSONDecodeError as e:
@@ -351,7 +355,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for module_path, m in program.named_sub_modules():
                     if not isinstance(m, ReAct):
                         continue
-                    
+
                     # Normalize path (same pattern as build_program)
                     normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
                     if normalized_path == target_path:
