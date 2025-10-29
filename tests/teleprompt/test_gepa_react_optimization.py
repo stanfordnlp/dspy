@@ -288,8 +288,11 @@ def assert_react_module_updated(react_module, expected_react_instruction, expect
 
         if "arg_desc" in tool_desc:
             for arg_name, expected_arg_desc in tool_desc["arg_desc"].items():
-                assert tool.arg_desc.get(arg_name) == expected_arg_desc, \
-                    f"Tool '{tool_name}' arg '{arg_name}' desc mismatch"
+                # Verify arg_desc propagated to tool.args (rendered in prompts)
+                assert arg_name in tool.args, \
+                    f"Tool '{tool_name}' arg_desc has '{arg_name}' but args schema doesn't"
+                assert tool.args[arg_name].get("description") == expected_arg_desc, \
+                    f"Tool '{tool_name}' args['{arg_name}']['description'] should match arg_desc (got {tool.args[arg_name].get('description')!r}, expected {expected_arg_desc!r})"
 
 
 def assert_regular_module_updated(predictor, expected_instruction):
@@ -597,8 +600,14 @@ def test_build_program_single_react(monkeypatch):
         react_instruction="OPTIMIZED: React instruction",
         extract_instruction="OPTIMIZED: Extract instruction",
         tool_descriptions={
-            "search": {"desc": "OPTIMIZED: Search description"},
-            "calc": {"desc": "OPTIMIZED: Calc description"}
+            "search": {
+                "desc": "OPTIMIZED: Search description",
+                "arg_desc": {"query": "OPTIMIZED: Search query param"}
+            },
+            "calc": {
+                "desc": "OPTIMIZED: Calc description",
+                "arg_desc": {"expr": "OPTIMIZED: Math expression param"}
+            }
         }
     )
 
@@ -617,8 +626,14 @@ def test_build_program_single_react(monkeypatch):
         expected_react_instruction="OPTIMIZED: React instruction",
         expected_extract_instruction="OPTIMIZED: Extract instruction",
         expected_tool_descriptions={
-            "search": {"desc": "OPTIMIZED: Search description"},
-            "calc": {"desc": "OPTIMIZED: Calc description"}
+            "search": {
+                "desc": "OPTIMIZED: Search description",
+                "arg_desc": {"query": "OPTIMIZED: Search query param"}
+            },
+            "calc": {
+                "desc": "OPTIMIZED: Calc description",
+                "arg_desc": {"expr": "OPTIMIZED: Math expression param"}
+            }
         }
     )
 
@@ -648,7 +663,12 @@ def test_build_program_multi_react_workflow(monkeypatch):
         module_path="workflow.coordinator",
         react_instruction="OPTIMIZED: Coordinator react",
         extract_instruction="OPTIMIZED: Coordinator extract",
-        tool_descriptions={"search": {"desc": "OPTIMIZED: Search tool"}}
+        tool_descriptions={
+            "search": {
+                "desc": "OPTIMIZED: Search tool",
+                "arg_desc": {"query": "OPTIMIZED: Coordinator search query"}
+            }
+        }
     )
 
     mock_optimized_react_module(
@@ -656,7 +676,12 @@ def test_build_program_multi_react_workflow(monkeypatch):
         module_path="workflow.researcher",
         react_instruction="OPTIMIZED: Researcher react",
         extract_instruction="OPTIMIZED: Researcher extract",
-        tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}}
+        tool_descriptions={
+            "analyze": {
+                "desc": "OPTIMIZED: Analyze tool",
+                "arg_desc": {"data": "OPTIMIZED: Data to analyze"}
+            }
+        }
     )
 
     # Optimize summarizer (non-ReAct ChainOfThought)
@@ -676,14 +701,24 @@ def test_build_program_multi_react_workflow(monkeypatch):
         react_module=rebuilt_program.workflow.coordinator,
         expected_react_instruction="OPTIMIZED: Coordinator react",
         expected_extract_instruction="OPTIMIZED: Coordinator extract",
-        expected_tool_descriptions={"search": {"desc": "OPTIMIZED: Search tool"}}
+        expected_tool_descriptions={
+            "search": {
+                "desc": "OPTIMIZED: Search tool",
+                "arg_desc": {"query": "OPTIMIZED: Coordinator search query"}
+            }
+        }
     )
 
     assert_react_module_updated(
         react_module=rebuilt_program.workflow.researcher,
         expected_react_instruction="OPTIMIZED: Researcher react",
         expected_extract_instruction="OPTIMIZED: Researcher extract",
-        expected_tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}}
+        expected_tool_descriptions={
+            "analyze": {
+                "desc": "OPTIMIZED: Analyze tool",
+                "arg_desc": {"data": "OPTIMIZED: Data to analyze"}
+            }
+        }
     )
 
     # Assert non-ReAct module updated
