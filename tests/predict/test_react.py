@@ -75,23 +75,26 @@ def test_tool_calling_with_pydantic_args():
         [
             {
                 "next_thought": "I need to write an invitation letter for Alice to the Science Fair event.",
-                "next_tool_name": "write_invitation_letter",
-                "next_tool_args": {
-                    "participant_name": "Alice",
-                    "event_info": {
-                        "name": "Science Fair",
-                        "date": "Friday",
-                        "participants": {"Alice": "female", "Bob": "male"},
-                    },
-                },
+                "next_tool_calls": [
+                    {
+                        "name": "write_invitation_letter",
+                        "args": {
+                            "participant_name": "Alice",
+                            "event_info": {
+                                "name": "Science Fair",
+                                "date": "Friday",
+                                "participants": {"Alice": "female", "Bob": "male"},
+                            },
+                        },
+                    }
+                ],
             },
             {
                 "next_thought": (
                     "I have successfully written the invitation letter for Alice to the Science Fair. Now "
                     "I can finish the task."
                 ),
-                "next_tool_name": "finish",
-                "next_tool_args": {},
+                "next_tool_calls": [{"name": "finish", "args": {}}],
             },
             {
                 "reasoning": "This is a very rigorous reasoning process, trust me bro!",
@@ -113,20 +116,28 @@ def test_tool_calling_with_pydantic_args():
 
     expected_trajectory = {
         "thought_0": "I need to write an invitation letter for Alice to the Science Fair event.",
-        "tool_name_0": "write_invitation_letter",
-        "tool_args_0": {
-            "participant_name": "Alice",
-            "event_info": {
-                "name": "Science Fair",
-                "date": "Friday",
-                "participants": {"Alice": "female", "Bob": "male"},
-            },
-        },
-        "observation_0": "It's my honor to invite Alice to event Science Fair on Friday",
+        "tool_calls_0": [
+            {
+                "name": "write_invitation_letter",
+                "args": {
+                    "participant_name": "Alice",
+                    "event_info": {
+                        "name": "Science Fair",
+                        "date": "Friday",
+                        "participants": {"Alice": "female", "Bob": "male"},
+                    },
+                },
+            }
+        ],
+        "observations_0": [
+            {
+                "tool": "write_invitation_letter",
+                "result": "It's my honor to invite Alice to event Science Fair on Friday",
+            }
+        ],
         "thought_1": "I have successfully written the invitation letter for Alice to the Science Fair. Now I can finish the task.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
+        "tool_calls_1": [{"name": "finish", "args": {}}],
+        "observations_1": [{"tool": "finish", "result": "Completed."}],
     }
     assert outputs.trajectory == expected_trajectory
 
@@ -139,8 +150,8 @@ def test_tool_calling_without_typehint():
     react = dspy.ReAct("a, b -> c:int", tools=[foo])
     lm = DummyLM(
         [
-            {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
-            {"next_thought": "I have the sum, now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"next_thought": "I need to add two numbers.", "next_tool_calls": [{"name": "foo", "args": {"a": 1, "b": 2}}]},
+            {"next_thought": "I have the sum, now I can finish.", "next_tool_calls": [{"name": "finish", "args": {}}]},
             {"reasoning": "I added the numbers successfully", "c": 3},
         ]
     )
@@ -149,16 +160,11 @@ def test_tool_calling_without_typehint():
 
     expected_trajectory = {
         "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {
-            "a": 1,
-            "b": 2,
-        },
-        "observation_0": 3,
+        "tool_calls_0": [{"name": "foo", "args": {"a": 1, "b": 2}}],
+        "observations_0": [{"tool": "foo", "result": 3}],
         "thought_1": "I have the sum, now I can finish.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
+        "tool_calls_1": [{"name": "finish", "args": {}}],
+        "observations_1": [{"tool": "finish", "result": "Completed."}],
     }
     assert outputs.trajectory == expected_trajectory
 
@@ -182,15 +188,14 @@ def test_trajectory_truncation():
             # First 2 calls use the echo tool
             return dspy.Prediction(
                 next_thought=f"Thought {call_count}",
-                next_tool_name="echo",
-                next_tool_args={"text": f"Text {call_count}"},
+                next_tool_calls=[{"name": "echo", "args": {"text": f"Text {call_count}"}}],
             )
         elif call_count == 3:
             # The 3rd call raises context window exceeded error
             raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
         else:
             # The 4th call finishes
-            return dspy.Prediction(next_thought="Final thought", next_tool_name="finish", next_tool_args={})
+            return dspy.Prediction(next_thought="Final thought", next_tool_calls=[{"name": "finish", "args": {}}])
 
     react.react = mock_react
     react.extract = lambda **kwargs: dspy.Prediction(output_text="Final output")
@@ -215,13 +220,11 @@ def test_error_retry():
         [
             {
                 "next_thought": "I need to add two numbers.",
-                "next_tool_name": "foo",
-                "next_tool_args": {"a": 1, "b": 2},
+                "next_tool_calls": [{"name": "foo", "args": {"a": 1, "b": 2}}],
             },
             {
                 "next_thought": "I need to add two numbers.",
-                "next_tool_name": "foo",
-                "next_tool_args": {"a": 1, "b": 2},
+                "next_tool_calls": [{"name": "foo", "args": {"a": 1, "b": 2}}],
             },
             # (The model *would* succeed on the 3rd turn, but max_iters=2 stops earlier.)
             {"reasoning": "I added the numbers successfully", "c": 3},
@@ -235,11 +238,9 @@ def test_error_retry():
     # --- exact-match checks (thoughts + tool calls) -------------------------
     control_expected = {
         "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {"a": 1, "b": 2},
+        "tool_calls_0": [{"name": "foo", "args": {"a": 1, "b": 2}}],
         "thought_1": "I need to add two numbers.",
-        "tool_name_1": "foo",
-        "tool_args_1": {"a": 1, "b": 2},
+        "tool_calls_1": [{"name": "foo", "args": {"a": 1, "b": 2}}],
     }
     for k, v in control_expected.items():
         assert traj[k] == v, f"{k} mismatch"
@@ -248,7 +249,7 @@ def test_error_retry():
     # We only care that each observation mentions our error string; we ignore
     # any extra traceback detail or differing prefixes.
     for i in range(2):
-        obs = traj[f"observation_{i}"]
+        obs = traj[f"observations_{i}"][0]["result"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
 
 
@@ -275,23 +276,26 @@ async def test_async_tool_calling_with_pydantic_args():
         [
             {
                 "next_thought": "I need to write an invitation letter for Alice to the Science Fair event.",
-                "next_tool_name": "write_invitation_letter",
-                "next_tool_args": {
-                    "participant_name": "Alice",
-                    "event_info": {
-                        "name": "Science Fair",
-                        "date": "Friday",
-                        "participants": {"Alice": "female", "Bob": "male"},
-                    },
-                },
+                "next_tool_calls": [
+                    {
+                        "name": "write_invitation_letter",
+                        "args": {
+                            "participant_name": "Alice",
+                            "event_info": {
+                                "name": "Science Fair",
+                                "date": "Friday",
+                                "participants": {"Alice": "female", "Bob": "male"},
+                            },
+                        },
+                    }
+                ],
             },
             {
                 "next_thought": (
                     "I have successfully written the invitation letter for Alice to the Science Fair. Now "
                     "I can finish the task."
                 ),
-                "next_tool_name": "finish",
-                "next_tool_args": {},
+                "next_tool_calls": [{"name": "finish", "args": {}}],
             },
             {
                 "reasoning": "This is a very rigorous reasoning process, trust me bro!",
@@ -312,20 +316,28 @@ async def test_async_tool_calling_with_pydantic_args():
 
     expected_trajectory = {
         "thought_0": "I need to write an invitation letter for Alice to the Science Fair event.",
-        "tool_name_0": "write_invitation_letter",
-        "tool_args_0": {
-            "participant_name": "Alice",
-            "event_info": {
-                "name": "Science Fair",
-                "date": "Friday",
-                "participants": {"Alice": "female", "Bob": "male"},
-            },
-        },
-        "observation_0": "It's my honor to invite Alice to event Science Fair on Friday",
+        "tool_calls_0": [
+            {
+                "name": "write_invitation_letter",
+                "args": {
+                    "participant_name": "Alice",
+                    "event_info": {
+                        "name": "Science Fair",
+                        "date": "Friday",
+                        "participants": {"Alice": "female", "Bob": "male"},
+                    },
+                },
+            }
+        ],
+        "observations_0": [
+            {
+                "tool": "write_invitation_letter",
+                "result": "It's my honor to invite Alice to event Science Fair on Friday",
+            }
+        ],
         "thought_1": "I have successfully written the invitation letter for Alice to the Science Fair. Now I can finish the task.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
+        "tool_calls_1": [{"name": "finish", "args": {}}],
+        "observations_1": [{"tool": "finish", "result": "Completed."}],
     }
     assert outputs.trajectory == expected_trajectory
 
@@ -341,13 +353,11 @@ async def test_async_error_retry():
         [
             {
                 "next_thought": "I need to add two numbers.",
-                "next_tool_name": "foo",
-                "next_tool_args": {"a": 1, "b": 2},
+                "next_tool_calls": [{"name": "foo", "args": {"a": 1, "b": 2}}],
             },
             {
                 "next_thought": "I need to add two numbers.",
-                "next_tool_name": "foo",
-                "next_tool_args": {"a": 1, "b": 2},
+                "next_tool_calls": [{"name": "foo", "args": {"a": 1, "b": 2}}],
             },
             # (The model *would* succeed on the 3rd turn, but max_iters=2 stops earlier.)
             {"reasoning": "I added the numbers successfully", "c": 3},
@@ -360,11 +370,9 @@ async def test_async_error_retry():
     # Exact-match checks (thoughts + tool calls)
     control_expected = {
         "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {"a": 1, "b": 2},
+        "tool_calls_0": [{"name": "foo", "args": {"a": 1, "b": 2}}],
         "thought_1": "I need to add two numbers.",
-        "tool_name_1": "foo",
-        "tool_args_1": {"a": 1, "b": 2},
+        "tool_calls_1": [{"name": "foo", "args": {"a": 1, "b": 2}}],
     }
     for k, v in control_expected.items():
         assert traj[k] == v, f"{k} mismatch"
@@ -373,5 +381,5 @@ async def test_async_error_retry():
     # We only care that each observation mentions our error string; we ignore
     # any extra traceback detail or differing prefixes.
     for i in range(2):
-        obs = traj[f"observation_{i}"]
+        obs = traj[f"observations_{i}"][0]["result"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
