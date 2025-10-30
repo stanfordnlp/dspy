@@ -666,8 +666,8 @@ def test_responses_api_converts_images_correctly():
     content = result["input"][0]["content"]
     assert len(content) == 2
 
-    # First item should be text (passed through as-is since it's already in correct format)
-    assert content[0]["type"] == "text"
+    # First item should be text converted to input_text format
+    assert content[0]["type"] == "input_text"
     assert content[0]["text"] == "What's in this image?"
 
     # Second item should be converted to input_image format

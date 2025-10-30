@@ -491,7 +491,12 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
     To:
         {"type": "input_image", "image_url": "..."}
 
-    For text and other types, passes through as-is (already in correct format).
+    For text, converts from:
+        {"type": "text", "text": "..."}
+    To:
+        {"type": "input_text", "text": "..."}
+
+    For other types, passes through as-is.
     """
     if item.get("type") == "image_url":
         image_url = item.get("image_url", {}).get("url", "")
@@ -499,8 +504,13 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
             "type": "input_image",
             "image_url": image_url,
         }
+    elif item.get("type") == "text":
+        return {
+            "type": "input_text",
+            "text": item.get("text", ""),
+        }
 
-    # For non-image items, return as-is
+    # For other items, return as-is
     return item
 
 
