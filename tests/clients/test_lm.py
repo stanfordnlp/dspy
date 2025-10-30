@@ -636,7 +636,6 @@ def test_api_key_not_saved_in_json():
 
 
 def test_responses_api_converts_images_correctly():
-    """Test that image_url format is converted to input_image format for Responses API."""
     from dspy.clients.lm import _convert_chat_request_to_responses_request
 
     # Test with base64 image
@@ -705,7 +704,6 @@ def test_responses_api_converts_images_correctly():
 
 
 def test_responses_api_with_image_input():
-    """Test that LM with model_type='responses' handles Image inputs correctly."""
     api_response = make_response(
         output_blocks=[
             ResponseOutputMessage(
