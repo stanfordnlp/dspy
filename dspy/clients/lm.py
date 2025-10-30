@@ -489,48 +489,15 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
     For images, converts from:
         {"type": "image_url", "image_url": {"url": "..."}}
     To:
-        {"type": "input_image", "source": {"type": "url", "url": "..."}}
-    or:
-        {"type": "input_image", "source": {"type": "base64", "media_type": "...", "data": "..."}}
+        {"type": "input_image", "image_url": "..."}
 
     For text and other types, passes through as-is (already in correct format).
     """
     if item.get("type") == "image_url":
         image_url = item.get("image_url", {}).get("url", "")
-
-        # Check if it's a base64 data URI
-        if image_url.startswith("data:"):
-            # Extract media type and base64 data
-            # Format: data:image/png;base64,iVBORw0KG...
-            parts = image_url.split(",", 1)
-            if len(parts) == 2:
-                header, data = parts
-                # Extract media type from header (e.g., "data:image/png;base64" -> "image/png")
-                # Handle both "data:image/png;base64" and "data:image/png" formats
-                media_type_parts = header.split(";")[0].replace("data:", "")
-                if media_type_parts:
-                    media_type = media_type_parts
-                else:
-                    # Fallback to a default media type if extraction fails
-                    media_type = "image/png"
-
-                return {
-                    "type": "input_image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": data,
-                    }
-                }
-            # If data URI is malformed (doesn't have comma separator), fall through to URL handling
-
-        # Otherwise treat as URL
         return {
             "type": "input_image",
-            "source": {
-                "type": "url",
-                "url": image_url,
-            }
+            "image_url": image_url,
         }
 
     # For non-image items, return as-is

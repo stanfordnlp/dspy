@@ -672,9 +672,7 @@ def test_responses_api_converts_images_correctly():
 
     # Second item should be converted to input_image format
     assert content[1]["type"] == "input_image"
-    assert content[1]["source"]["type"] == "base64"
-    assert content[1]["source"]["media_type"] == "image/png"
-    assert content[1]["source"]["data"] == "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    assert content[1]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
     # Test with URL image
     request_with_url_image = {
@@ -699,8 +697,7 @@ def test_responses_api_converts_images_correctly():
     content = result["input"][0]["content"]
     assert len(content) == 1
     assert content[0]["type"] == "input_image"
-    assert content[0]["source"]["type"] == "url"
-    assert content[0]["source"]["url"] == "https://example.com/image.jpg"
+    assert content[0]["image_url"] == "https://example.com/image.jpg"
 
 
 def test_responses_api_with_image_input():
@@ -759,5 +756,4 @@ def test_responses_api_with_image_input():
         # Check that image was converted to input_image format
         image_content = [c for c in content if c.get("type") == "input_image"]
         assert len(image_content) == 1
-        assert image_content[0]["source"]["type"] == "base64"
-        assert image_content[0]["source"]["media_type"] == "image/png"
+        assert image_content[0]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
