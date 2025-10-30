@@ -229,7 +229,7 @@ class ReAct(Module):
         # Execute tools in parallel using asyncio.gather
         observations = await asyncio.gather(*[execute_single_tool(tc) for tc in tool_calls])
 
-        return list(observations)
+        return observations
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         for _ in range(3):

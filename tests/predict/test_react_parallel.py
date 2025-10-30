@@ -45,9 +45,7 @@ def test_parallel_tool_execution_sync():
     )
     dspy.settings.configure(lm=lm)
 
-    start_time = time.time()
     outputs = react(input="test")
-    _elapsed_time = time.time() - start_time
 
     # Check that the trajectory contains the right structure
     assert "thought_0" in outputs.trajectory
@@ -201,9 +199,7 @@ async def test_parallel_tool_execution_async():
     )
 
     with dspy.context(lm=lm):
-        start_time = time.time()
         outputs = await react.acall(input="test")
-        _elapsed_time = time.time() - start_time
 
     # Check that the trajectory contains the right structure
     assert "thought_0" in outputs.trajectory
