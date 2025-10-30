@@ -195,6 +195,8 @@ class Example:
                 return value.toDict()
             elif isinstance(value, list):
                 return [convert_to_serializable(item) for item in value]
+            elif isinstance(value, tuple):
+                return tuple(convert_to_serializable(item) for item in value)
             elif isinstance(value, dict):
                 return {k: convert_to_serializable(v) for k, v in value.items()}
             else:
