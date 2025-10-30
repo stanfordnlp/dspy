@@ -608,3 +608,30 @@ def test_chat_adapter_toolcalls_vague_match():
         assert result[0]["tool_calls"] == dspy.ToolCalls(
             tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
         )
+
+
+def test_chat_adapter_same_line_markers():
+    MOCK_ANSWER = """
+[[ ## reasoning ## ]]
+The user asked a question about the weather. The topic is the current weather.
+[[ ## topic ## ]]
+Current Weather[[ ## answer ## ]]
+The current weather is sunny.[[ ## completed ## ]]
+"""
+
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        topic: str = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content=MOCK_ANSWER))],
+            model="openai/gpt-4o-mini",
+        )
+        result = adapter(dspy.LM(model="openai/gpt-4o-mini", cache=False), {}, MySignature, [], {"question": "What is the weather?"})
+    assert result[0]["reasoning"] == "The user asked a question about the weather. The topic is the current weather."
+    assert result[0]["topic"] == "Current Weather"
+    assert result[0]["answer"] == "The current weather is sunny."
