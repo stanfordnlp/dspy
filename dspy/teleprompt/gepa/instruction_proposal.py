@@ -472,33 +472,33 @@ class ReActModuleProposer(ProposalFn):
             )
 
             # Build improved config from reflection LM suggestions
-            # LM returns None for components it doesn't want to change, or text for improvements
-            logger.info("Building improved config from LM response...")
+            # Reflection LM returns None for components it doesn't want to change, or text for improvements
+            logger.info("Building improved config from reflection LM response...")
             improved_react_config = {}
 
-            # Update react instruction if LM suggested improvement
+            # Update react instruction if reflection LM suggested improvement
             if result.improved_react_instruction is not None:
                 improved_react_config["react"] = result.improved_react_instruction
                 logger.debug(f"React instruction: {len(result.improved_react_instruction)} chars")
             else:
-                logger.debug("React instruction: LM suggests keeping original")
+                logger.debug("React instruction: reflection LM suggests keeping original")
 
-            # Update extract instruction if LM suggested improvement
+            # Update extract instruction if reflection LM suggested improvement
             if result.improved_extract_instruction is not None:
                 improved_react_config["extract"] = result.improved_extract_instruction
                 logger.debug(f"Extract instruction: {len(result.improved_extract_instruction)} chars")
             else:
-                logger.debug("Extract instruction: LM suggests keeping original)")
+                logger.debug("Extract instruction: reflection LM suggests keeping original)")
 
-            # Update tool descriptions if LM suggested improvements
+            # Update tool descriptions if reflection LM suggested improvements
             improved_react_config["tools"] = {}
             for tool_name, tool_info in current_tools_dict.items():
-                # Check if LM suggested improving this tool's description
+                # Check if reflection LM suggested improving this tool's description
                 improved_desc = getattr(result, f"improved_tool_{tool_name}_desc", None)
 
-                # Skip if LM suggests keeping original
+                # Skip if reflection LM suggests keeping original
                 if improved_desc is None:
-                    logger.debug(f"  Tool '{tool_name}': LM suggests keeping original")
+                    logger.debug(f"  Tool '{tool_name}': reflection LM suggests keeping original")
                     continue
 
                 improved_tool_info = {
@@ -506,12 +506,12 @@ class ReActModuleProposer(ProposalFn):
                     "arg_desc": {}
                 }
 
-                # Update parameter descriptions if LM suggested improvements
+                # Update parameter descriptions if reflection LM suggested improvements
                 if tool_info.get("args"):
                     for arg_name in tool_info["args"].keys():
                         field_name = f"improved_tool_{tool_name}_arg_{arg_name}_desc"
                         arg_desc = getattr(result, field_name, None)
-                        if arg_desc is not None:  # LM suggested improvement
+                        if arg_desc is not None:  # Reflection LM suggested improvement
                             improved_tool_info["arg_desc"][arg_name] = arg_desc
 
                 improved_react_config["tools"][tool_name] = improved_tool_info
