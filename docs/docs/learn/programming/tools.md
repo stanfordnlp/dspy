@@ -66,6 +66,9 @@ react_agent = dspy.ReAct(
 
 For more control over the tool calling process, you can manually handle tools using DSPy's tool types.
 
+!!! note "Version Requirement"
+    The `ToolCall.execute()` method used in the examples below is available from **dspy 3.0.4b2** onwards. If you're using version 3.0.3 or earlier, you'll need to upgrade to use this feature.
+
 ### Basic Setup
 
 ```python
@@ -133,6 +136,9 @@ print(str(tool))        # Full tool description
 ```
 
 ### Understanding `dspy.ToolCalls`
+
+!!! note "Version Requirement"
+    The `ToolCall.execute()` method is available from **dspy 3.0.4b2** onwards. If you're using an earlier version, you'll need to upgrade to use this feature.
 
 The `dspy.ToolCalls` type represents the output from a model that can make tool calls. Each individual tool call can be executed using the `execute` method:
 
