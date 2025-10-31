@@ -754,119 +754,35 @@ for tool_name, tool in optimized_agent.tools.items():
 
 #### Implementing a Custom Proposer for ReAct
 
-If you need custom logic, you must handle ReAct components yourself. ReAct components are stored as JSON strings containing all 4 parts:
+If you need custom logic, you can start with the existing implementation at [`ReActModuleProposer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/instruction_proposal.py). This reference implementation shows how to:
 
-```python
-import json
+- Parse ReAct JSON configurations with `json.loads()`
+- Build dynamic signatures for tools and parameters
+- Call the reflection LM to optimize all components jointly
+- Handle optional improvements (reflection LM returns `None` to keep originals)
+- Serialize improved components back to JSON with `json.dumps()`
 
-# Define signature for improving ReAct components
-class ImproveReActInstruction(dspy.Signature):
-    """Analyze agent execution failures and improve the instruction.
-    
-    Focus on common ReAct failure patterns:
-    - Tool selection errors (wrong tool chosen)
-    - Missing tool calls (agent gave up without trying)
-    - Incorrect tool arguments
-    - Extraction failures (couldn't extract answer from trajectory)
-    """
-    current_instruction = dspy.InputField(desc="The current instruction being optimized")
-    component_type = dspy.InputField(desc="Type: 'react' (reasoning), 'extract' (extraction), or 'tool' (tool description)")
-    examples_with_feedback = dspy.InputField(desc="Examples showing what went wrong: inputs, outputs, and feedback")
-    improved_instruction = dspy.OutputField(desc="Improved instruction addressing the observed failures")
+**Key concepts for custom proposers:**
 
-
-class CustomProposer:
-    def __call__(self, candidate, reflective_dataset, components_to_update):
-        """
-        When you provide a custom proposer, it receives ALL components (regular + ReAct).
-        
-        Args:
-            candidate: dict[str, str] - All component instructions to update
-                - Regular: "predict" -> "Your instruction..."
-                - ReAct: "react_module" -> JSON string: {"react": "...", "extract": "...", "tools": {...}}
-            reflective_dataset: dict[str, list[ReflectiveExample]]
-                - Component name -> list of examples with Inputs, Generated_Outputs, Feedback
-            components_to_update: list[str] - All components to update this round
-        
-        Returns:
-            dict[str, str] - Updated instructions for all components
-        """
-        propose_instruction = dspy.Predict(ImproveReActInstruction)
-        results = {}
-        
-        for component in components_to_update:
-            if not component.startswith("react_module"):
-                continue  # Skip non-ReAct components (handle them separately if needed)
-            
-            # Parse the JSON config
-            config = json.loads(candidate[component])
-            # config contains: {"react": "...", "extract": "...", "tools": {...}}
-            
-            component_reflective_data = reflective_dataset[component]
-            
-            # Format examples (limit to first 3 for efficiency)
-            formatted_examples = self._format_examples(component_reflective_data[:3])
-            
-            # Improve react instruction (reasoning and tool selection)
-            improved_react = propose_instruction(
-                current_instruction=config["react"],
-                component_type="react",
-                examples_with_feedback=formatted_examples
-            ).improved_instruction
-            
-            # Improve extract instruction (answer extraction from trajectory)
-            improved_extract = config.get("extract", "")
-            if improved_extract:
-                improved_extract = propose_instruction(
-                    current_instruction=improved_extract,
-                    component_type="extract",
-                    examples_with_feedback=formatted_examples
-                ).improved_instruction
-            
-            # Improve tool descriptions (what each tool does and when to use it)
-            improved_tools = {}
-            for tool_name, tool_info in config.get("tools", {}).items():
-                improved_desc = propose_instruction(
-                    current_instruction=tool_info["desc"],
-                    component_type="tool",
-                    examples_with_feedback=formatted_examples
-                ).improved_instruction
-                
-                improved_tools[tool_name] = {
-                    "desc": improved_desc,
-                    "args": tool_info["args"],  # Keep args schema unchanged
-                    "arg_desc": tool_info.get("arg_desc", {})  # Can also improve these
-                }
-            
-            # Return as JSON string
-            results[component] = json.dumps({
-                "react": improved_react,
-                "extract": improved_extract,
-                "tools": improved_tools
-            })
-        
-        return results
-    
-    def _format_examples(self, reflective_data: list) -> str:
-        """Format reflective examples into markdown for the LM."""
-        formatted_parts = []
-        for i, example in enumerate(reflective_data):
-            s = f"# Example {i + 1}\n"
-            for key, val in example.items():
-                s += f"## {key}\n{str(val).strip()}\n\n"
-            formatted_parts.append(s)
-        return "\n\n".join(formatted_parts)
-
-gepa = dspy.GEPA(
-    metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5", temperature=1.0, max_tokens=32000),
-    instruction_proposer=CustomProposer(),  # Receives ALL components (regular + ReAct)
-    optimize_react_components=True,  # Must be True to discover ReAct modules
-    auto="medium"
-)
+ReAct components are JSON strings containing 4 parts:
+```json
+{
+  "react": "instruction for reasoning and tool selection",
+  "extract": "instruction for answer extraction",
+  "tools": {
+    "tool_name": {
+      "desc": "what the tool does",
+      "args": {"param": {"type": "string"}},
+      "arg_desc": {"param": "description of param"}
+    }
+  }
+}
 ```
 
-**Key points:**
-- ReAct components are JSON strings - use `json.loads()` to parse, `json.dumps()` to return
-- 4 parts to improve: `react` instruction, `extract` instruction, tool `desc`, tool `arg_desc`
-- Tools structure: `{"tool_name": {"desc": "...", "args": {...}, "arg_desc": {...}}}`
+Your proposer receives:
+- `candidate: dict[str, str]` - Component names to instructions (ReAct values are JSON strings)
+- `reflective_dataset: dict[str, list[ReflectiveExample]]` - Execution traces with feedback
+- `components_to_update: list[str]` - Which components to optimize this round
+
+Your proposer returns:
+- `dict[str, str]` - Same keys with improved instructions (ReAct as JSON strings)
