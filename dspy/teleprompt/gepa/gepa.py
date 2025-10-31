@@ -280,9 +280,6 @@ class GEPA(Teleprompter):
             Available parameters:
             - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/batch_sampler.py) instance or a string 
               ('epoch_shuffled'). Defaults to 'epoch_shuffled'. Only valid when reflection_minibatch_size is None.
-            - reflection_prompt_template: Custom prompt template for reflection. Must contain placeholders 
-              `<curr_instructions>` and `<inputs_outputs_feedback>`. Ignored if adapter provides its own 
-              `propose_new_texts` method.
             - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before 
               attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than 'full_eval'. 
               Default is 5.
@@ -294,15 +291,10 @@ class GEPA(Teleprompter):
               [NoImprovementStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
               or custom stopping logic. Note: This overrides the default 
               max_metric_calls stopping condition.
-            - mlflow_tracking_uri: The tracking URI to use for MLflow (when use_mlflow=True).
-            - mlflow_experiment_name: The experiment name to use for MLflow (when use_mlflow=True).
-            - display_progress_bar: Show a tqdm progress bar over metric calls. Default is True. Set to False to disable.
             - use_cloudpickle: Use cloudpickle instead of pickle for serialization. Can be helpful when the 
               serialized state contains dynamically generated DSPy signatures. Default is False.
             - val_evaluation_policy: Strategy controlling which validation ids to score each iteration. Can be 
               'full_eval' (evaluate every id each time) or an [EvaluationPolicy](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/eval_policy.py) instance. Default is 'full_eval'.
-            - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully. 
-              Default is True. Set to False for graceful error handling.
             
             Note: Parameters already handled by DSPy's GEPA class will be overridden by the direct parameters 
             and should not be passed through gepa_kwargs.
