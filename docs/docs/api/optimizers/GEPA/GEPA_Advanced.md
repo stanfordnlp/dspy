@@ -754,35 +754,59 @@ for tool_name, tool in optimized_agent.tools.items():
 
 #### Implementing a Custom Proposer for ReAct
 
-If you need custom logic, you can start with the existing implementation at [`ReActModuleProposer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/instruction_proposal.py). This reference implementation shows how to:
+If you need custom optimization logic beyond the default, you can build your own proposer. The best way to start is by looking at the reference implementation: [`ReActModuleProposer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/instruction_proposal.py).
 
-- Parse ReAct JSON configurations with `json.loads()`
-- Build dynamic signatures for tools and parameters
-- Call the reflection LM to optimize all components jointly
-- Handle optional improvements (reflection LM returns `None` to keep originals)
-- Serialize improved components back to JSON with `json.dumps()`
+**Understanding ReAct component structure**
 
-**Key concepts for custom proposers:**
+When GEPA optimizes ReAct modules, it serializes them as JSON strings containing all the pieces you can improve:
 
-ReAct components are JSON strings containing 4 parts:
 ```json
 {
   "react": "instruction for reasoning and tool selection",
   "extract": "instruction for answer extraction",
   "tools": {
-    "tool_name": {
-      "desc": "what the tool does",
-      "args": {"param": {"type": "string"}},
-      "arg_desc": {"param": "description of param"}
+    "search": {
+      "desc": "Search the web for information",
+      "args": {"query": {"type": "string"}},
+      "arg_desc": {"query": "The search query to execute"}
     }
   }
 }
 ```
 
-Your proposer receives:
-- `candidate: dict[str, str]` - Component names to instructions (ReAct values are JSON strings)
-- `reflective_dataset: dict[str, list[ReflectiveExample]]` - Execution traces with feedback
-- `components_to_update: list[str]` - Which components to optimize this round
+**What you can improve:**
+- **`react`** - How the agent reasons and decides which tools to use
+- **`extract`** - How the agent extracts the final answer from execution results
+- **`tools[*].desc`** - What each tool does and when to use it
+- **`tools[*].arg_desc`** - What each parameter means and how to use it
 
-Your proposer returns:
-- `dict[str, str]` - Same keys with improved instructions (ReAct as JSON strings)
+**What to preserve:**
+- **`tools[*].args`** - The tool's parameter schema (types, required fields, etc.)
+
+**Your proposer's interface**
+
+Your custom proposer is a callable that receives component instructions and execution feedback, then returns improved versions:
+
+```python
+def your_custom_proposer(
+    candidate: dict[str, str],              # Current instructions for all components
+    reflective_dataset: dict[str, list],    # Execution examples with feedback
+    components_to_update: list[str],        # Which components to optimize this round
+) -> dict[str, str]:                        # Return improved instructions
+    """
+    For ReAct components:
+    - Use json.loads() to parse the JSON string
+    - Improve what needs fixing based on the feedback
+    - Use json.dumps() to serialize back
+    
+    For regular components:
+    - Just return the improved instruction string
+    """
+    # Your optimization logic here
+    pass
+```
+
+**The reference shows how to:**
+- Parse and rebuild the JSON structure
+- Generate dynamic fields for tools/parameters
+- Use execution feedback to guide improvements
