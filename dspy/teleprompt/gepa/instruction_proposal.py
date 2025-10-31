@@ -321,9 +321,10 @@ class MultiModalInstructionProposer(ProposalFn):
 class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
     """Improve a ReAct agent based on execution examples and feedback.
 
+    These components are progressively optimized - refine what needs improvement.
     Analyze the trajectories to identify successful patterns and failure causes.
     Generate improved texts to help the agent succeed on similar tasks.
-    Place improved texts at their appropriate level of abstraction and specificity.
+    Place improved texts at their appropriate level of abstraction and/or specificity.
     """
 
     current_react_instruction = dspy.InputField(
@@ -341,11 +342,11 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
     )
 
     improved_react_instruction: str | None = dspy.OutputField(
-        desc="Improved ReAct module instruction",
+        desc="ReAct instruction for reasoning and tool selection",
         default=None
     )
     improved_extract_instruction: str | None = dspy.OutputField(
-        desc="Improved Extract module instruction",
+        desc="Extract instruction for answer extraction",
         default=None
     )
 
@@ -442,7 +443,7 @@ class ReActModuleProposer(ProposalFn):
                 signature = signature.append(
                     f"improved_tool_{tool_name}_desc",
                     dspy.OutputField(
-                        desc=f"Improved description for tool '{tool_name}'",
+                        desc=f"Purpose of tool '{tool_name}'",
                         default=None
                     )
                 )
@@ -452,7 +453,7 @@ class ReActModuleProposer(ProposalFn):
                         signature = signature.append(
                             f"improved_tool_{tool_name}_arg_{arg_name}_desc",
                             dspy.OutputField(
-                                desc=f"Improved description for parameter '{arg_name}'",
+                                desc=f"Usage of parameter '{arg_name}'",
                                 default=None
                             )
                         )
