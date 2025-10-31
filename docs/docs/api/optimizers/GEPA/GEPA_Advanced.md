@@ -507,41 +507,62 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
 
 The reflection LM receives all current components and execution traces, then decides which components to improve. Tool-specific fields (`improved_tool_{name}_desc`, `improved_tool_{name}_arg_{param}_desc`) are generated dynamically for each tool and parameter.
 
-**Example: Writing Effective Metrics**
+**Writing Metrics for ReAct Optimization**
 
-To help GEPA optimize ReAct modules, write metrics that provide trajectory feedback:
+GEPA optimizes ReAct modules more effectively when metrics provide feedback about the agent's execution. Here's how to write metrics that help:
 
 ```python
-def react_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
-    """Metric that provides trajectory feedback for ReAct optimization."""
-    correct = prediction.answer == example.answer
-    score = 1.0 if correct else 0.0
+def react_metric(example, pred, trace=None, pred_name=None, pred_trace=None):
+    """Evaluate ReAct agent performance with trajectory feedback."""
+    # Check if the answer is correct
+    answer_match = pred.answer == example.answer
+    score = 1.0 if answer_match else 0.0
     
-    # Extract tool calls from trajectory
-    trajectory = getattr(prediction, 'trajectory', {})
-    tool_calls = [
-        trajectory[key] 
-        for key in trajectory 
-        if key.startswith('tool_name_') and trajectory[key] != 'finish'
-    ]
-    
-    if tool_calls:
-        all_tool_names = ', '.join(tool_calls)
-        num_calls = len(tool_calls)
-        feedback = f"{'Correct Answer' if correct else 'Wrong Answer'}. Used {num_calls} tool calls: {all_tool_names}. Try to minimize tool calls."
-    else:
-        feedback = "Correct Answer" if correct else "Wrong Answer"
+    # Provide feedback to help GEPA understand what happened
+    feedback = "Correct answer" if answer_match else "Incorrect answer"
     
     return dspy.Prediction(score=score, feedback=feedback)
 ```
 
-This produces feedback like:
-```
-Correct Answer. Used 2 tool calls: web_search, summarize. Try to minimize tool calls.
-Wrong Answer. Used 5 tool calls: web_search, web_search, read_file, web_search, read_file. Try to minimize tool calls.
+You can make feedback more informative by examining the trajectory:
+
+```python
+def react_metric_with_trajectory(example, pred, trace=None, pred_name=None, pred_trace=None):
+    """Evaluate with trajectory analysis."""
+    # Check if the answer is correct
+    answer_match = pred.answer == example.answer
+    score = 1.0 if answer_match else 0.0
+    
+    # Access the ReAct trajectory to understand agent behavior
+    trajectory = getattr(pred, 'trajectory', {})
+    
+    # Extract tool names from trajectory (excluding 'finish')
+    tools_used = []
+    for key in trajectory:
+        if key.startswith('tool_name_'):
+            tool_name = trajectory[key]
+            if tool_name != 'finish':
+                tools_used.append(tool_name)
+    
+    # Build feedback message
+    if answer_match:
+        feedback = "Correct answer"
+    else:
+        feedback = "Incorrect answer"
+    
+    if tools_used:
+        feedback += f". Tools: {', '.join(tools_used)}"
+    
+    return dspy.Prediction(score=score, feedback=feedback)
 ```
 
-This feedback helps GEPA learn to reduce unnecessary tool calls while maintaining correct outputs. The reflection LM uses these insights to jointly improve react instructions, tool descriptions, and extraction logic.
+The trajectory contains the agent's step-by-step execution. Use it to provide feedback about:
+
+- **Tool selection**: Were appropriate tools chosen?
+- **Reasoning quality**: Did the agent think through the problem?
+- **Efficiency**: Were there unnecessary steps?
+
+The reflection LM uses your feedback to jointly improve react instructions, tool descriptions, and extraction logic.
 
 ### How It Works
 
