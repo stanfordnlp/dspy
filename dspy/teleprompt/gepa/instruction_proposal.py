@@ -413,13 +413,14 @@ class ReActModuleProposer(ProposalFn):
                 logger.error(f"Failed to deserialize config for {module_key}: {e}")
                 continue
 
-            # Reconstruct Tool objects from serialized schema
+            # Reconstruct Tool objects from JSON metadata so the adapter can format them for the reflection LM.
+            # Tool.func cannot be serialized in JSON, so we use a placeholder (never executed).
             current_tools_dict = current_react_config.get("tools", {})
             logger.info(f"Found {len(current_tools_dict)} tools: {list(current_tools_dict.keys())}")
             tools_list = []
             for tool_name, tool_info in current_tools_dict.items():
                 tool = dspy.Tool(
-                    func=lambda: None,
+                    func=lambda: None,  # Placeholder - Tool requires Callable, but only schema is used
                     name=tool_name,
                     desc=tool_info.get("desc", ""),
                 )
