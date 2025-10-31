@@ -340,12 +340,13 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
         desc="Execution examples with feedback showing successes and failures"
     )
 
-    improved_react_instruction = dspy.OutputField(
-        desc="Improved ReAct module instruction"
+    improved_react_instruction: str | None = dspy.OutputField(
+        desc="Improved ReAct module instruction",
+        default=None
     )
-    improved_extract_instruction = dspy.OutputField(
+    improved_extract_instruction: str | None = dspy.OutputField(
         desc="Improved Extract module instruction",
-        default=""
+        default=None
     )
 
 
@@ -442,7 +443,7 @@ class ReActModuleProposer(ProposalFn):
                     f"improved_tool_{tool_name}_desc",
                     dspy.OutputField(
                         desc=f"Improved description for tool '{tool_name}'",
-                        default=""
+                        default=None
                     )
                 )
 
@@ -452,7 +453,7 @@ class ReActModuleProposer(ProposalFn):
                             f"improved_tool_{tool_name}_arg_{arg_name}_desc",
                             dspy.OutputField(
                                 desc=f"Improved description for parameter '{arg_name}'",
-                                default=""
+                                default=None
                             )
                         )
 
@@ -470,30 +471,34 @@ class ReActModuleProposer(ProposalFn):
                 examples_with_feedback=formatted_examples,
             )
 
-            # Build improved config
+            # Build improved config from reflection LM suggestions
+            # LM returns None for components it doesn't want to change, or text for improvements
             logger.info("Building improved config from LM response...")
             improved_react_config = {}
 
-            # Add react instruction (always improved)
-            improved_react_config["react"] = result.improved_react_instruction
-            logger.debug(f"React instruction: {len(result.improved_react_instruction)} chars")
+            # Update react instruction if LM suggested improvement
+            if result.improved_react_instruction is not None:
+                improved_react_config["react"] = result.improved_react_instruction
+                logger.debug(f"React instruction: {len(result.improved_react_instruction)} chars")
+            else:
+                logger.debug("React instruction: LM suggests keeping original")
 
-            # Add extract instruction (only if improved)
-            if result.improved_extract_instruction:
+            # Update extract instruction if LM suggested improvement
+            if result.improved_extract_instruction is not None:
                 improved_react_config["extract"] = result.improved_extract_instruction
                 logger.debug(f"Extract instruction: {len(result.improved_extract_instruction)} chars")
             else:
-                logger.debug("Extract instruction: not improved (keeping original)")
+                logger.debug("Extract instruction: LM suggests keeping original)")
 
-            # Extract improved tool descriptions (only include if improved)
+            # Update tool descriptions if LM suggested improvements
             improved_react_config["tools"] = {}
             for tool_name, tool_info in current_tools_dict.items():
-                # Get improved description
-                improved_desc = getattr(result, f"improved_tool_{tool_name}_desc", "")
+                # Check if LM suggested improving this tool's description
+                improved_desc = getattr(result, f"improved_tool_{tool_name}_desc", None)
 
-                # Only add tool to config if description was improved
-                if not improved_desc:
-                    logger.debug(f"  Tool '{tool_name}': not improved (skipping)")
+                # Skip if LM suggests keeping original
+                if improved_desc is None:
+                    logger.debug(f"  Tool '{tool_name}': LM suggests keeping original")
                     continue
 
                 improved_tool_info = {
@@ -501,12 +506,12 @@ class ReActModuleProposer(ProposalFn):
                     "arg_desc": {}
                 }
 
-                # Extract parameter descriptions (if tool has args)
+                # Update parameter descriptions if LM suggested improvements
                 if tool_info.get("args"):
                     for arg_name in tool_info["args"].keys():
                         field_name = f"improved_tool_{tool_name}_arg_{arg_name}_desc"
-                        arg_desc = getattr(result, field_name, "")
-                        if arg_desc:
+                        arg_desc = getattr(result, field_name, None)
+                        if arg_desc is not None:  # LM suggested improvement
                             improved_tool_info["arg_desc"][arg_name] = arg_desc
 
                 improved_react_config["tools"][tool_name] = improved_tool_info
