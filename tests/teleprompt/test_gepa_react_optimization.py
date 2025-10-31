@@ -22,18 +22,18 @@ from dspy import Example
 from dspy.utils.dummies import DummyLM
 
 
-def setup_spy_for_base_program(monkeypatch):
-    """Setup spy to capture base_program from gepa.optimize."""
+def setup_capture_for_base_program(monkeypatch):
+    """Capture base_program passed to gepa.optimize."""
     captured_base_program = {}
 
     from gepa import optimize as original_optimize
 
-    def spy_optimize(seed_candidate, **kwargs):
+    def capture_optimize(seed_candidate, **kwargs):
         captured_base_program.update(seed_candidate)
         return original_optimize(seed_candidate=seed_candidate, **kwargs)
 
     import gepa
-    monkeypatch.setattr(gepa, "optimize", spy_optimize)
+    monkeypatch.setattr(gepa, "optimize", capture_optimize)
 
     return captured_base_program
 
@@ -300,7 +300,7 @@ def test_single_react_module_detection(monkeypatch):
     """
     from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
 
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_single_react_program()
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
@@ -336,7 +336,7 @@ def test_multi_react_workflow_detection(monkeypatch):
     """
     from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
 
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_multi_react_workflow_program()
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
@@ -383,7 +383,7 @@ def test_nested_react_orchestrator_worker_detection(monkeypatch):
     """
     from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
 
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_orchestrator_with_workers_program()
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
@@ -421,7 +421,7 @@ def test_build_program_single_react(monkeypatch):
     """Test build_program applies optimizations to single top-level ReAct module."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_single_react_program()
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
@@ -484,7 +484,7 @@ def test_build_program_multi_react_workflow(monkeypatch):
     """Test build_program applies optimizations to mixed ReAct + non-ReAct workflow."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_multi_react_workflow_program()
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
@@ -574,7 +574,7 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
     """Test build_program applies optimizations to orchestrator with worker ReAct modules."""
     from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
-    captured_base_program = setup_spy_for_base_program(monkeypatch)
+    captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_orchestrator_with_workers_program()
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
