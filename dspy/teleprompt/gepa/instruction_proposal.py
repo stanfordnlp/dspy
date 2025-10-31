@@ -320,9 +320,9 @@ class MultiModalInstructionProposer(ProposalFn):
 
 class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
     """Improve a ReAct agent based on execution examples and feedback.
-    
+
     Analyze the trajectories to identify successful patterns and failure causes.
-    Generate improved texts to help the agent succeed on similar tasks. 
+    Generate improved texts to help the agent succeed on similar tasks.
     Place improved texts at their appropriate level of abstraction and specificity.
     """
 
@@ -354,14 +354,14 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
 
 class ReActModuleProposer(ProposalFn):
     """Proposer for optimizing ReAct module configurations.
-    
-    Jointly optimizes three components of a ReAct module: the react instruction that guides 
-    reasoning and tool selection, the extract instruction for answer extraction from trajectories, 
-    and tool descriptions with their parameters. Uses dynamic signature generation to create 
-    output fields for each tool and parameter, enabling the reflection LM to optimize all parts 
+
+    Jointly optimizes three components of a ReAct module: the react instruction that guides
+    reasoning and tool selection, the extract instruction for answer extraction from trajectories,
+    and tool descriptions with their parameters. Uses dynamic signature generation to create
+    output fields for each tool and parameter, enabling the reflection LM to optimize all parts
     cohesively based on execution feedback.
-    
-    This joint optimization approach allows the LM to see how instructions and tool descriptions 
+
+    This joint optimization approach allows the LM to see how instructions and tool descriptions
     work together, leading to more coherent improvements than optimizing each component separately.
     """
 
@@ -376,12 +376,12 @@ class ReActModuleProposer(ProposalFn):
         components_to_update: list[str],
     ) -> dict[str, str]:
         """Optimize ReAct module components.
-        
+
         Args:
             candidate: Current component name -> JSON config mapping
             reflective_dataset: Component name -> list of reflective examples
             components_to_update: List of react_module component names to update
-            
+
         Returns:
             dict: Mapping of component names to improved JSON configs
         """

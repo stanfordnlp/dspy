@@ -291,7 +291,7 @@ def create_orchestrator_with_workers_program():
 
 def test_single_react_module_detection(monkeypatch):
     """Test GEPA detects a single top-level ReAct module with all components.
-    
+
     Tests:
     - ReAct module detected as REACT_MODULE_PREFIX (no path suffix)
     - react instruction captured
@@ -307,7 +307,7 @@ def test_single_react_module_detection(monkeypatch):
 
     try:
         optimizer.compile(program, trainset=trainset, valset=trainset)
-    except:
+    except Exception:
         pass
 
     module_key = REACT_MODULE_PREFIX
@@ -322,15 +322,15 @@ def test_single_react_module_detection(monkeypatch):
 
 def test_multi_react_workflow_detection(monkeypatch):
     """Test GEPA detects multiple ReAct modules with FULL paths preserved.
-    
+
     PRIMARY BUG FIX TEST: Validates paths are NOT truncated.
-    
+
     Tests:
     - workflow.coordinator detected as "react_module:workflow.coordinator" (NOT "react_module:workflow")
     - workflow.researcher detected as "react_module:workflow.researcher" (NOT "react_module:workflow")
     - Both ReAct modules detected separately (not merged)
     - Non-ReAct module (summarizer) detected correctly
-    
+
     Before fix: Paths truncated at first dot → wrong module matching
     After fix: Full paths preserved → correct module identification
     """
@@ -343,7 +343,7 @@ def test_multi_react_workflow_detection(monkeypatch):
 
     try:
         optimizer.compile(program, trainset=trainset, valset=trainset)
-    except:
+    except Exception:
         pass
 
     assert f"{REACT_MODULE_PREFIX}:workflow.coordinator" in captured_base_program
@@ -370,12 +370,12 @@ def test_multi_react_workflow_detection(monkeypatch):
 
 def test_nested_react_orchestrator_worker_detection(monkeypatch):
     """Test GEPA detects nested multi-agent system with 3 separate ReAct modules.
-    
+
     Tests complex nested structure:
     - Orchestrator: multi_agent.orchestrator (has analyst + researcher as tools)
     - Analyst worker: multi_agent.analyst (wrapped as tool for orchestrator)
     - Researcher worker: multi_agent.researcher (wrapped as tool for orchestrator)
-    
+
     Validates:
     - All 3 ReAct modules detected with FULL paths
     - Each module has its own tools detected
@@ -390,7 +390,7 @@ def test_nested_react_orchestrator_worker_detection(monkeypatch):
 
     try:
         optimizer.compile(program, trainset=trainset, valset=trainset)
-    except:
+    except Exception:
         pass
 
     assert f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator" in captured_base_program
@@ -428,7 +428,7 @@ def test_build_program_single_react(monkeypatch):
 
     try:
         optimizer.compile(program, trainset=trainset, valset=trainset)
-    except:
+    except Exception:
         pass
 
     # Mock optimized candidate
@@ -491,7 +491,7 @@ def test_build_program_multi_react_workflow(monkeypatch):
 
     try:
         optimizer.compile(program, trainset=trainset, valset=trainset)
-    except:
+    except Exception:
         pass
 
     # Mock optimized candidate
@@ -581,7 +581,7 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
 
     try:
         optimizer.compile(program, trainset=trainset, valset=trainset)
-    except:
+    except Exception:
         pass
 
     # Mock optimized candidate
