@@ -111,6 +111,7 @@ response = predictor(
 for call in response.outputs.tool_calls:
     # Execute the tool call
     result = call.execute()
+    # For versions earlier than 3.0.4b2, use: result = tools[call.name](**call.args)
     print(f"Tool: {call.name}")
     print(f"Args: {call.args}")
     print(f"Result: {result}")
@@ -158,6 +159,10 @@ for call in response.outputs.tool_calls:
     
     # Option 3: Pass Tool objects as a list
     result = call.execute(functions=[dspy.Tool(weather), dspy.Tool(calculator)])
+    
+    # Option 4: For versions earlier than 3.0.4b2 (manual tool lookup)
+    # tools_dict = {"weather": weather, "calculator": calculator}
+    # result = tools_dict[call.name](**call.args)
     
     print(f"Result: {result}")
 ```
