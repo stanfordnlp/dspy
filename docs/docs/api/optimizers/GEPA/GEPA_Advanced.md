@@ -443,3 +443,373 @@ gepa = dspy.GEPA(
     auto="medium"
 )
 ```
+
+## ReAct Component Optimization
+
+### What is optimize_react_components?
+
+Enable `optimize_react_components=True` to apply specialized optimization to `dspy.ReAct` modules while using default optimization for other modules.
+
+A [`dspy.ReAct`](../../learn/programming/tools.md#approach-1-using-dspyreact-fully-managed) module has three parts: a **react predictor** (iteratively reasons and selects tools), an **extract predictor** (extracts final answers from trajectories), and **tools** with their schemas.
+
+**What gets optimized for ReAct modules:**
+
+GEPA can improve textual components across all parts:
+- **React instruction** - Guides reasoning and tool selection (always optimized)
+- **Extract instruction** - Guides answer extraction from trajectories (optional)
+- **Tool descriptions** - Describes what each tool does (optional)
+- **Tool argument descriptions** - Describes tool parameters (optional)
+
+The reflection LM decides which optional components to improve based on observed failures. Non-ReAct modules in your program are optimized using GEPA's default signature optimization.
+
+**Why this matters:**
+
+Unlike optimizing signature instructions alone (which improves individual predictors), ReAct optimization improves the **entire agent workflow** - from initial reasoning through tool execution to final answer extraction.
+
+ReAct agents often fail when their components contradict each other. A clear tool description doesn't help if the react instruction never considers using that tool. GEPA analyzes execution traces to learn how all components should work together.
+
+### ReAct Optimization Prompt
+
+GEPA uses a specialized prompt to jointly optimize all ReAct components. The prompt receives complete ReAct trajectories and current component texts:
+
+```python
+class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
+    """Improve a ReAct agent based on execution examples and feedback.
+
+    These components are progressively optimized - refine what needs improvement.
+    Analyze the trajectories to identify successful patterns and failure causes.
+    Generate improved texts to help the agent succeed on similar tasks.
+    Place improved texts at their appropriate level of abstraction and/or specificity.
+    """
+
+    current_react_instruction = dspy.InputField(
+        desc="Current ReAct module instruction guiding the ReAct agent's reasoning and tool selection"
+    )
+    current_extract_instruction = dspy.InputField(
+        desc="Current Extract module instruction for extracting final answers from trajectories"
+    )
+    current_tools = dspy.InputField(
+        annotation=list[dspy.Tool],
+        desc="Available tools with their complete schemas"
+    )
+    examples_with_feedback = dspy.InputField(
+        desc="Execution examples with feedback showing successes and failures"
+    )
+
+    improved_react_instruction: str | None = dspy.OutputField(
+        desc="ReAct instruction for reasoning and tool selection",
+        default=None
+    )
+    improved_extract_instruction: str | None = dspy.OutputField(
+        desc="Extract instruction for answer extraction",
+        default=None
+    )
+    # Note: Tool descriptions and arg descriptions are added dynamically via signature.append()
+    # with field descriptions like "Purpose of tool" and "Usage of parameter"
+```
+
+The reflection LM receives all current components and execution traces, then decides which components to improve. Tool-specific fields (`improved_tool_{name}_desc`, `improved_tool_{name}_arg_{param}_desc`) are generated dynamically for each tool and parameter.
+
+**Writing Metrics for ReAct Optimization**
+
+GEPA optimizes ReAct modules more effectively when metrics provide feedback about the agent's execution. Here's how to write metrics that help:
+
+```python
+def react_metric(example, pred, trace=None, pred_name=None, pred_trace=None):
+    """Evaluate ReAct agent performance with trajectory feedback."""
+    # Check if the answer is correct
+    answer_match = pred.answer == example.answer
+    score = 1.0 if answer_match else 0.0
+    
+    # Provide feedback to help GEPA understand what happened
+    feedback = "Correct answer" if answer_match else "Incorrect answer"
+    
+    return dspy.Prediction(score=score, feedback=feedback)
+```
+
+You can make feedback more informative by examining the trajectory:
+
+```python
+def react_metric_with_trajectory(example, pred, trace=None, pred_name=None, pred_trace=None):
+    """Evaluate with trajectory analysis."""
+    # Check if the answer is correct
+    answer_match = pred.answer == example.answer
+    score = 1.0 if answer_match else 0.0
+    
+    # Access the ReAct trajectory to understand agent behavior
+    trajectory = getattr(pred, 'trajectory', {})
+    
+    # Extract tool names from trajectory (excluding 'finish')
+    tools_used = []
+    for key in trajectory:
+        if key.startswith('tool_name_'):
+            tool_name = trajectory[key]
+            if tool_name != 'finish':
+                tools_used.append(tool_name)
+    
+    # Build feedback message
+    if answer_match:
+        feedback = "Correct answer"
+    else:
+        feedback = "Incorrect answer"
+    
+    if tools_used:
+        feedback += f". Tools: {', '.join(tools_used)}"
+    
+    return dspy.Prediction(score=score, feedback=feedback)
+```
+
+The trajectory contains the agent's step-by-step execution. Use it to provide feedback about:
+
+- **Tool selection**: Were appropriate tools chosen?
+- **Reasoning quality**: Did the agent think through the problem?
+- **Efficiency**: Were there unnecessary steps?
+
+The reflection LM uses your feedback to jointly improve react instructions, tool descriptions, and extraction logic.
+
+### How It Works
+
+When `optimize_react_components=True`, GEPA:
+
+1. **Discovers ReAct modules** - Finds all `dspy.ReAct` instances in your program (including nested modules)
+2. **Extracts components** - Collects react instructions, extract instructions, and tool schemas from each ReAct module
+3. **Routes to proposers** - Separates components by type and routes them appropriately:
+   - **With custom `instruction_proposer`**: Your custom proposer receives all components (both regular instructions and ReAct components) and handles the optimization logic
+   - **With default proposer**: Regular instructions use default instruction proposer, ReAct components use specialized `ReActModuleProposer`
+4. **Optimizes jointly** - ReAct proposer improves all four components together based on execution feedback
+5. **Applies updates** - Updates your ReAct modules with improved instructions and tool descriptions
+
+Non-ReAct modules (like `dspy.Predict` or `dspy.ChainOfThought`) continue using standard GEPA optimization.
+
+### When to Use optimize_react_components
+
+Enable `optimize_react_components=True` when you use `dspy.ReAct` in your program and need better agent performance. GEPA jointly optimizes all ReAct components (react instruction, extract instruction, tool descriptions, tool argument descriptions) based on execution feedback. Common scenarios:
+
+1. **Agent loops with repeated tool calls** - Agent keeps calling `web_search` multiple times with similar queries instead of synthesizing information. GEPA improves react instruction to encourage synthesis and tool descriptions to clarify when searches are sufficient.
+
+2. **Wrong tool selection** - Agent with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA refines react instruction and tool descriptions to clarify "use search for factual queries, calculator for numerical analysis."
+
+3. **Agent gives up without trying tools** - Agent responds "I don't know" without using available tools that could answer the question. GEPA improves react instruction to be more proactive about tool usage.
+
+4. **Extraction failures** - Agent executes tools correctly but fails to extract the final answer from the trajectory. GEPA improves extract instruction to better identify and format answers from tool outputs.
+
+5. **Multi-agent delegation issues** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes all ReAct components across both parent and sub-agent modules for coherent delegation.
+
+See the usage examples below for basic ReAct agents and multi-agent systems.
+
+### Usage Examples
+
+#### Basic ReAct Agent
+
+```python
+import dspy
+
+def search_web(query: str) -> str:
+    return f"Search results for: {query}"
+
+def calculate(expression: str) -> float:
+    return eval(expression)
+
+# Create ReAct agent with tools (poor initial descriptions)
+search_tool = dspy.Tool(search_web, name="search", desc="Finds things")
+calc_tool = dspy.Tool(calculate, name="calculator", desc="Does calculations")
+
+agent = dspy.ReAct("question -> answer", tools=[search_tool, calc_tool])
+
+# Enable tool optimization
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5-mini"),
+    optimize_react_components=True,
+    component_selector="all",  # Optimize all components together
+    auto="medium"
+)
+
+optimized_agent = gepa.compile(agent, trainset=train_examples, valset=val_examples)
+
+# View optimized tool descriptions
+print("Optimized search tool:", optimized_agent.tools["search"].desc)
+print("Optimized calculator tool:", optimized_agent.tools["calculator"].desc)
+```
+
+**Example output after optimization:**
+```
+Optimized search tool: Use when you need to find current information, facts, or data 
+    from external sources. Provide specific search queries to get relevant results.
+
+Optimized calculator tool: Use for arithmetic operations and mathematical expressions. 
+    Accepts Python-compatible expressions with numbers and operators (+, -, *, /, **). 
+    Do not use for date calculations or string manipulations.
+```
+
+#### Multi-Agent System
+
+GEPA automatically discovers and optimizes tools in nested agents:
+
+```python
+import dspy
+
+def search_web(query: str) -> str:
+    return f"Search results for: {query}"
+
+def calculate(expression: str) -> float:
+    return eval(expression)
+
+search_tool = dspy.Tool(search_web, name="search", desc="Searches")
+calc_tool = dspy.Tool(calculate, name="calculator", desc="Computes")
+
+class ResearchAssistant(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.researcher = dspy.ReAct("query -> findings", tools=[search_tool])
+        
+        def delegate_research(query: str) -> str:
+            return self.researcher(query=query).findings
+        
+        research_tool = dspy.Tool(delegate_research, name="research", desc="Helps with questions")
+        self.assistant = dspy.ReAct("question -> answer", tools=[research_tool, calc_tool])
+    
+    def forward(self, question):
+        return self.assistant(question=question)
+
+# Optimizes ALL tools: calculator, research, search
+gepa = dspy.GEPA(
+    metric=my_metric,
+    reflection_lm=dspy.LM(model="gpt-5-mini"),
+    optimize_react_components=True,
+    component_selector="all",
+    auto="medium"
+)
+
+optimized_system = gepa.compile(ResearchAssistant(), trainset=train, valset=val)
+
+# View optimized nested tool descriptions
+print(optimized_system.researcher.tools["search"].desc)
+print(optimized_system.assistant.tools["research"].desc)
+print(optimized_system.assistant.tools["calculator"].desc)
+```
+
+### Inspecting Optimized ReAct Components
+
+After optimization, all ReAct components are automatically updated in your program. Access them directly:
+
+```python
+optimized_agent = gepa.compile(agent, trainset=train, valset=val)
+
+# ReAct instruction (guides reasoning and tool selection)
+print("React instruction:", optimized_agent.react.signature.instructions)
+
+# Extract instruction (guides answer extraction from trajectory)
+print("Extract instruction:", optimized_agent.extract.predict.signature.instructions)
+
+# Tool descriptions
+for tool_name, tool in optimized_agent.tools.items():
+    if tool_name != 'finish':  # Skip the built-in finish tool
+        print(f"Tool '{tool_name}' description:", tool.desc)
+        # Tool argument descriptions
+        print(f"  Argument descriptions:", tool.arg_desc)
+```
+
+### Custom Instruction Proposers and ReAct Optimization
+
+**Important:** When you provide a custom `instruction_proposer`, it receives ALL components (regular predictors AND ReAct modules). You must set `optimize_react_components=True` to enable ReAct module discovery and serialization, then handle the optimization logic yourself.
+
+**How it works internally:**
+
+1. **Component Discovery** - GEPA discovers components in your program:
+   - Regular predictors → keys like `"predict"`, `"chain_of_thought"`
+   - ReAct modules → keys like `"react_module"` or `"react_module:agent_name"`
+
+2. **ReAct Serialization** - When `optimize_react_components=True`, GEPA serializes ReAct modules as JSON:
+   ```json
+   {
+     "react": "instruction for reasoning and tool selection",
+     "extract": "instruction for answer extraction",
+     "tools": {
+       "tool_name": {
+         "desc": "what the tool does",
+         "args": {"param": {"type": "string"}},
+         "arg_desc": {"param": "description of param"}
+       }
+     }
+   }
+   ```
+
+3. **Custom Proposer Receives**:
+   - `candidate: dict[str, str]` - **All values are strings**
+     - Regular component: `candidate["predict"]` → `"Your instruction here"`
+     - ReAct component: `candidate["react_module"]` → `'{"react": "...", "extract": "...", "tools": {...}}'` (JSON as a string)
+   - `reflective_dataset: dict[str, list[ReflectiveExample]]` - **GEPA provides this** 
+     - Contains execution traces: inputs, outputs (including full ReAct trajectory), and your metric's feedback
+     - For ReAct: `Generated_Outputs` includes the entire trajectory with all tool calls and reasoning
+     - Use this to understand what went wrong and guide your improvements
+   - `components_to_update: list[str]` - Component keys to optimize this round
+
+4. **Your Responsibility**:
+   - For ReAct components: Use `json.loads()` to parse, improve all 4 parts, use `json.dumps()` to return
+   - For regular components: Improve the instruction string directly
+   - Return `dict[str, str]` with same keys
+
+**What this means:**
+- Your custom proposer receives ALL components: regular signatures AND ReAct modules
+- GEPA still does discovery and JSON serialization, but YOU handle the optimization logic
+- ReAct components are passed with keys like `"react_module"` or `"react_module:agent_name"`
+
+#### Implementing a Custom Proposer for ReAct
+
+If you need custom optimization logic beyond the default, you can build your own proposer. The best way to start is by looking at the reference implementation: [`ReActModuleProposer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/instruction_proposal.py).
+
+**Understanding ReAct component structure**
+
+When GEPA optimizes ReAct modules, it serializes them as JSON strings containing all the pieces you can improve:
+
+```json
+{
+  "react": "instruction for reasoning and tool selection",
+  "extract": "instruction for answer extraction",
+  "tools": {
+    "search": {
+      "desc": "Search the web for information",
+      "args": {"query": {"type": "string"}},
+      "arg_desc": {"query": "The search query to execute"}
+    }
+  }
+}
+```
+
+**What you can improve:**
+- **`react`** - How the agent reasons and decides which tools to use
+- **`extract`** - How the agent extracts the final answer from execution results
+- **`tools[*].desc`** - What each tool does and when to use it
+- **`tools[*].arg_desc`** - What each parameter means and how to use it
+
+**What to preserve:**
+- **`tools[*].args`** - The tool's parameter schema (types, required fields, etc.)
+
+**Your proposer's interface**
+
+Your custom proposer is a callable that receives component instructions and execution feedback, then returns improved versions:
+
+```python
+def your_custom_proposer(
+    candidate: dict[str, str],              # Current instructions for all components
+    reflective_dataset: dict[str, list],    # Execution examples with feedback
+    components_to_update: list[str],        # Which components to optimize this round
+) -> dict[str, str]:                        # Return improved instructions
+    """
+    For ReAct components:
+    - Use json.loads() to parse the JSON string
+    - Improve what needs fixing based on the feedback
+    - Use json.dumps() to serialize back
+    
+    For regular components:
+    - Just return the improved instruction string
+    """
+    # Your optimization logic here
+    pass
+```
+
+**The reference shows how to:**
+- Parse and rebuild the JSON structure
+- Generate dynamic fields for tools/parameters
+- Use execution feedback to guide improvements
