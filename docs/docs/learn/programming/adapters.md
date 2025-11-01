@@ -78,6 +78,10 @@ The output should resemble:
 
 DSPy offers several adapter types, each tailored for specific use cases:
 
+- **ChatAdapter**: Uses `[[ ## field ## ]]` markers (default, universal compatibility)
+- **JSONAdapter**: Uses JSON format (optimal for structured output models)
+- **XMLAdapter**: Uses `<field></field>` XML tags (ideal for XML-native systems)
+
 ### ChatAdapter
 
 **ChatAdapter** is the default adapter and works with all language models. It uses a field-based format with special markers.
@@ -300,6 +304,117 @@ Response:
 Avoid using `JSONAdapter` if you are:
 
 - Using a model that does not natively support structured output, such as a small open-source model hosted on Ollama.
+
+### XMLAdapter
+
+**XMLAdapter** formats inputs and outputs using XML tags, providing a clean structured format that some models and systems prefer. It wraps each field in opening and closing XML tags (e.g., `<field_name>value</field_name>`).
+
+#### Format Structure
+
+XMLAdapter uses XML tags to delineate fields. Like other adapters, it includes JSON schema information for complex types. Below is an example using the same signature:
+
+```python
+import dspy
+import pydantic
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), adapter=dspy.XMLAdapter())
+
+
+class ScienceNews(pydantic.BaseModel):
+    text: str
+    scientists_involved: list[str]
+
+
+class NewsQA(dspy.Signature):
+    """Get news about the given science field"""
+
+    science_field: str = dspy.InputField()
+    year: int = dspy.InputField()
+    num_of_outputs: int = dspy.InputField()
+    news: list[ScienceNews] = dspy.OutputField(desc="science news")
+
+
+predict = dspy.Predict(NewsQA)
+predict(science_field="Computer Theory", year=2022, num_of_outputs=1)
+dspy.inspect_history()
+```
+
+The output looks like:
+
+```
+System message:
+
+Your input fields are:
+1. `science_field` (str):
+2. `year` (int):
+3. `num_of_outputs` (int):
+Your output fields are:
+1. `news` (list[ScienceNews]): science news
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+<science_field>
+{science_field}
+</science_field>
+
+<year>
+{year}
+</year>
+
+<num_of_outputs>
+{num_of_outputs}
+</num_of_outputs>
+
+<news>
+{news}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "$defs": {"ScienceNews": {"type": "object", "properties": {"scientists_involved": {"type": "array", "items": {"type": "string"}, "title": "Scientists Involved"}, "text": {"type": "string", "title": "Text"}}, "required": ["text", "scientists_involved"], "title": "ScienceNews"}}, "items": {"$ref": "#/$defs/ScienceNews"}}
+</news>
+
+
+User message:
+
+<science_field>
+Computer Theory
+</science_field>
+
+<year>
+2022
+</year>
+
+<num_of_outputs>
+1
+</num_of_outputs>
+
+Respond with the corresponding output fields wrapped in XML tags `<news>`.
+
+
+Response:
+
+<news>
+[
+    {
+        "text": "In 2022, researchers made significant advancements in quantum computing algorithms, demonstrating that quantum systems can outperform classical computers in specific tasks.",
+        "scientists_involved": [
+            "Dr. Alice Smith",
+            "Dr. Bob Johnson"
+        ]
+    }
+]
+</news>
+```
+
+#### When to Use XMLAdapter
+
+`XMLAdapter` is ideal when:
+
+- **XML-native systems**: Your application or downstream systems expect XML format.
+- **Model preference**: Some models are trained with XML-structured prompts and may perform better with XML formatting.
+- **Clean structure**: You want a format that's human-readable with clear opening/closing tags.
+
+#### When Not to Use XMLAdapter
+
+Avoid using `XMLAdapter` if you are:
+
+- **Latency sensitive**: Like `ChatAdapter`, `XMLAdapter` includes boilerplate in the output. If minimizing tokens is critical, consider `JSONAdapter`.
+- **Working with JSON-native models**: Models optimized for JSON structured output will work better with `JSONAdapter`.
 
 ## Summary
 
