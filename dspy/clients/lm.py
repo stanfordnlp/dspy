@@ -470,6 +470,10 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
             elif isinstance(c, list):
                 content_blocks.extend(c)
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+    # Convert reasoning_effort to reasoning format supported by the Responses API
+    if "reasoning_effort" in request:
+        effort = request.pop("reasoning_effort")
+        request["reasoning"] = {"effort": effort, "summary": "auto"}
 
     # Convert `response_format` to `text.format` for Responses API
     if "response_format" in request:

@@ -71,6 +71,11 @@ class Type(pydantic.BaseModel):
         return formatted
 
     @classmethod
+    def adapt_to_native_lm_feature(cls, lm, lm_kwargs) -> bool:
+        """Check whether the custom type is natively supported by the LM and adapt to the native feature if possible."""
+        return False
+
+    @classmethod
     def is_streamable(cls) -> bool:
         """Whether the custom type is streamable."""
         return False
