@@ -8,6 +8,7 @@ import types
 from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
+from pydantic.json_schema import SkipJsonSchema
 
 from dspy.adapters.json_adapter import JSONAdapter
 from dspy.adapters.utils import format_field_value as original_format_field_value
@@ -112,6 +113,9 @@ def _build_simplified_schema(
     lines.append(f"{current_indent}{{")
 
     fields = pydantic_model.model_fields
+    for name, f in fields.copy().items():
+        if any(isinstance(a, SkipJsonSchema) for a in f.metadata):
+            fields.pop(name)
     if not fields:
         lines.append(f"{next_indent}{COMMENT_SYMBOL} No fields defined")
     for name, field in fields.items():
