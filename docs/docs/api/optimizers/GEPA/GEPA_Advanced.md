@@ -475,10 +475,11 @@ GEPA uses a specialized prompt to jointly optimize all ReAct components. The pro
 ```python
 class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
     """Improve a ReAct agent based on execution examples and feedback.
-    
+
+    These components are progressively optimized - refine what needs improvement.
     Analyze the trajectories to identify successful patterns and failure causes.
-    Generate improved texts to help the agent succeed on similar tasks. 
-    Place improved texts at their appropriate level of abstraction and specificity.
+    Generate improved texts to help the agent succeed on similar tasks.
+    Place improved texts at their appropriate level of abstraction and/or specificity.
     """
 
     current_react_instruction = dspy.InputField(
@@ -495,14 +496,16 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
         desc="Execution examples with feedback showing successes and failures"
     )
 
-    improved_react_instruction = dspy.OutputField(
-        desc="Improved ReAct module instruction"
+    improved_react_instruction: str | None = dspy.OutputField(
+        desc="ReAct instruction for reasoning and tool selection",
+        default=None
     )
-    improved_extract_instruction = dspy.OutputField(
-        desc="Improved Extract module instruction",
-        default=""
+    improved_extract_instruction: str | None = dspy.OutputField(
+        desc="Extract instruction for answer extraction",
+        default=None
     )
     # Note: Tool descriptions and arg descriptions are added dynamically via signature.append()
+    # with field descriptions like "Purpose of tool" and "Usage of parameter"
 ```
 
 The reflection LM receives all current components and execution traces, then decides which components to improve. Tool-specific fields (`improved_tool_{name}_desc`, `improved_tool_{name}_arg_{param}_desc`) are generated dynamically for each tool and parameter.
