@@ -66,6 +66,9 @@ react_agent = dspy.ReAct(
 
 For more control over the tool calling process, you can manually handle tools using DSPy's tool types.
 
+!!! note "Version Requirement"
+    The `ToolCall.execute()` method used in the examples below is available from **dspy 3.0.4b2** onwards. If you're using version 3.0.3 or earlier, you'll need to upgrade to use this feature.
+
 ### Basic Setup
 
 ```python
@@ -108,6 +111,7 @@ response = predictor(
 for call in response.outputs.tool_calls:
     # Execute the tool call
     result = call.execute()
+    # For versions earlier than 3.0.4b2, use: result = tools[call.name](**call.args)
     print(f"Tool: {call.name}")
     print(f"Args: {call.args}")
     print(f"Result: {result}")
@@ -134,6 +138,9 @@ print(str(tool))        # Full tool description
 
 ### Understanding `dspy.ToolCalls`
 
+!!! note "Version Requirement"
+    The `ToolCall.execute()` method is available from **dspy 3.0.4b2** onwards. If you're using an earlier version, you'll need to upgrade to use this feature.
+
 The `dspy.ToolCalls` type represents the output from a model that can make tool calls. Each individual tool call can be executed using the `execute` method:
 
 ```python
@@ -152,6 +159,10 @@ for call in response.outputs.tool_calls:
     
     # Option 3: Pass Tool objects as a list
     result = call.execute(functions=[dspy.Tool(weather), dspy.Tool(calculator)])
+    
+    # Option 4: For versions earlier than 3.0.4b2 (manual tool lookup)
+    # tools_dict = {"weather": weather, "calculator": calculator}
+    # result = tools_dict[call.name](**call.args)
     
     print(f"Result: {result}")
 ```
