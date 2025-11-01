@@ -468,7 +468,9 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
             if isinstance(c, str):
                 content_blocks.append({"type": "input_text", "text": c})
             elif isinstance(c, list):
-                content_blocks.extend(c)
+                # Convert each content item from Chat API format to Responses API format
+                for item in c:
+                    content_blocks.append(_convert_content_item_to_responses_format(item))
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
 
     # Convert `response_format` to `text.format` for Responses API
@@ -478,6 +480,38 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
         request["text"] = {**text, "format": response_format}
 
     return request
+
+
+def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
+    """
+    Convert a content item from Chat API format to Responses API format.
+
+    For images, converts from:
+        {"type": "image_url", "image_url": {"url": "..."}}
+    To:
+        {"type": "input_image", "image_url": "..."}
+
+    For text, converts from:
+        {"type": "text", "text": "..."}
+    To:
+        {"type": "input_text", "text": "..."}
+
+    For other types, passes through as-is.
+    """
+    if item.get("type") == "image_url":
+        image_url = item.get("image_url", {}).get("url", "")
+        return {
+            "type": "input_image",
+            "image_url": image_url,
+        }
+    elif item.get("type") == "text":
+        return {
+            "type": "input_text",
+            "text": item.get("text", ""),
+        }
+
+    # For other items, return as-is
+    return item
 
 
 def _get_headers(headers: dict[str, Any] | None = None):
