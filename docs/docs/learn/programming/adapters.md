@@ -74,6 +74,34 @@ The output should resemble:
 {'role': 'user', 'content': '[[ ## question ## ]]\nWhat is 2+2?\n\nRespond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.'}
 ```
 
+You can also only fetch the system message by calling `adapter.format_system_message(signature)`.
+
+```python
+import dspy
+
+signature = dspy.Signature("question -> answer")
+system_message = dspy.ChatAdapter().format_system_message(signature)
+print(system_message)
+```
+
+The output should resemble:
+
+```
+Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answer` (str):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+[[ ## question ## ]]
+{question}
+[[ ## answer ## ]]
+{answer}
+[[ ## completed ## ]]
+In adhering to this structure, your objective is: 
+        Given the fields `question`, produce the fields `answer`.
+```
+
 ## Types of Adapters
 
 DSPy offers several adapter types, each tailored for specific use cases:

@@ -272,11 +272,7 @@ class Adapter:
             )
 
         messages = []
-        system_message = (
-            f"{self.format_field_description(signature)}\n"
-            f"{self.format_field_structure(signature)}\n"
-            f"{self.format_task_description(signature)}"
-        )
+        system_message = self.format_system_message(signature)
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
         if history_field_name:
@@ -291,6 +287,19 @@ class Adapter:
 
         messages = split_message_content_for_custom_types(messages)
         return messages
+
+    def format_system_message(self, signature: type[Signature]) -> str:
+        """Format the system message for the LM call.
+
+
+        Args:
+            signature: The DSPy signature for which to format the system message.
+        """
+        return (
+            f"{self.format_field_description(signature)}\n"
+            f"{self.format_field_structure(signature)}\n"
+            f"{self.format_task_description(signature)}"
+        )
 
     def format_field_description(self, signature: type[Signature]) -> str:
         """Format the field description for the system message.
