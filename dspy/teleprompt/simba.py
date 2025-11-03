@@ -2,26 +2,29 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
 import numpy as np
 
 import dspy
+from dspy.primitives import Module
 from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
 
 logger = logging.getLogger(__name__)
 
+M = TypeVar("M", bound=Module)
+
 
 class SIMBA(Teleprompter):
     """
     SIMBA (Stochastic Introspective Mini-Batch Ascent) optimizer for DSPy.
-    
-    SIMBA is a DSPy optimizer that uses the LLM to analyze its own performance and 
-    generate improvement rules. It samples mini-batches, identifies challenging examples 
-    with high output variability, then either creates self-reflective rules or adds 
+
+    SIMBA is a DSPy optimizer that uses the LLM to analyze its own performance and
+    generate improvement rules. It samples mini-batches, identifies challenging examples
+    with high output variability, then either creates self-reflective rules or adds
     successful examples as demonstrations.
-    
+
     For more details, see: https://dspy.ai/api/optimizers/SIMBA/
     """
 
@@ -82,21 +85,15 @@ class SIMBA(Teleprompter):
         else:
             self.strategies = [append_a_rule]
 
-    def compile(
-        self,
-        student: dspy.Module,
-        *,
-        trainset: list[dspy.Example],
-        seed: int = 0
-    ) -> dspy.Module:
+    def compile(self, student: M, *, trainset: list[dspy.Example], seed: int = 0) -> M:
         """
         Compile and optimize the student module using SIMBA.
-        
+
         Args:
             student: The module to optimize
             trainset: Training examples for optimization
             seed: Random seed for reproducibility
-            
+
         Returns:
             The optimized module with candidate_programs and trial_logs attached
         """
