@@ -540,11 +540,13 @@ class GEPA(Teleprompter):
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
 
-        if self.optimize_react_components:
-            for module_path, module in student.named_sub_modules():
-                # Only process ReAct modules
-                if not isinstance(module, ReAct):
-                    continue
+        # Always traverse to detect ReAct modules
+        for module_path, module in student.named_sub_modules():
+            # Only process ReAct modules
+            if not isinstance(module, ReAct):
+                continue
+
+            if self.optimize_react_components:
                 normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
 
                 # Get first predictor name as module identifier
@@ -575,6 +577,12 @@ class GEPA(Teleprompter):
                     base_program.pop(extract_key, None)
                     base_program[module_key] = json.dumps(config, indent=2)
                     break
+            else:
+                logger.warning(
+                    f"Detected ReAct module at '{module_path}'. Consider using "
+                    "`optimize_react_components=True` to jointly optimize react instructions, "
+                    "extract instructions, tool descriptions, and tool argument descriptions."
+                )
 
         # Log base_program keys for debugging
         logger.info(f"Initialized base_program with {len(base_program)} components:")
