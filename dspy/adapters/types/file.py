@@ -1,4 +1,5 @@
 import base64
+import mimetypes
 import os
 from typing import Any
 
@@ -56,8 +57,13 @@ class File(Type):
     def __repr__(self):
         parts = []
         if self.file_data is not None:
-            len_data = len(self.file_data)
-            parts.append(f"file_data=<BASE64_ENCODED({len_data})>")
+            if self.file_data.startswith("data:"):
+                mime_type = self.file_data.split(";")[0].split(":")[1]
+                len_data = len(self.file_data.split("base64,")[1]) if "base64," in self.file_data else len(self.file_data)
+                parts.append(f"file_data=<DATA_URI({mime_type}, {len_data} chars)>")
+            else:
+                len_data = len(self.file_data)
+                parts.append(f"file_data=<DATA({len_data} chars)>")
         if self.file_id is not None:
             parts.append(f"file_id='{self.file_id}'")
         if self.filename is not None:
@@ -65,26 +71,45 @@ class File(Type):
         return f"File({', '.join(parts)})"
 
     @classmethod
-    def from_path(cls, file_path: str, filename: str | None = None) -> "File":
-        """Create a File from a local file path."""
+    def from_path(cls, file_path: str, filename: str | None = None, mime_type: str | None = None) -> "File":
+        """Create a File from a local file path.
+
+        Args:
+            file_path: Path to the file to read
+            filename: Optional filename to use (defaults to basename of path)
+            mime_type: Optional MIME type (defaults to auto-detection from file extension)
+        """
         if not os.path.isfile(file_path):
             raise ValueError(f"File not found: {file_path}")
 
         with open(file_path, "rb") as f:
-            file_data = f.read()
-
-        encoded_data = base64.b64encode(file_data).decode("utf-8")
+            file_bytes = f.read()
 
         if filename is None:
             filename = os.path.basename(file_path)
 
-        return cls(file_data=encoded_data, filename=filename)
+        if mime_type is None:
+            mime_type, _ = mimetypes.guess_type(file_path)
+            if mime_type is None:
+                mime_type = "application/octet-stream"
+
+        encoded_data = base64.b64encode(file_bytes).decode("utf-8")
+        file_data = f"data:{mime_type};base64,{encoded_data}"
+
+        return cls(file_data=file_data, filename=filename)
 
     @classmethod
-    def from_bytes(cls, file_bytes: bytes, filename: str | None = None) -> "File":
-        """Create a File from raw bytes."""
+    def from_bytes(cls, file_bytes: bytes, filename: str | None = None, mime_type: str = "application/octet-stream") -> "File":
+        """Create a File from raw bytes.
+
+        Args:
+            file_bytes: Raw bytes of the file
+            filename: Optional filename
+            mime_type: MIME type (defaults to 'application/octet-stream')
+        """
         encoded_data = base64.b64encode(file_bytes).decode("utf-8")
-        return cls(file_data=encoded_data, filename=filename)
+        file_data = f"data:{mime_type};base64,{encoded_data}"
+        return cls(file_data=file_data, filename=filename)
 
     @classmethod
     def from_file_id(cls, file_id: str, filename: str | None = None) -> "File":
@@ -129,5 +154,3 @@ def encode_file_to_dict(file_input: Any) -> dict:
 
     else:
         raise ValueError(f"Unsupported file input type: {type(file_input)}")
-
-

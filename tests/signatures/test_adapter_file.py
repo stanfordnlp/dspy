@@ -55,18 +55,21 @@ def setup_predictor(signature, expected_output):
 def test_file_from_local_path(sample_text_file):
     file_obj = dspy.File.from_path(sample_text_file)
     assert file_obj.file_data is not None
+    assert file_obj.file_data.startswith("data:text/plain;base64,")
     assert file_obj.filename == os.path.basename(sample_text_file)
 
 
 def test_file_from_path_method(sample_text_file):
     file_obj = dspy.File.from_path(sample_text_file)
     assert file_obj.file_data is not None
+    assert file_obj.file_data.startswith("data:text/plain;base64,")
     assert file_obj.filename == os.path.basename(sample_text_file)
 
 
 def test_file_from_path_with_custom_filename(sample_text_file):
     file_obj = dspy.File.from_path(sample_text_file, filename="custom.txt")
     assert file_obj.file_data is not None
+    assert file_obj.file_data.startswith("data:text/plain;base64,")
     assert file_obj.filename == "custom.txt"
 
 
@@ -74,6 +77,7 @@ def test_file_from_bytes():
     file_bytes = b"Test file content"
     file_obj = dspy.File.from_bytes(file_bytes)
     assert file_obj.file_data is not None
+    assert file_obj.file_data.startswith("data:application/octet-stream;base64,")
     assert file_obj.filename is None
 
 
@@ -81,6 +85,7 @@ def test_file_from_bytes_with_filename():
     file_bytes = b"Test file content"
     file_obj = dspy.File.from_bytes(file_bytes, filename="test.txt")
     assert file_obj.file_data is not None
+    assert file_obj.file_data.startswith("data:application/octet-stream;base64,")
     assert file_obj.filename == "test.txt"
 
 
@@ -97,8 +102,8 @@ def test_file_from_file_id_with_filename():
 
 
 def test_file_from_dict_with_file_data():
-    file_obj = dspy.File(file_data="dGVzdA==", filename="test.txt")
-    assert file_obj.file_data == "dGVzdA=="
+    file_obj = dspy.File(file_data="data:text/plain;base64,dGVzdA==", filename="test.txt")
+    assert file_obj.file_data == "data:text/plain;base64,dGVzdA=="
     assert file_obj.filename == "test.txt"
 
 
@@ -128,7 +133,8 @@ def test_file_format_with_file_id():
 def test_file_repr_with_file_data():
     file_obj = dspy.File.from_bytes(b"Test content", filename="test.txt")
     repr_str = repr(file_obj)
-    assert "BASE64_ENCODED" in repr_str
+    assert "DATA_URI" in repr_str
+    assert "application/octet-stream" in repr_str
     assert "filename='test.txt'" in repr_str
 
 
@@ -149,12 +155,14 @@ def test_file_str():
 def test_encode_file_to_dict_from_path(sample_text_file):
     result = encode_file_to_dict(sample_text_file)
     assert "file_data" in result
+    assert result["file_data"].startswith("data:text/plain;base64,")
     assert "filename" in result
 
 
 def test_encode_file_to_dict_from_bytes():
     result = encode_file_to_dict(b"test content")
     assert "file_data" in result
+    assert result["file_data"].startswith("data:application/octet-stream;base64,")
 
 
 def test_invalid_file_string():
@@ -233,13 +241,14 @@ def test_file_frozen():
 
 
 def test_file_with_all_fields():
-    file_obj = dspy.File(file_data="dGVzdA==", file_id="file-123", filename="test.txt")
-    assert file_obj.file_data == "dGVzdA=="
+    file_data_uri = "data:text/plain;base64,dGVzdA=="
+    file_obj = dspy.File(file_data=file_data_uri, file_id="file-123", filename="test.txt")
+    assert file_obj.file_data == file_data_uri
     assert file_obj.file_id == "file-123"
     assert file_obj.filename == "test.txt"
 
     formatted = file_obj.format()
-    assert formatted[0]["file"]["file_data"] == "dGVzdA=="
+    assert formatted[0]["file"]["file_data"] == file_data_uri
     assert formatted[0]["file"]["file_id"] == "file-123"
     assert formatted[0]["file"]["filename"] == "test.txt"
 
@@ -247,3 +256,19 @@ def test_file_with_all_fields():
 def test_file_path_not_found():
     with pytest.raises(ValueError, match="File not found"):
         dspy.File.from_path("/nonexistent/path/file.txt")
+
+
+def test_file_custom_mime_type(sample_text_file):
+    file_obj = dspy.File.from_path(sample_text_file, mime_type="text/custom")
+    assert file_obj.file_data.startswith("data:text/custom;base64,")
+
+
+def test_file_from_bytes_custom_mime():
+    file_obj = dspy.File.from_bytes(b"audio data", mime_type="audio/mp3")
+    assert file_obj.file_data.startswith("data:audio/mp3;base64,")
+
+
+def test_file_data_uri_in_format():
+    file_obj = dspy.File.from_bytes(b"test", filename="test.txt", mime_type="text/plain")
+    formatted = file_obj.format()
+    assert "data:text/plain;base64," in formatted[0]["file"]["file_data"]
