@@ -61,6 +61,10 @@ class Audio(Type):
         if not mime_type.startswith("audio/"):
             raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
         audio_format = mime_type.split("/")[1]
+
+        if audio_format == "x-wav":
+            audio_format == "wav"
+
         encoded_data = base64.b64encode(response.content).decode("utf-8")
         return cls(data=encoded_data, audio_format=audio_format)
 
@@ -80,6 +84,10 @@ class Audio(Type):
             file_data = file.read()
 
         audio_format = mime_type.split("/")[1]
+
+        if audio_format == "x-wav":
+            audio_format == "wav"
+
         encoded_data = base64.b64encode(file_data).decode("utf-8")
         return cls(data=encoded_data, audio_format=audio_format)
 
@@ -126,6 +134,8 @@ def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: in
             header, b64data = audio.split(",", 1)
             mime = header.split(";")[0].split(":")[1]
             audio_format = mime.split("/")[1]
+            if audio_format == "x-wav":
+                audio_format == "wav"
             return {"data": b64data, "audio_format": audio_format}
         except Exception as e:
             raise ValueError(f"Malformed audio data URI: {e}")
