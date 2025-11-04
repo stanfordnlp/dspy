@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.12.4' and sys_platform == 'win32'",
@@ -664,17 +664,15 @@ wheels = [
 
 [[package]]
 name = "dspy"
-version = "3.0.3"
+version = "3.0.4b2"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
     { name = "asyncer" },
-    { name = "backoff" },
     { name = "cachetools" },
     { name = "cloudpickle" },
     { name = "diskcache" },
     { name = "gepa" },
-    { name = "joblib" },
     { name = "json-repair" },
     { name = "litellm" },
     { name = "magicattr" },
@@ -687,8 +685,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "regex" },
     { name = "requests" },
-    { name = "rich", version = "13.7.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "rich", version = "14.0.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
     { name = "tenacity" },
     { name = "tqdm" },
     { name = "xxhash" },
@@ -734,15 +730,13 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.18.0,<1.0.0" },
     { name = "anyio" },
     { name = "asyncer", specifier = "==0.0.8" },
-    { name = "backoff", specifier = ">=2.2" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.3" },
     { name = "cachetools", specifier = ">=5.5.0" },
     { name = "cloudpickle", specifier = ">=3.0.0" },
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
-    { name = "gepa", extras = ["dspy"], specifier = "==0.0.12" },
-    { name = "joblib", specifier = "~=1.3" },
+    { name = "gepa", extras = ["dspy"], specifier = "==0.0.18" },
     { name = "json-repair", specifier = ">=0.30.0" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
     { name = "langchain-core", marker = "extra == 'test-extras'" },
@@ -758,6 +752,7 @@ requires-dist = [
     { name = "optuna", marker = "extra == 'test-extras'", specifier = ">=3.4.0" },
     { name = "orjson", specifier = ">=3.9.0" },
     { name = "pandas", marker = "extra == 'test-extras'", specifier = ">=2.1.1" },
+    { name = "pillow", specifier = ">=10.1.0" },
     { name = "pillow", marker = "extra == 'dev'", specifier = ">=10.1.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7.0" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -766,7 +761,6 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.12.0" },
     { name = "regex", specifier = ">=2023.10.3" },
     { name = "requests", specifier = ">=2.31.0" },
-    { name = "rich", specifier = ">=13.7.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "tenacity", specifier = ">=8.2.3" },
     { name = "tqdm", specifier = ">=4.66.1" },
@@ -957,11 +951,11 @@ wheels = [
 
 [[package]]
 name = "gepa"
-version = "0.0.12"
+version = "0.0.18"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1c/c1/748f282ca83dea3d2a8dcefd6b1476d8780c99a2e3bdd80dfebbcb6e823b/gepa-0.0.12.tar.gz", hash = "sha256:0c725790c28399e333a37f32dc858a674dc9e748fcccac1df632acdf9f0302ef", size = 63863, upload-time = "2025-09-09T01:36:21.818Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/c1/81235474f37ceb2f9c82e49c34a0eab8ceb6e641a3f79d4ffa34f29febf1/gepa-0.0.18.tar.gz", hash = "sha256:368f3bab9b155a3e9e43e739bd244e6eccad4d40cb3a005d23c3f7407c0ef00a", size = 103385, upload-time = "2025-10-25T02:34:25.535Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/fb/73d6b15259067248a9c574508924dc2df427b5cc1b50eccfb3ceddf4334d/gepa-0.0.12-py3-none-any.whl", hash = "sha256:bf254177d1b9056d09473273472bac96fd1272124fb20abfe8dc548e4b914c58", size = 64264, upload-time = "2025-09-09T01:36:20.469Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/52/9f2a82b4c8910fc12d43a2c27c30d1253b9cdc0d0ef65fd613c9104e9ef8/gepa-0.0.18-py3-none-any.whl", hash = "sha256:0ca0ddf05610cdd6b1d37a778e0963069dbba1c3075a188ac15236847d4ad2b7", size = 112168, upload-time = "2025-10-25T02:34:24.315Z" },
 ]
 
 [[package]]
@@ -1357,15 +1351,6 @@ wheels = [
 ]
 
 [[package]]
-name = "joblib"
-version = "1.5.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/dc/fe/0f5a938c54105553436dbff7a61dc4fed4b1b2c98852f8833beaf4d5968f/joblib-1.5.1.tar.gz", hash = "sha256:f4f86e351f39fe3d0d32a9f2c3d8af1ee4cec285aafcb27003dda5205576b444", size = 330475, upload-time = "2025-05-23T12:04:37.097Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/4f/1195bbac8e0c2acc5f740661631d8d750dc38d4a32b23ee5df3cde6f4e0d/joblib-1.5.1-py3-none-any.whl", hash = "sha256:4719a31f054c7d766948dcd83e9613686b27114f190f717cec7eaa2084f8a74a", size = 307746, upload-time = "2025-05-23T12:04:35.124Z" },
-]
-
-[[package]]
 name = "json-repair"
 version = "0.46.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1497,7 +1482,7 @@ proxy = [
     { name = "pynacl", marker = "sys_platform != 'win32'" },
     { name = "python-multipart", version = "0.0.18", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
     { name = "pyyaml", marker = "sys_platform != 'win32'" },
-    { name = "rich", version = "13.7.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "rich", marker = "sys_platform != 'win32'" },
     { name = "rq", marker = "sys_platform != 'win32'" },
     { name = "uvicorn", version = "0.29.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
     { name = "uvloop", marker = "sys_platform != 'win32'" },
@@ -1544,7 +1529,7 @@ name = "markdown-it-py"
 version = "3.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "mdurl" },
+    { name = "mdurl", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/38/71/3b932df36c1a044d397a1f92d1cf91ee0a503d91e470cbd670aa66b07ed0/markdown-it-py-3.0.0.tar.gz", hash = "sha256:e3f60a94fa066dc52ec76661e37c851cb232d92f9886b15cb560aaada2df8feb", size = 74596, upload-time = "2023-06-03T06:41:14.443Z" }
 wheels = [
@@ -2843,12 +2828,6 @@ wheels = [
 name = "rich"
 version = "13.7.1"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12.4' and sys_platform != 'win32'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and sys_platform != 'win32'",
-    "python_full_version == '3.11.*' and sys_platform != 'win32'",
-    "python_full_version < '3.11' and sys_platform != 'win32'",
-]
 dependencies = [
     { name = "markdown-it-py", marker = "sys_platform != 'win32'" },
     { name = "pygments", marker = "sys_platform != 'win32'" },
@@ -2856,26 +2835,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b3/01/c954e134dc440ab5f96952fe52b4fdc64225530320a910473c1fe270d9aa/rich-13.7.1.tar.gz", hash = "sha256:9be308cb1fe2f1f57d67ce99e95af38a1e2bc71ad9813b0e247cf7ffbcc3a432", size = 221248, upload-time = "2024-02-28T14:51:19.472Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/67/a37f6214d0e9fe57f6ae54b2956d550ca8365857f42a1ce0392bb21d9410/rich-13.7.1-py3-none-any.whl", hash = "sha256:4edbae314f59eb482f54e9e30bf00d33350aaa94f4bfcd4e9e3110e64d0d7222", size = 240681, upload-time = "2024-02-28T14:51:14.353Z" },
-]
-
-[[package]]
-name = "rich"
-version = "14.0.0"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12.4' and sys_platform == 'win32'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and sys_platform == 'win32'",
-    "python_full_version == '3.11.*' and sys_platform == 'win32'",
-    "python_full_version < '3.11' and sys_platform == 'win32'",
-]
-dependencies = [
-    { name = "markdown-it-py", marker = "sys_platform == 'win32'" },
-    { name = "pygments", marker = "sys_platform == 'win32'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.11' and sys_platform == 'win32'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a1/53/830aa4c3066a8ab0ae9a9955976fb770fe9c6102117c8ec4ab3ea62d89e8/rich-14.0.0.tar.gz", hash = "sha256:82f1bc23a6a21ebca4ae0c45af9bdbc492ed20231dcb63f297d6d1021a9d5725", size = 224078, upload-time = "2025-03-30T14:15:14.23Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0d/9b/63f4c7ebc259242c89b3acafdb37b41d1185c07ff0011164674e9076b491/rich-14.0.0-py3-none-any.whl", hash = "sha256:1c9491e1951aac09caffd42f448ee3d04e58923ffe14993f6e83068dc395d7e0", size = 243229, upload-time = "2025-03-30T14:15:12.283Z" },
 ]
 
 [[package]]
