@@ -262,7 +262,6 @@ class MIPROv2(Teleprompter):
 
     def _set_random_seeds(self, seed):
         self.rng = random.Random(seed)
-        random.seed(seed)
 
     def _set_num_trials_from_num_candidates(self, program, zeroshot_opt, num_candidates):
         num_vars = len(program.predictors())
