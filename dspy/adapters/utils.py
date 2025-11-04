@@ -167,12 +167,20 @@ def parse_value(value, annotation):
         # Handle union annotations, e.g., `str | None`, `Optional[str]`, `Union[str, int, None]`, etc.
         return TypeAdapter(annotation).validate_python(value)
 
-    candidate = json_repair.loads(value)  # json_repair.loads returns "" on failure.
+    # Try Python literal parsing first (handles None, True, False, single quotes, tuples)
+    ast_result = None
+    try:
+        ast_result = ast.literal_eval(value)
+        return TypeAdapter(annotation).validate_python(ast_result)
+    except (ValueError, SyntaxError):
+        pass  # Parsing failed
+    except pydantic.ValidationError:
+        pass  # Parsing succeeded but validation failed, will try json_repair
+
+    # Try JSON repair as fallback
+    candidate = json_repair.loads(value)
     if candidate == "" and value != "":
-        try:
-            candidate = ast.literal_eval(value)
-        except (ValueError, SyntaxError):
-            candidate = value
+        candidate = ast_result if ast_result is not None else value
 
     try:
         return TypeAdapter(annotation).validate_python(candidate)

@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 from unittest import mock
 
 import pydantic
@@ -610,7 +610,6 @@ def test_chat_adapter_toolcalls_vague_match():
             tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
         )
 
-
 def test_format_system_message():
     class MySignature(dspy.Signature):
         """Answer the question with multiple answers and scores"""
@@ -641,3 +640,67 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+def test_chat_adapter_dict_with_none_values():
+    """
+    Test that Dict[str, Any] fields correctly parse None values from Python-style output.
+    This verifies the fix for issue #8820 where None was being converted to "None" string.
+    """
+
+    class ActionToolCallSignature(dspy.Signature):
+        function_name: str = dspy.OutputField(desc="Name of the function to be called.")
+        arguments: dict[str, Any] = dspy.OutputField(desc="Arguments for the function to be called.")
+
+    adapter = dspy.ChatAdapter()
+
+    # Test case 1: LM outputs Python-style dict with None value
+    completion_with_none = (
+        '[[ ## function_name ## ]]\nget_revision\n\n'
+        '[[ ## arguments ## ]]\n'
+        '{"title": "Wikipedia:Featured and good topic candidates/Featured log/November 2016", "revision_id": None}\n\n'
+        '[[ ## completed ## ]]'
+    )
+
+    result = adapter.parse(ActionToolCallSignature, completion_with_none)
+    assert result["function_name"] == "get_revision"
+    assert result["arguments"]["title"] == "Wikipedia:Featured and good topic candidates/Featured log/November 2016"
+    assert result["arguments"]["revision_id"] is None  # Should be None, not "None"
+
+    # Test case 2: LM outputs Python-style dict with True/False
+    completion_with_bools = (
+        "[[ ## function_name ## ]]\nupdate_settings\n\n"
+        "[[ ## arguments ## ]]\n"
+        "{'enabled': True, 'debug': False, 'name': None}\n\n"
+        "[[ ## completed ## ]]"
+    )
+
+    result = adapter.parse(ActionToolCallSignature, completion_with_bools)
+    assert result["function_name"] == "update_settings"
+    assert result["arguments"]["enabled"] is True
+    assert result["arguments"]["debug"] is False
+    assert result["arguments"]["name"] is None
+
+    # Test case 3: LM outputs JSON-style dict with null
+    completion_with_null = (
+        '[[ ## function_name ## ]]\nget_revision\n\n'
+        '[[ ## arguments ## ]]\n'
+        '{"title": "Test", "revision_id": null}\n\n'
+        '[[ ## completed ## ]]'
+    )
+
+    result = adapter.parse(ActionToolCallSignature, completion_with_null)
+    assert result["function_name"] == "get_revision"
+    assert result["arguments"]["title"] == "Test"
+    assert result["arguments"]["revision_id"] is None
+
+    # Test case 4: String "None" should remain as string "None"
+    completion_with_string_none = (
+        '[[ ## function_name ## ]]\nlog_message\n\n'
+        '[[ ## arguments ## ]]\n'
+        '{"message": "None"}\n\n'
+        '[[ ## completed ## ]]'
+    )
+
+    result = adapter.parse(ActionToolCallSignature, completion_with_string_none)
+    assert result["function_name"] == "log_message"
+    assert result["arguments"]["message"] == "None"  # Should remain as string "None"
