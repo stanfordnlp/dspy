@@ -295,6 +295,10 @@ class GEPA(Teleprompter):
               serialized state contains dynamically generated DSPy signatures. Default is False.
             - val_evaluation_policy: Strategy controlling which validation ids to score each iteration. Can be 
               'full_eval' (evaluate every id each time) or an [EvaluationPolicy](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/eval_policy.py) instance. Default is 'full_eval'.
+            - use_mlflow: If True, enables MLflow integration to log optimization progress. 
+              MLflow can be used alongside Weights & Biases (WandB).
+            - mlflow_tracking_uri: The tracking URI to use for MLflow (when use_mlflow=True).
+            - mlflow_experiment_name: The experiment name to use for MLflow (when use_mlflow=True).
             
             Note: Parameters already handled by DSPy's GEPA class will be overridden by the direct parameters 
             and should not be passed through gepa_kwargs.
