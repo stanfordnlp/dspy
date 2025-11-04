@@ -5,10 +5,8 @@ from dspy.utils.import_utils import check_numpy_support
 
 class KNN:
     def __init__(self, k: int, trainset: list[Example], vectorizer: Embedder):
-
         """
         A k-nearest neighbors retriever that finds similar examples from a training set.
-        
         Args:
             k: Number of nearest neighbors to retrieve
             trainset: List of training examples to search through
