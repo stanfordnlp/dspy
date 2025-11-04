@@ -9,8 +9,6 @@ from dspy.utils.import_utils import check_numpy_support
 class Embedder:
     """DSPy embedding class.
 
-    Requires numpy to be installed.
-
     The class for computing embeddings for text inputs. This class provides a unified interface for both:
 
     1. Hosted embedding models (e.g. OpenAI's text-embedding-3-small) via litellm integration
