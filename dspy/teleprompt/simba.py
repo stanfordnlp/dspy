@@ -212,9 +212,14 @@ class SIMBA(Teleprompter):
             # STEP 3: Sort the training buckets by (max-to-min gap, max score, and max-to-avg gap).
             buckets = []
             largest_max_to_avg_gap = float("-inf")
-            scores_list = sorted([float(o["score"]) for o in outputs])
-            batch_10th_percentile_score = statistics.quantiles(scores_list, n=10)[0] if len(scores_list) > 1 else scores_list[0] if scores_list else 0
-            batch_90th_percentile_score = statistics.quantiles(scores_list, n=10)[8] if len(scores_list) > 1 else scores_list[-1] if scores_list else 0
+            scores = sorted(float(o["score"]) for o in outputs)
+            if not scores:
+                raise ValueError("No scores found in outputs")
+            elif len(scores) == 1:
+                batch_10th_percentile_score = batch_90th_percentile_score = scores[0]
+            else:
+                deciles = statistics.quantiles(scores, n=10, method="inclusive")
+                batch_10th_percentile_score, batch_90th_percentile_score = deciles[0], deciles[8]
 
             # We'll chunk `outputs` by example index, each chunk has length = num_candidates
             for idx, _ in enumerate(batch):
