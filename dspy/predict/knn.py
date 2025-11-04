@@ -1,14 +1,13 @@
-import numpy as np
-
 from dspy.clients import Embedder
 from dspy.primitives import Example
+from dspy.utils.import_utils import check_numpy_support
 
 
 class KNN:
     def __init__(self, k: int, trainset: list[Example], vectorizer: Embedder):
-        """
-        A k-nearest neighbors retriever that finds similar examples from a training set.
 
+        """K-nearest neighbors retriever that finds similar examples from a training set.
+        
         Args:
             k: Number of nearest neighbors to retrieve
             trainset: List of training examples to search through
@@ -36,6 +35,8 @@ class KNN:
             similar_examples = knn(input="hello")
             ```
         """
+        np = check_numpy_support("KNN")
+
         self.k = k
         self.trainset = trainset
         self.embedding = vectorizer
@@ -46,6 +47,8 @@ class KNN:
         self.trainset_vectors = self.embedding(trainset_casted_to_vectorize).astype(np.float32)
 
     def __call__(self, **kwargs) -> list:
+        np = check_numpy_support("KNN")
+
         input_example_vector = self.embedding([" | ".join([f"{key}: {val}" for key, val in kwargs.items()])])
         scores = np.dot(self.trainset_vectors, input_example_vector.T).squeeze()
         nearest_samples_idxs = scores.argsort()[-self.k :][::-1]

@@ -4,9 +4,8 @@ import math
 import os
 import random
 import shutil
+import statistics
 import sys
-
-import numpy as np
 
 try:
     from IPython.core.magics.code import extract_symbols
@@ -121,8 +120,8 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
     # Calculate the mean for each combination of categorical parameters, based on past trials
     results = []
     for key, values in param_score_dict.items():
-        scores = np.array([v[0] for v in values])
-        mean = np.average(scores)
+        scores = [v[0] for v in values]
+        mean = statistics.mean(scores)
         program = values[0][1]
         params = values[0][2]
         results.append((key, mean, program, params))
@@ -275,19 +274,14 @@ def get_token_usage(model) -> tuple[int, int]:
     if not hasattr(model, "history"):
         return 0, 0
 
-    input_tokens = []
-    output_tokens = []
+    input_tokens: int = 0
+    output_tokens: int = 0
     for interaction in model.history:
         usage = interaction.get("usage", {})
-        _input_tokens = usage.get("prompt_tokens", 0)
-        _output_tokens = usage.get("completion_tokens", 0)
-        input_tokens.append(_input_tokens)
-        output_tokens.append(_output_tokens)
+        input_tokens += usage.get("prompt_tokens", 0)
+        output_tokens += usage.get("completion_tokens", 0)
 
-    total_input_tokens = int(np.sum(input_tokens))
-    total_output_tokens = int(np.sum(output_tokens))
-
-    return total_input_tokens, total_output_tokens
+    return input_tokens, output_tokens
 
 
 def log_token_usage(trial_logs, trial_num, model_dict):
@@ -464,3 +458,22 @@ def new_getfile(object):
 
 
 inspect.getfile = new_getfile
+
+def _poisson_sample(rng: random.Random, lam: float) -> int:
+    """Generate a Poisson random variate using Knuth's algorithm.
+    
+    Needed to avoid numpy dependency in SIMBA.
+    """
+    if lam <= 0:
+        return 0
+
+    # Knuth's algorithm
+    L = math.exp(-lam)
+    k = 0
+    p = 1.0
+
+    while p > L:
+        k += 1
+        p *= rng.random()
+
+    return k - 1

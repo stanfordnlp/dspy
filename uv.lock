@@ -676,8 +676,6 @@ dependencies = [
     { name = "json-repair" },
     { name = "litellm" },
     { name = "magicattr" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "openai" },
     { name = "optuna" },
     { name = "orjson" },
@@ -713,6 +711,10 @@ mcp = [
     { name = "mcp", version = "1.9.3", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
     { name = "mcp", version = "1.9.4", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
 ]
+retrieval = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
 test-extras = [
     { name = "datasets" },
     { name = "langchain-core" },
@@ -746,7 +748,7 @@ requires-dist = [
     { name = "magicattr", specifier = ">=0.1.6" },
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'mcp'" },
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'test-extras'" },
-    { name = "numpy", specifier = ">=1.26.0" },
+    { name = "numpy", marker = "extra == 'retrieval'", specifier = ">=1.26.0" },
     { name = "openai", specifier = ">=0.28.1" },
     { name = "optuna", specifier = ">=3.4.0" },
     { name = "optuna", marker = "extra == 'test-extras'", specifier = ">=3.4.0" },
@@ -767,7 +769,7 @@ requires-dist = [
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = "~=4.5.4" },
     { name = "xxhash", specifier = ">=3.5.0" },
 ]
-provides-extras = ["anthropic", "weaviate", "mcp", "langchain", "dev", "test-extras"]
+provides-extras = ["retrieval", "anthropic", "weaviate", "mcp", "langchain", "dev", "test-extras"]
 
 [[package]]
 name = "email-validator"

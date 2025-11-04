@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import logging
+import math
 import random
+import statistics
 from typing import Any, Callable
-
-import numpy as np
 
 import dspy
 from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.teleprompt.utils import _poisson_sample
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,6 @@ class SIMBA(Teleprompter):
 
         # Initialize RNG
         rng = random.Random(seed)
-        rng_np = np.random.default_rng(seed)
 
         programs = []
         program_scores = {}
@@ -133,7 +133,7 @@ class SIMBA(Teleprompter):
 
             # Unnormalized weights
             scores = [calc_average_score(idx) for idx in program_idxs]
-            exps = [np.exp(s / temperature) for s in scores]
+            exps = [math.exp(s / temperature) for s in scores]
             sum_exps = sum(exps)
             if sum_exps <= 0:
                 # Fallback: uniform if all exps are zero
@@ -212,8 +212,9 @@ class SIMBA(Teleprompter):
             # STEP 3: Sort the training buckets by (max-to-min gap, max score, and max-to-avg gap).
             buckets = []
             largest_max_to_avg_gap = float("-inf")
-            batch_10th_percentile_score = np.percentile([float(o["score"]) for o in outputs], 10)
-            batch_90th_percentile_score = np.percentile([float(o["score"]) for o in outputs], 90)
+            scores_list = sorted([float(o["score"]) for o in outputs])
+            batch_10th_percentile_score = statistics.quantiles(scores_list, n=10)[0] if len(scores_list) > 1 else scores_list[0] if scores_list else 0
+            batch_90th_percentile_score = statistics.quantiles(scores_list, n=10)[8] if len(scores_list) > 1 else scores_list[-1] if scores_list else 0
 
             # We'll chunk `outputs` by example index, each chunk has length = num_candidates
             for idx, _ in enumerate(batch):
@@ -265,7 +266,9 @@ class SIMBA(Teleprompter):
                     num_demos_list.append(len(predictor.demos))
 
                 num_demos = max(num_demos_list) if num_demos_list else 0
-                num_demos_to_drop = max(rng_np.poisson(num_demos / max_demos_tmp), int(num_demos >= max_demos_tmp))
+                lam = num_demos / max_demos_tmp
+                poisson_sample = _poisson_sample(rng, lam)
+                num_demos_to_drop = max(poisson_sample, int(num_demos >= max_demos_tmp))
                 num_demos_to_drop = min(num_demos_to_drop, num_demos)
                 demos_to_drop = [rng.randrange(num_demos) for _ in range(num_demos_to_drop)]
 

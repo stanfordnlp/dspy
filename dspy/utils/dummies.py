@@ -2,13 +2,12 @@ import random
 from collections import defaultdict
 from typing import Any
 
-import numpy as np
-
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
 from dspy.clients.lm import LM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
 from dspy.utils.callback import with_callbacks
+from dspy.utils.import_utils import check_numpy_support
 
 
 class DummyLM(LM):
@@ -190,7 +189,9 @@ class DummyVectorizer:
             h %= self.P
         return h % self.max_length
 
-    def __call__(self, texts: list[str]) -> np.ndarray:
+    def __call__(self, texts: list[str]):
+        np = check_numpy_support("DummyEmbedder")
+
         vecs = []
         for text in texts:
             grams = [text[i : i + self.n_gram] for i in range(len(text) - self.n_gram + 1)]

@@ -38,12 +38,12 @@ dependencies = [
     "cachetools>=5.5.0",
     "cloudpickle>=3.0.0",
     "pillow>=10.1.0",
-    "numpy>=1.26.0",
     "xxhash>=3.5.0",
     "gepa[dspy]==0.0.18",
 ]
 
 [project.optional-dependencies]
+retrieval = ["numpy>=1.26.0"]
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 mcp = ["mcp; python_version >= '3.10'"]

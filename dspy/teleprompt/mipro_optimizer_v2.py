@@ -1,9 +1,8 @@
 import logging
+import math
 import random
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Literal
-
-import numpy as np
 
 import dspy
 from dspy.evaluate.evaluate import Evaluate
@@ -263,14 +262,14 @@ class MIPROv2(Teleprompter):
 
     def _set_random_seeds(self, seed):
         self.rng = random.Random(seed)
-        np.random.seed(seed)
+        random.seed(seed)
 
     def _set_num_trials_from_num_candidates(self, program, zeroshot_opt, num_candidates):
         num_vars = len(program.predictors())
         if not zeroshot_opt:
             num_vars *= 2  # Account for few-shot examples + instruction variables
         # Trials = MAX(c*M*log(N), c=2, 3/2*N)
-        num_trials = int(max(2 * num_vars * np.log2(num_candidates), 1.5 * num_candidates))
+        num_trials = int(max(2 * num_vars * math.log2(num_candidates), 1.5 * num_candidates))
 
         return num_trials
 

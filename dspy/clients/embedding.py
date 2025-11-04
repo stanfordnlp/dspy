@@ -1,13 +1,15 @@
 from typing import Any, Callable
 
 import litellm
-import numpy as np
 
 from dspy.clients.cache import request_cache
+from dspy.utils.import_utils import check_numpy_support
 
 
 class Embedder:
     """DSPy embedding class.
+
+    Requires numpy to be installed.
 
     The class for computing embeddings for text inputs. This class provides a unified interface for both:
 
@@ -104,13 +106,14 @@ class Embedder:
         return input_batches, caching, merged_kwargs, is_single_input
 
     def _postprocess(self, embeddings_list, is_single_input):
+        np = check_numpy_support("Embedder")
         embeddings = np.array(embeddings_list, dtype=np.float32)
         if is_single_input:
             return embeddings[0]
         else:
             return np.array(embeddings, dtype=np.float32)
 
-    def __call__(self, inputs: str | list[str], batch_size: int | None = None, caching: bool | None = None, **kwargs: dict[str, Any]) -> np.ndarray:
+    def __call__(self, inputs: str | list[str], batch_size: int | None = None, caching: bool | None = None, **kwargs: dict[str, Any]):
         """Compute embeddings for the given inputs.
 
         Args:
