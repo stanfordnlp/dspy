@@ -654,6 +654,7 @@ class MIPROv2(Teleprompter):
         if not sampler:
             _sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
         elif sampler.__class__.__name__ == 'qEISampler':
+            # batch Expected Improvement Sampler; allows parallelization in optuna
             _sampler = sampler
             _sampler.create_search_space(instruction_candidates, demo_candidates)
         else:
