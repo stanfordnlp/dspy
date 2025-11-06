@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from litellm import ContextWindowExceededError
 
 import dspy
-from dspy.adapters.types.tool import Tool
+from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
 
@@ -81,7 +81,7 @@ class ReAct(Module):
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
             .append("trajectory", dspy.InputField(), type_=str)
             .append("next_thought", dspy.OutputField(), type_=str)
-            .append("next_tool_calls", dspy.OutputField(), type_=list[dict[str, Any]])
+            .append("next_tool_calls", dspy.OutputField(), type_=ToolCalls)
         )
 
         fallback_signature = dspy.Signature(
@@ -173,8 +173,12 @@ class ReAct(Module):
     def _parse_tool_calls(self, tool_calls_data):
         """Parse tool calls from the prediction output.
 
-        Handles both the new list format and provides backward compatibility.
+        Handles both ToolCalls objects and list formats for backward compatibility.
         """
+        # If it's a ToolCalls object, extract the list of tool calls
+        if isinstance(tool_calls_data, ToolCalls):
+            return [{"name": tc.name, "args": tc.args} for tc in tool_calls_data.tool_calls]
+
         # If it's already a list of dicts with 'name' and 'args', use it directly
         if isinstance(tool_calls_data, list):
             return tool_calls_data
