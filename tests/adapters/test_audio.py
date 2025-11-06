@@ -11,12 +11,12 @@ from dspy.adapters.types.audio import _normalize_audio_format
         ("wav", "wav"),
         ("mp3", "mp3"),
 
-        # Case 2: The 'x-' prefix (the logic you changed)
+        # Case 2: The 'x-' prefix
         ("x-wav", "wav"),
         ("x-mp3", "mp3"),
         ("x-flac", "flac"),
 
-        # Case 3: The edge case ('x-' in the middle, proves 'removeprefix' is better)
+        # Case 3: The edge case
         ("my-x-format", "my-x-format"),
         ("x-my-format", "my-format"),
 
