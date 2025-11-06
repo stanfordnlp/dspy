@@ -91,6 +91,10 @@ Once the pull request is approved, a team member will take care of merging.
 
 Python 3.10 or later is required.
 
+> **Note on Python Versions:** While the setup instructions below recommend Python 3.11 for development, our `pre-commit` hooks (in `.pre-commit-config.yaml`) are configured to use **Python 3.10**.
+>
+> To ensure `pre-commit install` works correctly, please make sure you also have a `python3.10` executable installed and available on your system's PATH. Alternatively, you can create your `conda` or `uv` environment using `python=3.10` to satisfy both requirements.
+
 Setting up your DSPy development environment requires you to fork the DSPy repository and clone it locally.
 If you are not familiar with the GitHub fork process, please refer to [Fork a repository](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo). After creating the fork, clone
 it to your local development device:
