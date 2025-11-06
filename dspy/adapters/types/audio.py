@@ -62,8 +62,7 @@ class Audio(Type):
             raise ValueError(f"Unsupported MIME type for audio: {mime_type}")
         audio_format = mime_type.split("/")[1]
 
-        if "x-" in audio_format:
-            audio_format = audio_format.replace("x-", "")
+        audio_format = audio_format.removeprefix("x-")
 
         encoded_data = base64.b64encode(response.content).decode("utf-8")
         return cls(data=encoded_data, audio_format=audio_format)
@@ -85,8 +84,7 @@ class Audio(Type):
 
         audio_format = mime_type.split("/")[1]
 
-        if "x-" in audio_format:
-            audio_format = audio_format.replace("x-", "")
+        audio_format = audio_format.removeprefix("x-")
 
         encoded_data = base64.b64encode(file_data).decode("utf-8")
         return cls(data=encoded_data, audio_format=audio_format)
@@ -135,8 +133,7 @@ def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: in
             mime = header.split(";")[0].split(":")[1]
             audio_format = mime.split("/")[1]
 
-            if "x-" in audio_format:
-                audio_format = audio_format.replace("x-", "")
+            audio_format = audio_format.removeprefix("x-")
 
             return {"data": b64data, "audio_format": audio_format}
         except Exception as e:
