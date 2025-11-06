@@ -123,7 +123,12 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    def forward(self, prompt=None, messages=None, **kwargs):
+    def forward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -156,7 +161,12 @@ class LM(BaseLM):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
-    async def aforward(self, prompt=None, messages=None, **kwargs):
+    async def aforward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs,
+    ):
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
