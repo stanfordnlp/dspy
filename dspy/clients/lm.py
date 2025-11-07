@@ -85,7 +85,13 @@ class LM(BaseLM):
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
 
         # Recognize OpenAI reasoning models (o1, o3, o4, gpt-5 family)
-        model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
+        # Exclude non-reasoning variants like gpt-5-chat this is in azure ai foundry
+        # Allow date suffixes like -2023-01-01 after model name or mini/nano/pro
+        # For gpt-5, use negative lookahead to exclude -chat and allow other suffixes
+        model_pattern = re.match(
+            r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
+            model_family,
+        )
 
         if model_pattern:
             if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
