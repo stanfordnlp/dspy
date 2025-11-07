@@ -291,7 +291,7 @@ def test_xml_adapter_full_prompt():
     )
 
     expected_user = (
-        "[[ ## query ## ]]\nwhen was Marie Curie born\n\n"
+        "<query>\nwhen was Marie Curie born\n</query>\n\n"
         "Respond with the corresponding output fields wrapped in XML tags `<answer>`."
     )
 

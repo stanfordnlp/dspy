@@ -10,7 +10,7 @@ hide:
 
 # _Programming_—not prompting—_LMs_
 
-[![PyPI Downloads](https://static.pepy.tech/badge/dspy/month)](https://pepy.tech/projects/dspy)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/dspy?period=monthly)](https://pepy.tech/projects/dspy)
 
 DSPy is a declarative framework for building modular AI software. It allows you to **iterate fast on structured code**, rather than brittle strings, and offers algorithms that **compile AI programs into effective prompts and weights** for your language models, whether you're building simple classifiers, sophisticated RAG pipelines, or Agent loops.
 
@@ -40,7 +40,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM("anthropic/claude-3-opus-20240229", api_key="YOUR_ANTHROPIC_API_KEY")
+        lm = dspy.LM("anthropic/claude-sonnet-4-5-20250929", api_key="YOUR_ANTHROPIC_API_KEY")
         dspy.configure(lm=lm)
         ```
 
