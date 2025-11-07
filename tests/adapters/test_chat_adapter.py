@@ -442,6 +442,7 @@ def test_chat_adapter_fallback_to_json_adapter_on_exception():
         result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
         assert result == [{"answer": "Paris"}]
 
+
 def test_chat_adapter_respects_use_json_adapter_fallback_flag():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)
@@ -646,3 +647,35 @@ def test_chat_adapter_native_reasoning():
             {"question": "What is the capital of France?"},
         )
         assert result[0]["reasoning"] == dspy.Reasoning(content="Step-by-step thinking about the capital of France")
+
+
+def test_format_system_message():
+    class MySignature(dspy.Signature):
+        """Answer the question with multiple answers and scores"""
+
+        question: str = dspy.InputField()
+        answers: list[str] = dspy.OutputField()
+        scores: list[float] = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    system_message = adapter.format_system_message(MySignature)
+    expected_system_message = """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answers` (list[str]): 
+2. `scores` (list[float]):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+[[ ## question ## ]]
+{question}
+
+[[ ## answers ## ]]
+{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
+
+[[ ## scores ## ]]
+{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
+
+[[ ## completed ## ]]
+In adhering to this structure, your objective is: 
+        Answer the question with multiple answers and scores"""
+    assert system_message == expected_system_message
