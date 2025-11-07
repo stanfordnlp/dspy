@@ -280,3 +280,42 @@ def _quoted_string_for_literal_type_annotation(s: str) -> str:
     else:
         # Neither => enclose in single quotes
         return f"'{s}'"
+
+def _extract_first_json_object(text: str) -> str | None:
+    """Return the first balanced JSON object found in text or None if absent."""
+
+    in_string = False
+    escape = False
+    depth = 0
+    start_idx: int | None = None
+    seen_lbrace = False
+
+    for idx, char in enumerate(text):
+        if seen_lbrace and in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if seen_lbrace and char == '"':
+            in_string = True
+            continue
+
+        if char == "{":
+            if depth == 0:
+                start_idx = idx
+                seen_lbrace = True
+            depth += 1
+            continue
+
+        if char == "}":
+            if depth == 0 or start_idx is None:
+                continue
+            depth -= 1
+            if depth == 0:
+                return text[start_idx : idx + 1]
+
+    return None
