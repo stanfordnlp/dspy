@@ -72,7 +72,7 @@ def create_gepa_optimizer_for_detection():
         metric=simple_metric_for_detection,
         reflection_lm=reflection_lm,
         max_metric_calls=2,
-        optimize_react_components=True,
+        enable_tool_optimization=True,
     )
 
     trainset = [Example(question="test", answer="test").with_inputs("question")]
@@ -455,7 +455,7 @@ def test_build_program_single_react(monkeypatch):
         student_module=program,
         metric_fn=simple_metric_for_reconstruction,
         feedback_map={},
-        optimize_react_components=True
+        enable_tool_optimization=True
     )
     rebuilt_program = adapter.build_program(optimized_candidate)
 
@@ -529,7 +529,7 @@ def test_build_program_multi_react_workflow(monkeypatch):
         student_module=program,
         metric_fn=simple_metric_for_reconstruction,
         feedback_map={},
-        optimize_react_components=True
+        enable_tool_optimization=True
     )
     rebuilt_program = adapter.build_program(optimized_candidate)
 
@@ -616,7 +616,7 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
         student_module=program,
         metric_fn=simple_metric_for_reconstruction,
         feedback_map={},
-        optimize_react_components=True
+        enable_tool_optimization=True
     )
     rebuilt_program = adapter.build_program(optimized_candidate)
 
@@ -725,7 +725,7 @@ def test_make_reflective_dataset_single_react():
         student_module=program,
         metric_fn=simple_metric_for_reconstruction,
         feedback_map={"react": simple_feedback},
-        optimize_react_components=True
+        enable_tool_optimization=True
     )
 
     trainset = [Example(question="test", answer="result").with_inputs("question")]
@@ -799,7 +799,7 @@ def test_make_reflective_dataset_orchestrator_with_workers():
             "multi_agent.analyst.react": simple_feedback,
             "multi_agent.researcher.react": simple_feedback,
         },
-        optimize_react_components=True
+        enable_tool_optimization=True
     )
 
     trainset = [Example(question="test", answer="result").with_inputs("question")]

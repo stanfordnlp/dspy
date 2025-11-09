@@ -60,7 +60,7 @@ def create_gepa_optimizer_for_tool_detection():
         metric=simple_metric_for_detection,
         reflection_lm=reflection_lm,
         max_metric_calls=2,
-        optimize_react_components=True,  # TODO: Rename to enable_tool_optimization
+        enable_tool_optimization=True,
     )
 
     trainset = [Example(query="test", answer="test").with_inputs("query")]
@@ -263,7 +263,7 @@ def test_update_tool_and_predictor(monkeypatch):
         student_module=program,
         metric_fn=simple_metric_for_detection,
         feedback_map={},
-        optimize_react_components=True,
+        enable_tool_optimization=True,
     )
     rebuilt_program = adapter.build_program(optimized_candidate)
 

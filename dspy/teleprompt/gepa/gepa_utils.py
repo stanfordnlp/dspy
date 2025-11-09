@@ -88,7 +88,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         reflection_lm=None,
         custom_instruction_proposer: "ProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
-        optimize_react_components: bool = False,
+        enable_tool_optimization: bool = False,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -100,7 +100,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.reflection_lm = reflection_lm
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
-        self.optimize_react_components = optimize_react_components
+        self.enable_tool_optimization = enable_tool_optimization
 
         def build_propose_new_texts():
             instruction_proposer = None
@@ -134,7 +134,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
             # Init ReAct module proposer if tool optimization is enabled
             react_module_proposer = None
-            if self.optimize_react_components:
+            if self.enable_tool_optimization:
                 from .instruction_proposal import ReActModuleProposer
 
                 react_module_proposer = ReActModuleProposer()
@@ -226,7 +226,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 pred.signature = pred.signature.with_instructions(candidate[name])
 
         # Apply ReAct module updates (JSON configs for ReAct modules: react, extract, tools)
-        if self.optimize_react_components:
+        if self.enable_tool_optimization:
 
             for module_path, module in new_prog.named_sub_modules():
                 # Only process ReAct modules

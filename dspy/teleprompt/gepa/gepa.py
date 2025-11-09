@@ -281,9 +281,9 @@ class GEPA(Teleprompter):
         warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is
             raised if a mismatch in module-level and predictor-level score is detected.
-        optimize_react_components: Whether to optimize ReAct module components including react
-            instructions, extract instructions, tool descriptions, and tool argument descriptions.
-            When enabled, GEPA jointly optimizes all four components of ReAct modules. See the
+        enable_tool_optimization: Whether to enable joint optimization of tool-using modules.
+            When enabled, GEPA jointly optimizes predictor instructions and tool descriptions together
+            for both dspy.ReAct modules and custom predictors that use dspy.Tool. See the
             [ReAct Component Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#react-component-optimization)
             for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
@@ -341,7 +341,7 @@ class GEPA(Teleprompter):
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
-        optimize_react_components: bool = False,
+        enable_tool_optimization: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -404,7 +404,7 @@ class GEPA(Teleprompter):
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
-        self.optimize_react_components = optimize_react_components
+        self.enable_tool_optimization = enable_tool_optimization
         self.use_mlflow = use_mlflow
 
         if track_best_outputs:
@@ -534,7 +534,7 @@ class GEPA(Teleprompter):
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
-            optimize_react_components=self.optimize_react_components,
+            enable_tool_optimization=self.enable_tool_optimization,
         )
 
         # Instantiate GEPA with the simpler adapter-based API
@@ -546,7 +546,7 @@ class GEPA(Teleprompter):
             if not isinstance(module, ReAct):
                 continue
 
-            if self.optimize_react_components:
+            if self.enable_tool_optimization:
                 normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
 
                 # Get first predictor name as module identifier
@@ -580,7 +580,7 @@ class GEPA(Teleprompter):
             else:
                 logger.warning(
                     f"Detected ReAct module at '{module_path}'. Consider using "
-                    "`optimize_react_components=True` to jointly optimize react instructions, "
+                    "`enable_tool_optimization=True` to jointly optimize react instructions, "
                     "extract instructions, tool descriptions, and tool argument descriptions."
                 )
 
