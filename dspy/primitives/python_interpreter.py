@@ -1,7 +1,9 @@
 import json
 import os
 import subprocess
+import threading
 from os import PathLike
+from queue import Empty, Queue
 from types import TracebackType
 from typing import Any
 
@@ -33,6 +35,7 @@ class PythonInterpreter:
         enable_env_vars: list[str] | None = None,
         enable_network_access: list[str] | None = None,
         sync_files: bool = True,
+        timeout: float | None = None,
     ) -> None:
         """
         Args:
@@ -76,6 +79,7 @@ class PythonInterpreter:
 
         self.deno_process = None
         self._mounted_files = False
+        self.timeout = timeout
 
     def _get_runner_path(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -187,7 +191,7 @@ class PythonInterpreter:
             self.deno_process.stdin.flush()
 
         # Read one JSON line from stdout
-        output_line = self.deno_process.stdout.readline().strip()
+        output_line = self._read_output_line(self.timeout)
         if not output_line:
             # Possibly the subprocess died or gave no output
             err_output = self.deno_process.stderr.read()
@@ -216,6 +220,38 @@ class PythonInterpreter:
         # If there's no error or got `FinalAnswer`, return the "output" field
         self._sync_files()
         return result.get("output", None)
+
+    def _read_output_line(self, timeout: float | None) -> str:
+        if timeout is None:
+            return self.deno_process.stdout.readline().strip()
+
+        queue: Queue[str | Exception] = Queue(maxsize=1)
+
+        def _reader():
+            try:
+                line = self.deno_process.stdout.readline()
+            except Exception as exc:
+                queue.put(exc)
+            else:
+                queue.put(line)
+
+        reader = threading.Thread(target=_reader, daemon=True)
+        reader.start()
+        try:
+            result = queue.get(timeout=timeout)
+        except Empty:
+            self._handle_timeout()
+            raise InterpreterError(f"PythonInterpreter execution exceeded {timeout} seconds.") from None
+
+        if isinstance(result, Exception):
+            raise result
+        return result.strip()
+
+    def _handle_timeout(self) -> None:
+        if self.deno_process and self.deno_process.poll() is None:
+            self.deno_process.kill()
+            self.deno_process.wait()
+        self.deno_process = None
 
     def __enter__(self):
         return self
