@@ -3,12 +3,13 @@ import json
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Protocol, Union
+from typing import Any, Literal, Optional, Protocol, Union, get_args, get_origin
 
 from gepa import GEPAResult
 from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
+from dspy.adapters.types.tool import Tool
 from dspy.clients.lm import LM
 from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
@@ -538,7 +539,30 @@ class GEPA(Teleprompter):
         )
 
         # Instantiate GEPA with the simpler adapter-based API
-        base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+        base_program = {}
+        for name, pred in student.named_predictors():
+            # Detect tool-using predictors via type checking
+            def is_tool_field(annotation) -> bool:
+                """Check if a field annotation is Tool or contains Tool."""
+                if annotation is Tool:
+                    return True
+                origin = get_origin(annotation)
+                if origin is not None:
+                    args = get_args(annotation)
+                    for arg in args:
+                        if is_tool_field(arg):  # Recursive for nested types
+                            return True
+                return False
+
+            # Detect tool-using predictors
+            if self.enable_tool_optimization and any(is_tool_field(field.annotation) for field in pred.signature.input_fields.values()):
+                base_program[name] = json.dumps({
+                    "predictor": pred.signature.instructions,
+                    "tools": {}  # Populated from traces
+                }, indent=2)
+            else:
+                # Regular string instruction, no tools
+                base_program[name] = pred.signature.instructions
 
         # Always traverse to detect ReAct modules
         for module_path, module in student.named_sub_modules():
