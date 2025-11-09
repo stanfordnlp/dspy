@@ -102,83 +102,72 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.enable_tool_optimization = enable_tool_optimization
 
-        def build_propose_new_texts():
-            instruction_proposer = None
+        self.propose_new_texts = self._build_propose_new_texts()
 
-            # Init instruction proposer (custom or default)
-            if self.custom_instruction_proposer is not None:
-                instruction_proposer = self.custom_instruction_proposer
-            else:
-                from gepa.strategies.instruction_proposal import InstructionProposalSignature
+        # Cache predictor names/signatures
+        self.named_predictors = list(self.student.named_predictors())
 
-                def default_instruction_proposer(
-                    candidate: dict[str, str],
-                    reflective_dataset: dict[str, list[dict[str, Any]]],
-                    components_to_update: list[str],
-                ) -> dict[str, str]:
-                    lm = self.reflection_lm if self.reflection_lm is not None else dspy.settings.lm
-                    updated_components: dict[str, str] = {}
-                    for name in components_to_update:
-                        base_instruction = candidate[name]
-                        dataset_with_feedback = reflective_dataset[name]
-                        updated_components[name] = InstructionProposalSignature.run(
-                            lm=(lambda x: lm(x)[0]),
-                            input_dict={
-                                "current_instruction_doc": base_instruction,
-                                "dataset_with_feedback": dataset_with_feedback,
-                            },
-                        )["new_instruction"]
-                    return updated_components
+    def _build_propose_new_texts(self):
+        """Build proposal function that routes components to appropriate proposers."""
+        # Init instruction proposer (custom or default)
+        if self.custom_instruction_proposer is not None:
+            instruction_proposer = self.custom_instruction_proposer
+        else:
+            from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
-                instruction_proposer = default_instruction_proposer
-
-            # Init ReAct module proposer if tool optimization is enabled
-            react_module_proposer = None
-            if self.enable_tool_optimization:
-                from .instruction_proposal import ReActModuleProposer
-
-                react_module_proposer = ReActModuleProposer()
-
-            def propose_component_texts(
+            def default_instruction_proposer(
                 candidate: dict[str, str],
                 reflective_dataset: dict[str, list[dict[str, Any]]],
                 components_to_update: list[str],
             ) -> dict[str, str]:
-                # If custom proposer provided, override everything with custom proposer
-                if self.custom_instruction_proposer:
-                    if self.reflection_lm is not None:
-                        with dspy.context(lm=self.reflection_lm):
-                            return instruction_proposer(
-                                candidate=candidate,
-                                reflective_dataset=reflective_dataset,
-                                components_to_update=components_to_update,
-                            )
-                    else:
-                        return instruction_proposer(
-                            candidate=candidate,
-                            reflective_dataset=reflective_dataset,
-                            components_to_update=components_to_update,
-                        )
+                lm = self.reflection_lm or dspy.settings.lm
+                updated_components: dict[str, str] = {}
+                for name in components_to_update:
+                    base_instruction = candidate[name]
+                    dataset_with_feedback = reflective_dataset[name]
+                    updated_components[name] = InstructionProposalSignature.run(
+                        lm=(lambda x: lm(x)[0]),
+                        input_dict={
+                            "current_instruction_doc": base_instruction,
+                            "dataset_with_feedback": dataset_with_feedback,
+                        },
+                    )["new_instruction"]
+                return updated_components
 
-                # Otherwise, route to appropriate proposers
-                # Separate react_module components from regular instruction components
-                react_module_components = [c for c in components_to_update if c.startswith(REACT_MODULE_PREFIX)]
-                instruction_components = [c for c in components_to_update if not c.startswith(REACT_MODULE_PREFIX)]
+            instruction_proposer = default_instruction_proposer
 
-                results: dict[str, str] = {}
+        # Init ReAct module proposer if tool optimization is enabled
+        react_module_proposer = None
+        if self.enable_tool_optimization:
+            from .instruction_proposal import ReActModuleProposer
 
+            react_module_proposer = ReActModuleProposer()
+
+        def propose_component_texts(
+            candidate: dict[str, str],
+            reflective_dataset: dict[str, list[dict[str, Any]]],
+            components_to_update: list[str],
+        ) -> dict[str, str]:
+            # If custom proposer provided, override everything with custom proposer
+            if self.custom_instruction_proposer:
+                with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
+                    return instruction_proposer(
+                        candidate=candidate,
+                        reflective_dataset=reflective_dataset,
+                        components_to_update=components_to_update,
+                    )
+
+            # Otherwise, route to appropriate proposers
+            # Separate react_module components from regular instruction components
+            react_module_components = [c for c in components_to_update if c.startswith(REACT_MODULE_PREFIX)]
+            instruction_components = [c for c in components_to_update if not c.startswith(REACT_MODULE_PREFIX)]
+
+            results: dict[str, str] = {}
+
+            with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
                 # Handle regular instruction components
-                logger.debug(f"Routing {len(instruction_components)} instruction components to instruction_proposer")
-                if self.reflection_lm is not None:
-                    with dspy.context(lm=self.reflection_lm):
-                        results.update(
-                            instruction_proposer(
-                                candidate=candidate,
-                                reflective_dataset=reflective_dataset,
-                                components_to_update=instruction_components,
-                            )
-                        )
-                else:
+                if instruction_components:
+                    logger.debug(f"Routing {len(instruction_components)} instruction components to instruction_proposer")
                     results.update(
                         instruction_proposer(
                             candidate=candidate,
@@ -190,32 +179,17 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 # Handle ReAct module components
                 if react_module_components:
                     logger.debug(f"Routing {len(react_module_components)} react_module components to react_module_proposer")
-                    if self.reflection_lm is not None:
-                        with dspy.context(lm=self.reflection_lm):
-                            results.update(
-                                react_module_proposer(
-                                    candidate=candidate,
-                                    reflective_dataset=reflective_dataset,
-                                    components_to_update=react_module_components,
-                                )
-                            )
-                    else:
-                        results.update(
-                            react_module_proposer(
-                                candidate=candidate,
-                                reflective_dataset=reflective_dataset,
-                                components_to_update=react_module_components,
-                            )
+                    results.update(
+                        react_module_proposer(
+                            candidate=candidate,
+                            reflective_dataset=reflective_dataset,
+                            components_to_update=react_module_components,
                         )
+                    )
 
-                return results
+            return results
 
-            return propose_component_texts
-
-        self.propose_new_texts = build_propose_new_texts()
-
-        # Cache predictor names/signatures
-        self.named_predictors = list(self.student.named_predictors())
+        return propose_component_texts
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
