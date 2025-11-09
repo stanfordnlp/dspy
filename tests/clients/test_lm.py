@@ -298,6 +298,9 @@ def test_reasoning_model_token_parameter():
         ("openai/gpt-5", True),
         ("openai/gpt-5-mini", True),
         ("openai/gpt-5-nano", True),
+        ("openai/gpt-5-pro", True),
+        ("openai/gpt-5-chat", False),
+        ("azure/gpt-5-chat", False),
         ("openai/gpt-4", False),
         ("anthropic/claude-2", False),
     ]
