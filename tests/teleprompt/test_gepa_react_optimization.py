@@ -55,8 +55,17 @@ def simple_feedback(*args, **kwargs):
 
 def create_gepa_optimizer_for_detection():
     """Create GEPA optimizer with standard test configuration."""
-    task_lm = DummyLM([{"answer": "test"}] * 10)
-    reflection_lm = DummyLM([{"improved_instruction": "optimized"}] * 10)
+    task_lm = DummyLM([
+        {"next_thought": "I should use a tool", "next_tool_name": "search", "next_tool_args": {"query": "test"}},
+        {"next_thought": "I have enough information", "next_tool_name": "finish", "next_tool_args": {}},
+        {"reasoning": "Based on the tool results", "answer": "test answer"},
+    ] * 20)
+
+    reflection_lm = DummyLM([
+        {"improved_instruction": "optimized instruction"},
+        {"react": "optimized react", "extract": "optimized extract", "tools": None},  # For ReActModuleProposer
+    ] * 20)
+
     dspy.settings.configure(lm=task_lm)
 
     optimizer = dspy.GEPA(
@@ -305,10 +314,8 @@ def test_single_react_module_detection(monkeypatch):
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
 
-    try:
-        optimizer.compile(program, trainset=trainset, valset=trainset)
-    except Exception:
-        pass
+    # DummyLM now properly configured - compile should succeed
+    optimizer.compile(program, trainset=trainset, valset=trainset)
 
     module_key = REACT_MODULE_PREFIX
     assert module_key in captured_base_program, f"Expected '{module_key}' to be detected"
@@ -341,10 +348,8 @@ def test_multi_react_workflow_detection(monkeypatch):
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
 
-    try:
-        optimizer.compile(program, trainset=trainset, valset=trainset)
-    except Exception:
-        pass
+    # DummyLM now properly configured - compile should succeed
+    optimizer.compile(program, trainset=trainset, valset=trainset)
 
     assert f"{REACT_MODULE_PREFIX}:workflow.coordinator" in captured_base_program
     assert f"{REACT_MODULE_PREFIX}:workflow.researcher" in captured_base_program
@@ -388,10 +393,8 @@ def test_nested_react_orchestrator_worker_detection(monkeypatch):
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
 
-    try:
-        optimizer.compile(program, trainset=trainset, valset=trainset)
-    except Exception:
-        pass
+    # DummyLM now properly configured - compile should succeed
+    optimizer.compile(program, trainset=trainset, valset=trainset)
 
     assert f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator" in captured_base_program
     assert f"{REACT_MODULE_PREFIX}:multi_agent.analyst" in captured_base_program
@@ -426,10 +429,7 @@ def test_build_program_single_react(monkeypatch):
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
 
-    try:
-        optimizer.compile(program, trainset=trainset, valset=trainset)
-    except Exception:
-        pass
+    optimizer.compile(program, trainset=trainset, valset=trainset)
 
     # Mock optimized candidate
     optimized_candidate = dict(captured_base_program)
@@ -489,10 +489,8 @@ def test_build_program_multi_react_workflow(monkeypatch):
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
 
-    try:
-        optimizer.compile(program, trainset=trainset, valset=trainset)
-    except Exception:
-        pass
+    # DummyLM now properly configured - compile should succeed
+    optimizer.compile(program, trainset=trainset, valset=trainset)
 
     # Mock optimized candidate
     optimized_candidate = dict(captured_base_program)
@@ -579,10 +577,7 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
 
     optimizer, trainset = create_gepa_optimizer_for_detection()
 
-    try:
-        optimizer.compile(program, trainset=trainset, valset=trainset)
-    except Exception:
-        pass
+    optimizer.compile(program, trainset=trainset, valset=trainset)
 
     # Mock optimized candidate
     optimized_candidate = dict(captured_base_program)
