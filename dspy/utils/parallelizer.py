@@ -168,7 +168,7 @@ class ParallelExecutor:
 
                             # Update progress
                             if self.compare_results:
-                                vals = [r[-1] for r in results if r is not None]
+                                vals = [float(r) for r in results if r is not None]
                                 self._update_progress(pbar, sum(vals), len(vals))
                             else:
                                 self._update_progress(

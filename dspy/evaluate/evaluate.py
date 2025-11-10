@@ -170,13 +170,14 @@ class Evaluate:
         def process_item(example):
             prediction = program(**example.inputs())
             score = metric(example, prediction)
-            return prediction, score
+            prediction.score = score
+            return prediction
 
         results = executor.execute(process_item, devset)
         assert len(devset) == len(results)
 
-        results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
-        results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
+        results = [(dspy.Prediction(score=self.failure_score) if r is None else r) for r in results]
+        results = [(example, prediction, prediction.score) for example, prediction in zip(devset, results, strict=False)]
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
