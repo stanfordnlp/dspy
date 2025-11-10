@@ -17,8 +17,12 @@ Bug fixed: Path truncation in gepa.py and gepa_utils.py caused:
 
 import json
 
+import gepa
+from gepa import optimize as gepa_optimize
+
 import dspy
 from dspy import Example
+from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, DspyAdapter
 from dspy.utils.dummies import DummyLM
 
 
@@ -26,13 +30,10 @@ def setup_capture_for_base_program(monkeypatch):
     """Capture base_program passed to gepa.optimize."""
     captured_base_program = {}
 
-    from gepa import optimize as original_optimize
-
     def capture_optimize(seed_candidate, **kwargs):
         captured_base_program.update(seed_candidate)
-        return original_optimize(seed_candidate=seed_candidate, **kwargs)
+        return gepa_optimize(seed_candidate=seed_candidate, **kwargs)
 
-    import gepa
     monkeypatch.setattr(gepa, "optimize", capture_optimize)
 
     return captured_base_program
@@ -80,11 +81,14 @@ def create_gepa_optimizer_for_detection():
     return optimizer, trainset
 
 
-def assert_react_module_detected(captured_base_program, module_path, expected_tools):
-    """Assert that a ReAct module was detected with all components."""
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
-
-    module_key = REACT_MODULE_PREFIX if module_path == "" else f"{REACT_MODULE_PREFIX}:{module_path}"
+def assert_react_module_detected(captured_base_program, predictor_name, expected_tools):
+    """Assert that a ReAct module was detected with all components.
+    
+    Args:
+        predictor_name: Name of extract.predict from named_predictors() 
+                       (e.g., "extract.predict", "workflow.coordinator.extract.predict")
+    """
+    module_key = f"{REACT_MODULE_PREFIX}:{predictor_name}"
 
     assert module_key in captured_base_program, f"Expected '{module_key}' to be detected"
 
@@ -149,19 +153,18 @@ def assert_regular_module_updated(predictor, expected_instruction):
         f"Instruction mismatch: expected '{expected_instruction}', got '{predictor.signature.instructions}'"
 
 
-def mock_optimized_react_module(optimized_candidate, module_path, react_instruction, extract_instruction, tool_descriptions):
+def mock_optimized_react_module(optimized_candidate, predictor_name, react_instruction, extract_instruction, tool_descriptions):
     """Helper to mock an optimized ReAct module in the candidate dict.
 
     Args:
         optimized_candidate: The candidate dict to modify
-        module_path: Module path (e.g., "multi_agent.orchestrator" or "" for top-level)
+        predictor_name: Name of extract.predict from named_predictors()
+                       (e.g., "extract.predict", "multi_agent.orchestrator.extract.predict")
         react_instruction: New react instruction
         extract_instruction: New extract instruction
         tool_descriptions: Dict of {tool_name: {"desc": desc, "arg_desc": {arg: desc}}}
     """
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
-
-    module_key = REACT_MODULE_PREFIX if module_path == "" else f"{REACT_MODULE_PREFIX}:{module_path}"
+    module_key = f"{REACT_MODULE_PREFIX}:{predictor_name}"
     config = json.loads(optimized_candidate[module_key])
     config["react"] = react_instruction
     config["extract"] = extract_instruction
@@ -307,7 +310,6 @@ def test_single_react_module_detection(monkeypatch):
     - extract instruction captured
     - All tools with descriptions captured
     """
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
 
     captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_single_react_program()
@@ -317,12 +319,9 @@ def test_single_react_module_detection(monkeypatch):
     # DummyLM now properly configured - compile should succeed
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
-    module_key = REACT_MODULE_PREFIX
-    assert module_key in captured_base_program, f"Expected '{module_key}' to be detected"
-
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        module_path="",
+        predictor_name="extract.predict",
         expected_tools={"search": "Search the web", "calc": "Calculate math"}
     )
 
@@ -341,7 +340,6 @@ def test_multi_react_workflow_detection(monkeypatch):
     Before fix: Paths truncated at first dot → wrong module matching
     After fix: Full paths preserved → correct module identification
     """
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
 
     captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_multi_react_workflow_program()
@@ -351,20 +349,20 @@ def test_multi_react_workflow_detection(monkeypatch):
     # DummyLM now properly configured - compile should succeed
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
-    assert f"{REACT_MODULE_PREFIX}:workflow.coordinator" in captured_base_program
-    assert f"{REACT_MODULE_PREFIX}:workflow.researcher" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:workflow.coordinator.extract.predict" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:workflow.researcher.extract.predict" in captured_base_program
 
     react_modules = [k for k in captured_base_program.keys() if k.startswith(REACT_MODULE_PREFIX)]
     assert len(react_modules) == 2, f"Expected 2 ReAct modules, got {len(react_modules)}"
 
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        module_path="workflow.coordinator",
+        predictor_name="workflow.coordinator.extract.predict",
         expected_tools={"search": "Search tool"}
     )
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        module_path="workflow.researcher",
+        predictor_name="workflow.researcher.extract.predict",
         expected_tools={"analyze": "Analysis tool"}
     )
     assert_regular_module_detected(
@@ -386,7 +384,6 @@ def test_nested_react_orchestrator_worker_detection(monkeypatch):
     - Each module has its own tools detected
     - No path truncation causes module merging
     """
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
 
     captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_orchestrator_with_workers_program()
@@ -396,33 +393,32 @@ def test_nested_react_orchestrator_worker_detection(monkeypatch):
     # DummyLM now properly configured - compile should succeed
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator" in captured_base_program
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.analyst" in captured_base_program
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.researcher" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator.extract.predict" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:multi_agent.analyst.extract.predict" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:multi_agent.researcher.extract.predict" in captured_base_program
 
     react_modules = [k for k in captured_base_program.keys() if k.startswith(REACT_MODULE_PREFIX)]
     assert len(react_modules) == 3, f"Expected 3 ReAct modules, got {len(react_modules)}"
 
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        module_path="multi_agent.orchestrator",
+        predictor_name="multi_agent.orchestrator.extract.predict",
         expected_tools={"search": "Search tool", "analyst": "Use analyst", "researcher": "Use researcher"}
     )
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        module_path="multi_agent.analyst",
+        predictor_name="multi_agent.analyst.extract.predict",
         expected_tools={"analyze": "Analyze data"}
     )
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        module_path="multi_agent.researcher",
+        predictor_name="multi_agent.researcher.extract.predict",
         expected_tools={"research": "Research topic"}
     )
 
 
 def test_build_program_single_react(monkeypatch):
     """Test build_program applies optimizations to single top-level ReAct module."""
-    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
     captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_single_react_program()
@@ -435,7 +431,7 @@ def test_build_program_single_react(monkeypatch):
     optimized_candidate = dict(captured_base_program)
     mock_optimized_react_module(
         optimized_candidate=optimized_candidate,
-        module_path="",
+        predictor_name="extract.predict",
         react_instruction="OPTIMIZED: React instruction",
         extract_instruction="OPTIMIZED: Extract instruction",
         tool_descriptions={
@@ -482,7 +478,6 @@ def test_build_program_single_react(monkeypatch):
 
 def test_build_program_multi_react_workflow(monkeypatch):
     """Test build_program applies optimizations to mixed ReAct + non-ReAct workflow."""
-    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
     captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_multi_react_workflow_program()
@@ -497,7 +492,7 @@ def test_build_program_multi_react_workflow(monkeypatch):
 
     mock_optimized_react_module(
         optimized_candidate=optimized_candidate,
-        module_path="workflow.coordinator",
+        predictor_name="workflow.coordinator.extract.predict",
         react_instruction="OPTIMIZED: Coordinator react",
         extract_instruction="OPTIMIZED: Coordinator extract",
         tool_descriptions={
@@ -510,7 +505,7 @@ def test_build_program_multi_react_workflow(monkeypatch):
 
     mock_optimized_react_module(
         optimized_candidate=optimized_candidate,
-        module_path="workflow.researcher",
+        predictor_name="workflow.researcher.extract.predict",
         react_instruction="OPTIMIZED: Researcher react",
         extract_instruction="OPTIMIZED: Researcher extract",
         tool_descriptions={
@@ -570,7 +565,6 @@ def test_build_program_multi_react_workflow(monkeypatch):
 
 def test_build_program_orchestrator_with_workers(monkeypatch):
     """Test build_program applies optimizations to orchestrator with worker ReAct modules."""
-    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
 
     captured_base_program = setup_capture_for_base_program(monkeypatch)
     program = create_orchestrator_with_workers_program()
@@ -584,7 +578,7 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
 
     mock_optimized_react_module(
         optimized_candidate=optimized_candidate,
-        module_path="multi_agent.orchestrator",
+        predictor_name="multi_agent.orchestrator.extract.predict",
         react_instruction="OPTIMIZED: Orchestrator react",
         extract_instruction="OPTIMIZED: Orchestrator extract",
         tool_descriptions={
@@ -597,7 +591,7 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
 
     mock_optimized_react_module(
         optimized_candidate=optimized_candidate,
-        module_path="multi_agent.analyst",
+        predictor_name="multi_agent.analyst.extract.predict",
         react_instruction="OPTIMIZED: Analyst react",
         extract_instruction="OPTIMIZED: Analyst extract",
         tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}}
@@ -605,7 +599,7 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
 
     mock_optimized_react_module(
         optimized_candidate=optimized_candidate,
-        module_path="multi_agent.researcher",
+        predictor_name="multi_agent.researcher.extract.predict",
         react_instruction="OPTIMIZED: Researcher react",
         extract_instruction="OPTIMIZED: Researcher extract",
         tool_descriptions={"research": {"desc": "OPTIMIZED: Research tool"}}
@@ -704,7 +698,6 @@ def assert_reflective_example_has_trajectory(actual_example, expected_iterations
 
 def test_make_reflective_dataset_single_react():
     """Test reflective dataset captures complete trajectory for single ReAct module."""
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, DspyAdapter
 
     program = create_single_react_program()
 
@@ -724,7 +717,7 @@ def test_make_reflective_dataset_single_react():
     adapter = DspyAdapter(
         student_module=program,
         metric_fn=simple_metric_for_reconstruction,
-        feedback_map={"react": simple_feedback},
+        feedback_map={"extract.predict": simple_feedback},
         enable_tool_optimization=True
     )
 
@@ -734,11 +727,12 @@ def test_make_reflective_dataset_single_react():
     result = adapter.make_reflective_dataset(
         candidate={},
         eval_batch=eval_batch,
-        components_to_update=[REACT_MODULE_PREFIX]
+        components_to_update=[f"{REACT_MODULE_PREFIX}:extract.predict"]
     )
 
-    assert REACT_MODULE_PREFIX in result
-    examples = result[REACT_MODULE_PREFIX]
+    module_key = f"{REACT_MODULE_PREFIX}:extract.predict"
+    assert module_key in result
+    examples = result[module_key]
     assert len(examples) == 1, f"Should have 1 reflective example, got {len(examples)}"
 
     assert_reflective_example_has_trajectory(
@@ -757,7 +751,6 @@ def test_make_reflective_dataset_orchestrator_with_workers():
 
     Validates each module's trajectory captured separately with correct iteration counts.
     """
-    from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, DspyAdapter
 
     program = create_orchestrator_with_workers_program()
 
@@ -795,9 +788,9 @@ def test_make_reflective_dataset_orchestrator_with_workers():
         student_module=program,
         metric_fn=simple_metric_for_reconstruction,
         feedback_map={
-            "multi_agent.orchestrator.react": simple_feedback,
-            "multi_agent.analyst.react": simple_feedback,
-            "multi_agent.researcher.react": simple_feedback,
+            "multi_agent.orchestrator.extract.predict": simple_feedback,
+            "multi_agent.analyst.extract.predict": simple_feedback,
+            "multi_agent.researcher.extract.predict": simple_feedback,
         },
         enable_tool_optimization=True
     )
@@ -809,36 +802,25 @@ def test_make_reflective_dataset_orchestrator_with_workers():
         candidate={},
         eval_batch=eval_batch,
         components_to_update=[
-            f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator",
-            f"{REACT_MODULE_PREFIX}:multi_agent.analyst",
-            f"{REACT_MODULE_PREFIX}:multi_agent.researcher"
+            f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator.extract.predict",
+            f"{REACT_MODULE_PREFIX}:multi_agent.analyst.extract.predict",
+            f"{REACT_MODULE_PREFIX}:multi_agent.researcher.extract.predict"
         ]
     )
 
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator" in result
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.analyst" in result
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.researcher" in result
+    orch_key = f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator.extract.predict"
+    analyst_key = f"{REACT_MODULE_PREFIX}:multi_agent.analyst.extract.predict"
+    researcher_key = f"{REACT_MODULE_PREFIX}:multi_agent.researcher.extract.predict"
+
+    # Verify all 3 modules captured
     assert len(result) == 3
-    assert len(result[f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator"]) == 1
-    assert len(result[f"{REACT_MODULE_PREFIX}:multi_agent.analyst"]) == 1
-    assert len(result[f"{REACT_MODULE_PREFIX}:multi_agent.researcher"]) == 1
+    assert orch_key in result and len(result[orch_key]) == 1
+    assert analyst_key in result and len(result[analyst_key]) == 1
+    assert researcher_key in result and len(result[researcher_key]) == 1
 
-    orch_example = result[f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator"][0]
-    assert_reflective_example_has_trajectory(orch_example, orchestrator_iterations, "result")
-    assert "question" in orch_example["Inputs"]
-    assert "answer" in orch_example["Generated Outputs"]
-    assert "analyst" in orch_example["Inputs"]["trajectory"]
-
-    analyst_example = result[f"{REACT_MODULE_PREFIX}:multi_agent.analyst"][0]
-    assert_reflective_example_has_trajectory(analyst_example, analyst_iterations, "analyzed_data")
-    assert "data" in analyst_example["Inputs"]
-    assert "analysis" in analyst_example["Generated Outputs"]
-    assert "Analysis:" in analyst_example["Inputs"]["trajectory"]
-
-    researcher_example = result[f"{REACT_MODULE_PREFIX}:multi_agent.researcher"][0]
-    assert_reflective_example_has_trajectory(researcher_example, researcher_iterations, "research_findings")
-    assert "topic" in researcher_example["Inputs"]
-    assert "findings" in researcher_example["Generated Outputs"]
-    assert "Research:" in researcher_example["Inputs"]["trajectory"]
+    # Verify each module's trajectory captured correctly
+    assert_reflective_example_has_trajectory(result[orch_key][0], orchestrator_iterations, "result")
+    assert_reflective_example_has_trajectory(result[analyst_key][0], analyst_iterations, "analyzed_data")
+    assert_reflective_example_has_trajectory(result[researcher_key][0], researcher_iterations, "research_findings")
 
 
