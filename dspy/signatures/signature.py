@@ -156,7 +156,6 @@ class SignatureMeta(type(BaseModel)):
                         raw_annotations = {}
             except ImportError:
                 raw_annotations = namespace.get("__annotations__", {})
-        # Safely get annotations using inspect module
         else:
             # Python 3.13 and earlier
             # Set `str` as the default type for all fields

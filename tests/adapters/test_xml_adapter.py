@@ -1,3 +1,4 @@
+import sys
 from unittest import mock
 
 import pydantic
@@ -276,10 +277,12 @@ def test_xml_adapter_full_prompt():
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
 
+    union_type_repr = "Union[str, NoneType]" if sys.version_info >= (3, 14) else "UnionType[str, NoneType]"
+
     expected_system = (
         "Your input fields are:\n"
         "1. `query` (str): \n"
-        "2. `context` (UnionType[str, NoneType]):\n"
+        f"2. `context` ({union_type_repr}):\n"
         "Your output fields are:\n"
         "1. `answer` (str):\n"
         "All interactions will be structured in the following way, with the appropriate values filled in.\n\n"
