@@ -6,12 +6,9 @@ from gepa.core.adapter import ProposalFn
 
 import dspy
 from dspy.adapters.types.base_type import Type
-from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
+from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, ReflectiveExample
 
 logger = logging.getLogger(__name__)
-
-# Constants for ReAct module optimization
-REACT_MODULE_PREFIX = "react_module"
 
 
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
@@ -318,20 +315,17 @@ class MultiModalInstructionProposer(ProposalFn):
 
         return updated_components
 
-class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
-    """Improve a ReAct agent based on execution examples and feedback.
+class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
+    """Improve a tool-using module based on execution examples and feedback.
 
     These components are progressively optimized - refine what needs improvement.
-    Analyze the trajectories to identify successful patterns and failure causes.
-    Generate improved texts to help the agent succeed on similar tasks.
+    Analyze the examples_with_feedback to identify successful patterns and failure causes.
+    Generate improved texts to help the module succeed on similar tasks.
     Place improved texts at their appropriate level of abstraction and/or specificity.
     """
 
-    current_react_instruction = dspy.InputField(
-        desc="Current ReAct module instruction guiding the ReAct agent's reasoning and tool selection"
-    )
-    current_extract_instruction = dspy.InputField(
-        desc="Current Extract module instruction for extracting final answers from trajectories"
+    current_predictor_instruction = dspy.InputField(
+        desc="Current instruction guiding the predictor"
     )
     current_tools = dspy.InputField(
         annotation=list[dspy.Tool],
@@ -341,12 +335,8 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
         desc="Execution examples with feedback showing successes and failures"
     )
 
-    improved_react_instruction: str | None = dspy.OutputField(
-        desc="ReAct instruction for reasoning and tool selection",
-        default=None
-    )
-    improved_extract_instruction: str | None = dspy.OutputField(
-        desc="Extract instruction for answer extraction",
+    improved_predictor_instruction: str | None = dspy.OutputField(
+        desc="Improved instruction for the predictor",
         default=None
     )
 
@@ -354,22 +344,19 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
 
 
 
-class ReActModuleProposer(ProposalFn):
-    """Proposer for optimizing ReAct module configurations.
+class ToolModuleProposer(ProposalFn):
+    """Proposer for optimizing tool-using module configurations.
 
-    Jointly optimizes three components of a ReAct module: the react instruction that guides
-    reasoning and tool selection, the extract instruction for answer extraction from trajectories,
-    and tool descriptions with their parameters. Uses dynamic signature generation to create
-    output fields for each tool and parameter, enabling the reflection LM to optimize all parts
-    cohesively based on execution feedback.
+    Supports two types of modules:
+    - Tool modules (1 predictor): Optimizes predictor instruction and tool descriptions
+    - ReAct modules (2 predictors): Jointly optimizes react instruction, extract instruction, and tool descriptions
+
+    Uses dynamic signature generation to create output fields for each tool and parameter,
+    enabling the reflection LM to optimize all components cohesively based on execution feedback.
 
     This joint optimization approach allows the LM to see how instructions and tool descriptions
     work together, leading to more coherent improvements than optimizing each component separately.
     """
-
-    def __init__(self):
-        """Initialize the ReAct module proposer."""
-        pass
 
     def __call__(
         self,
@@ -377,52 +364,46 @@ class ReActModuleProposer(ProposalFn):
         reflective_dataset: dict[str, list[ReflectiveExample]],
         components_to_update: list[str],
     ) -> dict[str, str]:
-        """Optimize ReAct module components.
+        """Optimize tool-using module components.
 
         Args:
             candidate: Current component name -> JSON config mapping
             reflective_dataset: Component name -> list of reflective examples
-            components_to_update: List of react_module component names to update
+            components_to_update: List of tool-using module component names to update
 
         Returns:
             dict: Mapping of component names to improved JSON configs
         """
 
-        logger.info("\n=== ReActModuleProposer Called ===")
-        logger.info(f"components_to_update: {components_to_update}")
-        logger.info(f"candidate keys: {list(candidate.keys())}")
-        logger.info(f"reflective_dataset keys: {list(reflective_dataset.keys())}")
-
         updated_components = {}
 
         for module_key in components_to_update:
-            # Only handle react_module components
-            if not module_key.startswith(REACT_MODULE_PREFIX):
-                logger.debug(f"Skipping non-react_module component: {module_key}")
-                continue
-
             if module_key not in candidate or module_key not in reflective_dataset:
                 logger.warning(f"Skipping {module_key}: not in candidate={module_key not in candidate}, not in reflective_dataset={module_key not in reflective_dataset}")
                 continue
 
-            logger.info(f"\nProcessing react_module: {module_key}")
-
-            # Deserialize react module config
+            # Deserialize module config
             try:
-                current_react_config = json.loads(candidate[module_key])
-                logger.debug(f"Deserialized config keys: {list(current_react_config.keys())}")
+                current_module_config = json.loads(candidate[module_key])
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to deserialize config for {module_key}: {e}")
                 continue
 
+            # Extract predictor keys (all keys except "tools")
+            # Predictor keys are expected to be 1 for tool modules and 2 for ReAct modules (extra extract predictor)
+            predictor_keys = [k for k in current_module_config if k != "tools"]
+            logger.debug(f"Predictor keys: {predictor_keys}")
+            primary_predictor_key = predictor_keys[0]
+            extract_predictor_key = predictor_keys[1] if module_key.startswith(REACT_MODULE_PREFIX) else None
+
             # Reconstruct Tool objects from JSON metadata so the adapter can format them for the reflection LM.
             # Tool.func cannot be serialized in JSON, so we use a placeholder (never executed).
-            current_tools_dict = current_react_config.get("tools", {})
+            current_tools_dict = current_module_config.get("tools", {})
             logger.info(f"Found {len(current_tools_dict)} tools: {list(current_tools_dict.keys())}")
             tools_list = []
             for tool_name, tool_info in current_tools_dict.items():
                 tool = dspy.Tool(
-                    func=lambda: None,  # Placeholder - Tool requires Callable, but only schema is used
+                    func=lambda *args, **kwargs: None,  # Placeholder - Tool requires Callable, but only schema is used
                     name=tool_name,
                     desc=tool_info.get("desc", ""),
                 )
@@ -431,7 +412,7 @@ class ReActModuleProposer(ProposalFn):
                 tools_list.append(tool)
 
             # Build dynamic signature by extending base signature
-            signature = GenerateImprovedReActDescriptionsFromFeedback
+            signature = GenerateImprovedToolModuleDescriptionsFromFeedback
 
             logger.debug(f"Building dynamic signature with {len(tools_list)} tools...")
 
@@ -458,41 +439,49 @@ class ReActModuleProposer(ProposalFn):
                             )
                         )
 
-            # Format examples
-            formatted_examples = self._format_examples(reflective_dataset[module_key])
-            logger.info(f"Formatted {len(reflective_dataset[module_key])} reflective examples")
-            logger.debug(f"Examples preview: {formatted_examples[:200]}...")
 
-            logger.info("Calling reflection LM with dynamic signature...")
+            kwargs = {
+                "current_predictor_instruction": current_module_config[primary_predictor_key],
+                "current_tools": tools_list,
+                "examples_with_feedback": self._format_examples(reflective_dataset[module_key]),
+            }
+            # If module has extract predictor, add extract fields
+            if extract_predictor_key is not None:
+                signature = signature.append(
+                    "current_extract_instruction",
+                    dspy.InputField(desc="Current instruction for extraction predictor")
+                )
+                signature = signature.append(
+                    "improved_extract_instruction",
+                    dspy.OutputField(desc="Improved instruction for extraction", default=None)
+                )
+                kwargs["current_extract_instruction"] = current_module_config[extract_predictor_key]
+
             propose_descriptions = dspy.Predict(signature)
-            result = propose_descriptions(
-                current_react_instruction=current_react_config.get("react", ""),
-                current_extract_instruction=current_react_config.get("extract", ""),
-                current_tools=tools_list,  # List of Tool objects for adapter formatting
-                examples_with_feedback=formatted_examples,
-            )
+
+            result = propose_descriptions(**kwargs)
 
             # Build improved config from reflection LM suggestions
             # Reflection LM returns None for components it doesn't want to change, or text for improvements
             logger.info("Building improved config from reflection LM response...")
-            improved_react_config = {}
+            improved_module_config = {}
 
-            # Update react instruction if reflection LM suggested improvement
-            if result.improved_react_instruction is not None:
-                improved_react_config["react"] = result.improved_react_instruction
-                logger.debug(f"React instruction: {len(result.improved_react_instruction)} chars")
+            # Update primary predictor instruction if reflection LM suggested improvement
+            if result.improved_predictor_instruction is not None:
+                improved_module_config[primary_predictor_key] = result.improved_predictor_instruction
+                logger.debug(f"{primary_predictor_key}: {len(result.improved_predictor_instruction)} chars")
             else:
-                logger.debug("React instruction: reflection LM suggests keeping original")
+                logger.debug(f"{primary_predictor_key}: reflection LM suggests keeping original")
 
-            # Update extract instruction if reflection LM suggested improvement
-            if result.improved_extract_instruction is not None:
-                improved_react_config["extract"] = result.improved_extract_instruction
-                logger.debug(f"Extract instruction: {len(result.improved_extract_instruction)} chars")
+            # Update extract instruction if exists and reflection LM suggested improvement
+            if extract_predictor_key is not None and result.improved_extract_instruction is not None:
+                improved_module_config[extract_predictor_key] = result.improved_extract_instruction
+                logger.debug(f"{extract_predictor_key}: {len(result.improved_extract_instruction)} chars")
             else:
-                logger.debug("Extract instruction: reflection LM suggests keeping original)")
+                logger.debug(f"{extract_predictor_key}: reflection LM suggests keeping original")
 
             # Update tool descriptions if reflection LM suggested improvements
-            improved_react_config["tools"] = {}
+            improved_module_config["tools"] = {}
             for tool_name, tool_info in current_tools_dict.items():
                 # Check if reflection LM suggested improving this tool's description
                 improved_desc = getattr(result, f"improved_tool_{tool_name}_desc", None)
@@ -515,15 +504,15 @@ class ReActModuleProposer(ProposalFn):
                         if arg_desc is not None:  # Reflection LM suggested improvement
                             improved_tool_info["arg_desc"][arg_name] = arg_desc
 
-                improved_react_config["tools"][tool_name] = improved_tool_info
+                improved_module_config["tools"][tool_name] = improved_tool_info
                 logger.debug(f"  Tool '{tool_name}': desc={len(improved_desc)} chars, params={len(improved_tool_info['arg_desc'])}")
 
             # Serialize back to JSON
-            updated_components[module_key] = json.dumps(improved_react_config, indent=2)
+            updated_components[module_key] = json.dumps(improved_module_config, indent=2)
             logger.info(f"Successfully optimized {module_key}")
             logger.debug(f"Serialized config length: {len(updated_components[module_key])} chars")
 
-        logger.info(f"\nReActModuleProposer returning {len(updated_components)} components: {list(updated_components.keys())}")
+        logger.info(f"\nToolModuleProposer returning {len(updated_components)} components: {list(updated_components.keys())}")
         return updated_components
 
     def _format_examples(self, reflective_dataset: list[ReflectiveExample]) -> str:

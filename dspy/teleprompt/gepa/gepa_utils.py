@@ -138,12 +138,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
             instruction_proposer = default_instruction_proposer
 
-        # Init ReAct module proposer if tool optimization is enabled
-        react_module_proposer = None
+        # Init tool module proposer if tool optimization is enabled
+        tool_module_proposer = None
         if self.enable_tool_optimization:
-            from .instruction_proposal import ReActModuleProposer
+            from .instruction_proposal import ToolModuleProposer
 
-            react_module_proposer = ReActModuleProposer()
+            tool_module_proposer = ToolModuleProposer()
 
         def propose_component_texts(
             candidate: dict[str, str],
@@ -160,9 +160,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     )
 
             # Otherwise, route to appropriate proposers
-            # Separate react_module components from regular instruction components
-            react_module_components = [c for c in components_to_update if c.startswith(REACT_MODULE_PREFIX)]
-            instruction_components = [c for c in components_to_update if not c.startswith(REACT_MODULE_PREFIX)]
+            # Separate into two categories: components with tools vs regular instructions
+            tool_module_components = []
+            instruction_components = []
+
+            for c in components_to_update:
+                if c.startswith(REACT_MODULE_PREFIX) or c.startswith(TOOL_MODULE_PREFIX):
+                    tool_module_components.append(c)
+                else:
+                    instruction_components.append(c)
 
             results: dict[str, str] = {}
 
@@ -178,14 +184,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         )
                     )
 
-                # Handle ReAct module components
-                if react_module_components:
-                    logger.debug(f"Routing {len(react_module_components)} react_module components to react_module_proposer")
+                # Handle components with tools (ReAct and Tool modules)
+                if tool_module_components:
+                    logger.debug(f"Routing {len(tool_module_components)} tool_module components to tool_module_proposer")
                     results.update(
-                        react_module_proposer(
+                        tool_module_proposer(
                             candidate=candidate,
                             reflective_dataset=reflective_dataset,
-                            components_to_update=react_module_components,
+                            components_to_update=tool_module_components,
                         )
                     )
 
