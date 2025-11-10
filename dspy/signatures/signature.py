@@ -149,7 +149,7 @@ class SignatureMeta(type(BaseModel)):
                     annotate_func = annotationlib.get_annotate_from_class_namespace(namespace)
                     if annotate_func:
                         raw_annotations = annotationlib.call_annotate_function(
-                            annotate_func, 
+                            annotate_func,
                             format=annotationlib.Format.FORWARDREF
                         )
                     else:
