@@ -134,6 +134,100 @@ async def test_custom_status_streaming():
         assert status_messages[2].message == "Predict starting!"
 
 
+@pytest.mark.anyio
+async def test_default_then_custom_status_message_provider():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.generate_question = dspy.Tool(lambda x: f"What color is the {x}?", name="generate_question")
+            self.predict = dspy.Predict("question->answer")
+
+        def __call__(self, x: str):
+            question = self.generate_question(x=x)
+            return self.predict(question=question)
+
+    class MyStatusMessageProvider(StatusMessageProvider):
+        def tool_start_status_message(self, instance, inputs):
+            return "Tool starting!"
+
+        def tool_end_status_message(self, outputs):
+            return "Tool finished!"
+
+        def module_start_status_message(self, instance, inputs):
+            if isinstance(instance, dspy.Predict):
+                return "Predict starting!"
+
+    lm = dspy.utils.DummyLM([{"answer": "red"}, {"answer": "blue"}])
+    with dspy.context(lm=lm):
+        program = dspy.streamify(MyProgram())
+        output = program("sky")
+
+        status_messages = []
+        async for value in output:
+            if isinstance(value, StatusMessage):
+                status_messages.append(value)
+
+        assert len(status_messages) == 2
+        assert status_messages[0].message == "Calling tool generate_question..."
+        assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
+
+        program = dspy.streamify(MyProgram(), status_message_provider=MyStatusMessageProvider())
+        output = program("sky")
+        status_messages = []
+        async for value in output:
+            if isinstance(value, StatusMessage):
+                status_messages.append(value)
+        assert len(status_messages) == 3
+        assert status_messages[0].message == "Tool starting!"
+        assert status_messages[1].message == "Tool finished!"
+        assert status_messages[2].message == "Predict starting!"
+
+
+@pytest.mark.anyio
+async def test_custom_then_default_status_message_provider():
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.generate_question = dspy.Tool(lambda x: f"What color is the {x}?", name="generate_question")
+            self.predict = dspy.Predict("question->answer")
+
+        def __call__(self, x: str):
+            question = self.generate_question(x=x)
+            return self.predict(question=question)
+
+    class MyStatusMessageProvider(StatusMessageProvider):
+        def tool_start_status_message(self, instance, inputs):
+            return "Tool starting!"
+
+        def tool_end_status_message(self, outputs):
+            return "Tool finished!"
+
+        def module_start_status_message(self, instance, inputs):
+            if isinstance(instance, dspy.Predict):
+                return "Predict starting!"
+
+    lm = dspy.utils.DummyLM([{"answer": "red"}, {"answer": "blue"}])
+    with dspy.context(lm=lm):
+        program = dspy.streamify(MyProgram(), status_message_provider=MyStatusMessageProvider())
+        output = program("sky")
+        status_messages = []
+        async for value in output:
+            if isinstance(value, StatusMessage):
+                status_messages.append(value)
+        assert len(status_messages) == 3
+        assert status_messages[0].message == "Tool starting!"
+        assert status_messages[1].message == "Tool finished!"
+        assert status_messages[2].message == "Predict starting!"
+
+        program = dspy.streamify(MyProgram())
+        output = program("sky")
+        status_messages = []
+        async for value in output:
+            if isinstance(value, StatusMessage):
+                status_messages.append(value)
+        assert len(status_messages) == 2
+        assert status_messages[0].message == "Calling tool generate_question..."
+        assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
+
+
 @pytest.mark.llm_call
 @pytest.mark.anyio
 async def test_stream_listener_chat_adapter(lm_for_test):
