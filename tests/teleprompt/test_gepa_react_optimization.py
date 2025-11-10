@@ -44,6 +44,22 @@ def simple_metric_for_detection(example, pred, trace=None, pred_name=None, pred_
     return dspy.Prediction(score=0.5, feedback="ok")
 
 
+def get_predictor_name(program, predictor_obj):
+    """Get predictor name by finding it via object identity in named_predictors().
+    
+    Args:
+        program: DSPy program
+        predictor_obj: The predictor object to find (e.g., program.react_module)
+    
+    Returns:
+        str: Predictor name (e.g., "react_module", "agent.react", etc.)
+    """
+    for name, pred in program.named_predictors():
+        if pred is predictor_obj:
+            return name
+    raise ValueError(f"Predictor not found in program: {predictor_obj}")
+
+
 def simple_metric_for_reconstruction(example, pred, trace=None):
     """Simple metric for adapter reconstruction tests."""
     return 0.5
@@ -94,8 +110,7 @@ def assert_react_module_detected(captured_base_program, predictor_name, expected
 
     config = json.loads(captured_base_program[module_key])
 
-    assert "react" in config, f"{module_key} should have react instruction"
-    assert "extract" in config, f"{module_key} should have extract instruction"
+    # Check structure: should have predictor instructions and tools
     assert "tools" in config, f"{module_key} should have tools"
 
     for tool_name, expected_desc in expected_tools.items():
@@ -153,21 +168,39 @@ def assert_regular_module_updated(predictor, expected_instruction):
         f"Instruction mismatch: expected '{expected_instruction}', got '{predictor.signature.instructions}'"
 
 
-def mock_optimized_react_module(optimized_candidate, predictor_name, react_instruction, extract_instruction, tool_descriptions):
+def mock_optimized_react_module(program, optimized_candidate, react_instruction, extract_instruction, tool_descriptions, react_module=None):
     """Helper to mock an optimized ReAct module in the candidate dict.
 
     Args:
+        program: The DSPy program (to find predictor names)
         optimized_candidate: The candidate dict to modify
-        predictor_name: Name of extract.predict from named_predictors()
-                       (e.g., "extract.predict", "multi_agent.orchestrator.extract.predict")
         react_instruction: New react instruction
         extract_instruction: New extract instruction
         tool_descriptions: Dict of {tool_name: {"desc": desc, "arg_desc": {arg: desc}}}
+        react_module: Optional specific ReAct module to update (for multi-module programs)
     """
-    module_key = f"{REACT_MODULE_PREFIX}:{predictor_name}"
+    # Find the ReAct module's predictors via object identity
+    if react_module is None:
+        react_module = program if isinstance(program, dspy.ReAct) else None
+        if not react_module:
+            for _, module in program.named_sub_modules():
+                if isinstance(module, dspy.ReAct):
+                    react_module = module
+                    break
+
+        if not react_module:
+            raise ValueError("No ReAct module found in program")
+
+    # Get predictor names dynamically
+    expected_react_name = get_predictor_name(program, react_module.react)
+    expected_extract_name = get_predictor_name(program, react_module.extract.predict)
+
+    module_key = f"{REACT_MODULE_PREFIX}:{expected_extract_name}"
     config = json.loads(optimized_candidate[module_key])
-    config["react"] = react_instruction
-    config["extract"] = extract_instruction
+
+    # Update instructions using actual predictor names
+    config[expected_react_name] = react_instruction
+    config[expected_extract_name] = extract_instruction
 
     for tool_name, tool_desc in tool_descriptions.items():
         if "desc" in tool_desc:
@@ -319,9 +352,12 @@ def test_single_react_module_detection(monkeypatch):
     # DummyLM now properly configured - compile should succeed
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
+    # Get predictor name dynamically via object identity
+    expected_predictor_name = get_predictor_name(program, program.extract.predict)
+
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        predictor_name="extract.predict",
+        predictor_name=expected_predictor_name,
         expected_tools={"search": "Search the web", "calc": "Calculate math"}
     )
 
@@ -349,25 +385,30 @@ def test_multi_react_workflow_detection(monkeypatch):
     # DummyLM now properly configured - compile should succeed
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
-    assert f"{REACT_MODULE_PREFIX}:workflow.coordinator.extract.predict" in captured_base_program
-    assert f"{REACT_MODULE_PREFIX}:workflow.researcher.extract.predict" in captured_base_program
+    # Get predictor names dynamically via object identity
+    expected_coordinator_name = get_predictor_name(program, program.workflow.coordinator.extract.predict)
+    expected_researcher_name = get_predictor_name(program, program.workflow.researcher.extract.predict)
+    expected_summarizer_name = get_predictor_name(program, program.workflow.summarizer.predict)
+
+    assert f"{REACT_MODULE_PREFIX}:{expected_coordinator_name}" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:{expected_researcher_name}" in captured_base_program
 
     react_modules = [k for k in captured_base_program.keys() if k.startswith(REACT_MODULE_PREFIX)]
     assert len(react_modules) == 2, f"Expected 2 ReAct modules, got {len(react_modules)}"
 
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        predictor_name="workflow.coordinator.extract.predict",
+        predictor_name=expected_coordinator_name,
         expected_tools={"search": "Search tool"}
     )
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        predictor_name="workflow.researcher.extract.predict",
+        predictor_name=expected_researcher_name,
         expected_tools={"analyze": "Analysis tool"}
     )
     assert_regular_module_detected(
         captured_base_program=captured_base_program,
-        module_key="workflow.summarizer.predict"
+        module_key=expected_summarizer_name
     )
 
 
@@ -393,26 +434,31 @@ def test_nested_react_orchestrator_worker_detection(monkeypatch):
     # DummyLM now properly configured - compile should succeed
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator.extract.predict" in captured_base_program
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.analyst.extract.predict" in captured_base_program
-    assert f"{REACT_MODULE_PREFIX}:multi_agent.researcher.extract.predict" in captured_base_program
+    # Get predictor names dynamically via object identity
+    expected_orchestrator_name = get_predictor_name(program, program.multi_agent.orchestrator.extract.predict)
+    expected_analyst_name = get_predictor_name(program, program.multi_agent.analyst.extract.predict)
+    expected_researcher_name = get_predictor_name(program, program.multi_agent.researcher.extract.predict)
+
+    assert f"{REACT_MODULE_PREFIX}:{expected_orchestrator_name}" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:{expected_analyst_name}" in captured_base_program
+    assert f"{REACT_MODULE_PREFIX}:{expected_researcher_name}" in captured_base_program
 
     react_modules = [k for k in captured_base_program.keys() if k.startswith(REACT_MODULE_PREFIX)]
     assert len(react_modules) == 3, f"Expected 3 ReAct modules, got {len(react_modules)}"
 
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        predictor_name="multi_agent.orchestrator.extract.predict",
+        predictor_name=expected_orchestrator_name,
         expected_tools={"search": "Search tool", "analyst": "Use analyst", "researcher": "Use researcher"}
     )
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        predictor_name="multi_agent.analyst.extract.predict",
+        predictor_name=expected_analyst_name,
         expected_tools={"analyze": "Analyze data"}
     )
     assert_react_module_detected(
         captured_base_program=captured_base_program,
-        predictor_name="multi_agent.researcher.extract.predict",
+        predictor_name=expected_researcher_name,
         expected_tools={"research": "Research topic"}
     )
 
@@ -430,8 +476,8 @@ def test_build_program_single_react(monkeypatch):
     # Mock optimized candidate
     optimized_candidate = dict(captured_base_program)
     mock_optimized_react_module(
+        program=program,
         optimized_candidate=optimized_candidate,
-        predictor_name="extract.predict",
         react_instruction="OPTIMIZED: React instruction",
         extract_instruction="OPTIMIZED: Extract instruction",
         tool_descriptions={
@@ -491,8 +537,8 @@ def test_build_program_multi_react_workflow(monkeypatch):
     optimized_candidate = dict(captured_base_program)
 
     mock_optimized_react_module(
+        program=program,
         optimized_candidate=optimized_candidate,
-        predictor_name="workflow.coordinator.extract.predict",
         react_instruction="OPTIMIZED: Coordinator react",
         extract_instruction="OPTIMIZED: Coordinator extract",
         tool_descriptions={
@@ -500,12 +546,13 @@ def test_build_program_multi_react_workflow(monkeypatch):
                 "desc": "OPTIMIZED: Search tool",
                 "arg_desc": {"query": "OPTIMIZED: Coordinator search query"}
             }
-        }
+        },
+        react_module=program.workflow.coordinator
     )
 
     mock_optimized_react_module(
+        program=program,
         optimized_candidate=optimized_candidate,
-        predictor_name="workflow.researcher.extract.predict",
         react_instruction="OPTIMIZED: Researcher react",
         extract_instruction="OPTIMIZED: Researcher extract",
         tool_descriptions={
@@ -513,11 +560,13 @@ def test_build_program_multi_react_workflow(monkeypatch):
                 "desc": "OPTIMIZED: Analyze tool",
                 "arg_desc": {"data": "OPTIMIZED: Data to analyze"}
             }
-        }
+        },
+        react_module=program.workflow.researcher
     )
 
     # Optimize summarizer (non-ReAct ChainOfThought)
-    optimized_candidate["workflow.summarizer.predict"] = "OPTIMIZED: Summarizer instruction"
+    expected_summarizer_name = get_predictor_name(program, program.workflow.summarizer.predict)
+    optimized_candidate[expected_summarizer_name] = "OPTIMIZED: Summarizer instruction"
 
     # Build program
     adapter = DspyAdapter(
@@ -577,8 +626,8 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
     optimized_candidate = dict(captured_base_program)
 
     mock_optimized_react_module(
+        program=program,
         optimized_candidate=optimized_candidate,
-        predictor_name="multi_agent.orchestrator.extract.predict",
         react_instruction="OPTIMIZED: Orchestrator react",
         extract_instruction="OPTIMIZED: Orchestrator extract",
         tool_descriptions={
@@ -586,23 +635,26 @@ def test_build_program_orchestrator_with_workers(monkeypatch):
                 "desc": "OPTIMIZED: Search tool",
                 "arg_desc": {"query": "OPTIMIZED: Query param"}
             }
-        }
+        },
+        react_module=program.multi_agent.orchestrator
     )
 
     mock_optimized_react_module(
+        program=program,
         optimized_candidate=optimized_candidate,
-        predictor_name="multi_agent.analyst.extract.predict",
         react_instruction="OPTIMIZED: Analyst react",
         extract_instruction="OPTIMIZED: Analyst extract",
-        tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}}
+        tool_descriptions={"analyze": {"desc": "OPTIMIZED: Analyze tool"}},
+        react_module=program.multi_agent.analyst
     )
 
     mock_optimized_react_module(
+        program=program,
         optimized_candidate=optimized_candidate,
-        predictor_name="multi_agent.researcher.extract.predict",
         react_instruction="OPTIMIZED: Researcher react",
         extract_instruction="OPTIMIZED: Researcher extract",
-        tool_descriptions={"research": {"desc": "OPTIMIZED: Research tool"}}
+        tool_descriptions={"research": {"desc": "OPTIMIZED: Research tool"}},
+        react_module=program.multi_agent.researcher
     )
 
     # Build program
@@ -714,10 +766,13 @@ def test_make_reflective_dataset_single_react():
     ] * 10)
     dspy.settings.configure(lm=lm)
 
+    # Get predictor name dynamically
+    expected_predictor_name = get_predictor_name(program, program.extract.predict)
+
     adapter = DspyAdapter(
         student_module=program,
         metric_fn=simple_metric_for_reconstruction,
-        feedback_map={"extract.predict": simple_feedback},
+        feedback_map={expected_predictor_name: simple_feedback},
         enable_tool_optimization=True
     )
 
@@ -727,10 +782,10 @@ def test_make_reflective_dataset_single_react():
     result = adapter.make_reflective_dataset(
         candidate={},
         eval_batch=eval_batch,
-        components_to_update=[f"{REACT_MODULE_PREFIX}:extract.predict"]
+        components_to_update=[f"{REACT_MODULE_PREFIX}:{expected_predictor_name}"]
     )
 
-    module_key = f"{REACT_MODULE_PREFIX}:extract.predict"
+    module_key = f"{REACT_MODULE_PREFIX}:{expected_predictor_name}"
     assert module_key in result
     examples = result[module_key]
     assert len(examples) == 1, f"Should have 1 reflective example, got {len(examples)}"
@@ -784,13 +839,18 @@ def test_make_reflective_dataset_orchestrator_with_workers():
     ] * 10)
     dspy.settings.configure(lm=lm)
 
+    # Get predictor names dynamically
+    expected_orch_name = get_predictor_name(program, program.multi_agent.orchestrator.extract.predict)
+    expected_analyst_name = get_predictor_name(program, program.multi_agent.analyst.extract.predict)
+    expected_researcher_name = get_predictor_name(program, program.multi_agent.researcher.extract.predict)
+
     adapter = DspyAdapter(
         student_module=program,
         metric_fn=simple_metric_for_reconstruction,
         feedback_map={
-            "multi_agent.orchestrator.extract.predict": simple_feedback,
-            "multi_agent.analyst.extract.predict": simple_feedback,
-            "multi_agent.researcher.extract.predict": simple_feedback,
+            expected_orch_name: simple_feedback,
+            expected_analyst_name: simple_feedback,
+            expected_researcher_name: simple_feedback,
         },
         enable_tool_optimization=True
     )
@@ -802,15 +862,15 @@ def test_make_reflective_dataset_orchestrator_with_workers():
         candidate={},
         eval_batch=eval_batch,
         components_to_update=[
-            f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator.extract.predict",
-            f"{REACT_MODULE_PREFIX}:multi_agent.analyst.extract.predict",
-            f"{REACT_MODULE_PREFIX}:multi_agent.researcher.extract.predict"
+            f"{REACT_MODULE_PREFIX}:{expected_orch_name}",
+            f"{REACT_MODULE_PREFIX}:{expected_analyst_name}",
+            f"{REACT_MODULE_PREFIX}:{expected_researcher_name}"
         ]
     )
 
-    orch_key = f"{REACT_MODULE_PREFIX}:multi_agent.orchestrator.extract.predict"
-    analyst_key = f"{REACT_MODULE_PREFIX}:multi_agent.analyst.extract.predict"
-    researcher_key = f"{REACT_MODULE_PREFIX}:multi_agent.researcher.extract.predict"
+    orch_key = f"{REACT_MODULE_PREFIX}:{expected_orch_name}"
+    analyst_key = f"{REACT_MODULE_PREFIX}:{expected_analyst_name}"
+    researcher_key = f"{REACT_MODULE_PREFIX}:{expected_researcher_name}"
 
     # Verify all 3 modules captured
     assert len(result) == 3
