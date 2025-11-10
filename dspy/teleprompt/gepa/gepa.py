@@ -541,46 +541,18 @@ class GEPA(Teleprompter):
 
         # Instantiate GEPA with the simpler adapter-based API
         base_program = {}
-        for name, pred in student.named_predictors():
-            # Detect tool-using predictors via type checking
-            def is_tool_field(annotation) -> bool:
-                """Check if a field annotation is Tool or contains Tool."""
-                if annotation is Tool:
-                    return True
-                origin = get_origin(annotation)
-                if origin is not None:
-                    args = get_args(annotation)
-                    for arg in args:
-                        if is_tool_field(arg):  # Recursive for nested types
-                            return True
-                return False
 
-            # Detect tool-using predictors
-            if self.enable_tool_optimization and any(is_tool_field(field.annotation) for field in pred.signature.input_fields.values()):
-                # Use prefixed key for tool modules
-                module_key = f"{TOOL_MODULE_PREFIX}:{name}"
-                base_program[module_key] = json.dumps({
-                    name: pred.signature.instructions,  # Use actual predictor name as key
-                    "tools": {}  # Populated from traces
-                }, indent=2)
-            else:
-                # Regular string instruction, no tools
-                base_program[name] = pred.signature.instructions
+        # First, process ReAct modules to claim their predictors
+        if self.enable_tool_optimization:
+            for module_path, module in student.named_sub_modules():
+                if not isinstance(module, ReAct):
+                    continue
 
-        # Always traverse to detect ReAct modules
-        for module_path, module in student.named_sub_modules():
-            # Only process ReAct modules
-            if not isinstance(module, ReAct):
-                continue
-
-            if self.enable_tool_optimization:
                 # Get predictor names via object identity
                 extract_predictor = module.extract.predict
                 react_predictor = module.react
-
                 extract_predictor_name = None
                 react_predictor_name = None
-
                 for name, pred in student.named_predictors():
                     if pred is extract_predictor:
                         extract_predictor_name = name
@@ -605,16 +577,58 @@ class GEPA(Teleprompter):
                     }
                 }
 
-                # Remove the individual predictor keys (they're now part of ReAct module config)
-                base_program.pop(react_predictor_name, None)
-                base_program.pop(extract_predictor_name, None)
                 base_program[module_key] = json.dumps(config, indent=2)
-            else:
-                logger.warning(
-                    f"Detected ReAct module at '{module_path}'. Consider using "
-                    "`enable_tool_optimization=True` to jointly optimize react instructions, "
-                    "extract instructions, tool descriptions, and tool argument descriptions."
-                )
+        else:
+            # Warn if ReAct modules found but tool optimization disabled
+            for module_path, module in student.named_sub_modules():
+                if isinstance(module, ReAct):
+                    logger.warning(
+                        f"Detected ReAct module at '{module_path}'. Consider using "
+                        "`enable_tool_optimization=True` to jointly optimize react instructions, "
+                        "extract instructions, tool descriptions, and tool argument descriptions."
+                    )
+
+        # Then, process individual predictors (skip if already part of a module config)
+        for name, pred in student.named_predictors():
+            if self.enable_tool_optimization:
+                # Skip if predictor is part of a module config (e.g., ReAct)
+                found = False
+                for val in base_program.values():
+                    try:
+                        config = json.loads(val)
+                        if name in config:
+                            found = True
+                            break
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
+
+                if found:
+                    continue
+
+                # Detect tool-using predictors via type checking
+                def is_tool_field(annotation) -> bool:
+                    """Check if a field annotation is Tool or contains Tool."""
+                    if annotation is Tool:
+                        return True
+                    origin = get_origin(annotation)
+                    if origin is not None:
+                        args = get_args(annotation)
+                        for arg in args:
+                            if is_tool_field(arg):  # Recursive for nested types
+                                return True
+                    return False
+
+                # Add tool module if predictor uses tools
+                if any(is_tool_field(field.annotation) for field in pred.signature.input_fields.values()):
+                    module_key = f"{TOOL_MODULE_PREFIX}:{name}"
+                    base_program[module_key] = json.dumps({
+                        name: pred.signature.instructions,
+                        "tools": {}  # Populated from traces
+                    }, indent=2)
+                    continue
+
+            # Add regular predictor (no tool optimization or no tools detected)
+            base_program[name] = pred.signature.instructions
 
         # Log base_program keys for debugging
         logger.info(f"Initialized base_program with {len(base_program)} components:")
