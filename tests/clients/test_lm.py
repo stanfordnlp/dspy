@@ -298,6 +298,7 @@ def test_reasoning_model_token_parameter():
         ("openai/gpt-5", True),
         ("openai/gpt-5-mini", True),
         ("openai/gpt-5-nano", True),
+        ("azure/gpt-5-chat", False),  # gpt-5-chat is NOT a reasoning model
         ("openai/gpt-4", False),
         ("anthropic/claude-2", False),
     ]
@@ -318,7 +319,7 @@ def test_reasoning_model_token_parameter():
             assert lm.kwargs["max_tokens"] == 1000
 
 
-@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano"])
+@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano", "openai/gpt-5-mini"])
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
@@ -345,6 +346,21 @@ def test_reasoning_model_requirements(model_name):
     )
     assert lm.kwargs["temperature"] is None
     assert lm.kwargs["max_completion_tokens"] is None
+
+
+def test_gpt_5_chat_not_reasoning_model():
+    """Test that gpt-5-chat is NOT treated as a reasoning model."""
+    # Should NOT raise validation error - gpt-5-chat is not a reasoning model
+    lm = dspy.LM(
+        model="openai/gpt-5-chat",
+        temperature=0.7,  # Can be any value
+        max_tokens=1000,  # Can be any value
+    )
+    # Should use max_tokens, not max_completion_tokens
+    assert "max_completion_tokens" not in lm.kwargs
+    assert "max_tokens" in lm.kwargs
+    assert lm.kwargs["max_tokens"] == 1000
+    assert lm.kwargs["temperature"] == 0.7
 
 
 def test_dump_state():
