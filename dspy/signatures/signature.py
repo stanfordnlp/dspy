@@ -161,7 +161,6 @@ class SignatureMeta(type(BaseModel)):
             # Python 3.13 and earlier
             # Set `str` as the default type for all fields
             raw_annotations = namespace.get("__annotations__", {})
-            
         for name, field in namespace.items():
             if not isinstance(field, FieldInfo):
                 continue  # Don't add types to non-field attributes
