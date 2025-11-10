@@ -574,36 +574,41 @@ class GEPA(Teleprompter):
                 continue
 
             if self.enable_tool_optimization:
-                normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
+                # Get predictor names via object identity
+                extract_predictor = module.extract.predict
+                react_predictor = module.react
 
-                # Get first predictor name as module identifier
-                for pred_name, _ in module.named_predictors():
-                    comp_name = pred_name if not normalized_path else f"{normalized_path}.{pred_name}"
-                    # Use full normalized path to avoid collapsing nested modules
-                    # e.g., "multi_agent.coordinator" not "multi_agent"
-                    module_key = f"{REACT_MODULE_PREFIX}:{normalized_path}" if normalized_path else REACT_MODULE_PREFIX
+                extract_predictor_name = None
+                react_predictor_name = None
 
-                    # Build JSON config with tool args for reflection
-                    config = {
-                        "react": module.react.signature.instructions,
-                        "extract": module.extract.predict.signature.instructions,
-                        "tools": {
-                            tool_name: {
-                                "desc": tool.desc,
-                                "args": tool.args,
-                                "arg_desc": tool.arg_desc or {}
-                            }
-                            for tool_name, tool in module.tools.items()
-                            if tool_name != "finish"
+                for name, pred in student.named_predictors():
+                    if pred is extract_predictor:
+                        extract_predictor_name = name
+                    elif pred is react_predictor:
+                        react_predictor_name = name
+
+                # Use extract.predict as the key since it is the target predictor for feedback lookup
+                module_key = f"{REACT_MODULE_PREFIX}:{extract_predictor_name}"
+
+                # Build JSON config with dynamic predictor names as keys
+                config = {
+                    react_predictor_name: react_predictor.signature.instructions,
+                    extract_predictor_name: extract_predictor.signature.instructions,
+                    "tools": {
+                        tool_name: {
+                            "desc": tool.desc,
+                            "args": tool.args,
+                            "arg_desc": tool.arg_desc or {}
                         }
+                        for tool_name, tool in module.tools.items()
+                        if tool_name != "finish"  # Skip the built-in finish tool
                     }
+                }
 
-                    # Replace predictor keys with module key and extract key to prevent duplicates
-                    base_program.pop(comp_name, None)
-                    extract_key = f"{normalized_path}.extract.predict" if normalized_path else "extract.predict"
-                    base_program.pop(extract_key, None)
-                    base_program[module_key] = json.dumps(config, indent=2)
-                    break
+                # Remove the individual predictor keys (they're now part of ReAct module config)
+                base_program.pop(react_predictor_name, None)
+                base_program.pop(extract_predictor_name, None)
+                base_program[module_key] = json.dumps(config, indent=2)
             else:
                 logger.warning(
                     f"Detected ReAct module at '{module_path}'. Consider using "
