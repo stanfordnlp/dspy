@@ -15,6 +15,7 @@ from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import (
     REACT_MODULE_PREFIX,
+    TOOL_MODULE_PREFIX,
     DspyAdapter,
     DSPyTrace,
     PredictorFeedbackFn,
@@ -556,8 +557,10 @@ class GEPA(Teleprompter):
 
             # Detect tool-using predictors
             if self.enable_tool_optimization and any(is_tool_field(field.annotation) for field in pred.signature.input_fields.values()):
-                base_program[name] = json.dumps({
-                    "predictor": pred.signature.instructions,
+                # Use prefixed key for tool modules
+                module_key = f"{TOOL_MODULE_PREFIX}:{name}"
+                base_program[module_key] = json.dumps({
+                    name: pred.signature.instructions,  # Use actual predictor name as key
                     "tools": {}  # Populated from traces
                 }, indent=2)
             else:
