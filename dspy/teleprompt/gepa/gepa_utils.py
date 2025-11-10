@@ -10,6 +10,7 @@ import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.tool import Tool
 from dspy.evaluate import Evaluate
 from dspy.predict.react import ReAct
 from dspy.primitives import Example, Prediction
@@ -18,8 +19,9 @@ from dspy.teleprompt.bootstrap_trace import TraceData
 logger = logging.getLogger(__name__)
 
 
-# Constants for ReAct module optimization
+# Constants for module optimization
 REACT_MODULE_PREFIX = "react_module"
+TOOL_MODULE_PREFIX = "tool_module"
 
 
 class LoggerAdapter:
@@ -201,18 +203,22 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         # Apply ReAct module updates (JSON configs for ReAct modules: react, extract, tools)
         if self.enable_tool_optimization:
-
-            for module_path, module in new_prog.named_sub_modules():
+            for _, module in new_prog.named_sub_modules():
                 # Only process ReAct modules
                 if not isinstance(module, ReAct):
                     continue
 
-                # Build module key
-                normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
-                module_key = REACT_MODULE_PREFIX if normalized_path == "" else f"{REACT_MODULE_PREFIX}:{normalized_path}"
+                # Find module key using extract predictor name
+                extract_predictor = module.extract.predict
+                module_key = None
+
+                for name, pred in new_prog.named_predictors():
+                    if pred is extract_predictor:
+                        module_key = f"{REACT_MODULE_PREFIX}:{name}"
+                        break
 
                 # Check if this module was optimized
-                if module_key not in candidate:
+                if module_key is None or module_key not in candidate:
                     continue
 
                 # Deserialize JSON containing optimized module configuration
@@ -220,14 +226,23 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     module_config = json.loads(candidate[module_key])
                     logger.debug(f"Applying optimized module config to {module_key}")
 
-                    # Apply react instruction
-                    if "react" in module_config:
-                        module.react.signature = module.react.signature.with_instructions(module_config["react"])
+                    # Find predictor names for this module
+                    react_pred_name = None
+                    extract_pred_name = None
+                    for pred_name, pred in new_prog.named_predictors():
+                        if pred is module.react:
+                            react_pred_name = pred_name
+                        elif pred is module.extract.predict:
+                            extract_pred_name = pred_name
+
+                    # Apply react instruction using actual predictor name as key
+                    if react_pred_name and react_pred_name in module_config:
+                        module.react.signature = module.react.signature.with_instructions(module_config[react_pred_name])
                         logger.debug("  Updated react instruction")
 
-                    # Apply extract instruction
-                    if "extract" in module_config:
-                        module.extract.predict.signature = module.extract.predict.signature.with_instructions(module_config["extract"])
+                    # Apply extract instruction using actual predictor name as key
+                    if extract_pred_name and extract_pred_name in module_config:
+                        module.extract.predict.signature = module.extract.predict.signature.with_instructions(module_config[extract_pred_name])
                         logger.debug("  Updated extract instruction")
 
                     # Apply tool descriptions
@@ -308,10 +323,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self, candidate, eval_batch, components_to_update
     ) -> dict[str, list[ReflectiveExample]]:
         from dspy.teleprompt.bootstrap_trace import FailedPrediction
-
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
+
+        # collect unique tools from traces for each tool-using predictor, serialize to candidate at end
+        tools_by_predictor: dict[str, dict[str, Tool]] = {}
 
         # Debug: Log what components we're trying to update
         logger.info(f"make_reflective_dataset called with components_to_update: {components_to_update}")
@@ -319,40 +336,38 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         for pred_name in components_to_update:
             logger.info(f"Processing component: {pred_name}")
 
-            # Handle ReAct module components - use extract predictor for final outputs
+            # Extract predictor name from component key
             if pred_name.startswith(REACT_MODULE_PREFIX):
-                # Extract the target path from the key
-                target_path = pred_name.removeprefix(f"{REACT_MODULE_PREFIX}:") if ":" in pred_name else ""
+                target_name = pred_name.removeprefix(f"{REACT_MODULE_PREFIX}:")
 
-                # Find the ReAct module by traversing program structure (same as regular predictors)
-                react_module = None
-                for module_path, m in program.named_sub_modules():
-                    if not isinstance(m, ReAct):
-                        continue
+            elif pred_name.startswith(TOOL_MODULE_PREFIX):
+                target_name = pred_name.removeprefix(f"{TOOL_MODULE_PREFIX}:")
+                tools_by_predictor[pred_name] = {}
 
-                    # Normalize path (same pattern as build_program)
-                    normalized_path = module_path.removeprefix("self.") if module_path != "self" else ""
-                    if normalized_path == target_path:
-                        react_module = m
-                        break
+                # Helper function for extracting tools (only needed for tool modules)
+                def extract_tools_from_value(value, tools_dict):
+                    """Extract Tool objects from value (handles single, list, dict)."""
+                    if isinstance(value, Tool):
+                        tools_dict[value.name] = value
+                    elif isinstance(value, (list, tuple, set)):
+                        for item in value:
+                            extract_tools_from_value(item, tools_dict)
+                    elif isinstance(value, dict):
+                        for item in value.values():
+                            extract_tools_from_value(item, tools_dict)
 
-                if react_module is None:
-                    logger.warning(f"ReAct module not found for key: {pred_name}")
-                    continue
-
-                module = react_module.extract.predict
-                logger.debug(f"  ReAct module detected: using {target_path or 'top-level'}.extract for final outputs")
-
-            # Regular predictor - find by name
             else:
-                module = None
-                for name, m in program.named_predictors():
-                    if name == pred_name:
-                        module = m
-                        break
-                assert module is not None
-                logger.debug(f"  Regular predictor: {pred_name}")
+                target_name = pred_name
 
+            # Find the predictor object
+            module = None
+            for name, m in program.named_predictors():
+                if name == target_name:
+                    module = m
+                    break
+            assert module is not None, f"Predictor not found: {target_name}"
+
+            # Create reflective examples from traces
             items: list[ReflectiveExample] = []
             for data in eval_batch.trajectories or []:
                 trace = data["trace"]
@@ -372,13 +387,17 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     logger.debug("    Skipping example - no matching trace instances")
                     continue
 
-                # For ReAct modules, use LAST extract invocation (has trajectory + final outputs)
+                # Extract tools that are used in the trace instances
+                if pred_name.startswith(TOOL_MODULE_PREFIX):
+                    for t in trace_instances:
+                        trace_inputs = t[1]
+                        for input_value in trace_inputs.values():
+                            extract_tools_from_value(input_value, tools_by_predictor[pred_name])
+
+                # For ReAct modules, use LAST extract invocation (has all trajectory data + final outputs)
                 if pred_name.startswith(REACT_MODULE_PREFIX):
                     selected = trace_instances[-1]
-                    logger.debug(f"  Using LAST extract call ({len(trace_instances)} total) with trajectory + final outputs")
-                    if "trajectory" in selected[1]:
-                        traj_preview = str(selected[1]["trajectory"])[:100]
-                        logger.debug(f"  Trajectory preview: {traj_preview}...")
+
                 else:
                     selected = None
                     for t in trace_instances:
@@ -441,14 +460,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = "Your output failed to parse. Follow this structure:\n" + structure_instruction
                     # d['score'] = self.failure_score
                 else:
-                    # Map react_module component keys to their react predictor names for feedback lookup
-                    if pred_name.startswith(REACT_MODULE_PREFIX):
-                        # "react_module" → "react", "react_module:salary_agent" → "salary_agent.react"
-                        actual_pred_name = pred_name.split(":", 1)[1] + ".react" if ":" in pred_name else "react"
-                    else:
-                        actual_pred_name = pred_name
-
-                    feedback_fn = self.feedback_map[actual_pred_name]
+                    # Use actual predictor name for feedback lookup
+                    feedback_fn = self.feedback_map[target_name]
                     fb = feedback_fn(
                         predictor_output=outputs,
                         predictor_inputs=inputs,
@@ -482,6 +495,23 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
             ret_d[pred_name] = items
             logger.info(f"  Created {len(items)} reflective examples for {pred_name}")
+
+        # Update candidate configs with extracted tools (after all traces processed)
+        for pred_name, tools_dict in tools_by_predictor.items():
+            if not tools_dict:
+                continue
+
+            config = json.loads(candidate[pred_name])
+            config["tools"] = {
+                tool_name: {
+                    "desc": tool.desc,
+                    "args": tool.args,
+                    "arg_desc": tool.arg_desc or {}
+                }
+                for tool_name, tool in tools_dict.items()
+            }
+            candidate[pred_name] = json.dumps(config, indent=2)
+            logger.info(f"Extracted {len(tools_dict)} tools for {pred_name}: {list(tools_dict.keys())}")
 
         if len(ret_d) == 0:
             raise Exception("No valid predictions found for any module.")
