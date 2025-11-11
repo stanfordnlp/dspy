@@ -383,11 +383,7 @@ class ToolModuleProposer(ProposalFn):
                 continue
 
             # Deserialize module config
-            try:
-                current_module_config = json.loads(candidate[module_key])
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to deserialize config for {module_key}: {e}")
-                continue
+            current_module_config = json.loads(candidate[module_key])
 
             # Extract predictor keys (all keys except "tools")
             # Predictor keys are expected to be 1 for tool modules and 2 for ReAct modules (extra extract predictor)

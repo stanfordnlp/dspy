@@ -161,7 +161,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             instruction_components = []
 
             for c in components_to_update:
-                if c.startswith(REACT_MODULE_PREFIX) or c.startswith(TOOL_MODULE_PREFIX):
+                if c.startswith((REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX)):
                     tool_module_components.append(c)
                 else:
                     instruction_components.append(c)
