@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import dspy
 from dspy.clients.fabric_azure_openai import FabricAzureOpenAI
 
 
@@ -242,3 +243,71 @@ class TestFabricAzureOpenAI:
             lm.forward()
 
         assert "Either 'prompt' or 'messages' must be provided" in str(exc_info.value)
+
+
+class TestFabricAzureOpenAIIntegration:
+    """Test suite for FabricAzureOpenAI integration with dspy.LM."""
+
+    def test_lm_with_microsoftfabric_prefix(self):
+        """Test that dspy.LM with microsoftfabric/ prefix returns FabricAzureOpenAI."""
+        lm = dspy.LM("microsoftfabric/gpt-4o")
+
+        assert isinstance(lm, FabricAzureOpenAI)
+        assert lm.deployment_name == "gpt-4o"
+        assert lm.model == "gpt-4o"
+
+    def test_lm_with_microsoftfabric_prefix_custom_params(self):
+        """Test that custom parameters are passed through."""
+        lm = dspy.LM(
+            "microsoftfabric/gpt-4o",
+            temperature=0.8,
+            max_tokens=3000,
+            cache=False,
+        )
+
+        assert isinstance(lm, FabricAzureOpenAI)
+        assert lm.kwargs.get("temperature") == 0.8
+        assert lm.kwargs.get("max_tokens") == 3000
+        assert lm.cache is False
+
+    def test_lm_with_microsoftfabric_reasoning_model(self):
+        """Test that reasoning models are detected with microsoftfabric prefix."""
+        lm = dspy.LM("microsoftfabric/o1-preview")
+
+        assert isinstance(lm, FabricAzureOpenAI)
+        assert lm.is_reasoning_model is True
+        assert lm.deployment_name == "o1-preview"
+
+    def test_lm_without_microsoftfabric_prefix(self):
+        """Test that non-microsoftfabric models work as before."""
+        # This should create a regular LM instance, not FabricAzureOpenAI
+        lm = dspy.LM("openai/gpt-4o", api_key="test")
+
+        assert not isinstance(lm, FabricAzureOpenAI)
+        assert type(lm).__name__ == "LM"
+
+    def test_configure_with_microsoftfabric_lm(self):
+        """Test that dspy.configure works with microsoftfabric LM."""
+        lm = dspy.LM("microsoftfabric/gpt-4o")
+        dspy.configure(lm=lm)
+
+        # Verify it was configured
+        assert dspy.settings.lm is not None
+        assert isinstance(dspy.settings.lm, FabricAzureOpenAI)
+
+    def test_microsoftfabric_prefix_with_various_models(self):
+        """Test that various model names work with microsoftfabric prefix."""
+        test_cases = [
+            ("microsoftfabric/gpt-4o", "gpt-4o", False),
+            ("microsoftfabric/gpt-4", "gpt-4", False),
+            ("microsoftfabric/gpt-4-turbo", "gpt-4-turbo", False),
+            ("microsoftfabric/o1-mini", "o1-mini", True),
+            ("microsoftfabric/o3-preview", "o3-preview", True),
+            ("microsoftfabric/gpt-5", "gpt-5", True),
+        ]
+
+        for model_string, expected_deployment, expected_reasoning in test_cases:
+            lm = dspy.LM(model_string)
+            assert isinstance(lm, FabricAzureOpenAI)
+            assert lm.deployment_name == expected_deployment
+            assert lm.is_reasoning_model == expected_reasoning
