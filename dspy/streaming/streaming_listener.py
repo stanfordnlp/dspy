@@ -217,6 +217,9 @@ class StreamListener:
                 # the end_identifier for all LMs.
                 token = self.field_end_queue.get()
 
+            # TODO: Put adapter streaming handling into individial classes, e.g., `JSONAdapterStreamListener`,
+            # `ChatAdapterStreamListener`, `XMLAdapterStreamListener` instead of having many adhoc code in the
+            # `StreamListener` class.
             if isinstance(settings.adapter, JSONAdapter):
                 # JSONAdapter uses partial json parsing to detect the end of the field we are listening to, instead of
                 # relying on the end_identifier.
