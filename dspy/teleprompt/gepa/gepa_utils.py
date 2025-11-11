@@ -12,7 +12,6 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.tool import Tool
 from dspy.evaluate import Evaluate
-from dspy.predict.react import ReAct
 from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
@@ -105,9 +104,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.enable_tool_optimization = enable_tool_optimization
 
         self.propose_new_texts = self._build_propose_new_texts()
-
-        # Cache predictor names/signatures
-        self.named_predictors = list(self.student.named_predictors())
 
     def _build_propose_new_texts(self):
         """Build proposal function that routes components to appropriate proposers."""
@@ -202,79 +198,79 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
-        # Apply regular predictor instructions
-        for name, pred in new_prog.named_predictors():
-            if name in candidate:
-                pred.signature = pred.signature.with_instructions(candidate[name])
+        # Start with plain string instructions from candidate
+        improved_predictors = {
+            k: v for k, v in candidate.items()
+            if not k.startswith((REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX))
+        }
 
-        # Apply ReAct module updates (JSON configs for ReAct modules: react, extract, tools)
+        improved_tools = {}
         if self.enable_tool_optimization:
-            for _, module in new_prog.named_sub_modules():
-                # Only process ReAct modules
-                if not isinstance(module, ReAct):
+            for key, value in candidate.items():
+                if not key.startswith((REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX)):
                     continue
 
-                # Find module key using extract predictor name
-                extract_predictor = module.extract.predict
-                module_key = None
+                config = json.loads(value)
 
-                for name, pred in new_prog.named_predictors():
-                    if pred is extract_predictor:
-                        module_key = f"{REACT_MODULE_PREFIX}:{name}"
-                        break
+                # Parse module configs and override predictor instructions
+                for pred_name, instruction in config.items():
+                    if isinstance(instruction, str):
+                        improved_predictors[pred_name] = instruction
 
-                # Check if this module was optimized
-                if module_key is None or module_key not in candidate:
+                if "tools" in config:
+                    improved_tools.update(config["tools"])
+
+        # Update predictor instructions
+        for name, pred in new_prog.named_predictors():
+            if name in improved_predictors:
+                pred.signature = pred.signature.with_instructions(improved_predictors[name])
+
+        # Update tool descriptions
+        if improved_tools:
+            def collect_tools(obj):
+                all_tools = {}
+                visited = set()
+
+                def traverse(o):
+                    if id(o) in visited or not hasattr(o, "__dict__"):
+                        return
+                    visited.add(id(o))
+
+                    for attr_val in o.__dict__.values():
+                        if isinstance(attr_val, Tool):
+                            all_tools[attr_val.name] = attr_val
+                        elif isinstance(attr_val, list):
+                            for item in attr_val:
+                                if isinstance(item, Tool):
+                                    all_tools[item.name] = item
+                        elif isinstance(attr_val, dict):
+                            for item in attr_val.values():
+                                if isinstance(item, Tool):
+                                    all_tools[item.name] = item
+                        elif isinstance(attr_val, dspy.Module):
+                            traverse(attr_val)
+
+                traverse(obj)
+                return all_tools
+
+            all_tools = collect_tools(new_prog)
+
+            for tool_name, tool_config in improved_tools.items():
+                if tool_name not in all_tools:
                     continue
 
-                # Deserialize JSON containing optimized module configuration
-                try:
-                    module_config = json.loads(candidate[module_key])
-                    logger.debug(f"Applying optimized module config to {module_key}")
+                tool = all_tools[tool_name]
 
-                    # Find predictor names for this module
-                    react_pred_name = None
-                    extract_pred_name = None
-                    for pred_name, pred in new_prog.named_predictors():
-                        if pred is module.react:
-                            react_pred_name = pred_name
-                        elif pred is module.extract.predict:
-                            extract_pred_name = pred_name
+                if tool_config.get("desc"):
+                    tool.desc = tool_config["desc"]
 
-                    # Apply react instruction using actual predictor name as key
-                    if react_pred_name and react_pred_name in module_config:
-                        module.react.signature = module.react.signature.with_instructions(module_config[react_pred_name])
-                        logger.debug("  Updated react instruction")
-
-                    # Apply extract instruction using actual predictor name as key
-                    if extract_pred_name and extract_pred_name in module_config:
-                        module.extract.predict.signature = module.extract.predict.signature.with_instructions(module_config[extract_pred_name])
-                        logger.debug("  Updated extract instruction")
-
-                    # Apply tool descriptions
-                    if "tools" in module_config:
-                        for tool_name, tool_config in module_config["tools"].items():
-                            tool = module.tools[tool_name]
-
-                            # Update tool description
-                            if tool_config.get("desc"):
-                                tool.desc = tool_config["desc"]
-                                logger.debug(f"  Updated tool '{tool_name}' description")
-
-                            # Update tool arg descriptions
-                            arg_desc = tool_config.get("arg_desc")
-                            if arg_desc:
-                                tool.arg_desc = tool.arg_desc or {}
-                                tool.arg_desc.update(arg_desc)
-                                # Propagate to tool.args
-                                for arg_name, description in arg_desc.items():
-                                    if arg_name in tool.args:
-                                        tool.args[arg_name]["description"] = description
-                                logger.debug(f"  Updated tool '{tool_name}' arg descriptions: {list(arg_desc.keys())}")
-
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON config for {module_key}: {e}")
-                    raise
+                arg_desc = tool_config.get("arg_desc")
+                if arg_desc:
+                    tool.arg_desc = tool.arg_desc or {}
+                    tool.arg_desc.update(arg_desc)
+                    for arg_name, description in arg_desc.items():
+                        if arg_name in tool.args:
+                            tool.args[arg_name]["description"] = description
 
         return new_prog
 
