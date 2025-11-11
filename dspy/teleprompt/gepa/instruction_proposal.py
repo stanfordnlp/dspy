@@ -382,20 +382,15 @@ class ToolModuleProposer(ProposalFn):
                 logger.warning(f"Skipping {module_key}: not in candidate={module_key not in candidate}, not in reflective_dataset={module_key not in reflective_dataset}")
                 continue
 
-            # Deserialize module config
             current_module_config = json.loads(candidate[module_key])
 
-            # Extract predictor keys (strings are predictor instructions)
-            # Predictor keys are expected to be 1 for tool modules and 2 for ReAct modules (extra extract predictor)
+            # Predictor keys: 1 for tool modules, 2 for ReAct modules (extra extract predictor)
             predictor_keys = [k for k, v in current_module_config.items() if isinstance(v, str)]
-            logger.debug(f"Predictor keys: {predictor_keys}")
             primary_predictor_key = predictor_keys[0]
             extract_predictor_key = predictor_keys[1] if module_key.startswith(REACT_MODULE_PREFIX) else None
 
-            # Reconstruct Tool objects from JSON metadata so the adapter can format them for the reflection LM.
-            # Tool.func cannot be serialized in JSON, so we use a placeholder (never executed).
+            # Reconstruct Tool objects from JSON (func is placeholder since it can't be serialized)
             current_tools_dict = current_module_config.get("tools", {})
-            logger.info(f"Found {len(current_tools_dict)} tools: {list(current_tools_dict.keys())}")
             tools_list = []
             for tool_name, tool_info in current_tools_dict.items():
                 tool = dspy.Tool(
@@ -407,12 +402,9 @@ class ToolModuleProposer(ProposalFn):
                 tool.arg_desc = tool_info.get("arg_desc", {})
                 tools_list.append(tool)
 
-            # Build dynamic signature by extending base signature
+            # Build dynamic signature with tool-specific output fields
             signature = GenerateImprovedToolModuleDescriptionsFromFeedback
 
-            logger.debug(f"Building dynamic signature with {len(tools_list)} tools...")
-
-            # Add dynamic tool description and arg descriptions output fields
             for tool in tools_list:
                 tool_name = tool.name
                 tool_info = current_tools_dict[tool_name]
@@ -457,34 +449,19 @@ class ToolModuleProposer(ProposalFn):
 
             result = propose_descriptions(**kwargs)
 
-            # Build improved config from reflection LM suggestions
-            # Reflection LM returns None for components it doesn't want to change, or text for improvements
-            logger.info("Building improved config from reflection LM response...")
+            # Build improved config (reflection LM returns None to keep original, or new text)
             improved_module_config = {}
 
-            # Update primary predictor instruction if reflection LM suggested improvement
             if result.improved_predictor_instruction is not None:
                 improved_module_config[primary_predictor_key] = result.improved_predictor_instruction
-                logger.debug(f"{primary_predictor_key}: {len(result.improved_predictor_instruction)} chars")
-            else:
-                logger.debug(f"{primary_predictor_key}: reflection LM suggests keeping original")
 
-            # Update extract instruction if exists and reflection LM suggested improvement
             if extract_predictor_key is not None and result.improved_extract_instruction is not None:
                 improved_module_config[extract_predictor_key] = result.improved_extract_instruction
-                logger.debug(f"{extract_predictor_key}: {len(result.improved_extract_instruction)} chars")
-            else:
-                logger.debug(f"{extract_predictor_key}: reflection LM suggests keeping original")
 
-            # Update tool descriptions if reflection LM suggested improvements
             improved_module_config["tools"] = {}
             for tool_name, tool_info in current_tools_dict.items():
-                # Check if reflection LM suggested improving this tool's description
                 improved_desc = getattr(result, f"improved_tool_{tool_name}_desc", None)
-
-                # Skip if reflection LM suggests keeping original
                 if improved_desc is None:
-                    logger.debug(f"  Tool '{tool_name}': reflection LM suggests keeping original")
                     continue
 
                 improved_tool_info = {
@@ -492,23 +469,17 @@ class ToolModuleProposer(ProposalFn):
                     "arg_desc": {}
                 }
 
-                # Update parameter descriptions if reflection LM suggested improvements
                 if tool_info.get("args"):
                     for arg_name in tool_info["args"].keys():
                         field_name = f"improved_tool_{tool_name}_arg_{arg_name}_desc"
                         arg_desc = getattr(result, field_name, None)
-                        if arg_desc is not None:  # Reflection LM suggested improvement
+                        if arg_desc is not None:
                             improved_tool_info["arg_desc"][arg_name] = arg_desc
 
                 improved_module_config["tools"][tool_name] = improved_tool_info
-                logger.debug(f"  Tool '{tool_name}': desc={len(improved_desc)} chars, params={len(improved_tool_info['arg_desc'])}")
 
-            # Serialize back to JSON
             updated_components[module_key] = json.dumps(improved_module_config, indent=2)
-            logger.info(f"Successfully optimized {module_key}")
-            logger.debug(f"Serialized config length: {len(updated_components[module_key])} chars")
 
-        logger.info(f"\nToolModuleProposer returning {len(updated_components)} components: {list(updated_components.keys())}")
         return updated_components
 
     def _format_examples(self, reflective_dataset: list[ReflectiveExample]) -> str:

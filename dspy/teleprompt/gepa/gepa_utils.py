@@ -171,7 +171,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
                 # Handle regular instruction components
                 if instruction_components:
-                    logger.debug(f"Routing {len(instruction_components)} instruction components to instruction_proposer")
                     results.update(
                         instruction_proposer(
                             candidate=candidate,
@@ -182,7 +181,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 # Handle components with tools (ReAct and Tool modules)
                 if tool_module_components:
-                    logger.debug(f"Routing {len(tool_module_components)} tool_module components to tool_module_proposer")
                     results.update(
                         tool_module_proposer(
                             candidate=candidate,
@@ -212,7 +210,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 config = json.loads(value)
 
-                # Parse module configs and override predictor instructions
                 for pred_name, instruction in config.items():
                     if isinstance(instruction, str):
                         improved_predictors[pred_name] = instruction
@@ -331,12 +328,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         # collect unique tools from traces for each tool-using predictor, serialize to candidate at end
         tools_by_predictor: dict[str, dict[str, Tool]] = {}
 
-        # Debug: Log what components we're trying to update
-        logger.info(f"make_reflective_dataset called with components_to_update: {components_to_update}")
-
         for pred_name in components_to_update:
-            logger.info(f"Processing component: {pred_name}")
-
             # Extract predictor name from component key
             if pred_name.startswith(REACT_MODULE_PREFIX):
                 target_name = pred_name.removeprefix(f"{REACT_MODULE_PREFIX}:")
@@ -378,14 +370,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 if hasattr(module_score, "score"):
                     module_score = module_score["score"]
 
-                logger.debug(f"  Processing trace with {len(trace)} entries for example: {example}")
                 trace_instances = [t for t in trace if t[0].signature.equals(module.signature)]
-                logger.debug(f"    Found {len(trace_instances)} matching trace instances for signature: {module.signature}")
                 if not self.add_format_failure_as_feedback:
                     trace_instances = [t for t in trace_instances if not isinstance(t[2], FailedPrediction)]
-                    logger.debug(f"    After filtering FailedPrediction: {len(trace_instances)} instances")
                 if len(trace_instances) == 0:
-                    logger.debug("    Skipping example - no matching trace instances")
                     continue
 
                 # Extract tools that are used in the trace instances
@@ -479,23 +467,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 items.append(d)
 
-                # Log exact reflective example that reflection LM will see
-                if pred_name.startswith(REACT_MODULE_PREFIX) and len(items) == 1:
-                    logger.info(f"  First reflective example for {pred_name}:")
-                    logger.info(f"    Inputs: {list(d['Inputs'].keys())}")
-                    if "trajectory" in d["Inputs"]:
-                        traj = d["Inputs"]["trajectory"]
-                        logger.info(f"    Trajectory length: {len(traj)} chars")
-                        logger.info(f"    Trajectory sample:\n{traj[:300]}...")
-                    logger.info(f"    Outputs: {list(d['Generated Outputs'].keys()) if isinstance(d['Generated Outputs'], dict) else '<string>'}")
-                    logger.info(f"    Feedback: {d['Feedback'][:100]}...")
-
             if len(items) == 0:
                 logger.warning(f"  No valid reflective examples found for {pred_name}")
                 continue
 
             ret_d[pred_name] = items
-            logger.info(f"  Created {len(items)} reflective examples for {pred_name}")
 
         # Update candidate configs with extracted tools (after all traces processed)
         for pred_name, tools_dict in tools_by_predictor.items():
@@ -512,7 +488,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for tool_name, tool in tools_dict.items()
             }
             candidate[pred_name] = json.dumps(config, indent=2)
-            logger.info(f"Extracted {len(tools_dict)} tools for {pred_name}: {list(tools_dict.keys())}")
 
         if len(ret_d) == 0:
             raise Exception("No valid predictions found for any module.")
