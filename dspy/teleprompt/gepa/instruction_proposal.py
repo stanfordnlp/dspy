@@ -385,9 +385,9 @@ class ToolModuleProposer(ProposalFn):
             # Deserialize module config
             current_module_config = json.loads(candidate[module_key])
 
-            # Extract predictor keys (all keys except "tools")
+            # Extract predictor keys (strings are predictor instructions)
             # Predictor keys are expected to be 1 for tool modules and 2 for ReAct modules (extra extract predictor)
-            predictor_keys = [k for k in current_module_config if k != "tools"]
+            predictor_keys = [k for k, v in current_module_config.items() if isinstance(v, str)]
             logger.debug(f"Predictor keys: {predictor_keys}")
             primary_predictor_key = predictor_keys[0]
             extract_predictor_key = predictor_keys[1] if module_key.startswith(REACT_MODULE_PREFIX) else None

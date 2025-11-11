@@ -217,8 +217,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     if isinstance(instruction, str):
                         improved_predictors[pred_name] = instruction
 
-                if "tools" in config:
-                    improved_tools.update(config["tools"])
+                improved_tools.update(config.get("tools", {}))
 
         # Update predictor instructions
         for name, pred in new_prog.named_predictors():
