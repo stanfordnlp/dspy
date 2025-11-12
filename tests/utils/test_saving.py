@@ -14,7 +14,7 @@ def test_save_predict(tmp_path):
     assert (tmp_path / "metadata.json").exists()
     assert (tmp_path / "program.pkl").exists()
 
-    loaded_predict = dspy.load(tmp_path, dangerously_allow_pickle=True)
+    loaded_predict = dspy.load(tmp_path, allow_pickle=True)
     assert isinstance(loaded_predict, dspy.Predict)
 
     assert predict.signature == loaded_predict.signature
@@ -29,7 +29,7 @@ def test_save_custom_model(tmp_path):
     model = CustomModel()
     model.save(tmp_path, save_program=True)
 
-    loaded_model = dspy.load(tmp_path, dangerously_allow_pickle=True)
+    loaded_model = dspy.load(tmp_path, allow_pickle=True)
     assert isinstance(loaded_model, CustomModel)
 
     assert len(model.predictors()) == len(loaded_model.predictors())
@@ -51,7 +51,7 @@ def test_save_model_with_custom_signature(tmp_path):
     predict.signature = predict.signature.with_instructions("You are a helpful assistant.")
     predict.save(tmp_path, save_program=True)
 
-    loaded_predict = dspy.load(tmp_path, dangerously_allow_pickle=True)
+    loaded_predict = dspy.load(tmp_path, allow_pickle=True)
     assert isinstance(loaded_predict, dspy.Predict)
 
     assert predict.signature == loaded_predict.signature
@@ -77,7 +77,7 @@ def test_save_compiled_model(tmp_path):
     compiled_predict = optimizer.compile(predict, trainset=trainset)
     compiled_predict.save(tmp_path, save_program=True)
 
-    loaded_predict = dspy.load(tmp_path, dangerously_allow_pickle=True)
+    loaded_predict = dspy.load(tmp_path, allow_pickle=True)
     assert compiled_predict.demos == loaded_predict.demos
     assert compiled_predict.signature == loaded_predict.signature
 
@@ -115,7 +115,7 @@ def test_load_with_version_mismatch(tmp_path):
 
         # Mock version during load
         with patch("dspy.utils.saving.get_dependency_versions", return_value=load_versions):
-            loaded_predict = dspy.load(tmp_path, dangerously_allow_pickle=True)
+            loaded_predict = dspy.load(tmp_path, allow_pickle=True)
 
         # Assert warnings were logged, and one warning for each mismatched dependency.
         assert len(handler.messages) == 3
@@ -143,23 +143,11 @@ def test_pickle_loading_requires_explicit_permission(tmp_path):
         dspy.load(tmp_path)
 
     # Should succeed with dangerously_allow_pickle
-    loaded_predict = dspy.load(tmp_path, dangerously_allow_pickle=True)
+    loaded_predict = dspy.load(tmp_path, allow_pickle=True)
     assert isinstance(loaded_predict, dspy.Predict)
 
 
-def test_pickle_loading_with_environment_variable(tmp_path, monkeypatch):
-    """Test that pickle loading can be enabled via environment variable."""
-    predict = dspy.Predict("question->answer")
-    predict.save(tmp_path, save_program=True)
 
-    # Should fail without environment variable
-    with pytest.raises(ValueError, match="Loading with pickle is not allowed"):
-        dspy.load(tmp_path)
-
-    # Should succeed with environment variable
-    monkeypatch.setenv("DSPY_ALLOW_PICKLE", "1")
-    loaded_predict = dspy.load(tmp_path)
-    assert isinstance(loaded_predict, dspy.Predict)
 
 
 def test_pkl_file_loading_requires_explicit_permission(tmp_path):
@@ -168,13 +156,13 @@ def test_pkl_file_loading_requires_explicit_permission(tmp_path):
     pkl_path = tmp_path / "model.pkl"
     predict.save(pkl_path)
 
-    # Should fail without dangerously_allow_pickle
+    # Should fail without allow_pickle
     new_predict = dspy.Predict("question->answer")
     with pytest.raises(ValueError, match="Loading .pkl files can run arbitrary code"):
         new_predict.load(pkl_path)
 
-    # Should succeed with dangerously_allow_pickle
-    new_predict.load(pkl_path, dangerously_allow_pickle=True)
+    # Should succeed with allow_pickle
+    new_predict.load(pkl_path, allow_pickle=True)
     assert new_predict.dump_state() == predict.dump_state()
 
 
@@ -184,7 +172,7 @@ def test_json_file_loading_works_without_permission(tmp_path):
     json_path = tmp_path / "model.json"
     predict.save(json_path)
 
-    # Should succeed without dangerously_allow_pickle
+    # Should succeed without allow_pickle
     new_predict = dspy.Predict("question->answer")
     new_predict.load(json_path)
     assert new_predict.dump_state() == predict.dump_state()

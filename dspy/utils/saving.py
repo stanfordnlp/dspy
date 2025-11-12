@@ -1,5 +1,4 @@
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,20 +24,20 @@ def get_dependency_versions():
     }
 
 
-def load(path: str, dangerously_allow_pickle: bool = False) -> "Module":
+def load(path: str, allow_pickle: bool = False) -> "Module":
     """Load saved DSPy model.
 
     This method is used to load a saved DSPy model with `save_program=True`, i.e., the model is saved with cloudpickle.
 
     Args:
         path (str): Path to the saved model.
-        dangerously_allow_pickle (bool): Whether to allow loading the model with pickle. This is dangerous and should only be used if you are sure you trust the source of the model.
+        allow_pickle (bool): Whether to allow loading the model with pickle. This is dangerous and should only be used if you are sure you trust the source of the model.
 
     Returns:
         The loaded model, a `dspy.Module` instance.
     """
-    if not os.getenv("DSPY_ALLOW_PICKLE") == "1" and not dangerously_allow_pickle:
-        raise ValueError("Loading with pickle is not allowed. Please set `dangerously_allow_pickle=True` or set the environment variable `DSPY_ALLOW_PICKLE=1` if you are sure you trust the source of the model.")
+    if not allow_pickle:
+        raise ValueError("Loading with pickle is not allowed. Please set `allow_pickle=True` if you are sure you trust the source of the model.")
 
     path = Path(path)
     if not path.exists():

@@ -39,7 +39,7 @@ compiled_dspy_program.save("./dspy_program/program.json", save_program=False)
 To save the state of your program to a pickle file:
 
 !!! danger "Security Warning: Pickle Files Can Execute Arbitrary Code"
-    Loading `.pkl` files can execute arbitrary code and may be dangerous. Only load pickle files from trusted sources in secure environments. **Prefer using `.json` files whenever possible**. If you must use pickle files, ensure you trust the source and use the `dangerously_allow_pickle=True` parameter when loading.
+    Loading `.pkl` files can execute arbitrary code and may be dangerous. Only load pickle files from trusted sources in secure environments. **Prefer using `.json` files whenever possible**. If you must use pickle files, ensure you trust the source and use the `allow_pickle=True` parameter when loading.
 
 ```python
 compiled_dspy_program.save("./dspy_program/program.pkl", save_program=False)
@@ -61,11 +61,11 @@ assert str(compiled_dspy_program.signature) == str(loaded_dspy_program.signature
 Or load the state from a pickle file:
 
 !!! danger "Security Warning"
-    Remember to use `dangerously_allow_pickle=True` when loading pickle files, and only load from trusted sources.
+    Remember to use `allow_pickle=True` when loading pickle files, and only load from trusted sources.
 
 ```python
 loaded_dspy_program = dspy.ChainOfThought("question -> answer") # Recreate the same program.
-loaded_dspy_program.load("./dspy_program/program.pkl", dangerously_allow_pickle=True)
+loaded_dspy_program.load("./dspy_program/program.pkl", allow_pickle=True)
 
 assert len(compiled_dspy_program.demos) == len(loaded_dspy_program.demos)
 for original_demo, loaded_demo in zip(compiled_dspy_program.demos, loaded_dspy_program.demos):
