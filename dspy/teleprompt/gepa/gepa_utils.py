@@ -383,7 +383,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         for input_value in trace_inputs.values():
                             extract_tools_from_value(input_value, tools_by_predictor[pred_name])
 
-                # For ReAct modules, use LAST extract invocation (has all trajectory data + final outputs)
+                # TODO: Workaround for ReAct's multiple predictor calls with partial trajectories.
+                # Using last trace ensures full aggregated trajectory (same as extract predictor).
+                # After PR #8999 merges (https://github.com/stanfordnlp/dspy/pull/8999), test if we can
+                # remove this and use extract predictor trace directly like other modules traces.
                 if pred_name.startswith(REACT_MODULE_PREFIX):
                     selected = trace_instances[-1]
 
