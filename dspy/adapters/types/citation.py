@@ -16,9 +16,11 @@ class Citations(Type):
 
     Example:
         ```python
+        import os
         import dspy
         from dspy.signatures import Signature
         from dspy.experimental import Citations, Document
+        os.environ["ANTHROPIC_API_KEY"] = "YOUR_ANTHROPIC_API_KEY"
 
         class AnswerWithSources(Signature):
             '''Answer questions using provided documents with citations.'''
@@ -42,8 +44,8 @@ class Citations(Type):
 
         # Use with a model that supports citations like Claude
         lm = dspy.LM("anthropic/claude-opus-4-1-20250805")
-        predictor = dspy.Predict(AnswerWithSources, lm=lm)
-        result = predictor(documents=docs, question="What temperature does water boil?")
+        predictor = dspy.Predict(AnswerWithSources)
+        result = predictor(documents=docs, question="What temperature does water boil?", lm=lm)
 
         for citation in result.citations.citations:
             print(citation.format())
@@ -52,6 +54,7 @@ class Citations(Type):
 
     class Citation(Type):
         """Individual citation with character location information."""
+
         type: str = "char_location"
         cited_text: str
         document_index: int
@@ -71,7 +74,7 @@ class Citations(Type):
                 "cited_text": self.cited_text,
                 "document_index": self.document_index,
                 "start_char_index": self.start_char_index,
-                "end_char_index": self.end_char_index
+                "end_char_index": self.end_char_index,
             }
 
             if self.document_title:
@@ -132,9 +135,7 @@ class Citations(Type):
             return data
 
         # Handle case where data is a list of dicts with citation info
-        if isinstance(data, list) and all(
-            isinstance(item, dict) and "cited_text" in item for item in data
-        ):
+        if isinstance(data, list) and all(isinstance(item, dict) and "cited_text" in item for item in data):
             return {"citations": [cls.Citation(**item) for item in data]}
 
         # Handle case where data is a dict
@@ -145,8 +146,7 @@ class Citations(Type):
                 if isinstance(citations_data, list):
                     return {
                         "citations": [
-                            cls.Citation(**item) if isinstance(item, dict) else item
-                            for item in citations_data
+                            cls.Citation(**item) if isinstance(item, dict) else item for item in citations_data
                         ]
                     }
             elif "cited_text" in data:
@@ -194,7 +194,6 @@ class Citations(Type):
         except Exception:
             pass
         return None
-
 
     @classmethod
     def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Citations"]:

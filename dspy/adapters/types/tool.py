@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Type, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
 import pydantic
 from jsonschema import ValidationError, validate
@@ -195,7 +195,7 @@ class Tool(Type):
             return result
 
     @classmethod
-    def from_mcp_tool(cls, session: "mcp.client.session.ClientSession", tool: "mcp.types.Tool") -> "Tool":
+    def from_mcp_tool(cls, session: "mcp.ClientSession", tool: "mcp.types.Tool") -> "Tool":
         """
         Build a DSPy tool from an MCP tool and a ClientSession.
 
@@ -268,6 +268,51 @@ class ToolCalls(Type):
                     "arguments": self.args,
                 },
             }
+
+        def execute(self, functions: dict[str, Any] | list[Tool] | None = None) -> Any:
+            """Execute this individual tool call and return its result.
+
+            Args:
+                functions: Functions to search for the tool. Can be:
+                          - Dict mapping tool names to functions: {"tool_name": function}
+                          - List of Tool objects: [Tool(function), ...]
+                          - None: Will search in caller's locals and globals (automatic lookup)
+
+            Returns:
+                The result from executing this tool call.
+
+            Raises:
+                ValueError: If the tool function cannot be found.
+                Exception: Any exception raised by the tool function.
+            """
+            func = None
+
+            if functions is None:
+                # Automatic lookup in caller's globals and locals
+                frame = inspect.currentframe().f_back
+                try:
+                    caller_globals = frame.f_globals
+                    caller_locals = frame.f_locals
+                    func = caller_locals.get(self.name) or caller_globals.get(self.name)
+                finally:
+                    del frame
+
+            elif isinstance(functions, dict):
+                func = functions.get(self.name)
+            elif isinstance(functions, list):
+                for tool in functions:
+                    if tool.name == self.name:
+                        func = tool.func
+                        break
+
+            if func is None:
+                raise ValueError(f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method.")
+
+            try:
+                args = self.args or {}
+                return func(**args)
+            except Exception as e:
+                raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
 
     tool_calls: list[ToolCall]
 

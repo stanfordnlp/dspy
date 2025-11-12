@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
@@ -23,6 +23,18 @@ class LoggerAdapter:
         self.logger.info(x)
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
+
+
+class ReflectiveExample(TypedDict):
+    """
+    Structure of individual examples in the reflective dataset.
+
+    Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
+    """
+    Inputs: dict[str, Any]                              # Predictor inputs (may include str, dspy.Image, etc.)
+    Generated_Outputs: dict[str, Any] | str             # Success: dict with output fields, Failure: error message string
+    Feedback: str                                       # Always a string - from metric function or parsing error message
+
 
 class ScoreWithFeedback(Prediction):
     score: float
@@ -164,11 +176,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [s["score"] if hasattr(s, "score") else s for s in scores]
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
-    def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+    def make_reflective_dataset(self, candidate, eval_batch, components_to_update) -> dict[str, list[ReflectiveExample]]:
         from dspy.teleprompt.bootstrap_trace import FailedPrediction
         program = self.build_program(candidate)
 
-        ret_d: dict[str, list[dict[str, Any]]] = {}
+        ret_d: dict[str, list[ReflectiveExample]] = {}
         for pred_name in components_to_update:
             module = None
             for name, m in program.named_predictors():
@@ -177,7 +189,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     break
             assert module is not None
 
-            items: list[dict[str, Any]] = []
+            items: list[ReflectiveExample] = []
             for data in eval_batch.trajectories or []:
                 trace = data["trace"]
                 example = data["example"]

@@ -214,19 +214,36 @@ class GEPA(Teleprompter):
             a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` 
             for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
-        instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol. 
-            If provided, GEPA will use this custom proposer instead of its default instruction proposal 
-            mechanism to generate improved instructions based on feedback from failed examples. This is 
-            particularly useful when you need specialized instruction generation for multimodal inputs 
-            (like dspy.Image) or custom types. Use `MultiModalInstructionProposer()` from 
-            `dspy.teleprompt.gepa.instruction_proposal` for handling visual content. If None (default), 
-            GEPA uses its built-in text-optimized proposer (see `gepa.strategies.instruction_proposal.InstructionProposalSignature` 
-            for reference implementation).
+        instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol.
+            **Default: None (recommended for most users)** - Uses GEPA's proven instruction proposer from 
+            the [GEPA library](https://github.com/gepa-ai/gepa), which implements the 
+            [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). This default 
+            proposer is highly capable and was validated across diverse experiments reported in the GEPA 
+            paper and tutorials.
+
+            See documentation on custom instruction proposers 
+            [here](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#custom-instruction-proposers).
+            
+            **Advanced Feature**: Only needed for specialized scenarios:
+            - **Multi-modal handling**: Processing dspy.Image inputs alongside textual information
+            - **Nuanced control over constraints**: Fine-grained control over instruction length, format, 
+              and structural requirements beyond standard feedback mechanisms
+            - **Domain-specific knowledge injection**: Specialized terminology or context that cannot be 
+              provided through feedback_func alone
+            - **Provider-specific prompting**: Optimizations for specific LLM providers (OpenAI, Anthropic) 
+              with unique formatting preferences
+            - **Coupled component updates**: Coordinated updates of multiple components together rather 
+              than independent optimization
+            - **External knowledge integration**: Runtime access to databases, APIs, or knowledge bases
+            
+            The default proposer handles the vast majority of use cases effectively. Use 
+            MultiModalInstructionProposer() from dspy.teleprompt.gepa.instruction_proposal for visual 
+            content or implement custom ProposalFn for highly specialized requirements.
             
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called 
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer. 
             Custom instruction proposers can invoke their own LLMs if needed.
-        component_selector: Custom component selector implementing the ReflectionComponentSelector protocol,
+        component_selector: Custom component selector implementing the [ReflectionComponentSelector](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol,
             or a string specifying a built-in selector strategy. Controls which components (predictors) are selected 
             for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components 
             one at a time. Available string options: 'round_robin' (cycles through components sequentially), 
@@ -257,6 +274,34 @@ class GEPA(Teleprompter):
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
             raised if a mismatch in module-level and predictor-level score is detected.
         seed: The random seed to use for reproducibility. Default is 0.
+        gepa_kwargs: (Optional) Additional keyword arguments to pass directly to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py).
+            Useful for accessing advanced GEPA features not directly exposed through DSPy's GEPA interface.
+            
+            Available parameters:
+            - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/batch_sampler.py) instance or a string 
+              ('epoch_shuffled'). Defaults to 'epoch_shuffled'. Only valid when reflection_minibatch_size is None.
+            - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before 
+              attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than 'full_eval'. 
+              Default is 5.
+            - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single 
+              [StopperProtocol](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py) or a list of StopperProtocol instances. 
+              Examples: [FileStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
+              [TimeoutStopCondition](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
+              [SignalStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
+              [NoImprovementStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
+              or custom stopping logic. Note: This overrides the default 
+              max_metric_calls stopping condition.
+            - use_cloudpickle: Use cloudpickle instead of pickle for serialization. Can be helpful when the 
+              serialized state contains dynamically generated DSPy signatures. Default is False.
+            - val_evaluation_policy: Strategy controlling which validation ids to score each iteration. Can be 
+              'full_eval' (evaluate every id each time) or an [EvaluationPolicy](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/eval_policy.py) instance. Default is 'full_eval'.
+            - use_mlflow: If True, enables MLflow integration to log optimization progress. 
+              MLflow can be used alongside Weights & Biases (WandB).
+            - mlflow_tracking_uri: The tracking URI to use for MLflow (when use_mlflow=True).
+            - mlflow_experiment_name: The experiment name to use for MLflow (when use_mlflow=True).
+            
+            Note: Parameters already handled by DSPy's GEPA class will be overridden by the direct parameters 
+            and should not be passed through gepa_kwargs.
         
     Note:
         Budget Configuration: Exactly one of `auto`, `max_full_evals`, or `max_metric_calls` must be provided.
@@ -313,6 +358,8 @@ class GEPA(Teleprompter):
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
+        # GEPA passthrough kwargs
+        gepa_kwargs: dict | None = None
     ):
         try:
             inspect.signature(metric).bind(None, None, None, None, None)
@@ -381,6 +428,7 @@ class GEPA(Teleprompter):
 
         self.custom_instruction_proposer = instruction_proposer
         self.component_selector = component_selector
+        self.gepa_kwargs = gepa_kwargs or {}
 
     def auto_budget(self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5) -> int:
         import numpy as np
@@ -451,7 +499,7 @@ class GEPA(Teleprompter):
         logger.info(f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set.")
 
         if valset is None:
-            logger.warning("No valset provided; Using trainset as valset. This is useful as an inference-time scaling strategy where you want GEPA to find the best solutions for the provided tasks in the trainse, as it make GEPA overfit prompts to the provided trainset. In order to ensure generalization and perform well on unseen tasks, please provide separate trainset and valset. Provide the smallest valset that is just large enough to match the downstream task distribution, while keeping trainset as large as possible.")
+            logger.warning("No valset provided; Using trainset as valset. This is useful as an inference-time scaling strategy where you want GEPA to find the best solutions for the provided tasks in the trainset, as it makes GEPA overfit prompts to the provided trainset. In order to ensure generalization and perform well on unseen tasks, please provide separate trainset and valset. Provide the smallest valset that is just large enough to match the downstream task distribution, while keeping trainset as large as possible.")
         valset = valset or trainset
         logger.info(f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible.")
 
@@ -538,6 +586,7 @@ class GEPA(Teleprompter):
 
             # Reproducibility
             seed=self.seed,
+            **self.gepa_kwargs
         )
 
         new_prog = adapter.build_program(gepa_result.best_candidate)

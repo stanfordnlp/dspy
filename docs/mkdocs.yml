@@ -19,6 +19,7 @@ nav:
             - Modules: learn/programming/modules.md
             - Adapters: learn/programming/adapters.md
             - Tools: learn/programming/tools.md
+            - MCP: learn/programming/mcp.md
         - DSPy Evaluation:
             - Evaluation Overview: learn/evaluation/overview.md
             - Data Handling: learn/evaluation/data.md
@@ -53,6 +54,7 @@ nav:
             - GEPA for AIME (Math): tutorials/gepa_aime/index.ipynb
             - GEPA for Structured Information Extraction for Enterprise Tasks: tutorials/gepa_facilitysupportanalyzer/index.ipynb
             - GEPA for Privacy-Conscious Delegation: tutorials/gepa_papillon/index.ipynb
+            - GEPA for Code Backdoor Classification (AI control): tutorials/gepa_trusted_monitor/index.ipynb
         - Experimental RL Optimization for DSPy:
             - Overview: tutorials/rl_ai_program/index.md
             - RL for Privacy-Conscious Delegation: tutorials/rl_papillon/index.ipynb
@@ -95,6 +97,7 @@ nav:
         - Evaluation:
             - CompleteAndGrounded: api/evaluation/CompleteAndGrounded.md
             - Evaluate: api/evaluation/Evaluate.md
+            - EvaluationResult: api/evaluation/EvaluationResult.md
             - SemanticF1: api/evaluation/SemanticF1.md
             - answer_exact_match: api/evaluation/answer_exact_match.md
             - answer_passage_match: api/evaluation/answer_passage_match.md
@@ -116,6 +119,9 @@ nav:
             - ReAct: api/modules/ReAct.md
             - Refine: api/modules/Refine.md
         - Optimizers:
+            - GEPA:
+                - 1. GEPA Overview: api/optimizers/GEPA/overview.md
+                - 2. GEPA Advanced: api/optimizers/GEPA/GEPA_Advanced.md
             - BetterTogether: api/optimizers/BetterTogether.md
             - BootstrapFewShot: api/optimizers/BootstrapFewShot.md
             - BootstrapFewShotWithRandomSearch: api/optimizers/BootstrapFewShotWithRandomSearch.md
@@ -123,7 +129,6 @@ nav:
             - BootstrapRS: api/optimizers/BootstrapRS.md
             - COPRO: api/optimizers/COPRO.md
             - Ensemble: api/optimizers/Ensemble.md
-            - GEPA: api/optimizers/GEPA.md
             - InferRules: api/optimizers/InferRules.md
             - KNN: api/optimizers/KNN.md
             - KNNFewShot: api/optimizers/KNNFewShot.md
@@ -246,6 +251,7 @@ plugins:
             "deep-dive/optimizers/Ensemble.md": "api/optimizers/Ensemble.md"
             "deep-dive/optimizers/LabeledFewShot.md": "api/optimizers/LabeledFewShot.md"
             "deep-dive/optimizers/miprov2.md": "api/optimizers/MIPROv2.md"
+            "api/optimizers/GEPA/index.md": "api/optimizers/GEPA/overview.md"
 
             "docs/quick-start/getting-started-01.md": "tutorials/rag/index.ipynb"
             "docs/quick-start/getting-started-02.md": "tutorials/rag/index.ipynb"
@@ -294,6 +300,7 @@ extra:
 
 extra_javascript:
     - "js/runllm-widget.js"
+    - "js/tutorial-nav.js"
 
 markdown_extensions:
     - toc:

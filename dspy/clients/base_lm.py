@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from typing import Any
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
@@ -81,31 +82,55 @@ class BaseLM:
         return outputs
 
     @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
+    def __call__(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ) -> list[dict[str, Any] | str]:
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
 
         return outputs
 
     @with_callbacks
-    async def acall(self, prompt=None, messages=None, **kwargs):
+    async def acall(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ) -> list[dict[str, Any] | str]:
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
 
-    def forward(self, prompt=None, messages=None, **kwargs):
+    def forward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         """Forward pass for the language model.
 
-        Subclasses must implement this method, and the response should be identical to
-        [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+        Subclasses must implement this method, and the response should be identical to either of the following formats:
+        - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
+        - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
+        - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-    async def aforward(self, prompt=None, messages=None, **kwargs):
+    async def aforward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         """Async forward pass for the language model.
 
-        Subclasses that support async should implement this method, and the response should be identical to
-        [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+        Subclasses must implement this method, and the response should be identical to either of the following formats:
+        - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
+        - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
+        - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -166,12 +191,12 @@ class BaseLM:
 
     def _process_completion(self, response, merged_kwargs):
         """Process the response of OpenAI chat completion API and extract outputs.
-        
+
         Args:
             response: The OpenAI chat completion response
                 https://platform.openai.com/docs/api-reference/chat/object
             merged_kwargs: Merged kwargs from self.kwargs and method kwargs
-            
+
         Returns:
             List of processed outputs
         """
@@ -200,10 +225,10 @@ class BaseLM:
     def _extract_citations_from_response(self, choice):
         """Extract citations from LiteLLM response if available.
         Reference: https://docs.litellm.ai/docs/providers/anthropic#beta-citations-api
-        
+
         Args:
             choice: The choice object from response.choices
-            
+
         Returns:
             A list of citation dictionaries or None if no citations found
         """
@@ -217,26 +242,42 @@ class BaseLM:
 
     def _process_response(self, response):
         """Process the response of OpenAI Response API and extract outputs.
-        
+
         Args:
             response: OpenAI Response API response
                 https://platform.openai.com/docs/api-reference/responses/object
-            
-        Returns:
-            List of processed outputs
-        """
-        outputs = []
-        tool_calls = []
-        for output_item in response.output:
-            if output_item.type == "message":
-                for content_item in output_item.content:
-                    outputs.append(content_item.text)
-            elif output_item.type == "function_call":
-                tool_calls.append(output_item.model_dump())
 
-        if tool_calls:
-            outputs.append({"tool_calls": tool_calls})
-        return outputs
+        Returns:
+            List of processed outputs, which is always of size 1 because the Response API only supports one output.
+        """
+        text_outputs = []
+        tool_calls = []
+        reasoning_contents = []
+
+        for output_item in response.output:
+            output_item_type = output_item.type
+            if output_item_type == "message":
+                for content_item in output_item.content:
+                    text_outputs.append(content_item.text)
+            elif output_item_type == "function_call":
+                tool_calls.append(output_item.model_dump())
+            elif output_item_type == "reasoning":
+                if getattr(output_item, "content", None) and len(output_item.content) > 0:
+                    for content_item in output_item.content:
+                        reasoning_contents.append(content_item.text)
+                elif getattr(output_item, "summary", None) and len(output_item.summary) > 0:
+                    for summary_item in output_item.summary:
+                        reasoning_contents.append(summary_item.text)
+
+        result = {}
+        if len(text_outputs) > 0:
+            result["text"] = "".join(text_outputs)
+        if len(tool_calls) > 0:
+            result["tool_calls"] = tool_calls
+        if len(reasoning_contents) > 0:
+            result["reasoning_content"] = "".join(reasoning_contents)
+        # All `response.output` items map to one answer, so we return a list of size 1.
+        return [result]
 
 
 def inspect_history(n: int = 1):

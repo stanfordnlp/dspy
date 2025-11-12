@@ -4,6 +4,7 @@ from gepa.core.adapter import ProposalFn
 
 import dspy
 from dspy.adapters.types.base_type import Type
+from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
 
 
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
@@ -54,7 +55,7 @@ class SingleComponentMultiModalProposer(dspy.Module):
         super().__init__()
         self.propose_instruction = dspy.Predict(GenerateEnhancedMultimodalInstructionFromFeedback)
 
-    def forward(self, current_instruction: str, reflective_dataset: list[dict[str, Any]]) -> str:
+    def forward(self, current_instruction: str, reflective_dataset: list[ReflectiveExample]) -> str:
         """
         Generate an improved instruction based on current instruction and feedback examples.
 
@@ -84,7 +85,7 @@ class SingleComponentMultiModalProposer(dspy.Module):
         return result.improved_instruction
 
     def _format_examples_with_pattern_analysis(
-        self, reflective_dataset: list[dict[str, Any]]
+        self, reflective_dataset: list[ReflectiveExample]
     ) -> tuple[str, dict[int, list[Type]]]:
         """
         Format examples with pattern analysis and feedback categorization.
@@ -106,7 +107,7 @@ class SingleComponentMultiModalProposer(dspy.Module):
 
         return formatted_examples, image_map
 
-    def _analyze_feedback_patterns(self, reflective_dataset: list[dict[str, Any]]) -> dict[str, Any]:
+    def _analyze_feedback_patterns(self, reflective_dataset: list[ReflectiveExample]) -> dict[str, Any]:
         """
         Analyze feedback patterns to provide better context for instruction generation.
 
@@ -177,7 +178,7 @@ class SingleComponentMultiModalProposer(dspy.Module):
         return "\n".join(summary_parts)
 
     def _format_examples_for_instruction_generation(
-        self, reflective_dataset: list[dict[str, Any]]
+        self, reflective_dataset: list[ReflectiveExample]
     ) -> tuple[str, dict[int, list[Type]]]:
         """
         Format examples using GEPA's markdown structure while preserving image objects.
@@ -278,7 +279,7 @@ class MultiModalInstructionProposer(ProposalFn):
     def __call__(
         self,
         candidate: dict[str, str],
-        reflective_dataset: dict[str, list[dict[str, Any]]],
+        reflective_dataset: dict[str, list[ReflectiveExample]],
         components_to_update: list[str],
     ) -> dict[str, str]:
         """GEPA-compatible proposal function.

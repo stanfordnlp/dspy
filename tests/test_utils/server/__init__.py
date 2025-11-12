@@ -2,6 +2,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Any
@@ -17,6 +18,8 @@ def litellm_test_server() -> tuple[str, str]:
     Start a LiteLLM test server for a DSPy integration test case, and tear down the
     server when the test case completes.
     """
+    if sys.version_info[:2] == (3, 14):
+        pytest.skip("Litellm proxy server is not supported on Python 3.14.")
     with tempfile.TemporaryDirectory() as server_log_dir_path:
         # Create a server log file used to store request logs
         server_log_file_path = os.path.join(server_log_dir_path, "request_logs.jsonl")

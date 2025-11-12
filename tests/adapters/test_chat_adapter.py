@@ -68,7 +68,7 @@ def test_chat_adapter_quotes_literals_as_expected(
 
     program = dspy.Predict(TestSignature)
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
 
     with mock.patch("litellm.completion") as mock_completion:
         program(input_text=input_value)
@@ -121,7 +121,7 @@ def test_chat_adapter_with_pydantic_models():
         question: str = dspy.InputField()
         output: Answer = dspy.OutputField()
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
@@ -157,7 +157,7 @@ def test_chat_adapter_signature_information():
         input2: int = dspy.InputField(desc="Integer Input")
         output: str = dspy.OutputField(desc="String Output")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt4o"), adapter=dspy.ChatAdapter())
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
     program = dspy.Predict(TestSignature)
 
     with mock.patch("litellm.completion") as mock_completion:
@@ -443,6 +443,24 @@ def test_chat_adapter_fallback_to_json_adapter_on_exception():
         assert result == [{"answer": "Paris"}]
 
 
+def test_chat_adapter_respects_use_json_adapter_fallback_flag():
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.ChatAdapter(use_json_adapter_fallback=False)
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="nonsense"))],
+            model="openai/gpt-4o-mini",
+        )
+
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with mock.patch("dspy.adapters.json_adapter.JSONAdapter.__call__") as mock_json_adapter_call:
+            with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+                adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+        mock_json_adapter_call.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_chat_adapter_fallback_to_json_adapter_on_exception_async():
     signature = dspy.make_signature("question->answer")
@@ -591,3 +609,35 @@ def test_chat_adapter_toolcalls_vague_match():
         assert result[0]["tool_calls"] == dspy.ToolCalls(
             tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
         )
+
+
+def test_format_system_message():
+    class MySignature(dspy.Signature):
+        """Answer the question with multiple answers and scores"""
+
+        question: str = dspy.InputField()
+        answers: list[str] = dspy.OutputField()
+        scores: list[float] = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    system_message = adapter.format_system_message(MySignature)
+    expected_system_message = """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answers` (list[str]): 
+2. `scores` (list[float]):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+[[ ## question ## ]]
+{question}
+
+[[ ## answers ## ]]
+{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
+
+[[ ## scores ## ]]
+{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
+
+[[ ## completed ## ]]
+In adhering to this structure, your objective is: 
+        Answer the question with multiple answers and scores"""
+    assert system_message == expected_system_message
