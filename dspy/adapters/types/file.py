@@ -9,6 +9,24 @@ from dspy.adapters.types.base_type import Type
 
 
 class File(Type):
+    """A file input type for DSPy.
+
+    The file_data field should be a data URI with the format:
+        data:<mime_type>;base64,<base64_encoded_data>
+
+    Example:
+        ```python
+        import dspy
+
+        class QA(dspy.Signature):
+            file: dspy.File = dspy.InputField()
+            summary = dspy.OutputField()
+        program = dspy.Predict(QA)
+        result = program(file=dspy.File.from_path("./research.pdf"))
+        print(result.summary)
+        ```
+    """
+
     file_data: str | None = None
     file_id: str | None = None
     filename: str | None = None
@@ -33,18 +51,18 @@ class File(Type):
         if isinstance(values, dict):
             if "file_data" in values or "file_id" in values or "filename" in values:
                 return values
-            raise ValueError("Dict must contain at least one of: file_data, file_id, or filename")
+            raise ValueError("Value of `dspy.File` must contain at least one of: file_data, file_id, or filename")
 
         return encode_file_to_dict(values)
 
     def format(self) -> list[dict[str, Any]]:
         try:
             file_dict = {}
-            if self.file_data is not None:
+            if self.file_data:
                 file_dict["file_data"] = self.file_data
-            if self.file_id is not None:
+            if self.file_id:
                 file_dict["file_id"] = self.file_id
-            if self.filename is not None:
+            if self.filename:
                 file_dict["filename"] = self.filename
 
             return [{"type": "file", "file": file_dict}]
@@ -58,6 +76,7 @@ class File(Type):
         parts = []
         if self.file_data is not None:
             if self.file_data.startswith("data:"):
+                # file data has "data:text/plain;base64,..." format
                 mime_type = self.file_data.split(";")[0].split(":")[1]
                 len_data = len(self.file_data.split("base64,")[1]) if "base64," in self.file_data else len(self.file_data)
                 parts.append(f"file_data=<DATA_URI({mime_type}, {len_data} chars)>")
@@ -99,7 +118,9 @@ class File(Type):
         return cls(file_data=file_data, filename=filename)
 
     @classmethod
-    def from_bytes(cls, file_bytes: bytes, filename: str | None = None, mime_type: str = "application/octet-stream") -> "File":
+    def from_bytes(
+        cls, file_bytes: bytes, filename: str | None = None, mime_type: str = "application/octet-stream"
+    ) -> "File":
         """Create a File from raw bytes.
 
         Args:
