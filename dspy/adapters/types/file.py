@@ -10,6 +10,7 @@ from dspy.adapters.types.base_type import Type
 
 class File(Type):
     """A file input type for DSPy.
+    See https://platform.openai.com/docs/api-reference/chat/create#chat_create-messages-user_message-content-array_of_content_parts-file_content_part-file for specification.
 
     The file_data field should be a data URI with the format:
         data:<mime_type>;base64,<base64_encoded_data>

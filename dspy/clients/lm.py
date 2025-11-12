@@ -476,6 +476,11 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
 
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
+    """
+    Convert a chat request to a responses request
+    See https://platform.openai.com/docs/api-reference/responses/create for the responses API specification.
+    Also see https://platform.openai.com/docs/api-reference/chat/create for the chat API specification.
+    """
     request = dict(request)
     if "messages" in request:
         content_blocks = []
@@ -524,6 +529,14 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
         return {
             "type": "input_text",
             "text": item.get("text", ""),
+        }
+    elif item.get("type") == "file":
+        file = item.get("file", {})
+        return {
+            "type": "input_file",
+            "file_data": file.get("file_data"),
+            "filename": file.get("filename"),
+            "file_id": file.get("file_id"),
         }
 
     # For other items, return as-is
