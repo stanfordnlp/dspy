@@ -37,7 +37,6 @@ def load(path: str, dangerously_allow_pickle: bool = False) -> "Module":
     Returns:
         The loaded model, a `dspy.Module` instance.
     """
-    # env_allows_pickle = os.getenv("DSPY_ALLOW_PICKLE") == "1"
     if not os.getenv("DSPY_ALLOW_PICKLE") == "1" and not dangerously_allow_pickle:
         raise ValueError("Loading with pickle is not allowed. Please set `dangerously_allow_pickle=True` or set the environment variable `DSPY_ALLOW_PICKLE=1` if you are sure you trust the source of the model.")
 
