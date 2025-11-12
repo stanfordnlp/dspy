@@ -77,7 +77,7 @@ def test_save_compiled_model(tmp_path):
     compiled_predict = optimizer.compile(predict, trainset=trainset)
     compiled_predict.save(tmp_path, save_program=True)
 
-    loaded_predict = dspy.load(tmp_path)
+    loaded_predict = dspy.load(tmp_path, dangerously_allow_pickle=True)
     assert compiled_predict.demos == loaded_predict.demos
     assert compiled_predict.signature == loaded_predict.signature
 
