@@ -298,6 +298,7 @@ def test_reasoning_model_token_parameter():
         ("openai/gpt-5", True),
         ("openai/gpt-5-mini", True),
         ("openai/gpt-5-nano", True),
+        ("azure/gpt-5-chat", False),  # gpt-5-chat is NOT a reasoning model
         ("openai/gpt-4", False),
         ("anthropic/claude-2", False),
     ]
@@ -318,7 +319,7 @@ def test_reasoning_model_token_parameter():
             assert lm.kwargs["max_tokens"] == 1000
 
 
-@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano"])
+@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano", "openai/gpt-5-mini"])
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
@@ -343,8 +344,23 @@ def test_reasoning_model_requirements(model_name):
     lm = dspy.LM(
         model=model_name,
     )
-    assert lm.kwargs["temperature"] == None
-    assert lm.kwargs["max_completion_tokens"] == None
+    assert lm.kwargs["temperature"] is None
+    assert lm.kwargs["max_completion_tokens"] is None
+
+
+def test_gpt_5_chat_not_reasoning_model():
+    """Test that gpt-5-chat is NOT treated as a reasoning model."""
+    # Should NOT raise validation error - gpt-5-chat is not a reasoning model
+    lm = dspy.LM(
+        model="openai/gpt-5-chat",
+        temperature=0.7,  # Can be any value
+        max_tokens=1000,  # Can be any value
+    )
+    # Should use max_tokens, not max_completion_tokens
+    assert "max_completion_tokens" not in lm.kwargs
+    assert "max_tokens" in lm.kwargs
+    assert lm.kwargs["max_tokens"] == 1000
+    assert lm.kwargs["temperature"] == 0.7
 
 
 def test_dump_state():
@@ -633,3 +649,127 @@ def test_api_key_not_saved_in_json():
         assert saved_state["lm"]["model"] == "openai/gpt-4o-mini"
         assert saved_state["lm"]["temperature"] == 1.0
         assert saved_state["lm"]["max_tokens"] == 100
+
+
+def test_responses_api_converts_images_correctly():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    # Test with base64 image
+    request_with_base64_image = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What's in this image?"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_base64_image)
+
+    assert "input" in result
+    assert len(result["input"]) == 1
+    assert result["input"][0]["role"] == "user"
+
+    content = result["input"][0]["content"]
+    assert len(content) == 2
+
+    # First item should be text converted to input_text format
+    assert content[0]["type"] == "input_text"
+    assert content[0]["text"] == "What's in this image?"
+
+    # Second item should be converted to input_image format
+    assert content[1]["type"] == "input_image"
+    assert content[1]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+    # Test with URL image
+    request_with_url_image = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "https://example.com/image.jpg"
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_url_image)
+
+    content = result["input"][0]["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "input_image"
+    assert content[0]["image_url"] == "https://example.com/image.jpg"
+
+
+def test_responses_api_with_image_input():
+    api_response = make_response(
+        output_blocks=[
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {"type": "output_text", "text": "This is a test answer with image input.", "annotations": []}
+                    ],
+                },
+            ),
+        ]
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
+        lm = dspy.LM(
+            model="openai/gpt-5-mini",
+            model_type="responses",
+            cache=False,
+            temperature=1.0,
+            max_tokens=16000,
+        )
+
+        # Test with messages containing an image
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe this image"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                        }
+                    }
+                ]
+            }
+        ]
+
+        lm_result = lm(messages=messages)
+
+        assert lm_result == [{"text": "This is a test answer with image input."}]
+
+        dspy_responses.assert_called_once()
+        call_args = dspy_responses.call_args.kwargs
+
+        # Verify the request was converted correctly
+        assert "input" in call_args
+        content = call_args["input"][0]["content"]
+
+        # Check that image was converted to input_image format
+        image_content = [c for c in content if c.get("type") == "input_image"]
+        assert len(image_content) == 1
+        assert image_content[0]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
