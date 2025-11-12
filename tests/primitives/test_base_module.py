@@ -162,7 +162,7 @@ class MyModule(dspy.Module):
 
         # Test the loading fails without using `modules_to_serialize`
         with pytest.raises(ModuleNotFoundError):
-            dspy.load(tmp_path)
+            dspy.load(tmp_path, dangerously_allow_pickle=True)
 
         sys.path.insert(0, str(tmp_path))
         import custom_module
@@ -225,10 +225,14 @@ def test_load_with_version_mismatch(tmp_path):
             loaded_predict = dspy.Predict("question->answer")
             loaded_predict.load(save_path, dangerously_allow_pickle=True)
 
-        # Assert warnings were logged, and one warning for each mismatched dependency.
-        assert len(handler.messages) == 3
+        # Assert warnings were logged: 1 for pickle loading + 3 for version mismatches
+        assert len(handler.messages) == 4
 
-        for msg in handler.messages:
+        # First message is about pickle loading
+        assert "Loading .pkl files can run arbitrary code" in handler.messages[0]
+
+        # Rest are version mismatch warnings
+        for msg in handler.messages[1:]:
             assert "There is a mismatch of" in msg
 
         # Verify the model still loads correctly despite version mismatches

@@ -1,5 +1,6 @@
 import copy
 import logging
+import os
 from collections import deque
 from collections.abc import Generator
 from pathlib import Path
@@ -257,7 +258,7 @@ class BaseModule:
             with open(path, "rb") as f:
                 state = orjson.loads(f.read())
         elif path.suffix == ".pkl":
-            if not dangerously_allow_pickle or not os.getenv("DSPY_ALLOW_PICKLE") == "1":
+            if not dangerously_allow_pickle and not os.getenv("DSPY_ALLOW_PICKLE") == "1":
                 raise ValueError("Loading .pkl files can run arbitrary code, which may be dangerous. Prefer "
                                  "saving with .json files if possible. Set `dangerously_allow_pickle=True` "
                                  "or set the environment variable `DSPY_ALLOW_PICKLE=1` if you are sure about the source"

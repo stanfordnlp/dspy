@@ -157,7 +157,7 @@ def test_pickle_loading_with_environment_variable(tmp_path, monkeypatch):
         dspy.load(tmp_path)
 
     # Should succeed with environment variable
-    monkeypatch.setenv("DSPY_DANGEROUSLY_ALLOW_PICKLE", "1")
+    monkeypatch.setenv("DSPY_ALLOW_PICKLE", "1")
     loaded_predict = dspy.load(tmp_path)
     assert isinstance(loaded_predict, dspy.Predict)
 
