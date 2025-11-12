@@ -193,6 +193,9 @@ class Example:
         def convert_to_serializable(value):
             if hasattr(value, "toDict"):
                 return value.toDict()
+            elif hasattr(value, "model_dump"):
+                # Handle Pydantic models (e.g., dspy.History)
+                return value.model_dump()
             elif isinstance(value, list):
                 return [convert_to_serializable(item) for item in value]
             elif isinstance(value, dict):
