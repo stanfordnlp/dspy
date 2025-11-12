@@ -123,7 +123,7 @@ def test_save_and_load_with_pkl(tmp_path):
     compiled_cot.save(save_path)
 
     new_cot = dspy.ChainOfThought(MySignature)
-    new_cot.load(save_path)
+    new_cot.load(save_path, dangerously_allow_pickle=True)
 
     assert str(new_cot.predict.signature) == str(compiled_cot.predict.signature)
     assert new_cot.predict.demos == compiled_cot.predict.demos
@@ -179,7 +179,7 @@ class MyModule(dspy.Module):
         sys.path.remove(str(tmp_path))
         del custom_module
 
-        loaded_module = dspy.load(tmp_path)
+        loaded_module = dspy.load(tmp_path, dangerously_allow_pickle=True)
         assert loaded_module.cot.predict.signature == cot.cot.predict.signature
 
     finally:
@@ -223,7 +223,7 @@ def test_load_with_version_mismatch(tmp_path):
         # Mock version during load
         with patch("dspy.primitives.base_module.get_dependency_versions", return_value=load_versions):
             loaded_predict = dspy.Predict("question->answer")
-            loaded_predict.load(save_path)
+            loaded_predict.load(save_path, dangerously_allow_pickle=True)
 
         # Assert warnings were logged, and one warning for each mismatched dependency.
         assert len(handler.messages) == 3

@@ -253,7 +253,7 @@ def test_lm_field_after_dump_and_load_state(tmp_path, filename):
     assert file_path.exists()
 
     loaded_predict = dspy.Predict("q->a")
-    loaded_predict.load(file_path)
+    loaded_predict.load(file_path, dangerously_allow_pickle=True)
 
     assert original_predict.dump_state() == loaded_predict.dump_state()
 
