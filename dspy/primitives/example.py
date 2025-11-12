@@ -1,3 +1,6 @@
+from pydantic import BaseModel
+
+
 class Example:
     """A flexible data container for DSPy examples and training data.
 
@@ -191,7 +194,9 @@ class Example:
 
     def toDict(self):  # noqa: N802
         def convert_to_serializable(value):
-            if hasattr(value, "toDict"):
+            if isinstance(value, BaseModel):
+                return value.model_dump()
+            elif hasattr(value, "toDict"):
                 return value.toDict()
             elif isinstance(value, list):
                 return [convert_to_serializable(item) for item in value]
