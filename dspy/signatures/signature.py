@@ -138,7 +138,28 @@ class SignatureMeta(type(BaseModel)):
         # At this point, the orders have been swapped already.
         field_order = [name for name, value in namespace.items() if isinstance(value, FieldInfo)]
         # Set `str` as the default type for all fields
-        raw_annotations = namespace.get("__annotations__", {})
+        if sys.version_info >= (3, 14):
+            try:
+                import annotationlib
+                # Try to get from explicit __annotations__ first (e.g., from __future__ import annotations)
+                raw_annotations = namespace.get("__annotations__")
+
+                if raw_annotations is None:
+                    # In 3.14 with PEP 649, get the annotate function and call it
+                    annotate_func = annotationlib.get_annotate_from_class_namespace(namespace)
+                    if annotate_func:
+                        raw_annotations = annotationlib.call_annotate_function(
+                            annotate_func,
+                            format=annotationlib.Format.FORWARDREF
+                        )
+                    else:
+                        raw_annotations = {}
+            except ImportError:
+                raw_annotations = namespace.get("__annotations__", {})
+        else:
+            # Python 3.13 and earlier
+            # Set `str` as the default type for all fields
+            raw_annotations = namespace.get("__annotations__", {})
         for name, field in namespace.items():
             if not isinstance(field, FieldInfo):
                 continue  # Don't add types to non-field attributes
