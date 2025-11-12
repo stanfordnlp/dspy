@@ -233,6 +233,8 @@ class BaseModule:
                     "with `.pkl`, or saving the whole program by setting `save_program=True`."
                 )
         elif path.suffix == ".pkl":
+            logger.warning("Loading .pkl files can run arbitrary code, which may be dangerous. Prefer "
+                          "saving with .json files if possible.")
             state = self.dump_state(json_mode=False)
             state["metadata"] = metadata
             with open(path, "wb") as f:
@@ -240,12 +242,14 @@ class BaseModule:
         else:
             raise ValueError(f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}")
 
-    def load(self, path):
+    def load(self, path, dangerously_allow_pickle=False):
         """Load the saved module. You may also want to check out dspy.load, if you want to
         load an entire program, not just the state for an existing program.
 
         Args:
             path (str): Path to the saved state file, which should be a .json or a .pkl file
+            dangerously_allow_pickle (bool): If True, allow loading .pkl files, which can run arbitrary code.
+                This is dangerous and should only be used if you are sure about the source of the file and in a trusted environment.
         """
         path = Path(path)
 
@@ -253,6 +257,11 @@ class BaseModule:
             with open(path, "rb") as f:
                 state = orjson.loads(f.read())
         elif path.suffix == ".pkl":
+            if not dangerously_allow_pickle or not os.getenv("DSPY_ALLOW_PICKLE") == "1":
+                raise ValueError("Loading .pkl files can run arbitrary code, which may be dangerous. Prefer "
+                                 "saving with .json files if possible. Set `dangerously_allow_pickle=True` "
+                                 "or set the environment variable `DSPY_ALLOW_PICKLE=1` if you are sure about the source"
+                                 " of the file and in a trusted environment.")
             with open(path, "rb") as f:
                 state = cloudpickle.load(f)
         else:
