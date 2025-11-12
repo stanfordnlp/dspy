@@ -147,9 +147,6 @@ def test_pickle_loading_requires_explicit_permission(tmp_path):
     assert isinstance(loaded_predict, dspy.Predict)
 
 
-
-
-
 def test_pkl_file_loading_requires_explicit_permission(tmp_path):
     """Test that loading .pkl files requires explicit permission."""
     predict = dspy.Predict("question->answer")
