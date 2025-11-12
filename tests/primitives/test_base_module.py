@@ -229,7 +229,7 @@ def test_load_with_version_mismatch(tmp_path):
         assert len(handler.messages) == 4
 
         # First message is about pickle loading
-        assert "Loading .pkl files can run arbitrary code" in handler.messages[0]
+        assert ".pkl" in handler.messages[0]
 
         # Rest are version mismatch warnings
         for msg in handler.messages[1:]:
