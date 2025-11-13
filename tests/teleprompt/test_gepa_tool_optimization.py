@@ -11,7 +11,7 @@ DSPy ReAct Design Note:
     DSPy's ReAct uses two predictors:
     - react: reasoning/acting loop
     - extract: structured output synthesis
-    
+
     We optimize extract.predict as it's called once with the complete trajectory
     and produces all output fields.
 """
@@ -56,11 +56,11 @@ def setup_seed_candidate_capture(monkeypatch):
 
 def create_optimizer(task_responses, reflection_responses):
     """Create GEPA optimizer with explicit LM responses.
-    
+
     Args:
         task_responses: List of dicts for task LM (e.g., [{"answer": "test"}])
         reflection_responses: List of dicts for reflection LM
-    
+
     Returns:
         tuple: (optimizer, trainset)
     """
@@ -82,11 +82,11 @@ def create_optimizer(task_responses, reflection_responses):
 
 def get_predictor_name(program, predictor):
     """Find predictor name by object identity in named_predictors().
-    
+
     Args:
         program: DSPy module
         predictor: Predictor object to find
-    
+
     Returns:
         str: Predictor name (e.g., "pred", "agent.pred")
     """
@@ -497,6 +497,3 @@ def test_selective_optimization_with_none_returns():
 
     # Original unchanged (calculate not in optimized candidate)
     assert rebuilt.tools["calculate"].desc == program.tools["calculate"].desc
-
-
-
