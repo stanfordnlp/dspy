@@ -109,7 +109,12 @@ dev environment.
 way to set up the development environment. First, install uv by following the
 [installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 
-After uv is installed, in your working directory (`dspy/`), run:
+After uv is installed, in your working directory (`dspy/`), create a virtual environment using Python 3.10:
+
+```shell
+uv venv --python 3.10
+```
+This creates a `.venv` directory. Now, sync the environment with the development dependencies:
 
 ```shell
 uv sync --extra dev
@@ -136,7 +141,7 @@ make sure you have conda installed. If not, please follow the instructions
 To set up the environment, run:
 
 ```shell
-conda create -n dspy-dev python=3.11
+conda create -n dspy-dev python=3.10
 conda activate dspy-dev
 pip install -e ".[dev]"
 ```

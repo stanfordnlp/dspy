@@ -298,6 +298,7 @@ def test_reasoning_model_token_parameter():
         ("openai/gpt-5", True),
         ("openai/gpt-5-mini", True),
         ("openai/gpt-5-nano", True),
+        ("azure/gpt-5-chat", False),  # gpt-5-chat is NOT a reasoning model
         ("openai/gpt-4", False),
         ("anthropic/claude-2", False),
     ]
@@ -318,7 +319,7 @@ def test_reasoning_model_token_parameter():
             assert lm.kwargs["max_tokens"] == 1000
 
 
-@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano"])
+@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano", "openai/gpt-5-mini"])
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
@@ -345,6 +346,21 @@ def test_reasoning_model_requirements(model_name):
     )
     assert lm.kwargs["temperature"] is None
     assert lm.kwargs["max_completion_tokens"] is None
+
+
+def test_gpt_5_chat_not_reasoning_model():
+    """Test that gpt-5-chat is NOT treated as a reasoning model."""
+    # Should NOT raise validation error - gpt-5-chat is not a reasoning model
+    lm = dspy.LM(
+        model="openai/gpt-5-chat",
+        temperature=0.7,  # Can be any value
+        max_tokens=1000,  # Can be any value
+    )
+    # Should use max_tokens, not max_completion_tokens
+    assert "max_completion_tokens" not in lm.kwargs
+    assert "max_tokens" in lm.kwargs
+    assert lm.kwargs["max_tokens"] == 1000
+    assert lm.kwargs["temperature"] == 0.7
 
 
 def test_dump_state():
@@ -759,6 +775,103 @@ def test_responses_api_converts_images_correctly():
     assert len(content) == 1
     assert content[0]["type"] == "input_image"
     assert content[0]["image_url"] == "https://example.com/image.jpg"
+
+
+def test_responses_api_converts_files_correctly():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    # Test with file data (base64 encoded)
+    request_with_file = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Analyze this file"},
+                    {
+                        "type": "file",
+                        "file": {
+                            "file_data": "data:text/plain;base64,SGVsbG8gV29ybGQ=",
+                            "filename": "test.txt",
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_file)
+
+    assert "input" in result
+    assert len(result["input"]) == 1
+    assert result["input"][0]["role"] == "user"
+
+    content = result["input"][0]["content"]
+    assert len(content) == 2
+
+    # First item should be text converted to input_text format
+    assert content[0]["type"] == "input_text"
+    assert content[0]["text"] == "Analyze this file"
+
+    # Second item should be converted to input_file format
+    assert content[1]["type"] == "input_file"
+    assert content[1]["file_data"] == "data:text/plain;base64,SGVsbG8gV29ybGQ="
+    assert content[1]["filename"] == "test.txt"
+
+    # Test with file_id
+    request_with_file_id = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "file",
+                        "file": {
+                            "file_id": "file-abc123",
+                            "filename": "document.pdf",
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_file_id)
+
+    content = result["input"][0]["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "input_file"
+    assert content[0]["file_id"] == "file-abc123"
+    assert content[0]["filename"] == "document.pdf"
+
+    # Test with all file fields
+    request_with_all_fields = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "file",
+                        "file": {
+                            "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
+                            "file_id": "file-xyz789",
+                            "filename": "report.pdf",
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_all_fields)
+
+    content = result["input"][0]["content"]
+    assert content[0]["type"] == "input_file"
+    assert content[0]["file_data"] == "data:application/pdf;base64,JVBERi0xLjQ="
+    assert content[0]["file_id"] == "file-xyz789"
+    assert content[0]["filename"] == "report.pdf"
 
 
 def test_responses_api_with_image_input():
