@@ -11,8 +11,14 @@ from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
 from dspy.adapters.types import Type
+from dspy.dsp.utils.settings import thread_local_overrides
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
+
+try:
+    from exceptiongroup import BaseExceptionGroup
+except ImportError:
+    BaseExceptionGroup = BaseException
 
 
 @pytest.mark.anyio
@@ -1515,3 +1521,40 @@ def test_stream_listener_could_form_end_identifier_xml_adapter():
     # Should return False for text that cannot form the pattern
     assert listener._could_form_end_identifier("hello world", "XMLAdapter") is False
     assert listener._could_form_end_identifier("some text", "XMLAdapter") is False
+
+
+@pytest.mark.asyncio
+async def test_streamify_context_propagation():
+    """
+    Test that dspy.context() properly propagates LM settings to streamify
+    even when the context exits before async iteration begins.
+    """
+    predict = dspy.Predict("question->answer")
+    test_lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+    lm_was_set = []
+
+    async def mock_stream(**kwargs):
+        current_lm = thread_local_overrides.get().get("lm") or dspy.settings.lm
+        lm_was_set.append(current_lm is not None and current_lm == test_lm)
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="test"))])
+
+    stream_predict = dspy.streamify(
+        predict,
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=mock_stream):
+        with dspy.context(lm=test_lm):
+            output_stream = stream_predict(question="test question")
+
+        async for _ in output_stream:
+            break
+
+    assert len(lm_was_set) > 0
+    assert lm_was_set[0]
