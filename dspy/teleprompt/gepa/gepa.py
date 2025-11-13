@@ -548,6 +548,10 @@ class GEPA(Teleprompter):
                 if not isinstance(module, ReAct):
                     continue
 
+                # Verify DSPy's two-predictor ReAct design
+                assert hasattr(module, "extract") and hasattr(module.extract, "predict"), \
+                    f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
+
                 # Get predictor names via object identity
                 extract_predictor = module.extract.predict
                 react_predictor = module.react
