@@ -29,7 +29,7 @@ def test_basic_workflow():
             "Finish[blue]",  # Expected output for both training and validation
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     optimizer = BootstrapFewShotWithRandomSearch(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     trainset = [

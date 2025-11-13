@@ -105,7 +105,7 @@ def test_save_and_load_with_pkl(tmp_path):
     ]
     trainset = [dspy.Example(**example).with_inputs("current_date", "target_date") for example in trainset]
 
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM([{"date_diff": "1", "reasoning": "n/a"}, {"date_diff": "2", "reasoning": "n/a"}] * 10)
     )
 
@@ -247,7 +247,7 @@ def test_load_with_version_mismatch(tmp_path):
 
 @pytest.mark.llm_call
 def test_single_module_call_with_usage_tracker(lm_for_test):
-    dspy.settings.configure(lm=dspy.LM(lm_for_test, cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM(lm_for_test, cache=False), track_usage=True)
 
     predict = dspy.ChainOfThought("question -> answer")
     output = predict(question="What is the capital of France?")
@@ -259,7 +259,7 @@ def test_single_module_call_with_usage_tracker(lm_for_test):
     assert lm_usage[lm_for_test]["total_tokens"] > 0
 
     # Test no usage being tracked when cache is enabled
-    dspy.settings.configure(lm=dspy.LM(lm_for_test, cache=True), track_usage=True)
+    dspy.configure(lm=dspy.LM(lm_for_test, cache=True), track_usage=True)
     for _ in range(2):
         output = predict(question="What is the capital of France?")
 
@@ -268,7 +268,7 @@ def test_single_module_call_with_usage_tracker(lm_for_test):
 
 @pytest.mark.llm_call
 def test_multi_module_call_with_usage_tracker(lm_for_test):
-    dspy.settings.configure(lm=dspy.LM(lm_for_test, cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM(lm_for_test, cache=False), track_usage=True)
 
     class MyProgram(dspy.Module):
         def __init__(self):
@@ -301,12 +301,12 @@ def test_usage_tracker_in_parallel():
             self.predict2 = dspy.ChainOfThought("question, answer -> score")
 
         def __call__(self, question: str) -> Prediction:
-            with dspy.settings.context(lm=self.lm):
+            with dspy.context(lm=self.lm):
                 answer = self.predict1(question=question)
                 score = self.predict2(question=question, answer=answer)
                 return score
 
-    dspy.settings.configure(track_usage=True)
+    dspy.configure(track_usage=True)
     program1 = MyProgram(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
     program2 = MyProgram(lm=dspy.LM("openai/gpt-3.5-turbo", cache=False))
 
@@ -356,7 +356,7 @@ async def test_usage_tracker_async_parallel():
             program.acall(question="What is the capital of France?"),
             program.acall(question="What is the capital of France?"),
         ]
-        with dspy.settings.context(
+        with dspy.context(
             lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True, adapter=dspy.JSONAdapter()
         ):
             results = await asyncio.gather(*coroutines)
@@ -404,7 +404,7 @@ def test_module_history():
             ],
             model="openai/gpt-4o-mini",
         )
-        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
         program(question="What is the capital of France?")
 
@@ -421,7 +421,7 @@ def test_module_history():
 
         assert program.history[0]["outputs"] == ["{'reasoning': 'Paris is the capital of France', 'answer': 'Paris'}"]
 
-        dspy.settings.configure(disable_history=True)
+        dspy.configure(disable_history=True)
 
         program(question="What is the capital of France?")
         # No history is recorded when history is disabled.
@@ -429,7 +429,7 @@ def test_module_history():
         assert len(program.cot.history) == 2
         assert len(program.cot.predict.history) == 2
 
-        dspy.settings.configure(disable_history=False)
+        dspy.configure(disable_history=False)
 
         program(question="What is the capital of France?")
         # History is recorded again when history is enabled.
@@ -452,7 +452,7 @@ def test_module_history_with_concurrency():
             choices=[Choices(message=Message(content="{'reasoning': 'N/A', 'answer': 'Holy crab!'}"))],
             model="openai/gpt-4o-mini",
         )
-        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter())
         program = MyProgram()
 
         parallelizer = dspy.Parallel()

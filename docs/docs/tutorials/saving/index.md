@@ -20,7 +20,7 @@ Let's say we have compiled a program with some data, and we want to save the pro
 import dspy
 from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 gsm8k = GSM8K()
 gsm8k_trainset = gsm8k.train[:10]

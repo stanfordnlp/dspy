@@ -96,7 +96,7 @@ def test_basic_workflow(use_mlflow, mock_mlflow):
     reflection_lm_history = data["reflection_lm"]
 
     lm_main = DictDummyLM(lm_history)
-    dspy.settings.configure(lm=lm_main)
+    dspy.configure(lm=lm_main)
     reflection_lm = DictDummyLM(reflection_lm_history)
 
     optimizer = dspy.GEPA(
@@ -165,7 +165,7 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
     lm_main = DictDummyLM(lm_history)
     reflection_lm = DictDummyLM(reflection_lm_history)
 
-    dspy.settings.configure(lm=lm_main)
+    dspy.configure(lm=lm_main)
     optimizer = dspy.GEPA(
         metric=metric,
         reflection_lm=reflection_lm,

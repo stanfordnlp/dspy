@@ -34,7 +34,7 @@ def test_evaluate_initialization():
 
 
 def test_evaluate_call():
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             {
                 "What is 1+1?": {"answer": "2"},
@@ -86,7 +86,7 @@ def test_construct_result_df():
 
 
 def test_multithread_evaluate_call():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     assert program(question="What is 1+1?").answer == "2"
@@ -109,7 +109,7 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
             time.sleep(1)
             return super().__call__(*args, **kwargs)
 
-    dspy.settings.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
+    dspy.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
 
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
@@ -138,7 +138,7 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
 
 
 def test_evaluate_call_wrong_answer():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     ev = Evaluate(
@@ -180,7 +180,7 @@ def test_evaluate_display_table(program_with_example, display_table, is_in_ipyth
     example_input = next(iter(example.inputs().values()))
     example_output = {key: value for key, value in example.toDict().items() if key not in example.inputs()}
 
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             {
                 example_input: example_output,
@@ -234,7 +234,7 @@ def test_evaluate_callback():
             self.end_call_count += 1
 
     callback = TestCallback()
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             {
                 "What is 1+1?": {"answer": "2"},

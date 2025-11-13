@@ -7,7 +7,7 @@ Below, we'll assume you have the following simple DSPy program that you want to 
 ```python
 import dspy
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 dspy_program = dspy.ChainOfThought("question -> answer")
 ```
 
@@ -40,7 +40,7 @@ class Question(BaseModel):
 
 # Configure your language model and 'asyncify' your DSPy program.
 lm = dspy.LM("openai/gpt-4o-mini")
-dspy.settings.configure(lm=lm, async_max_workers=4) # default is 8
+dspy.configure(lm=lm, async_max_workers=4) # default is 8
 dspy_program = dspy.ChainOfThought("question -> answer")
 dspy_program = dspy.asyncify(dspy_program)
 
@@ -163,7 +163,7 @@ mlflow.set_tracking_uri("http://127.0.0.1:5000/")
 mlflow.set_experiment("deploy_dspy_program")
 
 lm = dspy.LM("openai/gpt-4o-mini")
-dspy.settings.configure(lm=lm)
+dspy.configure(lm=lm)
 
 class MyProgram(dspy.Module):
     def __init__(self):

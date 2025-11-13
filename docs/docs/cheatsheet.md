@@ -67,7 +67,7 @@ print(f"Final Predicted Answer (after ReAct process): {result.answer}")
 
 ```python
 colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
-dspy.settings.configure(rm=colbertv2_wiki17_abstracts)
+dspy.configure(rm=colbertv2_wiki17_abstracts)
 
 #Define Retrieve Module
 retriever = dspy.Retrieve(k=3)
@@ -450,7 +450,7 @@ asyncio.run(dspy_program(question="What is DSPy"))
 
 ```python
 import dspy
-dspy.settings.configure(track_usage=True)
+dspy.configure(track_usage=True)
 
 result = dspy.ChainOfThought(BasicQA)(question="What is 2+2?")
 print(f"Token usage: {result.get_lm_usage()}")
