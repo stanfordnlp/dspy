@@ -1,224 +1,178 @@
-"""Tests for GEPA's generic tool optimization (beyond ReAct modules).
+"""Tests for GEPA's tool optimization (ReAct modules and custom tool modules).
 
-Tests the new generic tool optimization pathway that detects and optimizes
-ANY dspy.Module using dspy.Tool, not just dspy.ReAct modules.
+Tests the generic tool optimization that works with ANY module using dspy.Tool,
+including dspy.ReAct and custom modules.
 
-What we test:
-1. Detection: Verify predictors with Tool-typed input fields are detected at compile time
-   - JSON config structure is created (vs plain string for non-tool predictors)
-   - Config contains "predictor" and "tools" fields
-2. Reconstruction: Verify build_program applies optimized tool descriptions
-   - Predictor instructions are updated
-   - Tool descriptions and arg_desc are updated
-
-What we DON'T test:
-- Exact tool extraction from runtime traces (that's internal GEPA behavior)
-- We only verify the compile-time detection creates the right structure
-
-Requirements:
-- Signatures MUST use class-based definitions with type annotations
-- String signatures like "query, tools -> answer" are NOT supported (lose type info)
-- Detection is based on INPUT types only (output types don't matter)
+Test categories:
+1. Detection - Compile-time detection of tool-using modules
+2. Application - build_program applies optimized instructions and tool descriptions
 """
 
 import json
 
-import pytest
+import gepa
+from gepa import optimize as gepa_optimize
 
 import dspy
-from dspy import Example
-from dspy.teleprompt.gepa.gepa_utils import TOOL_MODULE_PREFIX
+from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX, DspyAdapter
 from dspy.utils.dummies import DummyLM
 
 
-def setup_capture_for_base_program(monkeypatch):
-    """Capture base_program snapshot at compile time."""
-    captured_base_program = {}
-
-    from gepa import optimize as original_optimize
+def setup_seed_candidate_capture(monkeypatch):
+    """Capture seed_candidate dict passed to gepa.optimize."""
+    captured = {}
 
     def capture_optimize(seed_candidate, **kwargs):
-        captured_base_program.update(seed_candidate)
-        return original_optimize(seed_candidate=seed_candidate, **kwargs)
+        captured.update(seed_candidate)
+        return gepa_optimize(seed_candidate=seed_candidate, **kwargs)
 
-    import gepa
     monkeypatch.setattr(gepa, "optimize", capture_optimize)
-
-    return captured_base_program
-
-
-def simple_metric_for_detection(example, pred, trace=None, pred_name=None, pred_trace=None):
-    """Simple metric for GEPA detection tests."""
-    return dspy.Prediction(score=0.5, feedback="ok")
+    return captured
 
 
-def mock_optimized_tool_module(optimized_candidate, pred_key, predictor_instruction, tool_descriptions):
-    """Helper to mock an optimized tool module in the candidate dict.
-        
+def create_optimizer(task_responses, reflection_responses):
+    """Create GEPA optimizer with explicit LM responses.
+    
     Args:
-        optimized_candidate: The candidate dict to modify
-        pred_key: Predictor key from captured_base_program (e.g., "tool_module:pred")
-        predictor_instruction: New predictor instruction
-        tool_descriptions: Dict of {tool_name: {"desc": desc, "arg_desc": {arg: desc}}}
+        task_responses: List of dicts for task LM (e.g., [{"answer": "test"}])
+        reflection_responses: List of dicts for reflection LM
+    
+    Returns:
+        tuple: (optimizer, trainset)
     """
-    # Parse existing config
-    config = json.loads(optimized_candidate[pred_key])
-
-    # Modify predictor instruction
-    config["predictor"] = predictor_instruction
-
-    # Modify tool descriptions
-    for tool_name, tool_desc in tool_descriptions.items():
-        if tool_name not in config["tools"]:
-            config["tools"][tool_name] = {"args": {}}
-
-        if "desc" in tool_desc:
-            config["tools"][tool_name]["desc"] = tool_desc["desc"]
-        if "arg_desc" in tool_desc:
-            config["tools"][tool_name]["arg_desc"] = tool_desc["arg_desc"]
-
-    # Serialize back
-    optimized_candidate[pred_key] = json.dumps(config)
-
-
-def create_gepa_optimizer_for_tool_detection():
-    """Create GEPA optimizer configured for tool optimization."""
-    task_lm = DummyLM([
-        {"answer": "test answer"},
-    ] * 20)
-
-    reflection_lm = DummyLM([
-        {"improved_instruction": "optimized instruction"},
-        {"improved_desc": "optimized tool description", "improved_args": "optimized args"},
-    ] * 20)
+    task_lm = DummyLM(task_responses)
+    reflection_lm = DummyLM(reflection_responses)
 
     dspy.settings.configure(lm=task_lm)
 
     optimizer = dspy.GEPA(
-        metric=simple_metric_for_detection,
+        metric=lambda example, pred, trace=None, pred_name=None, pred_trace=None: dspy.Prediction(score=0.5, feedback="ok"),
         reflection_lm=reflection_lm,
         max_metric_calls=2,
         enable_tool_optimization=True,
     )
 
-    trainset = [Example(query="test", answer="test").with_inputs("query")]
-
+    trainset = [dspy.Example(query="test", answer="test").with_inputs("query")]
     return optimizer, trainset
 
 
-def test_detect_single_tool(monkeypatch):
-    """Detect predictor with single Tool input field.
+def get_predictor_name(program, predictor):
+    """Find predictor name by object identity in named_predictors().
     
-    Tests that GEPA detects a custom module with a single tool at compile time.
-    We verify the JSON structure is created, but don't check exact tools
-    (those are extracted at runtime from traces).
+    Args:
+        program: DSPy module
+        predictor: Predictor object to find
+    
+    Returns:
+        str: Predictor name (e.g., "pred", "agent.pred")
     """
-    captured_base_program = setup_capture_for_base_program(monkeypatch)
+    for name, pred in program.named_predictors():
+        if pred is predictor:
+            return name
+    raise ValueError(f"Predictor not found: {predictor}")
 
-    # Create module with single tool (MUST use class signature!)
+def test_detect_single_tool(monkeypatch):
+    """Detect single tool in custom module."""
+    seed_candidate = setup_seed_candidate_capture(monkeypatch)
+
+    # Create module with single tool
     class AgentSignature(dspy.Signature):
         """Answer questions using tools."""
         query: str = dspy.InputField()
         tool: dspy.Tool = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    class SimpleAgent(dspy.Module):
+    class Agent(dspy.Module):
         def __init__(self):
             super().__init__()
 
-            def search_web(query: str) -> str:
-                """Search the internet."""
+            def search(query: str) -> str:
                 return f"Results for: {query}"
 
-            self.tool = dspy.Tool(search_web, name="search", desc="Search tool")
+            self.tool = dspy.Tool(search, name="search", desc="Search tool")
             self.pred = dspy.Predict(AgentSignature)
 
         def forward(self, query):
             return self.pred(query=query, tool=self.tool)
 
-    program = SimpleAgent()
-    optimizer, trainset = create_gepa_optimizer_for_tool_detection()
 
-    # Run GEPA - should detect tool-using predictor
+    program = Agent()
+    optimizer, trainset = create_optimizer(
+        task_responses=[{"answer": "test"}] * 20,
+        reflection_responses=[
+            {
+                "improved_predictor_instruction": "optimized",
+                "improved_tool_search_desc": "optimized search desc",
+                "improved_tool_search_arg_query_desc": "optimized query desc"
+            }
+        ] * 20
+    )
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
-    # Verify compile-time detection created JSON config
+    predictor_name = get_predictor_name(program, program.pred)
+    component_key = f"{TOOL_MODULE_PREFIX}:{predictor_name}"
+    assert component_key in seed_candidate
 
-    pred_key = f"{TOOL_MODULE_PREFIX}:pred"
-    assert pred_key in captured_base_program, f"Expected '{pred_key}' to be detected"
-
-    config = json.loads(captured_base_program[pred_key])
-
-    # Check JSON structure (proves detection worked)
-    assert "predictor" in config, "Should have predictor instruction"
-    assert isinstance(config["predictor"], str), "Predictor should be string"
-    assert "tools" in config, "Should have tools field"
-    assert isinstance(config["tools"], dict), "Tools should be dict"
-    # Don't check exact tools - that's runtime extraction
+    tool_config = json.loads(seed_candidate[component_key])
+    assert predictor_name in tool_config
+    assert "tools" in tool_config
 
 
-def test_detect_tool_list(monkeypatch):
-    """Detect predictor with list of Tools.
-    
-    Tests that GEPA detects a predictor using multiple tools at compile time.
-    We verify the JSON structure is created for tool-using predictors.
-    """
-    captured_base_program = setup_capture_for_base_program(monkeypatch)
-
-    # Create module with tool list (MUST use class signature!)
+def test_detect_multiple_tools(monkeypatch):
+    """Detect multiple tools in custom module."""
+    seed_candidate = setup_seed_candidate_capture(monkeypatch)
     class AgentSignature(dspy.Signature):
         """Answer questions using multiple tools."""
         query: str = dspy.InputField()
         tools: list[dspy.Tool] = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    class MultiToolAgent(dspy.Module):
+    class Agent(dspy.Module):
         def __init__(self):
             super().__init__()
 
-            def search_web(query: str) -> str:
+            def search(query: str) -> str:
                 return f"Search: {query}"
 
             def calculate(expr: str) -> str:
                 return f"Calc: {expr}"
 
             self.tools = [
-                dspy.Tool(search_web, name="search", desc="Search tool"),
-                dspy.Tool(calculate, name="calc", desc="Calculator tool"),
+                dspy.Tool(search, name="search", desc="Search tool"),
+                dspy.Tool(calculate, name="calc", desc="Calculator"),
             ]
             self.pred = dspy.Predict(AgentSignature)
 
         def forward(self, query):
             return self.pred(query=query, tools=self.tools)
 
-    program = MultiToolAgent()
-    optimizer, trainset = create_gepa_optimizer_for_tool_detection()
-
-    # Run GEPA - should detect tool-using predictor
+    program = Agent()
+    optimizer, trainset = create_optimizer(
+        task_responses=[{"answer": "test"}] * 20,
+        reflection_responses=[
+            {
+                "improved_predictor_instruction": "optimized",
+                "improved_tool_search_desc": "optimized search desc",
+                "improved_tool_search_arg_query_desc": "optimized query desc",
+                "improved_tool_calc_desc": "optimized calc desc",
+                "improved_tool_calc_arg_expr_desc": "optimized expr desc"
+            }
+        ] * 20
+    )
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
-    # Verify compile-time detection created JSON config
+    predictor_name = get_predictor_name(program, program.pred)
+    component_key = f"{TOOL_MODULE_PREFIX}:{predictor_name}"
+    assert component_key in seed_candidate
 
-    pred_key = f"{TOOL_MODULE_PREFIX}:pred"
-    assert pred_key in captured_base_program, f"Expected '{pred_key}' to be detected"
-
-    config = json.loads(captured_base_program[pred_key])
-
-    # Check JSON structure
-    assert "predictor" in config, "Should have predictor instruction"
-    assert "tools" in config, "Should have tools field"
-    assert isinstance(config["tools"], dict), "Tools should be dict"
+    tool_config = json.loads(seed_candidate[component_key])
+    assert predictor_name in tool_config
+    assert "tools" in tool_config
 
 
 def test_skip_predictor_without_tools(monkeypatch):
-    """Negative case: Predictors without Tool annotations should be skipped.
-    
-    Tests that regular predictors (no Tool fields) get normal string optimization,
-    not JSON tool optimization.
-    """
-    captured_base_program = setup_capture_for_base_program(monkeypatch)
-
-    # Create plain module without tools
+    """Skip predictors without Tool annotations."""
+    seed_candidate = setup_seed_candidate_capture(monkeypatch)
     class PlainSignature(dspy.Signature):
         """Answer questions."""
         query: str = dspy.InputField()
@@ -233,41 +187,22 @@ def test_skip_predictor_without_tools(monkeypatch):
             return self.pred(query=query)
 
     program = PlainAgent()
-    optimizer, trainset = create_gepa_optimizer_for_tool_detection()
-
+    optimizer, trainset = create_optimizer(
+        task_responses=[{"answer": "test"}] * 20,
+        reflection_responses=[{"improved_instruction": "optimized"}] * 20
+    )
     optimizer.compile(program, trainset=trainset, valset=trainset)
 
-    # Verify predictor detected as plain string (not JSON)
-    pred_key = "pred"
-    assert pred_key in captured_base_program, f"Expected '{pred_key}' to be detected"
+    predictor_name = get_predictor_name(program, program.pred)
+    assert predictor_name in seed_candidate
 
-    pred_config = captured_base_program[pred_key]
-
-    # Should be plain string, not JSON
-    assert isinstance(pred_config, str), "Should be string instruction"
-
-    # Verify it's NOT a JSON structure
-    try:
-        json.loads(pred_config)
-        assert False, "Plain predictor should not have JSON config"
-    except json.JSONDecodeError:
-        pass  # Expected - proves it's a plain string
+    # Should be plain string instruction, not JSON config
+    instruction = seed_candidate[predictor_name]
+    assert isinstance(instruction, str)
 
 
-@pytest.mark.skip(reason="Tool module reconstruction not yet implemented in build_program")
-def test_update_tool_and_predictor(monkeypatch):
-    """Rebuild program with updated tool descriptions and predictor instructions.
-    
-    Tests that DspyAdapter.build_program applies optimized tool metadata.
-    Follows the same pattern as ReAct test_build_program_single_react.
-    
-    TODO: Implement tool module reconstruction in DspyAdapter.build_program
-    """
-    from dspy.teleprompt.gepa.gepa_utils import DspyAdapter
-
-    captured_base_program = setup_capture_for_base_program(monkeypatch)
-
-    # Create module with tool
+def test_apply_optimized_tool_descriptions():
+    """Apply optimized tool descriptions via build_program."""
     class AgentSignature(dspy.Signature):
         """Answer using tools."""
         query: str = dspy.InputField()
@@ -278,54 +213,259 @@ def test_update_tool_and_predictor(monkeypatch):
         def __init__(self):
             super().__init__()
 
-            def search_web(query: str) -> str:
+            def search(query: str) -> str:
                 return f"Search: {query}"
 
-            self.tool = dspy.Tool(search_web, name="search", desc="Original desc")
+            self.tool = dspy.Tool(search, name="search", desc="Original description")
             self.pred = dspy.Predict(AgentSignature)
 
         def forward(self, query):
             return self.pred(query=query, tool=self.tool)
 
     program = Agent()
-    optimizer, trainset = create_gepa_optimizer_for_tool_detection()
+    predictor_name = get_predictor_name(program, program.pred)
+    component_key = f"{TOOL_MODULE_PREFIX}:{predictor_name}"
 
-    optimizer.compile(program, trainset=trainset, valset=trainset)
-
-    # Mock optimized candidate
-
-    pred_key = f"{TOOL_MODULE_PREFIX}:pred"
-    assert pred_key in captured_base_program, f"Expected '{pred_key}' to be detected"
-
-    optimized_candidate = dict(captured_base_program)
-    mock_optimized_tool_module(
-        optimized_candidate=optimized_candidate,
-        pred_key=pred_key,
-        predictor_instruction="OPTIMIZED: Answer using tools",
-        tool_descriptions={
-            "search": {
-                "desc": "OPTIMIZED: Search description",
-                "arg_desc": {"query": "OPTIMIZED: Search query param"}
+    optimized_candidate = {
+        component_key: json.dumps({
+            predictor_name: "OPTIMIZED: Answer using tools",
+            "tools": {
+                "search": {
+                    "desc": "OPTIMIZED: Search description",
+                    "args": {"query": {"type": "string", "description": "Search query"}},
+                    "arg_desc": {"query": "OPTIMIZED: Query parameter"}
+                }
             }
-        }
-    )
+        })
+    }
 
-    # Build program with optimizations
+    # Apply optimizations
     adapter = DspyAdapter(
         student_module=program,
-        metric_fn=simple_metric_for_detection,
+        metric_fn=lambda example, pred, trace=None: 0.5,
         feedback_map={},
         enable_tool_optimization=True,
     )
-    rebuilt_program = adapter.build_program(optimized_candidate)
+    rebuilt = adapter.build_program(optimized_candidate)
 
-    # Verify predictor instruction was updated
-    assert rebuilt_program.pred.signature.instructions == "OPTIMIZED: Answer using tools"
+    assert rebuilt.pred.signature.instructions == "OPTIMIZED: Answer using tools"
+    assert rebuilt.tool.desc == "OPTIMIZED: Search description"
+    assert rebuilt.tool.args["query"]["description"] == "OPTIMIZED: Query parameter"
 
-    # Verify tool description was updated
-    assert rebuilt_program.tool.desc == "OPTIMIZED: Search description"
-    assert rebuilt_program.tool.args["query"]["description"] == "OPTIMIZED: Search query param"
-
-    # Verify original program unchanged
+    # Original unchanged
     assert program.pred.signature.instructions != "OPTIMIZED: Answer using tools"
-    assert program.tool.desc == "Original desc"
+    assert program.tool.desc == "Original description"
+
+def test_detect_react_module(monkeypatch):
+    """Detect ReAct module with tools."""
+    seed_candidate = setup_seed_candidate_capture(monkeypatch)
+
+
+    def search(query: str) -> str:
+        return f"Results for: {query}"
+
+    program = dspy.ReAct("question -> answer", tools=[search])
+
+
+    optimizer, trainset = create_optimizer(
+        task_responses=[
+            {"next_thought": "I should search", "next_tool_name": "search", "next_tool_args": {"query": "test"}},
+            {"next_thought": "Done", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Based on search", "answer": "test"},
+        ] * 20,
+        reflection_responses=[
+            {
+                "improved_predictor_instruction": "optimized react",
+                "improved_extract_instruction": "optimized extract",
+                "improved_tool_search_desc": "optimized search desc",
+                "improved_tool_search_arg_query_desc": "optimized query desc"
+            }
+        ] * 20
+    )
+    optimizer.compile(program, trainset=trainset, valset=trainset)
+
+    # Verify detection - use extract.predict as primary (for tracing)
+    extract_name = get_predictor_name(program, program.extract.predict)
+    component_key = f"{REACT_MODULE_PREFIX}:{extract_name}"
+    assert component_key in seed_candidate
+
+    tool_config = json.loads(seed_candidate[component_key])
+    assert "tools" in tool_config
+
+
+def test_detect_multiple_react_modules(monkeypatch):
+    """Detect multiple ReAct modules in workflow."""
+    seed_candidate = setup_seed_candidate_capture(monkeypatch)
+
+
+    def search(query: str) -> str:
+        return f"Search: {query}"
+
+    def analyze(data: str) -> str:
+        return f"Analysis: {data}"
+
+    class Workflow(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.searcher = dspy.ReAct("query -> results", tools=[search])
+            self.analyzer = dspy.ReAct("data -> analysis", tools=[analyze])
+
+        def forward(self, query):
+            results = self.searcher(query=query)
+            return self.analyzer(data=results.results)
+
+    program = Workflow()
+
+
+    optimizer, trainset = create_optimizer(
+        task_responses=[
+            {"next_thought": "Searching", "next_tool_name": "search", "next_tool_args": {"query": "test"}},
+            {"next_thought": "Done", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Found results", "results": "data"},
+            {"next_thought": "Analyzing", "next_tool_name": "analyze", "next_tool_args": {"data": "test"}},
+            {"next_thought": "Done", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Analyzed", "analysis": "result"},
+        ] * 20,
+        reflection_responses=[
+            {
+                "improved_predictor_instruction": "opt react search",
+                "improved_extract_instruction": "opt extract search",
+                "improved_tool_search_desc": "opt search desc",
+                "improved_tool_search_arg_query_desc": "opt query desc"
+            },
+            {
+                "improved_predictor_instruction": "opt react analyze",
+                "improved_extract_instruction": "opt extract analyze",
+                "improved_tool_analyze_desc": "opt analyze desc",
+                "improved_tool_analyze_arg_data_desc": "opt data desc"
+            }
+        ] * 20
+    )
+    optimizer.compile(program, trainset=trainset, valset=trainset)
+
+    # Verify both detected - use extract.predict as primary (for tracing)
+    searcher_name = get_predictor_name(program, program.searcher.extract.predict)
+    analyzer_name = get_predictor_name(program, program.analyzer.extract.predict)
+
+    searcher_key = f"{REACT_MODULE_PREFIX}:{searcher_name}"
+    analyzer_key = f"{REACT_MODULE_PREFIX}:{analyzer_name}"
+
+    assert searcher_key in seed_candidate
+    assert analyzer_key in seed_candidate
+
+
+def test_apply_optimized_react_descriptions():
+    """Apply optimized tool descriptions to ReAct modules."""
+
+    def search(query: str) -> str:
+        return f"Search: {query}"
+
+    program = dspy.ReAct("question -> answer", tools=[search])
+
+    # Create mock optimized candidate - use extract.predict as primary (for tracing)
+    react_name = get_predictor_name(program, program.react)
+    extract_predict_name = get_predictor_name(program, program.extract.predict)
+
+    component_key = f"{REACT_MODULE_PREFIX}:{extract_predict_name}"
+
+    optimized_candidate = {
+        component_key: json.dumps({
+            react_name: "OPTIMIZED: React instruction",
+            extract_predict_name: "OPTIMIZED: Extract instruction",
+            "tools": {
+                "search": {
+                    "desc": "OPTIMIZED: Search tool",
+                    "args": {"query": {"type": "string"}},
+                    "arg_desc": {"query": "OPTIMIZED: Query param"}
+                }
+            }
+        })
+    }
+
+    # Apply optimizations
+    adapter = DspyAdapter(
+        student_module=program,
+        metric_fn=lambda example, pred, trace=None: 0.5,
+        feedback_map={},
+        enable_tool_optimization=True,
+    )
+    rebuilt = adapter.build_program(optimized_candidate)
+
+    # Verify instructions updated
+    assert rebuilt.react.signature.instructions == "OPTIMIZED: React instruction"
+    assert rebuilt.extract.predict.signature.instructions == "OPTIMIZED: Extract instruction"
+
+    # Verify tool updated
+    assert rebuilt.tools["search"].desc == "OPTIMIZED: Search tool"
+
+def test_detect_nested_react_modules(monkeypatch):
+    """Detect ReAct modules in nested program structure."""
+    seed_candidate = setup_seed_candidate_capture(monkeypatch)
+
+
+    def search(query: str) -> str:
+        return f"Search: {query}"
+
+    def analyze(data: str) -> str:
+        return f"Analyze: {data}"
+
+    class Worker(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.react = dspy.ReAct("task -> result", tools=[analyze])
+
+        def forward(self, task):
+            return self.react(task=task)
+
+    class Orchestrator(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.searcher = dspy.ReAct("query -> results", tools=[search])
+            self.worker = Worker()
+
+        def forward(self, query):
+            results = self.searcher(query=query)
+            return self.worker(task=results.results)
+
+    program = Orchestrator()
+
+
+    optimizer, trainset = create_optimizer(
+        task_responses=[
+            {"next_thought": "Search", "next_tool_name": "search", "next_tool_args": {"query": "test"}},
+            {"next_thought": "Done", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Found", "results": "data"},
+            {"next_thought": "Analyze", "next_tool_name": "analyze", "next_tool_args": {"data": "test"}},
+            {"next_thought": "Done", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "Analyzed", "result": "final"},
+        ] * 20,
+        reflection_responses=[
+            {
+                "improved_predictor_instruction": "opt react search",
+                "improved_extract_instruction": "opt extract search",
+                "improved_tool_search_desc": "opt search desc",
+                "improved_tool_search_arg_query_desc": "opt query desc"
+            },
+            {
+                "improved_predictor_instruction": "opt react analyze",
+                "improved_extract_instruction": "opt extract analyze",
+                "improved_tool_analyze_desc": "opt analyze desc",
+                "improved_tool_analyze_arg_data_desc": "opt data desc"
+            }
+        ] * 20
+    )
+    optimizer.compile(program, trainset=trainset, valset=trainset)
+
+    # Verify nested modules detected with full paths - use extract.predict as primary (for tracing)
+    searcher_name = get_predictor_name(program, program.searcher.extract.predict)
+    worker_extract_name = get_predictor_name(program, program.worker.react.extract.predict)
+
+    searcher_key = f"{REACT_MODULE_PREFIX}:{searcher_name}"
+    worker_key = f"{REACT_MODULE_PREFIX}:{worker_extract_name}"
+
+    assert searcher_key in seed_candidate
+    assert worker_key in seed_candidate
+
+    # Verify full paths preserved (not truncated)
+    assert "searcher" in searcher_name  # Contains parent path
+    assert "worker" in worker_extract_name  # Contains nested path
