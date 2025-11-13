@@ -242,6 +242,7 @@ print(result)
 If you need to call an async tool from synchronous code, you can enable automatic conversion using the `allow_tool_async_sync_conversion` setting:
 
 ```python
+import asyncio
 import dspy
 
 async def async_weather(city: str) -> str:
