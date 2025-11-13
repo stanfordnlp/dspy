@@ -60,7 +60,7 @@ def test_save_model_with_custom_signature(tmp_path):
 @pytest.mark.extra
 def test_save_compiled_model(tmp_path):
     predict = dspy.Predict("question->answer")
-    dspy.settings.configure(lm=DummyLM([{"answer": "blue"}, {"answer": "white"}] * 10))
+    dspy.configure(lm=DummyLM([{"answer": "blue"}, {"answer": "white"}] * 10))
 
     trainset = [
         {"question": "What is the color of the sky?", "answer": "blue"},

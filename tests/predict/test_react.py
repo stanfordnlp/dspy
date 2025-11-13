@@ -41,7 +41,7 @@ def test_tool_observation_preserves_custom_type():
         ],
         adapter=adapter,
     )
-    dspy.settings.configure(lm=lm, adapter=adapter)
+    dspy.configure(lm=lm, adapter=adapter)
 
     react = dspy.ReAct("question -> answer", tools=[make_images])
     react(question="Draw me something red")
@@ -99,7 +99,7 @@ def test_tool_calling_with_pydantic_args():
             },
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     outputs = react(
         participant_name="Alice",
@@ -144,7 +144,7 @@ def test_tool_calling_without_typehint():
             {"reasoning": "I added the numbers successfully", "c": 3},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     outputs = react(a=1, b=2)
 
     expected_trajectory = {
@@ -227,7 +227,7 @@ def test_error_retry():
             {"reasoning": "I added the numbers successfully", "c": 3},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     outputs = react(a=1, b=2, max_iters=2)
     traj = outputs.trajectory

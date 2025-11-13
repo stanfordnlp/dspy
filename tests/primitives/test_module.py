@@ -38,7 +38,7 @@ def test_predictors():
 
 def test_forward():
     program = HopModule()
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             {
                 "What is 1+1?": {"query": "let me check"},

@@ -50,7 +50,7 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
         print("\nBootstrapping dataset summary (this will be used to generate instructions)...")
     upper_lim = min(len(trainset), view_data_batch_size)
     prompt_model = prompt_model if prompt_model else dspy.settings.lm
-    with dspy.settings.context(lm=prompt_model):
+    with dspy.context(lm=prompt_model):
         observation = dspy.Predict(DatasetDescriptor, n=1, temperature=1.0)(examples=order_input_keys_in_string(trainset[0:upper_lim].__repr__()))
     observations = observation["observations"]
 
@@ -68,7 +68,7 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
             if verbose:
                 print(f"b: {b}")
             upper_lim = min(len(trainset), b+view_data_batch_size)
-            with dspy.settings.context(lm=prompt_model):
+            with dspy.context(lm=prompt_model):
                 output = dspy.Predict(DatasetDescriptorWithPriorObservations, n=1, temperature=1.0)(prior_observations=observations, examples=order_input_keys_in_string(trainset[b:upper_lim].__repr__()))
             if len(output["observations"]) >= 8 and output["observations"][:8].upper() == "COMPLETE":
                 skips += 1
@@ -84,7 +84,7 @@ def create_dataset_summary(trainset, view_data_batch_size, prompt_model, log_fil
             print(f"e {e}. using observations from past round for a summary.")
 
     if prompt_model:
-        with dspy.settings.context(lm=prompt_model):
+        with dspy.context(lm=prompt_model):
             summary = dspy.Predict(ObservationSummarizer, n=1, temperature=1.0)(observations=observations)
     else:
         summary = dspy.Predict(ObservationSummarizer, n=1, temperature=1.0)(observations=observations)

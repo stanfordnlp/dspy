@@ -17,7 +17,7 @@ eval_score = evaluate(compiled_prompt_opt, devset=evalset[:EVAL_NUM], **kwargs)
 
 Note that this teleprompter takes in the following parameters:
 
-* prompt_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (ie. dspy.settings.configure(lm=task_model)).
+* prompt_model: The model used for prompt generation. When unspecified, defaults to the model set in settings (ie. dspy.configure(lm=task_model)).
 * metric: The task metric used for optimization.
 * breadth: The number of new prompts to generate at each iteration. Default=10.
 * depth: The number of times we should ask our prompt model to generate new prompts, with the history of the past prompts as input. Default=3.

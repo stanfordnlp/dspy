@@ -43,7 +43,7 @@ def test_compile_with_predict_instances():
     teacher = SimpleModule("input -> output")
 
     lm = DummyLM(["Initial thoughts", "Finish[blue]"])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     # Initialize BootstrapFewShot and compile the student
     bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
@@ -58,7 +58,7 @@ def test_bootstrap_effectiveness():
     student = SimpleModule("input -> output")
     teacher = SimpleModule("input -> output")
     lm = DummyLM([{"output": "blue"}, {"output": "Ring-ding-ding-ding-dingeringeding!"}], follow_examples=True)
-    dspy.settings.configure(lm=lm, trace=[])
+    dspy.configure(lm=lm, trace=[])
 
     bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)
@@ -99,7 +99,7 @@ def test_error_handling_during_bootstrap():
             {"output": "Initial thoughts"},  # Simulate initial teacher's prediction
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     bootstrap = BootstrapFewShot(
         metric=simple_metric,
@@ -125,7 +125,7 @@ def test_validation_set_usage():
             {"output": "Finish[blue]"},  # Expected output for both training and validation
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     compiled_student = bootstrap.compile(student, teacher=teacher, trainset=trainset)

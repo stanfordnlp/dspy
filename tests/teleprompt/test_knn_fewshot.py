@@ -49,7 +49,7 @@ def _test_knn_few_shot_compile(setup_knn_few_shot):
 
     # Setup DummyLM with a response for a query similar to one of the training examples
     lm = DummyLM(["Madrid", "10"])
-    dspy.settings.configure(lm=lm)  # Responses for the capital of Spain and the result of 5+5)
+    dspy.configure(lm=lm)  # Responses for the capital of Spain and the result of 5+5)
 
     knn_few_shot = setup_knn_few_shot
     trainset = knn_few_shot.KNN.trainset

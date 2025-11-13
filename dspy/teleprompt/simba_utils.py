@@ -155,7 +155,7 @@ def append_a_rule(bucket, system, **kwargs):
     kwargs = {k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
               for k, v in kwargs.items()}
 
-    with dspy.settings.context(trace=[], lm=prompt_model):
+    with dspy.context(trace=[], lm=prompt_model):
         advice_program = dspy.Predict(OfferFeedback)
         advice = advice_program(**kwargs).module_advice
 

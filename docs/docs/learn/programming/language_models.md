@@ -229,7 +229,7 @@ To enable the Responses API, just set `model_type="responses"` when creating the
 import dspy
 
 # Configure DSPy to use the Responses API for your language model
-dspy.settings.configure(
+dspy.configure(
     lm=dspy.LM(
         "openai/gpt-5-mini",
         model_type="responses",

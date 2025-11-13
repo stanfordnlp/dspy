@@ -39,7 +39,7 @@ class SimpleModule(dspy.Module):
 
 def test_signature_optimizer_optimization_process():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             [
                 {
@@ -69,7 +69,7 @@ def test_signature_optimizer_statistics_tracking():
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
     optimizer.track_stats = True  # Enable statistics tracking
 
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             [
                 {
@@ -105,7 +105,7 @@ def test_optimization_and_output_verification():
             {"reasoning": "france", "output": "Paris"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
 
     student = SimpleModule("input -> output")
@@ -125,7 +125,7 @@ def test_optimization_and_output_verification():
 
 
 def test_statistics_tracking_during_optimization():
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             [
                 {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
