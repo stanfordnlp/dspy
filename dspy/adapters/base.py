@@ -114,7 +114,7 @@ class Adapter:
         self,
         processed_signature: type[Signature],
         original_signature: type[Signature],
-        outputs: list[dict[str, Any]],
+        outputs: list[dict[str, Any] | str],
         lm: "LM",
     ) -> list[dict[str, Any]]:
         values = []

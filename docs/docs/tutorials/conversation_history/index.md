@@ -118,7 +118,7 @@ You may notice that `history` does not appear in the input fields section of the
 
 For example:
 
-```
+```python
 import dspy
 
 dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
