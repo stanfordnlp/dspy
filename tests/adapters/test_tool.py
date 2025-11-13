@@ -385,7 +385,7 @@ async def test_async_concurrent_calls():
 def test_async_tool_call_in_sync_mode():
     tool = Tool(async_dummy_function)
     with dspy.context(allow_tool_async_sync_conversion=False):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r".*acall.*allow_tool_async_sync_conversion.*"):
             result = tool(x=1, y="hello")
 
     with dspy.context(allow_tool_async_sync_conversion=True):
