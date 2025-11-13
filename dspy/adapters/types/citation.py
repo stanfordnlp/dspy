@@ -168,6 +168,12 @@ class Citations(Type):
         return self.citations[index]
 
     @classmethod
+    def adapt_to_native_lm_feature(cls, signature, field_name, lm, lm_kwargs) -> bool:
+        if lm.model.startswith("anthropic/"):
+            return signature.delete(field_name)
+        return signature
+
+    @classmethod
     def is_streamable(cls) -> bool:
         """Whether the Citations type is streamable."""
         return True

@@ -975,6 +975,10 @@ async def test_streaming_allows_custom_streamable_type():
             return True
 
         @classmethod
+        def adapt_to_native_lm_feature(cls, signature, field_name, lm, lm_kwargs):
+            return signature.delete(field_name)
+
+        @classmethod
         def parse_stream_chunk(cls, chunk):
             return CustomType(message=chunk.choices[0].delta.content)
 
@@ -1515,3 +1519,294 @@ def test_stream_listener_could_form_end_identifier_xml_adapter():
     # Should return False for text that cannot form the pattern
     assert listener._could_form_end_identifier("hello world", "XMLAdapter") is False
     assert listener._could_form_end_identifier("some text", "XMLAdapter") is False
+
+
+@pytest.mark.anyio
+async def test_streaming_reasoning_model():
+    """Test streaming behavior for reasoning-capable models using dspy.Reasoning.
+
+    This test verifies that:
+    1. Reasoning content is extracted from delta.reasoning_content in stream chunks
+    2. Reasoning chunks are streamed independently from regular content
+    3. The final prediction contains a Reasoning object with the full reasoning content
+    """
+
+    class ReasoningSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict(ReasoningSignature)
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    async def reasoning_stream(*args, **kwargs):
+        """Simulate streaming from a reasoning model like Claude 3.7 Sonnet"""
+        # Reasoning content comes through delta.reasoning_content
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[
+                StreamingChoices(delta=Delta(reasoning_content="First, let's think about this problem step by step. "))
+            ],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(reasoning_content="We need to consider the context of a kitchen. "))],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[
+                StreamingChoices(
+                    delta=Delta(reasoning_content="The chicken likely wants to reach something on the other side.")
+                )
+            ],
+        )
+        # Regular answer content comes through delta.content
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(content="To"))],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(content=" get"))],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(content=" to"))],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(content=" the"))],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(content=" other"))],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(content=" side"))],
+        )
+        yield ModelResponseStream(
+            model="anthropic/claude-3-7-sonnet-20250219",
+            choices=[StreamingChoices(delta=Delta(content="!\n\n[[ ## completed ## ]]"))],
+        )
+
+    with mock.patch("litellm.acompletion", side_effect=reasoning_stream):
+        with mock.patch("litellm.supports_reasoning", return_value=True):
+            program = dspy.streamify(
+                MyProgram(),
+                stream_listeners=[
+                    dspy.streaming.StreamListener(signature_field_name="reasoning"),
+                    dspy.streaming.StreamListener(signature_field_name="answer"),
+                ],
+            )
+            with dspy.context(
+                lm=dspy.LM("anthropic/claude-3-7-sonnet-20250219", cache=False),
+                adapter=dspy.ChatAdapter(native_response_types=[dspy.Reasoning]),
+            ):
+                output = program(question="Why did a chicken cross the kitchen?")
+                reasoning_chunks = []
+                answer_chunks = []
+                final_prediction = None
+                async for value in output:
+                    if isinstance(value, dspy.streaming.StreamResponse):
+                        if value.signature_field_name == "reasoning":
+                            reasoning_chunks.append(value)
+                        elif value.signature_field_name == "answer":
+                            answer_chunks.append(value)
+                    elif isinstance(value, dspy.Prediction):
+                        final_prediction = value
+
+                # Verify reasoning chunks were streamed
+                assert len(reasoning_chunks) == 3
+                assert reasoning_chunks[0].chunk == "First, let's think about this problem step by step. "
+                assert reasoning_chunks[1].chunk == "We need to consider the context of a kitchen. "
+                assert reasoning_chunks[2].chunk == "The chicken likely wants to reach something on the other side."
+
+                # Verify answer chunks were streamed
+                assert len(answer_chunks) > 0
+                assert answer_chunks[0].chunk == "To"
+                full_answer = "".join([chunk.chunk for chunk in answer_chunks])
+                assert full_answer == "To get to the other side!"
+
+                # Verify final prediction has Reasoning object
+                assert final_prediction is not None
+                assert hasattr(final_prediction, "reasoning")
+                assert isinstance(final_prediction.reasoning, dspy.Reasoning)
+                expected_reasoning = (
+                    "First, let's think about this problem step by step. "
+                    "We need to consider the context of a kitchen. "
+                    "The chicken likely wants to reach something on the other side."
+                )
+                assert final_prediction.reasoning.content == expected_reasoning
+
+
+@pytest.mark.anyio
+async def test_streaming_reasoning_fallback():
+    """Test fallback behavior for non-reasoning models using dspy.Reasoning.
+
+    This test verifies that:
+    1. For non-reasoning models, reasoning is treated as a regular string field
+    2. Reasoning content is streamed through regular adapter parsing (not reasoning_content)
+    3. The Reasoning object is created from the parsed string content
+    4. Streaming behavior is identical to regular string fields
+    """
+
+    class ReasoningSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predict = dspy.Predict(ReasoningSignature)
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    async def non_reasoning_stream(*args, **kwargs):
+        """Simulate streaming from a non-reasoning model like GPT-4o-mini.
+
+        The reasoning field is formatted by the adapter as a regular field,
+        and content comes through delta.content (not reasoning_content).
+        """
+        # Reasoning field marker (ChatAdapter format)
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="[[ ## reasoning ## ]]\n"))],
+        )
+        # Reasoning content as regular text
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="Let"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="'s"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" think"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" step"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" by"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" step"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" about"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" this"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" question"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="."))],
+        )
+        # Answer field marker
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## answer ## ]]\n"))],
+        )
+        # Answer content
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="To"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" get"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" to"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" the"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" other"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content=" side"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="!"))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))],
+        )
+
+    with mock.patch("litellm.acompletion", side_effect=non_reasoning_stream):
+        with mock.patch("litellm.supports_reasoning", return_value=False):
+            program = dspy.streamify(
+                MyProgram(),
+                stream_listeners=[
+                    dspy.streaming.StreamListener(signature_field_name="reasoning"),
+                    dspy.streaming.StreamListener(signature_field_name="answer"),
+                ],
+            )
+            with dspy.context(
+                lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+                adapter=dspy.ChatAdapter(),
+            ):
+                output = program(question="Why did a chicken cross the kitchen?")
+                reasoning_chunks = []
+                answer_chunks = []
+                final_prediction = None
+                async for value in output:
+                    if isinstance(value, dspy.streaming.StreamResponse):
+                        if value.signature_field_name == "reasoning":
+                            reasoning_chunks.append(value)
+                        elif value.signature_field_name == "answer":
+                            answer_chunks.append(value)
+                    elif isinstance(value, dspy.Prediction):
+                        final_prediction = value
+
+                # Verify reasoning was streamed as regular text
+                assert len(reasoning_chunks) > 0
+                assert reasoning_chunks[0].chunk == "Let"
+                assert reasoning_chunks[1].chunk == "'s"
+                full_reasoning = "".join([chunk.chunk for chunk in reasoning_chunks])
+                assert full_reasoning == "Let's think step by step about this question."
+
+                # Verify answer chunks were streamed
+                assert len(answer_chunks) > 0
+                assert answer_chunks[0].chunk == "To"
+                full_answer = "".join([chunk.chunk for chunk in answer_chunks])
+                assert full_answer == "To get to the other side!"
+
+                # Verify final prediction has Reasoning object created from string
+                assert final_prediction is not None
+                assert hasattr(final_prediction, "reasoning")
+                assert isinstance(final_prediction.reasoning, dspy.Reasoning)
+                assert final_prediction.reasoning.content == "Let's think step by step about this question."
+                # Verify Reasoning object is str-like
+                assert str(final_prediction.reasoning) == "Let's think step by step about this question."

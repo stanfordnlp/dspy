@@ -134,13 +134,6 @@ class StreamListener:
             else:
                 return
 
-        try:
-            chunk_message = chunk.choices[0].delta.content
-            if chunk_message is None:
-                return
-        except Exception:
-            return
-
         # Handle custom streamable types
         if self._output_type and issubclass(self._output_type, Type) and self._output_type.is_streamable():
             if parsed_chunk := self._output_type.parse_stream_chunk(chunk):
@@ -150,6 +143,14 @@ class StreamListener:
                     parsed_chunk,
                     is_last_chunk=self.stream_end,
                 )
+
+        # For non-custom streamable types, the streaming chunks come from the content field of the ModelResponseStream.
+        try:
+            chunk_message = chunk.choices[0].delta.content
+            if chunk_message is None:
+                return
+        except Exception:
+            return
 
         if chunk_message and start_identifier in chunk_message and not isinstance(settings.adapter, JSONAdapter):
             # If the cache is hit, the chunk_message could be the full response. When it happens we can

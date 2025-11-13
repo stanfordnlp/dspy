@@ -155,7 +155,8 @@ def test_citations_postprocessing():
         CitationSignature.delete("citations"),
         CitationSignature,
         outputs,
-        dspy.LM(model="claude-3-5-sonnet-20241022")
+        dspy.LM(model="anthropic/claude-3-5-sonnet-20241022"),
+        lm_kwargs={},
     )
 
     assert len(result) == 1

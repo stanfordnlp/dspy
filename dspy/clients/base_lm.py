@@ -204,6 +204,10 @@ class BaseLM:
         for c in response.choices:
             output = {}
             output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+
+            if hasattr(c, "message") and hasattr(c.message, "reasoning_content") and c.message.reasoning_content:
+                output["reasoning_content"] = c.message.reasoning_content
+
             if merged_kwargs.get("logprobs"):
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
@@ -219,7 +223,6 @@ class BaseLM:
         if all(len(output) == 1 for output in outputs):
             # Return a list if every output only has "text" key
             outputs = [output["text"] for output in outputs]
-
         return outputs
 
     def _extract_citations_from_response(self, choice):
