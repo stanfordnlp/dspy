@@ -7,7 +7,7 @@ automatically using Fabric's built-in service discovery and token utilities.
 Note: This class only works within a Microsoft Fabric environment.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 import requests
 
@@ -26,9 +26,14 @@ class FabricAzureOpenAI(BaseLM):
         - synapse.ml.fabric.service_discovery
         - synapse.ml.fabric.token_utils
 
+    Supported models:
+        - gpt-5 (reasoning model)
+        - gpt-4.1
+        - gpt-4.1-mini
+
     Args:
         deployment_name: The name of the Azure OpenAI deployment to use.
-            Defaults to "gpt-4o".
+            Must be one of: gpt-5, gpt-4.1, gpt-4.1-mini
         model_type: The type of the model. Defaults to "chat".
         temperature: The sampling temperature. Defaults to 0.0.
         max_tokens: Maximum number of tokens to generate. Defaults to 4000.
@@ -41,7 +46,7 @@ class FabricAzureOpenAI(BaseLM):
         from dspy.clients import FabricAzureOpenAI
 
         # In a Microsoft Fabric notebook
-        lm = FabricAzureOpenAI(deployment_name="gpt-4o")
+        lm = FabricAzureOpenAI(deployment_name="gpt-5")
         dspy.configure(lm=lm)
 
         # Use with DSPy modules
@@ -50,9 +55,13 @@ class FabricAzureOpenAI(BaseLM):
         ```
     """
 
+    # Supported models in Microsoft Fabric
+    SUPPORTED_MODELS: ClassVar[set[str]] = {"gpt-5", "gpt-4.1", "gpt-4.1-mini"}
+    REASONING_MODELS: ClassVar[set[str]] = {"gpt-5"}
+
     def __init__(
         self,
-        deployment_name: str = "gpt-4o",
+        deployment_name: str = "gpt-5",
         model_type: str = "chat",
         temperature: float = 0.0,
         max_tokens: int = 4000,
@@ -68,7 +77,19 @@ class FabricAzureOpenAI(BaseLM):
             max_tokens: Maximum tokens to generate.
             cache: Whether to enable caching.
             **kwargs: Additional keyword arguments.
+
+        Raises:
+            ValueError: If deployment_name is not a supported model.
         """
+        # Validate model support
+        if deployment_name not in self.SUPPORTED_MODELS:
+            raise ValueError(
+                f"Model '{deployment_name}' is not supported in Microsoft Fabric. "
+                f"Supported models are: {', '.join(sorted(self.SUPPORTED_MODELS))}. "
+                f"For more information, see: "
+                f"https://learn.microsoft.com/en-us/fabric/data-science/ai-services/ai-services-overview"
+            )
+
         self.deployment_name = deployment_name
         super().__init__(
             model=deployment_name,
@@ -79,14 +100,8 @@ class FabricAzureOpenAI(BaseLM):
             **kwargs,
         )
 
-        # Models that use max_completion_tokens and don't support temperature
-        self.is_reasoning_model = any(
-            [
-                "gpt-5" in deployment_name.lower(),
-                "o1" in deployment_name.lower(),
-                "o3" in deployment_name.lower(),
-            ]
-        )
+        # Check if this is a reasoning model
+        self.is_reasoning_model = deployment_name in self.REASONING_MODELS
 
     def _get_fabric_config(self):
         """Get Fabric environment configuration and auth header.

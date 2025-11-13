@@ -57,6 +57,17 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
         dspy.configure(lm=lm)
         ```
 
+    === "Microsoft Fabric"
+        If you're on the Microsoft Fabric platform, authentication is automatic via their SDK.
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM("microsoftfabric/gpt-5")  # Reasoning model
+        dspy.configure(lm=lm)
+        ```
+
+        Learn more about [Azure OpenAI in Microsoft Fabric](https://learn.microsoft.com/en-us/fabric/data-science/ai-services/ai-services-overview).
+
     === "Gemini"
         You can authenticate by setting the `GEMINI_API_KEY` env variable or passing `api_key` below.
 
