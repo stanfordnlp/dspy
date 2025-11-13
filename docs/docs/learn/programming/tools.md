@@ -213,6 +213,52 @@ the screenshot below:
 
 Native function calling automatically detects model support using `litellm.supports_function_calling()`. If the model doesn't support native function calling, DSPy will fall back to manual text-based parsing even when `use_native_function_calling=True` is set.
 
+## Async Tools
+
+DSPy tools support both synchronous and asynchronous functions. When working with async tools, you have two options:
+
+### Using `acall` for Async Tools
+
+The recommended approach is to use `acall` when working with async tools:
+
+```python
+import asyncio
+import dspy
+
+async def async_weather(city: str) -> str:
+    """Get weather information asynchronously."""
+    await asyncio.sleep(0.1)  # Simulate async API call
+    return f"The weather in {city} is sunny"
+
+tool = dspy.Tool(async_weather)
+
+# Use acall for async tools
+result = await tool.acall(city="New York")
+print(result)
+```
+
+### Running Async Tools in Sync Mode
+
+If you need to call an async tool from synchronous code, you can enable automatic conversion using the `allow_tool_async_sync_conversion` setting:
+
+```python
+import asyncio
+import dspy
+
+async def async_weather(city: str) -> str:
+    """Get weather information asynchronously."""
+    await asyncio.sleep(0.1)
+    return f"The weather in {city} is sunny"
+
+tool = dspy.Tool(async_weather)
+
+# Enable async-to-sync conversion
+with dspy.context(allow_tool_async_sync_conversion=True):
+    # Now you can use __call__ on async tools
+    result = tool(city="New York")
+    print(result)
+```
+
 ## Best Practices
 
 ### 1. Tool Function Design
