@@ -27,6 +27,37 @@ class LM(BaseLM):
     A language model supporting chat or text completion requests for use with DSPy modules.
     """
 
+    def __new__(
+        cls,
+        model: str,
+        model_type: Literal["chat", "text", "responses"] = "chat",
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        cache: bool = True,
+        **kwargs,
+    ):
+        """Create a new LM instance, delegating to FabricAzureOpenAI for microsoftfabric/ models."""
+        # Only check for microsoftfabric prefix if model is a string
+        if isinstance(model, str) and model.startswith("microsoftfabric/"):
+            # Import here to avoid circular dependency
+            from dspy.clients.fabric_azure_openai import FabricAzureOpenAI
+
+            # Extract the deployment name (everything after "microsoftfabric/")
+            deployment_name = model.split("microsoftfabric/", 1)[1]
+
+            # Create and return a FabricAzureOpenAI instance
+            return FabricAzureOpenAI(
+                deployment_name=deployment_name,
+                model_type=model_type,
+                temperature=temperature if temperature is not None else 0.0,
+                max_tokens=max_tokens if max_tokens is not None else 4000,
+                cache=cache,
+                **kwargs,
+            )
+
+        # For all other models, create a regular LM instance
+        return super().__new__(cls)
+
     def __init__(
         self,
         model: str,
@@ -129,12 +160,7 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    def forward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
+    def forward(self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs):
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
