@@ -43,11 +43,16 @@ def bad_metric(example, prediction):
     return 0.0
 
 
-@pytest.mark.parametrize("full_eval_size, batch, expected_callback_metadata", [
+@pytest.mark.parametrize("reflection_minibatch_size, batch, expected_callback_metadata", [
+    (None, [], {"metric_key": "eval_full"}),
+    (None, [Example(input="What is the color of the sky?", output="blue")], {"metric_key": "eval_full"}),
     (1, [], {"disable_logging": True}),
-    (1, [Example(input="What is the color of the sky?", output="blue")], {"metric_key": "eval_full"}),
+    (1, [
+        Example(input="What is the color of the sky?", output="blue"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"),
+    ], {"metric_key": "eval_full"}),
 ])
-def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, full_eval_size, batch, expected_callback_metadata):
+def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, reflection_minibatch_size, batch, expected_callback_metadata):
     from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
     from dspy.teleprompt.gepa import gepa_utils
 
@@ -61,7 +66,7 @@ def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, full_eval_
         metric_fn=simple_metric,
         feedback_map={},
         failure_score=0.0,
-        full_eval_size=full_eval_size,
+        reflection_minibatch_size=reflection_minibatch_size,
     )
 
     captured_kwargs: dict[str, Any] = {}

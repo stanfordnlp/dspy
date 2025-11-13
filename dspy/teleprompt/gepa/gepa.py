@@ -546,7 +546,7 @@ class GEPA(Teleprompter):
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
-            full_eval_size=len(valset),
+            reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
         # Instantiate GEPA with the simpler adapter-based API

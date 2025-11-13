@@ -77,7 +77,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         reflection_lm=None,
         custom_instruction_proposer: "ProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
-        full_eval_size: int | None = None,
+        reflection_minibatch_size: int | None = None,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -89,7 +89,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.reflection_lm = reflection_lm
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
-        self.full_eval_size = full_eval_size
+        self.reflection_minibatch_size = reflection_minibatch_size
 
         if self.custom_instruction_proposer is not None:
             # We are only overriding the propose_new_texts method when a custom
@@ -130,7 +130,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
     def evaluate(self, batch, candidate, capture_traces=False):
         program = self.build_program(candidate)
-        callback_metadata = {"metric_key": "eval_full"} if self.full_eval_size == len(batch) else {"disable_logging": True}
+        callback_metadata = {"metric_key": "eval_full"} if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size else {"disable_logging": True}
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
