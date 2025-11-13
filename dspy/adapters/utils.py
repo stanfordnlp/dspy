@@ -192,7 +192,8 @@ def get_annotation_name(annotation):
     args = get_args(annotation)
     if origin is None:
         if annotation is Reasoning:
-            # Reasoning field type is treated as a string.
+            # Keep backward compatibility with the old behavior in `dspy.ChainOfThought`, where reasoning
+            # field type is treated as a string.
             return "str"
         if hasattr(annotation, "__name__"):
             return annotation.__name__
