@@ -99,6 +99,33 @@ async def main():
 asyncio.run(main())
 ```
 
+#### Using Async Tools in Synchronous Contexts
+
+If you need to call an async tool from synchronous code, you can enable automatic async-to-sync conversion:
+
+```python
+import dspy
+
+async def async_tool(x: int) -> int:
+    """An async tool that doubles a number."""
+    await asyncio.sleep(0.1)
+    return x * 2
+
+tool = dspy.Tool(async_tool)
+
+# Option 1: Use context manager for temporary conversion
+with dspy.context(allow_tool_async_sync_conversion=True):
+    result = tool(x=5)  # Works in sync context
+    print(result)  # 10
+
+# Option 2: Configure globally
+dspy.configure(allow_tool_async_sync_conversion=True)
+result = tool(x=5)  # Now works everywhere
+print(result)  # 10
+```
+
+For more details on async tools, see the [Tools documentation](../../learn/programming/tools.md#async-tools).
+
 Note: When using `dspy.ReAct` with tools, calling `acall()` on the ReAct instance will automatically
 execute all tools asynchronously using their `acall()` methods.
 
