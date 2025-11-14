@@ -393,6 +393,16 @@ def test_async_tool_call_in_sync_mode():
         assert result == "hello 1"
 
 
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore::DeprecationWarning:pytest_asyncio")
+async def test_async_tool_call_from_running_event_loop():
+    tool = Tool(async_dummy_function)
+
+    with dspy.context(allow_tool_async_sync_conversion=True):
+        result = tool(x=42, y="test")
+        assert result == "test 42"
+
+
 TOOL_CALL_TEST_CASES = [
     ([], {"tool_calls": []}),
     (
@@ -540,8 +550,6 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
         "bar": "The bar.",
         "baz": "No description provided. (Required)",
     }
-
-
 
 
 def test_tool_call_execute():
