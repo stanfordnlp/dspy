@@ -14,10 +14,15 @@ def run_async(coro):
         loop = None
 
     if loop and loop.is_running():
-        # If we're in a running event loop (e.g., Jupyter), use asyncio.create_task and run until done
-        import nest_asyncio
+        try:
+            import nest_asyncio
 
-        nest_asyncio.apply()
+            nest_asyncio.apply()
+        except ImportError:
+            raise ImportError(
+                "nest_asyncio is required to call async functions from within a running event loop. "
+                "Install it with: pip install nest-asyncio"
+            )
         return asyncio.get_event_loop().run_until_complete(coro)
     else:
         return asyncio.run(coro)
