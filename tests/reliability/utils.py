@@ -80,7 +80,7 @@ def judge_dspy_configuration(**extra_judge_config):
     if judge_params is None:
         raise ValueError(f"No LiteLLM configuration found for judge model: {JUDGE_MODEL_NAME}")
 
-    with dspy.settings.context(lm=dspy.LM(**judge_params, **extra_judge_config), adapter=adapter):
+    with dspy.context(lm=dspy.LM(**judge_params, **extra_judge_config), adapter=adapter):
         yield
 
 

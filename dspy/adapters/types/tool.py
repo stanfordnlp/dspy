@@ -179,8 +179,9 @@ class Tool(Type):
                 return self._run_async_in_sync(result)
             else:
                 raise ValueError(
-                    "You are calling `__call__` on an async tool, please use `acall` instead or set "
-                    "`allow_async=True` to run the async tool in sync mode."
+                    "You are calling `__call__` on an async tool, please use `acall` instead or enable "
+                    "async-to-sync conversion with `dspy.configure(allow_tool_async_sync_conversion=True)` "
+                    "or `with dspy.context(allow_tool_async_sync_conversion=True):`."
                 )
         return result
 

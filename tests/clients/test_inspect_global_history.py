@@ -14,7 +14,7 @@ def clear_history():
 def test_inspect_history_basic(capsys):
     # Configure a DummyLM with some predefined responses
     lm = DummyLM([{"response": "Hello"}, {"response": "How are you?"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     # Make some calls to generate history
     predictor = dspy.Predict("query: str -> response: str")
@@ -35,7 +35,7 @@ def test_inspect_history_with_n(capsys):
     Random failures in this test most likely mean you are printing messages somewhere
     """
     lm = DummyLM([{"response": "One"}, {"response": "Two"}, {"response": "Three"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     # Generate some history
     predictor = dspy.Predict("query: str -> response: str")
@@ -54,7 +54,7 @@ def test_inspect_history_with_n(capsys):
 def test_inspect_empty_history(capsys):
     # Configure fresh DummyLM
     lm = DummyLM([])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     # Test inspecting empty history
     dspy.inspect_history()
@@ -65,7 +65,7 @@ def test_inspect_empty_history(capsys):
 
 def test_inspect_history_n_larger_than_history(capsys):
     lm = DummyLM([{"response": "First"}, {"response": "Second"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     predictor = dspy.Predict("query: str -> response: str")
     predictor(query="Query 1")

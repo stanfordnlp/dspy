@@ -19,6 +19,7 @@ nav:
             - Modules: learn/programming/modules.md
             - Adapters: learn/programming/adapters.md
             - Tools: learn/programming/tools.md
+            - MCP: learn/programming/mcp.md
         - DSPy Evaluation:
             - Evaluation Overview: learn/evaluation/overview.md
             - Data Handling: learn/evaluation/data.md
@@ -53,6 +54,7 @@ nav:
             - GEPA for AIME (Math): tutorials/gepa_aime/index.ipynb
             - GEPA for Structured Information Extraction for Enterprise Tasks: tutorials/gepa_facilitysupportanalyzer/index.ipynb
             - GEPA for Privacy-Conscious Delegation: tutorials/gepa_papillon/index.ipynb
+            - GEPA for Code Backdoor Classification (AI control): tutorials/gepa_trusted_monitor/index.ipynb
         - Experimental RL Optimization for DSPy:
             - Overview: tutorials/rl_ai_program/index.md
             - RL for Privacy-Conscious Delegation: tutorials/rl_papillon/index.ipynb
@@ -298,6 +300,7 @@ extra:
 
 extra_javascript:
     - "js/runllm-widget.js"
+    - "js/tutorial-nav.js"
 
 markdown_extensions:
     - toc:

@@ -107,7 +107,7 @@ def test_reflection_lm_gets_structured_images():
             {"label": "vertebrate"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     gepa = dspy.GEPA(
         metric=lambda gold, pred, trace=None, pred_name=None, pred_trace=None: 0.3,
@@ -172,7 +172,7 @@ def test_custom_proposer_without_reflection_lm():
             {"label": "mode"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     # Test the full flexibility: no reflection_lm provided to GEPA at all!
     # The updated GEPA core library now allows this when using custom proposers
@@ -266,7 +266,7 @@ def test_image_serialization_into_strings():
             {"label": "herbivore"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     reflection_lm = DummyLM(
         [
@@ -323,7 +323,7 @@ def test_default_proposer():
             {"label": "herbivore"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     reflection_lm = DummyLM(
         [

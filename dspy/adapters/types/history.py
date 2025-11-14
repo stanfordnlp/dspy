@@ -22,7 +22,7 @@ class History(pydantic.BaseModel):
         ```
         import dspy
 
-        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
         class MySignature(dspy.Signature):
             question: str = dspy.InputField()
@@ -44,7 +44,7 @@ class History(pydantic.BaseModel):
         ```
         import dspy
 
-        dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
         class MySignature(dspy.Signature):
             question: str = dspy.InputField()

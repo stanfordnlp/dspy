@@ -334,8 +334,16 @@ def test_json_adapter_formats_with_nested_documents():
     adapter = dspy.JSONAdapter()
     messages = adapter.format(MySignature, [], {"document": document_wrapper})
 
-    expected_doc1_content = {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world!"}, "citations": {"enabled": True}}
-    expected_doc2_content = {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world 2!"}, "citations": {"enabled": True}}
+    expected_doc1_content = {
+        "type": "document",
+        "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world!"},
+        "citations": {"enabled": True},
+    }
+    expected_doc2_content = {
+        "type": "document",
+        "source": {"type": "text", "media_type": "text/plain", "data": "Hello, world 2!"},
+        "citations": {"enabled": True},
+    }
 
     assert expected_doc1_content in messages[1]["content"]
     assert expected_doc2_content in messages[1]["content"]
@@ -643,6 +651,7 @@ def test_json_adapter_fallback_to_json_mode_on_structured_output_failure():
         _, second_call_kwargs = mock_completion.call_args_list[1]
         assert second_call_kwargs.get("response_format") == {"type": "json_object"}
 
+
 def test_json_adapter_json_mode_no_structured_outputs():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -651,11 +660,15 @@ def test_json_adapter_json_mode_no_structured_outputs():
     dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
     program = dspy.Predict(TestSignature)
 
-    with mock.patch("litellm.completion") as mock_completion, \
-        mock.patch("litellm.get_supported_openai_params") as mock_get_supported_openai_params, \
-        mock.patch("litellm.supports_response_schema") as mock_supports_response_schema:
+    with (
+        mock.patch("litellm.completion") as mock_completion,
+        mock.patch("litellm.get_supported_openai_params") as mock_get_supported_openai_params,
+        mock.patch("litellm.supports_response_schema") as mock_supports_response_schema,
+    ):
         # Call a model that allows json but not structured outputs
-        mock_completion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'answer': 'Test output'}"))]
+        )
         mock_get_supported_openai_params.return_value = ["response_format"]
         mock_supports_response_schema.return_value = False
 
@@ -676,11 +689,15 @@ async def test_json_adapter_json_mode_no_structured_outputs_async():
 
     program = dspy.Predict(TestSignature)
 
-    with mock.patch("litellm.acompletion") as mock_acompletion, \
-        mock.patch("litellm.get_supported_openai_params") as mock_get_supported_openai_params, \
-        mock.patch("litellm.supports_response_schema") as mock_supports_response_schema:
+    with (
+        mock.patch("litellm.acompletion") as mock_acompletion,
+        mock.patch("litellm.get_supported_openai_params") as mock_get_supported_openai_params,
+        mock.patch("litellm.supports_response_schema") as mock_supports_response_schema,
+    ):
         # Call a model that allows json but not structured outputs
-        mock_acompletion.return_value = ModelResponse(choices=[Choices(message=Message(content="{'answer': 'Test output'}"))])
+        mock_acompletion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content="{'answer': 'Test output'}"))]
+        )
         mock_get_supported_openai_params.return_value = ["response_format"]
         mock_supports_response_schema.return_value = False
 
@@ -870,6 +887,44 @@ def test_json_adapter_toolcalls_no_native_function_calling():
         assert call_kwargs["response_format"] == {"type": "json_object"}
 
 
+def test_json_adapter_native_reasoning():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        reasoning: dspy.Reasoning = dspy.OutputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(
+                    message=Message(
+                        content="{'answer': 'Paris'}",
+                        reasoning_content="Step-by-step thinking about the capital of France",
+                    ),
+                )
+            ],
+            model="anthropic/claude-3-7-sonnet-20250219",
+        )
+        modified_signature = adapter._call_preprocess(
+            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            {},
+            MySignature,
+            {"question": "What is the capital of France?"},
+        )
+        assert "reasoning" not in modified_signature.output_fields
+
+        result = adapter(
+            dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", reasoning_effort="low", cache=False),
+            {},
+            MySignature,
+            [],
+            {"question": "What is the capital of France?"},
+        )
+        assert result[0]["reasoning"] == dspy.Reasoning(content="Step-by-step thinking about the capital of France")
+
+
 def test_json_adapter_with_responses_api():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -890,9 +945,7 @@ def test_json_adapter_with_responses_api():
                     "type": "message",
                     "role": "assistant",
                     "status": "completed",
-                    "content": [
-                        {"type": "output_text", "text": '{"answer": "Washington, D.C."}', "annotations": []}
-                    ],
+                    "content": [{"type": "output_text", "text": '{"answer": "Washington, D.C."}', "annotations": []}],
                 },
             ),
         ],
@@ -927,3 +980,36 @@ def test_json_adapter_with_responses_api():
     assert "text" in call_kwargs
     assert isinstance(call_kwargs["text"]["format"], type)
     assert issubclass(call_kwargs["text"]["format"], pydantic.BaseModel)
+
+
+def test_format_system_message():
+    class MySignature(dspy.Signature):
+        """Answer the question with multiple answers and scores"""
+
+        question: str = dspy.InputField()
+        answers: list[str] = dspy.OutputField()
+        scores: list[float] = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    system_message = adapter.format_system_message(MySignature)
+    expected_system_message = """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answers` (list[str]): 
+2. `scores` (list[float]):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+Inputs will have the following structure:
+
+[[ ## question ## ]]
+{question}
+
+Outputs will be a JSON object with the following fields.
+
+{
+  "answers": "{answers}        # note: the value you produce must adhere to the JSON schema: {\\"type\\": \\"array\\", \\"items\\": {\\"type\\": \\"string\\"}}",
+  "scores": "{scores}        # note: the value you produce must adhere to the JSON schema: {\\"type\\": \\"array\\", \\"items\\": {\\"type\\": \\"number\\"}}"
+}
+In adhering to this structure, your objective is: 
+        Answer the question with multiple answers and scores"""
+    assert system_message == expected_system_message

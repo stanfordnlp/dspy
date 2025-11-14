@@ -70,7 +70,7 @@ def test_lm_after_dump_and_load_state():
 def test_call_method():
     predict_instance = Predict("input -> output")
     lm = DummyLM([{"output": "test output"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     result = predict_instance(input="test input")
     assert result.output == "test output"
 
@@ -253,21 +253,21 @@ def test_lm_field_after_dump_and_load_state(tmp_path, filename):
     assert file_path.exists()
 
     loaded_predict = dspy.Predict("q->a")
-    loaded_predict.load(file_path)
+    loaded_predict.load(file_path, allow_pickle=True)
 
     assert original_predict.dump_state() == loaded_predict.dump_state()
 
 
 def test_forward_method():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([{"answer": "No more responses"}]))
+    dspy.configure(lm=DummyLM([{"answer": "No more responses"}]))
     result = program(question="What is 1+1?").answer
     assert result == "No more responses"
 
 
 def test_forward_method2():
     program = Predict("question -> answer1, answer2")
-    dspy.settings.configure(lm=DummyLM([{"answer1": "my first answer", "answer2": "my second answer"}]))
+    dspy.configure(lm=DummyLM([{"answer1": "my first answer", "answer2": "my second answer"}]))
     result = program(question="What is 1+1?")
     assert result.answer1 == "my first answer"
     assert result.answer2 == "my second answer"
@@ -282,7 +282,7 @@ def test_config_management():
 
 def test_multi_output():
     program = Predict("question -> answer", n=2)
-    dspy.settings.configure(lm=DummyLM([{"answer": "my first answer"}, {"answer": "my second answer"}]))
+    dspy.configure(lm=DummyLM([{"answer": "my first answer"}, {"answer": "my second answer"}]))
     results = program(question="What is 1+1?")
     assert results.completions.answer[0] == "my first answer"
     assert results.completions.answer[1] == "my second answer"
@@ -290,7 +290,7 @@ def test_multi_output():
 
 def test_multi_output2():
     program = Predict("question -> answer1, answer2", n=2)
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             [
                 {"answer1": "my 0 answer", "answer2": "my 2 answer"},
@@ -327,7 +327,7 @@ def test_datetime_inputs_and_outputs():
             }
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     output = program(
         events=[
@@ -359,7 +359,7 @@ def test_explicitly_valued_enum_inputs_and_outputs():
             }
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     output = program(current_status=Status.PENDING)
     assert output.next_status == Status.IN_PROGRESS
@@ -386,7 +386,7 @@ def test_enum_inputs_and_outputs_with_shared_names_and_values():
             }
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     output = program(current_status=TicketStatus.OPEN)
     assert output.next_status == TicketStatus.CLOSED  # By value
@@ -409,7 +409,7 @@ def test_auto_valued_enum_inputs_and_outputs():
             }
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     output = program(current_status=Status.PENDING)
     assert output.next_status == Status.IN_PROGRESS
@@ -436,7 +436,7 @@ def test_output_only():
     predictor = Predict(OutputOnlySignature)
 
     lm = DummyLM([{"output": "short answer"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     assert predictor().output == "short answer"
 
 
@@ -474,10 +474,10 @@ def test_call_predict_with_chat_history(adapter_type):
 
     if adapter_type == "chat":
         lm = SpyLM("dummy_model")
-        dspy.settings.configure(adapter=dspy.ChatAdapter(), lm=lm)
+        dspy.configure(adapter=dspy.ChatAdapter(), lm=lm)
     else:
         lm = SpyLM("dummy_model", return_json=True)
-        dspy.settings.configure(adapter=dspy.JSONAdapter(), lm=lm)
+        dspy.configure(adapter=dspy.JSONAdapter(), lm=lm)
 
     program(
         question="are you sure that's correct?",
@@ -497,7 +497,7 @@ def test_call_predict_with_chat_history(adapter_type):
 
 def test_lm_usage():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
     with patch(
         "dspy.clients.lm.litellm_completion",
         return_value=ModelResponse(
@@ -518,7 +518,7 @@ def test_lm_usage_with_parallel():
         time.sleep(0.5)
         return program(question=question)
 
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False), track_usage=True)
     with patch(
         "dspy.clients.lm.litellm_completion",
         return_value=ModelResponse(
@@ -634,10 +634,10 @@ def test_field_constraints(adapter_type):
     lm = SpyLM("dummy_model")
     if adapter_type == "chat":
         lm = SpyLM("dummy_model")
-        dspy.settings.configure(adapter=dspy.ChatAdapter(), lm=lm)
+        dspy.configure(adapter=dspy.ChatAdapter(), lm=lm)
     else:
         lm = SpyLM("dummy_model", return_json=True)
-        dspy.settings.configure(adapter=dspy.JSONAdapter(), lm=lm)
+        dspy.configure(adapter=dspy.JSONAdapter(), lm=lm)
 
     # Call the predictor to trigger instruction generation
     program(text="hello world", number=5)
@@ -665,7 +665,7 @@ async def test_async_predict():
 
 def test_predicted_outputs_piped_from_predict_to_lm_call():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
     with patch("litellm.completion") as mock_completion:
         program(
@@ -729,7 +729,7 @@ def test_dump_state_pydantic_non_primitive_types():
 
 def test_trace_size_limit():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]), max_trace_size=3)
+    dspy.configure(lm=DummyLM([{"answer": "Paris"}]), max_trace_size=3)
 
     for _ in range(10):
         program(question="What is the capital of France?")
@@ -739,7 +739,7 @@ def test_trace_size_limit():
 
 def test_disable_trace():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]), trace=None)
+    dspy.configure(lm=DummyLM([{"answer": "Paris"}]), trace=None)
 
     for _ in range(10):
         program(question="What is the capital of France?")
@@ -749,7 +749,7 @@ def test_disable_trace():
 
 def test_per_module_history_size_limit():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]), max_history_size=5)
+    dspy.configure(lm=DummyLM([{"answer": "Paris"}]), max_history_size=5)
 
     for _ in range(10):
         program(question="What is the capital of France?")
@@ -758,7 +758,7 @@ def test_per_module_history_size_limit():
 
 def test_per_module_history_disabled():
     program = Predict("question -> answer")
-    dspy.settings.configure(lm=DummyLM([{"answer": "Paris"}]), disable_history=True)
+    dspy.configure(lm=DummyLM([{"answer": "Paris"}]), disable_history=True)
 
     for _ in range(10):
         program(question="What is the capital of France?")

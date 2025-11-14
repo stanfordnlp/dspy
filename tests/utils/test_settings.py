@@ -160,7 +160,7 @@ async def test_dspy_configure_allowance_async():
         # In this case, foo1 (async) calls bar1 (sync), and bar1 uses the async task from foo1.
         with pytest.raises(RuntimeError) as e:
             dspy.configure(lm=dspy.LM("openai/gpt-4o"))
-        assert "dspy.settings.configure(...) can only be called from the same async" in str(e.value)
+        assert "dspy.configure(...) can only be called from the same async" in str(e.value)
 
     async def foo1():
         bar1()
@@ -170,7 +170,7 @@ async def test_dspy_configure_allowance_async():
         # `dspy.configure` is disallowed in different async tasks from the initial one.
         with pytest.raises(RuntimeError) as e:
             dspy.configure(lm=dspy.LM("openai/gpt-4o"))
-        assert "dspy.settings.configure(...) can only be called from the same async" in str(e.value)
+        assert "dspy.configure(...) can only be called from the same async" in str(e.value)
         await asyncio.sleep(0.1)
 
     async def foo3():

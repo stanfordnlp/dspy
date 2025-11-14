@@ -19,7 +19,7 @@ class DummyModule(dspy.Module):
 
 def test_refine_forward_success_first_attempt():
     lm = DummyLM([{"answer": "Brussels"}, {"answer": "City of Brussels"}, {"answer": "Brussels"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     module_call_count = [0]
 
     def count_calls(self, **kwargs):
@@ -47,7 +47,7 @@ def test_refine_forward_success_first_attempt():
 
 def test_refine_module_default_fail_count():
     lm = DummyLM([{"answer": "Brussels"}, {"answer": "City of Brussels"}, {"answer": "Brussels"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     def always_raise(self, **kwargs):
         raise ValueError("Deliberately failing")
@@ -61,7 +61,7 @@ def test_refine_module_default_fail_count():
 
 def test_refine_module_custom_fail_count():
     lm = DummyLM([{"answer": "Brussels"}, {"answer": "City of Brussels"}, {"answer": "Brussels"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     module_call_count = [0]
 
     def raise_on_second_call(self, **kwargs):

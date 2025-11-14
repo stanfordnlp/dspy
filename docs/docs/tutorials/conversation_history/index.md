@@ -12,7 +12,7 @@ import os
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_api_key}"
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 class QA(dspy.Signature):
     question: str = dspy.InputField()
@@ -118,10 +118,10 @@ You may notice that `history` does not appear in the input fields section of the
 
 For example:
 
-```
+```python
 import dspy
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 
 class QA(dspy.Signature):

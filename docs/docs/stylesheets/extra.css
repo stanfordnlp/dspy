@@ -235,3 +235,16 @@ h2.doc-heading {
     color: var(--md-accent-fg-color);
 }
 
+/* Tutorial navigation "Learn more" styling */
+.learn-more-item .md-nav__link {
+    font-style: italic;
+    opacity: 0.85;
+    font-size: 0.9em;
+    transition: opacity 0.2s ease;
+}
+
+.learn-more-item .md-nav__link:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+

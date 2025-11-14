@@ -6,6 +6,7 @@ import litellm
 
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
+from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from dspy.clients.lm import LM
 
-_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations]
+_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 
 
 class Adapter:
@@ -99,14 +100,14 @@ class Adapter:
 
                 return signature_for_native_function_calling
 
-        # Handle custom types that use native response
+        # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
         for name, field in signature.output_fields.items():
             if (
                 isinstance(field.annotation, type)
                 and issubclass(field.annotation, Type)
                 and field.annotation in self.native_response_types
             ):
-                signature = signature.delete(name)
+                signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
         return signature
 
@@ -114,8 +115,9 @@ class Adapter:
         self,
         processed_signature: type[Signature],
         original_signature: type[Signature],
-        outputs: list[dict[str, Any]],
+        outputs: list[dict[str, Any] | str],
         lm: "LM",
+        lm_kwargs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         values = []
 
@@ -152,14 +154,16 @@ class Adapter:
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
-            # Parse custom types that does not rely on the adapter parsing
+            # Parse custom types that does not rely on the `Adapter.parse()` method
             for name, field in original_signature.output_fields.items():
                 if (
                     isinstance(field.annotation, type)
                     and issubclass(field.annotation, Type)
                     and field.annotation in self.native_response_types
                 ):
-                    value[name] = field.annotation.parse_lm_response(output)
+                    parsed_value = field.annotation.parse_lm_response(output)
+                    if parsed_value is not None:
+                        value[name] = parsed_value
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
@@ -196,7 +200,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm)
+        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     async def acall(
         self,
@@ -210,7 +214,7 @@ class Adapter:
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm)
+        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     def format(
         self,
@@ -272,11 +276,7 @@ class Adapter:
             )
 
         messages = []
-        system_message = (
-            f"{self.format_field_description(signature)}\n"
-            f"{self.format_field_structure(signature)}\n"
-            f"{self.format_task_description(signature)}"
-        )
+        system_message = self.format_system_message(signature)
         messages.append({"role": "system", "content": system_message})
         messages.extend(self.format_demos(signature, demos))
         if history_field_name:
@@ -291,6 +291,19 @@ class Adapter:
 
         messages = split_message_content_for_custom_types(messages)
         return messages
+
+    def format_system_message(self, signature: type[Signature]) -> str:
+        """Format the system message for the LM call.
+
+
+        Args:
+            signature: The DSPy signature for which to format the system message.
+        """
+        return (
+            f"{self.format_field_description(signature)}\n"
+            f"{self.format_field_structure(signature)}\n"
+            f"{self.format_task_description(signature)}"
+        )
 
     def format_field_description(self, signature: type[Signature]) -> str:
         """Format the field description for the system message.

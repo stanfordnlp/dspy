@@ -182,13 +182,13 @@ class BootstrapFewShot(Teleprompter):
         predictor_cache = {}
 
         try:
-            with dspy.settings.context(trace=[], **self.teacher_settings):
+            with dspy.context(trace=[], **self.teacher_settings):
                 lm = dspy.settings.lm
                 # Use a fresh rollout with temperature=1.0 to bypass caches.
                 lm = lm.copy(rollout_id=round_idx, temperature=1.0) if round_idx > 0 else lm
                 new_settings = {"lm": lm} if round_idx > 0 else {}
 
-                with dspy.settings.context(**new_settings):
+                with dspy.context(**new_settings):
                     for name, predictor in teacher.named_predictors():
                         predictor_cache[name] = predictor.demos
                         predictor.demos = [x for x in predictor.demos if x != example]

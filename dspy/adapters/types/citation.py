@@ -54,6 +54,7 @@ class Citations(Type):
 
     class Citation(Type):
         """Individual citation with character location information."""
+
         type: str = "char_location"
         cited_text: str
         document_index: int
@@ -73,7 +74,7 @@ class Citations(Type):
                 "cited_text": self.cited_text,
                 "document_index": self.document_index,
                 "start_char_index": self.start_char_index,
-                "end_char_index": self.end_char_index
+                "end_char_index": self.end_char_index,
             }
 
             if self.document_title:
@@ -134,9 +135,7 @@ class Citations(Type):
             return data
 
         # Handle case where data is a list of dicts with citation info
-        if isinstance(data, list) and all(
-            isinstance(item, dict) and "cited_text" in item for item in data
-        ):
+        if isinstance(data, list) and all(isinstance(item, dict) and "cited_text" in item for item in data):
             return {"citations": [cls.Citation(**item) for item in data]}
 
         # Handle case where data is a dict
@@ -147,8 +146,7 @@ class Citations(Type):
                 if isinstance(citations_data, list):
                     return {
                         "citations": [
-                            cls.Citation(**item) if isinstance(item, dict) else item
-                            for item in citations_data
+                            cls.Citation(**item) if isinstance(item, dict) else item for item in citations_data
                         ]
                     }
             elif "cited_text" in data:
@@ -168,6 +166,12 @@ class Citations(Type):
     def __getitem__(self, index):
         """Allow indexing into citations."""
         return self.citations[index]
+
+    @classmethod
+    def adapt_to_native_lm_feature(cls, signature, field_name, lm, lm_kwargs) -> bool:
+        if lm.model.startswith("anthropic/"):
+            return signature.delete(field_name)
+        return signature
 
     @classmethod
     def is_streamable(cls) -> bool:
@@ -196,7 +200,6 @@ class Citations(Type):
         except Exception:
             pass
         return None
-
 
     @classmethod
     def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Citations"]:

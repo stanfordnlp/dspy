@@ -13,7 +13,7 @@ import dspy
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
-from dspy.clients.utils_finetune import MultiGPUConfig, TrainDataFormat
+from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 
@@ -85,10 +85,15 @@ class LM(BaseLM):
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
 
         # Recognize OpenAI reasoning models (o1, o3, o4, gpt-5 family)
-        model_pattern = re.match(r"^(?:o[1345]|gpt-5)(?:-(?:mini|nano))?", model_family)
+        # Exclude non-reasoning variants like gpt-5-chat this is in azure ai foundry
+        # Allow date suffixes like -2023-01-01 after model name or mini/nano/pro
+        # For gpt-5, use negative lookahead to exclude -chat and allow other suffixes
+        model_pattern = re.match(
+            r"^(?:o[1345](?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$",
+            model_family,
+        )
 
         if model_pattern:
-
             if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
                 raise ValueError(
                     "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
@@ -124,7 +129,12 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    def forward(self, prompt=None, messages=None, **kwargs):
+    def forward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -157,7 +167,12 @@ class LM(BaseLM):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
-    async def aforward(self, prompt=None, messages=None, **kwargs):
+    async def aforward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs,
+    ):
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -228,16 +243,14 @@ class LM(BaseLM):
 
         return job
 
-    def reinforce(
-        self, train_kwargs, gpu_config: MultiGPUConfig = MultiGPUConfig(num_inference_gpus=1, num_training_gpus=1)
-    ) -> ReinforceJob:
+    def reinforce(self, train_kwargs) -> ReinforceJob:
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
 
         err = f"Provider {self.provider} does not implement the reinforcement learning interface."
         assert self.provider.reinforceable, err
 
-        job = self.provider.ReinforceJob(lm=self, train_kwargs=train_kwargs, gpu_config=gpu_config)
+        job = self.provider.ReinforceJob(lm=self, train_kwargs=train_kwargs)
         job.initialize()
         return job
 
@@ -273,7 +286,9 @@ class LM(BaseLM):
             "launch_kwargs",
             "train_kwargs",
         ]
-        return {key: getattr(self, key) for key in state_keys} | self.kwargs
+        # Exclude api_key from kwargs to prevent API keys from being saved in plain text
+        filtered_kwargs = {k: v for k, v in self.kwargs.items() if k != "api_key"}
+        return {key: getattr(self, key) for key in state_keys} | filtered_kwargs
 
     def _check_truncation(self, results):
         if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
@@ -461,6 +476,11 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
 
 
 def _convert_chat_request_to_responses_request(request: dict[str, Any]):
+    """
+    Convert a chat request to a responses request
+    See https://platform.openai.com/docs/api-reference/responses/create for the responses API specification.
+    Also see https://platform.openai.com/docs/api-reference/chat/create for the chat API specification.
+    """
     request = dict(request)
     if "messages" in request:
         content_blocks = []
@@ -469,8 +489,14 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
             if isinstance(c, str):
                 content_blocks.append({"type": "input_text", "text": c})
             elif isinstance(c, list):
-                content_blocks.extend(c)
+                # Convert each content item from Chat API format to Responses API format
+                for item in c:
+                    content_blocks.append(_convert_content_item_to_responses_format(item))
         request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+    # Convert `reasoning_effort` to reasoning format supported by the Responses API
+    if "reasoning_effort" in request:
+        effort = request.pop("reasoning_effort")
+        request["reasoning"] = {"effort": effort, "summary": "auto"}
 
     # Convert `response_format` to `text.format` for Responses API
     if "response_format" in request:
@@ -479,6 +505,47 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
         request["text"] = {**text, "format": response_format}
 
     return request
+
+
+def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
+    """
+    Convert a content item from Chat API format to Responses API format.
+
+    For images, converts from:
+        {"type": "image_url", "image_url": {"url": "..."}}
+    To:
+        {"type": "input_image", "image_url": "..."}
+
+    For text, converts from:
+        {"type": "text", "text": "..."}
+    To:
+        {"type": "input_text", "text": "..."}
+
+    For other types, passes through as-is.
+    """
+    if item.get("type") == "image_url":
+        image_url = item.get("image_url", {}).get("url", "")
+        return {
+            "type": "input_image",
+            "image_url": image_url,
+        }
+    elif item.get("type") == "text":
+        return {
+            "type": "input_text",
+            "text": item.get("text", ""),
+        }
+    elif item.get("type") == "file":
+        file = item.get("file", {})
+        return {
+            "type": "input_file",
+            "file_data": file.get("file_data"),
+            "filename": file.get("filename"),
+            "file_id": file.get("file_id"),
+        }
+
+    # For other items, return as-is
+    return item
+
 
 def _get_headers(headers: dict[str, Any] | None = None):
     headers = headers or {}

@@ -17,7 +17,7 @@
 #     assert "feedback" in retry_module.new_signature.input_fields
 
 #     lm = DummyLM([{"answer": "blue"}])
-#     dspy.settings.configure(lm=lm)
+#     dspy.configure(lm=lm)
 #     result = retry_module.forward(
 #         question="What color is the sky?",
 #         past_outputs={"answer": "red"},
@@ -29,7 +29,7 @@
 # def test_retry_forward_with_feedback():
 #     # First we make a mistake, then we fix it
 #     lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
-#     dspy.settings.configure(lm=lm, trace=[])
+#     dspy.configure(lm=lm, trace=[])
 
 #     class SimpleModule(dspy.Module):
 #         def __init__(self):
@@ -56,7 +56,7 @@
 # # def test_retry_forward_with_typed_predictor():
 # #     # First we make a mistake, then we fix it
 # #     lm = DummyLM([{"output": '{"answer":"red"}'}, {"output": '{"answer":"blue"}'}])
-# #     dspy.settings.configure(lm=lm, trace=[])
+# #     dspy.configure(lm=lm, trace=[])
 
 # #     class AnswerQuestion(dspy.Signature):
 # #         """Answer questions with succinct responses."""

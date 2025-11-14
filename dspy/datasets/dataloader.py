@@ -132,7 +132,7 @@ class DataLoader(Dataset):
                 )
         except AttributeError:
             raise ValueError(
-                "Retrieval module not found. Please set a retrieval module using `dspy.settings.configure`."
+                "Retrieval module not found. Please set a retrieval module using `dspy.configure`."
             )
 
     def sample(

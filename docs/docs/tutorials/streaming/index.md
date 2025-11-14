@@ -130,7 +130,7 @@ import asyncio
 import dspy
 
 lm = dspy.LM("openai/gpt-4o-mini", cache=False)
-dspy.settings.configure(lm=lm)
+dspy.configure(lm=lm)
 
 
 class MyModule(dspy.Module):
@@ -204,7 +204,7 @@ import asyncio
 import dspy
 
 lm = dspy.LM("openai/gpt-4o-mini", cache=False)
-dspy.settings.configure(lm=lm)
+dspy.configure(lm=lm)
 
 
 def fetch_user_info(user_name: str):
@@ -259,7 +259,7 @@ import asyncio
 import dspy
 
 lm = dspy.LM("openai/gpt-4o-mini", cache=False)
-dspy.settings.configure(lm=lm)
+dspy.configure(lm=lm)
 
 
 class MyModule(dspy.Module):
@@ -371,7 +371,7 @@ import asyncio
 import dspy
 
 lm = dspy.LM("openai/gpt-4o-mini", cache=False)
-dspy.settings.configure(lm=lm)
+dspy.configure(lm=lm)
 
 
 class MyModule(dspy.Module):

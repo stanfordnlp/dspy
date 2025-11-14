@@ -29,7 +29,7 @@ class BestOfN(Module):
             ```python
             import dspy
 
-            dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+            dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
             # Define a QA module with chain of thought
             qa = dspy.ChainOfThought("question -> answer")

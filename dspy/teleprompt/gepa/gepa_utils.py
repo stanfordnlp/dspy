@@ -90,6 +90,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         custom_instruction_proposer: "ProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
         enable_tool_optimization: bool = False,
+        reflection_minibatch_size: int | None = None,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -104,6 +105,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.enable_tool_optimization = enable_tool_optimization
 
         self.propose_new_texts = self._build_propose_new_texts()
+        self.reflection_minibatch_size = reflection_minibatch_size
 
     def _build_propose_new_texts(self):
         """Build proposal function that routes components to appropriate proposers."""
@@ -272,12 +274,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
     def evaluate(self, batch, candidate, capture_traces=False):
         program = self.build_program(candidate)
+        callback_metadata = {"metric_key": "eval_full"} if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size else {"disable_logging": True}
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
             from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
 
-            eval_callback_metadata = {"disable_logging": True}
             trajs = bootstrap_trace_module.bootstrap_trace_data(
                 program=program,
                 dataset=batch,
@@ -287,7 +289,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 capture_failed_parses=True,
                 failure_score=self.failure_score,
                 format_failure_score=self.failure_score,
-                callback_metadata=eval_callback_metadata,
+                callback_metadata=callback_metadata,
             )
             scores = []
             outputs = []
@@ -310,6 +312,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 failure_score=self.failure_score,
                 provide_traceback=True,
                 max_errors=len(batch) * 100,
+                callback_metadata=callback_metadata,
             )
             res = evaluator(program)
             outputs = [r[1] for r in res.results]

@@ -42,7 +42,7 @@ def test_compile_with_predict_instances():
     teacher = SimpleModule("input -> output")
 
     lm = DummyLM([{"output": "blue"}, {"output": "Ring-ding-ding-ding-dingeringeding!"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     # Set LM for both student and teacher
     student.set_lm(lm)
@@ -65,7 +65,7 @@ def test_error_handling_missing_lm():
     """Test error handling when predictor doesn't have an LM assigned."""
 
     lm = DummyLM([{"output": "test"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     student = SimpleModule("input -> output")
     # Intentionally NOT setting LM for the student module

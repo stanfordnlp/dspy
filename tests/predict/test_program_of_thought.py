@@ -27,7 +27,7 @@ def test_pot_code_generation():
             {"reasoning": "Reason_B", "answer": "2"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
@@ -43,7 +43,7 @@ def test_old_style_pot():
             {"reasoning": "Reason_B", "answer": "2"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
@@ -67,7 +67,7 @@ def test_pot_support_multiple_fields():
             {"reasoning": "Reason_B", "maximum": "6", "minimum": "2"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     pot = ProgramOfThought(ExtremumFinder)
     res = pot(input_list="2, 3, 5, 6")
     assert res.maximum == "6"
@@ -90,7 +90,7 @@ def test_pot_code_generation_with_one_error():
             {"reasoning": "Reason_C", "answer": "2"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
@@ -109,7 +109,7 @@ def test_pot_code_generation_persistent_errors():
         ]
         * max_iters
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     pot = ProgramOfThought(BasicQA, max_iters=max_iters)
     with pytest.raises(RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: ZeroDivisionError:"):
@@ -125,7 +125,7 @@ def test_pot_code_parse_error():
         ]
         * max_iters
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA, max_iters=max_iters)
     with (
         patch("dspy.predict.program_of_thought.ProgramOfThought._execute_code") as mock_execute_code,

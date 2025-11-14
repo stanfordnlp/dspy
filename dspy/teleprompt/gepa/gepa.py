@@ -253,13 +253,13 @@ class GEPA(Teleprompter):
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer.
             Custom instruction proposers can invoke their own LLMs if needed.
-        component_selector: Custom component selector implementing the ReflectionComponentSelector protocol,
-            or a string specifying a built-in selector strategy. Controls which components (predictors) are selected
-            for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components
-            one at a time. Available string options: 'round_robin' (cycles through components sequentially),
-            'all' (selects all components for simultaneous optimization). Custom selectors can implement strategies
-            using LLM-driven selection logic based on optimization state and trajectories.
-            See [gepa component selectors](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/component_selector.py)
+        component_selector: Custom component selector implementing the [ReflectionComponentSelector](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol,
+            or a string specifying a built-in selector strategy. Controls which components (predictors) are selected 
+            for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components 
+            one at a time. Available string options: 'round_robin' (cycles through components sequentially), 
+            'all' (selects all components for simultaneous optimization). Custom selectors can implement strategies 
+            using LLM-driven selection logic based on optimization state and trajectories. 
+            See [gepa component selectors](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/component_selector.py) 
             for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.
         add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
@@ -289,8 +289,35 @@ class GEPA(Teleprompter):
             [ReAct Component Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#react-component-optimization)
             for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
-        gepa_kwargs: (Optional) provide additional kwargs to be passed to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py) method
-
+        gepa_kwargs: (Optional) Additional keyword arguments to pass directly to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py).
+            Useful for accessing advanced GEPA features not directly exposed through DSPy's GEPA interface.
+            
+            Available parameters:
+            - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/batch_sampler.py) instance or a string 
+              ('epoch_shuffled'). Defaults to 'epoch_shuffled'. Only valid when reflection_minibatch_size is None.
+            - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before 
+              attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than 'full_eval'. 
+              Default is 5.
+            - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single 
+              [StopperProtocol](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py) or a list of StopperProtocol instances. 
+              Examples: [FileStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
+              [TimeoutStopCondition](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
+              [SignalStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
+              [NoImprovementStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py), 
+              or custom stopping logic. Note: This overrides the default 
+              max_metric_calls stopping condition.
+            - use_cloudpickle: Use cloudpickle instead of pickle for serialization. Can be helpful when the 
+              serialized state contains dynamically generated DSPy signatures. Default is False.
+            - val_evaluation_policy: Strategy controlling which validation ids to score each iteration. Can be 
+              'full_eval' (evaluate every id each time) or an [EvaluationPolicy](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/eval_policy.py) instance. Default is 'full_eval'.
+            - use_mlflow: If True, enables MLflow integration to log optimization progress. 
+              MLflow can be used alongside Weights & Biases (WandB).
+            - mlflow_tracking_uri: The tracking URI to use for MLflow (when use_mlflow=True).
+            - mlflow_experiment_name: The experiment name to use for MLflow (when use_mlflow=True).
+            
+            Note: Parameters already handled by DSPy's GEPA class will be overridden by the direct parameters 
+            and should not be passed through gepa_kwargs.
+        
     Note:
         Budget Configuration: Exactly one of `auto`, `max_full_evals`, or `max_metric_calls` must be provided.
         The `auto` parameter provides preset configurations: "light" for quick experimentation, "medium" for
@@ -537,6 +564,7 @@ class GEPA(Teleprompter):
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             enable_tool_optimization=self.enable_tool_optimization,
+            reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
         # Instantiate GEPA with the simpler adapter-based API

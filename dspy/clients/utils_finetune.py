@@ -40,14 +40,17 @@ class GRPOChatData(TypedDict):
     reward: float
 
 
-GRPOGroup = list[GRPOChatData]
+class GRPOGroup(TypedDict):
+    batch_id: int | None
+    group: list[GRPOChatData]
 
-
-class MultiGPUConfig(TypedDict):
-    # Number of GPUs to use for inference
-    num_inference_gpus: int
-    # Number of GPUs to use for training
-    num_training_gpus: int
+class GRPOStatus(TypedDict):
+    job_id: str
+    status: str | None = None
+    current_model: str
+    checkpoints: dict[str, str]
+    last_checkpoint: str | None = None
+    pending_batch_ids: list[int] = []
 
 
 def infer_data_format(adapter: Adapter) -> str:
