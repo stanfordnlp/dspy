@@ -268,7 +268,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for arg_name, arg_schema in args_schema.items():
                     if arg_schema.get("description") is not None:
                         tool.args[arg_name]["description"] = arg_schema["description"]
-                        tool.arg_desc[arg_name] = arg_schema["description"] # This can be removed if arg_desc is always kept in sync with args.
 
         return new_prog
 
@@ -489,7 +488,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 tool_name: {
                     "desc": tool.desc,
                     "args": tool.args,
-                    "arg_desc": tool.arg_desc or {}
                 }
                 for tool_name, tool in tools_dict.items()
             }

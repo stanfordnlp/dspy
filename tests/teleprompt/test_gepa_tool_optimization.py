@@ -262,7 +262,7 @@ def test_apply_optimized_tool_descriptions():
 
     assert rebuilt.pred.signature.instructions == "OPTIMIZED: Answer using tools"
     assert rebuilt.tool.desc == "OPTIMIZED: Search description"
-    assert rebuilt.tool.args["query"]["description"] == "OPTIMIZED: Query parameter"
+    assert rebuilt.tool.args["query"]["description"] == "Search query"
 
     # Original unchanged
     assert program.pred.signature.instructions != "OPTIMIZED: Answer using tools"

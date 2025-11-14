@@ -602,7 +602,6 @@ class GEPA(Teleprompter):
                         tool_name: {
                             "desc": tool.desc,
                             "args": tool.args,
-                            "arg_desc": tool.arg_desc or {}
                         }
                         for tool_name, tool in module.tools.items()
                         if tool_name != "finish"  # Skip the built-in finish tool
