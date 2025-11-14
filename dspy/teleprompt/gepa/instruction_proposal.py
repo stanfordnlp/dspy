@@ -412,7 +412,7 @@ class ToolModuleProposer(ProposalFn):
                 signature = signature.append(
                     f"improved_tool_{tool_name}_desc",
                     dspy.OutputField(
-                        desc=f"Purpose of tool '{tool_name}'",
+                        desc=f"Concise description of tool '{tool_name}'",
                         default=None
                     )
                 )
@@ -422,11 +422,10 @@ class ToolModuleProposer(ProposalFn):
                         signature = signature.append(
                             f"improved_tool_{tool_name}_arg_{arg_name}_desc",
                             dspy.OutputField(
-                                desc=f"Usage of parameter '{arg_name}'",
+                                desc=f"Concise description of tool '{tool_name}' parameter '{arg_name}'",
                                 default=None
                             )
                         )
-
 
             kwargs = {
                 "current_predictor_instruction": current_module_config[primary_predictor_key],
