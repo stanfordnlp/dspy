@@ -399,7 +399,6 @@ class ToolModuleProposer(ProposalFn):
                     desc=tool_info.get("desc", ""),
                 )
                 tool.args = tool_info.get("args", {})
-                tool.arg_desc = tool_info.get("arg_desc", {})
                 tools_list.append(tool)
 
             # Build dynamic signature with tool-specific output fields
@@ -417,15 +416,14 @@ class ToolModuleProposer(ProposalFn):
                     )
                 )
 
-                if tool_info.get("args"):
-                    for arg_name in tool_info["args"].keys():
-                        signature = signature.append(
-                            f"improved_tool_{tool_name}_arg_{arg_name}_desc",
-                            dspy.OutputField(
-                                desc=f"Concise description of tool '{tool_name}' parameter '{arg_name}'",
-                                default=None
-                            )
+                for arg_name in tool_info["args"].keys():
+                    signature = signature.append(
+                        f"improved_tool_{tool_name}_arg_{arg_name}_desc",
+                        dspy.OutputField(
+                            desc=f"Concise description of tool '{tool_name}' parameter '{arg_name}'",
+                            default=None
                         )
+                    )
 
             kwargs = {
                 "current_predictor_instruction": current_module_config[primary_predictor_key],
@@ -459,23 +457,18 @@ class ToolModuleProposer(ProposalFn):
 
             improved_module_config["tools"] = {}
             for tool_name, tool_info in current_tools_dict.items():
-                improved_desc = getattr(result, f"improved_tool_{tool_name}_desc", None)
-                if improved_desc is None:
-                    continue
+                # Update tool description if LM proposed a change
+                improved_tool_desc = getattr(result, f"improved_tool_{tool_name}_desc", None)
+                if improved_tool_desc is not None:
+                    tool_info["desc"] = improved_tool_desc
 
-                improved_tool_info = {
-                    "desc": improved_desc,
-                    "arg_desc": {}
-                }
+                # Update arg descriptions if LM proposed changes
+                for arg_name in tool_info["args"].keys():
+                    improved_tool_arg_desc = getattr(result, f"improved_tool_{tool_name}_arg_{arg_name}_desc", None)
+                    if improved_tool_arg_desc is not None:
+                        tool_info["args"][arg_name]["description"] = improved_tool_arg_desc
 
-                if tool_info.get("args"):
-                    for arg_name in tool_info["args"].keys():
-                        field_name = f"improved_tool_{tool_name}_arg_{arg_name}_desc"
-                        arg_desc = getattr(result, field_name, None)
-                        if arg_desc is not None:
-                            improved_tool_info["arg_desc"][arg_name] = arg_desc
-
-                improved_module_config["tools"][tool_name] = improved_tool_info
+                improved_module_config["tools"][tool_name] = tool_info
 
             updated_components[module_key] = json.dumps(improved_module_config, indent=2)
 
