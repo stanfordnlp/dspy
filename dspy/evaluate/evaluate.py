@@ -233,7 +233,7 @@ class Evaluate:
             (
                 merge_dicts(example, prediction) | {metric_name: score}
                 if prediction_is_dictlike(prediction)
-                else (example.toDict() if hasattr(example, "toDict") else dict(example)) | {"prediction": prediction, metric_name: score}
+                else example.toDict() | {"prediction": prediction, metric_name: score}
             )
             for example, prediction, score in results
         ]
