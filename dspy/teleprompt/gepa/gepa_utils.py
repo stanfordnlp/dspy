@@ -259,15 +259,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 tool = all_tools[tool_name]
 
-                if tool_config.get("desc"):
+                # Update tool description if present.
+                if tool_config.get("desc") is not None:
                     tool.desc = tool_config["desc"]
 
-                # Read descriptions from args and mirror them into arg_desc.
+                # Update arg descriptions if present.
                 args_schema = tool_config.get("args") or {}
                 for arg_name, arg_schema in args_schema.items():
-                    description = arg_schema["description"]
-                    tool.args[arg_name]["description"] = description
-                    tool.arg_desc[arg_name] = description # This can be removed if arg_desc is always kept in sync with args.
+                    if arg_schema.get("description") is not None:
+                        tool.args[arg_name]["description"] = arg_schema["description"]
+                        tool.arg_desc[arg_name] = arg_schema["description"] # This can be removed if arg_desc is always kept in sync with args.
 
         return new_prog
 
