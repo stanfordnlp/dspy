@@ -117,6 +117,12 @@ Practical Recipe for GEPA-Friendly Feedback:
 - **Multi-Objective Tasks** (e.g., PUPA): Decompose aggregate scores to reveal contributions from each objective, highlighting tradeoffs (e.g., quality vs. privacy).
 - **Stacked Pipelines** (e.g., code generation: parse → compile → run → profile → evaluate): Expose stage-specific failures; natural-language traces often suffice for LLM self-correction.
 
+## ReAct Component Optimization
+
+GEPA can optimize ReAct modules holistically. When `optimize_react_components=True`, GEPA jointly optimizes all four components of ReAct modules: react instructions, extract instructions, tool descriptions, and tool argument descriptions. This helps agents make better decisions by learning from execution traces how all components work together.
+
+For details on how ReAct optimization works, when to use it, and usage examples, see [ReAct Component Optimization](GEPA_Advanced.md#react-component-optimization) in the Advanced Features guide.
+
 ## Custom Instruction Proposal
 
 For advanced customization of GEPA's instruction proposal mechanism, including custom instruction proposers and component selectors, see [Advanced Features](GEPA_Advanced.md).

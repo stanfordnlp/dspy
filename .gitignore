@@ -67,3 +67,8 @@ docs/docs/**/*.json*
 
 test_before_pypi/
 .github/.internal_dspyai/dist/
+
+AGENTS.md
+/tasks
+/notebooks
+.cache/

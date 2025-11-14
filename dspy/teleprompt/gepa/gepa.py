@@ -1,16 +1,26 @@
 import inspect
+import json
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Protocol, Union
+from typing import Any, Literal, Optional, Protocol, Union, get_args, get_origin
 
 from gepa import GEPAResult
 from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
+from dspy.adapters.types.tool import Tool
 from dspy.clients.lm import LM
+from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+from dspy.teleprompt.gepa.gepa_utils import (
+    REACT_MODULE_PREFIX,
+    TOOL_MODULE_PREFIX,
+    DspyAdapter,
+    DSPyTrace,
+    PredictorFeedbackFn,
+    ScoreWithFeedback,
+)
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -36,18 +46,18 @@ class GEPAFeedbackMetric(Protocol):
         - gold: The gold example.
         - pred: The predicted output.
         - trace: Optional. The trace of the program's execution.
-        - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which 
+        - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which
             the feedback is being requested.
         - pred_trace: Optional. The trace of the target predictor's execution GEPA is seeking feedback for.
 
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
         and the sub-trace (of the trace) corresponding to the predictor in `pred_trace`.
-        If available at the predictor level, the metric should return dspy.Prediction(score: float, feedback: str) corresponding 
+        If available at the predictor level, the metric should return dspy.Prediction(score: float, feedback: str) corresponding
         to the predictor.
         If not available at the predictor level, the metric can also return a text feedback at the program level
         (using just the gold, pred and trace).
-        If no feedback is returned, GEPA will use a simple text feedback consisting of just the score: 
+        If no feedback is returned, GEPA will use a simple text feedback consisting of just the score:
         f"This trajectory got a score of {score}."
         """
         ...
@@ -172,18 +182,18 @@ class GEPA(Teleprompter):
         - gold: The gold example.
         - pred: The predicted output.
         - trace: Optional. The trace of the program's execution.
-        - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which 
+        - pred_name: Optional. The name of the target predictor currently being optimized by GEPA, for which
             the feedback is being requested.
         - pred_trace: Optional. The trace of the target predictor's execution GEPA is seeking feedback for.
 
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
         and the sub-trace (of the trace) corresponding to the predictor in `pred_trace`.
-        If available at the predictor level, the metric should return {'score': float, 'feedback': str} corresponding 
+        If available at the predictor level, the metric should return {'score': float, 'feedback': str} corresponding
         to the predictor.
         If not available at the predictor level, the metric can also return a text feedback at the program level
         (using just the gold, pred and trace).
-        If no feedback is returned, GEPA will use a simple text feedback consisting of just the score: 
+        If no feedback is returned, GEPA will use a simple text feedback consisting of just the score:
         f"This trajectory got a score of {score}."
         \"""
         ...
@@ -207,41 +217,41 @@ class GEPA(Teleprompter):
         max_full_evals: The maximum number of full evaluations to perform.
         max_metric_calls: The maximum number of metric calls to perform.
         reflection_minibatch_size: The number of examples to use for reflection in a single GEPA step. Default is 3.
-        candidate_selection_strategy: The strategy to use for candidate selection. Default is "pareto", 
-            which stochastically selects candidates from the Pareto frontier of all validation scores. 
+        candidate_selection_strategy: The strategy to use for candidate selection. Default is "pareto",
+            which stochastically selects candidates from the Pareto frontier of all validation scores.
             Options: "pareto", "current_best".
-        reflection_lm: The language model to use for reflection. Required parameter. GEPA benefits from 
-            a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` 
+        reflection_lm: The language model to use for reflection. Required parameter. GEPA benefits from
+            a strong reflection model. Consider using `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)`
             for optimal performance.
         skip_perfect_score: Whether to skip examples with perfect scores during reflection. Default is True.
         instruction_proposer: Optional custom instruction proposer implementing GEPA's ProposalFn protocol.
-            **Default: None (recommended for most users)** - Uses GEPA's proven instruction proposer from 
-            the [GEPA library](https://github.com/gepa-ai/gepa), which implements the 
-            [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). This default 
-            proposer is highly capable and was validated across diverse experiments reported in the GEPA 
+            **Default: None (recommended for most users)** - Uses GEPA's proven instruction proposer from
+            the [GEPA library](https://github.com/gepa-ai/gepa), which implements the
+            [`ProposalFn`](https://github.com/gepa-ai/gepa/blob/main/src/gepa/core/adapter.py). This default
+            proposer is highly capable and was validated across diverse experiments reported in the GEPA
             paper and tutorials.
 
-            See documentation on custom instruction proposers 
+            See documentation on custom instruction proposers
             [here](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#custom-instruction-proposers).
-            
+
             **Advanced Feature**: Only needed for specialized scenarios:
             - **Multi-modal handling**: Processing dspy.Image inputs alongside textual information
-            - **Nuanced control over constraints**: Fine-grained control over instruction length, format, 
+            - **Nuanced control over constraints**: Fine-grained control over instruction length, format,
               and structural requirements beyond standard feedback mechanisms
-            - **Domain-specific knowledge injection**: Specialized terminology or context that cannot be 
+            - **Domain-specific knowledge injection**: Specialized terminology or context that cannot be
               provided through feedback_func alone
-            - **Provider-specific prompting**: Optimizations for specific LLM providers (OpenAI, Anthropic) 
+            - **Provider-specific prompting**: Optimizations for specific LLM providers (OpenAI, Anthropic)
               with unique formatting preferences
-            - **Coupled component updates**: Coordinated updates of multiple components together rather 
+            - **Coupled component updates**: Coordinated updates of multiple components together rather
               than independent optimization
             - **External knowledge integration**: Runtime access to databases, APIs, or knowledge bases
-            
-            The default proposer handles the vast majority of use cases effectively. Use 
-            MultiModalInstructionProposer() from dspy.teleprompt.gepa.instruction_proposal for visual 
+
+            The default proposer handles the vast majority of use cases effectively. Use
+            MultiModalInstructionProposer() from dspy.teleprompt.gepa.instruction_proposal for visual
             content or implement custom ProposalFn for highly specialized requirements.
-            
-            Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called 
-            in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer. 
+
+            Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called
+            in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer.
             Custom instruction proposers can invoke their own LLMs if needed.
         component_selector: Custom component selector implementing the [ReflectionComponentSelector](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol,
             or a string specifying a built-in selector strategy. Controls which components (predictors) are selected 
@@ -256,23 +266,28 @@ class GEPA(Teleprompter):
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
         num_threads: The number of threads to use for evaluation with `Evaluate`. Optional.
         failure_score: The score to assign to failed examples. Default is 0.0.
-        perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA 
+        perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA
             to determine if all examples in a minibatch are perfect.
-        log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all candidate 
-            programs, in this directory. Running GEPA with the same `log_dir` will resume the run 
+        log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all candidate
+            programs, in this directory. Running GEPA with the same `log_dir` will resume the run
             from the last checkpoint.
-        track_stats: Whether to return detailed results and all proposed programs in the `detailed_results` 
+        track_stats: Whether to return detailed results and all proposed programs in the `detailed_results`
             attribute of the optimized program. Default is False.
         use_wandb: Whether to use wandb for logging. Default is False.
-        wandb_api_key: The API key to use for wandb. If not provided, wandb will use the API key 
+        wandb_api_key: The API key to use for wandb. If not provided, wandb will use the API key
             from the environment variable `WANDB_API_KEY`.
         wandb_init_kwargs: Additional keyword arguments to pass to `wandb.init`.
-        track_best_outputs: Whether to track the best outputs on the validation set. track_stats must 
-            be True if track_best_outputs is True. The optimized program's `detailed_results.best_outputs_valset` 
+        track_best_outputs: Whether to track the best outputs on the validation set. track_stats must
+            be True if track_best_outputs is True. The optimized program's `detailed_results.best_outputs_valset`
             will contain the best outputs for each task in the validation set.
-        warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when 
-            called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
+        warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when
+            called with and without the pred_name. This flag (defaults to True) determines whether a warning is
             raised if a mismatch in module-level and predictor-level score is detected.
+        enable_tool_optimization: Whether to enable joint optimization of tool-using modules.
+            When enabled, GEPA jointly optimizes predictor instructions and tool descriptions together
+            for both dspy.ReAct modules and custom predictors that use dspy.Tool. See the
+            [ReAct Component Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#react-component-optimization)
+            for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
         gepa_kwargs: (Optional) Additional keyword arguments to pass directly to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py).
             Useful for accessing advanced GEPA features not directly exposed through DSPy's GEPA interface.
@@ -307,21 +322,21 @@ class GEPA(Teleprompter):
         Budget Configuration: Exactly one of `auto`, `max_full_evals`, or `max_metric_calls` must be provided.
         The `auto` parameter provides preset configurations: "light" for quick experimentation, "medium" for
         balanced optimization, and "heavy" for thorough optimization.
-        
+
         Reflection Configuration: The `reflection_lm` parameter is required and should be a strong language model.
         GEPA performs best with models like `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)`.
         The reflection process analyzes failed examples to generate feedback for program improvement.
-        
+
         Merge Configuration: GEPA can merge successful program variants using `use_merge=True`.
         The `max_merge_invocations` parameter controls how many merge attempts are made during optimization.
-        
-        Evaluation Configuration: Use `num_threads` to parallelize evaluation. The `failure_score` and 
+
+        Evaluation Configuration: Use `num_threads` to parallelize evaluation. The `failure_score` and
         `perfect_score` parameters help GEPA understand your metric's range and optimize accordingly.
-        
+
         Logging Configuration: Set `log_dir` to save detailed logs and enable checkpoint resuming.
         Use `track_stats=True` to access detailed optimization results via the `detailed_results` attribute.
         Enable `use_wandb=True` for experiment tracking and visualization.
-        
+
         Reproducibility: Set `seed` to ensure consistent results across runs with the same configuration.
     """
     def __init__(
@@ -355,6 +370,7 @@ class GEPA(Teleprompter):
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
+        enable_tool_optimization: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -417,6 +433,7 @@ class GEPA(Teleprompter):
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.enable_tool_optimization = enable_tool_optimization
         self.use_mlflow = use_mlflow
 
         if track_best_outputs:
@@ -546,11 +563,112 @@ class GEPA(Teleprompter):
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
+            enable_tool_optimization=self.enable_tool_optimization,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
         # Instantiate GEPA with the simpler adapter-based API
-        base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+        base_program = {}
+
+        # First, process ReAct modules to claim their predictors
+        if self.enable_tool_optimization:
+            for module_path, module in student.named_sub_modules():
+                if not isinstance(module, ReAct):
+                    continue
+
+                # Verify DSPy's two-predictor ReAct design
+                assert hasattr(module, "extract") and hasattr(module.extract, "predict"), \
+                    f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
+
+                # Get predictor names via object identity
+                extract_predictor = module.extract.predict
+                react_predictor = module.react
+                extract_predictor_name = None
+                react_predictor_name = None
+                for name, pred in student.named_predictors():
+                    if pred is extract_predictor:
+                        extract_predictor_name = name
+                    elif pred is react_predictor:
+                        react_predictor_name = name
+
+                # Use extract.predict as the key since it is the target predictor for feedback lookup
+                module_key = f"{REACT_MODULE_PREFIX}:{extract_predictor_name}"
+
+                # Build JSON config with dynamic predictor names as keys
+                config = {
+                    react_predictor_name: react_predictor.signature.instructions,
+                    extract_predictor_name: extract_predictor.signature.instructions,
+                    "tools": {
+                        tool_name: {
+                            "desc": tool.desc,
+                            "args": tool.args,
+                        }
+                        for tool_name, tool in module.tools.items()
+                        if tool_name != "finish"  # Skip the built-in finish tool
+                    }
+                }
+
+                base_program[module_key] = json.dumps(config, indent=2)
+        else:
+            # Warn if ReAct modules found but tool optimization disabled
+            for module_path, module in student.named_sub_modules():
+                if isinstance(module, ReAct):
+                    logger.warning(
+                        f"Detected ReAct module at '{module_path}'. Consider using "
+                        "`enable_tool_optimization=True` to jointly optimize react instructions, "
+                        "extract instructions, tool descriptions, and tool argument descriptions."
+                    )
+
+        # Then, process individual predictors (skip if already part of a module config)
+        for name, pred in student.named_predictors():
+            if self.enable_tool_optimization:
+                # Skip if predictor is part of a module config (e.g., ReAct)
+                found = False
+                for val in base_program.values():
+                    try:
+                        config = json.loads(val)
+                        if name in config:
+                            found = True
+                            break
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        pass
+
+                if found:
+                    continue
+
+                # Detect tool-using predictors via type checking
+                def is_tool_field(annotation) -> bool:
+                    """Check if a field annotation is Tool or contains Tool."""
+                    if annotation is Tool:
+                        return True
+                    origin = get_origin(annotation)
+                    if origin is not None:
+                        args = get_args(annotation)
+                        for arg in args:
+                            if is_tool_field(arg):  # Recursive for nested types
+                                return True
+                    return False
+
+                # Add tool module if predictor uses tools
+                if any(is_tool_field(field.annotation) for field in pred.signature.input_fields.values()):
+                    module_key = f"{TOOL_MODULE_PREFIX}:{name}"
+                    base_program[module_key] = json.dumps({
+                        name: pred.signature.instructions,
+                        "tools": {}  # Populated from traces
+                    }, indent=2)
+                    continue
+
+            # Add regular predictor (no tool optimization or no tools detected)
+            base_program[name] = pred.signature.instructions
+
+        # Log base_program keys for debugging
+        logger.info(f"Initialized base_program with {len(base_program)} components:")
+        for key in sorted(base_program.keys()):
+            if key.startswith(REACT_MODULE_PREFIX):
+                logger.info(f"  {key}: <ReAct module JSON config>")
+            else:
+                logger.info(f"  {key}: <instruction>")
+
         gepa_result: GEPAResult = optimize(
             seed_candidate=base_program,
             trainset=trainset,
