@@ -245,7 +245,6 @@ def test_apply_optimized_tool_descriptions():
                 "search": {
                     "desc": "OPTIMIZED: Search description",
                     "args": {"query": {"type": "string", "description": "Search query"}},
-                    "arg_desc": {"query": "OPTIMIZED: Query parameter"}
                 }
             }
         })
@@ -371,7 +370,6 @@ def test_apply_optimized_react_descriptions():
                 "search": {
                     "desc": "OPTIMIZED: Search tool",
                     "args": {"query": {"type": "string"}},
-                    "arg_desc": {"query": "OPTIMIZED: Query param"}
                 }
             }
         })
@@ -476,7 +474,6 @@ def test_selective_optimization_with_none_returns():
                 "search": {
                     "desc": "OPTIMIZED: Search tool",
                     "args": {"query": {"type": "string"}},
-                    "arg_desc": {}
                 }
             }
         })
