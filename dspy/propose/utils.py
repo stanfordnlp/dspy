@@ -3,6 +3,7 @@ import json
 import re
 
 import dspy
+from dspy.metrics import Score
 
 try:
     from IPython.core.magics.code import extract_symbols
@@ -95,6 +96,16 @@ def create_predictor_level_history_string(base_program, predictor_i, trial_logs,
         predictor = history_item["program"].predictors()[predictor_i]
         instruction = get_signature(predictor).instructions
         score = history_item["score"]
+        if isinstance(score, Score):
+            score = score.scalar
+        elif isinstance(score, dict) and "score" in score:
+            score = score["score"]
+        else:
+            attr_score = getattr(score, "score", None)
+            if isinstance(attr_score, Score):
+                score = attr_score.scalar
+            elif attr_score is not None:
+                score = attr_score
 
         if instruction in instruction_aggregate:
             instruction_aggregate[instruction]["total_score"] += score
