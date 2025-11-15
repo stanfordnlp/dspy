@@ -123,3 +123,34 @@ def test_example_copy_without():
 def test_example_to_dict():
     example = Example(a=1, b=2)
     assert example.toDict() == {"a": 1, "b": 2}
+
+
+def test_example_to_dict_with_history():
+    """Test that Example.toDict() properly serializes dspy.History objects."""
+    history = dspy.History(
+        messages=[
+            {"question": "What is the capital of France?", "answer": "Paris"},
+            {"question": "What is the capital of Germany?", "answer": "Berlin"},
+        ]
+    )
+    example = Example(question="Test question", history=history, answer="Test answer")
+
+    result = example.toDict()
+
+    # Verify the result is a dictionary
+    assert isinstance(result, dict)
+    assert "history" in result
+
+    # Verify history is serialized to a dict (not a History object)
+    assert isinstance(result["history"], dict)
+    assert "messages" in result["history"]
+    assert result["history"]["messages"] == [
+        {"question": "What is the capital of France?", "answer": "Paris"},
+        {"question": "What is the capital of Germany?", "answer": "Berlin"},
+    ]
+
+    # Verify JSON serialization works
+    import json
+    json_str = json.dumps(result)
+    restored = json.loads(json_str)
+    assert restored["history"]["messages"] == result["history"]["messages"]

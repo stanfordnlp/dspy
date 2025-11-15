@@ -1,3 +1,9 @@
+try:
+    from pydantic import BaseModel
+except ImportError:
+    BaseModel = None
+
+
 class Example:
     """A flexible data container for DSPy examples and training data.
 
@@ -193,6 +199,9 @@ class Example:
         def convert_to_serializable(value):
             if hasattr(value, "toDict"):
                 return value.toDict()
+            elif BaseModel is not None and isinstance(value, BaseModel):
+                # Handle Pydantic models (e.g., dspy.History)
+                return value.model_dump()
             elif isinstance(value, list):
                 return [convert_to_serializable(item) for item in value]
             elif isinstance(value, dict):
