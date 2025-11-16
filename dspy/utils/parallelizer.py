@@ -21,7 +21,7 @@ class ParallelExecutor:
         disable_progress_bar=False,
         provide_traceback=None,
         compare_results=False,
-        timeout=120,
+        timeout=1200,
         straggler_limit=3,
     ):
         """
