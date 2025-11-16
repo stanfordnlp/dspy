@@ -36,6 +36,7 @@ AUTO_RUN_SETTINGS = {
     "light": {"n": 6, "val_size": 100},
     "medium": {"n": 12, "val_size": 300},
     "heavy": {"n": 18, "val_size": 1000},
+    "heavy_long": {"n": 18, "val_size": 1000, "n_trials": 66},
 }
 
 # ANSI escape codes for colors
@@ -67,7 +68,7 @@ class MIPROv2(Teleprompter):
         metric_threshold: Optional[float] = None,
     ):
         # Validate 'auto' parameter
-        allowed_modes = {None, "light", "medium", "heavy"}
+        allowed_modes = {None, "light", "medium", "heavy", "heavy_long"}
         if auto not in allowed_modes:
             raise ValueError(f"Invalid value for auto: {auto}. Must be one of {allowed_modes}.")
         self.auto = auto
@@ -113,6 +114,7 @@ class MIPROv2(Teleprompter):
         fewshot_aware_proposer: bool = True,
         requires_permission_to_run: bool = True,
         provide_traceback: Optional[bool] = None,
+        save_dir: str=None,
     ) -> Any:
         
         zeroshot_opt = (self.max_bootstrapped_demos == 0) and (self.max_labeled_demos == 0)
@@ -199,6 +201,18 @@ class MIPROv2(Teleprompter):
             demo_candidates = None
 
         # Step 3: Find optimal prompt parameters
+        import os 
+        def write_pkl(obj, path):
+            import pickle
+            with open(path, "wb") as f:
+                pickle.dump(obj, f)
+
+        if save_dir is not None:
+            write_pkl(demo_candidates, os.path.join(save_dir, "demo_candidates.pkl"))
+            write_pkl(instruction_candidates, os.path.join(save_dir, "instruction_candidates.pkl"))
+        save_path = os.path.join(save_dir, "history_board.pkl") if save_dir is not None else None
+        save_history = save_path is not None
+
         best_program = self._optimize_prompt_parameters(
             program,
             instruction_candidates,
@@ -210,6 +224,8 @@ class MIPROv2(Teleprompter):
             minibatch_size,
             minibatch_full_eval_steps,
             seed,
+            save_history,
+            save_path,
         )
 
         return best_program
@@ -249,7 +265,7 @@ class MIPROv2(Teleprompter):
         self.num_instruct_candidates = auto_settings["n"] if zeroshot_opt else int(auto_settings["n"] * 0.5)
         self.num_fewshot_candidates = auto_settings["n"] 
 
-        num_trials = self._set_num_trials_from_num_candidates(program, zeroshot_opt, auto_settings["n"])
+        num_trials = self._set_num_trials_from_num_candidates(program, zeroshot_opt, auto_settings["n"]) if "n_trials" not in auto_settings else auto_settings["n_trials"]
 
         return num_trials, valset, minibatch
 
@@ -494,6 +510,8 @@ class MIPROv2(Teleprompter):
         minibatch_size: int,
         minibatch_full_eval_steps: int,
         seed: int,
+        save_history: bool=False,
+        save_path: str=None,
     ) -> Optional[Any]:
         # Run optimization
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -528,6 +546,7 @@ class MIPROv2(Teleprompter):
         fully_evaled_param_combos = {}
 
         # Define the objective function
+        history_board = [] if save_history else None
         def objective(trial):
             nonlocal program, best_program, best_score, trial_logs, total_eval_calls, score_data
 
@@ -559,7 +578,22 @@ class MIPROv2(Teleprompter):
 
             # Evaluate the candidate program (on minibatch if minibatch=True)
             batch_size = minibatch_size if minibatch else len(valset)
-            score = eval_candidate_program(batch_size, valset, candidate_program, evaluate, self.rng)
+            score = eval_candidate_program(batch_size, valset, candidate_program, evaluate, self.rng, return_all_scores=save_history, return_with_inputs=save_history)
+            if save_history:
+                inputs, (score, score_list) = score
+                cur_result = {
+                    "inputs": inputs,
+                    "score": score,
+                    "score_list": score_list,
+                    # "candidate_program": candidate_program.deepcopy(),
+                    "candidate_program_str": print_full_program(candidate_program),
+                    "chosen_params": chosen_params,
+                    "trial_num": trial_num,
+                    "total_eval_calls": total_eval_calls,
+                    # "score_data": score_data,
+                    # "param_score_dict": param_score_dict,
+                }
+                history_board.append(("minibatch", cur_result))
             total_eval_calls += batch_size
 
             # Update best score and program
@@ -623,8 +657,13 @@ class MIPROv2(Teleprompter):
                     study,
                     instruction_candidates,
                     demo_candidates,
+                    history_board,
                 )
-
+            if save_path is not None:
+                import pickle
+                # save history board as pkl
+                with open(save_path, "wb") as f:
+                    pickle.dump(history_board, f)
             return score
 
         sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
@@ -782,6 +821,7 @@ class MIPROv2(Teleprompter):
         study: optuna.Study,
         instruction_candidates: List,
         demo_candidates: List,
+        history_board: List = None,
     ):
         logger.info(f"===== Trial {trial_num + 1} / {adjusted_num_trials} - Full Evaluation =====")
 
@@ -790,7 +830,24 @@ class MIPROv2(Teleprompter):
             param_score_dict, fully_evaled_param_combos
         )
         logger.info(f"Doing full eval on next top averaging program (Avg Score: {mean_score}) from minibatch trials...")
-        full_eval_score = eval_candidate_program(len(valset), valset, highest_mean_program, evaluate, self.rng)
+
+        save_history = history_board is not None
+        full_eval_score = eval_candidate_program(len(valset), valset, highest_mean_program, evaluate, self.rng, return_all_scores=save_history, return_with_inputs=save_history)
+        if save_history:
+            inputs, (full_eval_score, full_eval_score_list) = full_eval_score
+            cur_result = {
+                "inputs": inputs,
+                "score": full_eval_score,
+                "score_list": full_eval_score_list,
+                # "program": highest_mean_program,
+                "program_str": print_full_program(highest_mean_program),
+                "chosen_params": params,
+                "trial_num": trial_num + 1,
+                "total_eval_calls": total_eval_calls,
+                # "score_data": score_data,
+                # "param_score_dict": param_score_dict,
+            }
+            history_board.append(("full_eval", cur_result))
         score_data.append({"score": full_eval_score, "program": highest_mean_program, "full_eval": True})
 
         # Log full eval as a trial so that optuna can learn from the new results

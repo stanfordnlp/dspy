@@ -42,21 +42,30 @@ def create_minibatch(trainset, batch_size=50, rng=None):
     return minibatch
 
 
-def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None, return_all_scores=False):
+def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rng=None, return_all_scores=False, return_with_inputs=False):
     """Evaluate a candidate program on the trainset, using the specified batch size."""
 
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
-            return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
+            scores = evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
+            if return_with_inputs:
+                return trainset, scores
+            else:
+                return scores
         # Or evaluate on a minibatch
         else:
-            return evaluate(
+            minibatch = create_minibatch(trainset, batch_size, rng)
+            scores = evaluate(
                 candidate_program,
-                devset=create_minibatch(trainset, batch_size, rng),
+                devset=minibatch,
                 return_all_scores=return_all_scores,
                 callback_metadata={"metric_key": "eval_minibatch"}
             )
+            if return_with_inputs:
+                return minibatch, scores
+            else:
+                return scores
     except Exception:
         logger.error("An exception occurred during evaluation", exc_info=True)
         if return_all_scores:
