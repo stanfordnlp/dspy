@@ -137,6 +137,8 @@ class Predict(Module, Parameter):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
+        # print("demos: ", demos)
+        # print("args: ", **kwargs)
 
         if self._should_stream():
             with settings.context(caller_predict=self):
@@ -144,7 +146,7 @@ class Predict(Module, Parameter):
         else:
             with settings.context(send_stream=None):
                 completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
-
+        # print("completions: ", completions)
         return self._forward_postprocess(completions, signature, **kwargs)
 
     async def aforward(self, **kwargs):
