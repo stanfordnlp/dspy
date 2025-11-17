@@ -8,6 +8,7 @@ from dspy.teleprompt.knn_fewshot import KNNFewShot
 from dspy.teleprompt.simba import SIMBA
 
 from dspy.teleprompt.mipro_optimizer_v2 import MIPROv2
+from dspy.teleprompt.mipro_optimizer_vmy import MIPROvmy
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.infer_rules import InferRules
 
@@ -15,6 +16,10 @@ from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.teleprompt.teleprompt_optuna import BootstrapFewShotWithOptuna
 from dspy.teleprompt.vanilla import LabeledFewShot
 # from dspy.teleprompt.gepa.gepa import GEPA
+
+from dspy.teleprompt.random_selection import RandomSelection
+from dspy.teleprompt.global_search import GlobalSearch
+from dspy.teleprompt.vanilla_gp import VanillaGP
 
 __all__ = [
     "AvatarOptimizer",
@@ -25,10 +30,14 @@ __all__ = [
     "Ensemble",
     "KNNFewShot",
     "MIPROv2",
+    "MIPROvmy",
     "BootstrapFewShotWithRandomSearch",
     "BootstrapFewShotWithOptuna",
     "LabeledFewShot",
     "InferRules",
     "SIMBA",
     # "GEPA",
+    "RandomSelection",
+    "GlobalSearch",
+    "VanillaGP",
 ]

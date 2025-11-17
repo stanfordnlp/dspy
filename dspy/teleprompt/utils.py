@@ -48,6 +48,7 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
     try:
         # Evaluate on the full trainset
         if batch_size >= len(trainset):
+# <<<<<<< HEAD
             scores = evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
             if return_with_inputs:
                 return trainset, scores
@@ -57,6 +58,14 @@ def eval_candidate_program(batch_size, trainset, candidate_program, evaluate, rn
         else:
             minibatch = create_minibatch(trainset, batch_size, rng)
             scores = evaluate(
+# =======
+#             # import ipdb; ipdb.set_trace()
+#             return evaluate(candidate_program, devset=trainset, return_all_scores=return_all_scores, callback_metadata={"metric_key": "eval_full"})
+#         # Or evaluate on a minibatch
+#         else:
+#             # import ipdb; ipdb.set_trace()
+#             return evaluate(
+# >>>>>>> dspy_local_backup_sihun
                 candidate_program,
                 devset=minibatch,
                 return_all_scores=return_all_scores,
@@ -382,6 +391,7 @@ def create_n_fewshot_demo_sets(
                 teacher_settings=teacher_settings,
                 max_rounds=max_rounds,
             )
+            # import ipdb; ipdb.set_trace()
             program2 = program.compile(student, teacher=teacher, trainset=trainset_copy)
 
         else:

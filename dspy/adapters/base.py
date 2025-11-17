@@ -55,11 +55,16 @@ class Adapter:
     ) -> list[dict[str, Any]]:
         predictor_inputs = inputs.copy()
         inputs = self.format(signature, demos, inputs)
+        # print("\n\n")
+        # print("INPUTS: ", inputs)
+        # print("input type: ", type(inputs), len(inputs))
+        # print("\n\n")
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        try:
+        try:   
             return self._call_post_process(outputs, signature)
         except ValueError as ve:
+            # import ipdb; ipdb.set_trace()        
             if len(ve.args) == 3 and "Failed to parse response as per signature" in ve.args[0]:
                 # This is formatting error, let's add the original input to the error message
                 raise ValueError("Failed to parse response as per signature from original completion with input", ve.args[1], ve.args[2], predictor_inputs) from ve
@@ -263,9 +268,12 @@ class Adapter:
         """
         complete_demos = []
         incomplete_demos = []
+        # import ipdb; ipdb.set_trace()
+        # print(len(demos))
 
         for demo in demos:
             # Check if all fields are present and not None
+            # print("demo: ", demo)
             is_complete = all(k in demo and demo[k] is not None for k in signature.fields)
 
             # Check if demo has at least one input and one output field
@@ -307,7 +315,11 @@ class Adapter:
                     ),
                 }
             )
-
+        # if( len(demos) ==5):
+        #     print("signature.fields: ", signature.fields)
+        #     print("is_complete: ", is_complete)
+        #     print("complete_demos: ", complete_demos)
+        #     print("messages: ", messages)
         return messages
 
     def _get_history_field_name(self, signature: Type[Signature]) -> bool:

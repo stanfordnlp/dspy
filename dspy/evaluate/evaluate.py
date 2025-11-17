@@ -55,7 +55,7 @@ class Evaluate:
         num_threads: Optional[int] = None,
         display_progress: bool = False,
         display_table: Union[bool, int] = False,
-        max_errors: int = 5,
+        max_errors: int = 100, #5,
         return_all_scores: bool = False,
         return_outputs: bool = False,
         provide_traceback: Optional[bool] = None,
@@ -166,7 +166,6 @@ class Evaluate:
                 program._suggest_failures += dspy.settings.get("suggest_failures")
 
             return prediction, score
-
         results = executor.execute(process_item, devset)
         assert len(devset) == len(results)
 
@@ -190,7 +189,7 @@ class Evaluate:
             return round(100 * ncorrect / ntotal, 2), [score for *_, score in results]
         if return_outputs:
             return round(100 * ncorrect / ntotal, 2), results
-
+        # import ipdb; ipdb.set_trace()
         return round(100 * ncorrect / ntotal, 2)
     
 

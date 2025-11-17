@@ -2,9 +2,14 @@ import random
 
 import dspy
 from dspy.propose.dataset_summary_generator import create_dataset_summary
-from dspy.propose.utils import create_example_string, create_predictor_level_history_string, strip_prefix, get_dspy_source_code
-from dspy.teleprompt.utils import get_signature, get_prompt_model
 from dspy.propose.propose_base import Proposer
+from dspy.propose.utils import (
+    create_example_string,
+    create_predictor_level_history_string,
+    get_dspy_source_code,
+    strip_prefix,
+)
+from dspy.teleprompt.utils import get_prompt_model, get_signature
 
 # Hardcoded variables (TODO: update)
 MAX_INSTRUCT_IN_HISTORY = 5  # 10
@@ -184,7 +189,7 @@ class GenerateModuleInstruction(dspy.Module):
         # Construct full program demo or single module demo depending on settings
         basic_instruction = get_signature(program.predictors()[pred_i]).instructions
         task_demos = ""
-        
+
         if self.use_task_demos:
             # Combine current and adjacent sets
             adjacent_sets = (
@@ -192,7 +197,7 @@ class GenerateModuleInstruction(dspy.Module):
                 demo_candidates[pred_i][demo_set_i + 1:] +
                 demo_candidates[pred_i][:demo_set_i]
             )
-            
+
             # Gather examples up to the required count
             example_strings = gather_examples_from_sets(adjacent_sets, num_demos_in_context)
             task_demos = "\n\n".join(example_strings) + "\n\n"
@@ -219,8 +224,8 @@ class GenerateModuleInstruction(dspy.Module):
                 outputs = []
                 for field_name, field in get_signature(program.predictors()[pred_i]).fields.items():
                     # Access the '__dspy_field_type' from the extra metadata
-                    dspy_field_type = field.json_schema_extra.get('__dspy_field_type')
-                    
+                    dspy_field_type = field.json_schema_extra.get("__dspy_field_type")
+
                     # Based on the '__dspy_field_type', append to the respective list
                     if dspy_field_type == "input":
                         inputs.append(field_name)
@@ -236,9 +241,9 @@ class GenerateModuleInstruction(dspy.Module):
                     module=module_code,
                     max_depth=10,
                 ).module_description
-            except:
+            except Exception as e:
                 if self.verbose:
-                    print("Error getting program description. Running without program aware proposer.")
+                    print(f"Error getting program description. Running without program aware proposer. Error: {e}")
                 self.program_aware = False
 
         # Generate an instruction for our chosen module
@@ -279,7 +284,8 @@ class GroundedProposer(Proposer):
         set_tip_randomly=True,
         set_history_randomly=True,
         verbose=False,
-        rng=None
+        rng=None,
+        init_temperature: float = 1.0,
     ):
         super().__init__()
         self.program_aware = program_aware
@@ -294,6 +300,7 @@ class GroundedProposer(Proposer):
         self.rng = rng or random
 
         self.prompt_model = get_prompt_model(prompt_model)
+        self.init_temperature = init_temperature
 
         self.program_code_string = None
         if self.program_aware:
@@ -324,12 +331,11 @@ class GroundedProposer(Proposer):
         program,
         demo_candidates,
         trial_logs,
-        N,
-        T,
+        N, # noqa: N803
     ) -> list[str]:
         """This method is responsible for returning the full set of new instructions for our program, given the specified criteria."""
 
-        proposed_instructions = {}      
+        proposed_instructions = {}
 
         if self.set_history_randomly:
             # Randomly select whether or not we're using instruction history
@@ -342,12 +348,12 @@ class GroundedProposer(Proposer):
             if self.verbose:
                 print("No demo candidates provided. Running without task demos.")
             self.use_task_demos = False
-            # When no demo candidates are provided, defailt to N
+            # When no demo candidates are provided, default to N
             num_demos = N
         else:
             num_demos = max(len(demo_candidates[0]), 1)
 
-        # Create an instruction for each predictor 
+        # Create an instruction for each predictor
         for pred_i, predictor in enumerate(program.predictors()):
             for demo_set_i in range(num_demos)[:min(N, num_demos)]:
                 if pred_i not in proposed_instructions:
@@ -370,14 +376,13 @@ class GroundedProposer(Proposer):
                         program=program,
                         predictor=predictor,
                         pred_i=pred_i,
-                        T=T,
                         demo_candidates=demo_candidates,
                         demo_set_i=demo_set_i,
                         trial_logs=trial_logs,
                         tip=selected_tip,
                     ),
                 )
-        
+
         return proposed_instructions
 
     def propose_instruction_for_predictor(
@@ -385,7 +390,6 @@ class GroundedProposer(Proposer):
         program,
         predictor,
         pred_i,
-        T,
         demo_candidates,
         demo_set_i,
         trial_logs,
@@ -409,15 +413,14 @@ class GroundedProposer(Proposer):
             verbose=self.verbose
         )
 
-        # Generate a new instruction for our predictor, using the temperature specified for this round
-        original_temp = self.prompt_model.kwargs["temperature"]
+        # Generate a new instruction for our predictor using a unique rollout id to bypass cache
+        rollout_lm = self.prompt_model.copy(
+            rollout_id=self.rng.randint(0, 10**9),
+            temperature=self.init_temperature,
+        )
 
-        epsilon = self.rng.uniform(0.01, 0.05)
-        modified_temp = T + epsilon
-
-        with dspy.settings.context(lm=self.prompt_model):
-            self.prompt_model.kwargs["temperature"] = modified_temp
-            proposed_instruction = instruction_generator.forward(
+        with dspy.settings.context(lm=rollout_lm):
+            proposed_instruction = instruction_generator(
                 demo_candidates=demo_candidates,
                 pred_i=pred_i,
                 demo_set_i=demo_set_i,
@@ -427,7 +430,6 @@ class GroundedProposer(Proposer):
                 num_demos_in_context = self.num_demos_in_context,
                 tip=tip,
             ).proposed_instruction
-        self.prompt_model.kwargs["temperature"] = original_temp
 
         # Log the trace used to generate the new instruction, along with the new instruction itself
         if self.verbose:

@@ -17,7 +17,7 @@ class ParallelExecutor:
     def __init__(
         self,
         num_threads=None,
-        max_errors=5,
+        max_errors=100, #5,
         disable_progress_bar=False,
         provide_traceback=None,
         compare_results=False,
@@ -53,16 +53,19 @@ class ParallelExecutor:
             if self.cancel_jobs.is_set():
                 return None
             try:
+                # print("user function item: ", user_function(item))
                 return user_function(item)
             except Exception as e:
+                # return_val = dspy.Prediction(answer=e.args[1])
                 with self.error_lock:
                     self.error_count += 1
                     if self.error_count >= self.max_errors:
                         self.cancel_jobs.set()
                 if self.provide_traceback:
                     logger.error(f"Error for {item}: {e}\n{traceback.format_exc()}")
-                else:
-                    logger.error(f"Error for {item}: {e}. " "Set `provide_traceback=True` for traceback.")
+                # else:
+                    # logger.error(f"Error for {item}: {e}. " "Set `provide_traceback=True` for traceback.")
+                    # logger.error(f"pred answer is {return_val}")
                 return None
 
         return safe_func
@@ -152,6 +155,7 @@ class ParallelExecutor:
                         futures_set.remove(f)
                         try:
                             index, outcome = f.result()
+                            # import ipdb; ipdb.set_trace()
                         except Exception:
                             pass
                         else:
