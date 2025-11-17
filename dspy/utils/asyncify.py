@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Awaitable, Callable, ParamSpec, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ParamSpec, TypeVar, Union, overload
 
 import asyncer
 from anyio import CapacityLimiter
@@ -35,10 +35,10 @@ def asyncify(program: Callable[P, T]) -> Callable[P, Awaitable[T]]: ...
 
 
 @overload
-def asyncify(program: "Module") -> Callable[..., Awaitable[T]]: ...
+def asyncify(program: "Module") -> Callable[..., Awaitable[Any]]: ...
 
 
-def asyncify(program: Union[Callable[P, T], "Module"]) -> Callable[P, Awaitable[T]] | Callable[..., Awaitable[T]]:
+def asyncify(program: Union[Callable[P, T], "Module"]) -> Callable[P, Awaitable[T]] | Callable[..., Awaitable[Any]]:
     """
     Wraps a DSPy program or callable so that it can be called asynchronously. This is useful for running a
     program in parallel with another task (e.g., another DSPy program).
