@@ -1,10 +1,13 @@
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Union, overload
+from typing import TYPE_CHECKING, Awaitable, Callable, ParamSpec, TypeVar, Union, overload
 
 import asyncer
 from anyio import CapacityLimiter
 
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 _limiter = None
 
@@ -28,14 +31,14 @@ def get_limiter():
 
 
 @overload
-def asyncify(program: "Module") -> Callable[..., Awaitable[Any]]: ...
+def asyncify(program: Callable[P, T]) -> Callable[P, Awaitable[T]]: ...
 
 
 @overload
-def asyncify(program: Callable[..., Any]) -> Callable[..., Awaitable[Any]]: ...
+def asyncify(program: "Module") -> Callable[..., Awaitable[T]]: ...
 
 
-def asyncify(program: Union["Module", Callable[..., Any]]) -> Callable[..., Awaitable[Any]]:
+def asyncify(program: Union[Callable[P, T], "Module"]) -> Callable[P, Awaitable[T]] | Callable[..., Awaitable[T]]:
     """
     Wraps a DSPy program or callable so that it can be called asynchronously. This is useful for running a
     program in parallel with another task (e.g., another DSPy program).
@@ -50,7 +53,7 @@ def asyncify(program: Union["Module", Callable[..., Any]]) -> Callable[..., Awai
             The current thread's configuration context is inherited for each call.
     """
 
-    async def async_program(*args: Any, **kwargs: Any) -> Any:
+    async def async_program(*args: P.args, **kwargs: P.kwargs) -> T:
         # Capture the current overrides at call-time.
         from dspy.dsp.utils.settings import thread_local_overrides
 
@@ -70,4 +73,4 @@ def asyncify(program: Union["Module", Callable[..., Any]]) -> Callable[..., Awai
         call_async = asyncer.asyncify(wrapped_program, abandon_on_cancel=True, limiter=get_limiter())
         return await call_async(*args, **kwargs)
 
-    return async_program
+    return async_program  # type: ignore[return-value]
