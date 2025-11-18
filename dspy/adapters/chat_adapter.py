@@ -26,20 +26,15 @@ class FieldInfoWithName(NamedTuple):
 
 
 class ChatAdapter(Adapter):
-    """Chat-based Adapter for LM interactions.
+    """Default Adapter for most language models.
 
-    The ChatAdapter formats DSPy signatures into a conversational chat format with structured field markers.
+    The ChatAdapter formats DSPy signatures into a format compatible with most language models.
     It uses delimiter patterns like `[[ ## field_name ## ]]` to clearly separate input and output fields in
-    the message content, making it suitable for chat-based language models.
+    the message content.
 
     Key features:
         - Structures inputs and outputs using field header markers for clear field delineation.
         - Provides automatic fallback to JSONAdapter on parsing errors (configurable).
-        - Supports conversation history, few-shot examples, and custom type processing.
-        - Includes a completion marker `[[ ## completed ## ]]` to signal the end of output fields.
-
-    This adapter is particularly effective for chat-based models that benefit from explicit field boundaries
-    in the conversation flow.
     """
 
     def __init__(
@@ -63,7 +58,7 @@ class ChatAdapter(Adapter):
                 parsing errors or other exceptions (except ContextWindowExceededError). This provides robustness by
                 retrying with a different format when the chat format fails. Defaults to True.
         """
-    
+
         super().__init__(
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
