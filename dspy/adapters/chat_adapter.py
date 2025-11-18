@@ -34,7 +34,7 @@ class ChatAdapter(Adapter):
 
     Key features:
         - Structures inputs and outputs using field header markers for clear field delineation.
-        - Provides automatic fallback to JSONAdapter on parsing errors (configurable).
+        - Provides automatic fallback to JSONAdapter if the chat format fails.
     """
 
     def __init__(
