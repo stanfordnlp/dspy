@@ -26,6 +26,22 @@ class FieldInfoWithName(NamedTuple):
 
 
 class ChatAdapter(Adapter):
+    """Chat-based Adapter for LM interactions.
+
+    The ChatAdapter formats DSPy signatures into a conversational chat format with structured field markers.
+    It uses delimiter patterns like `[[ ## field_name ## ]]` to clearly separate input and output fields in
+    the message content, making it suitable for chat-based language models.
+
+    Key features:
+        - Structures inputs and outputs using field header markers for clear field delineation.
+        - Provides automatic fallback to JSONAdapter on parsing errors (configurable).
+        - Supports conversation history, few-shot examples, and custom type processing.
+        - Includes a completion marker `[[ ## completed ## ]]` to signal the end of output fields.
+
+    This adapter is particularly effective for chat-based models that benefit from explicit field boundaries
+    in the conversation flow.
+    """
+
     def __init__(
         self,
         callbacks=None,
@@ -33,6 +49,21 @@ class ChatAdapter(Adapter):
         native_response_types=None,
         use_json_adapter_fallback: bool = True,
     ):
+        """
+        Args:
+            callbacks: List of callback functions to execute during `format()` and `parse()` methods. Callbacks can be
+                used for logging, monitoring, or custom processing. Defaults to None (empty list).
+            use_native_function_calling: Whether to enable native function calling capabilities when the LM supports it.
+                If True, the adapter will automatically configure function calling when input fields contain `dspy.Tool`
+                or `list[dspy.Tool]` types. Defaults to False.
+            native_response_types: List of output field types that should be handled by native LM features rather than
+                adapter parsing. For example, `dspy.Citations` can be populated directly by citation APIs
+                (e.g., Anthropic's citation feature). Defaults to `[Citations, Reasoning]`.
+            use_json_adapter_fallback: Whether to automatically fall back to JSONAdapter if ChatAdapter encounters
+                parsing errors or other exceptions (except ContextWindowExceededError). This provides robustness by
+                retrying with a different format when the chat format fails. Defaults to True.
+        """
+    
         super().__init__(
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
