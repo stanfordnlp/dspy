@@ -195,7 +195,7 @@ The capital of France is Paris.
 User message:
 
 [[ ## question ## ]]
-What is the capital of Germany?
+What is the capital of America?
 
 Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.
 
@@ -203,7 +203,7 @@ Respond with the corresponding output fields, starting with the field `[[ ## ans
 Response:
 
 [[ ## answer ## ]]
-The capital of Germany is Berlin.
+The capital of the United States of America is Washington, D.C.
 
 [[ ## completed ## ]]
 ```
