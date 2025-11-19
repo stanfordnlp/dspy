@@ -253,7 +253,7 @@ class GEPA(Teleprompter):
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called 
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer. 
             Custom instruction proposers can invoke their own LLMs if needed.
-        component_selector: Custom component selector implementing the ReflectionComponentSelector protocol,
+        component_selector: Custom component selector implementing the [ReflectionComponentSelector](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol,
             or a string specifying a built-in selector strategy. Controls which components (predictors) are selected 
             for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components 
             one at a time. Available string options: 'round_robin' (cycles through components sequentially), 
