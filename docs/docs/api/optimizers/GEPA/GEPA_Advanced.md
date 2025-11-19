@@ -446,27 +446,16 @@ gepa = dspy.GEPA(
 
 ## Tool Optimization
 
-### What is optimize_react_components?
+### What is enable_tool_optimization?
 
-Enable `optimize_react_components=True` to apply specialized optimization to `dspy.ReAct` modules while using default optimization for other modules.
+Many DSPy programs use tools, with modules like `dspy.ReAct` as canonical examples. When `enable_tool_optimization=True`, GEPA jointly optimizes tool-using modules as a whole: predictor instructions and tool descriptions and argument descriptions are updated together, instead of being tuned in isolation. This lets the model learn better patterns for when to call a tool and how to use it from the same execution traces and feedback that drive core GEPA.
 
-A [`dspy.ReAct`](../../learn/programming/tools.md#approach-1-using-dspyreact-fully-managed) module has three parts: a **react predictor** (iteratively reasons and selects tools), an **extract predictor** (extracts final answers from trajectories), and **tools** with their schemas.
+### Usage and constraints
 
-**What gets optimized for ReAct modules:**
-
-GEPA can improve textual components across all parts:
-- **React instruction** - Guides reasoning and tool selection (always optimized)
-- **Extract instruction** - Guides answer extraction from trajectories (optional)
-- **Tool descriptions** - Describes what each tool does (optional)
-- **Tool argument descriptions** - Describes tool parameters (optional)
-
-The reflection LM decides which optional components to improve based on observed failures. Non-ReAct modules in your program are optimized using GEPA's default signature optimization.
-
-**Why this matters:**
-
-Unlike optimizing signature instructions alone (which improves individual predictors), ReAct optimization improves the **entire agent workflow** - from initial reasoning through tool execution to final answer extraction.
-
-ReAct agents often fail when their components contradict each other. A clear tool description doesn't help if the react instruction never considers using that tool. GEPA analyzes execution traces to learn how all components should work together.
+- **Expose tools as `dspy.Tool` in signatures and examples.** GEPA only optimizes tools that are represented as `dspy.Tool` and actually passed as `dspy.Tool` objects into your modules.
+- **Treat `Tool.name` as a stable identifier.** `Tool.name` is the tool's name, and GEPA uses it to attach improved descriptions and argument descriptions. If you reuse the same `Tool.name` for different tools, they will share the same text updates.
+- **Avoid custom tools named `"finish"`.** The built-in ReAct `"finish"` tool is reserved and excluded from optimization. Custom tools with the name `"finish"` are also not optimized.
+- **Custom instruction proposers handle all modules and tool updates.** When you provide an `instruction_proposer`, GEPA routes every optimized module through your proposer instead of the built-in instruction proposer. If `enable_tool_optimization=True`, modules that call tools are still included, and your proposer is also responsible for updating their tool descriptions and argument descriptions.
 
 ### ReAct Optimization Prompt
 
