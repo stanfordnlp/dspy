@@ -316,12 +316,15 @@ class MultiModalInstructionProposer(ProposalFn):
         return updated_components
 
 class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
-    """Improve a tool-using module based on execution examples and feedback.
+    """I provided an assistant with predictor instructions and tool descriptions, 
+    but its performance needs improvement based on the examples_with_feedback below.
 
-    These components are progressively optimized - refine what needs improvement.
-    Analyze the examples_with_feedback to identify successful patterns and failure causes.
-    Generate improved texts to help the module succeed on similar tasks.
-    Place improved texts at their appropriate level of abstraction and/or specificity.
+    Your task is to propose better predictor instructions, tool descriptions, and tool argument descriptions that address the issues shown in these examples. 
+    Focus on reinforcing patterns that clearly improve the assistant's performance on similar tasks, rather than rewriting everything from scratch unless necessary.
+    These components are progressively optimized - refine only what needs to change. 
+
+    Analyze the examples_with_feedback to identify success and failure patterns, and write improved instructions and descriptions at their appropriate level of abstraction and/or specificity, 
+    so that each layer plays a clear, complementary role without unnecessary repetition or verbosity unless redundancy clearly helps the assistant's performance.
     """
 
     current_predictor_instruction = dspy.InputField(
@@ -379,9 +382,8 @@ class ToolModuleProposer(ProposalFn):
 
         for module_key in components_to_update:
             if module_key not in candidate or module_key not in reflective_dataset:
-                logger.warning(f"Skipping {module_key}: not in candidate={module_key not in candidate}, not in reflective_dataset={module_key not in reflective_dataset}")
+                logger.debug(f"Skipping {module_key}: not in candidate={module_key not in candidate}, not in reflective_dataset={module_key not in reflective_dataset}")
                 continue
-
             current_module_config = json.loads(candidate[module_key])
 
             # Predictor keys: 1 for tool modules, 2 for ReAct modules (extra extract predictor)
@@ -411,7 +413,7 @@ class ToolModuleProposer(ProposalFn):
                 signature = signature.append(
                     f"improved_tool_{tool_name}_desc",
                     dspy.OutputField(
-                        desc=f"Concise description of tool '{tool_name}'",
+                        desc=f"Improved description of tool '{tool_name}'",
                         default=None
                     )
                 )
@@ -420,7 +422,7 @@ class ToolModuleProposer(ProposalFn):
                     signature = signature.append(
                         f"improved_tool_{tool_name}_arg_{arg_name}_desc",
                         dspy.OutputField(
-                            desc=f"Concise description of tool '{tool_name}' parameter '{arg_name}'",
+                            desc=f"Improved description of the argument '{arg_name}' of tool '{tool_name}'",
                             default=None
                         )
                     )
@@ -443,7 +445,6 @@ class ToolModuleProposer(ProposalFn):
                 kwargs["current_extract_instruction"] = current_module_config[extract_predictor_key]
 
             propose_descriptions = dspy.Predict(signature)
-
             result = propose_descriptions(**kwargs)
 
             # Build improved config (reflection LM returns None to keep original, or new text)
