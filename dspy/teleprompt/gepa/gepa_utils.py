@@ -23,14 +23,12 @@ logger = logging.getLogger(__name__)
 REACT_MODULE_PREFIX = "react_module"
 TOOL_MODULE_PREFIX = "tool_module"
 
-
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
 
     def log(self, x: str):
         self.logger.info(x)
-
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
 
@@ -41,16 +39,14 @@ class ReflectiveExample(TypedDict):
 
     Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
     """
-
-    Inputs: dict[str, Any]  # Predictor inputs (may include str, dspy.Image, etc.)
-    Generated_Outputs: dict[str, Any] | str  # Success: dict with output fields, Failure: error message string
-    Feedback: str  # Always a string - from metric function or parsing error message
+    Inputs: dict[str, Any]                              # Predictor inputs (may include str, dspy.Image, etc.)
+    Generated_Outputs: dict[str, Any] | str             # Success: dict with output fields, Failure: error message string
+    Feedback: str                                       # Always a string - from metric function or parsing error message
 
 
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str
-
 
 class PredictorFeedbackFn(Protocol):
     def __call__(
@@ -75,7 +71,6 @@ class PredictorFeedbackFn(Protocol):
         The feedback is a string that is used to guide the evolution of the predictor.
         """
         ...
-
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def __init__(
