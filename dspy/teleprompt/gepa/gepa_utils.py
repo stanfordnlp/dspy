@@ -367,24 +367,16 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 if len(trace_instances) == 0:
                     continue
 
-                # TODO: Workaround for ReAct's multiple predictor calls with partial trajectories.
-                # Using last trace ensures full aggregated trajectory (same as extract predictor).
-                # After PR #8999 merges (https://github.com/stanfordnlp/dspy/pull/8999), test if we can
-                # remove this and use extract predictor trace directly like other modules traces.
-                if pred_name.startswith(REACT_MODULE_PREFIX):
-                    selected = trace_instances[-1]
+                selected = None
+                for t in trace_instances:
+                    if isinstance(t[2], FailedPrediction):
+                        selected = t
+                        break
 
-                else:
-                    selected = None
-                    for t in trace_instances:
-                        if isinstance(t[2], FailedPrediction):
-                            selected = t
-                            break
-
-                    if selected is None:
-                        if isinstance(prediction, FailedPrediction):
-                            continue
-                        selected = self.rng.choice(trace_instances)
+                if selected is None:
+                    if isinstance(prediction, FailedPrediction):
+                        continue
+                    selected = self.rng.choice(trace_instances)
 
                 inputs = selected[1]
                 outputs = selected[2]
