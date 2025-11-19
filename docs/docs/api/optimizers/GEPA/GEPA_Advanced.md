@@ -444,7 +444,7 @@ gepa = dspy.GEPA(
 )
 ```
 
-## ReAct Component Optimization
+## Tool Optimization
 
 ### What is optimize_react_components?
 
