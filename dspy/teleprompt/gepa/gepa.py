@@ -619,35 +619,33 @@ class GEPA(Teleprompter):
                         "extract instructions, tool descriptions, and tool argument descriptions."
                     )
 
+        # Detect tool-using predictors via type checking
+        def is_tool_field(annotation) -> bool:
+            """Check if a field annotation is Tool or contains Tool."""
+            if annotation is Tool:
+                return True
+            origin = get_origin(annotation)
+            if origin is not None:
+                args = get_args(annotation)
+                for arg in args:
+                    if is_tool_field(arg):  # Recursive for nested types
+                        return True
+            return False
+
         # Then, process individual predictors (skip if already part of a module config)
         for name, pred in student.named_predictors():
             if self.enable_tool_optimization:
                 # Skip if predictor is part of a module config (e.g., ReAct)
                 found = False
-                for val in base_program.values():
-                    try:
+                for key, val in base_program.items():
+                    if key.startswith((REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX)):
                         config = json.loads(val)
                         if name in config:
                             found = True
                             break
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        pass
 
                 if found:
                     continue
-
-                # Detect tool-using predictors via type checking
-                def is_tool_field(annotation) -> bool:
-                    """Check if a field annotation is Tool or contains Tool."""
-                    if annotation is Tool:
-                        return True
-                    origin = get_origin(annotation)
-                    if origin is not None:
-                        args = get_args(annotation)
-                        for arg in args:
-                            if is_tool_field(arg):  # Recursive for nested types
-                                return True
-                    return False
 
                 # Add tool module if predictor uses tools
                 if any(is_tool_field(field.annotation) for field in pred.signature.input_fields.values()):
