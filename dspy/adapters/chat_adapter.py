@@ -52,8 +52,6 @@ class ChatAdapter(Adapter):
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
 
-    __init__.__doc__ = Adapter.__init__.__doc__
-
     def __call__(
         self,
         lm: LM,
@@ -282,3 +280,12 @@ class ChatAdapter(Adapter):
         assistant_message = {"role": "assistant", "content": assistant_message_content}
         messages = system_user_messages + [assistant_message]
         return {"messages": messages}
+
+
+ChatAdapter.__init__.__doc__ = (
+    Adapter.__init__.__doc__
+    + """    use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
+                If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
+                JSONAdapter. Defaults to True.
+"""
+)
