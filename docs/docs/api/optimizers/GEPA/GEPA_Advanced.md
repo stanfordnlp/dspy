@@ -576,21 +576,21 @@ When `enable_tool_optimization=True`, GEPA:
 
 Modules without tools (like `dspy.Predict` or `dspy.ChainOfThought`) continue using standard GEPA instruction-only optimization.
 
-### When to Use optimize_react_components
+### When to Use Tool Optimization
 
-Enable `optimize_react_components=True` when you use `dspy.ReAct` in your program and need better agent performance. GEPA jointly optimizes all ReAct components (react instruction, extract instruction, tool descriptions, tool argument descriptions) based on execution feedback. Common scenarios:
+Enable `enable_tool_optimization=True` when tools are central to your program's behavior and you want GEPA to jointly optimize predictor instructions and tool descriptions together. Common scenarios:
 
-1. **Agent loops with repeated tool calls** - Agent keeps calling `web_search` multiple times with similar queries instead of synthesizing information. GEPA improves react instruction to encourage synthesis and tool descriptions to clarify when searches are sufficient.
+1. **Wrong tool selection** - Predictor with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA refines predictor instructions and tool descriptions to clarify "use search for factual queries, calculator for numerical analysis."
 
-2. **Wrong tool selection** - Agent with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA refines react instruction and tool descriptions to clarify "use search for factual queries, calculator for numerical analysis."
+2. **Underused tools** - Predictor responds "I don't know" without using available tools that could answer the question. GEPA improves predictor instructions to be more proactive about tool usage.
 
-3. **Agent gives up without trying tools** - Agent responds "I don't know" without using available tools that could answer the question. GEPA improves react instruction to be more proactive about tool usage.
+3. **Tool call loops** - Agent keeps calling `web_search` multiple times with similar queries instead of synthesizing information. GEPA improves instructions to encourage synthesis and tool descriptions to clarify when searches are sufficient.
 
-4. **Extraction failures** - Agent executes tools correctly but fails to extract the final answer from the trajectory. GEPA improves extract instruction to better identify and format answers from tool outputs.
+4. **Extraction failures (ReAct)** - Agent executes tools correctly but fails to extract the final answer from the trajectory. GEPA improves extract instruction to better identify and format answers from tool outputs.
 
-5. **Multi-agent delegation issues** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes all ReAct components across both parent and sub-agent modules for coherent delegation.
+5. **Multi-agent delegation** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes instructions and tool descriptions across both parent and sub-agent modules for coherent delegation.
 
-See the usage examples below for basic ReAct agents and multi-agent systems.
+See the usage examples below for tool-using programs.
 
 ### Usage Examples
 
