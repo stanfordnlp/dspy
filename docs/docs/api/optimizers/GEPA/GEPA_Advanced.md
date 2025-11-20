@@ -705,106 +705,97 @@ for tool_name, tool in optimized_agent.tools.items():
         print(f"  Argument descriptions:", tool.arg_desc)
 ```
 
-### Custom Instruction Proposers and ReAct Optimization
+### Custom Instruction Proposers with Tool Optimization
 
-**Important:** When you provide a custom `instruction_proposer`, it receives ALL components (regular predictors AND ReAct modules). You must set `optimize_react_components=True` to enable ReAct module discovery and serialization, then handle the optimization logic yourself.
+When you provide a custom `instruction_proposer`, GEPA routes **all components** to your proposer, including both plain predictors and tool-using modules. Your proposer must handle both.
 
-**How it works internally:**
+**What your proposer receives:**
 
-1. **Component Discovery** - GEPA discovers components in your program:
-   - Regular predictors → keys like `"predict"`, `"chain_of_thought"`
-   - ReAct modules → keys like `"react_module"` or `"react_module:agent_name"`
+- **Plain predictors**: instruction strings keyed by predictor name
+- **Tool-using modules**: JSON strings keyed by module identifier, containing predictor instructions and tool schemas
+  - Generic tool modules: `f"{TOOL_MODULE_PREFIX}:{predictor_name}"`
+  - ReAct modules: `f"{REACT_MODULE_PREFIX}:{extract_predictor_name}"`
 
-2. **ReAct Serialization** - When `optimize_react_components=True`, GEPA serializes ReAct modules as JSON:
-   ```json
-   {
-     "react": "instruction for reasoning and tool selection",
-     "extract": "instruction for answer extraction",
-     "tools": {
-       "tool_name": {
-         "desc": "what the tool does",
-         "args": {"param": {"type": "string"}},
-         "arg_desc": {"param": "description of param"}
-       }
-     }
-   }
-   ```
+**Your proposer's responsibilities:**
 
-3. **Custom Proposer Receives**:
-   - `candidate: dict[str, str]` - **All values are strings**
-     - Regular component: `candidate["predict"]` → `"Your instruction here"`
-     - ReAct component: `candidate["react_module"]` → `'{"react": "...", "extract": "...", "tools": {...}}'` (JSON as a string)
-   - `reflective_dataset: dict[str, list[ReflectiveExample]]` - **GEPA provides this** 
-     - Contains execution traces: inputs, outputs (including full ReAct trajectory), and your metric's feedback
-     - For ReAct: `Generated_Outputs` includes the entire trajectory with all tool calls and reasoning
-     - Use this to understand what went wrong and guide your improvements
-   - `components_to_update: list[str]` - Component keys to optimize this round
+```python
+import json
+from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX
 
-4. **Your Responsibility**:
-   - For ReAct components: Use `json.loads()` to parse, improve all 4 parts, use `json.dumps()` to return
-   - For regular components: Improve the instruction string directly
-   - Return `dict[str, str]` with same keys
+def custom_proposer(candidate, reflective_dataset, components_to_update):
+    """Custom instruction proposer for GEPA with tool optimization.
+    
+    Args:
+        candidate: dict[str, str] - All components in the program
+            {
+                "predictor_name": "instruction string",
+                "tool_module:pred_name": '{"pred_name": "...", "tools": {...}}',
+                "react_module:extract_name": '{"react_name": "...", "extract_name": "...", "tools": {...}}'
+            }
+        reflective_dataset: dict[str, list[dict]] - Execution examples with feedback per component
+        components_to_update: list[str] - Component keys to optimize in this call
+    
+    Returns:
+        dict[str, str]: Improved instructions for components_to_update keys only
+    """
+    improved_components = {}
+    
+    for component_key in components_to_update:
+        if component_key.startswith(REACT_MODULE_PREFIX) or component_key.startswith(TOOL_MODULE_PREFIX):
+            config = json.loads(candidate[component_key])
+            # Example: {"pred": "instruction", "tools": {"search": {"desc": "...", "args": {...}}}}
+            
+            # Find predictor names (predictor keys with string values and "tools" is a dict)
+            predictor_keys = [k for k, v in config.items() if isinstance(v, str)]
+            for pred_name in predictor_keys:
+                config[pred_name] = "improved predictor instruction"
+            
+            # Update tool descriptions and argument descriptions
+            for tool_name, tool_info in config.get("tools", {}).items():
+                tool_info["desc"] = "improved tool description"
+                for arg_name in tool_info.get("args", {}):
+                    tool_info["args"][arg_name]["description"] = "improved argument description"
+            
+            improved_components[component_key] = json.dumps(config)
+        else:
+            # Plain predictor: improve instruction string only
+            improved_components[component_key] = "improved instruction"
+    
+    return improved_components
+```
 
-**What this means:**
-- Your custom proposer receives ALL components: regular signatures AND ReAct modules
-- GEPA still does discovery and JSON serialization, but YOU handle the optimization logic
-- ReAct components are passed with keys like `"react_module"` or `"react_module:agent_name"`
+Your proposer can use any optimization approach: custom prompts, LM calls, heuristics, or rule-based logic.
 
-#### Implementing a Custom Proposer for ReAct
+**Tool module JSON structure:**
 
-If you need custom optimization logic beyond the default, you can build your own proposer. The best way to start is by looking at the reference implementation: [`ReActModuleProposer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/instruction_proposal.py).
-
-**Understanding ReAct component structure**
-
-When GEPA optimizes ReAct modules, it serializes them as JSON strings containing all the pieces you can improve:
-
+Generic:
 ```json
 {
-  "react": "instruction for reasoning and tool selection",
-  "extract": "instruction for answer extraction",
+  "predictor_name": "instruction",
   "tools": {
     "search": {
-      "desc": "Search the web for information",
-      "args": {"query": {"type": "string"}},
-      "arg_desc": {"query": "The search query to execute"}
+      "desc": "...",
+      "args": {"query": {"type": "string", "description": "..."}}
     }
   }
 }
 ```
 
-**What you can improve:**
-- **`react`** - How the agent reasons and decides which tools to use
-- **`extract`** - How the agent extracts the final answer from execution results
-- **`tools[*].desc`** - What each tool does and when to use it
-- **`tools[*].arg_desc`** - What each parameter means and how to use it
-
-**What to preserve:**
-- **`tools[*].args`** - The tool's parameter schema (types, required fields, etc.)
-
-**Your proposer's interface**
-
-Your custom proposer is a callable that receives component instructions and execution feedback, then returns improved versions:
-
-```python
-def your_custom_proposer(
-    candidate: dict[str, str],              # Current instructions for all components
-    reflective_dataset: dict[str, list],    # Execution examples with feedback
-    components_to_update: list[str],        # Which components to optimize this round
-) -> dict[str, str]:                        # Return improved instructions
-    """
-    For ReAct components:
-    - Use json.loads() to parse the JSON string
-    - Improve what needs fixing based on the feedback
-    - Use json.dumps() to serialize back
-    
-    For regular components:
-    - Just return the improved instruction string
-    """
-    # Your optimization logic here
-    pass
+ReAct:
+```json
+{
+  "react_name": "react instruction",
+  "extract_name": "extract instruction",
+  "tools": { ... }
+}
 ```
 
-**The reference shows how to:**
-- Parse and rebuild the JSON structure
-- Generate dynamic fields for tools/parameters
-- Use execution feedback to guide improvements
+**What to update:**
+- `config[predictor_name] = "proposed predictor instruction"`
+- `config["tools"][tool_name]["desc"] = "proposed tool description"`
+- `config["tools"][tool_name]["args"][arg_name]["description"] = "proposed argument description"`
+
+**What to preserve:**
+- `config["tools"][tool_name]["args"][arg_name]["type"]` and other schema metadata (changing these breaks the tool since they must match the underlying function's parameter types)
+
+See [`ToolModuleProposer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/instruction_proposal.py) for reference.
