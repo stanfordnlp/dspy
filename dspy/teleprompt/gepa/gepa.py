@@ -286,7 +286,7 @@ class GEPA(Teleprompter):
         enable_tool_optimization: Whether to enable joint optimization of tool-using modules.
             When enabled, GEPA jointly optimizes predictor instructions and tool descriptions together
             for both dspy.ReAct modules and custom predictors that use dspy.Tool. See the
-            [ReAct Component Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#react-component-optimization)
+            [Tool Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#tool-optimization)
             for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
         gepa_kwargs: (Optional) Additional keyword arguments to pass directly to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py).
