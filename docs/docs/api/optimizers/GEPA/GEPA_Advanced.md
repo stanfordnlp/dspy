@@ -457,25 +457,30 @@ Many DSPy programs use tools, with modules like `dspy.ReAct` as canonical exampl
 - **Avoid custom tools named `"finish"`.** The built-in ReAct `"finish"` tool is reserved and excluded from optimization. Custom tools with the name `"finish"` are also not optimized.
 - **Custom instruction proposers handle all modules and tool updates.** When you provide an `instruction_proposer`, GEPA routes every optimized module through your proposer instead of the built-in instruction proposer. If `enable_tool_optimization=True`, modules that call tools are still included, and your proposer is also responsible for updating their tool descriptions and argument descriptions.
 
-### ReAct Optimization Prompt
+### Tool Module Optimization Prompt
 
-GEPA uses a specialized prompt to jointly optimize all ReAct components. The prompt receives complete ReAct trajectories and current component texts:
+GEPA uses `ToolModuleProposer` to optimize tool-using modules when `enable_tool_optimization=True`. For each module, the proposer builds a dynamic signature from the base `GenerateImprovedToolModuleDescriptionsFromFeedback` signature shown below, then appends output fields for each tool description and each tool argument description in that module. For ReAct modules, the proposer also appends input and output fields for the extract instruction.
 
 ```python
-class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
-    """Improve a ReAct agent based on execution examples and feedback.
+class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
+    """I provided an assistant with predictor instructions and tool descriptions,
+    but its performance needs improvement based on the examples_with_feedback below.
 
-    These components are progressively optimized - refine what needs improvement.
-    Analyze the trajectories to identify successful patterns and failure causes.
-    Generate improved texts to help the agent succeed on similar tasks.
-    Place improved texts at their appropriate level of abstraction and/or specificity.
+    Your task is to propose better predictor instructions, tool descriptions, and
+    tool argument descriptions that address the issues shown in these examples.
+    Focus on reinforcing patterns that clearly improve the assistant's performance
+    on similar tasks, rather than rewriting everything from scratch unless necessary.
+    These components are progressively optimized - refine only what needs to change.
+
+    Analyze the examples_with_feedback to identify success and failure patterns,
+    and write improved instructions and descriptions at their appropriate level
+    of abstraction and/or specificity, so that each layer plays a clear,
+    complementary role without unnecessary repetition or verbosity unless
+    redundancy clearly helps the assistant's performance.
     """
 
-    current_react_instruction = dspy.InputField(
-        desc="Current ReAct module instruction guiding the ReAct agent's reasoning and tool selection"
-    )
-    current_extract_instruction = dspy.InputField(
-        desc="Current Extract module instruction for extracting final answers from trajectories"
+    current_predictor_instruction = dspy.InputField(
+        desc="Current instruction guiding the predictor"
     )
     current_tools = dspy.InputField(
         annotation=list[dspy.Tool],
@@ -485,19 +490,20 @@ class GenerateImprovedReActDescriptionsFromFeedback(dspy.Signature):
         desc="Execution examples with feedback showing successes and failures"
     )
 
-    improved_react_instruction: str | None = dspy.OutputField(
-        desc="ReAct instruction for reasoning and tool selection",
+    improved_predictor_instruction: str | None = dspy.OutputField(
+        desc="Improved instruction for the predictor",
         default=None
     )
-    improved_extract_instruction: str | None = dspy.OutputField(
-        desc="Extract instruction for answer extraction",
-        default=None
-    )
-    # Note: Tool descriptions and arg descriptions are added dynamically via signature.append()
-    # with field descriptions like "Purpose of tool" and "Usage of parameter"
+
+    # GEPA appends output fields dynamically for each tool and argument:
+    # - improved_tool_{name}_desc with desc="Improved description of tool '{name}'"
+    # - improved_tool_{name}_arg_{param}_desc with desc="Improved description of the argument '{param}' of tool '{name}'"
+    # For ReAct modules, GEPA also appends:
+    # - current_extract_instruction (input) with desc="Current instruction for extraction predictor"
+    # - improved_extract_instruction (output) with desc="Improved instruction for extraction"
 ```
 
-The reflection LM receives all current components and execution traces, then decides which components to improve. Tool-specific fields (`improved_tool_{name}_desc`, `improved_tool_{name}_arg_{param}_desc`) are generated dynamically for each tool and parameter.
+The reflection LM uses this dynamically-built signature to jointly propose updates across predictor instructions, tool descriptions, and argument descriptions based on execution feedback. Updates are coordinated rather than made in isolation: the LM sees all current components together and can selectively update any subset by returning new text, or return `None` to keep a component unchanged.
 
 **Writing Metrics for ReAct Optimization**
 
