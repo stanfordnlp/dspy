@@ -594,52 +594,71 @@ See the usage examples below for tool-using programs.
 
 ### Usage Examples
 
-#### Basic ReAct Agent
+#### Custom Tool-Using Agent
 
 ```python
 import dspy
 
 def search_web(query: str) -> str:
+    """Search for information."""
     return f"Search results for: {query}"
 
-def calculate(expression: str) -> float:
-    return eval(expression)
+def finish_task(final_answer: str) -> str:
+    """Signal completion and return final answer."""
+    return final_answer
 
-# Create ReAct agent with tools (poor initial descriptions)
-search_tool = dspy.Tool(search_web, name="search", desc="Finds things")
-calc_tool = dspy.Tool(calculate, name="calculator", desc="Does calculations")
+# Signature with tools, history tracking, and tool_calls output
+class AgentSignature(dspy.Signature):
+    task: str = dspy.InputField()
+    tools: list[dspy.Tool] = dspy.InputField()
+    max_iters: int = dspy.InputField()
+    history: list[dict] = dspy.InputField()
+    outputs: dspy.ToolCalls = dspy.OutputField()
 
-agent = dspy.ReAct("question -> answer", tools=[search_tool, calc_tool])
+class CustomAgent(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.max_iters = 3
+        self.tools = {
+            "search_web": dspy.Tool(search_web, name="search_web", desc="Search tool"),
+            "finish_task": dspy.Tool(finish_task, name="finish_task", desc="Finish tool"),  # Avoid "finish" tool name if program uses ReAct
+        }
+        self.predictor = dspy.Predict(AgentSignature)
+    
+    def forward(self, task: str):
+        history = []
+        for iteration in range(self.max_iters):
+            response = self.predictor(
+                task=task,
+                tools=self.tools.values(),
+                max_iters=self.max_iters,
+                history=history,
+            )
+            for call in response.outputs.tool_calls:
+                result = call.execute()
+                if call.name == "finish_task":
+                    return dspy.Prediction(answer=result)
+                history.append({
+                    "tool_call_name": call.name,
+                    "tool_call_args": call.args,
+                    "tool_call_result": result,
+                })
+        return dspy.Prediction(answer="No answer")
+
+program = CustomAgent()
 
 # Enable tool optimization
 gepa = dspy.GEPA(
     metric=my_metric,
     reflection_lm=dspy.LM(model="gpt-5-mini"),
-    optimize_react_components=True,
-    component_selector="all",  # Optimize all components together
+    enable_tool_optimization=True,
     auto="medium"
 )
 
-optimized_agent = gepa.compile(agent, trainset=train_examples, valset=val_examples)
-
-# View optimized tool descriptions
-print("Optimized search tool:", optimized_agent.tools["search"].desc)
-print("Optimized calculator tool:", optimized_agent.tools["calculator"].desc)
+optimized_program = gepa.compile(program, trainset=train_examples, valset=val_examples)
 ```
 
-**Example output after optimization:**
-```
-Optimized search tool: Use when you need to find current information, facts, or data 
-    from external sources. Provide specific search queries to get relevant results.
-
-Optimized calculator tool: Use for arithmetic operations and mathematical expressions. 
-    Accepts Python-compatible expressions with numbers and operators (+, -, *, /, **). 
-    Do not use for date calculations or string manipulations.
-```
-
-#### Multi-Agent System
-
-GEPA automatically discovers and optimizes tools in nested agents:
+#### ReAct Agent
 
 ```python
 import dspy
@@ -650,59 +669,44 @@ def search_web(query: str) -> str:
 def calculate(expression: str) -> float:
     return eval(expression)
 
-search_tool = dspy.Tool(search_web, name="search", desc="Searches")
-calc_tool = dspy.Tool(calculate, name="calculator", desc="Computes")
+# Create tools with basic descriptions
+search_tool = dspy.Tool(search_web, name="search_web", desc="Search tool")
+calc_tool = dspy.Tool(calculate, name="calculate", desc="Calculator tool")
 
-class ResearchAssistant(dspy.Module):
-    def __init__(self):
-        super().__init__()
-        self.researcher = dspy.ReAct("query -> findings", tools=[search_tool])
-        
-        def delegate_research(query: str) -> str:
-            return self.researcher(query=query).findings
-        
-        research_tool = dspy.Tool(delegate_research, name="research", desc="Helps with questions")
-        self.assistant = dspy.ReAct("question -> answer", tools=[research_tool, calc_tool])
-    
-    def forward(self, question):
-        return self.assistant(question=question)
+program = dspy.ReAct("question -> answer", tools=[search_tool, calc_tool])
 
-# Optimizes ALL tools: calculator, research, search
+# Enable tool optimization
 gepa = dspy.GEPA(
     metric=my_metric,
     reflection_lm=dspy.LM(model="gpt-5-mini"),
-    optimize_react_components=True,
-    component_selector="all",
+    enable_tool_optimization=True,
     auto="medium"
 )
 
-optimized_system = gepa.compile(ResearchAssistant(), trainset=train, valset=val)
-
-# View optimized nested tool descriptions
-print(optimized_system.researcher.tools["search"].desc)
-print(optimized_system.assistant.tools["research"].desc)
-print(optimized_system.assistant.tools["calculator"].desc)
+optimized_program = gepa.compile(program, trainset=train_examples, valset=val_examples)
 ```
 
-### Inspecting Optimized ReAct Components
+### Inspecting Optimized Programs
 
-After optimization, all ReAct components are automatically updated in your program. Access them directly:
+View optimization results and metadata (requires `track_stats=True`):
 
 ```python
-optimized_agent = gepa.compile(agent, trainset=train, valset=val)
+# High-level optimization metadata
+optimized_program.detailed_results
+```
 
-# ReAct instruction (guides reasoning and tool selection)
-print("React instruction:", optimized_agent.react.signature.instructions)
+Access optimized instructions and tool descriptions directly:
 
-# Extract instruction (guides answer extraction from trajectory)
-print("Extract instruction:", optimized_agent.extract.predict.signature.instructions)
+```python
+# Predictor instructions
+for name, predictor in optimized_program.named_predictors():
+    print(f"{name}: {predictor.signature.instructions}")
 
-# Tool descriptions
-for tool_name, tool in optimized_agent.tools.items():
-    if tool_name != 'finish':  # Skip the built-in finish tool
-        print(f"Tool '{tool_name}' description:", tool.desc)
-        # Tool argument descriptions
-        print(f"  Argument descriptions:", tool.arg_desc)
+# Tool descriptions and argument descriptions
+for tool_name, tool in optimized_program.tools.items():
+    print(f"{tool_name}: {tool.desc}")
+    for arg_name, arg_schema in tool.args.items():
+        print(f"  {arg_name}: {arg_schema.get('description', 'N/A')}")
 ```
 
 ### Custom Instruction Proposers with Tool Optimization
