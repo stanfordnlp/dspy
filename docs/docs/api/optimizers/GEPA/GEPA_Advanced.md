@@ -562,19 +562,19 @@ The trajectory contains the agent's step-by-step execution. Use it to provide fe
 
 The reflection LM uses your feedback to jointly improve react instructions, tool descriptions, and extraction logic.
 
-### How It Works
+### How Tool Optimization Works
 
-When `optimize_react_components=True`, GEPA:
+When `enable_tool_optimization=True`, GEPA:
 
-1. **Discovers ReAct modules** - Finds all `dspy.ReAct` instances in your program (including nested modules)
-2. **Extracts components** - Collects react instructions, extract instructions, and tool schemas from each ReAct module
-3. **Routes to proposers** - Separates components by type and routes them appropriately:
-   - **With custom `instruction_proposer`**: Your custom proposer receives all components (both regular instructions and ReAct components) and handles the optimization logic
-   - **With default proposer**: Regular instructions use default instruction proposer, ReAct components use specialized `ReActModuleProposer`
-4. **Optimizes jointly** - ReAct proposer improves all four components together based on execution feedback
-5. **Applies updates** - Updates your ReAct modules with improved instructions and tool descriptions
+1. **Discovers tool-using modules** - Identifies any module that uses `dspy.Tool` instances, including `dspy.ReAct` and generic predictors with `dspy.Tool` as an input field type in their signatures
+2. **Treats them as joint optimization units** - Instead of only optimizing predictor instructions, GEPA optimizes predictor instructions and tool descriptions together as a coordinated set; for ReAct this includes both the react and extract instructions
+3. **Routes to specialized proposer** - Separates components by type and routes them appropriately:
+   - **With custom `instruction_proposer`**: Your custom proposer receives both tool-using modules and plain predictors, and is responsible for updating all components
+   - **With default proposer**: Plain predictors use the default instruction proposer; tool-using modules use `ToolModuleProposer`, which employs the dynamic signature mechanism described above
+4. **Optimizes jointly** - `ToolModuleProposer` improves predictor instructions and tool descriptions together based on execution feedback, coordinating updates across all components rather than tuning them in isolation
+5. **Applies updates** - Improved instructions update predictor signatures; improved tool descriptions and argument descriptions update all `dspy.Tool` objects with matching tool names throughout the program
 
-Non-ReAct modules (like `dspy.Predict` or `dspy.ChainOfThought`) continue using standard GEPA optimization.
+Modules without tools (like `dspy.Predict` or `dspy.ChainOfThought`) continue using standard GEPA instruction-only optimization.
 
 ### When to Use optimize_react_components
 
