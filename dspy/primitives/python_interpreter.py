@@ -39,8 +39,9 @@ class PythonInterpreter:
         """
         Args:
             deno_command: command list to launch Deno.
-            enable_read_paths: Files or directories to allow reading from in the sandbox.
-            enable_write_paths: Files or directories to allow writing to in the sandbox.
+            enable_read_paths: Files or directories to allow reading from in the sandbox. 
+            enable_write_paths: Files or directories to allow writing to in the sandbox. 
+                All write paths will also be able to be read from for mounting.
             enable_env_vars: Environment variable names to allow in the sandbox.
             enable_network_access: Domains or IPs to allow network access in the sandbox.
             sync_files: If set, syncs changes within the sandbox back to original files after execution.
