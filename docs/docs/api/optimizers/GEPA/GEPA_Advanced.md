@@ -505,63 +505,6 @@ class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
 
 The reflection LM uses this dynamically-built signature to jointly propose updates across predictor instructions, tool descriptions, and argument descriptions based on execution feedback. Updates are coordinated rather than made in isolation: the LM sees all current components together and can selectively update any subset by returning new text, or return `None` to keep a component unchanged.
 
-**Writing Metrics for ReAct Optimization**
-
-GEPA optimizes ReAct modules more effectively when metrics provide feedback about the agent's execution. Here's how to write metrics that help:
-
-```python
-def react_metric(example, pred, trace=None, pred_name=None, pred_trace=None):
-    """Evaluate ReAct agent performance with trajectory feedback."""
-    # Check if the answer is correct
-    answer_match = pred.answer == example.answer
-    score = 1.0 if answer_match else 0.0
-    
-    # Provide feedback to help GEPA understand what happened
-    feedback = "Correct answer" if answer_match else "Incorrect answer"
-    
-    return dspy.Prediction(score=score, feedback=feedback)
-```
-
-You can make feedback more informative by examining the trajectory:
-
-```python
-def react_metric_with_trajectory(example, pred, trace=None, pred_name=None, pred_trace=None):
-    """Evaluate with trajectory analysis."""
-    # Check if the answer is correct
-    answer_match = pred.answer == example.answer
-    score = 1.0 if answer_match else 0.0
-    
-    # Access the ReAct trajectory to understand agent behavior
-    trajectory = getattr(pred, 'trajectory', {})
-    
-    # Extract tool names from trajectory (excluding 'finish')
-    tools_used = []
-    for key in trajectory:
-        if key.startswith('tool_name_'):
-            tool_name = trajectory[key]
-            if tool_name != 'finish':
-                tools_used.append(tool_name)
-    
-    # Build feedback message
-    if answer_match:
-        feedback = "Correct answer"
-    else:
-        feedback = "Incorrect answer"
-    
-    if tools_used:
-        feedback += f". Tools: {', '.join(tools_used)}"
-    
-    return dspy.Prediction(score=score, feedback=feedback)
-```
-
-The trajectory contains the agent's step-by-step execution. Use it to provide feedback about:
-
-- **Tool selection**: Were appropriate tools chosen?
-- **Reasoning quality**: Did the agent think through the problem?
-- **Efficiency**: Were there unnecessary steps?
-
-The reflection LM uses your feedback to jointly improve react instructions, tool descriptions, and extraction logic.
-
 ### How Tool Optimization Works
 
 When `enable_tool_optimization=True`, GEPA:
