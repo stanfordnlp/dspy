@@ -1,10 +1,12 @@
 import json
+import logging
 import os
 import subprocess
 from os import PathLike
 from types import TracebackType
 from typing import Any
 
+logger = logging.getLogger(__name__)
 
 class InterpreterError(RuntimeError):
     pass
@@ -37,8 +39,9 @@ class PythonInterpreter:
         """
         Args:
             deno_command: command list to launch Deno.
-            enable_read_paths: Files or directories to allow reading from in the sandbox.
-            enable_write_paths: Files or directories to allow writing to in the sandbox.
+            enable_read_paths: Files or directories to allow reading from in the sandbox. 
+            enable_write_paths: Files or directories to allow writing to in the sandbox. 
+                All write paths will also be able to be read from for mounting.
             enable_env_vars: Environment variable names to allow in the sandbox.
             enable_network_access: Domains or IPs to allow network access in the sandbox.
             sync_files: If set, syncs changes within the sandbox back to original files after execution.
@@ -56,7 +59,22 @@ class PythonInterpreter:
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            args = ["deno", "run", "--allow-read"]
+            args = ["deno", "run"]
+
+            # Allow reading runner.js and explicitly enabled paths
+            allowed_read_paths = [self._get_runner_path()]
+
+            # Also allow reading Deno's cache directory so Pyodide can load its files
+            deno_dir = self._get_deno_dir()
+            if deno_dir:
+                allowed_read_paths.append(deno_dir)
+
+            if self.enable_read_paths:
+                allowed_read_paths.extend(str(p) for p in self.enable_read_paths)
+            if self.enable_write_paths:
+                allowed_read_paths.extend(str(p) for p in self.enable_write_paths)
+            args.append(f"--allow-read={','.join(allowed_read_paths)}")
+
             self._env_arg  = ""
             if self.enable_env_vars:
                 user_vars = [str(v).strip() for v in self.enable_env_vars]
@@ -76,6 +94,36 @@ class PythonInterpreter:
 
         self.deno_process = None
         self._mounted_files = False
+
+    _deno_dir_cache = None
+
+    @classmethod
+    def _get_deno_dir(cls) -> str | None:
+        if cls._deno_dir_cache:
+            return cls._deno_dir_cache
+
+        if "DENO_DIR" in os.environ:
+            cls._deno_dir_cache = os.environ["DENO_DIR"]
+            return cls._deno_dir_cache
+
+        try:
+            # Attempt to find deno in path or use just "deno"
+            # We can't easily know which 'deno' will be used if not absolute, but 'deno' is a safe bet
+            result = subprocess.run(
+                ["deno", "info", "--json"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if result.returncode == 0:
+                info = json.loads(result.stdout)
+                cls._deno_dir_cache = info.get("denoDir")
+                return cls._deno_dir_cache
+        except Exception:
+            logger.warning("Unable to find the Deno cache dir.")
+            pass
+
+        return None
 
     def _get_runner_path(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
