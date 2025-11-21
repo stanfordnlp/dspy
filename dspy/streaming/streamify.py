@@ -3,7 +3,6 @@ import contextvars
 import logging
 import threading
 from asyncio import iscoroutinefunction
-from copy import deepcopy
 from queue import Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
@@ -162,7 +161,7 @@ def streamify(
     elif not iscoroutinefunction(program):
         program = asyncify(program)
 
-    callbacks = deepcopy(settings.callbacks)
+    callbacks = list(settings.callbacks)
     status_streaming_callback = StatusStreamingCallback(status_message_provider)
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
         callbacks.append(status_streaming_callback)
