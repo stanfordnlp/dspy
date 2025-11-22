@@ -1,16 +1,26 @@
 import inspect
+import json
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Protocol, Union
+from typing import Any, Literal, Optional, Protocol, Union, get_args, get_origin
 
 from gepa import GEPAResult
 from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
+from dspy.adapters.types.tool import Tool
 from dspy.clients.lm import LM
+from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+from dspy.teleprompt.gepa.gepa_utils import (
+    REACT_MODULE_PREFIX,
+    TOOL_MODULE_PREFIX,
+    DspyAdapter,
+    DSPyTrace,
+    PredictorFeedbackFn,
+    ScoreWithFeedback,
+)
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -273,6 +283,11 @@ class GEPA(Teleprompter):
         warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when 
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
             raised if a mismatch in module-level and predictor-level score is detected.
+        enable_tool_optimization: Whether to enable joint optimization of tool-using modules.
+            When enabled, GEPA jointly optimizes predictor instructions and tool descriptions together
+            for both dspy.ReAct modules and custom predictors that use dspy.Tool. See the
+            [Tool Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#tool-optimization)
+            for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
         gepa_kwargs: (Optional) Additional keyword arguments to pass directly to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py).
             Useful for accessing advanced GEPA features not directly exposed through DSPy's GEPA interface.
@@ -355,6 +370,7 @@ class GEPA(Teleprompter):
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
+        enable_tool_optimization: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -417,6 +433,7 @@ class GEPA(Teleprompter):
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.enable_tool_optimization = enable_tool_optimization
         self.use_mlflow = use_mlflow
 
         if track_best_outputs:
@@ -546,11 +563,102 @@ class GEPA(Teleprompter):
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
+            enable_tool_optimization=self.enable_tool_optimization,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
         # Instantiate GEPA with the simpler adapter-based API
-        base_program = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+        base_program = {}
+
+        # First, process ReAct modules to claim their predictors
+        if self.enable_tool_optimization:
+            for module_path, module in student.named_sub_modules():
+                if not isinstance(module, ReAct):
+                    continue
+
+                # Verify DSPy's two-predictor ReAct design
+                assert hasattr(module, "extract") and hasattr(module.extract, "predict"), \
+                    f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
+
+                # Get predictor names via object identity
+                extract_predictor = module.extract.predict
+                react_predictor = module.react
+                extract_predictor_name = None
+                react_predictor_name = None
+                for name, pred in student.named_predictors():
+                    if pred is extract_predictor:
+                        extract_predictor_name = name
+                    elif pred is react_predictor:
+                        react_predictor_name = name
+
+                # Use extract.predict as the key since it is the target predictor for feedback lookup
+                module_key = f"{REACT_MODULE_PREFIX}:{extract_predictor_name}"
+
+                # Build JSON config with dynamic predictor names as keys
+                config = {
+                    react_predictor_name: react_predictor.signature.instructions,
+                    extract_predictor_name: extract_predictor.signature.instructions,
+                    "tools": {
+                        tool_name: {
+                            "desc": tool.desc,
+                            "args": tool.args,
+                        }
+                        for tool_name, tool in module.tools.items()
+                        if tool_name != "finish"  # Skip the built-in finish tool
+                    }
+                }
+
+                base_program[module_key] = json.dumps(config, indent=2)
+        else:
+            # Warn if ReAct modules found but tool optimization disabled
+            for module_path, module in student.named_sub_modules():
+                if isinstance(module, ReAct):
+                    logger.warning(
+                        f"Detected ReAct module at '{module_path}'. Consider using "
+                        "`enable_tool_optimization=True` to jointly optimize react instructions, "
+                        "extract instructions, tool descriptions, and tool argument descriptions."
+                    )
+
+        # Detect tool-using predictors via type checking
+        def is_tool_field(annotation) -> bool:
+            """Check if a field annotation is Tool or contains Tool."""
+            if annotation is Tool:
+                return True
+            origin = get_origin(annotation)
+            if origin is not None:
+                args = get_args(annotation)
+                for arg in args:
+                    if is_tool_field(arg):  # Recursive for nested types
+                        return True
+            return False
+
+        # Then, process individual predictors (skip if already part of a module config)
+        for name, pred in student.named_predictors():
+            if self.enable_tool_optimization:
+                # Skip if predictor is part of a module config (e.g., ReAct)
+                found = False
+                for key, val in base_program.items():
+                    if key.startswith((REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX)):
+                        config = json.loads(val)
+                        if name in config:
+                            found = True
+                            break
+
+                if found:
+                    continue
+
+                # Add tool module if predictor uses tools
+                if any(is_tool_field(field.annotation) for field in pred.signature.input_fields.values()):
+                    module_key = f"{TOOL_MODULE_PREFIX}:{name}"
+                    base_program[module_key] = json.dumps({
+                        name: pred.signature.instructions,
+                        "tools": {}  # Populated from traces
+                    }, indent=2)
+                    continue
+
+            # Add regular predictor (no tool optimization or no tools detected)
+            base_program[name] = pred.signature.instructions
+
         gepa_result: GEPAResult = optimize(
             seed_candidate=base_program,
             trainset=trainset,
