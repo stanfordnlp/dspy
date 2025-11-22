@@ -57,6 +57,7 @@ dev = [
     "build>=1.0.3",
     "litellm>=1.64.0; sys_platform == 'win32' or python_version == '3.14'",
     "litellm[proxy]>=1.64.0; sys_platform != 'win32' and python_version < '3.14'",  # Remove 3.14 condition once uvloop supports
+    "nest-asyncio>=1.6.0",
 ]
 test_extras = [
     "mcp; python_version >= '3.10'",

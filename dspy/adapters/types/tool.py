@@ -168,6 +168,17 @@ class Tool(Type):
         except RuntimeError:
             return asyncio.run(coroutine)
 
+        if loop and loop.is_running():
+            try:
+                import nest_asyncio
+
+                nest_asyncio.apply()
+            except ImportError:
+                raise ImportError(
+                    "nest_asyncio is required to call async tools from within a running event loop. "
+                    "Install it with: pip install nest-asyncio"
+                )
+
         return loop.run_until_complete(coroutine)
 
     @with_callbacks
