@@ -15,6 +15,7 @@ from dspy.adapters.utils import (
 )
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
+from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
@@ -39,12 +40,20 @@ class ChatAdapter(Adapter):
 
     def __init__(
         self,
-        callbacks=None,
+        callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
-        native_response_types=None,
+        native_response_types: list[type[type]] | None = None,
         use_json_adapter_fallback: bool = True,
     ):
-
+        """
+        Args:
+            callbacks: List of callback functions to execute during adapter methods.
+            use_native_function_calling: Whether to enable native function calling capabilities.
+            native_response_types: List of output field types handled by native LM features.
+            use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
+                If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
+                JSONAdapter. Defaults to True.
+        """
         super().__init__(
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
@@ -280,12 +289,3 @@ class ChatAdapter(Adapter):
         assistant_message = {"role": "assistant", "content": assistant_message_content}
         messages = system_user_messages + [assistant_message]
         return {"messages": messages}
-
-
-ChatAdapter.__init__.__doc__ = (
-    Adapter.__init__.__doc__
-    + """    use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
-                If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
-                JSONAdapter. Defaults to True.
-"""
-)
