@@ -23,6 +23,54 @@ def _normalize_audio_format(audio_format: str) -> str:
 
 
 class Audio(Type):
+    """A type for representing audio data in DSPy.
+
+    The Audio class provides a standardized way to handle audio inputs for language models
+    that support audio processing. Audio data is stored as base64-encoded strings along
+    with format metadata.
+
+    Attributes:
+        data: Base64-encoded audio data.
+        audio_format: The audio format (e.g., "wav", "mp3", "flac").
+
+    Example:
+        Basic usage with a local file:
+
+        ```python
+        import dspy
+
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-audio-preview"))
+
+        class TranscribeAudio(dspy.Signature):
+            audio: dspy.Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        # Create Audio from a local file
+        audio = dspy.Audio.from_file("speech.wav")
+
+        predict = dspy.Predict(TranscribeAudio)
+        result = predict(audio=audio)
+        ```
+
+    Example:
+        Creating Audio from different sources:
+
+        ```python
+        import dspy
+
+        # From a URL
+        audio = dspy.Audio.from_url("https://example.com/audio.mp3")
+
+        # From a local file path (auto-detected)
+        audio = dspy.Audio("path/to/audio.wav")
+
+        # From a numpy array (requires soundfile)
+        import numpy as np
+        samples = np.random.randn(16000)  # 1 second of audio at 16kHz
+        audio = dspy.Audio.from_array(samples, sampling_rate=16000)
+        ```
+    """
+
     data: str
     audio_format: str
 
@@ -32,18 +80,20 @@ class Audio(Type):
     )
 
     def format(self) -> list[dict[str, Any]]:
+        """Format the audio data for consumption by language models.
+
+        Returns:
+            A list containing the audio block in the format expected by
+            audio-enabled language models.
+
+        Raises:
+            ValueError: If the audio data cannot be formatted.
+        """
         try:
             data = self.data
         except Exception as e:
             raise ValueError(f"Failed to format audio for DSPy: {e}")
-        return [{
-            "type": "input_audio",
-            "input_audio": {
-                "data": data,
-                "format": self.audio_format
-            }
-        }]
-
+        return [{"type": "input_audio", "input_audio": {"data": data, "format": self.audio_format}}]
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -57,8 +107,20 @@ class Audio(Type):
 
     @classmethod
     def from_url(cls, url: str) -> "Audio":
-        """
-        Download an audio file from URL and encode it as base64.
+        """Create an Audio instance by downloading from a URL.
+
+        Downloads the audio file from the specified URL, determines the format
+        from the Content-Type header, and encodes the content as base64.
+
+        Args:
+            url: The URL of the audio file to download.
+
+        Returns:
+            An Audio instance containing the base64-encoded audio data.
+
+        Raises:
+            ValueError: If the Content-Type is not an audio MIME type.
+            requests.HTTPError: If the HTTP request fails.
         """
         response = requests.get(url)
         response.raise_for_status()
@@ -74,8 +136,19 @@ class Audio(Type):
 
     @classmethod
     def from_file(cls, file_path: str) -> "Audio":
-        """
-        Read local audio file and encode it as base64.
+        """Create an Audio instance from a local file.
+
+        Reads the audio file from disk, determines the format from the file
+        extension, and encodes the content as base64.
+
+        Args:
+            file_path: The path to the local audio file.
+
+        Returns:
+            An Audio instance containing the base64-encoded audio data.
+
+        Raises:
+            ValueError: If the file does not exist or has an unsupported MIME type.
         """
         if not os.path.isfile(file_path):
             raise ValueError(f"File not found: {file_path}")
@@ -95,11 +168,26 @@ class Audio(Type):
         return cls(data=encoded_data, audio_format=audio_format)
 
     @classmethod
-    def from_array(
-        cls, array: Any, sampling_rate: int, format: str = "wav"
-    ) -> "Audio":
-        """
-        Process numpy-like array and encode it as base64. Uses sampling rate and audio format for encoding.
+    def from_array(cls, array: Any, sampling_rate: int, format: str = "wav") -> "Audio":
+        """Create an Audio instance from a numpy array.
+
+        Converts a numpy-like array of audio samples into an Audio instance
+        by encoding it with the specified format and sampling rate.
+
+        Args:
+            array: A numpy-like array containing audio samples.
+            sampling_rate: The sampling rate in Hz (e.g., 16000 for 16kHz).
+            format: The output audio format. Defaults to "wav".
+
+        Returns:
+            An Audio instance containing the base64-encoded audio data.
+
+        Raises:
+            ImportError: If the soundfile library is not installed.
+
+        Note:
+            This method requires the ``soundfile`` library to be installed.
+            Install it with ``pip install soundfile``.
         """
         if not SF_AVAILABLE:
             raise ImportError("soundfile is required to process audio arrays.")
@@ -122,11 +210,30 @@ class Audio(Type):
         length = len(self.data)
         return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, audio_format='{self.audio_format}')"
 
+
 def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
-    """
-    Encode audio to a dict with 'data' and 'audio_format'.
-    
-    Accepts: local file path, URL, data URI, dict, Audio instance, numpy array, or bytes (with known format).
+    """Encode audio from various sources into a standardized dictionary format.
+
+    This function accepts multiple input types and normalizes them into a dictionary
+    containing base64-encoded audio data and format information.
+
+    Args:
+        audio: The audio input. Supported types include:
+
+            - ``str``: Local file path, HTTP(S) URL, or data URI
+            - ``bytes``: Raw audio bytes
+            - ``dict``: Dictionary with "data" and "audio_format" keys
+            - ``Audio``: An existing Audio instance
+            - ``numpy.ndarray``: Audio samples as a numpy array (requires soundfile)
+
+        sampling_rate: The sampling rate in Hz for numpy array inputs. Defaults to 16000.
+        format: The audio format for numpy array or bytes inputs. Defaults to "wav".
+
+    Returns:
+        A dictionary with "data" (base64-encoded string) and "audio_format" keys.
+
+    Raises:
+        ValueError: If the input type is unsupported or the data URI is malformed.
     """
     if isinstance(audio, dict) and "data" in audio and "audio_format" in audio:
         return audio
