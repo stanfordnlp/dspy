@@ -258,10 +258,13 @@ class BaseLM:
         reasoning_contents = []
 
         for output_item in response.output:
-            output_item_type = output_item.type
+            output_item_type = output_item.type if hasattr(output_item, "type") else output_item.get("type")
             if output_item_type == "message":
-                for content_item in output_item.content:
-                    text_outputs.append(content_item.text)
+                content = output_item.content if hasattr(output_item, "content") else output_item.get("content", [])
+                for content_item in content:
+                    text_outputs.append(
+                        content_item.text if hasattr(content_item, "text") else content_item.get("text")
+                    )
             elif output_item_type == "function_call":
                 tool_calls.append(output_item.model_dump())
             elif output_item_type == "reasoning":
