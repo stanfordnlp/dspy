@@ -693,7 +693,7 @@ def test_format_system_message():
     expected_system_message = """Your input fields are:
 1. `question` (str):
 Your output fields are:
-1. `answers` (list[str]):
+1. `answers` (list[str]): 
 2. `scores` (list[float]):
 All interactions will be structured in the following way, with the appropriate values filled in.
 
@@ -707,6 +707,6 @@ All interactions will be structured in the following way, with the appropriate v
 {scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
 
 [[ ## completed ## ]]
-In adhering to this structure, your objective is:
+In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
