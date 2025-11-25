@@ -649,6 +649,37 @@ def test_chat_adapter_native_reasoning():
         assert result[0]["reasoning"] == dspy.Reasoning(content="Step-by-step thinking about the capital of France")
 
 
+def test_chat_adapter_parses_float_with_underscores():
+    """
+    This test verifies that ChatAdapter can parse float numbers with underscores.
+    After json-repair version 0.54.1, floats like "123_456.789" are treated as normal float numbers.
+    """
+
+    class Score(pydantic.BaseModel):
+        score: float
+
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        score: Score = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    # Simulate a response with a float number containing underscores
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[
+                Choices(message=Message(content="[[ ## score ## ]]\n{'score': 123_456.789}\n[[ ## completed ## ]]"))
+            ],
+            model="openai/gpt-4o-mini",
+        )
+
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+        result = adapter(lm, {}, MySignature, [], {"question": "What is the score?"})
+
+        # The underscore-separated float should be parsed as a normal float
+        assert result[0]["score"].score == 123456.789
+
+
 def test_format_system_message():
     class MySignature(dspy.Signature):
         """Answer the question with multiple answers and scores"""
@@ -662,7 +693,7 @@ def test_format_system_message():
     expected_system_message = """Your input fields are:
 1. `question` (str):
 Your output fields are:
-1. `answers` (list[str]): 
+1. `answers` (list[str]):
 2. `scores` (list[float]):
 All interactions will be structured in the following way, with the appropriate values filled in.
 
@@ -676,6 +707,6 @@ All interactions will be structured in the following way, with the appropriate v
 {scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
 
 [[ ## completed ## ]]
-In adhering to this structure, your objective is: 
+In adhering to this structure, your objective is:
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message

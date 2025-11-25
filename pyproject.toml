@@ -30,7 +30,7 @@ dependencies = [
     "pydantic>=2.0",
     "litellm>=1.64.0",
     "diskcache>=5.6.0",
-    "json-repair>=0.30.0",
+    "json-repair>=0.54.2",
     "tenacity>=8.2.3",
     "anyio",
     "asyncer==0.0.8",
