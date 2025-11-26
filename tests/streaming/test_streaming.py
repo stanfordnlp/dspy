@@ -1651,7 +1651,7 @@ async def test_streaming_reasoning_model():
 
 
 @pytest.mark.anyio
-async def test_stream_listener_empty_last_chunk_when_end_marker_only():
+async def test_stream_listener_empty_last_chunk_chat_adapter():
     """Test that StreamListener emits an empty chunk marking field end.
 
     This test covers the scenario where:
@@ -1663,7 +1663,6 @@ async def test_stream_listener_empty_last_chunk_when_end_marker_only():
     predict = dspy.Predict("question->reasoning, answer")
 
     async def mock_stream(*args, **kwargs):
-        # First field - reasoning
         yield ModelResponseStream(
             model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## reasoning ## ]]\n"))]
         )
@@ -1702,6 +1701,61 @@ async def test_stream_listener_empty_last_chunk_when_end_marker_only():
             ],
         )
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="Why did the chicken cross the kitchen?")
+            all_chunks = []
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    all_chunks.append(value)
+
+            # Find answer and judgement chunks
+            reasoning_chunks = [c for c in all_chunks if c.signature_field_name == "reasoning"]
+            answer_chunks = [c for c in all_chunks if c.signature_field_name == "answer"]
+
+            # The last chunk should be marked as last chunk for both fields.
+            assert answer_chunks[-1].is_last_chunk is True
+            assert reasoning_chunks[-1].is_last_chunk is True
+
+
+@pytest.mark.anyio
+async def test_stream_listener_empty_last_chunk_json_adapter():
+    predict = dspy.Predict("question->reasoning, answer")
+
+    async def mock_stream(*args, **kwargs):
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"reasoning": "'))]
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="Let's think about this problem step by step. "))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content="We need to consider the context of a kitchen. "))],
+        )
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[
+                StreamingChoices(
+                    delta=Delta(content='The chicken likely wants to reach something on the other side. "')
+                )
+            ],
+        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=',"answer": "'))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini",
+            choices=[StreamingChoices(delta=Delta(content='To get to the other side!"'))],
+        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n}"))])
+
+    with mock.patch("litellm.acompletion", side_effect=mock_stream):
+        program = dspy.streamify(
+            predict,
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="reasoning"),
+                dspy.streaming.StreamListener(signature_field_name="answer"),
+            ],
+        )
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
             output = program(question="Why did the chicken cross the kitchen?")
             all_chunks = []
             async for value in output:

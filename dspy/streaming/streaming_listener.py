@@ -274,7 +274,7 @@ class StreamListener:
         except ValueError:
             pass
 
-        if token:
+        if token or self.stream_end:
             return StreamResponse(
                 self.predict_name,
                 self.signature_field_name,
