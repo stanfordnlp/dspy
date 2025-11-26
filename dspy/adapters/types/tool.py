@@ -166,8 +166,11 @@ class Tool(Type):
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(coroutine)
+            # Run the coroutine outside of "except" block to avoid propagation
+            loop = None
 
+        if loop is None:
+            return asyncio.run(coroutine)
         return loop.run_until_complete(coroutine)
 
     @with_callbacks
