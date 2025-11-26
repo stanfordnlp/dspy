@@ -20,7 +20,25 @@ ADAPTER_SUPPORT_STREAMING = [ChatAdapter, XMLAdapter, JSONAdapter]
 
 
 class StreamListener:
-    """Class that listens to the stream to capture the streeaming of a specific output field of a predictor."""
+    """Listener that captures streaming output from a specific field of a predictor.
+
+    The listener monitors the token stream and emits StreamResponse objects for the specified field.
+    Each streaming session is guaranteed to emit exactly one chunk with is_last_chunk=True, which
+    will have chunk="" (empty string) to signal the end of streaming for that field.
+
+    Example:
+        ```python
+        listener = dspy.streaming.StreamListener(signature_field_name="answer")
+        program = dspy.streamify(my_program, stream_listeners=[listener])
+
+        async for chunk in program(question="test"):
+            if isinstance(chunk, dspy.streaming.StreamResponse):
+                if chunk.is_last_chunk:
+                    print("Streaming complete for", chunk.signature_field_name)
+                else:
+                    print("Content:", chunk.chunk)
+        ```
+    """
 
     def __init__(
         self,
@@ -292,7 +310,7 @@ class StreamListener:
             token = token + last_token if token else last_token
             token = token.rstrip()  # Remove the trailing \n\n
 
-        if token:
+        if token or self.stream_end:
             return StreamResponse(
                 self.predict_name,
                 self.signature_field_name,

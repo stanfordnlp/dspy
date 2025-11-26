@@ -613,13 +613,27 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
         assert all_chunks[0].predict_name == "predict1"
         assert all_chunks[0].signature_field_name == "answer"
         assert all_chunks[0].chunk == "To get to the other side."
+        assert all_chunks[0].is_last_chunk is False
 
-        assert all_chunks[1].predict_name == "predict2"
-        assert all_chunks[1].signature_field_name == "judgement"
-        assert all_chunks[1].chunk == (
+        # Empty final chunk from predict1 with is_last_chunk=True
+        assert all_chunks[1].predict_name == "predict1"
+        assert all_chunks[1].signature_field_name == "answer"
+        assert all_chunks[1].chunk == ""
+        assert all_chunks[1].is_last_chunk is True
+
+        assert all_chunks[2].predict_name == "predict2"
+        assert all_chunks[2].signature_field_name == "judgement"
+        assert all_chunks[2].chunk == (
             "The answer provides the standard punchline for this classic joke format, adapted to the specific location "
             "mentioned in the question. It is the expected and appropriate response."
         )
+        assert all_chunks[2].is_last_chunk is False
+
+        # Empty final chunk from predict2 with is_last_chunk=True
+        assert all_chunks[3].predict_name == "predict2"
+        assert all_chunks[3].signature_field_name == "judgement"
+        assert all_chunks[3].chunk == ""
+        assert all_chunks[3].is_last_chunk is True
 
 
 @pytest.mark.anyio

@@ -11,6 +11,17 @@ from dspy.utils.callback import BaseCallback
 
 @dataclass
 class StreamResponse:
+    """Response object containing a chunk of streamed output from a field.
+
+    Attributes:
+        predict_name: Name of the predictor module producing this output.
+        signature_field_name: Name of the output field being streamed.
+        chunk: The content chunk (string). The final chunk for each field is always empty ("").
+        is_last_chunk: Boolean indicating if this is the final chunk for this field.
+            Each StreamListener emits exactly one chunk with is_last_chunk=True per streaming session.
+            The final chunk always has chunk="" (empty string) and is_last_chunk=True.
+    """
+
     predict_name: str
     signature_field_name: str
     chunk: str

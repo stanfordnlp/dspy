@@ -98,7 +98,7 @@ print("Final output: ", program_output)
 
 ### Understand `StreamResponse`
 
-`StreamResponse` (`dspy.streaming.StreamResponse`) is the wrapper class of streaming tokens. It comes with 3
+`StreamResponse` (`dspy.streaming.StreamResponse`) is the wrapper class of streaming tokens. It comes with 4
 fields:
 
 - `predict_name`: the name of the predict that holds the `signature_field_name`. The name is the
@@ -108,7 +108,50 @@ fields:
 - `signature_field_name`: the output field that these tokens map to. `predict_name` and `signature_field_name`
   together form the unique identifier of the field. We will demonstrate how to handle multiple fields streaming
   and duplicated field name later in this guide.
-- `chunk`: the value of the stream chunk.
+- `chunk`: the value of the stream chunk. This is usually a non-empty string containing one or more tokens,
+  but the final chunk for each field will have `chunk=""` (empty string).
+- `is_last_chunk`: a boolean flag indicating whether this is the final chunk for this field. When `True`,
+  the streaming for this particular field has completed. Each `StreamListener` guarantees exactly one chunk
+  with `is_last_chunk=True` per streaming session.
+
+#### Understanding `is_last_chunk`
+
+The `is_last_chunk` field is particularly important for knowing when a field's streaming has completed:
+
+```python
+async def read_output_stream():
+    output_stream = stream_predict(question="Why did a chicken cross the kitchen?")
+
+    async for chunk in output_stream:
+        if isinstance(chunk, dspy.streaming.StreamResponse):
+            if chunk.is_last_chunk:
+                print(f"✓ Finished streaming {chunk.signature_field_name}")
+            else:
+                print(f"Chunk: {chunk.chunk}")
+        elif isinstance(chunk, dspy.Prediction):
+            print(f"Final output: {chunk}")
+```
+
+**Important behaviors to note:**
+
+1. **Final chunk is empty**: The last `StreamResponse` for each field always has `chunk=""` (empty string)
+   and `is_last_chunk=True`. This empty chunk serves as an end-of-stream marker.
+
+2. **Exactly one per field**: Each `StreamListener` emits exactly one chunk with `is_last_chunk=True`, making
+   it reliable for detecting completion.
+
+3. **With `allow_reuse=True`**: When a listener is reused for multiple predictions, each prediction gets its
+   own final chunk with `is_last_chunk=True`.
+
+Example output showing the final empty chunk:
+
+```
+StreamResponse(predict_name='self', signature_field_name='answer', chunk='To', is_last_chunk=False)
+StreamResponse(predict_name='self', signature_field_name='answer', chunk=' get to', is_last_chunk=False)
+StreamResponse(predict_name='self', signature_field_name='answer', chunk=' the other side!', is_last_chunk=False)
+StreamResponse(predict_name='self', signature_field_name='answer', chunk='', is_last_chunk=True)
+Prediction(answer='To get to the other side!')
+```
 
 ### Streaming with Cache
 
@@ -460,7 +503,6 @@ Final output:  Prediction(
 
 By default calling a streamified DSPy program produces an async generator. In order to get back
 a sync generator, you can set the flag `async_streaming=False`:
-
 
 ```python
 import os
