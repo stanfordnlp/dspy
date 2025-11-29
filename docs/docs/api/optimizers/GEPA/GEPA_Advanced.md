@@ -523,7 +523,7 @@ Modules without tools (like `dspy.Predict` or `dspy.ChainOfThought`) continue us
 
 Enable `enable_tool_optimization=True` when tools are central to your program's behavior and you want GEPA to jointly optimize predictor instructions and tool descriptions together. Common scenarios:
 
-1. **Wrong tool selection** - Predictor with `search` and `calculator` tools keeps searching when it should calculate, or vice versa. GEPA refines predictor instructions and tool descriptions to clarify "use search for factual queries, calculator for numerical analysis."
+1. **Wrong tool selection** - Predictor with `search` and `weather` tools keeps searching when it should check weather, or vice versa. GEPA refines predictor instructions and tool descriptions to clarify when to use each tool.
 
 2. **Underused tools** - Predictor responds "I don't know" without using available tools that could answer the question. GEPA improves predictor instructions to be more proactive about tool usage.
 
@@ -609,14 +609,15 @@ import dspy
 def search_web(query: str) -> str:
     return f"Search results for: {query}"
 
-def calculate(expression: str) -> float:
-    return eval(expression)
+def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return f"The weather in {city} is sunny and 75°F"
 
 # Create tools with basic descriptions
 search_tool = dspy.Tool(search_web, name="search_web", desc="Search tool")
-calc_tool = dspy.Tool(calculate, name="calculate", desc="Calculator tool")
+weather_tool = dspy.Tool(get_weather, name="get_weather", desc="Weather tool")
 
-program = dspy.ReAct("question -> answer", tools=[search_tool, calc_tool])
+program = dspy.ReAct("question -> answer", tools=[search_tool, weather_tool])
 
 # Enable tool optimization
 gepa = dspy.GEPA(
