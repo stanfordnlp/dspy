@@ -89,10 +89,10 @@ class ParallelExecutor:
             from dspy.dsp.utils.settings import thread_local_overrides
 
             original = thread_local_overrides.get()
-            token = thread_local_overrides.set({**original, **parent_overrides.copy()})
+            new_overrides = {**original, **parent_overrides.copy()}
             if parent_overrides.get("usage_tracker"):
-                # Usage tracker needs to be deep copied across threads so that each thread tracks its own usage
-                thread_local_overrides.overrides["usage_tracker"] = copy.deepcopy(parent_overrides["usage_tracker"])
+                new_overrides["usage_tracker"] = copy.deepcopy(parent_overrides["usage_tracker"])
+            token = thread_local_overrides.set(new_overrides)
 
             try:
                 return index, function(item)
@@ -154,7 +154,9 @@ class ParallelExecutor:
                         try:
                             index, outcome = f.result()
                         except Exception:
-                            pass
+                            logger.error(f"Worker failed: {e}")
+                            if self.provide_traceback:
+                                traceback.print_exc()
                         else:
                             if outcome != job_cancelled and results[index] is None:
                                 # Check if this is an exception
