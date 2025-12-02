@@ -274,7 +274,7 @@ class StreamListener:
         except ValueError:
             pass
 
-        if token:
+        if token or self.stream_end:
             return StreamResponse(
                 self.predict_name,
                 self.signature_field_name,
@@ -292,7 +292,7 @@ class StreamListener:
             token = token + last_token if token else last_token
             token = token.rstrip()  # Remove the trailing \n\n
 
-        if token:
+        if token or self.stream_end:
             return StreamResponse(
                 self.predict_name,
                 self.signature_field_name,
