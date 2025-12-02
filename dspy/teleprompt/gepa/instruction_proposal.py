@@ -347,7 +347,7 @@ class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
 
 
 
-class ToolModuleProposer(ProposalFn):
+class ToolProposer(ProposalFn):
     """Proposer for optimizing tool-using module configurations.
 
     Supports two types of modules:

@@ -102,8 +102,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         self._tool_proposer = None
         if self.enable_tool_optimization:
-            from dspy.teleprompt.gepa.instruction_proposal import ToolModuleProposer
-            self._tool_proposer = ToolModuleProposer()
+            from dspy.teleprompt.gepa.instruction_proposal import ToolProposer
+            self._tool_proposer = ToolProposer()
 
         self.propose_new_texts = self._propose_component_texts
 
