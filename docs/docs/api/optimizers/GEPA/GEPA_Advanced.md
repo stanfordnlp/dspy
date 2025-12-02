@@ -533,75 +533,9 @@ Enable `enable_tool_optimization=True` when tools are central to your program's 
 
 5. **Multi-agent delegation** - Parent agent has delegation tools to specialized sub-agents but doesn't understand when to use each. GEPA optimizes instructions and tool descriptions across both parent and sub-agent modules for coherent delegation.
 
-See the usage examples below for tool-using programs.
+See the usage example below for tool-using programs.
 
-### Usage Examples
-
-#### Custom Tool-Using Agent
-
-```python
-import dspy
-
-def search_web(query: str) -> str:
-    """Search for information."""
-    return f"Search results for: {query}"
-
-def finish_task(final_answer: str) -> str:
-    """Signal completion and return final answer."""
-    return final_answer
-
-# Signature with tools, history tracking, and tool_calls output
-class AgentSignature(dspy.Signature):
-    task: str = dspy.InputField()
-    tools: list[dspy.Tool] = dspy.InputField()
-    max_iters: int = dspy.InputField()
-    history: list[dict] = dspy.InputField()
-    outputs: dspy.ToolCalls = dspy.OutputField()
-
-class CustomAgent(dspy.Module):
-    def __init__(self):
-        super().__init__()
-        self.max_iters = 3
-        self.tools = {
-            "search_web": dspy.Tool(search_web, name="search_web", desc="Search tool"),
-            "finish_task": dspy.Tool(finish_task, name="finish_task", desc="Finish tool"),  # Avoid "finish" tool name if program uses ReAct
-        }
-        self.predictor = dspy.Predict(AgentSignature)
-    
-    def forward(self, task: str):
-        history = []
-        for iteration in range(self.max_iters):
-            response = self.predictor(
-                task=task,
-                tools=self.tools.values(),
-                max_iters=self.max_iters,
-                history=history,
-            )
-            for call in response.outputs.tool_calls:
-                result = call.execute()
-                if call.name == "finish_task":
-                    return dspy.Prediction(answer=result)
-                history.append({
-                    "tool_call_name": call.name,
-                    "tool_call_args": call.args,
-                    "tool_call_result": result,
-                })
-        return dspy.Prediction(answer="No answer")
-
-program = CustomAgent()
-
-# Enable tool optimization
-gepa = dspy.GEPA(
-    metric=my_metric,
-    reflection_lm=dspy.LM(model="gpt-5-mini"),
-    enable_tool_optimization=True,
-    auto="medium"
-)
-
-optimized_program = gepa.compile(program, trainset=train_examples, valset=val_examples)
-```
-
-#### ReAct Agent
+### Usage Example
 
 ```python
 import dspy
