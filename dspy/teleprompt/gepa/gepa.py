@@ -613,7 +613,7 @@ class GEPA(Teleprompter):
             # Warn if ReAct modules found but tool optimization disabled
             for module_path, module in student.named_sub_modules():
                 if isinstance(module, ReAct):
-                    logger.warning(
+                    logger.info(
                         f"Detected ReAct module at '{module_path}'. Consider using "
                         "`enable_tool_optimization=True` to jointly optimize react instructions, "
                         "extract instructions, tool descriptions, and tool argument descriptions."
