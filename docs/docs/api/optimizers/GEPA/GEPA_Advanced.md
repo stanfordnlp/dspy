@@ -459,7 +459,7 @@ Many DSPy programs use tools, with modules like `dspy.ReAct` as canonical exampl
 
 ### Tool Module Optimization Prompt
 
-GEPA uses `ToolModuleProposer` to optimize tool-using modules when `enable_tool_optimization=True`. For each module, the proposer builds a dynamic signature from the base `GenerateImprovedToolModuleDescriptionsFromFeedback` signature shown below, then appends output fields for each tool description and each tool argument description in that module. For ReAct modules, the proposer also appends input and output fields for the extract instruction.
+GEPA uses `ToolProposer` to optimize tool-using modules when `enable_tool_optimization=True`. For each module, the proposer builds a dynamic signature from the base `GenerateImprovedToolModuleDescriptionsFromFeedback` signature shown below, then appends output fields for each tool description and each tool argument description in that module. For ReAct modules, the proposer also appends input and output fields for the extract instruction.
 
 ```python
 class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
@@ -509,12 +509,12 @@ The reflection LM uses this dynamically-built signature to jointly propose updat
 
 When `enable_tool_optimization=True`, GEPA:
 
-1. **Discovers tool-using modules** - Identifies any module that uses `dspy.Tool` instances, including `dspy.ReAct` and generic predictors with `dspy.Tool` as an input field type in their signatures
+1. **Discovers ReAct modules** - Identifies `dspy.ReAct` modules and their associated tools
 2. **Treats them as joint optimization units** - Instead of only optimizing predictor instructions, GEPA optimizes predictor instructions and tool descriptions together as a coordinated set; for ReAct this includes both the react and extract instructions
 3. **Routes to specialized proposer** - Separates components by type and routes them appropriately:
-   - **With custom `instruction_proposer`**: Your custom proposer receives both tool-using modules and plain predictors, and is responsible for updating all components
-   - **With default proposer**: Plain predictors use the default instruction proposer; tool-using modules use `ToolModuleProposer`, which employs the dynamic signature mechanism described above
-4. **Optimizes jointly** - `ToolModuleProposer` improves predictor instructions and tool descriptions together based on execution feedback, coordinating updates across all components rather than tuning them in isolation
+   - **With custom `instruction_proposer`**: Your custom proposer receives both ReAct modules and plain predictors, and is responsible for updating all components
+   - **With default proposer**: Plain predictors use the default instruction proposer; ReAct modules use `ToolProposer`, which employs the dynamic signature mechanism described above
+4. **Optimizes jointly** - `ToolProposer` improves predictor instructions and tool descriptions together based on execution feedback, coordinating updates across all components rather than tuning them in isolation
 5. **Applies updates** - Improved instructions update predictor signatures; improved tool descriptions and argument descriptions update all `dspy.Tool` objects with matching tool names throughout the program
 
 Modules without tools (like `dspy.Predict` or `dspy.ChainOfThought`) continue using standard GEPA instruction-only optimization.
@@ -660,15 +660,14 @@ When you provide a custom `instruction_proposer`, GEPA routes **all components**
 **What your proposer receives:**
 
 - **Plain predictors**: instruction strings keyed by predictor name
-- **Tool-using modules**: JSON strings keyed by module identifier, containing predictor instructions and tool schemas
-  - Generic tool modules: `f"{TOOL_MODULE_PREFIX}:{predictor_name}"`
+- **ReAct modules**: JSON strings keyed by module identifier, containing predictor instructions and tool schemas
   - ReAct modules: `f"{REACT_MODULE_PREFIX}:{extract_predictor_name}"`
 
 **Your proposer's responsibilities:**
 
 ```python
 import json
-from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX
+from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
 
 def custom_proposer(candidate, reflective_dataset, components_to_update):
     """Custom instruction proposer for GEPA with tool optimization.
@@ -677,7 +676,6 @@ def custom_proposer(candidate, reflective_dataset, components_to_update):
         candidate: dict[str, str] - All components in the program
             {
                 "predictor_name": "instruction string",
-                "tool_module:pred_name": '{"pred_name": "...", "tools": {...}}',
                 "react_module:extract_name": '{"react_name": "...", "extract_name": "...", "tools": {...}}'
             }
         reflective_dataset: dict[str, list[dict]] - Execution examples with feedback per component
@@ -689,7 +687,7 @@ def custom_proposer(candidate, reflective_dataset, components_to_update):
     improved_components = {}
     
     for component_key in components_to_update:
-        if component_key.startswith(REACT_MODULE_PREFIX) or component_key.startswith(TOOL_MODULE_PREFIX):
+        if component_key.startswith(REACT_MODULE_PREFIX):
             config = json.loads(candidate[component_key])
             # Example: {"pred": "instruction", "tools": {"search": {"desc": "...", "args": {...}}}}
             
@@ -746,4 +744,4 @@ ReAct:
 **What to preserve:**
 - `config["tools"][tool_name]["args"][arg_name]["type"]` and other schema metadata (changing these breaks the tool since they must match the underlying function's parameter types)
 
-See [`ToolModuleProposer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/instruction_proposal.py) for reference.
+See [`ToolProposer`](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/instruction_proposal.py) for reference.
