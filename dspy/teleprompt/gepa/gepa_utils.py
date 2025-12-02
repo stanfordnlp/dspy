@@ -99,11 +99,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.enable_tool_optimization = enable_tool_optimization
         self.reflection_minibatch_size = reflection_minibatch_size
 
-        self._tool_proposer = None
-        if self.enable_tool_optimization:
-            from dspy.teleprompt.gepa.instruction_proposal import ToolProposer
-            self._tool_proposer = ToolProposer()
-
         self.propose_new_texts = self._propose_component_texts
 
     def _propose_component_texts(
@@ -155,8 +150,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
             # Handle ReAct modules
             if tool_components:
+                from dspy.teleprompt.gepa.instruction_proposal import ToolProposer
+
+                tool_proposer = ToolProposer()
                 results.update(
-                    self._tool_proposer(
+                    tool_proposer(
                         candidate=candidate,
                         reflective_dataset=reflective_dataset,
                         components_to_update=tool_components,
