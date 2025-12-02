@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Constants for module optimization
 REACT_MODULE_PREFIX = "react_module"
-TOOL_MODULE_PREFIX = "tool_module"
+# TODO: Add TOOL_MODULE_PREFIX = "tool_module" when generic tool optimization is ready
 
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
@@ -124,14 +124,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 )
 
         # Otherwise, route to appropriate proposers
-        # Separate into two categories: ReAct modules vs regular instructions
-        # TODO: Add TOOL_MODULE_PREFIX support when DSPy trace lineage is improved
-        tool_module_components = []
+        # Separate into two categories: tool-using modules (ReAct) vs regular instructions
+        # TODO: Add generic tool module support when DSPy trace lineage is improved
+        tool_components = []
         instruction_components = []
 
         for c in components_to_update:
             if c.startswith(REACT_MODULE_PREFIX):
-                tool_module_components.append(c)
+                tool_components.append(c)
             else:
                 instruction_components.append(c)
 
@@ -155,12 +155,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     )["new_instruction"]
 
             # Handle ReAct modules
-            if tool_module_components:
+            if tool_components:
                 results.update(
                     self._tool_proposer(
                         candidate=candidate,
                         reflective_dataset=reflective_dataset,
-                        components_to_update=tool_module_components,
+                        components_to_update=tool_components,
                     )
                 )
 
