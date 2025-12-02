@@ -3,19 +3,17 @@ import json
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Protocol, Union, get_args, get_origin
+from typing import Any, Literal, Optional, Protocol, Union
 
 from gepa import GEPAResult
 from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
-from dspy.adapters.types.tool import Tool
 from dspy.clients.lm import LM
 from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import (
     REACT_MODULE_PREFIX,
-    TOOL_MODULE_PREFIX,
     DspyAdapter,
     DSPyTrace,
     PredictorFeedbackFn,
@@ -619,26 +617,13 @@ class GEPA(Teleprompter):
                         "extract instructions, tool descriptions, and tool argument descriptions."
                     )
 
-        # Detect tool-using predictors via type checking
-        def is_tool_field(annotation) -> bool:
-            """Check if a field annotation is Tool or contains Tool."""
-            if annotation is Tool:
-                return True
-            origin = get_origin(annotation)
-            if origin is not None:
-                args = get_args(annotation)
-                for arg in args:
-                    if is_tool_field(arg):  # Recursive for nested types
-                        return True
-            return False
-
         # Then, process individual predictors (skip if already part of a module config)
         for name, pred in student.named_predictors():
             if self.enable_tool_optimization:
-                # Skip if predictor is part of a module config (e.g., ReAct)
+                # Skip if predictor is part of a ReAct module config
                 found = False
                 for key, val in base_program.items():
-                    if key.startswith((REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX)):
+                    if key.startswith(REACT_MODULE_PREFIX):
                         config = json.loads(val)
                         if name in config:
                             found = True
@@ -647,16 +632,7 @@ class GEPA(Teleprompter):
                 if found:
                     continue
 
-                # Add tool module if predictor uses tools
-                if any(is_tool_field(field.annotation) for field in pred.signature.input_fields.values()):
-                    module_key = f"{TOOL_MODULE_PREFIX}:{name}"
-                    base_program[module_key] = json.dumps({
-                        name: pred.signature.instructions,
-                        "tools": {}  # Populated from traces
-                    }, indent=2)
-                    continue
-
-            # Add regular predictor (no tool optimization or no tools detected)
+            # Add regular predictor
             base_program[name] = pred.signature.instructions
 
         gepa_result: GEPAResult = optimize(
