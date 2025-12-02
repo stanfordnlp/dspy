@@ -660,14 +660,14 @@ When you provide a custom `instruction_proposer`, GEPA routes **all components**
 **What your proposer receives:**
 
 - **Plain predictors**: instruction strings keyed by predictor name
-- **ReAct modules**: JSON strings keyed by module identifier, containing predictor instructions and tool schemas
-  - ReAct modules: `f"{REACT_MODULE_PREFIX}:{extract_predictor_name}"`
+- **Tool modules (ReAct)**: JSON strings keyed by module identifier, containing predictor instructions and tool schemas
+  - Tool modules: `f"{TOOL_MODULE_PREFIX}:{extract_predictor_name}"`
 
 **Your proposer's responsibilities:**
 
 ```python
 import json
-from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX
+from dspy.teleprompt.gepa.gepa_utils import TOOL_MODULE_PREFIX
 
 def custom_proposer(candidate, reflective_dataset, components_to_update):
     """Custom instruction proposer for GEPA with tool optimization.
@@ -676,7 +676,7 @@ def custom_proposer(candidate, reflective_dataset, components_to_update):
         candidate: dict[str, str] - All components in the program
             {
                 "predictor_name": "instruction string",
-                "react_module:extract_name": '{"react_name": "...", "extract_name": "...", "tools": {...}}'
+                "tool_module:extract_name": '{"react_name": "...", "extract_name": "...", "tools": {...}}'
             }
         reflective_dataset: dict[str, list[dict]] - Execution examples with feedback per component
         components_to_update: list[str] - Component keys to optimize in this call
@@ -687,7 +687,7 @@ def custom_proposer(candidate, reflective_dataset, components_to_update):
     improved_components = {}
     
     for component_key in components_to_update:
-        if component_key.startswith(REACT_MODULE_PREFIX):
+        if component_key.startswith(TOOL_MODULE_PREFIX):
             config = json.loads(candidate[component_key])
             # Example: {"pred": "instruction", "tools": {"search": {"desc": "...", "args": {...}}}}
             

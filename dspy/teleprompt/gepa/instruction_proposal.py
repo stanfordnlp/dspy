@@ -6,7 +6,7 @@ from gepa.core.adapter import ProposalFn
 
 import dspy
 from dspy.adapters.types.base_type import Type
-from dspy.teleprompt.gepa.gepa_utils import REACT_MODULE_PREFIX, ReflectiveExample
+from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
 
 logger = logging.getLogger(__name__)
 
@@ -386,10 +386,10 @@ class ToolProposer(ProposalFn):
                 continue
             current_module_config = json.loads(candidate[module_key])
 
-            # Predictor keys: 1 for tool modules, 2 for ReAct modules (extra extract predictor)
+            # Predictor keys: ReAct has 2 predictors (react + extract)
             predictor_keys = [k for k, v in current_module_config.items() if isinstance(v, str)]
             primary_predictor_key = predictor_keys[0]
-            extract_predictor_key = predictor_keys[1] if module_key.startswith(REACT_MODULE_PREFIX) else None
+            extract_predictor_key = predictor_keys[1] if len(predictor_keys) > 1 else None
 
             # Reconstruct Tool objects from JSON (func is placeholder since it can't be serialized)
             current_tools_dict = current_module_config.get("tools", {})

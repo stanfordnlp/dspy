@@ -19,8 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 # Constants for module optimization
-REACT_MODULE_PREFIX = "react_module"
-# TODO: Add TOOL_MODULE_PREFIX = "tool_module" when generic tool optimization is ready
+TOOL_MODULE_PREFIX = "tool_module"
 
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
@@ -130,7 +129,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         instruction_components = []
 
         for c in components_to_update:
-            if c.startswith(REACT_MODULE_PREFIX):
+            if c.startswith(TOOL_MODULE_PREFIX):
                 tool_components.append(c)
             else:
                 instruction_components.append(c)
@@ -172,13 +171,13 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         # Start with plain string instructions from candidate
         predictor_candidates = {
             k: v for k, v in candidate.items()
-            if not k.startswith(REACT_MODULE_PREFIX)
+            if not k.startswith(TOOL_MODULE_PREFIX)
         }
 
         tool_candidates = {}
         if self.enable_tool_optimization:
             for key, value in candidate.items():
-                if not key.startswith(REACT_MODULE_PREFIX):
+                if not key.startswith(TOOL_MODULE_PREFIX):
                     continue
 
                 config = json.loads(value)
@@ -306,8 +305,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         for pred_name in components_to_update:
             # Extract predictor name from component key
-            if pred_name.startswith(REACT_MODULE_PREFIX):
-                target_name = pred_name.removeprefix(f"{REACT_MODULE_PREFIX}:")
+            if pred_name.startswith(TOOL_MODULE_PREFIX):
+                target_name = pred_name.removeprefix(f"{TOOL_MODULE_PREFIX}:")
             else:
                 target_name = pred_name
 

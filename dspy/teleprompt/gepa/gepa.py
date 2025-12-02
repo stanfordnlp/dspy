@@ -13,7 +13,7 @@ from dspy.clients.lm import LM
 from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import (
-    REACT_MODULE_PREFIX,
+    TOOL_MODULE_PREFIX,
     DspyAdapter,
     DSPyTrace,
     PredictorFeedbackFn,
@@ -590,7 +590,7 @@ class GEPA(Teleprompter):
                         react_predictor_name = name
 
                 # Use extract.predict as the key since it is the target predictor for feedback lookup
-                module_key = f"{REACT_MODULE_PREFIX}:{extract_predictor_name}"
+                module_key = f"{TOOL_MODULE_PREFIX}:{extract_predictor_name}"
 
                 # Build JSON config with dynamic predictor names as keys
                 config = {
@@ -623,7 +623,7 @@ class GEPA(Teleprompter):
                 # Skip if predictor is part of a ReAct module config
                 found = False
                 for key, val in base_program.items():
-                    if key.startswith(REACT_MODULE_PREFIX):
+                    if key.startswith(TOOL_MODULE_PREFIX):
                         config = json.loads(val)
                         if name in config:
                             found = True
