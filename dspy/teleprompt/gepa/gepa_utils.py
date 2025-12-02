@@ -12,7 +12,7 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.tool import Tool
 from dspy.evaluate import Evaluate
-from dspy.primitives import Example, Prediction
+from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 logger = logging.getLogger(__name__)
@@ -100,10 +100,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.enable_tool_optimization = enable_tool_optimization
         self.reflection_minibatch_size = reflection_minibatch_size
 
-        self._tool_module_proposer = None
+        self._tool_proposer = None
         if self.enable_tool_optimization:
             from dspy.teleprompt.gepa.instruction_proposal import ToolModuleProposer
-            self._tool_module_proposer = ToolModuleProposer()
+            self._tool_proposer = ToolModuleProposer()
 
         self.propose_new_texts = self._propose_component_texts
 
@@ -157,7 +157,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             # Handle ReAct modules
             if tool_module_components:
                 results.update(
-                    self._tool_module_proposer(
+                    self._tool_proposer(
                         candidate=candidate,
                         reflective_dataset=reflective_dataset,
                         components_to_update=tool_module_components,
@@ -170,12 +170,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         new_prog = self.student.deepcopy()
 
         # Start with plain string instructions from candidate
-        improved_predictors = {
+        predictor_candidates = {
             k: v for k, v in candidate.items()
             if not k.startswith(REACT_MODULE_PREFIX)
         }
 
-        improved_tools = {}
+        tool_candidates = {}
         if self.enable_tool_optimization:
             for key, value in candidate.items():
                 if not key.startswith(REACT_MODULE_PREFIX):
@@ -185,63 +185,68 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
                 for pred_name, instruction in config.items():
                     if isinstance(instruction, str):
-                        improved_predictors[pred_name] = instruction
+                        predictor_candidates[pred_name] = instruction
 
-                improved_tools.update(config.get("tools", {}))
+                tool_candidates.update(config.get("tools", {}))
 
         # Update predictor instructions
         for name, pred in new_prog.named_predictors():
-            if name in improved_predictors:
-                pred.signature = pred.signature.with_instructions(improved_predictors[name])
+            if name in predictor_candidates:
+                pred.signature = pred.signature.with_instructions(predictor_candidates[name])
 
         # Update tool descriptions
-        if improved_tools:
-            def collect_tools(obj):
-                all_tools = {}
-                visited = set()
-
-                def traverse(o):
-                    if id(o) in visited or not hasattr(o, "__dict__"):
-                        return
-                    visited.add(id(o))
-
-                    for attr_val in o.__dict__.values():
-                        if isinstance(attr_val, Tool):
-                            all_tools[attr_val.name] = attr_val
-                        elif isinstance(attr_val, list):
-                            for item in attr_val:
-                                if isinstance(item, Tool):
-                                    all_tools[item.name] = item
-                        elif isinstance(attr_val, dict):
-                            for item in attr_val.values():
-                                if isinstance(item, Tool):
-                                    all_tools[item.name] = item
-                        elif isinstance(attr_val, dspy.Module):
-                            traverse(attr_val)
-
-                traverse(obj)
-                return all_tools
-
-            all_tools = collect_tools(new_prog)
-
-            for tool_name, tool_config in improved_tools.items():
-                if tool_name not in all_tools:
-                    logger.warning(f"Skipping updates for tool:'{tool_name}' because it cannot be detected on the student program.")
-                    continue
-
-                tool = all_tools[tool_name]
-
-                # Update tool description if present.
-                if tool_config.get("desc") is not None:
-                    tool.desc = tool_config["desc"]
-
-                # Update arg descriptions if present.
-                args_schema = tool_config.get("args") or {}
-                for arg_name, arg_schema in args_schema.items():
-                    if arg_schema.get("description") is not None:
-                        tool.args[arg_name]["description"] = arg_schema["description"]
+        if tool_candidates:
+            self._update_tool_descriptions(new_prog, tool_candidates)
 
         return new_prog
+
+    def _update_tool_descriptions(self, program: Module, tool_candidates: dict[str, Any]) -> None:
+        """Update tool descriptions and argument descriptions on the program."""
+        all_tools = self._collect_tools(program)
+
+        for tool_name, tool_config in tool_candidates.items():
+            if tool_name not in all_tools:
+                logger.warning(f"Skipping updates for tool:'{tool_name}' because it cannot be detected on the student program.")
+                continue
+
+            tool = all_tools[tool_name]
+
+            # Update tool description if present.
+            if tool_config.get("desc") is not None:
+                tool.desc = tool_config["desc"]
+
+            # Update arg descriptions if present.
+            args_schema = tool_config.get("args") or {}
+            for arg_name, arg_schema in args_schema.items():
+                if arg_schema.get("description") is not None:
+                    tool.args[arg_name]["description"] = arg_schema["description"]
+
+    def _collect_tools(self, obj) -> dict[str, Tool]:
+        """Recursively collect all Tool instances from a module."""
+        all_tools = {}
+        visited = set()
+
+        def traverse(o):
+            if id(o) in visited or not hasattr(o, "__dict__"):
+                return
+            visited.add(id(o))
+
+            for attr_val in o.__dict__.values():
+                if isinstance(attr_val, Tool):
+                    all_tools[attr_val.name] = attr_val
+                elif isinstance(attr_val, list):
+                    for item in attr_val:
+                        if isinstance(item, Tool):
+                            all_tools[item.name] = item
+                elif isinstance(attr_val, dict):
+                    for item in attr_val.values():
+                        if isinstance(item, Tool):
+                            all_tools[item.name] = item
+                elif isinstance(attr_val, dspy.Module):
+                    traverse(attr_val)
+
+        traverse(obj)
+        return all_tools
 
     def evaluate(self, batch, candidate, capture_traces=False):
         program = self.build_program(candidate)
