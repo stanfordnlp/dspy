@@ -281,9 +281,9 @@ class GEPA(Teleprompter):
         warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when 
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is 
             raised if a mismatch in module-level and predictor-level score is detected.
-        enable_tool_optimization: Whether to enable joint optimization of tool-using modules.
+        enable_tool_optimization: Whether to enable joint optimization of dspy.ReAct modules.
             When enabled, GEPA jointly optimizes predictor instructions and tool descriptions together
-            for both dspy.ReAct modules and custom predictors that use dspy.Tool. See the
+            for dspy.ReAct modules. See the
             [Tool Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#tool-optimization)
             for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
