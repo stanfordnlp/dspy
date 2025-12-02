@@ -99,96 +99,72 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.enable_tool_optimization = enable_tool_optimization
-
-        self.propose_new_texts = self._build_propose_new_texts()
         self.reflection_minibatch_size = reflection_minibatch_size
 
-    def _build_propose_new_texts(self):
-        """Build proposal function that routes components to appropriate proposers."""
-        # Init instruction proposer (custom or default)
-        if self.custom_instruction_proposer is not None:
-            instruction_proposer = self.custom_instruction_proposer
-        else:
-            from gepa.strategies.instruction_proposal import InstructionProposalSignature
+        self._tool_module_proposer = None
+        if self.enable_tool_optimization:
+            from dspy.teleprompt.gepa.instruction_proposal import ToolModuleProposer
+            self._tool_module_proposer = ToolModuleProposer()
 
-            def default_instruction_proposer(
-                candidate: dict[str, str],
-                reflective_dataset: dict[str, list[dict[str, Any]]],
-                components_to_update: list[str],
-            ) -> dict[str, str]:
+        self.propose_new_texts = self._propose_component_texts
+
+    def _propose_component_texts(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[dict[str, Any]]],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        """Propose new texts for components using appropriate proposers."""
+        # If custom proposer provided, override everything with custom proposer
+        if self.custom_instruction_proposer:
+            with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
+                return self.custom_instruction_proposer(
+                    candidate=candidate,
+                    reflective_dataset=reflective_dataset,
+                    components_to_update=components_to_update,
+                )
+
+        # Otherwise, route to appropriate proposers
+        # Separate into two categories: components with tools vs regular instructions
+        tool_module_components = []
+        instruction_components = []
+
+        for c in components_to_update:
+            if c.startswith((REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX)):
+                tool_module_components.append(c)
+            else:
+                instruction_components.append(c)
+
+        results: dict[str, str] = {}
+
+        with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
+            # Handle regular instruction components
+            if instruction_components:
+                from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
                 lm = self.reflection_lm or dspy.settings.lm
-                updated_components: dict[str, str] = {}
-                for name in components_to_update:
+                for name in instruction_components:
                     base_instruction = candidate[name]
                     dataset_with_feedback = reflective_dataset[name]
-                    updated_components[name] = InstructionProposalSignature.run(
+                    results[name] = InstructionProposalSignature.run(
                         lm=(lambda x: lm(x)[0]),
                         input_dict={
                             "current_instruction_doc": base_instruction,
                             "dataset_with_feedback": dataset_with_feedback,
                         },
                     )["new_instruction"]
-                return updated_components
 
-            instruction_proposer = default_instruction_proposer
-
-        # Init tool module proposer if tool optimization is enabled
-        tool_module_proposer = None
-        if self.enable_tool_optimization:
-            from dspy.teleprompt.gepa.instruction_proposal import ToolModuleProposer
-            tool_module_proposer = ToolModuleProposer()
-
-        def propose_component_texts(
-            candidate: dict[str, str],
-            reflective_dataset: dict[str, list[dict[str, Any]]],
-            components_to_update: list[str],
-        ) -> dict[str, str]:
-            # If custom proposer provided, override everything with custom proposer
-            if self.custom_instruction_proposer:
-                with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
-                    return instruction_proposer(
+            # Handle components with tools (ReAct and Tool modules)
+            if tool_module_components:
+                results.update(
+                    self._tool_module_proposer(
                         candidate=candidate,
                         reflective_dataset=reflective_dataset,
-                        components_to_update=components_to_update,
+                        components_to_update=tool_module_components,
                     )
+                )
 
-            # Otherwise, route to appropriate proposers
-            # Separate into two categories: components with tools vs regular instructions
-            tool_module_components = []
-            instruction_components = []
-
-            for c in components_to_update:
-                if c.startswith((REACT_MODULE_PREFIX, TOOL_MODULE_PREFIX)):
-                    tool_module_components.append(c)
-                else:
-                    instruction_components.append(c)
-
-            results: dict[str, str] = {}
-
-            with dspy.context(lm=self.reflection_lm or dspy.settings.lm):
-                # Handle regular instruction components
-                if instruction_components:
-                    results.update(
-                        instruction_proposer(
-                            candidate=candidate,
-                            reflective_dataset=reflective_dataset,
-                            components_to_update=instruction_components,
-                        )
-                    )
-
-                # Handle components with tools (ReAct and Tool modules)
-                if tool_module_components:
-                    results.update(
-                        tool_module_proposer(
-                            candidate=candidate,
-                            reflective_dataset=reflective_dataset,
-                            components_to_update=tool_module_components,
-                        )
-                    )
-
-            return results
-
-        return propose_component_texts
+        return results
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
