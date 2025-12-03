@@ -5,12 +5,12 @@ from typing import Any, get_origin
 import json_repair
 import litellm
 import pydantic
-import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
+    _extract_first_json_object,
     format_field_value,
     get_annotation_name,
     parse_value,
@@ -151,10 +151,9 @@ class JSONAdapter(ChatAdapter):
         return self.format_field_with_value(fields_with_values, role="assistant")
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
-        pattern = r"\{(?:[^{}]|(?R))*\}"
-        match = regex.search(pattern, completion, regex.DOTALL)
-        if match:
-            completion = match.group(0)
+        extracted_object = _extract_first_json_object(completion)
+        if extracted_object:
+            completion = extracted_object
         fields = json_repair.loads(completion)
 
         if not isinstance(fields, dict):
