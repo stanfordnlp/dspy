@@ -408,7 +408,8 @@ def test_chat_adapter_formats_conversation_history():
         messages=[
             {"question": "What is the capital of France?", "answer": "Paris"},
             {"question": "What is the capital of Germany?", "answer": "Berlin"},
-        ]
+        ],
+        mode="signature",
     )
 
     adapter = dspy.ChatAdapter()
@@ -710,3 +711,200 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+class TestHistoryModes:
+    """Tests for History mode detection and adapter formatting."""
+
+    def test_history_mode_detection_dict_default(self):
+        """Messages with arbitrary keys are detected as dict mode (default)."""
+        history = dspy.History(messages=[{"question": "...", "answer": "..."}])
+        assert history._detect_mode(history.messages[0]) == "dict"
+
+    def test_history_mode_detection_kv(self):
+        """Messages with only input_fields/output_fields keys are detected as kv mode."""
+        history = dspy.History(messages=[{"input_fields": {"a": 1}, "output_fields": {"b": 2}}])
+        assert history._detect_mode(history.messages[0]) == "kv"
+
+    def test_history_mode_detection_kv_input_only(self):
+        """Messages with only input_fields are detected as kv mode."""
+        history = dspy.History(messages=[{"input_fields": {"a": 1}}])
+        assert history._detect_mode(history.messages[0]) == "kv"
+
+    def test_history_mode_detection_raw(self):
+        """Messages with role+content are detected as raw mode."""
+        history = dspy.History(messages=[{"role": "user", "content": "hello"}])
+        assert history._detect_mode(history.messages[0]) == "raw"
+
+    def test_history_mode_detection_raw_with_extra_keys(self):
+        """Raw mode allows extra keys like 'name'."""
+        history = dspy.History(messages=[{"role": "user", "content": "hello", "name": "tool"}])
+        assert history._detect_mode(history.messages[0]) == "raw"
+
+    def test_history_mode_detection_dict_with_input_fields_and_extra(self):
+        """Messages with input_fields AND extra keys fallback to dict mode."""
+        history = dspy.History(messages=[{"question": "...", "input_fields": {"a": 1}}])
+        assert history._detect_mode(history.messages[0]) == "dict"
+
+    def test_history_explicit_mode_override(self):
+        """Explicit mode overrides auto-detection."""
+        history = dspy.History(messages=[{"question": "...", "answer": "..."}], mode="signature")
+        assert history._detect_mode(history.messages[0]) == "signature"
+
+    def test_history_validation_kv_non_dict_input_fields(self):
+        """KV mode with non-dict input_fields raises ValueError."""
+        with pytest.raises(ValueError, match="'input_fields' must be a dict"):
+            dspy.History(messages=[{"input_fields": "not a dict"}])
+
+    def test_history_validation_raw_non_string_content(self):
+        """Raw mode with non-string content raises ValueError."""
+        with pytest.raises(ValueError, match="'content' must be a string or None"):
+            dspy.History(messages=[{"role": "user", "content": 123}])
+
+    def test_history_validation_raw_allows_none_content(self):
+        """Raw mode allows None content for tool call messages."""
+        history = dspy.History(messages=[
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]}
+        ])
+        assert history.messages[0]["content"] is None
+
+    def test_history_validation_raw_non_string_role(self):
+        """Raw mode with non-string role raises ValueError."""
+        with pytest.raises(ValueError, match="'role' must be a string"):
+            dspy.History(messages=[{"role": 123, "content": "hello"}])
+
+    def test_history_from_kv_factory(self):
+        """from_kv factory sets mode to kv."""
+        history = dspy.History.from_kv([{"input_fields": {"a": 1}}])
+        assert history.mode == "kv"
+
+    def test_history_from_raw_factory(self):
+        """from_raw factory sets mode to raw."""
+        history = dspy.History.from_raw([{"role": "user", "content": "hello"}])
+        assert history.mode == "raw"
+
+    def test_adapter_formats_kv_mode_history(self):
+        """Adapter correctly formats kv-mode history."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History.from_kv([
+            {
+                "input_fields": {"thought": "I need to search", "tool_name": "search"},
+                "output_fields": {"observation": "Results found"},
+            }
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (thought+tool_name), assistant (observation), user (question)
+        assert len(messages) == 4
+        assert messages[1]["role"] == "user"
+        assert "thought" in messages[1]["content"]
+        assert "tool_name" in messages[1]["content"]
+        assert messages[2]["role"] == "assistant"
+        assert "observation" in messages[2]["content"]
+
+    def test_adapter_formats_raw_mode_history(self):
+        """Adapter correctly formats raw-mode history."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History.from_raw([
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (Hello), assistant (Hi there!), user (test question)
+        assert len(messages) == 4
+        assert messages[1] == {"role": "user", "content": "Hello"}
+        assert messages[2] == {"role": "assistant", "content": "Hi there!"}
+
+    def test_adapter_kv_mode_serializes_complex_values(self):
+        """KV mode serializes non-primitive values to strings."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History.from_kv([
+            {
+                "input_fields": {"args": {"key": "value"}, "number": 42},
+                "output_fields": {"result": ["a", "b", "c"]},
+            }
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Values should be serialized to strings
+        assert "args" in messages[1]["content"]
+        assert "number" in messages[1]["content"]
+        assert "result" in messages[2]["content"]
+
+    def test_adapter_kv_mode_input_only(self):
+        """KV mode with only input_fields produces only user message."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History.from_kv([{"input_fields": {"thought": "Thinking..."}}])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (thought), user (question)
+        assert len(messages) == 3
+        assert messages[1]["role"] == "user"
+        assert "thought" in messages[1]["content"]
+
+    def test_adapter_formats_dict_mode_history(self):
+        """Dict mode (default) puts all kv pairs in single user message."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {"thought": "I need to search", "tool_name": "search", "observation": "Results found"},
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (all fields), user (question)
+        assert len(messages) == 3
+        assert messages[1]["role"] == "user"
+        assert "thought" in messages[1]["content"]
+        assert "tool_name" in messages[1]["content"]
+        assert "observation" in messages[1]["content"]
+
+    def test_adapter_formats_signature_mode_history(self):
+        """Signature mode produces user/assistant pairs matching signature fields."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {"question": "What is 2+2?", "answer": "4"},
+        ], mode="signature")
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (question), assistant (answer), user (question)
+        assert len(messages) == 4
+        assert messages[1]["role"] == "user"
+        assert "What is 2+2?" in messages[1]["content"]
+        assert messages[2]["role"] == "assistant"
+        assert "4" in messages[2]["content"]

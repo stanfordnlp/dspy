@@ -522,7 +522,8 @@ def test_json_adapter_formats_conversation_history():
         messages=[
             {"question": "What is the capital of France?", "answer": "Paris"},
             {"question": "What is the capital of Germany?", "answer": "Berlin"},
-        ]
+        ],
+        mode="signature",
     )
 
     adapter = dspy.JSONAdapter()
