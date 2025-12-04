@@ -204,54 +204,36 @@ def test_trajectory_truncation():
     assert result.output_text == "Final output"
 
 
-def test_context_window_exceeded_after_retries():
+@pytest.mark.asyncio
+async def test_context_window_exceeded_after_retries():
     def echo(text: str) -> str:
         return f"Echoed: {text}"
 
     react = dspy.ReAct("input_text -> output_text", tools=[echo])
 
-    # Always raise context window exceeded - simulating case where prompt is too large
-    # even on the very first call with empty trajectory
     def mock_react(**kwargs):
         raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
 
     react.react = mock_react
     react.extract = lambda **kwargs: dspy.Prediction(output_text="Fallback output")
 
-    # Call forward - should handle the error gracefully by logging and breaking the loop
-    # This should NOT raise AttributeError: 'NoneType' object has no attribute 'next_thought'
+    # Test sync version
     result = react(input_text="test input")
-
-    # The trajectory should be empty since the first call failed
     assert result.trajectory == {}
-    # Extract should still be called and produce output
     assert result.output_text == "Fallback output"
 
-
-@pytest.mark.asyncio
-async def test_async_context_window_exceeded_after_retries():
-    async def echo(text: str) -> str:
-        return f"Echoed: {text}"
-
-    react = dspy.ReAct("input_text -> output_text", tools=[echo])
-
-    # Always raise context window exceeded
-    async def mock_react(**kwargs):
+    # Test async version
+    async def mock_react_async(**kwargs):
         raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
 
-    async def mock_extract(**kwargs):
+    async def mock_extract_async(**kwargs):
         return dspy.Prediction(output_text="Fallback output")
 
-    react.react.acall = mock_react
-    react.extract.acall = mock_extract
+    react.react.acall = mock_react_async
+    react.extract.acall = mock_extract_async
 
-    # Call forward - should handle the error gracefully
-    # This should NOT raise AttributeError: 'NoneType' object has no attribute 'next_thought'
     result = await react.acall(input_text="test input")
-
-    # The trajectory should be empty since the first call failed
     assert result.trajectory == {}
-    # Extract should still be called and produce output
     assert result.output_text == "Fallback output"
 
 
