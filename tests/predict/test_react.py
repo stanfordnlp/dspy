@@ -205,15 +205,6 @@ def test_trajectory_truncation():
 
 
 def test_context_window_exceeded_after_retries():
-    """Test that context window errors are handled gracefully after exhausting retry attempts.
-
-    This tests the fix for the bug where returning None after exhausting retries
-    caused "'NoneType' object has no attribute 'next_thought'" error.
-
-    The fix raises a ValueError instead, which is caught in forward() and causes
-    the loop to break gracefully.
-    """
-
     def echo(text: str) -> str:
         return f"Echoed: {text}"
 
@@ -239,8 +230,6 @@ def test_context_window_exceeded_after_retries():
 
 @pytest.mark.asyncio
 async def test_async_context_window_exceeded_after_retries():
-    """Test that context window errors are handled gracefully after exhausting retry attempts in async mode."""
-
     async def echo(text: str) -> str:
         return f"Echoed: {text}"
 
