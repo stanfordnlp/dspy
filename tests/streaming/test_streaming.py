@@ -1932,3 +1932,24 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+@pytest.mark.anyio
+async def test_stream_listener_with_generic_type_annotation():
+    class TestSignature(dspy.Signature):
+        input_text: str = dspy.InputField()
+        output_list: list[str] | int = dspy.OutputField()
+
+    predict = dspy.Predict(TestSignature)
+    listener = dspy.streaming.StreamListener(signature_field_name="output_list", predict=predict)
+
+    assert listener._output_type == list[str] | int
+
+    mock_chunk = ModelResponseStream(
+        model="gpt-4o-mini",
+        choices=[StreamingChoices(delta=Delta(content="test"))],
+    )
+
+    with dspy.context(adapter=dspy.JSONAdapter()):
+        result = listener.receive(mock_chunk)
+        assert result is None
