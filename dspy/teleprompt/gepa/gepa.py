@@ -25,6 +25,7 @@ AUTO_RUN_SETTINGS = {
 @experimental(version="3.0.0")
 class GEPAFeedbackMetric(Protocol):
     def __call__(
+        self,
         gold: Example,
         pred: Prediction,
         trace: Optional["DSPyTrace"],
