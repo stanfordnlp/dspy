@@ -18,29 +18,29 @@ if TYPE_CHECKING:
 
 
 class ReAct(Module):
-    def __init__(self, signature: type["Signature"], tools: list[Callable], max_iters: int = 10):
-        """
-        ReAct stands for "Reasoning and Acting," a popular paradigm for building tool-using agents.
-        In this approach, the language model is iteratively provided with a list of tools and has
-        to reason about the current situation. The model decides whether to call a tool to gather more
-        information or to finish the task based on its reasoning process. The DSPy version of ReAct is
-        generalized to work over any signature, thanks to signature polymorphism.
+    """ReAct (Reasoning and Acting) agent module.
 
-        Args:
-            signature: The signature of the module, which defines the input and output of the react module.
-            tools (list[Callable]): A list of functions, callable objects, or `dspy.Tool` instances.
-            max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 10.
+    ReAct iteratively reasons about the current situation and takes actions using tools.
+    The trajectory is stored as a History in raw LM message format.
 
-        Example:
+    Args:
+        signature: The signature defining input and output fields.
+        tools: List of callable tools the agent can use.
+        max_iters: Maximum reasoning iterations (default: 10).
 
+    Example:
         ```python
         def get_weather(city: str) -> str:
             return f"The weather in {city} is sunny."
 
-        react = dspy.ReAct(signature="question->answer", tools=[get_weather])
+        react = dspy.ReAct("question -> answer", tools=[get_weather])
         pred = react(question="What is the weather in Tokyo?")
+        print(pred.answer)
+        print(pred.trajectory)  # History object with tool call messages
         ```
-        """
+    """
+
+    def __init__(self, signature: type["Signature"], tools: list[Callable], max_iters: int = 10):
         super().__init__()
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
@@ -52,21 +52,22 @@ class ReAct(Module):
         outputs = ", ".join([f"`{k}`" for k in signature.output_fields.keys()])
         instr = [f"{signature.instructions}\n"] if signature.instructions else []
 
-        instr.extend(
-            [
-                f"You are an Agent. In each episode, you will be given the fields {inputs} as input. And you can see your past trajectory so far.",
-                f"Your goal is to use one or more of the supplied tools to collect any necessary information for producing {outputs}.\n",
-                "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.",
-                "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
-                "When writing next_thought, you may reason about the current situation and plan for future steps.",
-                "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
-            ]
-        )
+        instr.extend([
+            f"You are an Agent. In each episode, you will be given the fields {inputs} as input. "
+            "And you can see your past trajectory so far.",
+            f"Your goal is to use one or more of the supplied tools to collect any necessary information "
+            f"for producing {outputs}.\n",
+            "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, "
+            "and also when finishing the task.",
+            "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
+            "When writing next_thought, you may reason about the current situation and plan for future steps.",
+            "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
+        ])
 
         tools["finish"] = Tool(
             func=lambda: "Completed.",
             name="finish",
-            desc=f"Marks the task as complete. That is, signals that all information for producing the outputs, i.e. {outputs}, are now available to be extracted.",
+            desc=f"Marks the task as complete. Signals that all information for producing {outputs} is available.",
             args={},
         )
 
@@ -83,224 +84,183 @@ class ReAct(Module):
         )
 
         extract_instructions = (
-            "You are an extraction Agent whose job it is to extract the fields: {outputs} from the given trajectory."
-            + "The original task was:\n"
-            + signature.instructions
-            + "\nIn trying to solve this task, an executor agent with has used tools to generate the conversation below."
-            + "\nGiven this trajectory, your only job is to extract the fields: {outputs}."
+            f"You are an extraction agent. Extract the fields: {outputs} from the given trajectory.\n"
+            f"The original task was:\n{signature.instructions}\n"
+            "An executor agent has used tools to generate the conversation below. "
+            f"Given this trajectory, extract the fields: {outputs}."
         )
         fallback_signature = dspy.Signature(
             {**signature.input_fields, **signature.output_fields},
             extract_instructions,
-        ).append("trajectory", dspy.InputField(desc="The history of the conversation. There is enough context to produce the final output"), type_=History)
+        ).append(
+            "trajectory",
+            dspy.InputField(desc="The conversation history with enough context to produce the output"),
+            type_=History,
+        )
 
         self.tools = tools
         self.react = dspy.Predict(react_signature)
         self.extract = dspy.ChainOfThought(fallback_signature)
 
-    def forward(self, **input_args):
+    def forward(self, *, trajectory: History | None = None, **input_args):
         max_iters = input_args.pop("max_iters", self.max_iters)
-
-        # Check for existing history in input_args, otherwise start empty
-        trajectory = input_args.pop("trajectory", None)
-        if trajectory is None:
-            trajectory = History(messages=[], mode="raw")
+        trajectory = trajectory or History.from_raw([])
 
         for _ in range(max_iters):
             try:
-                pred, trajectory = self._call_with_potential_truncation(self.react, trajectory, **input_args)
-            except ValueError as err:
-                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
+                pred, trajectory = self._call_with_retry(self.react, trajectory, **input_args)
+            except (ValueError, ContextWindowExceededError) as err:
+                logger.warning(f"Ending trajectory: {_fmt_exc(err)}")
                 break
 
-            # Add the agent's action to trajectory
-            trajectory, tool_call_id = self._append_action(
-                trajectory,
-                thought=pred.next_thought,
-                tool_name=pred.next_tool_name,
-                tool_args=pred.next_tool_args,
-            )
-
-            # Execute tool and get observation
-            try:
-                observation = self.tools[pred.next_tool_name](**pred.next_tool_args)
-            except Exception as err:
-                observation = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
-
-            # Add observation to trajectory
-            trajectory = self._append_observation(trajectory, observation, tool_call_id)
+            observation = self._run_tool(pred.next_tool_name, pred.next_tool_args)
+            trajectory = self._record_step(trajectory, pred, observation)
 
             if pred.next_tool_name == "finish":
                 break
 
-        extract, trajectory = self._call_with_potential_truncation(self.extract, trajectory, **input_args)
-
-        # Add the extract step to the trajectory
-        trajectory = self._append_extract(trajectory, extract)
+        extract, trajectory = self._call_with_retry(self.extract, trajectory, **input_args)
+        trajectory = self._record_extract(trajectory, extract)
 
         return dspy.Prediction(trajectory=trajectory, **extract)
 
-    async def aforward(self, **input_args):
+    async def aforward(self, *, trajectory: History | None = None, **input_args):
         max_iters = input_args.pop("max_iters", self.max_iters)
-
-        # Check for existing history in input_args, otherwise start empty
-        trajectory = input_args.pop("trajectory", None)
-        if trajectory is None:
-            trajectory = History(messages=[], mode="raw")
+        trajectory = trajectory or History.from_raw([])
 
         for _ in range(max_iters):
             try:
-                pred, trajectory = await self._async_call_with_potential_truncation(self.react, trajectory, **input_args)
-            except ValueError as err:
-                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
+                pred, trajectory = await self._acall_with_retry(self.react, trajectory, **input_args)
+            except (ValueError, ContextWindowExceededError) as err:
+                logger.warning(f"Ending trajectory: {_fmt_exc(err)}")
                 break
 
-            # Add the agent's action to trajectory
-            trajectory, tool_call_id = self._append_action(
-                trajectory,
-                thought=pred.next_thought,
-                tool_name=pred.next_tool_name,
-                tool_args=pred.next_tool_args,
-            )
-
-            # Execute tool and get observation
-            try:
-                observation = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
-            except Exception as err:
-                observation = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
-
-            # Add observation to trajectory
-            trajectory = self._append_observation(trajectory, observation, tool_call_id)
+            observation = await self._arun_tool(pred.next_tool_name, pred.next_tool_args)
+            trajectory = self._record_step(trajectory, pred, observation)
 
             if pred.next_tool_name == "finish":
                 break
 
-        extract, trajectory = await self._async_call_with_potential_truncation(self.extract, trajectory, **input_args)
-
-        # Add the extract step to the trajectory
-        trajectory = self._append_extract(trajectory, extract)
+        extract, trajectory = await self._acall_with_retry(self.extract, trajectory, **input_args)
+        trajectory = self._record_extract(trajectory, extract)
 
         return dspy.Prediction(trajectory=trajectory, **extract)
 
-    def _generate_tool_call_id(self) -> str:
-        """Generate a unique tool call ID."""
-        return f"call_{uuid.uuid4().hex[:24]}"
+    # -------------------------------------------------------------------------
+    # Tool execution
+    # -------------------------------------------------------------------------
 
-    def _append_action(self, trajectory: History, thought: str, tool_name: str, tool_args: dict) -> tuple[History, str]:
-        """Append an action (thought + tool call) to the trajectory.
-        
-        Returns:
-            Tuple of (updated trajectory, tool_call_id for matching with observation)
-        """
-        tool_call_id = self._generate_tool_call_id()
-        new_msg = {
+    def _run_tool(self, name: str, args: dict) -> str:
+        try:
+            result = self.tools[name](**args)
+            return self._serialize(result)
+        except Exception as err:
+            return f"Execution error in {name}: {_fmt_exc(err)}"
+
+    async def _arun_tool(self, name: str, args: dict) -> str:
+        try:
+            result = await self.tools[name].acall(**args)
+            return self._serialize(result)
+        except Exception as err:
+            return f"Execution error in {name}: {_fmt_exc(err)}"
+
+    def _serialize(self, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value)
+        except (TypeError, ValueError):
+            return str(value)
+
+    # -------------------------------------------------------------------------
+    # Trajectory recording
+    # -------------------------------------------------------------------------
+
+    def _record_step(self, trajectory: History, pred, observation: str) -> History:
+        """Record a single agent step (action + observation) to the trajectory."""
+        tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
+
+        action_msg = {
             "role": "assistant",
-            "content": thought,
-            "tool_calls": [
-                {
-                    "id": tool_call_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": json.dumps(tool_args),
-                    },
-                }
-            ],
+            "content": pred.next_thought,
+            "tool_calls": [{
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": pred.next_tool_name,
+                    "arguments": json.dumps(pred.next_tool_args),
+                },
+            }],
         }
-        return trajectory.with_messages([new_msg]), tool_call_id
 
-    def _append_observation(self, trajectory: History, observation: Any, tool_call_id: str) -> History:
-        """Append a tool response to the trajectory."""
-        if isinstance(observation, str):
-            content = observation
-        else:
-            try:
-                content = json.dumps(observation)
-            except (TypeError, ValueError):
-                content = str(observation)
-
-        new_msg = {
+        observation_msg = {
             "role": "tool",
             "tool_call_id": tool_call_id,
-            "content": content,
+            "content": observation,
         }
-        return trajectory.with_messages([new_msg])
 
-    def _append_extract(self, trajectory: History, extract) -> History:
-        """Append the extract step (final reasoning and outputs) to the trajectory."""
+        return trajectory.with_messages([action_msg, observation_msg])
+
+    def _record_extract(self, trajectory: History, extract) -> History:
+        """Record the final extraction result to the trajectory."""
         extract_dict = dict(extract)
         reasoning = extract_dict.pop("reasoning", None)
 
-        content_parts = []
+        parts = []
         if reasoning:
-            content_parts.append(f"Reasoning: {reasoning}")
+            parts.append(f"Reasoning: {reasoning}")
         for key, value in extract_dict.items():
-            if isinstance(value, str):
-                content_parts.append(f"{key}: {value}")
-            else:
-                try:
-                    content_parts.append(f"{key}: {json.dumps(value)}")
-                except (TypeError, ValueError):
-                    content_parts.append(f"{key}: {value}")
+            parts.append(f"{key}: {self._serialize(value)}")
 
-        new_msg = {
-            "role": "assistant",
-            "content": "\n".join(content_parts),
-        }
-        return trajectory.with_messages([new_msg])
+        return trajectory.with_messages([{"role": "assistant", "content": "\n".join(parts)}])
 
-    def _call_with_potential_truncation(self, module, trajectory: History, **input_args) -> tuple[Any, History]:
-        """Call module with trajectory, truncating if context window exceeded.
-        
-        Returns:
-            Tuple of (module result, potentially truncated trajectory)
-        """
+    # -------------------------------------------------------------------------
+    # LM calls with truncation retry
+    # -------------------------------------------------------------------------
+
+    def _call_with_retry(self, module, trajectory: History, **input_args) -> tuple[Any, History]:
+        last_err = None
         for _ in range(3):
             try:
                 return module(**input_args, trajectory=trajectory), trajectory
-            except ContextWindowExceededError:
-                logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
+            except ContextWindowExceededError as err:
+                last_err = err
+                logger.warning("Context window exceeded, truncating oldest step.")
                 trajectory = self.truncate_trajectory(trajectory)
-        return None, trajectory
 
-    async def _async_call_with_potential_truncation(self, module, trajectory: History, **input_args) -> tuple[Any, History]:
-        """Call module with trajectory, truncating if context window exceeded.
-        
-        Returns:
-            Tuple of (module result, potentially truncated trajectory)
-        """
+        raise ContextWindowExceededError(f"Context window exceeded after 3 truncation attempts: {last_err}")
+
+    async def _acall_with_retry(self, module, trajectory: History, **input_args) -> tuple[Any, History]:
+        last_err = None
         for _ in range(3):
             try:
                 return await module.acall(**input_args, trajectory=trajectory), trajectory
-            except ContextWindowExceededError:
-                logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
+            except ContextWindowExceededError as err:
+                last_err = err
+                logger.warning("Context window exceeded, truncating oldest step.")
                 trajectory = self.truncate_trajectory(trajectory)
-        return None, trajectory
+
+        raise ContextWindowExceededError(f"Context window exceeded after 3 truncation attempts: {last_err}")
 
     def truncate_trajectory(self, trajectory: History) -> History:
-        """Truncates the trajectory so that it fits in the context window.
+        """Remove the oldest tool call pair from the trajectory.
 
-        Users can override this method to implement their own truncation logic.
-        For tool call format, we remove pairs of messages (assistant + tool) together.
+        Override this method to implement custom truncation logic.
         """
-        if len(trajectory.messages) < 2:
-            raise ValueError(
-                "The trajectory is too long so your prompt exceeded the context window, but the trajectory cannot be "
-                "truncated because it only has one tool call."
-            )
-
-        # Remove the oldest pair (assistant message with tool_calls + tool response)
         messages = list(trajectory.messages)
-        if messages and messages[0].get("role") == "assistant" and messages[0].get("tool_calls"):
-            # Remove assistant + following tool message(s)
-            messages = messages[1:]
-            while messages and messages[0].get("role") == "tool":
-                messages = messages[1:]
-        else:
-            # Fallback: just remove the first message
-            messages = messages[1:]
 
-        return History(messages=messages, mode="raw")
+        if len(messages) < 2:
+            raise ValueError("Trajectory too long but cannot truncate: only one step remains.")
+
+        # Remove assistant + following tool response(s)
+        if messages[0].get("role") == "assistant" and messages[0].get("tool_calls"):
+            messages.pop(0)
+            while messages and messages[0].get("role") == "tool":
+                messages.pop(0)
+        else:
+            messages.pop(0)
+
+        return History(messages=messages, mode=trajectory.mode)
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
@@ -310,7 +270,6 @@ def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
     """
 
     import traceback
-
     return "\n" + "".join(traceback.format_exception(type(err), err, err.__traceback__, limit=limit)).strip()
 
 

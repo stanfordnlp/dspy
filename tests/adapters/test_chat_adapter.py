@@ -716,54 +716,61 @@ In adhering to this structure, your objective is:
 class TestHistoryModes:
     """Tests for History mode detection and adapter formatting."""
 
-    def test_history_mode_detection_dict_default(self):
-        """Messages with arbitrary keys are detected as dict mode (default)."""
+    def test_history_mode_detection_flat_default(self):
+        """Messages with arbitrary keys are detected as flat mode (default)."""
         history = dspy.History(messages=[{"question": "...", "answer": "..."}])
-        assert history._detect_mode(history.messages[0]) == "dict"
+        assert history.mode == "flat"
 
-    def test_history_mode_detection_kv(self):
-        """Messages with only input_fields/output_fields keys are detected as kv mode."""
+    def test_history_mode_detection_demo(self):
+        """Messages with only input_fields/output_fields keys are detected as demo mode."""
         history = dspy.History(messages=[{"input_fields": {"a": 1}, "output_fields": {"b": 2}}])
-        assert history._detect_mode(history.messages[0]) == "kv"
+        assert history.mode == "demo"
 
-    def test_history_mode_detection_kv_input_only(self):
-        """Messages with only input_fields are detected as kv mode."""
+    def test_history_mode_detection_demo_input_only(self):
+        """Messages with only input_fields are detected as demo mode."""
         history = dspy.History(messages=[{"input_fields": {"a": 1}}])
-        assert history._detect_mode(history.messages[0]) == "kv"
+        assert history.mode == "demo"
 
     def test_history_mode_detection_raw(self):
         """Messages with role+content are detected as raw mode."""
         history = dspy.History(messages=[{"role": "user", "content": "hello"}])
-        assert history._detect_mode(history.messages[0]) == "raw"
+        assert history.mode == "raw"
 
-    def test_history_mode_detection_raw_with_extra_keys(self):
-        """Raw mode allows extra keys like 'name'."""
-        history = dspy.History(messages=[{"role": "user", "content": "hello", "name": "tool"}])
-        assert history._detect_mode(history.messages[0]) == "raw"
+    def test_history_mode_detection_raw_with_tool_calls(self):
+        """Raw mode detected for tool_calls messages."""
+        history = dspy.History(messages=[
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]}
+        ])
+        assert history.mode == "raw"
 
-    def test_history_mode_detection_dict_with_input_fields_and_extra(self):
-        """Messages with input_fields AND extra keys fallback to dict mode."""
+    def test_history_mode_detection_flat_with_extra_keys(self):
+        """Messages with role+content AND extra keys fallback to flat mode."""
+        history = dspy.History(messages=[{"role": "user", "content": "hello", "extra": "data"}])
+        assert history.mode == "flat"
+
+    def test_history_mode_detection_flat_with_input_fields_and_extra(self):
+        """Messages with input_fields AND extra keys fallback to flat mode."""
         history = dspy.History(messages=[{"question": "...", "input_fields": {"a": 1}}])
-        assert history._detect_mode(history.messages[0]) == "dict"
+        assert history.mode == "flat"
 
     def test_history_explicit_mode_override(self):
         """Explicit mode overrides auto-detection."""
         history = dspy.History(messages=[{"question": "...", "answer": "..."}], mode="signature")
-        assert history._detect_mode(history.messages[0]) == "signature"
+        assert history.mode == "signature"
 
-    def test_history_validation_kv_non_dict_input_fields(self):
-        """KV mode with non-dict input_fields raises ValueError."""
+    def test_history_validation_demo_non_dict_input_fields(self):
+        """Demo mode with non-dict input_fields raises ValueError."""
         with pytest.raises(ValueError, match="'input_fields' must be a dict"):
-            dspy.History(messages=[{"input_fields": "not a dict"}])
+            dspy.History.from_demo([{"input_fields": "not a dict"}])
 
     def test_history_validation_raw_non_string_content(self):
         """Raw mode with non-string content raises ValueError."""
         with pytest.raises(ValueError, match="'content' must be a string or None"):
-            dspy.History(messages=[{"role": "user", "content": 123}])
+            dspy.History.from_raw([{"role": "user", "content": 123}])
 
     def test_history_validation_raw_allows_none_content(self):
         """Raw mode allows None content for tool call messages."""
-        history = dspy.History(messages=[
+        history = dspy.History.from_raw([
             {"role": "assistant", "content": None, "tool_calls": [{"id": "1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]}
         ])
         assert history.messages[0]["content"] is None
@@ -771,26 +778,31 @@ class TestHistoryModes:
     def test_history_validation_raw_non_string_role(self):
         """Raw mode with non-string role raises ValueError."""
         with pytest.raises(ValueError, match="'role' must be a string"):
-            dspy.History(messages=[{"role": 123, "content": "hello"}])
+            dspy.History.from_raw([{"role": 123, "content": "hello"}])
 
-    def test_history_from_kv_factory(self):
-        """from_kv factory sets mode to kv."""
-        history = dspy.History.from_kv([{"input_fields": {"a": 1}}])
-        assert history.mode == "kv"
+    def test_history_from_demo_factory(self):
+        """from_demo factory sets mode to demo."""
+        history = dspy.History.from_demo([{"input_fields": {"a": 1}}])
+        assert history.mode == "demo"
 
     def test_history_from_raw_factory(self):
         """from_raw factory sets mode to raw."""
         history = dspy.History.from_raw([{"role": "user", "content": "hello"}])
         assert history.mode == "raw"
 
-    def test_adapter_formats_kv_mode_history(self):
-        """Adapter correctly formats kv-mode history."""
+    def test_history_from_signature_factory(self):
+        """from_signature factory sets mode to signature."""
+        history = dspy.History.from_signature([{"question": "...", "answer": "..."}])
+        assert history.mode == "signature"
+
+    def test_adapter_formats_demo_mode_history(self):
+        """Adapter correctly formats demo-mode history."""
         class MySignature(dspy.Signature):
             question: str = dspy.InputField()
             history: dspy.History = dspy.InputField()
             answer: str = dspy.OutputField()
 
-        history = dspy.History.from_kv([
+        history = dspy.History.from_demo([
             {
                 "input_fields": {"thought": "I need to search", "tool_name": "search"},
                 "output_fields": {"observation": "Results found"},
@@ -828,14 +840,14 @@ class TestHistoryModes:
         assert messages[1] == {"role": "user", "content": "Hello"}
         assert messages[2] == {"role": "assistant", "content": "Hi there!"}
 
-    def test_adapter_kv_mode_serializes_complex_values(self):
-        """KV mode serializes non-primitive values to strings."""
+    def test_adapter_demo_mode_serializes_complex_values(self):
+        """Demo mode serializes non-primitive values to strings."""
         class MySignature(dspy.Signature):
             question: str = dspy.InputField()
             history: dspy.History = dspy.InputField()
             answer: str = dspy.OutputField()
 
-        history = dspy.History.from_kv([
+        history = dspy.History.from_demo([
             {
                 "input_fields": {"args": {"key": "value"}, "number": 42},
                 "output_fields": {"result": ["a", "b", "c"]},
@@ -850,14 +862,14 @@ class TestHistoryModes:
         assert "number" in messages[1]["content"]
         assert "result" in messages[2]["content"]
 
-    def test_adapter_kv_mode_input_only(self):
-        """KV mode with only input_fields produces only user message."""
+    def test_adapter_demo_mode_input_only(self):
+        """Demo mode with only input_fields produces only user message."""
         class MySignature(dspy.Signature):
             question: str = dspy.InputField()
             history: dspy.History = dspy.InputField()
             answer: str = dspy.OutputField()
 
-        history = dspy.History.from_kv([{"input_fields": {"thought": "Thinking..."}}])
+        history = dspy.History.from_demo([{"input_fields": {"thought": "Thinking..."}}])
 
         adapter = dspy.ChatAdapter()
         messages = adapter.format(MySignature, [], {"question": "test", "history": history})
@@ -867,8 +879,8 @@ class TestHistoryModes:
         assert messages[1]["role"] == "user"
         assert "thought" in messages[1]["content"]
 
-    def test_adapter_formats_dict_mode_history(self):
-        """Dict mode (default) puts all kv pairs in single user message."""
+    def test_adapter_formats_flat_mode_history(self):
+        """Flat mode (default) puts all kv pairs in single user message."""
         class MySignature(dspy.Signature):
             question: str = dspy.InputField()
             history: dspy.History = dspy.InputField()
@@ -895,9 +907,9 @@ class TestHistoryModes:
             history: dspy.History = dspy.InputField()
             answer: str = dspy.OutputField()
 
-        history = dspy.History(messages=[
+        history = dspy.History.from_signature([
             {"question": "What is 2+2?", "answer": "4"},
-        ], mode="signature")
+        ])
 
         adapter = dspy.ChatAdapter()
         messages = adapter.format(MySignature, [], {"question": "test", "history": history})

@@ -453,13 +453,13 @@ class Adapter:
 
         return messages
 
-    def _get_history_field_name(self, signature: type[Signature]) -> bool:
+    def _get_history_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.input_fields.items():
             if field.annotation == History:
                 return name
         return None
 
-    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> bool:
+    def _get_tool_call_input_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.input_fields.items():
             # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
             origin = get_origin(field.annotation)
@@ -469,7 +469,7 @@ class Adapter:
                 return name
         return None
 
-    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> bool:
+    def _get_tool_call_output_field_name(self, signature: type[Signature]) -> str | None:
         for name, field in signature.output_fields.items():
             if field.annotation == ToolCalls:
                 return name
@@ -498,72 +498,75 @@ class Adapter:
         history_field_name: str,
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Format the conversation history.
+        """Format the conversation history as multiturn messages.
 
-        This method formats the conversation history and the current input as multiturn messages.
         Supports four modes:
-        - signature: Dict keys match signature input/output fields → user/assistant pairs
-        - kv: Nested {"input_fields": {...}, "output_fields": {...}} → user/assistant pairs
-        - dict: Arbitrary serializable kv pairs → all in single user message (default)
-        - raw: Direct LM messages with {"role": "user", "content": "..."} → passed through
-
-        Args:
-            signature: The DSPy signature for which to format the conversation history.
-            history_field_name: The name of the history field in the signature.
-            inputs: The input arguments to the DSPy module.
-
-        Returns:
-            A list of multiturn messages.
+        - raw: Direct LM messages → passed through as-is
+        - demo: {"input_fields": {...}, "output_fields": {...}} → user/assistant pairs
+        - flat: Arbitrary kv pairs → single user message per dict (default)
+        - signature: Dict keys match signature fields → user/assistant pairs
         """
         history = inputs.get(history_field_name)
         if history is None:
             return []
 
-        messages = []
-        for msg in history.messages:
-            mode = history._detect_mode(msg)
-
-            if mode == "raw":
-                messages.append(dict(msg))
-
-            elif mode == "kv":
-                if "input_fields" in msg:
-                    input_dict = {k: self._serialize_kv_value(v) for k, v in msg["input_fields"].items()}
-                    sig = self._make_dynamic_signature_for_inputs(list(input_dict.keys()))
-                    messages.append({
-                        "role": "user",
-                        "content": self.format_user_message_content(sig, input_dict),
-                    })
-                if "output_fields" in msg:
-                    output_dict = {k: self._serialize_kv_value(v) for k, v in msg["output_fields"].items()}
-                    sig = self._make_dynamic_signature_for_outputs(list(output_dict.keys()))
-                    messages.append({
-                        "role": "assistant",
-                        "content": self.format_assistant_message_content(sig, output_dict),
-                    })
-
-            elif mode == "signature":
-                messages.append({
-                    "role": "user",
-                    "content": self.format_user_message_content(signature, msg),
-                })
-                messages.append({
-                    "role": "assistant",
-                    "content": self.format_assistant_message_content(signature, msg),
-                })
-
-            else:  # dict mode (default) - all kv pairs go into single user message
-                serialized = {k: self._serialize_kv_value(v) for k, v in msg.items()}
-                sig = self._make_dynamic_signature_for_inputs(list(serialized.keys()))
-                messages.append({
-                    "role": "user",
-                    "content": self.format_user_message_content(sig, serialized),
-                })
-
-        # Remove the history field from the inputs
         del inputs[history_field_name]
 
-        return messages
+        if history.mode == "raw":
+            return [dict(msg) for msg in history.messages]
+        if history.mode == "demo":
+            return self._format_demo_history(history.messages)
+        if history.mode == "signature":
+            return self._format_signature_history(signature, history.messages)
+        return self._format_flat_history(history.messages)
+
+    def _format_demo_history(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Format demo-mode history (input_fields/output_fields → user/assistant)."""
+        result = []
+        for msg in messages:
+            if "input_fields" in msg:
+                input_dict = {k: self._serialize_kv_value(v) for k, v in msg["input_fields"].items()}
+                sig = self._make_dynamic_signature_for_inputs(list(input_dict.keys()))
+                result.append({
+                    "role": "user",
+                    "content": self.format_user_message_content(sig, input_dict),
+                })
+            if "output_fields" in msg:
+                output_dict = {k: self._serialize_kv_value(v) for k, v in msg["output_fields"].items()}
+                sig = self._make_dynamic_signature_for_outputs(list(output_dict.keys()))
+                result.append({
+                    "role": "assistant",
+                    "content": self.format_assistant_message_content(sig, output_dict),
+                })
+        return result
+
+    def _format_signature_history(
+        self, signature: type[Signature], messages: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Format signature-mode history (signature fields → user/assistant pairs)."""
+        result = []
+        for msg in messages:
+            result.append({
+                "role": "user",
+                "content": self.format_user_message_content(signature, msg),
+            })
+            result.append({
+                "role": "assistant",
+                "content": self.format_assistant_message_content(signature, msg),
+            })
+        return result
+
+    def _format_flat_history(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Format flat-mode history (all kv pairs in single user message)."""
+        result = []
+        for msg in messages:
+            serialized = {k: self._serialize_kv_value(v) for k, v in msg.items()}
+            sig = self._make_dynamic_signature_for_inputs(list(serialized.keys()))
+            result.append({
+                "role": "user",
+                "content": self.format_user_message_content(sig, serialized),
+            })
+        return result
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         """Parse the LM output into a dictionary of the output fields.
