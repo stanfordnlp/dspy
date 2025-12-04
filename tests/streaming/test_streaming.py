@@ -1945,10 +1945,10 @@ async def test_stream_listener_with_generic_type_annotation():
 
     assert listener._output_type == list[str] | int
 
-    mock_chunk = mock.MagicMock(spec=ModelResponseStream)
-    mock_chunk.choices = [mock.MagicMock(spec=StreamingChoices)]
-    mock_chunk.choices[0].delta = mock.MagicMock(spec=Delta)
-    mock_chunk.choices[0].delta.content = "test"
+    mock_chunk = ModelResponseStream(
+        model="gpt-4o-mini",
+        choices=[StreamingChoices(delta=Delta(content="test"))],
+    )
 
     with dspy.context(adapter=dspy.JSONAdapter()):
         result = listener.receive(mock_chunk)
