@@ -204,6 +204,68 @@ def test_trajectory_truncation():
     assert result.output_text == "Final output"
 
 
+def test_context_window_exceeded_after_retries():
+    """Test that context window errors are handled gracefully after exhausting retry attempts.
+
+    This tests the fix for the bug where returning None after exhausting retries
+    caused "'NoneType' object has no attribute 'next_thought'" error.
+
+    The fix raises a ValueError instead, which is caught in forward() and causes
+    the loop to break gracefully.
+    """
+
+    def echo(text: str) -> str:
+        return f"Echoed: {text}"
+
+    react = dspy.ReAct("input_text -> output_text", tools=[echo])
+
+    # Always raise context window exceeded - simulating case where prompt is too large
+    # even on the very first call with empty trajectory
+    def mock_react(**kwargs):
+        raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+
+    react.react = mock_react
+    react.extract = lambda **kwargs: dspy.Prediction(output_text="Fallback output")
+
+    # Call forward - should handle the error gracefully by logging and breaking the loop
+    # This should NOT raise AttributeError: 'NoneType' object has no attribute 'next_thought'
+    result = react(input_text="test input")
+
+    # The trajectory should be empty since the first call failed
+    assert result.trajectory == {}
+    # Extract should still be called and produce output
+    assert result.output_text == "Fallback output"
+
+
+@pytest.mark.asyncio
+async def test_async_context_window_exceeded_after_retries():
+    """Test that context window errors are handled gracefully after exhausting retry attempts in async mode."""
+
+    async def echo(text: str) -> str:
+        return f"Echoed: {text}"
+
+    react = dspy.ReAct("input_text -> output_text", tools=[echo])
+
+    # Always raise context window exceeded
+    async def mock_react(**kwargs):
+        raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+
+    async def mock_extract(**kwargs):
+        return dspy.Prediction(output_text="Fallback output")
+
+    react.react.acall = mock_react
+    react.extract.acall = mock_extract
+
+    # Call forward - should handle the error gracefully
+    # This should NOT raise AttributeError: 'NoneType' object has no attribute 'next_thought'
+    result = await react.acall(input_text="test input")
+
+    # The trajectory should be empty since the first call failed
+    assert result.trajectory == {}
+    # Extract should still be called and produce output
+    assert result.output_text == "Fallback output"
+
+
 def test_error_retry():
     # --- a tiny tool that always fails -------------------------------------
     def foo(a, b):

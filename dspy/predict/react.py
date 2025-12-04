@@ -152,7 +152,16 @@ class ReAct(Module):
                 )
             except ContextWindowExceededError:
                 logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
-                trajectory = self.truncate_trajectory(trajectory)
+                try:
+                    trajectory = self.truncate_trajectory(trajectory)
+                except ValueError:
+                    # Cannot truncate further, re-raise as a clear error
+                    raise ValueError(
+                        "The context window was exceeded and the trajectory could not be truncated further."
+                    )
+        raise ValueError(
+            "The context window was exceeded after 3 attempts to truncate the trajectory."
+        )
 
     async def _async_call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         for _ in range(3):
@@ -163,7 +172,16 @@ class ReAct(Module):
                 )
             except ContextWindowExceededError:
                 logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
-                trajectory = self.truncate_trajectory(trajectory)
+                try:
+                    trajectory = self.truncate_trajectory(trajectory)
+                except ValueError:
+                    # Cannot truncate further, re-raise as a clear error
+                    raise ValueError(
+                        "The context window was exceeded and the trajectory could not be truncated further."
+                    )
+        raise ValueError(
+            "The context window was exceeded after 3 attempts to truncate the trajectory."
+        )
 
     def truncate_trajectory(self, trajectory):
         """Truncates the trajectory so that it fits in the context window.
