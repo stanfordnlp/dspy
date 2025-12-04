@@ -1,3 +1,5 @@
+from unittest import mock
+
 from pydantic import BaseModel
 
 import dspy
@@ -325,3 +327,58 @@ def test_merge_usage_entries_with_pydantic_models():
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["audio_tokens"] == 1
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["accepted_prediction_tokens"] == 1
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["rejected_prediction_tokens"] == 1
+
+
+def test_parallel_executor_with_usage_tracker():
+    """Test that usage tracking works correctly with ParallelExecutor and mocked LM calls."""
+
+    parent_tracker = UsageTracker()
+
+    # Mock LM with different responses
+    mock_lm = mock.MagicMock(spec=dspy.LM)
+    mock_lm.return_value = ['{"answer": "Mocked answer"}']
+    mock_lm.kwargs = {}
+    mock_lm.model = "openai/gpt-4o-mini"
+
+    dspy.configure(lm=mock_lm, adapter=dspy.JSONAdapter())
+
+    def task1():
+        # Simulate LM usage tracking for task 1
+        dspy.settings.usage_tracker.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 50,
+                "completion_tokens": 10,
+                "total_tokens": 60,
+            },
+        )
+        return dspy.settings.usage_tracker.get_total_tokens()
+
+    def task2():
+        # Simulate LM usage tracking for task 2 with different values
+        dspy.settings.usage_tracker.add_usage(
+            "openai/gpt-4o-mini",
+            {
+                "prompt_tokens": 80,
+                "completion_tokens": 15,
+                "total_tokens": 95,
+            },
+        )
+        return dspy.settings.usage_tracker.get_total_tokens()
+
+    # Execute tasks in parallel
+    with dspy.context(track_usage=True, usage_tracker=parent_tracker):
+        executor = dspy.Parallel()
+        results = executor([(task1, {}), (task2, {})])
+    # Verify that the two workers had different usage
+    usage1 = results[0]
+    usage2 = results[1]
+
+    # Task 1 should have 50 prompt tokens, task 2 should have 80
+    assert usage1["openai/gpt-4o-mini"]["prompt_tokens"] == 50
+    assert usage1["openai/gpt-4o-mini"]["completion_tokens"] == 10
+    assert usage2["openai/gpt-4o-mini"]["prompt_tokens"] == 80
+    assert usage2["openai/gpt-4o-mini"]["completion_tokens"] == 15
+
+    # Parent tracker should remain unchanged (workers have independent copies)
+    assert len(parent_tracker.usage_data) == 0
