@@ -8,6 +8,7 @@ from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
+from dspy.adapters.utils import serialize_for_json
 from dspy.experimental import Citations
 from dspy.signatures.field import InputField, OutputField
 from dspy.signatures.signature import Signature
@@ -479,10 +480,7 @@ class Adapter:
         """Safely serialize values for kv-mode formatting."""
         if isinstance(v, (str, int, float, bool)) or v is None:
             return v
-        try:
-            return str(v)
-        except Exception:
-            return f"<unserializable {type(v).__name__}>"
+        return serialize_for_json(v)
 
     def _make_dynamic_signature_for_inputs(self, keys: list[str]) -> type[Signature]:
         """Create a dynamic signature with input fields only (no instructions)."""
