@@ -1,3 +1,5 @@
+import json
+import logging
 from typing import Any
 
 from gepa.core.adapter import ProposalFn
@@ -5,6 +7,8 @@ from gepa.core.adapter import ProposalFn
 import dspy
 from dspy.adapters.types.base_type import Type
 from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
+
+logger = logging.getLogger(__name__)
 
 
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
@@ -310,3 +314,184 @@ class MultiModalInstructionProposer(ProposalFn):
                 updated_components[component_name] = new_instruction
 
         return updated_components
+
+
+class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
+    """I provided an assistant with predictor instructions and tool descriptions,
+    but its performance needs improvement based on the examples_with_feedback below.
+
+    Your task is to propose better predictor instructions, tool descriptions, and tool argument descriptions that address the issues shown in these examples.
+    Focus on reinforcing patterns that clearly improve the assistant's performance on similar tasks, rather than rewriting everything from scratch unless necessary.
+    These components are progressively optimized - refine only what needs to change.
+
+    Analyze the examples_with_feedback to identify success and failure patterns, and write improved instructions and descriptions at their appropriate level of abstraction and/or specificity,
+    so that each layer plays a clear, complementary role without unnecessary repetition or verbosity unless redundancy clearly helps the assistant's performance.
+    """
+
+    current_predictor_instruction = dspy.InputField(desc="Current instruction guiding the predictor")
+    current_tools = dspy.InputField(annotation=list[dspy.Tool], desc="Available tools with their complete schemas")
+    examples_with_feedback = dspy.InputField(desc="Execution examples with feedback showing successes and failures")
+
+    improved_predictor_instruction: str | None = dspy.OutputField(
+        desc="Improved instruction for the predictor", default=None
+    )
+
+
+class ToolProposer(ProposalFn):
+    """Proposer for optimizing tool-using module configurations.
+
+    Supports two types of modules:
+    - Tool modules (1 predictor): Optimizes predictor instruction and tool descriptions
+    - ReAct modules (2 predictors): Jointly optimizes react instruction, extract instruction, and tool descriptions
+
+    Uses dynamic signature generation to create output fields for each tool and parameter,
+    enabling the reflection LM to optimize all components cohesively based on execution feedback.
+
+    This joint optimization approach allows the LM to see how instructions and tool descriptions
+    work together, leading to more coherent improvements than optimizing each component separately.
+    """
+
+    def __call__(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[ReflectiveExample]],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        """Optimize tool-using module components.
+
+        Args:
+            candidate: Current component name -> JSON config mapping
+            reflective_dataset: Component name -> list of reflective examples
+            components_to_update: List of tool-using module component names to update
+
+        Returns:
+            dict: Mapping of component names to improved JSON configs
+        """
+
+        updated_components = {}
+
+        for module_key in components_to_update:
+            if module_key not in candidate or module_key not in reflective_dataset:
+                logger.debug(
+                    f"Skipping {module_key}: not in candidate={module_key not in candidate}, not in "
+                    "reflective_dataset={module_key not in reflective_dataset}"
+                )
+                continue
+            current_module_config = json.loads(candidate[module_key])
+
+            # Predictor keys: ReAct has 2 predictors (react + extract)
+            predictor_keys = [k for k, v in current_module_config.items() if isinstance(v, str)]
+            primary_predictor_key = predictor_keys[0]
+            extract_predictor_key = predictor_keys[1] if len(predictor_keys) > 1 else None
+
+            # Reconstruct Tool objects from JSON (func is placeholder since it can't be serialized)
+            current_tools_dict = current_module_config.get("tools", {})
+            tools_list = []
+            for tool_name, tool_info in current_tools_dict.items():
+                tool = dspy.Tool(
+                    func=lambda *args, **kwargs: None,  # Placeholder - Tool requires Callable, but only schema is used
+                    name=tool_name,
+                    desc=tool_info.get("desc", ""),
+                )
+                tool.args = tool_info.get("args", {})
+                tools_list.append(tool)
+
+            # Build dynamic signature with tool-specific output fields
+            signature = GenerateImprovedToolModuleDescriptionsFromFeedback
+
+            for tool in tools_list:
+                tool_name = tool.name
+                tool_info = current_tools_dict[tool_name]
+
+                signature = signature.append(
+                    f"improved_tool_{tool_name}_desc",
+                    dspy.OutputField(desc=f"Improved description of tool '{tool_name}'", default=None),
+                )
+
+                for arg_name in tool_info["args"].keys():
+                    signature = signature.append(
+                        f"improved_tool_{tool_name}_arg_{arg_name}_desc",
+                        dspy.OutputField(
+                            desc=f"Improved description of the argument '{arg_name}' of tool '{tool_name}'",
+                            default=None,
+                        ),
+                    )
+
+            kwargs = {
+                "current_predictor_instruction": current_module_config[primary_predictor_key],
+                "current_tools": tools_list,
+                "examples_with_feedback": self._format_examples(reflective_dataset[module_key]),
+            }
+            # If module has extract predictor, add extract fields
+            if extract_predictor_key is not None:
+                signature = signature.append(
+                    "current_extract_instruction", dspy.InputField(desc="Current instruction for extraction predictor")
+                )
+                signature = signature.append(
+                    "improved_extract_instruction",
+                    dspy.OutputField(desc="Improved instruction for extraction", default=None),
+                )
+                kwargs["current_extract_instruction"] = current_module_config[extract_predictor_key]
+
+            propose_descriptions = dspy.Predict(signature)
+            result = propose_descriptions(**kwargs)
+
+            # Build improved config (reflection LM returns None to keep original, or new text)
+            improved_module_config = {}
+
+            if result.improved_predictor_instruction is not None:
+                improved_module_config[primary_predictor_key] = result.improved_predictor_instruction
+
+            if extract_predictor_key is not None and result.improved_extract_instruction is not None:
+                improved_module_config[extract_predictor_key] = result.improved_extract_instruction
+
+            improved_module_config["tools"] = {}
+            for tool_name, tool_info in current_tools_dict.items():
+                # Update tool description if LM proposed a change
+                improved_tool_desc = getattr(result, f"improved_tool_{tool_name}_desc", None)
+                if improved_tool_desc is not None:
+                    tool_info["desc"] = improved_tool_desc
+
+                # Update arg descriptions if LM proposed changes
+                for arg_name in tool_info["args"].keys():
+                    improved_tool_arg_desc = getattr(result, f"improved_tool_{tool_name}_arg_{arg_name}_desc", None)
+                    if improved_tool_arg_desc is not None:
+                        tool_info["args"][arg_name]["description"] = improved_tool_arg_desc
+
+                improved_module_config["tools"][tool_name] = tool_info
+
+            updated_components[module_key] = json.dumps(improved_module_config, indent=2)
+
+        return updated_components
+
+    def _format_examples(self, reflective_dataset: list[ReflectiveExample]) -> str:
+        """Format reflective examples using GEPA's markdown structure."""
+
+        def render_value(value, level=3):
+            if isinstance(value, dict):
+                s = ""
+                for key, val in value.items():
+                    s += f"{'#' * level} {key}\n"
+                    s += render_value(val, min(level + 1, 6))
+                if not value:
+                    s += "\n"
+                return s
+            if isinstance(value, (list, tuple)):
+                s = ""
+                for index, item in enumerate(value):
+                    s += f"{'#' * level} Item {index + 1}\n"
+                    s += render_value(item, min(level + 1, 6))
+                if not value:
+                    s += "\n"
+                return s
+            return f"{str(value).strip()}\n\n"
+
+        def convert_sample_to_markdown(sample, example_num):
+            s = f"# Example {example_num}\n"
+            for key, val in sample.items():
+                s += f"## {key}\n"
+                s += render_value(val, level=3)
+            return s
+
+        formatted_parts = [convert_sample_to_markdown(example, i + 1) for i, example in enumerate(reflective_dataset)]
+        return "\n\n".join(formatted_parts)
