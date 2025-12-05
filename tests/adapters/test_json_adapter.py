@@ -518,12 +518,10 @@ def test_json_adapter_formats_conversation_history():
         history: dspy.History = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    history = dspy.History(
-        messages=[
-            {"question": "What is the capital of France?", "answer": "Paris"},
-            {"question": "What is the capital of Germany?", "answer": "Berlin"},
-        ]
-    )
+    history = dspy.History(messages=[
+        {"question": "What is the capital of France?", "answer": "Paris"},
+        {"question": "What is the capital of Germany?", "answer": "Berlin"},
+    ], mode="signature")
 
     adapter = dspy.JSONAdapter()
     messages = adapter.format(MySignature, [], {"question": "What is the capital of France?", "history": history})

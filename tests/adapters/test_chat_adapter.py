@@ -408,7 +408,8 @@ def test_chat_adapter_formats_conversation_history():
         messages=[
             {"question": "What is the capital of France?", "answer": "Paris"},
             {"question": "What is the capital of Germany?", "answer": "Berlin"},
-        ]
+        ],
+        mode="signature",
     )
 
     adapter = dspy.ChatAdapter()
@@ -710,3 +711,340 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+class TestHistoryModes:
+    """Tests for History mode detection and adapter formatting."""
+
+    def test_history_mode_detection_flat_default(self):
+        """Messages with arbitrary keys are detected as flat mode (default)."""
+        history = dspy.History(messages=[{"question": "...", "answer": "..."}])
+        assert history.mode == "flat"
+
+    def test_history_mode_detection_demo(self):
+        """Messages with only input_fields/output_fields keys are detected as demo mode."""
+        history = dspy.History(messages=[{"input_fields": {"a": 1}, "output_fields": {"b": 2}}])
+        assert history.mode == "demo"
+
+    def test_history_mode_detection_demo_input_only(self):
+        """Messages with only input_fields are detected as demo mode."""
+        history = dspy.History(messages=[{"input_fields": {"a": 1}}])
+        assert history.mode == "demo"
+
+    def test_history_mode_detection_raw(self):
+        """Messages with role+content are detected as raw mode."""
+        history = dspy.History(messages=[{"role": "user", "content": "hello"}])
+        assert history.mode == "raw"
+
+    def test_history_mode_detection_raw_with_tool_calls(self):
+        """Raw mode detected for tool_calls messages."""
+        history = dspy.History(messages=[
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]}
+        ])
+        assert history.mode == "raw"
+
+    def test_history_mode_detection_flat_with_extra_keys(self):
+        """Messages with role+content AND extra keys fallback to flat mode."""
+        history = dspy.History(messages=[{"role": "user", "content": "hello", "extra": "data"}])
+        assert history.mode == "flat"
+
+    def test_history_mode_detection_flat_with_input_fields_and_extra(self):
+        """Messages with input_fields AND extra keys fallback to flat mode."""
+        history = dspy.History(messages=[{"question": "...", "input_fields": {"a": 1}}])
+        assert history.mode == "flat"
+
+    def test_history_explicit_mode_override(self):
+        """Explicit mode overrides auto-detection."""
+        history = dspy.History(messages=[{"question": "...", "answer": "..."}], mode="signature")
+        assert history.mode == "signature"
+
+    def test_history_validation_demo_non_dict_input_fields(self):
+        """Demo mode with non-dict input_fields raises ValueError."""
+        with pytest.raises(ValueError, match="'input_fields' must be a dict"):
+            dspy.History(messages=[{"input_fields": "not a dict"}])
+
+    def test_history_validation_raw_non_string_content(self):
+        """Raw mode with non-string content raises ValueError."""
+        with pytest.raises(ValueError, match="'content' must be a string, list, or None"):
+            dspy.History(messages=[{"role": "user", "content": 123}])
+
+    def test_history_validation_raw_allows_none_content(self):
+        """Raw mode allows None content for tool call messages."""
+        history = dspy.History(messages=[
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "1", "type": "function", "function": {"name": "test", "arguments": "{}"}}]}
+        ])
+        assert history.messages[0]["content"] is None
+
+    def test_history_validation_raw_non_string_role(self):
+        """Raw mode with non-string role raises ValueError."""
+        with pytest.raises(ValueError, match="'role' must be a string"):
+            dspy.History(messages=[{"role": 123, "content": "hello"}])
+
+    def test_history_explicit_demo_mode(self):
+        """Explicit mode='demo' sets demo mode."""
+        history = dspy.History(messages=[{"input_fields": {"a": 1}}], mode="demo")
+        assert history.mode == "demo"
+
+    def test_history_explicit_raw_mode(self):
+        """Explicit mode='raw' sets raw mode."""
+        history = dspy.History(messages=[{"role": "user", "content": "hello"}], mode="raw")
+        assert history.mode == "raw"
+
+    def test_history_explicit_signature_mode(self):
+        """Explicit mode='signature' sets signature mode."""
+        history = dspy.History(messages=[{"question": "...", "answer": "..."}], mode="signature")
+        assert history.mode == "signature"
+
+    def test_adapter_formats_demo_mode_history(self):
+        """Adapter correctly formats demo-mode history."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {
+                "input_fields": {"thought": "I need to search", "tool_name": "search"},
+                "output_fields": {"observation": "Results found"},
+            }
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (thought+tool_name), assistant (observation), user (question)
+        assert len(messages) == 4
+        assert messages[1]["role"] == "user"
+        assert "thought" in messages[1]["content"]
+        assert "tool_name" in messages[1]["content"]
+        assert messages[2]["role"] == "assistant"
+        assert "observation" in messages[2]["content"]
+
+    def test_adapter_formats_raw_mode_history(self):
+        """Adapter correctly formats raw-mode history."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (Hello), assistant (Hi there!), user (test question)
+        assert len(messages) == 4
+        assert messages[1] == {"role": "user", "content": "Hello"}
+        assert messages[2] == {"role": "assistant", "content": "Hi there!"}
+
+    def test_adapter_demo_mode_serializes_complex_values(self):
+        """Demo mode serializes non-primitive values to strings."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {
+                "input_fields": {"args": {"key": "value"}, "number": 42},
+                "output_fields": {"result": ["a", "b", "c"]},
+            }
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Values should be serialized to strings
+        assert "args" in messages[1]["content"]
+        assert "number" in messages[1]["content"]
+        assert "result" in messages[2]["content"]
+
+    def test_adapter_demo_mode_input_only(self):
+        """Demo mode with only input_fields produces only user message."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[{"input_fields": {"thought": "Thinking..."}}])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (thought), user (question)
+        assert len(messages) == 3
+        assert messages[1]["role"] == "user"
+        assert "thought" in messages[1]["content"]
+
+    def test_adapter_formats_flat_mode_history(self):
+        """Flat mode (default) puts all kv pairs in single user message."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {"thought": "I need to search", "tool_name": "search", "observation": "Results found"},
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (all fields), user (question)
+        assert len(messages) == 3
+        assert messages[1]["role"] == "user"
+        assert "thought" in messages[1]["content"]
+        assert "tool_name" in messages[1]["content"]
+        assert "observation" in messages[1]["content"]
+
+    def test_adapter_formats_signature_mode_history(self):
+        """Signature mode produces user/assistant pairs matching signature fields."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {"question": "What is 2+2?", "answer": "4"},
+        ], mode="signature")
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should have: system, user (question), assistant (answer), user (question)
+        assert len(messages) == 4
+        assert messages[1]["role"] == "user"
+        assert "What is 2+2?" in messages[1]["content"]
+        assert messages[2]["role"] == "assistant"
+        assert "4" in messages[2]["content"]
+
+    def test_history_with_messages_preserves_mode(self):
+        """with_messages() preserves mode and validates new messages."""
+        base = dspy.History(messages=[{"role": "user", "content": "hi"}])
+        extended = base.with_messages([{"role": "assistant", "content": "hello"}])
+        assert extended.mode == "raw"
+        assert len(extended.messages) == 2
+        assert extended.messages[1]["content"] == "hello"
+
+    def test_history_with_messages_validates_new_messages(self):
+        """with_messages() validates appended messages against the mode."""
+        base = dspy.History(messages=[{"role": "user", "content": "hi"}])
+        with pytest.raises(ValueError, match="'content' must be a string"):
+            base.with_messages([{"role": "assistant", "content": 123}])
+
+    def test_history_raw_mode_allows_multimodal_content(self):
+        """Raw mode allows list content for multimodal messages."""
+        history = dspy.History(messages=[
+            {"role": "user", "content": [{"type": "text", "text": "Hello"}, {"type": "image_url", "image_url": {"url": "..."}}]},
+        ])
+        assert history.mode == "raw"
+        assert isinstance(history.messages[0]["content"], list)
+
+    def test_adapter_backward_compat_flat_treated_as_signature(self):
+        """Flat-mode history with signature-like keys is treated as signature-mode for backward compat."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        # Old-style: no explicit mode, but keys match signature
+        history = dspy.History(messages=[
+            {"question": "What is 2+2?", "answer": "4"},
+        ])
+        assert history.mode == "flat"  # Mode is flat
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # But adapter formats as signature-mode (user/assistant pairs) for backward compat
+        assert len(messages) == 4
+        assert messages[1]["role"] == "user"
+        assert messages[2]["role"] == "assistant"
+
+    def test_adapter_flat_mode_stays_flat_with_non_signature_keys(self):
+        """Flat-mode with keys NOT matching signature stays truly flat (single user messages)."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        # Keys don't match signature fields - should stay flat
+        history = dspy.History(messages=[
+            {"thought": "I need to search", "tool_name": "search", "observation": "Found it"},
+        ])
+        assert history.mode == "flat"
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should stay flat: system, user (all fields in one), user (question)
+        assert len(messages) == 3
+        assert messages[1]["role"] == "user"
+        assert "thought" in messages[1]["content"]
+        assert "tool_name" in messages[1]["content"]
+        assert "observation" in messages[1]["content"]
+
+    def test_adapter_flat_mode_without_output_fields_stays_flat(self):
+        """Flat-mode history with only input-like keys (no output fields) stays flat."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        # Only has "question" (input field), no "answer" (output field) - should stay flat
+        history = dspy.History(messages=[{"question": "What is 2+2?"}])
+        assert history.mode == "flat"
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should stay flat (no output field overlap): system, user (question), user (current)
+        assert len(messages) == 3
+        assert messages[1]["role"] == "user"
+        assert messages[2]["role"] == "user"
+
+    def test_serialize_kv_value_with_unserializable_object(self):
+        """_serialize_kv_value handles objects that fail str() gracefully."""
+        class Unserializable:
+            def __str__(self):
+                raise RuntimeError("Cannot serialize")
+
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {"data": Unserializable(), "normal": "value"},
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Should not crash, and should contain the fallback placeholder
+        assert len(messages) == 3
+        assert "<unserializable Unserializable>" in messages[1]["content"]
+        assert "normal" in messages[1]["content"]
+
+    def test_serialize_kv_value_with_complex_objects(self):
+        """_serialize_kv_value serializes complex objects to their string representation."""
+        class MySignature(dspy.Signature):
+            question: str = dspy.InputField()
+            history: dspy.History = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        history = dspy.History(messages=[
+            {"nested_dict": {"key": "value"}, "a_list": [1, 2, 3], "number": 42},
+        ])
+
+        adapter = dspy.ChatAdapter()
+        messages = adapter.format(MySignature, [], {"question": "test", "history": history})
+
+        # Complex objects should be stringified
+        assert "nested_dict" in messages[1]["content"]
+        assert "a_list" in messages[1]["content"]
+        # Primitives pass through
+        assert "42" in messages[1]["content"]
