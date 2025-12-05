@@ -13,8 +13,8 @@ from tests.reliability.generate.utils import (
 def generate_test_cases(
     dst_path: str,
     num_inputs: int = 1,
-    program_instructions: Optional[str] = None,
-    input_instructions: Optional[str] = None,
+    program_instructions: str | None = None,
+    input_instructions: str | None = None,
 ) -> list[GeneratedTestCase]:
     os.makedirs(dst_path, exist_ok=True)
     if _directory_contains_program(dst_path):

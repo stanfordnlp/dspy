@@ -2,8 +2,9 @@ import functools
 import inspect
 import logging
 import uuid
+from collections.abc import Callable
 from contextvars import ContextVar
-from typing import Any, Callable
+from typing import Any
 
 import dspy
 
