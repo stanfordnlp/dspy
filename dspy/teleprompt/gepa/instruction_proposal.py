@@ -315,36 +315,26 @@ class MultiModalInstructionProposer(ProposalFn):
 
         return updated_components
 
+
 class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
-    """I provided an assistant with predictor instructions and tool descriptions, 
+    """I provided an assistant with predictor instructions and tool descriptions,
     but its performance needs improvement based on the examples_with_feedback below.
 
-    Your task is to propose better predictor instructions, tool descriptions, and tool argument descriptions that address the issues shown in these examples. 
+    Your task is to propose better predictor instructions, tool descriptions, and tool argument descriptions that address the issues shown in these examples.
     Focus on reinforcing patterns that clearly improve the assistant's performance on similar tasks, rather than rewriting everything from scratch unless necessary.
-    These components are progressively optimized - refine only what needs to change. 
+    These components are progressively optimized - refine only what needs to change.
 
-    Analyze the examples_with_feedback to identify success and failure patterns, and write improved instructions and descriptions at their appropriate level of abstraction and/or specificity, 
+    Analyze the examples_with_feedback to identify success and failure patterns, and write improved instructions and descriptions at their appropriate level of abstraction and/or specificity,
     so that each layer plays a clear, complementary role without unnecessary repetition or verbosity unless redundancy clearly helps the assistant's performance.
     """
 
-    current_predictor_instruction = dspy.InputField(
-        desc="Current instruction guiding the predictor"
-    )
-    current_tools = dspy.InputField(
-        annotation=list[dspy.Tool],
-        desc="Available tools with their complete schemas"
-    )
-    examples_with_feedback = dspy.InputField(
-        desc="Execution examples with feedback showing successes and failures"
-    )
+    current_predictor_instruction = dspy.InputField(desc="Current instruction guiding the predictor")
+    current_tools = dspy.InputField(annotation=list[dspy.Tool], desc="Available tools with their complete schemas")
+    examples_with_feedback = dspy.InputField(desc="Execution examples with feedback showing successes and failures")
 
     improved_predictor_instruction: str | None = dspy.OutputField(
-        desc="Improved instruction for the predictor",
-        default=None
+        desc="Improved instruction for the predictor", default=None
     )
-
-
-
 
 
 class ToolProposer(ProposalFn):
@@ -382,7 +372,10 @@ class ToolProposer(ProposalFn):
 
         for module_key in components_to_update:
             if module_key not in candidate or module_key not in reflective_dataset:
-                logger.debug(f"Skipping {module_key}: not in candidate={module_key not in candidate}, not in reflective_dataset={module_key not in reflective_dataset}")
+                logger.debug(
+                    f"Skipping {module_key}: not in candidate={module_key not in candidate}, not in "
+                    "reflective_dataset={module_key not in reflective_dataset}"
+                )
                 continue
             current_module_config = json.loads(candidate[module_key])
 
@@ -412,10 +405,7 @@ class ToolProposer(ProposalFn):
 
                 signature = signature.append(
                     f"improved_tool_{tool_name}_desc",
-                    dspy.OutputField(
-                        desc=f"Improved description of tool '{tool_name}'",
-                        default=None
-                    )
+                    dspy.OutputField(desc=f"Improved description of tool '{tool_name}'", default=None),
                 )
 
                 for arg_name in tool_info["args"].keys():
@@ -423,8 +413,8 @@ class ToolProposer(ProposalFn):
                         f"improved_tool_{tool_name}_arg_{arg_name}_desc",
                         dspy.OutputField(
                             desc=f"Improved description of the argument '{arg_name}' of tool '{tool_name}'",
-                            default=None
-                        )
+                            default=None,
+                        ),
                     )
 
             kwargs = {
@@ -435,12 +425,11 @@ class ToolProposer(ProposalFn):
             # If module has extract predictor, add extract fields
             if extract_predictor_key is not None:
                 signature = signature.append(
-                    "current_extract_instruction",
-                    dspy.InputField(desc="Current instruction for extraction predictor")
+                    "current_extract_instruction", dspy.InputField(desc="Current instruction for extraction predictor")
                 )
                 signature = signature.append(
                     "improved_extract_instruction",
-                    dspy.OutputField(desc="Improved instruction for extraction", default=None)
+                    dspy.OutputField(desc="Improved instruction for extraction", default=None),
                 )
                 kwargs["current_extract_instruction"] = current_module_config[extract_predictor_key]
 

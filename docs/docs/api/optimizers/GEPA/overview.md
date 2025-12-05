@@ -119,7 +119,7 @@ Practical Recipe for GEPA-Friendly Feedback:
 
 ## Tool Optimization with GEPA
 
-When `enable_tool_optimization=True`, GEPA jointly optimizes `dspy.ReAct` modules. This lets the optimizer update predictor instructions and tool descriptions/argument descriptions together, based on execution traces and feedback, instead of keeping tool behavior fixed.
+When `enable_tool_optimization=True`, GEPA jointly optimizes `dspy.ReAct` modules with the tools - GEPA updates predictor instructions and tool descriptions/argument descriptions together, based on execution traces and feedback, instead of keeping tool behavior fixed.
 
 For details, examples, and the underlying design (tool discovery, naming requirements, and interaction with custom instruction proposers), see [Tool Optimization](GEPA_Advanced.md#tool-optimization).
 
