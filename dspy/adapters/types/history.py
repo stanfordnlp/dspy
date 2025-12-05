@@ -5,40 +5,42 @@ import pydantic
 
 
 class History(pydantic.BaseModel):
-    """Class representing conversation history.
+    """Class representing conversation history for DSPy modules.
 
-    History supports four message formats via the `mode` parameter:
+    History allows you to pass previous conversation turns or context to a module.
+    Use factory methods to create History objects - DSPy will handle formatting automatically.
 
-    1. **Raw mode**: Direct LM messages with `{"role": "...", "content": "..."}`.
-       Used for ReAct trajectories and native tool calling.
-       ```python
-       history = dspy.History(messages=[
-           {"role": "user", "content": "Hello"},
-           {"role": "assistant", "content": "Hi there!"},
-       ], mode="raw")
-       ```
+    **Chat-style history** (LM messages):
+        ```python
+        history = dspy.History.from_raw([
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+        ])
+        ```
 
-    2. **Demo mode**: Nested `{"input_fields": {...}, "output_fields": {...}}` pairs.
-       Used for few-shot demonstrations with explicit input/output separation.
-       ```python
-       history = dspy.History(messages=[
-           {"input_fields": {"question": "2+2?"}, "output_fields": {"answer": "4"}},
-       ], mode="demo")
-       ```
+    **Signature-matched history** (previous input/output pairs):
+        ```python
+        history = dspy.History.from_signature_pairs([
+            {"question": "What is 2+2?", "answer": "4"},
+        ])
+        ```
 
-    3. **Flat mode** (default): Arbitrary key-value pairs in a single user message.
-       ```python
-       history = dspy.History(messages=[
-           {"thought": "I need to search", "tool_name": "search", "observation": "Found it"},
-       ])
-       ```
+    **Few-shot demonstrations**:
+        ```python
+        history = dspy.History.from_demos([
+            {"input_fields": {"question": "2+2?"}, "output_fields": {"answer": "4"}},
+        ])
+        ```
 
-    4. **Signature mode**: Dict keys match signature fields → user/assistant pairs.
-       ```python
-       history = dspy.History(messages=[
-           {"question": "What is 2+2?", "answer": "4"},
-       ], mode="signature")
-       ```
+    **Arbitrary context** (key-value pairs as user messages):
+        ```python
+        history = dspy.History.from_kv([
+            {"thought": "I need to search", "tool": "search", "result": "Found it"},
+        ])
+        ```
+
+    You can also pass `History(messages=[...])` directly - DSPy will infer the format
+    from the message structure when possible.
 
     Example:
         ```python
@@ -46,44 +48,39 @@ class History(pydantic.BaseModel):
 
         dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
-        class MySignature(dspy.Signature):
+        class QA(dspy.Signature):
             question: str = dspy.InputField()
             history: dspy.History = dspy.InputField()
             answer: str = dspy.OutputField()
 
-        history = dspy.History(messages=[
-            {"question": "What is the capital of France?", "answer": "Paris"},
-        ], mode="signature")
+        predict = dspy.Predict(QA)
 
-        predict = dspy.Predict(MySignature)
-        outputs = predict(question="What is the capital of France?", history=history)
-        ```
+        # First turn
+        result = predict(question="What is the capital of France?")
 
-    Example of capturing the conversation history:
-        ```python
-        import dspy
+        # Build history from previous turn
+        history = dspy.History.from_signature_pairs([
+            {"question": "What is the capital of France?", **result}
+        ])
 
-        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-
-        class MySignature(dspy.Signature):
-            question: str = dspy.InputField()
-            history: dspy.History = dspy.InputField()
-            answer: str = dspy.OutputField()
-
-        predict = dspy.Predict(MySignature)
-        outputs = predict(question="What is the capital of France?")
-        history = dspy.History(messages=[{"question": "What is the capital of France?", **outputs}], mode="signature")
-        outputs_with_history = predict(question="Are you sure?", history=history)
+        # Follow-up with context
+        result = predict(question="What about Germany?", history=history)
         ```
     """
 
     messages: list[dict[str, Any]]
     mode: Literal["signature", "demo", "flat", "raw"] = "flat"
-    """The message format mode for this history.
+    """Advanced: Override the message format mode.
 
-    Note: For backward compatibility, some adapters (e.g., ChatAdapter) may treat
-    flat-mode histories whose keys match a signature's fields as signature-mode,
-    formatting them as user/assistant pairs rather than single user messages.
+    In most cases, use factory methods (from_raw, from_demos, from_signature_pairs,
+    from_kv) instead of setting this directly. DSPy can also infer the mode from
+    message structure for raw and demo formats.
+
+    Modes:
+    - "raw": LM-style messages with role/content
+    - "demo": Few-shot examples with input_fields/output_fields
+    - "signature": Dict keys match signature fields → user/assistant pairs
+    - "flat": Arbitrary key-value pairs → single user messages (default)
     """
 
     model_config = pydantic.ConfigDict(
@@ -173,3 +170,69 @@ class History(pydantic.BaseModel):
     def with_messages(self, messages: list[dict[str, Any]]) -> "History":
         """Return a new History with additional messages appended."""
         return History(messages=[*self.messages, *messages], mode=self.mode)
+
+    @classmethod
+    def from_raw(cls, messages: list[dict[str, Any]]) -> "History":
+        """Create History from LM-style messages with role/content.
+
+        Use this for chat-style conversation history or ReAct trajectories
+        that are already formatted as LM messages.
+
+        Example:
+            ```python
+            history = dspy.History.from_raw([
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there!"},
+            ])
+            ```
+        """
+        return cls(messages=messages, mode="raw")
+
+    @classmethod
+    def from_demos(cls, examples: list[dict[str, Any]]) -> "History":
+        """Create History from few-shot demonstration examples.
+
+        Each example should have 'input_fields' and/or 'output_fields' keys
+        containing the respective field dictionaries.
+
+        Example:
+            ```python
+            history = dspy.History.from_demos([
+                {"input_fields": {"question": "2+2?"}, "output_fields": {"answer": "4"}},
+            ])
+            ```
+        """
+        return cls(messages=examples, mode="demo")
+
+    @classmethod
+    def from_signature_pairs(cls, messages: list[dict[str, Any]]) -> "History":
+        """Create History from signature-matched field pairs.
+
+        Each message dict should have keys matching the signature's input/output
+        fields. Each dict becomes a user/assistant message pair.
+
+        Example:
+            ```python
+            history = dspy.History.from_signature_pairs([
+                {"question": "What is 2+2?", "answer": "4"},
+            ])
+            ```
+        """
+        return cls(messages=messages, mode="signature")
+
+    @classmethod
+    def from_kv(cls, messages: list[dict[str, Any]]) -> "History":
+        """Create History from arbitrary key-value context.
+
+        Each dict becomes a single user message containing all key-value pairs.
+        Use this when you want to pass context that should NOT be split into
+        user/assistant turns.
+
+        Example:
+            ```python
+            history = dspy.History.from_kv([
+                {"thought": "I need to search", "tool": "search", "result": "Found it"},
+            ])
+            ```
+        """
+        return cls(messages=messages, mode="flat")
