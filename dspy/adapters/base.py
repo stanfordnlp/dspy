@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import TYPE_CHECKING, Any, get_origin
 
@@ -476,11 +477,15 @@ class Adapter:
                 return name
         return None
 
-    def _serialize_kv_value(self, v: Any) -> Any:
-        """Safely serialize values for kv-mode formatting."""
-        if isinstance(v, (str, int, float, bool)) or v is None:
-            return v
-        return serialize_for_json(v)
+    def _serialize_kv_value(self, v: Any) -> str:
+        """Serialize a value to string for flat-mode history formatting.
+
+        Uses the same pattern as format_field_value in adapters/utils.py.
+        """
+        jsonable = serialize_for_json(v)
+        if isinstance(jsonable, (dict, list)):
+            return json.dumps(jsonable, ensure_ascii=False)
+        return str(jsonable)
 
     def _make_dynamic_signature_for_inputs(self, keys: list[str]) -> type[Signature]:
         """Create a dynamic signature with input fields only (no instructions)."""
