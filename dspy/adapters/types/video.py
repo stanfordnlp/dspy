@@ -162,7 +162,8 @@ class Video(Type):
             if self.url:
                 if is_youtube_url(self.url):
                     # YouTube URLs - pass through for Gemini native handling
-                    return [{"type": "file", "file": {"file_data": self.url, "filename": self.filename or "youtube_video"}}]
+                    # Must include format so LiteLLM uses file_uri instead of trying to download
+                    return [{"type": "file", "file": {"file_data": self.url, "filename": self.filename or "youtube_video", "format": "video/mp4"}}]
 
                 if self.url.startswith("data:"):
                     # Already a data URI
