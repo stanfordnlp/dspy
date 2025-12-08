@@ -43,6 +43,7 @@ nav:
             - Program Of Thought: tutorials/program_of_thought/index.ipynb
             - Image Generation Prompt iteration: tutorials/image_generation_prompting/index.ipynb
             - Audio: tutorials/audio/index.ipynb
+            - Video Understanding with Gemini: tutorials/video/index.md
         - Optimize AI Programs with DSPy:
             - Overview: tutorials/optimize_ai_program/index.md
             - Math Reasoning: tutorials/math/index.ipynb
@@ -144,6 +145,7 @@ nav:
             - Prediction: api/primitives/Prediction.md
             - Tool: api/primitives/Tool.md
             - ToolCalls: api/primitives/ToolCalls.md
+            - Video: api/primitives/Video.md
         - Signatures:
             - InputField: api/signatures/InputField.md
             - OutputField: api/signatures/OutputField.md
