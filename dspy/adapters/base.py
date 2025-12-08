@@ -487,14 +487,6 @@ class Adapter:
             return json.dumps(jsonable, ensure_ascii=False)
         return str(jsonable)
 
-    def _make_dynamic_signature_for_inputs(self, keys: list[str]) -> type[Signature]:
-        """Create a dynamic signature with input fields only (no instructions)."""
-        return Signature({k: InputField() for k in keys}, instructions="")
-
-    def _make_dynamic_signature_for_outputs(self, keys: list[str]) -> type[Signature]:
-        """Create a dynamic signature with output fields only (no instructions)."""
-        return 
-
     def format_conversation_history(
         self,
         signature: type[Signature],
@@ -579,7 +571,7 @@ class Adapter:
         result = []
         for msg in messages:
             serialized = {k: self._serialize_kv_value(v) for k, v in msg.items()}
-            sig = self._make_dynamic_signature_for_inputs(list(serialized.keys()))
+            sig = Signature({k: InputField() for k in serialized.keys()}, instructions="")
             result.append({
                 "role": "user",
                 "content": self.format_user_message_content(sig, serialized),
