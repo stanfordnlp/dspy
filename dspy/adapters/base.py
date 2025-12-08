@@ -493,7 +493,7 @@ class Adapter:
 
     def _make_dynamic_signature_for_outputs(self, keys: list[str]) -> type[Signature]:
         """Create a dynamic signature with output fields only (no instructions)."""
-        return Signature({k: OutputField() for k in keys}, instructions="")
+        return 
 
     def format_conversation_history(
         self,
@@ -544,14 +544,14 @@ class Adapter:
         for msg in messages:
             if "input_fields" in msg:
                 input_dict = {k: self._serialize_kv_value(v) for k, v in msg["input_fields"].items()}
-                sig = self._make_dynamic_signature_for_inputs(list(input_dict.keys()))
+                sig = Signature({k: InputField() for k in input_dict.keys()}, instructions="")
                 result.append({
                     "role": "user",
                     "content": self.format_user_message_content(sig, input_dict),
                 })
             if "output_fields" in msg:
                 output_dict = {k: self._serialize_kv_value(v) for k, v in msg["output_fields"].items()}
-                sig = self._make_dynamic_signature_for_outputs(list(output_dict.keys()))
+                sig = Signature({k: OutputField() for k in output_dict.keys()}, instructions="")
                 result.append({
                     "role": "assistant",
                     "content": self.format_assistant_message_content(sig, output_dict),
