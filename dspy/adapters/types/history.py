@@ -5,42 +5,62 @@ import pydantic
 
 
 class History(pydantic.BaseModel):
-    """Class representing conversation history for DSPy modules.
+    """
+    Class representing conversation history for DSPy modules.
 
-    History allows you to pass previous conversation turns or context to a module.
-    Use factory methods to create History objects - DSPy will handle formatting automatically.
+    The `History` class allows you to attach previous conversation turns or context to a module.
+    By default, DSPy will auto-detect the appropriate message format based on your data's structure,
+    making it easy to work with different LM and prompt formats without manual intervention.
 
-    **Chat-style history** (LM messages):
+    In most cases, you can just use:
         ```python
-        history = dspy.History.from_raw([
+        history = dspy.History(messages=[...])
+        ```
+    and DSPy will infer the message mode (chat, demo, flat, etc.) for you.
+
+    **If needed, you can specify the mode explicitly**
+    (e.g., if auto-detection guesses incorrectly, or for advanced use cases):
+        ```python
+        history = dspy.History(messages=[...], mode="demo")  # force demo mode
+        ```
+
+    Modes:
+    - "raw": LM-style messages with role/content
+    - "demo": Few-shot examples with input_fields/output_fields
+    - "signature": Dict keys match signature fields → user/assistant pairs
+    - "flat": Arbitrary key-value pairs → single user messages (default)
+
+    **Raw mode: Chat-style history (LM messages):**
+        ```python
+        history = dspy.History(messages=[
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there!"},
         ])
         ```
 
-    **Signature-matched history** (previous input/output pairs):
+    **Signature mode: Signature-matched history (previous input/output pairs):**
         ```python
-        history = dspy.History.from_signature_pairs([
+        history = dspy.History(messages=[
             {"question": "What is 2+2?", "answer": "4"},
         ])
         ```
 
-    **Few-shot demonstrations**:
+    **Demo mode: Few-shot demonstrations:**
         ```python
-        history = dspy.History.from_demos([
+        history = dspy.History(messages=[
             {"input_fields": {"question": "2+2?"}, "output_fields": {"answer": "4"}},
         ])
         ```
 
-    **Arbitrary context** (key-value pairs as user messages):
+    **Flat mode: Arbitrary context (key-value pairs as user messages):**
         ```python
-        history = dspy.History.from_kv([
+        history = dspy.History(messages=[
             {"thought": "I need to search", "tool": "search", "result": "Found it"},
         ])
         ```
 
-    You can also pass `History(messages=[...])` directly - DSPy will infer the format
-    from the message structure when possible.
+    In summary: Just pass `dspy.History(messages=[...])` and auto-detect will do the right thing most of the time.
+    Override the `mode` argument only if DSPy cannot reliably infer the correct message format for your use case.
 
     Example:
         ```python
@@ -58,10 +78,13 @@ class History(pydantic.BaseModel):
         # First turn
         result = predict(question="What is the capital of France?")
 
-        # Build history from previous turn
-        history = dspy.History.from_signature_pairs([
+        # Build history from previous turn using auto-detect
+        history = dspy.History(messages=[
             {"question": "What is the capital of France?", **result}
         ])
+
+        # Or, explicitly specify mode if needed
+        # history = dspy.History(messages=[...], mode="signature")
 
         # Follow-up with context
         result = predict(question="What about Germany?", history=history)
@@ -70,18 +93,6 @@ class History(pydantic.BaseModel):
 
     messages: list[dict[str, Any]]
     mode: Literal["signature", "demo", "flat", "raw"] = "flat"
-    """Advanced: Override the message format mode.
-
-    In most cases, use factory methods (from_raw, from_demos, from_signature_pairs,
-    from_kv) instead of setting this directly. DSPy can also infer the mode from
-    message structure for raw and demo formats.
-
-    Modes:
-    - "raw": LM-style messages with role/content
-    - "demo": Few-shot examples with input_fields/output_fields
-    - "signature": Dict keys match signature fields → user/assistant pairs
-    - "flat": Arbitrary key-value pairs → single user messages (default)
-    """
 
     model_config = pydantic.ConfigDict(
         frozen=True,
@@ -97,7 +108,7 @@ class History(pydantic.BaseModel):
         Detection rules (conservative):
         - Raw: has "role" key and ONLY LM-like keys (role, content, tool_calls, tool_call_id, name)
         - Demo: keys are ONLY "input_fields" and/or "output_fields"
-        - Flat: everything else (signature mode must be explicit)
+        - Flat: everything else (signature mode must be explicit, and is applied retroactively inside the adapter)
         """
         keys = set(msg.keys())
         lm_keys = {"role", "content", "tool_calls", "tool_call_id", "name"}

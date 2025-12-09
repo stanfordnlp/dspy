@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 
 import dspy
@@ -33,14 +35,30 @@ class TestHistoryModeDetection:
         ])
         assert history.mode == "raw"
 
+    def test_detects_raw_mode_with_tool_call_id(self):
+        """Raw mode detected for tool response messages with tool_call_id."""
+        history = dspy.History(messages=[
+            {"role": "tool", "content": "result", "tool_call_id": "call_123"}
+        ])
+        assert history.mode == "raw"
+
+    def test_detects_raw_mode_with_name(self):
+        """Raw mode detected for messages with name field."""
+        history = dspy.History(messages=[
+            {"role": "user", "content": "hello", "name": "alice"}
+        ])
+        assert history.mode == "raw"
+
     def test_flat_with_extra_keys_beyond_role_content(self):
-        """Messages with role+content AND extra keys fallback to flat mode."""
-        history = dspy.History(messages=[{"role": "user", "content": "hello", "extra": "data"}])
+        """Messages with role+content AND extra keys fallback to flat mode with warning."""
+        with pytest.warns(UserWarning, match="Did you mean to use mode='raw'"):
+            history = dspy.History(messages=[{"role": "user", "content": "hello", "extra": "data"}])
         assert history.mode == "flat"
 
     def test_flat_with_input_fields_and_extra_keys(self):
-        """Messages with input_fields AND extra keys fallback to flat mode."""
-        history = dspy.History(messages=[{"question": "...", "input_fields": {"a": 1}}])
+        """Messages with input_fields AND extra keys fallback to flat mode with warning."""
+        with pytest.warns(UserWarning, match="Did you mean to use mode='demo'"):
+            history = dspy.History(messages=[{"question": "...", "input_fields": {"a": 1}}])
         assert history.mode == "flat"
 
 
@@ -52,20 +70,15 @@ class TestHistoryExplicitMode:
         history = dspy.History(messages=[{"question": "...", "answer": "..."}], mode="signature")
         assert history.mode == "signature"
 
-    def test_explicit_demo_mode(self):
-        """Explicit mode='demo' sets demo mode."""
-        history = dspy.History(messages=[{"input_fields": {"a": 1}}], mode="demo")
-        assert history.mode == "demo"
-
-    def test_explicit_raw_mode(self):
-        """Explicit mode='raw' sets raw mode."""
-        history = dspy.History(messages=[{"role": "user", "content": "hello"}], mode="raw")
-        assert history.mode == "raw"
-
-    def test_explicit_signature_mode(self):
-        """Explicit mode='signature' sets signature mode."""
-        history = dspy.History(messages=[{"question": "...", "answer": "..."}], mode="signature")
-        assert history.mode == "signature"
+    @pytest.mark.parametrize("messages,mode", [
+        ([{"input_fields": {"a": 1}}], "demo"),
+        ([{"role": "user", "content": "hello"}], "raw"),
+        ([{"question": "...", "answer": "..."}], "signature"),
+    ])
+    def test_explicit_mode_sets_mode(self, messages, mode):
+        """Explicit mode sets the specified mode."""
+        history = dspy.History(messages=messages, mode=mode)
+        assert history.mode == mode
 
 
 class TestHistoryValidation:
@@ -75,6 +88,22 @@ class TestHistoryValidation:
         """Demo mode with non-dict input_fields raises ValueError."""
         with pytest.raises(ValueError, match="'input_fields' must be a dict"):
             dspy.History(messages=[{"input_fields": "not a dict"}])
+
+    def test_demo_mode_requires_dict_output_fields(self):
+        """Demo mode with non-dict output_fields raises ValueError."""
+        with pytest.raises(ValueError, match="'output_fields' must be a dict"):
+            dspy.History(messages=[{"output_fields": "not a dict"}])
+
+    def test_signature_mode_requires_non_empty_dict(self):
+        """Signature mode with empty dict raises ValueError."""
+        with pytest.raises(ValueError, match="messages must be non-empty dicts"):
+            dspy.History(messages=[{}], mode="signature")
+
+    def test_empty_messages_list(self):
+        """Empty messages list is allowed."""
+        history = dspy.History(messages=[])
+        assert history.messages == []
+        assert history.mode == "flat"
 
     def test_raw_mode_requires_string_or_list_or_none_content(self):
         """Raw mode with invalid content type raises ValueError."""
@@ -123,38 +152,18 @@ class TestHistoryWithMessages:
 class TestHistoryFactoryMethods:
     """Tests for History factory methods."""
 
-    def test_from_raw_creates_raw_mode(self):
-        """from_raw() creates History with raw mode."""
-        history = dspy.History.from_raw([
-            {"role": "user", "content": "Hello"},
-            {"role": "assistant", "content": "Hi!"},
-        ])
-        assert history.mode == "raw"
-        assert len(history.messages) == 2
-
-    def test_from_demos_creates_demo_mode(self):
-        """from_demos() creates History with demo mode."""
-        history = dspy.History.from_demos([
-            {"input_fields": {"question": "2+2?"}, "output_fields": {"answer": "4"}},
-        ])
-        assert history.mode == "demo"
-        assert len(history.messages) == 1
-
-    def test_from_signature_pairs_creates_signature_mode(self):
-        """from_signature_pairs() creates History with signature mode."""
-        history = dspy.History.from_signature_pairs([
-            {"question": "What is 2+2?", "answer": "4"},
-        ])
-        assert history.mode == "signature"
-        assert len(history.messages) == 1
-
-    def test_from_kv_creates_flat_mode(self):
-        """from_kv() creates History with flat mode."""
-        history = dspy.History.from_kv([
-            {"thought": "I need to search", "tool": "search", "result": "Found it"},
-        ])
-        assert history.mode == "flat"
-        assert len(history.messages) == 1
+    @pytest.mark.parametrize("factory_name,args,expected_mode,expected_len", [
+        ("from_raw", [[{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi!"}]], "raw", 2),
+        ("from_demos", [[{"input_fields": {"question": "2+2?"}, "output_fields": {"answer": "4"}}]], "demo", 1),
+        ("from_signature_pairs", [[{"question": "What is 2+2?", "answer": "4"}]], "signature", 1),
+        ("from_kv", [[{"thought": "I need to search", "tool": "search", "result": "Found it"}]], "flat", 1),
+    ])
+    def test_factory_creates_correct_mode(self, factory_name, args, expected_mode, expected_len):
+        """Factory methods create History with the correct mode."""
+        factory = getattr(dspy.History, factory_name)
+        history = factory(*args)
+        assert history.mode == expected_mode
+        assert len(history.messages) == expected_len
 
 
 class TestHistorySerialization:
