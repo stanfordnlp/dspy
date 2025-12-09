@@ -562,6 +562,11 @@ def make_signature(
         names = dict(typing.__dict__)
         names.update(custom_types)
 
+    # Prepare accepted types for fields
+    known_types = (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm, types.UnionType)
+    if sys.version_info >= (3, 12):
+        known_types += (typing.TypeAliasType,)
+
     fields = _parse_signature(signature, names) if isinstance(signature, str) else signature
 
     # Validate the fields, this is important because we sometimes forget the
@@ -581,9 +586,7 @@ def make_signature(
         # program of thought and teleprompters, so we just silently default to string.
         if type_ is None:
             type_ = str
-        if not isinstance(
-            type_, (type, typing._GenericAlias, types.GenericAlias, typing._SpecialForm, types.UnionType)
-        ):
+        if not isinstance(type_, known_types):
             raise ValueError(f"Field types must be types, but received: {type_} of type {type(type_)}.")
         if not isinstance(field, FieldInfo):
             raise ValueError(f"Field values must be Field instances, but received: {field}.")
