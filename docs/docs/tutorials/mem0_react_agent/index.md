@@ -121,9 +121,9 @@ class MemoryTools:
         except Exception as e:
             return f"Error deleting memory: {str(e)}"
 
-def get_current_time() -> str:
-    """Get the current date and time."""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    def get_current_time() -> str:
+        """Get the current date and time."""
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 ```
 
 ## Step 3: Build the Memory-Enhanced ReAct Agent
