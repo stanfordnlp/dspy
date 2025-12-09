@@ -35,9 +35,19 @@ def is_youtube_url(url: str) -> bool:
     return parsed.netloc in youtube_domains
 
 
+def is_gcs_url(url: str) -> bool:
+    """Check if a URL is a Google Cloud Storage URL (gs://)."""
+    if not isinstance(url, str):
+        return False
+    return url.startswith("gs://")
+
+
 def is_video_url(url: str) -> bool:
-    """Check if a string is a valid video URL."""
+    """Check if a string is a valid video URL (HTTP, HTTPS, or GCS)."""
     try:
+        # Check for GCS URLs first
+        if is_gcs_url(url):
+            return True
         result = urlparse(url)
         return all([result.scheme in ("http", "https"), result.netloc])
     except ValueError:
@@ -60,6 +70,7 @@ class Video(Type):
     - Local file paths (encoded as base64 for files <20MB)
     - Remote HTTP(S) URLs
     - YouTube URLs (native Gemini support)
+    - Google Cloud Storage URIs (gs://)
     - Raw bytes
     - Pre-uploaded file IDs from Gemini Files API
 
@@ -78,6 +89,9 @@ class Video(Type):
 
         # From YouTube
         video = dspy.Video("https://www.youtube.com/watch?v=VIDEO_ID")
+
+        # From Google Cloud Storage
+        video = dspy.Video("gs://my-bucket/videos/sample.mp4")
 
         # From pre-uploaded file ID
         video = dspy.Video(file_id="files/abc123", mime_type="video/mp4")
@@ -165,6 +179,21 @@ class Video(Type):
                     # Must include format so LiteLLM uses file_uri instead of trying to download
                     return [{"type": "file", "file": {"file_data": self.url, "filename": self.filename or "youtube_video", "format": "video/mp4"}}]
 
+                if is_gcs_url(self.url):
+                    # GCS URLs (gs://) - Gemini natively supports these
+                    # LiteLLM extracts MIME type from extension, but we pass it if available
+                    file_dict = {"file_data": self.url}
+                    if self.filename:
+                        file_dict["filename"] = self.filename
+                    if self.mime_type:
+                        file_dict["format"] = self.mime_type
+                    else:
+                        # Try to detect MIME type from the GCS path extension
+                        detected_mime = get_video_mime_type(self.url)
+                        if detected_mime:
+                            file_dict["format"] = detected_mime
+                    return [{"type": "file", "file": file_dict}]
+
                 if self.url.startswith("data:"):
                     # Already a data URI
                     file_dict = {"file_data": self.url}
@@ -197,6 +226,8 @@ class Video(Type):
                 parts.append(f"url=<DATA_URI({mime}, {len_data} chars)>")
             elif is_youtube_url(self.url):
                 parts.append(f"url='{self.url}' (YouTube)")
+            elif is_gcs_url(self.url):
+                parts.append(f"url='{self.url}' (GCS)")
             else:
                 parts.append(f"url='{self.url}'")
         if self.file_id is not None:
@@ -327,6 +358,41 @@ class Video(Type):
             Video instance referencing the uploaded file
         """
         return cls(file_id=file_id, filename=filename, mime_type=mime_type)
+
+    @classmethod
+    def from_gcs(cls, gcs_uri: str, filename: str | None = None, mime_type: str | None = None) -> "Video":
+        """Create a Video from a Google Cloud Storage URI.
+
+        Args:
+            gcs_uri: GCS URI in format gs://bucket-name/path/to/video.mp4
+            filename: Optional filename (defaults to basename of path)
+            mime_type: Optional MIME type (auto-detected from URI extension if not provided)
+
+        Returns:
+            Video instance referencing the GCS URI
+
+        Note:
+            The GCS bucket must be accessible to the Gemini API. For Vertex AI,
+            this typically means the bucket should be in the same project or
+            have appropriate IAM permissions.
+
+        Example:
+            ```python
+            video = dspy.Video.from_gcs("gs://my-bucket/videos/sample.mp4")
+            result = qa(video=video, question="What is in this video?")
+            ```
+        """
+        if not is_gcs_url(gcs_uri):
+            raise ValueError(f"Not a valid GCS URI (must start with gs://): {gcs_uri}")
+
+        if mime_type is None:
+            mime_type = get_video_mime_type(gcs_uri)
+
+        if filename is None:
+            # Extract filename from GCS path
+            filename = os.path.basename(gcs_uri)
+
+        return cls(url=gcs_uri, filename=filename, mime_type=mime_type)
 
     @classmethod
     def upload_from_path(cls, file_path: str, api_key: str | None = None, mime_type: str | None = None) -> "Video":
@@ -512,6 +578,12 @@ def encode_video_to_dict(video_input: Any) -> dict:
         # Check if it's a YouTube URL
         if is_youtube_url(video_input):
             return {"url": video_input, "filename": "youtube_video"}
+
+        # Check if it's a GCS URL
+        if is_gcs_url(video_input):
+            mime_type = get_video_mime_type(video_input)
+            filename = os.path.basename(video_input)
+            return {"url": video_input, "filename": filename, "mime_type": mime_type}
 
         # Check if it's a local file
         if os.path.isfile(video_input):

@@ -11,6 +11,7 @@ from dspy.adapters.types.video import (
     MAX_INLINE_SIZE_BYTES,
     encode_video_to_dict,
     get_video_mime_type,
+    is_gcs_url,
     is_video_url,
     is_youtube_url,
 )
@@ -92,6 +93,38 @@ class TestIsVideoUrl:
 
     def test_empty_string(self):
         assert not is_video_url("")
+
+    def test_gcs_url(self):
+        assert is_video_url("gs://my-bucket/videos/sample.mp4")
+
+    def test_gcs_url_nested_path(self):
+        assert is_video_url("gs://bucket-name/path/to/nested/video.webm")
+
+
+class TestIsGcsUrl:
+    def test_gcs_url_basic(self):
+        assert is_gcs_url("gs://my-bucket/video.mp4")
+
+    def test_gcs_url_nested(self):
+        assert is_gcs_url("gs://bucket-name/path/to/video.mp4")
+
+    def test_gcs_url_no_path(self):
+        assert is_gcs_url("gs://bucket-name/")
+
+    def test_not_gcs_https(self):
+        assert not is_gcs_url("https://storage.googleapis.com/bucket/video.mp4")
+
+    def test_not_gcs_http(self):
+        assert not is_gcs_url("http://example.com/video.mp4")
+
+    def test_not_gcs_local_path(self):
+        assert not is_gcs_url("/path/to/video.mp4")
+
+    def test_not_gcs_empty(self):
+        assert not is_gcs_url("")
+
+    def test_not_gcs_non_string(self):
+        assert not is_gcs_url(123)
 
 
 class TestGetVideoMimeType:
@@ -225,6 +258,32 @@ class TestVideoFromFileId:
         assert video.mime_type == "video/mp4"
 
 
+class TestVideoFromGcs:
+    def test_from_gcs_basic(self):
+        video = dspy.Video.from_gcs("gs://my-bucket/videos/sample.mp4")
+        assert video.url == "gs://my-bucket/videos/sample.mp4"
+        assert video.mime_type == "video/mp4"
+        assert video.filename == "sample.mp4"
+
+    def test_from_gcs_webm(self):
+        video = dspy.Video.from_gcs("gs://bucket/path/to/video.webm")
+        assert video.url == "gs://bucket/path/to/video.webm"
+        assert video.mime_type == "video/webm"
+        assert video.filename == "video.webm"
+
+    def test_from_gcs_custom_filename(self):
+        video = dspy.Video.from_gcs("gs://bucket/video.mp4", filename="custom_name.mp4")
+        assert video.filename == "custom_name.mp4"
+
+    def test_from_gcs_custom_mime_type(self):
+        video = dspy.Video.from_gcs("gs://bucket/video", mime_type="video/mp4")
+        assert video.mime_type == "video/mp4"
+
+    def test_from_gcs_invalid_url(self):
+        with pytest.raises(ValueError, match="Not a valid GCS URI"):
+            dspy.Video.from_gcs("https://example.com/video.mp4")
+
+
 class TestVideoDirectConstruction:
     def test_from_local_path_string(self, sample_video_file):
         video = dspy.Video(sample_video_file)
@@ -238,6 +297,12 @@ class TestVideoDirectConstruction:
     def test_from_youtube_string(self):
         video = dspy.Video("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         assert video.url == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    def test_from_gcs_string(self):
+        video = dspy.Video("gs://my-bucket/videos/sample.mp4")
+        assert video.url == "gs://my-bucket/videos/sample.mp4"
+        assert video.mime_type == "video/mp4"
+        assert video.filename == "sample.mp4"
 
     def test_from_data_uri(self):
         data_uri = "data:video/mp4;base64,AAAA"
@@ -301,6 +366,21 @@ class TestVideoFormat:
         assert formatted[0]["file"]["file_data"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         assert formatted[0]["file"]["filename"] == "youtube_video"
 
+    def test_format_with_gcs_url(self):
+        video = dspy.Video.from_gcs("gs://my-bucket/videos/sample.mp4")
+        formatted = video.format()
+        assert formatted[0]["type"] == "file"
+        assert formatted[0]["file"]["file_data"] == "gs://my-bucket/videos/sample.mp4"
+        assert formatted[0]["file"]["filename"] == "sample.mp4"
+        assert formatted[0]["file"]["format"] == "video/mp4"
+
+    def test_format_with_gcs_url_no_extension(self):
+        # When no extension, we should still be able to specify mime_type
+        video = dspy.Video.from_gcs("gs://bucket/video", mime_type="video/webm")
+        formatted = video.format()
+        assert formatted[0]["file"]["file_data"] == "gs://bucket/video"
+        assert formatted[0]["file"]["format"] == "video/webm"
+
     def test_format_no_url_or_file_id_raises(self):
         # This shouldn't happen in practice due to validation, but test the format method
         video = dspy.Video.__new__(dspy.Video)
@@ -333,6 +413,12 @@ class TestVideoRepr:
         video = dspy.Video.from_youtube("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         repr_str = repr(video)
         assert "YouTube" in repr_str
+
+    def test_repr_with_gcs(self):
+        video = dspy.Video.from_gcs("gs://my-bucket/video.mp4")
+        repr_str = repr(video)
+        assert "GCS" in repr_str
+        assert "gs://my-bucket/video.mp4" in repr_str
 
     def test_repr_with_file_id(self):
         video = dspy.Video(file_id="files/abc123")
@@ -398,6 +484,12 @@ class TestEncodeVideoToDict:
         result = encode_video_to_dict("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         assert result["url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         assert result["filename"] == "youtube_video"
+
+    def test_from_gcs_url(self):
+        result = encode_video_to_dict("gs://my-bucket/videos/sample.mp4")
+        assert result["url"] == "gs://my-bucket/videos/sample.mp4"
+        assert result["filename"] == "sample.mp4"
+        assert result["mime_type"] == "video/mp4"
 
     def test_from_remote_url(self):
         result = encode_video_to_dict("https://example.com/video.mp4")
