@@ -1,4 +1,3 @@
-import warnings
 
 import pytest
 
