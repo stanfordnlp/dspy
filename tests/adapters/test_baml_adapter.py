@@ -357,12 +357,10 @@ def test_baml_adapter_with_conversation_history():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    history = dspy.History(
-        messages=[
-            {"question": "What is the patient's age?", "answer": "45 years old"},
-            {"question": "Any allergies?", "answer": "Penicillin allergy"},
-        ]
-    )
+    history = dspy.History(messages=[
+        {"question": "What is the patient's age?", "answer": "45 years old"},
+        {"question": "Any allergies?", "answer": "Penicillin allergy"},
+    ], mode="signature")
 
     adapter = BAMLAdapter()
     messages = adapter.format(TestSignature, [], {"history": history, "question": "What medications should we avoid?"})
