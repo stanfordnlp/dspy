@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Callable
+from typing import Callable, TypeVar
 
 import dspy
 from dspy.primitives.example import Example
@@ -14,20 +14,22 @@ from dspy.teleprompt.bootstrap_finetune import (
 )
 from dspy.teleprompt.random_search import BootstrapFewShotWithRandomSearch
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.primitives import Module
 
+M = TypeVar("M", bound=Module)
 logger = logging.getLogger(__name__)
 
 
 class BetterTogether(Teleprompter):
-
     STRAT_SEP = " -> "
 
-    def __init__(self,
+    def __init__(
+        self,
         metric: Callable,
         prompt_optimizer: Teleprompter | None = None,
         weight_optimizer: Teleprompter | None = None,
         seed: int | None = None,
-      ):
+    ):
         if not dspy.settings.experimental:
             raise ValueError("This is an experimental optimizer. Set `dspy.settings.experimental` to `True` to use it.")
 
@@ -37,7 +39,9 @@ class BetterTogether(Teleprompter):
         # a BootstrapFinetune without a metric, say, if there aren't labels
         # available for the training data. Should this be noted somewhere?
         # TODO: We should re-consider if the metric should be required.
-        self.prompt_optimizer = prompt_optimizer if prompt_optimizer else BootstrapFewShotWithRandomSearch(metric=metric)
+        self.prompt_optimizer = (
+            prompt_optimizer if prompt_optimizer else BootstrapFewShotWithRandomSearch(metric=metric)
+        )
         self.weight_optimizer = weight_optimizer if weight_optimizer else BootstrapFinetune(metric=metric)
 
         is_supported_prompt = isinstance(self.prompt_optimizer, BootstrapFewShotWithRandomSearch)
@@ -52,11 +56,11 @@ class BetterTogether(Teleprompter):
 
     def compile(
         self,
-        student: Module,
+        student: M,
         trainset: list[Example],
         strategy: str = "p -> w -> p",
-        valset_ratio = 0.1,
-    ) -> Module:
+        valset_ratio=0.1,
+    ) -> M:
         # TODO: We could record acc on a different valset to pick the best
         # strategy within the provided strategy
         logger.info("Validating the strategy")
@@ -91,10 +95,9 @@ class BetterTogether(Teleprompter):
         launched_flag = False
 
         for ind, step_code in enumerate(parsed_strategy):
-            current_strategy = self.STRAT_SEP.join(parsed_strategy[:ind + 1])
+            current_strategy = self.STRAT_SEP.join(parsed_strategy[: ind + 1])
             logger.info(
-                f"\n########## Step {ind + 1} of {len(parsed_strategy)} - Strategy "
-                f"'{current_strategy}' ##########"
+                f"\n########## Step {ind + 1} of {len(parsed_strategy)} - Strategy " f"'{current_strategy}' ##########"
             )
 
             logger.info("Shuffling the trainset...")
