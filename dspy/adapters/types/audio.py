@@ -26,16 +26,14 @@ class Audio(Type):
     """A type for representing audio data in DSPy.
 
     The Audio class provides a standardized way to handle audio inputs for language models
-    that support audio processing. Audio data is stored as base64-encoded strings along
+    that support audio processing. Audio data is represented as base64-encoded strings along
     with format metadata.
 
     Attributes:
         data: Base64-encoded audio data.
         audio_format: The audio format (e.g., "wav", "mp3", "flac").
 
-    Example:
-        Basic usage with a local file:
-
+    Example: Basic usage with a local file:
         ```python
         import dspy
 
@@ -52,8 +50,7 @@ class Audio(Type):
         result = predict(audio=audio)
         ```
 
-    Example:
-        Creating Audio from different sources:
+    Example: Creating Audio from different sources:
 
         ```python
         import dspy
@@ -83,11 +80,8 @@ class Audio(Type):
         """Format the audio data for consumption by language models.
 
         Returns:
-            A list containing the audio block in the format expected by
-            audio-enabled language models.
-
-        Raises:
-            ValueError: If the audio data cannot be formatted.
+            A list containing a single dict with "type" set to "input_audio" and
+            "input_audio" containing "data" (base64 string) and "format" keys.
         """
         try:
             data = self.data
@@ -186,8 +180,8 @@ class Audio(Type):
             ImportError: If the soundfile library is not installed.
 
         Note:
-            This method requires the ``soundfile`` library to be installed.
-            Install it with ``pip install soundfile``.
+            This method requires the `soundfile` library to be installed.
+            Install it with `pip install soundfile`.
         """
         if not SF_AVAILABLE:
             raise ImportError("soundfile is required to process audio arrays.")
@@ -220,11 +214,11 @@ def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: in
     Args:
         audio: The audio input. Supported types include:
 
-            - ``str``: Local file path, HTTP(S) URL, or data URI
-            - ``bytes``: Raw audio bytes
-            - ``dict``: Dictionary with "data" and "audio_format" keys
-            - ``Audio``: An existing Audio instance
-            - ``numpy.ndarray``: Audio samples as a numpy array (requires soundfile)
+            - `str`: Local file path, HTTP(S) URL, or data URI
+            - `bytes`: Raw audio bytes
+            - `dict`: Dictionary with "data" and "audio_format" keys
+            - `Audio`: An existing Audio instance
+            - `numpy.ndarray`: Audio samples as a numpy array (requires soundfile)
 
         sampling_rate: The sampling rate in Hz for numpy array inputs. Defaults to 16000.
         format: The audio format for numpy array or bytes inputs. Defaults to "wav".
