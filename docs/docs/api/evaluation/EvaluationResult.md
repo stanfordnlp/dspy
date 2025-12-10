@@ -1,6 +1,5 @@
 # dspy.evaluate.EvaluationResult
 
-
 <!-- START_API_REF -->
 ::: dspy.evaluate.EvaluationResult
     handler: python

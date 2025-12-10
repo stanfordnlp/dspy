@@ -7,6 +7,7 @@
         members:
             - __call__
             - acall
+            - adapt_to_native_lm_feature
             - description
             - extract_custom_type_from_annotation
             - format
