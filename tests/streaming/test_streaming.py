@@ -1206,6 +1206,52 @@ async def test_chat_adapter_simple_pydantic_streaming():
 
 
 @pytest.mark.anyio
+async def test_chat_adapter_with_generic_type_annotation():
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        response: list[str] | int = dspy.OutputField()
+
+    class MyProgram(dspy.Module):
+        def __init__(self):
+            self.predict = dspy.Predict(TestSignature)
+
+        def forward(self, question, **kwargs):
+            return self.predict(question=question, **kwargs)
+
+    async def chat_stream(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
+        yield ModelResponseStream(
+            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="1"))]
+        )
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
+
+    program = dspy.streamify(
+        MyProgram(),
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="response"),
+        ],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=chat_stream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
+            output = program(question="Say hello")
+            chunks = []
+            async for value in output:
+                if isinstance(value, StreamResponse):
+                    chunks.append(value)
+
+    assert len(chunks) > 0
+    assert chunks[0].signature_field_name == "response"
+
+    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert "1" in full_content
+
+
+@pytest.mark.anyio
 async def test_chat_adapter_nested_pydantic_streaming():
     """Test ChatAdapter streaming with nested pydantic model."""
 
