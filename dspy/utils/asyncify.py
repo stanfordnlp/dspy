@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 import asyncer
 from anyio import CapacityLimiter

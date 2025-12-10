@@ -1,5 +1,6 @@
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Literal
 
 from litellm import ContextWindowExceededError
 
