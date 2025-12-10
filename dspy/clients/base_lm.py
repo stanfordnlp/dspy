@@ -253,24 +253,83 @@ class BaseLM:
         Returns:
             List of processed outputs, which is always of size 1 because the Response API only supports one output.
         """
+
+        def _normalize_output_item(item):
+            """Convert response output item to dict format regardless of input type.
+
+            OpenAI's Responses API returns different formats based on tool usage:
+            - Without tools: Returns objects with attributes (.type, .content, etc.)
+            - With tools (e.g., web_search): Returns dicts with keys ('type', 'content', etc.)
+
+            This function normalizes both formats to dict for consistent processing.
+            """
+            if isinstance(item, dict):
+                # Already a dict, return as-is
+                return item
+
+            # Convert object to dict
+            normalized = {"type": item.type}
+
+            # Handle content
+            if hasattr(item, "content") and item.content:
+                normalized["content"] = []
+                for content_item in item.content:
+                    if isinstance(content_item, dict):
+                        normalized["content"].append(content_item)
+                    else:
+                        normalized["content"].append({"text": content_item.text})
+
+            # Handle function calls (store original for model_dump if needed)
+            if hasattr(item, "name"):
+                normalized["name"] = item.name
+            if hasattr(item, "arguments"):
+                normalized["arguments"] = item.arguments
+            if hasattr(item, "model_dump"):
+                # Store the original object for model_dump
+                normalized["_original"] = item
+
+            # Handle reasoning content
+            if hasattr(item, "summary") and item.summary:
+                normalized["summary"] = []
+                for summary_item in item.summary:
+                    if isinstance(summary_item, dict):
+                        normalized["summary"].append(summary_item)
+                    else:
+                        normalized["summary"].append({"text": summary_item.text})
+
+            return normalized
+
+        # Normalize all output items to dict format first
+        normalized_outputs = [_normalize_output_item(item) for item in response.output]
+
         text_outputs = []
         tool_calls = []
         reasoning_contents = []
 
-        for output_item in response.output:
-            output_item_type = output_item.type
+        for output_item in normalized_outputs:
+            output_item_type = output_item.get("type")
+
             if output_item_type == "message":
-                for content_item in output_item.content:
-                    text_outputs.append(content_item.text)
+                for content_item in output_item.get("content", []):
+                    text_outputs.append(content_item.get("text", ""))
+
             elif output_item_type == "function_call":
-                tool_calls.append(output_item.model_dump())
+                # Use original object for model_dump if available, otherwise use dict
+                if "_original" in output_item:
+                    tool_calls.append(output_item["_original"].model_dump())
+                else:
+                    tool_calls.append(output_item)
+
             elif output_item_type == "reasoning":
-                if getattr(output_item, "content", None) and len(output_item.content) > 0:
-                    for content_item in output_item.content:
-                        reasoning_contents.append(content_item.text)
-                elif getattr(output_item, "summary", None) and len(output_item.summary) > 0:
-                    for summary_item in output_item.summary:
-                        reasoning_contents.append(summary_item.text)
+                content = output_item.get("content", [])
+                summary = output_item.get("summary", [])
+
+                if content:
+                    for content_item in content:
+                        reasoning_contents.append(content_item.get("text", ""))
+                elif summary:
+                    for summary_item in summary:
+                        reasoning_contents.append(summary_item.get("text", ""))
 
         result = {}
         if len(text_outputs) > 0:
@@ -279,9 +338,9 @@ class BaseLM:
             result["tool_calls"] = tool_calls
         if len(reasoning_contents) > 0:
             result["reasoning_content"] = "".join(reasoning_contents)
+
         # All `response.output` items map to one answer, so we return a list of size 1.
         return [result]
-
 
 def inspect_history(n: int = 1):
     """The global history shared across all LMs."""
