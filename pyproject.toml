@@ -39,6 +39,12 @@ dependencies = [
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
     "gepa[dspy]==0.0.22",
+    "mlflow>=3.7.0",
+    "ipykernel>=7.1.0",
+    "bm25s>=0.2.14",
+    "pystemmer>=3.0.0",
+    "datasets>=3.6.0",
+    "ujson>=5.11.0",
 ]
 
 [project.optional-dependencies]
