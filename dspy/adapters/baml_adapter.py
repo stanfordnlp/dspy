@@ -15,6 +15,7 @@ from dspy.signatures.signature import Signature
 
 # Changing the comment symbol to Python's # rather than other languages' // seems to help
 COMMENT_SYMBOL = "#"
+INDENTATION = "  "
 
 
 def _render_type_str(
@@ -52,7 +53,7 @@ def _render_type_str(
     if origin in (types.UnionType, Union):
         non_none_args = [arg for arg in args if arg is not type(None)]
         # Render the non-None part of the union
-        type_render = " or ".join([_render_type_str(arg, depth + 1, indent) for arg in non_none_args])
+        type_render = " or ".join([_render_type_str(arg, depth + 1, indent, seen_models) for arg in non_none_args])
         # Add "or null" if None was part of the union
         if len(non_none_args) < len(args):
             return f"{type_render} or null"
@@ -70,14 +71,14 @@ def _render_type_str(
             # Build inner schema - the Pydantic model inside should use indent level for array contents
             inner_schema = _build_simplified_schema(inner_type, indent + 1, seen_models)
             # Format with proper bracket notation and indentation
-            current_indent = "  " * indent
+            current_indent = INDENTATION * indent
             return f"[\n{inner_schema}\n{current_indent}]"
         else:
-            return f"{_render_type_str(inner_type, depth + 1, indent)}[]"
+            return f"{_render_type_str(inner_type, depth + 1, indent, seen_models)}[]"
 
     # dict[T1, T2]
     if origin is dict:
-        return f"dict[{_render_type_str(args[0], depth + 1, indent)}, {_render_type_str(args[1], depth + 1, indent)}]"
+        return f"dict[{_render_type_str(args[0], depth + 1, indent, seen_models)}, {_render_type_str(args[1], depth + 1, indent, seen_models)}]"
 
     # fallback
     if hasattr(annotation, "__name__"):
@@ -106,8 +107,19 @@ def _build_simplified_schema(
     seen_models.add(pydantic_model)
 
     lines = []
-    current_indent = "  " * indent
-    next_indent = "  " * (indent + 1)
+    current_indent = INDENTATION * indent
+    next_indent = INDENTATION * (indent + 1)
+
+    # Add model docstring as a comment above the object if it exists
+    # Only do this for top-level schemas (indent=0), since nested field docstrings
+    # are already added before the field name in the parent schema
+    if indent == 0 and pydantic_model.__doc__:
+        docstring = pydantic_model.__doc__.strip()
+        # Handle multiline docstrings by prefixing each line with the comment symbol
+        for line in docstring.split("\n"):
+            line = line.strip()
+            if line:
+                lines.append(f"{current_indent}{COMMENT_SYMBOL} {line}")
 
     lines.append(f"{current_indent}{{")
 
@@ -120,6 +132,24 @@ def _build_simplified_schema(
         elif field.alias and field.alias != name:
             # If there's an alias but no description, show the alias as a comment
             lines.append(f"{next_indent}{COMMENT_SYMBOL} alias: {field.alias}")
+
+        # If the field type is a BaseModel, add its docstring as a comment before the field
+        field_annotation = field.annotation
+        # Handle Optional types
+        origin = get_origin(field_annotation)
+        if origin in (types.UnionType, Union):
+            args = get_args(field_annotation)
+            non_none_args = [arg for arg in args if arg is not type(None)]
+            if len(non_none_args) == 1:
+                field_annotation = non_none_args[0]
+
+        if inspect.isclass(field_annotation) and issubclass(field_annotation, BaseModel):
+            if field_annotation.__doc__:
+                docstring = field_annotation.__doc__.strip()
+                for line in docstring.split("\n"):
+                    line = line.strip()
+                    if line:
+                        lines.append(f"{next_indent}{COMMENT_SYMBOL} {line}")
 
         rendered_type = _render_type_str(field.annotation, indent=indent + 1, seen_models=seen_models)
         line = f"{next_indent}{name}: {rendered_type},"
@@ -178,28 +208,6 @@ class BAMLAdapter(JSONAdapter):
     # PatientDetails(name='John Doe', age=45, address=PatientAddress(street='123 Main St', city='Anytown', country='US'))
     ```
     """
-
-    def format_field_description(self, signature: type[Signature]) -> str:
-        """Format the field description for the system message."""
-        sections = []
-
-        # Add input field descriptions
-        if signature.input_fields:
-            sections.append("Your input fields are:")
-            for i, (name, field) in enumerate(signature.input_fields.items(), 1):
-                type_name = getattr(field.annotation, "__name__", str(field.annotation))
-                description = f": {field.description}" if field.description else ":"
-                sections.append(f"{i}. `{name}` ({type_name}){description}")
-
-        # Add output field descriptions
-        if signature.output_fields:
-            sections.append("Your output fields are:")
-            for i, (name, field) in enumerate(signature.output_fields.items(), 1):
-                type_name = getattr(field.annotation, "__name__", str(field.annotation))
-                description = f": {field.description}" if field.description else ":"
-                sections.append(f"{i}. `{name}` ({type_name}){description}")
-
-        return "\n".join(sections)
 
     def format_field_structure(self, signature: type[Signature]) -> str:
         """Overrides the base method to generate a simplified schema for Pydantic models."""
