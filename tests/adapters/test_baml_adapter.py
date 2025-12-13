@@ -515,9 +515,9 @@ def test_baml_adapter_multiple_pydantic_input_fields():
         endpoints: list[str]
 
     class TestSignature(dspy.Signature):
-        input_1: UserProfile = dspy.InputField()
-        input_2: SystemConfig = dspy.InputField()
-        result: str = dspy.OutputField()
+        input_1: UserProfile = dspy.InputField(desc="User profile information")
+        input_2: SystemConfig = dspy.InputField(desc="System configuration settings")
+        result: str = dspy.OutputField(desc="Resulting output after processing")
 
     adapter = BAMLAdapter()
 
@@ -535,7 +535,10 @@ def test_baml_adapter_multiple_pydantic_input_fields():
     # Test field descriptions are in the correct method
     field_desc = adapter.format_field_description(TestSignature)
     assert "Your input fields are:" in field_desc
+    assert "1. `input_1` (UserProfile): User profile information" in field_desc
+    assert "2. `input_2` (SystemConfig): System configuration settings" in field_desc
     assert "Your output fields are:" in field_desc
+    assert "1. `result` (str): Resulting output after processing" in field_desc
 
     # Test message formatting with actual Pydantic instances
     user_profile = UserProfile(name="John Doe", email="john@example.com", age=30)

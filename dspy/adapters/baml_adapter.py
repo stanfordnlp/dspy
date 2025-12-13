@@ -209,28 +209,6 @@ class BAMLAdapter(JSONAdapter):
     ```
     """
 
-    def format_field_description(self, signature: type[Signature]) -> str:
-        """Format the field description for the system message."""
-        sections = []
-
-        # Add input field descriptions
-        if signature.input_fields:
-            sections.append("Your input fields are:")
-            for i, (name, field) in enumerate(signature.input_fields.items(), 1):
-                type_name = getattr(field.annotation, "__name__", str(field.annotation))
-                description = f": {field.description}" if field.description else ":"
-                sections.append(f"{i}. `{name}` ({type_name}){description}")
-
-        # Add output field descriptions
-        if signature.output_fields:
-            sections.append("Your output fields are:")
-            for i, (name, field) in enumerate(signature.output_fields.items(), 1):
-                type_name = getattr(field.annotation, "__name__", str(field.annotation))
-                description = f": {field.description}" if field.description else ":"
-                sections.append(f"{i}. `{name}` ({type_name}){description}")
-
-        return "\n".join(sections)
-
     def format_field_structure(self, signature: type[Signature]) -> str:
         """Overrides the base method to generate a simplified schema for Pydantic models."""
 
