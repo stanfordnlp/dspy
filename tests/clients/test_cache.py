@@ -48,6 +48,16 @@ def test_initialization(tmp_path):
     assert memory_cache.memory_cache.maxsize == 50
     assert memory_cache.disk_cache == {}
 
+    # Test memory-only cache with invalid memory_max_entries
+    with pytest.raises(ValueError):
+        memory_cache = Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=True,
+            disk_cache_dir="",
+            disk_size_limit_bytes=0,
+            memory_max_entries=-1,
+        )
+
     # Test disk-only cache
     disk_cache = Cache(
         enable_disk_cache=True,
