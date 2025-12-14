@@ -1,19 +1,27 @@
+import json
 import logging
 import random
 from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
+from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.tool import Tool
 from dspy.evaluate import Evaluate
-from dspy.primitives import Example, Prediction
-from dspy.teleprompt.bootstrap_trace import TraceData
+from dspy.primitives import Example, Module, Prediction
+from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 logger = logging.getLogger(__name__)
+
+
+# Constants for module optimization
+TOOL_MODULE_PREFIX = "tool_module"
+
 
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
@@ -21,6 +29,7 @@ class LoggerAdapter:
 
     def log(self, x: str):
         self.logger.info(x)
+
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
 
@@ -31,17 +40,20 @@ class ReflectiveExample(TypedDict):
 
     Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
     """
-    Inputs: dict[str, Any]                              # Predictor inputs (may include str, dspy.Image, etc.)
-    Generated_Outputs: dict[str, Any] | str             # Success: dict with output fields, Failure: error message string
-    Feedback: str                                       # Always a string - from metric function or parsing error message
+
+    Inputs: dict[str, Any]  # Predictor inputs (may include str, dspy.Image, etc.)
+    Generated_Outputs: dict[str, Any] | str  # Success: dict with output fields, Failure: error message string
+    Feedback: str  # Always a string - from metric function or parsing error message
 
 
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str
 
+
 class PredictorFeedbackFn(Protocol):
     def __call__(
+        self,
         predictor_output: dict[str, Any],
         predictor_inputs: dict[str, Any],
         module_inputs: Example,
@@ -64,6 +76,7 @@ class PredictorFeedbackFn(Protocol):
         """
         ...
 
+
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def __init__(
         self,
@@ -77,6 +90,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         reflection_lm=None,
         custom_instruction_proposer: "ProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
+        enable_tool_optimization: bool = False,
         reflection_minibatch_size: int | None = None,
     ):
         self.student = student_module
@@ -89,48 +103,155 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.reflection_lm = reflection_lm
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.enable_tool_optimization = enable_tool_optimization
         self.reflection_minibatch_size = reflection_minibatch_size
 
-        if self.custom_instruction_proposer is not None:
-            # We are only overriding the propose_new_texts method when a custom
-            # instruction proposer is provided. Otherwise, we use the GEPA
-            # default propose_new_texts.
+    def propose_new_texts(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[dict[str, Any]]],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        reflection_lm = self.reflection_lm or dspy.settings.lm
+        # If custom proposer provided, override everything with custom proposer
+        if self.custom_instruction_proposer:
+            with dspy.context(lm=reflection_lm):
+                return self.custom_instruction_proposer(
+                    candidate=candidate,
+                    reflective_dataset=reflective_dataset,
+                    components_to_update=components_to_update,
+                )
 
-            def custom_propose_new_texts(
-                candidate: dict[str, str],
-                reflective_dataset: dict[str, list[dict[str, Any]]],
-                components_to_update: list[str]
-            ) -> dict[str, str]:
-                if self.reflection_lm is not None:
-                    with dspy.context(lm=self.reflection_lm):
-                        return self.custom_instruction_proposer(
-                            candidate=candidate,
-                            reflective_dataset=reflective_dataset,
-                            components_to_update=components_to_update
-                        )
-                else:
-                    return self.custom_instruction_proposer(
+        # Otherwise, route to appropriate proposers
+        # Separate into two categories: tool-using modules (ReAct) vs regular instructions
+        # TODO: Add generic tool module support when DSPy trace lineage is improved
+        tool_components = []
+        instruction_components = []
+
+        for c in components_to_update:
+            if c.startswith(TOOL_MODULE_PREFIX):
+                tool_components.append(c)
+            else:
+                instruction_components.append(c)
+
+        results: dict[str, str] = {}
+
+        with dspy.context(lm=reflection_lm):
+            # Handle regular instruction components
+            if instruction_components:
+                for name in instruction_components:
+                    base_instruction = candidate[name]
+                    dataset_with_feedback = reflective_dataset[name]
+                    results[name] = InstructionProposalSignature.run(
+                        lm=(lambda x: reflection_lm(x)[0]),
+                        input_dict={
+                            "current_instruction_doc": base_instruction,
+                            "dataset_with_feedback": dataset_with_feedback,
+                        },
+                    )["new_instruction"]
+
+            # Handle ReAct modules
+            if tool_components:
+                from dspy.teleprompt.gepa.instruction_proposal import ToolProposer
+
+                tool_proposer = ToolProposer()
+                results.update(
+                    tool_proposer(
                         candidate=candidate,
                         reflective_dataset=reflective_dataset,
-                        components_to_update=components_to_update
+                        components_to_update=tool_components,
                     )
+                )
 
-            self.propose_new_texts = custom_propose_new_texts
-
-        # Cache predictor names/signatures
-        self.named_predictors = list(self.student.named_predictors())
-
+        return results
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
+
+        # Start with plain string instructions from candidate
+        predictor_candidates = {k: v for k, v in candidate.items() if not k.startswith(TOOL_MODULE_PREFIX)}
+
+        tool_candidates = {}
+        if self.enable_tool_optimization:
+            for key, value in candidate.items():
+                if not key.startswith(TOOL_MODULE_PREFIX):
+                    continue
+
+                config = json.loads(value)
+
+                for pred_name, instruction in config.items():
+                    if isinstance(instruction, str):
+                        predictor_candidates[pred_name] = instruction
+
+                tool_candidates.update(config.get("tools", {}))
+
+        # Update predictor instructions
         for name, pred in new_prog.named_predictors():
-            if name in candidate:
-                pred.signature = pred.signature.with_instructions(candidate[name])
+            if name in predictor_candidates:
+                pred.signature = pred.signature.with_instructions(predictor_candidates[name])
+
+        # Update tool descriptions
+        if tool_candidates:
+            self._update_tool_descriptions(new_prog, tool_candidates)
+
         return new_prog
+
+    def _update_tool_descriptions(self, program: Module, tool_candidates: dict[str, Any]) -> None:
+        all_tools = self._collect_tools(program)
+
+        for tool_name, tool_config in tool_candidates.items():
+            if tool_name not in all_tools:
+                logger.warning(
+                    f"Skipping updates for tool:'{tool_name}' because it cannot be detected on the student program."
+                )
+                continue
+
+            tool = all_tools[tool_name]
+
+            # Update tool description if present.
+            if tool_config.get("desc"):
+                tool.desc = tool_config["desc"]
+
+            # Update arg descriptions if present.
+            args_schema = tool_config.get("args") or {}
+            for arg_name, arg_schema in args_schema.items():
+                if arg_schema.get("description") is not None:
+                    tool.args[arg_name]["description"] = arg_schema["description"]
+
+    def _collect_tools(self, module: Module) -> dict[str, Tool]:
+        """Recursively collect all Tool instances from a module and its sub-modules."""
+        all_tools = {}
+        visited = set()
+
+        def _collect_from_attribute(attr_value):
+            if isinstance(attr_value, Tool):
+                all_tools[attr_value.name] = attr_value
+            elif isinstance(attr_value, dspy.Module):
+                _traverse(attr_value)
+            elif isinstance(attr_value, list | dict):
+                items = attr_value if isinstance(attr_value, list) else attr_value.values()
+                for item in items:
+                    if isinstance(item, Tool):
+                        all_tools[item.name] = item
+
+        def _traverse(current_module):
+            if id(current_module) in visited or not hasattr(current_module, "__dict__"):
+                return
+            visited.add(id(current_module))
+
+            for attr_value in current_module.__dict__.values():
+                _collect_from_attribute(attr_value)
+
+        _traverse(module)
+        return all_tools
 
     def evaluate(self, batch, candidate, capture_traces=False):
         program = self.build_program(candidate)
-        callback_metadata = {"metric_key": "eval_full"} if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size else {"disable_logging": True}
+        callback_metadata = (
+            {"metric_key": "eval_full"}
+            if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size
+            else {"disable_logging": True}
+        )
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
@@ -158,6 +279,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     if hasattr(score, "score"):
                         score = score["score"]
                     scores.append(score)
+
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
         else:
             evaluator = Evaluate(
@@ -176,19 +298,29 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [s["score"] if hasattr(s, "score") else s for s in scores]
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
-    def make_reflective_dataset(self, candidate, eval_batch, components_to_update) -> dict[str, list[ReflectiveExample]]:
-        from dspy.teleprompt.bootstrap_trace import FailedPrediction
+    def make_reflective_dataset(
+        self, candidate, eval_batch, components_to_update
+    ) -> dict[str, list[ReflectiveExample]]:
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
+
         for pred_name in components_to_update:
+            # Extract predictor name from component key
+            if pred_name.startswith(TOOL_MODULE_PREFIX):
+                target_name = pred_name.removeprefix(f"{TOOL_MODULE_PREFIX}:")
+            else:
+                target_name = pred_name
+
+            # Find the predictor object
             module = None
             for name, m in program.named_predictors():
-                if name == pred_name:
+                if name == target_name:
                     module = m
                     break
-            assert module is not None
+            assert module is not None, f"Predictor not found: {target_name}"
 
+            # Create reflective examples from traces
             items: list[ReflectiveExample] = []
             for data in eval_batch.trajectories or []:
                 trace = data["trace"]
@@ -265,7 +397,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = "Your output failed to parse. Follow this structure:\n" + structure_instruction
                     # d['score'] = self.failure_score
                 else:
-                    feedback_fn = self.feedback_map[pred_name]
+                    # Use actual predictor name for feedback lookup
+                    feedback_fn = self.feedback_map[target_name]
                     fb = feedback_fn(
                         predictor_output=outputs,
                         predictor_inputs=inputs,
@@ -276,21 +409,32 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = fb["feedback"]
                     if fb["score"] != module_score:
                         if self.warn_on_score_mismatch:
-                            logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score. You can safely ignore this warning if using a semantic metric, however, if this mismatch is caused due to predictor scoring, please return module-level scores. To disable this warning, set warn_on_score_mismatch=False.")
+                            logger.warning(
+                                "The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score. You can safely ignore this warning if using a semantic metric, however, if this mismatch is caused due to predictor scoring, please return module-level scores. To disable this warning, set warn_on_score_mismatch=False."
+                            )
                             self.warn_on_score_mismatch = False
                         fb["score"] = module_score
 
                 items.append(d)
 
             if len(items) == 0:
-                # raise Exception(f"No valid predictions found for module {module.signature}.")
+                logger.warning(f"  No valid reflective examples found for {pred_name}")
                 continue
+
             ret_d[pred_name] = items
 
         if len(ret_d) == 0:
             raise Exception("No valid predictions found for any module.")
 
         return ret_d
+
+    # TODO: Generic tool module optimization - pending DSPy trace lineage improvements
+    # Currently only ReAct modules are supported for tool optimization.
+    # Re-enable _update_candidate_tools when DSPy provides better tool→trace lineage.
+    #
+    # def _update_candidate_tools(self, candidate, program, trajectories) -> None:
+    #     """Extract dspy.Tool objects from traces for tool modules and update candidate["tools"]."""
+    #     ...
 
     # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.
     # We can potentially override this, to use the instruction proposal similar to MIPROv2.

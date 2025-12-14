@@ -204,6 +204,54 @@ def test_trajectory_truncation():
     assert result.output_text == "Final output"
 
 
+@pytest.mark.asyncio
+async def test_context_window_exceeded_after_retries():
+    def echo(text: str) -> str:
+        return f"Echoed: {text}"
+
+    react = dspy.ReAct("input_text -> output_text", tools=[echo])
+
+    def mock_react(**kwargs):
+        raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+
+    # Test sync version
+    extract_calls = []
+
+    def mock_extract(**kwargs):
+        extract_calls.append(kwargs)
+        return dspy.Prediction(output_text="Fallback output")
+
+    react.react = mock_react
+    react.extract = mock_extract
+
+    result = react(input_text="test input")
+    assert result.trajectory == {}
+    assert result.output_text == "Fallback output"
+    assert len(extract_calls) == 1
+    assert extract_calls[0]["input_text"] == "test input"
+    assert "trajectory" in extract_calls[0]
+
+    # Test async version
+    async_extract_calls = []
+
+    async def mock_react_async(**kwargs):
+        raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+
+    async def mock_extract_async(**kwargs):
+        async_extract_calls.append(kwargs)
+        return dspy.Prediction(output_text="Fallback output")
+
+    react.react.acall = mock_react_async
+    react.extract.acall = mock_extract_async
+
+    result = await react.acall(input_text="test input")
+    assert result.trajectory == {}
+    assert result.output_text == "Fallback output"
+    assert len(async_extract_calls) == 1
+    assert async_extract_calls[0]["input_text"] == "test input"
+    assert "trajectory" in async_extract_calls[0]
+
+
 def test_error_retry():
     # --- a tiny tool that always fails -------------------------------------
     def foo(a, b):

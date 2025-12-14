@@ -117,6 +117,12 @@ Practical Recipe for GEPA-Friendly Feedback:
 - **Multi-Objective Tasks** (e.g., PUPA): Decompose aggregate scores to reveal contributions from each objective, highlighting tradeoffs (e.g., quality vs. privacy).
 - **Stacked Pipelines** (e.g., code generation: parse → compile → run → profile → evaluate): Expose stage-specific failures; natural-language traces often suffice for LLM self-correction.
 
+## Tool Optimization with GEPA
+
+When `enable_tool_optimization=True`, GEPA jointly optimizes `dspy.ReAct` modules with the tools - GEPA updates predictor instructions and tool descriptions/argument descriptions together, based on execution traces and feedback, instead of keeping tool behavior fixed.
+
+For details, examples, and the underlying design (tool discovery, naming requirements, and interaction with custom instruction proposers), see [Tool Optimization](GEPA_Advanced.md#tool-optimization).
+
 ## Custom Instruction Proposal
 
 For advanced customization of GEPA's instruction proposal mechanism, including custom instruction proposers and component selectors, see [Advanced Features](GEPA_Advanced.md).
