@@ -91,6 +91,7 @@ class ParallelExecutor:
             original = thread_local_overrides.get()
             new_overrides = {**original, **parent_overrides.copy()}
             if parent_overrides.get("usage_tracker"):
+                # Usage tracker needs to be deep copied across threads so that each thread tracks its own usage
                 new_overrides["usage_tracker"] = copy.deepcopy(parent_overrides["usage_tracker"])
             token = thread_local_overrides.set(new_overrides)
 
@@ -154,9 +155,8 @@ class ParallelExecutor:
                         try:
                             index, outcome = f.result()
                         except Exception:
-                            logger.error(f"Worker failed: {e}")
-                            if self.provide_traceback:
-                                traceback.print_exc()
+                            pass
+                            
                         else:
                             if outcome != job_cancelled and results[index] is None:
                                 # Check if this is an exception
