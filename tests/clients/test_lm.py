@@ -954,33 +954,34 @@ def test_responses_api_with_pydantic_model_input():
         ]
     )
 
+    lm = dspy.LM(
+        model="openai/gpt-5-mini",
+        model_type="responses",
+        cache=False,
+        temperature=1.0,
+        max_tokens=16000,
+    )
+
+    class TestModel(pydantic.BaseModel):
+        answer: str
+        number: int
+
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
-        lm = dspy.LM(
-            model="openai/gpt-5-mini",
-            model_type="responses",
-            cache=False,
-            temperature=1.0,
-            max_tokens=16000,
-        )
-
         # Test with messages containing a Pydantic model as response format
-
-        class TestModel(pydantic.BaseModel):
-            answer: str
-            number: int
-
         lm_result = lm("What is a good test answer?", response_format=TestModel)
-        TestModel.model_validate_json(lm_result[0]["text"])
 
-        dspy_responses.assert_called_once()
-        call_args = dspy_responses.call_args.kwargs
+    # Try to validate to Pydantic model
+    TestModel.model_validate_json(lm_result[0]["text"])
 
-        # Verify the request was converted correctly
-        assert "text" in call_args
-        response_format = call_args["text"]["format"]
+    dspy_responses.assert_called_once()
+    call_args = dspy_responses.call_args.kwargs
 
-        assert response_format == {
-            "name": TestModel.__name__,
-            "type": "json_schema",
-            "schema": TestModel.model_json_schema(),
-        }
+    # Verify the request was converted correctly
+    assert "text" in call_args
+    response_format = call_args["text"]["format"]
+
+    assert response_format == {
+        "name": TestModel.__name__,
+        "type": "json_schema",
+        "schema": TestModel.model_json_schema(),
+    }
