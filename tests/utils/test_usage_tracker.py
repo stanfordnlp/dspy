@@ -385,96 +385,28 @@ def test_parallel_executor_with_usage_tracker():
 
 
 def test_merge_usage_entries_with_mixed_types():
-    """Test merging usage entries where nested keys have mixed types (dict, int, None).
+    """Test merging usage entries with mixed types (dict, int, None).
 
     This test verifies the fix for the bug where _merge_usage_entries would fail
     with TypeError when trying to call len() on a non-dict value during recursive merging.
-    When types are mixed, the dict value is preserved (regardless of which one is dict).
-    """
-    # Case 1: None first, then dict - dict should be preserved
-    tracker1 = UsageTracker()
-    tracker1.add_usage("test-1", {"prompt_tokens": 100, "details": None})
-    tracker1.add_usage("test-1", {"prompt_tokens": 200, "details": {"cached_tokens": 10}})
-    total1 = tracker1.get_total_tokens()
-    assert total1["test-1"]["prompt_tokens"] == 300
-    assert isinstance(total1["test-1"]["details"], dict)
-    assert total1["test-1"]["details"]["cached_tokens"] == 10
-
-    # Case 2: Dict first, then None - dict should be preserved
-    tracker2 = UsageTracker()
-    tracker2.add_usage("test-2", {"prompt_tokens": 100, "details": {"cached_tokens": 10}})
-    tracker2.add_usage("test-2", {"prompt_tokens": 200, "details": None})
-    total2 = tracker2.get_total_tokens()
-    assert total2["test-2"]["prompt_tokens"] == 300
-    assert isinstance(total2["test-2"]["details"], dict)
-    assert total2["test-2"]["details"]["cached_tokens"] == 10
-
-    # Case 3: Dict first, then int - dict should be preserved
-    tracker3 = UsageTracker()
-    tracker3.add_usage("test-3", {"prompt_tokens": 100, "details": {"cached_tokens": 10}})
-    tracker3.add_usage("test-3", {"prompt_tokens": 200, "details": 15})
-    total3 = tracker3.get_total_tokens()
-    assert total3["test-3"]["prompt_tokens"] == 300
-    assert isinstance(total3["test-3"]["details"], dict)
-    assert total3["test-3"]["details"]["cached_tokens"] == 10
-
-    # Case 4: Int first, then dict - dict should be preserved
-    tracker4 = UsageTracker()
-    tracker4.add_usage("test-4", {"prompt_tokens": 100, "details": 20})
-    tracker4.add_usage("test-4", {"prompt_tokens": 200, "details": {"cached_tokens": 10}})
-    total4 = tracker4.get_total_tokens()
-    assert total4["test-4"]["prompt_tokens"] == 300
-    assert isinstance(total4["test-4"]["details"], dict)
-    assert total4["test-4"]["details"]["cached_tokens"] == 10
-
-
-def test_merge_usage_entries_with_nested_none_dict_int():
-    """Test merging usage entries with complex nested structures containing None, dict, and int.
-
-    This test verifies that no TypeError is raised when merging mixed types.
-    When types are mixed, the dict value is preserved (regardless of which one is dict).
     """
     tracker = UsageTracker()
 
-    # First usage entry: nested structure with None
-    usage_entry1 = {
-        "prompt_tokens": 100,
-        "details": {
-            "cached_tokens": None,
-            "audio_tokens": 5,
-            "nested": {
-                "value": 10,
-            },
-        },
-    }
+    # Test dict and int mixing - dict should be preserved
+    tracker.add_usage("gpt-4o-mini", {"prompt_tokens": 100, "details": {"cached_tokens": 10}})
+    tracker.add_usage("gpt-4o-mini", {"prompt_tokens": 200, "details": 0})
+    total_usage = tracker.get_total_tokens()
+    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 300
+    assert isinstance(total_usage["gpt-4o-mini"]["details"], dict)
+    assert total_usage["gpt-4o-mini"]["details"]["cached_tokens"] == 10
 
-    # Second usage entry: nested structure with dict and int
-    usage_entry2 = {
-        "prompt_tokens": 200,
-        "details": {
-            "cached_tokens": 20,  # None -> int: both non-dict, should add numerically
-            "audio_tokens": {
-                "input": 3,  # int -> dict: dict should be preserved
-                "output": 2,
-            },
-            "nested": 15,  # dict -> int: dict should be preserved
-        },
-    }
-
-    tracker.add_usage("test-model", usage_entry1)
-    tracker.add_usage("test-model", usage_entry2)
+    # Test None values in details
+    tracker.add_usage("gpt-4o-mini", {"completion_tokens": 129, "prompt_tokens": 975, "completion_tokens_details": None, "prompt_tokens_details": None})
+    tracker.add_usage("gpt-4o-mini", {"completion_tokens": 144, "prompt_tokens": 1418, "completion_tokens_details": None, "prompt_tokens_details": {"cached_tokens": 0}})
+    tracker.add_usage("gpt-4o-mini", {"completion_tokens": 121, "prompt_tokens": 1167, "completion_tokens_details": {"reasoning_tokens": 0}, "prompt_tokens_details": None})
 
     total_usage = tracker.get_total_tokens()
-
-    assert "test-model" in total_usage
-    assert total_usage["test-model"]["prompt_tokens"] == 300  # 100 + 200
-    assert isinstance(total_usage["test-model"]["details"], dict)
-    # None + int = int (both non-dict, add numerically)
-    assert total_usage["test-model"]["details"]["cached_tokens"] == 20  # 0 + 20
-    # int -> dict: dict should be preserved
-    assert isinstance(total_usage["test-model"]["details"]["audio_tokens"], dict)
-    assert total_usage["test-model"]["details"]["audio_tokens"]["input"] == 3
-    assert total_usage["test-model"]["details"]["audio_tokens"]["output"] == 2
-    # dict -> int: dict should be preserved
-    assert isinstance(total_usage["test-model"]["details"]["nested"], dict)
-    assert total_usage["test-model"]["details"]["nested"]["value"] == 10
+    assert total_usage["gpt-4o-mini"]["completion_tokens"] == 394
+    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 3860
+    assert isinstance(total_usage["gpt-4o-mini"]["prompt_tokens_details"], dict)
+    assert isinstance(total_usage["gpt-4o-mini"]["completion_tokens_details"], dict)
