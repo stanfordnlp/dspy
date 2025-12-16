@@ -35,37 +35,21 @@ class UsageTracker:
     def _merge_usage_entries(
         self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
     ) -> dict[str, Any]:
-        """Merge two usage entries, with usage_entry2 (new value) taking precedence when types conflict."""
-        # Handle empty or None entries
-        if usage_entry1 is None or not isinstance(usage_entry1, dict) or len(usage_entry1) == 0:
-            return dict(usage_entry2) if usage_entry2 is not None else {}
+        if usage_entry1 is None or len(usage_entry1) == 0:
+            return dict(usage_entry2)
         if usage_entry2 is None or not isinstance(usage_entry2, dict) or len(usage_entry2) == 0:
             return dict(usage_entry1)
 
-        # Start with the new entry (usage_entry2) as base
         result = dict(usage_entry2)
-
-        # Merge values from the old entry (usage_entry1) into the result
-        for key, old_value in usage_entry1.items():
-            new_value = result.get(key)
-
-            # Check types once for reuse
-            old_is_dict = isinstance(old_value, dict)
-            new_is_dict = isinstance(new_value, dict)
-
-            # Case 1: Both are dicts - recursively merge them
-            if old_is_dict and new_is_dict:
-                result[key] = self._merge_usage_entries(old_value, new_value)
-
-            # Case 2: One is dict, the other is not (int/None)
-            # Use new value if it's not None (right value takes precedence), otherwise keep old value
-            elif old_is_dict != new_is_dict:
-                result[key] = new_value if new_value is not None else old_value
-
-            # Case 3: Both are non-dict (int/None) - add them numerically
+        for k, v in usage_entry1.items():
+            current_v = result.get(k)
+            if isinstance(v, dict) and isinstance(current_v, dict):
+                result[k] = self._merge_usage_entries(v, current_v)
+            elif isinstance(v, dict) or isinstance(current_v, dict):
+                # One is dict, the other is not - keep the dict value
+                result[k] = v if isinstance(v, dict) else current_v
             else:
-                result[key] = (new_value or 0) + (old_value or 0)
-
+                result[k] = (current_v or 0) + (v or 0)
         return result
 
     def add_usage(self, lm: str, usage_entry: dict[str, Any]) -> None:

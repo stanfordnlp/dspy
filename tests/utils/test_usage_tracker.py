@@ -389,9 +389,9 @@ def test_merge_usage_entries_with_mixed_types():
 
     This test verifies the fix for the bug where _merge_usage_entries would fail
     with TypeError when trying to call len() on a non-dict value during recursive merging.
-    When types are mixed, the new value (right value) should override the old value.
+    When types are mixed, the dict value is preserved (regardless of which one is dict).
     """
-    # Case 1: None first, then dict - new value (dict) should override
+    # Case 1: None first, then dict - dict should be preserved
     tracker1 = UsageTracker()
     tracker1.add_usage("test-1", {"prompt_tokens": 100, "details": None})
     tracker1.add_usage("test-1", {"prompt_tokens": 200, "details": {"cached_tokens": 10}})
@@ -400,7 +400,7 @@ def test_merge_usage_entries_with_mixed_types():
     assert isinstance(total1["test-1"]["details"], dict)
     assert total1["test-1"]["details"]["cached_tokens"] == 10
 
-    # Case 2: Dict first, then None - old value (dict) should be preserved (None is meaningless)
+    # Case 2: Dict first, then None - dict should be preserved
     tracker2 = UsageTracker()
     tracker2.add_usage("test-2", {"prompt_tokens": 100, "details": {"cached_tokens": 10}})
     tracker2.add_usage("test-2", {"prompt_tokens": 200, "details": None})
@@ -409,15 +409,16 @@ def test_merge_usage_entries_with_mixed_types():
     assert isinstance(total2["test-2"]["details"], dict)
     assert total2["test-2"]["details"]["cached_tokens"] == 10
 
-    # Case 3: Dict first, then int - new value (int) should override
+    # Case 3: Dict first, then int - dict should be preserved
     tracker3 = UsageTracker()
     tracker3.add_usage("test-3", {"prompt_tokens": 100, "details": {"cached_tokens": 10}})
     tracker3.add_usage("test-3", {"prompt_tokens": 200, "details": 15})
     total3 = tracker3.get_total_tokens()
     assert total3["test-3"]["prompt_tokens"] == 300
-    assert total3["test-3"]["details"] == 15
+    assert isinstance(total3["test-3"]["details"], dict)
+    assert total3["test-3"]["details"]["cached_tokens"] == 10
 
-    # Case 4: Int first, then dict - new value (dict) should override
+    # Case 4: Int first, then dict - dict should be preserved
     tracker4 = UsageTracker()
     tracker4.add_usage("test-4", {"prompt_tokens": 100, "details": 20})
     tracker4.add_usage("test-4", {"prompt_tokens": 200, "details": {"cached_tokens": 10}})
@@ -430,7 +431,8 @@ def test_merge_usage_entries_with_mixed_types():
 def test_merge_usage_entries_with_nested_none_dict_int():
     """Test merging usage entries with complex nested structures containing None, dict, and int.
 
-    When types are mixed, the new value (right value) should override the old value.
+    This test verifies that no TypeError is raised when merging mixed types.
+    When types are mixed, the dict value is preserved (regardless of which one is dict).
     """
     tracker = UsageTracker()
 
@@ -450,12 +452,12 @@ def test_merge_usage_entries_with_nested_none_dict_int():
     usage_entry2 = {
         "prompt_tokens": 200,
         "details": {
-            "cached_tokens": 20,  # None -> int: new value (int) should override
+            "cached_tokens": 20,  # None -> int: both non-dict, should add numerically
             "audio_tokens": {
-                "input": 3,  # int -> dict: new value (dict) should override
+                "input": 3,  # int -> dict: dict should be preserved
                 "output": 2,
             },
-            "nested": 15,  # dict -> int: new value (int) should override
+            "nested": 15,  # dict -> int: dict should be preserved
         },
     }
 
@@ -467,11 +469,12 @@ def test_merge_usage_entries_with_nested_none_dict_int():
     assert "test-model" in total_usage
     assert total_usage["test-model"]["prompt_tokens"] == 300  # 100 + 200
     assert isinstance(total_usage["test-model"]["details"], dict)
-    # None + int = int (new value overrides)
+    # None + int = int (both non-dict, add numerically)
     assert total_usage["test-model"]["details"]["cached_tokens"] == 20  # 0 + 20
-    # int -> dict: new value (dict) should override old value (int)
+    # int -> dict: dict should be preserved
     assert isinstance(total_usage["test-model"]["details"]["audio_tokens"], dict)
     assert total_usage["test-model"]["details"]["audio_tokens"]["input"] == 3
     assert total_usage["test-model"]["details"]["audio_tokens"]["output"] == 2
-    # dict -> int: new value (int) should override old value (dict)
-    assert total_usage["test-model"]["details"]["nested"] == 15
+    # dict -> int: dict should be preserved
+    assert isinstance(total_usage["test-model"]["details"]["nested"], dict)
+    assert total_usage["test-model"]["details"]["nested"]["value"] == 10
