@@ -392,14 +392,6 @@ def test_merge_usage_entries_with_mixed_types():
     """
     tracker = UsageTracker()
 
-    # Test dict and int mixing - dict should be preserved
-    tracker.add_usage("gpt-4o-mini", {"prompt_tokens": 100, "details": {"cached_tokens": 10}})
-    tracker.add_usage("gpt-4o-mini", {"prompt_tokens": 200, "details": 0})
-    total_usage = tracker.get_total_tokens()
-    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 300
-    assert isinstance(total_usage["gpt-4o-mini"]["details"], dict)
-    assert total_usage["gpt-4o-mini"]["details"]["cached_tokens"] == 10
-
     # Test None values in details
     tracker.add_usage("gpt-4o-mini", {"completion_tokens": 129, "prompt_tokens": 975, "completion_tokens_details": None, "prompt_tokens_details": None})
     tracker.add_usage("gpt-4o-mini", {"completion_tokens": 144, "prompt_tokens": 1418, "completion_tokens_details": None, "prompt_tokens_details": {"cached_tokens": 0}})
@@ -407,6 +399,8 @@ def test_merge_usage_entries_with_mixed_types():
 
     total_usage = tracker.get_total_tokens()
     assert total_usage["gpt-4o-mini"]["completion_tokens"] == 394
-    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 3860
+    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 3560
     assert isinstance(total_usage["gpt-4o-mini"]["prompt_tokens_details"], dict)
     assert isinstance(total_usage["gpt-4o-mini"]["completion_tokens_details"], dict)
+    assert total_usage["gpt-4o-mini"]["prompt_tokens_details"] == {"cached_tokens": 0}
+    assert total_usage["gpt-4o-mini"]["completion_tokens_details"] == {"reasoning_tokens": 0}

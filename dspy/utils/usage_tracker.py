@@ -36,19 +36,16 @@ class UsageTracker:
         self, usage_entry1: dict[str, Any] | None, usage_entry2: dict[str, Any] | None
     ) -> dict[str, Any]:
         if usage_entry1 is None or len(usage_entry1) == 0:
-            return dict(usage_entry2)
-        if usage_entry2 is None or not isinstance(usage_entry2, dict) or len(usage_entry2) == 0:
-            return dict(usage_entry1)
+            return dict(usage_entry2 or {})
+        if usage_entry2 is None or len(usage_entry2) == 0:
+            return dict(usage_entry1 or {})
 
         result = dict(usage_entry2)
         for k, v in usage_entry1.items():
             current_v = result.get(k)
-            if isinstance(v, dict) and isinstance(current_v, dict):
+            if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(v, current_v)
-            elif isinstance(v, dict) or isinstance(current_v, dict):
-                # One is dict, the other is not - keep the dict value
-                result[k] = v if isinstance(v, dict) else current_v
-            else:
+            elif current_v is not None or v is not None:
                 result[k] = (current_v or 0) + (v or 0)
         return result
 
