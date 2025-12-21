@@ -190,6 +190,16 @@ def test_merge_usage_entries_with_none_values():
                 "prompt_tokens": 800,
                 "completion_tokens": 100,
                 "total_tokens": 900,
+                "prompt_tokens_details": None,
+                "completion_tokens_details": None,
+            },
+        },
+        {
+            "model": "gpt-4o-mini",
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 100,
+                "total_tokens": 200,
                 "prompt_tokens_details": {"cached_tokens": 50, "audio_tokens": 50},
                 "completion_tokens_details": None,
             },
@@ -216,9 +226,9 @@ def test_merge_usage_entries_with_none_values():
 
     total_usage = tracker.get_total_tokens()
 
-    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 2717
-    assert total_usage["gpt-4o-mini"]["completion_tokens"] == 246
-    assert total_usage["gpt-4o-mini"]["total_tokens"] == 2963
+    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 2817
+    assert total_usage["gpt-4o-mini"]["completion_tokens"] == 346
+    assert total_usage["gpt-4o-mini"]["total_tokens"] == 3163
     assert total_usage["gpt-4o-mini"]["prompt_tokens_details"]["cached_tokens"] == 50
     assert total_usage["gpt-4o-mini"]["prompt_tokens_details"]["audio_tokens"] == 50
     assert total_usage["gpt-4o-mini"]["completion_tokens_details"]["reasoning_tokens"] == 1
@@ -382,25 +392,3 @@ def test_parallel_executor_with_usage_tracker():
 
     # Parent tracker should remain unchanged (workers have independent copies)
     assert len(parent_tracker.usage_data) == 0
-
-
-def test_merge_usage_entries_with_mixed_types():
-    """Test merging usage entries with mixed types (dict, int, None).
-
-    This test verifies the fix for the bug where _merge_usage_entries would fail
-    with TypeError when trying to call len() on a non-dict value during recursive merging.
-    """
-    tracker = UsageTracker()
-
-    # Test None values in details
-    tracker.add_usage("gpt-4o-mini", {"completion_tokens": 129, "prompt_tokens": 975, "completion_tokens_details": None, "prompt_tokens_details": None})
-    tracker.add_usage("gpt-4o-mini", {"completion_tokens": 144, "prompt_tokens": 1418, "completion_tokens_details": None, "prompt_tokens_details": {"cached_tokens": 0}})
-    tracker.add_usage("gpt-4o-mini", {"completion_tokens": 121, "prompt_tokens": 1167, "completion_tokens_details": {"reasoning_tokens": 0}, "prompt_tokens_details": None})
-
-    total_usage = tracker.get_total_tokens()
-    assert total_usage["gpt-4o-mini"]["completion_tokens"] == 394
-    assert total_usage["gpt-4o-mini"]["prompt_tokens"] == 3560
-    assert isinstance(total_usage["gpt-4o-mini"]["prompt_tokens_details"], dict)
-    assert isinstance(total_usage["gpt-4o-mini"]["completion_tokens_details"], dict)
-    assert total_usage["gpt-4o-mini"]["prompt_tokens_details"] == {"cached_tokens": 0}
-    assert total_usage["gpt-4o-mini"]["completion_tokens_details"] == {"reasoning_tokens": 0}
