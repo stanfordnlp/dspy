@@ -8,12 +8,17 @@ from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.interpreter import ThreadLocalInterpreter
 
 logger = logging.getLogger(__name__)
 
 class CodeAct(ReAct, ProgramOfThought):
     """
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
+
+    **Thread Safety & Isolation**:
+    - Uses `ThreadLocalInterpreter` by default: Each thread operates in its own isolated Deno environment if no shared interpreter is passed.
+    - **Session Isolation**: Ensures that each step's code execution starts from a clean slate (reverting globals, modules, and env vars), preventing state pollution between iterations or threads.
     """
 
     def __init__(self, signature: str | type[Signature], tools: list[Callable], max_iters: int = 5, interpreter: PythonInterpreter | None = None):
@@ -66,7 +71,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.codeact = dspy.Predict(codeact_signature)
         self.extractor = dspy.ChainOfThought(extract_signature)
         # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or PythonInterpreter()
+        self.interpreter = interpreter or ThreadLocalInterpreter()
 
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []
@@ -115,5 +120,5 @@ class CodeAct(ReAct, ProgramOfThought):
                 break
 
         extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
-        self.interpreter.shutdown()
+        # self.interpreter.shutdown() # Removed for thread safety reuse
         return dspy.Prediction(trajectory=trajectory, **extract)

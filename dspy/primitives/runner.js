@@ -33,39 +33,39 @@ for await (const line of readLines(Deno.stdin)) {
   }
 
   if (input.mount_file) {
-      const hostPath = input.mount_file;
-      const virtualPath = input.virtual_path || hostPath;
-      try {
-          const contents = await Deno.readFile(hostPath);
-          const dirs = virtualPath.split('/').slice(1, -1);
-          let cur = '';
-          for (const d of dirs) {
-              cur += '/' + d;
-              try {
-                  pyodide.FS.mkdir(cur);
-              } catch (e) {
-                  if (!(e && e.message && e.message.includes('File exists'))) {
-                      console.log("[DEBUG] Error creating directory in Pyodide file system:", cur, "|", e.message);
-                  }
-              }
+    const hostPath = input.mount_file;
+    const virtualPath = input.virtual_path || hostPath;
+    try {
+      const contents = await Deno.readFile(hostPath);
+      const dirs = virtualPath.split('/').slice(1, -1);
+      let cur = '';
+      for (const d of dirs) {
+        cur += '/' + d;
+        try {
+          pyodide.FS.mkdir(cur);
+        } catch (e) {
+          if (!(e && e.message && e.message.includes('File exists'))) {
+            console.log("[DEBUG] Error creating directory in Pyodide file system:", cur, "|", e.message);
           }
-          pyodide.FS.writeFile(virtualPath, contents);
-      } catch (e) {
-          console.log(JSON.stringify({error: "Failed to mount file: " + e.message}));
+        }
       }
-      continue;      
+      pyodide.FS.writeFile(virtualPath, contents);
+    } catch (e) {
+      console.log(JSON.stringify({ error: "Failed to mount file: " + e.message }));
+    }
+    continue;
   }
 
   if (input.sync_file) {
-      const virtualPath = input.sync_file;
-      const hostPath = input.host_file || virtualPath;
-      try {
-          const contents = pyodide.FS.readFile(virtualPath);
-          await Deno.writeFile(hostPath, contents);
-      } catch (e) {
-          console.log("[DEBUG] Failed to sync file:", hostPath, "|", e.message);
-      }
-      continue;
+    const virtualPath = input.sync_file;
+    const hostPath = input.host_file || virtualPath;
+    try {
+      const contents = pyodide.FS.readFile(virtualPath);
+      await Deno.writeFile(hostPath, contents);
+    } catch (e) {
+      console.log("[DEBUG] Failed to sync file:", hostPath, "|", e.message);
+    }
+    continue;
   }
 
 
@@ -78,8 +78,100 @@ for await (const line of readLines(Deno.stdin)) {
     continue;
   }
 
+  // Check for snapshot
+  if (input.snapshot) {
+    try {
+      // Capture state. We keep PyProxies in JS.
+      // Note: dict(globals()) is a shallow copy of the globals dictionary.
+      // Values are references. This is standard behavior for "state reset" (revert variables).
+      if (globalThis.savedState) {
+        // Destroy previous snapshot if exists to avoid leaks? 
+        // Actually, we usually snapshot-restore-snapshot. 
+        // But if we snapshot twice, we should free the old one.
+        if (globalThis.savedState.globals) globalThis.savedState.globals.destroy();
+        if (globalThis.savedState.sysModules) globalThis.savedState.sysModules.destroy();
+        if (globalThis.savedState.osEnviron) globalThis.savedState.osEnviron.destroy();
+      }
+
+      globalThis.savedState = {
+        globals: pyodide.runPython("dict(globals())"),
+        sysModules: pyodide.runPython("import sys; list(sys.modules.keys())"),
+        osEnviron: pyodide.runPython("import os; dict(os.environ)")
+      };
+      console.log(JSON.stringify({ result: "snapshot_taken" }));
+    } catch (e) {
+      console.log(JSON.stringify({ error: "Snapshot failed: " + e.message }));
+    }
+    continue;
+  }
+
+  // Check for restore
+  if (input.restore) {
+    if (!globalThis.savedState) {
+      console.log(JSON.stringify({ error: "No snapshot to restore" }));
+      continue;
+    }
+    try {
+      const { globals, sysModules, osEnviron } = globalThis.savedState;
+
+      // 1. Restore Globals
+      // Clear current globals
+      pyodide.runPython("globals().clear()");
+      // Restore from saved proxy
+      pyodide.globals.set("_dspy_saved_globals", globals);
+      pyodide.runPython(`
+globals().update(_dspy_saved_globals)
+if "_dspy_saved_globals" in globals():
+    del _dspy_saved_globals
+          `);
+
+      // 2. Unload new modules
+      // We need to delete keys in sys.modules that are NOT in sysModules (saved list).
+      // Let's do this in Python for efficiency.
+      // We need to pass the saved list to Python.
+      // We can set it as a variable.
+      pyodide.globals.set("_dspy_saved_modules", sysModules);
+      pyodide.runPython(`
+import sys
+current_modules = list(sys.modules.keys())
+saved_set = set(_dspy_saved_modules)
+for m in current_modules:
+    if m not in saved_set:
+        try:
+            del sys.modules[m]
+        except KeyError:
+            pass
+if "_dspy_saved_modules" in globals():
+    del _dspy_saved_modules
+          `);
+
+      // 3. Restore os.environ
+      pyodide.globals.set("_dspy_saved_environ", osEnviron);
+      pyodide.runPython(`
+import os
+os.environ.clear()
+os.environ.update(_dspy_saved_environ)
+if "_dspy_saved_environ" in globals():
+    del _dspy_saved_environ
+          `);
+
+      console.log(JSON.stringify({ result: "restore_complete" }));
+
+    } catch (e) {
+      console.log(JSON.stringify({ error: "Restore failed: " + e.message }));
+    }
+    continue;
+  }
+
   // Check for shutdown
   if (input.shutdown) {
+    // Cleanup snapshot if exists
+    if (globalThis.savedState) {
+      if (globalThis.savedState.globals) globalThis.savedState.globals.destroy();
+      if (globalThis.savedState.sysModules) globalThis.savedState.sysModules.destroy();
+      if (globalThis.savedState.osEnviron) globalThis.savedState.osEnviron.destroy();
+      globalThis.savedState = null;
+    }
     break;
   }
 

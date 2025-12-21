@@ -6,6 +6,7 @@ import dspy
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.interpreter import ThreadLocalInterpreter
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,10 @@ class ProgramOfThought(Module):
     """
     A DSPy module that runs Python programs to solve a problem.
     This module requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
+
+    **Thread Safety & Isolation**:
+    - Uses `ThreadLocalInterpreter` by default: If no interpreter is provided, each thread gets its own isolated `PythonInterpreter` instance.
+    - **Session Isolation**: Wraps code execution in a `snapshot` -> `execute` -> `restore` block. This ensures that variables, imports, and environment changes from one execution do not leak into others, maintaining a clean state for every `forward()` call.
 
     Example:
     ```
@@ -164,11 +169,30 @@ class ProgramOfThought(Module):
         if not code:
             return None, "Error: Empty code before execution."
 
+        interpreter_instance = self.interpreter
+        
+        # Unwrap ThreadLocalInterpreter to get the actual instance
+        if isinstance(interpreter_instance, ThreadLocalInterpreter):
+            interpreter_instance = interpreter_instance.interpreter
+            
         try:
-            # Since it's more complex structure now, just blindly use json to represents all.
-            output = json.dumps(self.interpreter.execute(code))
-            return output, None
+            # 1. Snapshot state to ensure isolation for this run
+            interpreter_instance.snapshot_state()
+            try:
+                # 2. Execute code (thread-safe due to PythonInterpreter lock)
+                output = interpreter_instance.execute(code)
+                return output, None
+            except Exception as e:
+                # Return the exception as an error description
+                return None, str(e)
+            finally:
+                # 3. Restore state regardless of success or failure
+                try:
+                    interpreter_instance.restore_state()
+                except Exception as e:
+                    logger.error(f"Failed to restore interpreter state: {e}")
         except Exception as e:
+            logger.error(f"Failed to snapshot interpreter state: {e}")
             return None, str(e)
 
     def forward(self, **kwargs):
@@ -183,7 +207,6 @@ class ProgramOfThought(Module):
         while error is not None:
             logger.error(f"Error in code execution: {error}")
             if hop == self.max_iters:
-                self.interpreter.shutdown()
                 raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
             input_kwargs.update({"previous_code": code, "error": error})
             code_data = self.code_regenerate(**input_kwargs)
@@ -193,5 +216,4 @@ class ProgramOfThought(Module):
             hop += 1
         input_kwargs.update({"final_generated_code": code, "code_output": output})
         answer_gen_result = self.generate_answer(**input_kwargs)
-        self.interpreter.shutdown()
         return answer_gen_result
