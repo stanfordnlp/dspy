@@ -12,6 +12,7 @@ from dspy.utils.interpreter import ThreadLocalInterpreter
 
 logger = logging.getLogger(__name__)
 
+
 class CodeAct(ReAct, ProgramOfThought):
     """
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
@@ -21,7 +22,13 @@ class CodeAct(ReAct, ProgramOfThought):
     - **Session Isolation**: Ensures that each step's code execution starts from a clean slate (reverting globals, modules, and env vars), preventing state pollution between iterations or threads.
     """
 
-    def __init__(self, signature: str | type[Signature], tools: list[Callable], max_iters: int = 5, interpreter: PythonInterpreter | None = None):
+    def __init__(
+        self,
+        signature: str | type[Signature],
+        tools: list[Callable],
+        max_iters: int = 5,
+        interpreter: PythonInterpreter | None = None,
+    ):
         """
         Initializes the CodeAct class with the specified model, temperature, and max tokens.
 
@@ -47,9 +54,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.history = []
 
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
-        if any(
-            not inspect.isfunction(tool.func) for tool in tools
-        ):
+        if any(not inspect.isfunction(tool.func) for tool in tools):
             raise ValueError("CodeAct only accepts functions and not callable objects.")
         tools = {tool.name: tool for tool in tools}
 
@@ -58,7 +63,13 @@ class CodeAct(ReAct, ProgramOfThought):
         codeact_signature = (
             dspy.Signature({**self.signature.input_fields}, "\n".join(instructions))
             .append("trajectory", dspy.InputField(), type_=str)
-            .append("generated_code", dspy.OutputField(desc="Python code that when executed, produces output relevant to answering the question"), type_=str)
+            .append(
+                "generated_code",
+                dspy.OutputField(
+                    desc="Python code that when executed, produces output relevant to answering the question"
+                ),
+                type_=str,
+            )
             .append("finished", dspy.OutputField(desc="a boolean flag to determine if the process is done"), type_=bool)
         )
 

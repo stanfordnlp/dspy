@@ -1,4 +1,3 @@
-import json
 import logging
 import re
 
@@ -31,7 +30,9 @@ class ProgramOfThought(Module):
     ```
     """
 
-    def __init__(self, signature: str | type[Signature], max_iters: int = 3, interpreter: PythonInterpreter | None = None):
+    def __init__(
+        self, signature: str | type[Signature], max_iters: int = 3, interpreter: PythonInterpreter | None = None
+    ):
         """
         Args:
             signature: The signature of the module.
@@ -170,11 +171,11 @@ class ProgramOfThought(Module):
             return None, "Error: Empty code before execution."
 
         interpreter_instance = self.interpreter
-        
+
         # Unwrap ThreadLocalInterpreter to get the actual instance
         if isinstance(interpreter_instance, ThreadLocalInterpreter):
             interpreter_instance = interpreter_instance.interpreter
-            
+
         try:
             # 1. Snapshot state to ensure isolation for this run
             interpreter_instance.snapshot_state()

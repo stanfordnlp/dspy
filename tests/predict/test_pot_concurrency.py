@@ -1,21 +1,27 @@
-import pytest
-import dspy
 import json
-from dspy.predict.program_of_thought import ProgramOfThought
 from concurrent.futures import ThreadPoolExecutor
+
+import dspy
+from dspy.predict.program_of_thought import ProgramOfThought
+
 
 class DummyLM(dspy.LM):
     def __init__(self):
         super().__init__("dummy")
-        
+
     def __call__(self, prompt=None, **kwargs):
         # Return a valid JSON response for the adapter
         # This matches the structure ProgramOfThought expects
-        return [json.dumps({
-            "reasoning": "I will calculate the square.",
-            "generated_code": "```python\nanswer = 42\nprint(answer)\n```",
-            "answer": "42"
-        })]
+        return [
+            json.dumps(
+                {
+                    "reasoning": "I will calculate the square.",
+                    "generated_code": "```python\nanswer = 42\nprint(answer)\n```",
+                    "answer": "42",
+                }
+            )
+        ]
+
 
 def test_pot_concurrency_no_crash():
     """
@@ -25,10 +31,10 @@ def test_pot_concurrency_no_crash():
     # Configure Dummy LM
     lm = DummyLM()
     dspy.configure(lm=lm)
-    
+
     # Initialize implementation
     pot = ProgramOfThought("question -> answer")
-    
+
     def run_step(i):
         # This triggers interpreter usage
         return pot(question=f"q{i}")
@@ -38,7 +44,7 @@ def test_pot_concurrency_no_crash():
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(run_step, i) for i in range(10)]
         results = [f.result() for f in futures]
-    
+
     # Verify results
     assert len(results) == 10
     for res in results:
@@ -46,6 +52,7 @@ def test_pot_concurrency_no_crash():
         # Check against string "42" (or int depending on extraction, usually string from DummyLM unless cast)
         # DummyLM returns answer="42" string in JSON.
         assert res.answer == "42"
+
 
 if __name__ == "__main__":
     test_pot_concurrency_no_crash()

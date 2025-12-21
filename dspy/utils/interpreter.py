@@ -1,15 +1,18 @@
 import atexit
-import threading
 import logging
+import threading
+
 from dspy.primitives.python_interpreter import PythonInterpreter
 
 logger = logging.getLogger(__name__)
+
 
 class ThreadLocalInterpreter:
     """
     Manages thread-local PythonInterpreter instances for default usage.
     Ensures each thread gets its own isolated Deno process.
     """
+
     def __init__(self):
         self._local = threading.local()
         self._interpreters = []
@@ -32,7 +35,7 @@ class ThreadLocalInterpreter:
                 except Exception:
                     pass
             self._interpreters.clear()
-    
+
     def __getattr__(self, name):
         # Proxy other accesses to the underlying interpreter
         # Note: This might be tricky if attributes change dynamically, but for execute/snapshot/restore it's fine.
