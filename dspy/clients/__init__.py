@@ -19,7 +19,7 @@ def configure_cache(
     enable_memory_cache: bool | None = True,
     disk_cache_dir: str | None = DISK_CACHE_DIR,
     disk_size_limit_bytes: int | None = DISK_CACHE_LIMIT,
-    memory_max_entries: int = 1000000,
+    memory_max_entries: int | float = 1000000,
 ):
     """Configure the cache for DSPy.
 
