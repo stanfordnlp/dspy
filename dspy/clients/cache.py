@@ -29,7 +29,7 @@ class Cache:
         enable_memory_cache: bool,
         disk_cache_dir: str,
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
-        memory_max_entries: int | float = 1000000,
+        memory_max_entries: int = 1000000,
     ):
         """
         Args:
