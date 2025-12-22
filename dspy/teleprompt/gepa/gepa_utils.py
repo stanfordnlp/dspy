@@ -128,7 +128,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 pred.signature = pred.signature.with_instructions(candidate[name])
         return new_prog
 
-    def evaluate(self, batch, candidate, capture_traces=False):
+    def evaluate(self, batch, candidate, capture_traces=True):
         program = self.build_program(candidate)
         callback_metadata = {"metric_key": "eval_full"} if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size else {"disable_logging": True}
 
