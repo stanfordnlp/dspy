@@ -44,7 +44,7 @@ class Cache:
         self.enable_memory_cache = enable_memory_cache
         if self.enable_memory_cache:
             if memory_max_entries <= 0:
-                raise ValueError("memory_max_entries must be a positive integer")
+                raise ValueError(f"`memory_max_entries` must be a positive integer, but received {memory_max_entries}")
             self.memory_cache = LRUCache(maxsize=memory_max_entries)
         else:
             self.memory_cache = {}
