@@ -28,7 +28,8 @@ def configure_cache(
         enable_memory_cache: Whether to enable in-memory cache.
         disk_cache_dir: The directory to store the on-disk cache.
         disk_size_limit_bytes: The size limit of the on-disk cache.
-        memory_max_entries: The maximum number of entries in the in-memory cache.
+        memory_max_entries: The maximum number of entries in the in-memory cache. To allow the cache to grow without
+                            bounds, set this parameter to `math.inf` or a similar value.
     """
 
     DSPY_CACHE = Cache(
