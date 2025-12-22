@@ -13,6 +13,7 @@
             - format_demos
             - format_field_description
             - format_field_structure
+            - format_system_message
             - format_task_description
             - format_user_message_content
             - parse

@@ -931,3 +931,57 @@ def test_responses_api_with_image_input():
         image_content = [c for c in content if c.get("type") == "input_image"]
         assert len(image_content) == 1
         assert image_content[0]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+
+def test_responses_api_with_pydantic_model_input():
+    api_response = make_response(
+        output_blocks=[
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": '{"answer" : "This is a good test answer", "number" : 42}',
+                            "annotations": [],
+                        }
+                    ],
+                },
+            ),
+        ]
+    )
+
+    lm = dspy.LM(
+        model="openai/gpt-5-mini",
+        model_type="responses",
+        cache=False,
+        temperature=1.0,
+        max_tokens=16000,
+    )
+
+    class TestModel(pydantic.BaseModel):
+        answer: str
+        number: int
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
+        # Test with messages containing a Pydantic model as response format
+        lm_result = lm("What is a good test answer?", response_format=TestModel)
+
+    # Try to validate to Pydantic model
+    TestModel.model_validate_json(lm_result[0]["text"])
+
+    dspy_responses.assert_called_once()
+    call_args = dspy_responses.call_args.kwargs
+
+    # Verify the request was converted correctly
+    assert "text" in call_args
+    response_format = call_args["text"]["format"]
+
+    assert response_format == {
+        "name": TestModel.__name__,
+        "type": "json_schema",
+        "schema": TestModel.model_json_schema(),
+    }

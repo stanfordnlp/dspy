@@ -33,17 +33,20 @@ class LoggerAdapter:
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
 
+ReflectiveExample = TypedDict(
+    "ReflectiveExample",
+    {
+        "Inputs": dict[str, Any],
+        "Generated Outputs": dict[str, Any] | str,
+        "Feedback": str,
+    },
+)
 
-class ReflectiveExample(TypedDict):
-    """
-    Structure of individual examples in the reflective dataset.
+ReflectiveExample.__doc__ = """
+Structure of individual examples in the reflective dataset.
 
-    Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
-    """
-
-    Inputs: dict[str, Any]  # Predictor inputs (may include str, dspy.Image, etc.)
-    Generated_Outputs: dict[str, Any] | str  # Success: dict with output fields, Failure: error message string
-    Feedback: str  # Always a string - from metric function or parsing error message
+Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
+"""
 
 
 class ScoreWithFeedback(Prediction):

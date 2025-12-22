@@ -45,7 +45,7 @@ class UsageTracker:
             current_v = result.get(k)
             if isinstance(v, dict) or isinstance(current_v, dict):
                 result[k] = self._merge_usage_entries(current_v, v)
-            else:
+            elif current_v is not None or v is not None:
                 result[k] = (current_v or 0) + (v or 0)
         return result
 

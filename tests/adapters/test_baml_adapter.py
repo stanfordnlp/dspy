@@ -7,23 +7,29 @@ from litellm import Choices, Message
 from litellm.files.main import ModelResponse
 
 import dspy
-from dspy.adapters.baml_adapter import COMMENT_SYMBOL, BAMLAdapter
+from dspy.adapters.baml_adapter import COMMENT_SYMBOL, INDENTATION, BAMLAdapter
 
 
 # Test fixtures - Pydantic models for testing
 class PatientAddress(pydantic.BaseModel):
+    """Patient Address model docstring"""
     street: str
     city: str
     country: Literal["US", "CA"]
 
 
 class PatientDetails(pydantic.BaseModel):
+    """
+    Patient Details model docstring
+    Multiline docstring support test
+    """
     name: str = pydantic.Field(description="Full name of the patient")
     age: int
     address: PatientAddress | None = None
 
 
 class ComplexNestedModel(pydantic.BaseModel):
+    """Complex model docstring"""
     id: int = pydantic.Field(description="Unique identifier")
     details: PatientDetails
     tags: list[str] = pydantic.Field(default_factory=list)
@@ -130,12 +136,20 @@ def test_baml_adapter_handles_complex_nested_models():
     adapter = BAMLAdapter()
     schema = adapter.format_field_structure(TestSignature)
 
+    expected_patient_details = "\n".join([
+        f"{INDENTATION}{COMMENT_SYMBOL} Patient Details model docstring",
+        f"{INDENTATION}{COMMENT_SYMBOL} Multiline docstring support test",
+        f"{INDENTATION}details:",
+    ])
+
     # Should include nested structure with comments
     assert f"{COMMENT_SYMBOL} Unique identifier" in schema
-    assert "details:" in schema
+    assert expected_patient_details in schema
     assert f"{COMMENT_SYMBOL} Full name of the patient" in schema
     assert "tags: string[]," in schema
     assert "metadata: dict[string, string]," in schema
+    assert f"{COMMENT_SYMBOL} Complex model docstring" in schema
+    assert f"{COMMENT_SYMBOL} Patient Address model docstring" in schema
 
 
 def test_baml_adapter_raise_error_on_circular_references():
@@ -501,9 +515,9 @@ def test_baml_adapter_multiple_pydantic_input_fields():
         endpoints: list[str]
 
     class TestSignature(dspy.Signature):
-        input_1: UserProfile = dspy.InputField()
-        input_2: SystemConfig = dspy.InputField()
-        result: str = dspy.OutputField()
+        input_1: UserProfile = dspy.InputField(desc="User profile information")
+        input_2: SystemConfig = dspy.InputField(desc="System configuration settings")
+        result: str = dspy.OutputField(desc="Resulting output after processing")
 
     adapter = BAMLAdapter()
 
@@ -521,7 +535,10 @@ def test_baml_adapter_multiple_pydantic_input_fields():
     # Test field descriptions are in the correct method
     field_desc = adapter.format_field_description(TestSignature)
     assert "Your input fields are:" in field_desc
+    assert "1. `input_1` (UserProfile): User profile information" in field_desc
+    assert "2. `input_2` (SystemConfig): System configuration settings" in field_desc
     assert "Your output fields are:" in field_desc
+    assert "1. `result` (str): Resulting output after processing" in field_desc
 
     # Test message formatting with actual Pydantic instances
     user_profile = UserProfile(name="John Doe", email="john@example.com", age=30)
