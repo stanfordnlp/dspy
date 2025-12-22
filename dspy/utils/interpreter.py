@@ -27,6 +27,12 @@ class ThreadLocalInterpreter:
                 self._interpreters.append(self._local.interpreter)
         return self._local.interpreter
 
+    def __call__(self, *args, **kwargs):
+        return self.interpreter(*args, **kwargs)
+
+    def getattr(self, name):
+         return getattr(self.interpreter, name)
+
     def cleanup(self):
         with self._lock:
             for interp in self._interpreters:
