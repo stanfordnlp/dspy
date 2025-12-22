@@ -33,45 +33,27 @@ class Parallel:
         Example:
             ```python
             import dspy
+            from dspy.predict.parallel import Parallel
+            lm = dspy.LM("openai/gpt-4o-mini")
+            dspy.configure(lm=lm)
 
-            dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-
-            # define a module to process data
-            class MyModule(dspy.Module):
-                def __init__(self):
-                    super().__init__()
-                
-                def forward(self, question: str) -> str:
-                    return f"Answer to: {question}"
-
-            # create example list
             examples = [
-                dspy.Example(question="What is the capital of France?").with_inputs("question"),
-                dspy.Example(question="What is 2 + 2?").with_inputs("question"),
-                dspy.Example(question="Who invented electricity?").with_inputs("question"),
-                dspy.Example(question="What is the largest planet?").with_inputs("question"),
-                dspy.Example(question="What is the chemical symbol for water?").with_inputs("question"),
+                {"question": "What is the capital of Spain?"},
+                {"question": "What is 3 * 4?"},
+                {"question": "Who wrote Hamlet?"},
             ]
 
-            # create module instance
-            module = MyModule()
-
-            # create execution pairs
+            module=dspy.Predict("question->answer")
             exec_pairs = [(module, example) for example in examples]
-
-            # parallel execution
-            results = parallel(exec_pairs, num_threads=3, disable_progress_bar=False)
-
-            # print results
+            parallel = Parallel(num_threads=3, disable_progress_bar=False)
+            results = parallel(exec_pairs)
             for i, result in enumerate(results):
-                print(f"Result {i+1}: {result}")
+                print(f"Result {i+1}: {result.answer}")
                 
             # Expected Output:
-            # Result 1: Answer to: What is the capital of France?
-            # Result 2: Answer to: What is 2 + 2?
-            # Result 3: Answer to: Who invented electricity?
-            # Result 4: Answer to: What is the largest planet?
-            # Result 5: Answer to: What is the chemical symbol for water?
+            # Result 1: Madrid
+            # Result 2: 12
+            # Result 3: William Shakespeare
             ```
         """
         super().__init__()
