@@ -1,8 +1,9 @@
 """Usage tracking utilities for DSPy."""
 
 from collections import defaultdict
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any
 
 from pydantic import BaseModel
 

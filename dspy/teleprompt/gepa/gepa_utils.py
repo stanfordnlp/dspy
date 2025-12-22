@@ -1,7 +1,8 @@
 import json
 import logging
 import random
-from typing import Any, Callable, Protocol, TypedDict
+from collections.abc import Callable
+from typing import Any, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
