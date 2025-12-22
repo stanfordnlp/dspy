@@ -135,6 +135,17 @@ def bootstrap_trace_data(
             if raise_on_error:
                 raise ve
             else:
+                # Add placeholder to maintain 1:1 correspondence between inputs and outputs.
+                # This is required by GEPA which zips outputs with input IDs.
+                data_dict = {
+                    "example": example,
+                    "prediction": prediction,  # The raw prediction that couldn't be unpacked
+                    "trace": [],
+                    "example_ind": example_ind,
+                }
+                if metric:
+                    data_dict["score"] = score
+                data.append(data_dict)
                 continue
         data_dict = {"example": example, "prediction": prediction, "trace": trace, "example_ind": example_ind}
         if metric:
