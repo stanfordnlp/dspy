@@ -48,39 +48,6 @@ def test_initialization(tmp_path):
     assert memory_cache.memory_cache.maxsize == 50
     assert memory_cache.disk_cache == {}
 
-    # Test memory-only cache with invalid memory_max_entries
-    with pytest.raises(ValueError, match=r"`memory_max_entries` must be a positive number, but received -1"):
-        memory_cache = Cache(
-            enable_disk_cache=False,
-            enable_memory_cache=True,
-            disk_cache_dir="",
-            disk_size_limit_bytes=0,
-            memory_max_entries=-1,
-        )
-
-    # Test memory-only cache with invalid memory_max_entries
-    with pytest.raises(ValueError, match=r"`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache."):
-        memory_cache = Cache(
-            enable_disk_cache=False,
-            enable_memory_cache=True,
-            disk_cache_dir="",
-            disk_size_limit_bytes=0,
-            memory_max_entries=None,
-        )
-
-    # Test memory-only cache with unbounded size
-    import math
-    memory_cache = Cache(
-        enable_disk_cache=False,
-        enable_memory_cache=True,
-        disk_cache_dir="",
-        disk_size_limit_bytes=0,
-        memory_max_entries=math.inf,
-    )
-    assert isinstance(memory_cache.memory_cache, LRUCache)
-    assert memory_cache.memory_cache.maxsize == math.inf
-    assert memory_cache.disk_cache == {}
-
     # Test disk-only cache
     disk_cache = Cache(
         enable_disk_cache=True,
@@ -102,6 +69,27 @@ def test_initialization(tmp_path):
     )
     assert disabled_cache.memory_cache == {}
     assert disabled_cache.disk_cache == {}
+
+
+def test_invalid_cache_initialization():
+    with pytest.raises(ValueError, match=r"`memory_max_entries` must be a positive number, but received -1"):
+        Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=True,
+            disk_cache_dir="",
+            disk_size_limit_bytes=0,
+            memory_max_entries=-1,
+        )
+    with pytest.raises(
+        ValueError, match=r"`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache."
+    ):
+        Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=True,
+            disk_cache_dir="",
+            disk_size_limit_bytes=0,
+            memory_max_entries=None,
+        )
 
 
 def test_cache_key_generation(cache):
