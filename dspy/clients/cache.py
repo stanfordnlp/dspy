@@ -29,7 +29,7 @@ class Cache:
         enable_memory_cache: bool,
         disk_cache_dir: str,
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
-        memory_max_entries: int | None = 1000000,
+        memory_max_entries: int = 1000000,
     ):
         """
         Args:
@@ -43,6 +43,10 @@ class Cache:
         self.enable_disk_cache = enable_disk_cache
         self.enable_memory_cache = enable_memory_cache
         if self.enable_memory_cache:
+            if memory_max_entries is None:
+                raise ValueError("`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache.")
+            elif memory_max_entries <= 0:
+                raise ValueError(f"`memory_max_entries` must be a positive number, but received {memory_max_entries}")
             self.memory_cache = LRUCache(maxsize=memory_max_entries)
         else:
             self.memory_cache = {}
