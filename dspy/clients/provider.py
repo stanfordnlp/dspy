@@ -53,7 +53,7 @@ class TrainingJob(Future):
         self.train_kwargs = train_kwargs or {}
         super().__init__()
 
-    def cancel(self):
+    def cancel(self) -> bool:
         """Cancel the training job.
 
         Subclasses should override this method to cancel the job with the provider;
@@ -65,7 +65,7 @@ class TrainingJob(Future):
         super().cancel()
 
     @abstractmethod
-    def status(self):
+    def status(self) -> Any:
         """Get the current status of the training job.
 
         This method should be implemented by subclasses to return the current
@@ -74,9 +74,6 @@ class TrainingJob(Future):
         Returns:
             The current status of the training job. The exact type depends on
             the provider implementation.
-
-        Raises:
-            NotImplementedError: If the method is not implemented by a subclass.
         """
         raise NotImplementedError
 
@@ -118,9 +115,6 @@ class ReinforceJob:
 
         This method should be implemented by subclasses to set up the necessary
         resources and state for the reinforcement learning training process.
-
-        Raises:
-            NotImplementedError: If the method is not implemented by a subclass.
         """
         raise NotImplementedError
 
@@ -135,9 +129,6 @@ class ReinforceJob:
             train_data: A list of training examples, each represented as a dictionary.
             train_data_format: The format of the training data. Can be a `TrainDataFormat`
                 enum value or a string identifier.
-
-        Raises:
-            NotImplementedError: If the method is not implemented by a subclass.
         """
         raise NotImplementedError
 
@@ -147,9 +138,6 @@ class ReinforceJob:
 
         This method should be implemented by subclasses to clean up resources
         and finalize the training process.
-
-        Raises:
-            NotImplementedError: If the method is not implemented by a subclass.
         """
         raise NotImplementedError
 
@@ -162,9 +150,6 @@ class ReinforceJob:
 
         Args:
             checkpoint_name: A name identifier for this checkpoint.
-
-        Raises:
-            NotImplementedError: If the method is not implemented by a subclass.
         """
         raise NotImplementedError
 
@@ -179,7 +164,7 @@ class ReinforceJob:
         """
         raise NotImplementedError
 
-    def status(self):
+    def status(self) -> Any:
         """Get the current status of the reinforcement learning job.
 
         This method should be implemented by subclasses to return the current
@@ -188,9 +173,6 @@ class ReinforceJob:
         Returns:
             The current status of the training job. The exact type depends on
             the provider implementation.
-
-        Raises:
-            NotImplementedError: If the method is not implemented by a subclass.
         """
         raise NotImplementedError
 
@@ -306,8 +288,5 @@ class Provider:
 
         Returns:
             The identifier of the fine-tuned model.
-
-        Raises:
-            NotImplementedError: If the method is not implemented by a subclass.
         """
         raise NotImplementedError
