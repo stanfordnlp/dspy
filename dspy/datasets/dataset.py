@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import random
 import uuid
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from dspy import Example
 from dspy.dsp.utils import dotdict
