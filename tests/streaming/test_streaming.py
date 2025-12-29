@@ -395,7 +395,7 @@ def test_sync_streaming_keyboard_interrupt_propagation():
         yield "Starting..."
         raise KeyboardInterrupt()
 
-    sync_output = apply_sync_streaming(interrupt_gen())
+    sync_output = dspy.streaming.apply_sync_streaming(interrupt_gen())
 
     with pytest.raises(KeyboardInterrupt):
         for _ in sync_output:
