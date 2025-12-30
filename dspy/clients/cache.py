@@ -170,7 +170,11 @@ class Cache:
             with open(filepath, "wb") as f:
                 cloudpickle.dump(self.memory_cache, f)
 
-    def load_memory_cache(self, filepath: str) -> None:
+    def load_memory_cache(self, filepath: str, allow_pickle: bool = False) -> None:
+        if not allow_pickle:
+            raise ValueError("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. \
+            Set `allow_pickle=True` to load if you are running in a trusted environment and the file is from a trusted source.")
+
         if not self.enable_memory_cache:
             return
 

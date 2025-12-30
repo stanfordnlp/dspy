@@ -12,7 +12,7 @@ def test_parallel_module():
             {"output": "test output 5"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     class MyModule(dspy.Module):
         def __init__(self):
@@ -99,7 +99,7 @@ def test_nested_parallel_module():
             {"output": "test output 5"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     class MyModule(dspy.Module):
         def __init__(self):
@@ -143,7 +143,7 @@ def test_nested_batch_method():
             {"output": "test output 5"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     class MyModule(dspy.Module):
         def __init__(self):

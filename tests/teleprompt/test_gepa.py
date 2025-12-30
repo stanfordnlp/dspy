@@ -43,7 +43,16 @@ def bad_metric(example, prediction):
     return 0.0
 
 
-def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
+@pytest.mark.parametrize("reflection_minibatch_size, batch, expected_callback_metadata", [
+    (None, [], {"metric_key": "eval_full"}),
+    (None, [Example(input="What is the color of the sky?", output="blue")], {"metric_key": "eval_full"}),
+    (1, [], {"disable_logging": True}),
+    (1, [
+        Example(input="What is the color of the sky?", output="blue"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!"),
+    ], {"metric_key": "eval_full"}),
+])
+def test_gepa_adapter_disables_logging_on_minibatch_eval(monkeypatch, reflection_minibatch_size, batch, expected_callback_metadata):
     from dspy.teleprompt import bootstrap_trace as bootstrap_trace_module
     from dspy.teleprompt.gepa import gepa_utils
 
@@ -57,6 +66,7 @@ def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
         metric_fn=simple_metric,
         feedback_map={},
         failure_score=0.0,
+        reflection_minibatch_size=reflection_minibatch_size,
     )
 
     captured_kwargs: dict[str, Any] = {}
@@ -72,9 +82,9 @@ def test_gepa_adapter_disables_logging_during_trace_capture(monkeypatch):
         lambda self, candidate: DummyModule(),
     )
 
-    adapter.evaluate(batch=[], candidate={}, capture_traces=True)
+    adapter.evaluate(batch=batch, candidate={}, capture_traces=True)
 
-    assert captured_kwargs["callback_metadata"] == {"disable_logging": True}
+    assert captured_kwargs["callback_metadata"] == expected_callback_metadata
 
 
 @pytest.fixture
@@ -96,7 +106,7 @@ def test_basic_workflow(use_mlflow, mock_mlflow):
     reflection_lm_history = data["reflection_lm"]
 
     lm_main = DictDummyLM(lm_history)
-    dspy.settings.configure(lm=lm_main)
+    dspy.configure(lm=lm_main)
     reflection_lm = DictDummyLM(reflection_lm_history)
 
     optimizer = dspy.GEPA(
@@ -165,7 +175,7 @@ def test_workflow_with_custom_instruction_proposer_and_component_selector():
     lm_main = DictDummyLM(lm_history)
     reflection_lm = DictDummyLM(reflection_lm_history)
 
-    dspy.settings.configure(lm=lm_main)
+    dspy.configure(lm=lm_main)
     optimizer = dspy.GEPA(
         metric=metric,
         reflection_lm=reflection_lm,

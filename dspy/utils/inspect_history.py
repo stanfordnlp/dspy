@@ -46,6 +46,13 @@ def pretty_print_history(history, n: int = 1):
                             len_audio = len(c["input_audio"]["data"])
                             audio_str = f"<audio format='{audio_format}' base64-encoded, length={len_audio}>"
                             print(_blue(audio_str.strip()))
+                        elif c["type"] == "file" or c["type"] == "input_file":
+                            file = c.get("file", c.get("input_file", {}))
+                            filename = file.get("filename", "")
+                            file_id = file.get("file_id", "")
+                            file_data = file.get("file_data", "")
+                            file_str = f"<file: name:{filename}, id:{file_id}, data_length:{len(file_data)}>"
+                            print(_blue(file_str.strip()))
             print("\n")
 
         if isinstance(outputs[0], dict):

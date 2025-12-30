@@ -1,4 +1,6 @@
+import json
 import signal
+import tempfile
 import threading
 from unittest.mock import patch
 
@@ -34,7 +36,7 @@ def test_evaluate_initialization():
 
 
 def test_evaluate_call():
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             {
                 "What is 1+1?": {"answer": "2"},
@@ -86,7 +88,7 @@ def test_construct_result_df():
 
 
 def test_multithread_evaluate_call():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     assert program(question="What is 1+1?").answer == "2"
@@ -109,7 +111,7 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
             time.sleep(1)
             return super().__call__(*args, **kwargs)
 
-    dspy.settings.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
+    dspy.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
 
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
@@ -138,7 +140,7 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
 
 
 def test_evaluate_call_wrong_answer():
-    dspy.settings.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
     program = Predict("question -> answer")
     ev = Evaluate(
@@ -180,7 +182,7 @@ def test_evaluate_display_table(program_with_example, display_table, is_in_ipyth
     example_input = next(iter(example.inputs().values()))
     example_output = {key: value for key, value in example.toDict().items() if key not in example.inputs()}
 
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             {
                 example_input: example_output,
@@ -234,7 +236,7 @@ def test_evaluate_callback():
             self.end_call_count += 1
 
     callback = TestCallback()
-    dspy.settings.configure(
+    dspy.configure(
         lm=DummyLM(
             {
                 "What is 1+1?": {"answer": "2"},
@@ -261,3 +263,136 @@ def test_evaluate_callback():
 def test_evaluation_result_repr():
     result = EvaluationResult(score=100.0, results=[(new_example("What is 1+1?", "2"), {"answer": "2"}, 100.0)])
     assert repr(result) == "EvaluationResult(score=100.0, results=<list of 1 results>)"
+
+
+def test_evaluate_save_as_json_with_history():
+    """Test that save_as_json works with Examples containing dspy.History objects."""
+    # Setup
+    dspy.settings.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+            }
+        )
+    )
+
+    # Create history objects
+    history1 = dspy.History(
+        messages=[
+            {"question": "Previous Q1", "answer": "Previous A1"},
+        ]
+    )
+    history2 = dspy.History(
+        messages=[
+            {"question": "Previous Q2", "answer": "Previous A2"},
+            {"question": "Previous Q3", "answer": "Previous A3"},
+        ]
+    )
+
+    # Create examples with history
+    devset = [
+        dspy.Example(question="What is 1+1?", answer="2", history=history1).with_inputs("question"),
+        dspy.Example(question="What is 2+2?", answer="4", history=history2).with_inputs("question"),
+    ]
+
+    program = Predict("question -> answer")
+
+    # Create evaluator with save_as_json
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        temp_json = f.name
+
+    try:
+        evaluator = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            save_as_json=temp_json,
+        )
+
+        result = evaluator(program)
+        assert result.score == 100.0
+
+        # Verify JSON file was created and is valid
+        with open(temp_json) as f:
+            data = json.load(f)
+
+        assert len(data) == 2
+
+        # Verify history was properly serialized in first record
+        assert "history" in data[0]
+        assert isinstance(data[0]["history"], dict)
+        assert "messages" in data[0]["history"]
+        assert len(data[0]["history"]["messages"]) == 1
+        assert data[0]["history"]["messages"][0] == {"question": "Previous Q1", "answer": "Previous A1"}
+
+        # Verify history was properly serialized in second record
+        assert "history" in data[1]
+        assert isinstance(data[1]["history"], dict)
+        assert "messages" in data[1]["history"]
+        assert len(data[1]["history"]["messages"]) == 2
+        assert data[1]["history"]["messages"][0] == {"question": "Previous Q2", "answer": "Previous A2"}
+        assert data[1]["history"]["messages"][1] == {"question": "Previous Q3", "answer": "Previous A3"}
+
+    finally:
+        import os
+        if os.path.exists(temp_json):
+            os.unlink(temp_json)
+
+
+def test_evaluate_save_as_csv_with_history():
+    """Test that save_as_csv works with Examples containing dspy.History objects."""
+    # Setup
+    dspy.settings.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+            }
+        )
+    )
+
+    # Create history object
+    history = dspy.History(
+        messages=[
+            {"question": "Previous Q", "answer": "Previous A"},
+        ]
+    )
+
+    # Create example with history
+    devset = [
+        dspy.Example(question="What is 1+1?", answer="2", history=history).with_inputs("question"),
+    ]
+
+    program = Predict("question -> answer")
+
+    # Create evaluator with save_as_csv
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+        temp_csv = f.name
+
+    try:
+        evaluator = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            save_as_csv=temp_csv,
+        )
+
+        result = evaluator(program)
+        assert result.score == 100.0
+
+        # Verify CSV file was created
+        import csv
+        with open(temp_csv) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) == 1
+        assert "history" in rows[0]
+        # CSV will have string representation of the dict
+        assert "messages" in rows[0]["history"]
+
+    finally:
+        import os
+        if os.path.exists(temp_csv):
+            os.unlink(temp_csv)
+

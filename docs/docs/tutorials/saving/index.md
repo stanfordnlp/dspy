@@ -20,7 +20,7 @@ Let's say we have compiled a program with some data, and we want to save the pro
 import dspy
 from dspy.datasets.gsm8k import GSM8K, gsm8k_metric
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 gsm8k = GSM8K()
 gsm8k_trainset = gsm8k.train[:10]
@@ -37,6 +37,9 @@ compiled_dspy_program.save("./dspy_program/program.json", save_program=False)
 ```
 
 To save the state of your program to a pickle file:
+
+!!! danger "Security Warning: Pickle Files Can Execute Arbitrary Code"
+    Loading `.pkl` files can execute arbitrary code and may be dangerous. Only load pickle files from trusted sources in secure environments. **Prefer using `.json` files whenever possible**. If you must use pickle files, ensure you trust the source and use the `allow_pickle=True` parameter when loading.
 
 ```python
 compiled_dspy_program.save("./dspy_program/program.pkl", save_program=False)
@@ -57,9 +60,12 @@ assert str(compiled_dspy_program.signature) == str(loaded_dspy_program.signature
 
 Or load the state from a pickle file:
 
+!!! danger "Security Warning"
+    Remember to use `allow_pickle=True` when loading pickle files, and only load from trusted sources.
+
 ```python
 loaded_dspy_program = dspy.ChainOfThought("question -> answer") # Recreate the same program.
-loaded_dspy_program.load("./dspy_program/program.pkl")
+loaded_dspy_program.load("./dspy_program/program.pkl", allow_pickle=True)
 
 assert len(compiled_dspy_program.demos) == len(loaded_dspy_program.demos)
 for original_demo, loaded_demo in zip(compiled_dspy_program.demos, loaded_dspy_program.demos):
@@ -69,6 +75,9 @@ assert str(compiled_dspy_program.signature) == str(loaded_dspy_program.signature
 ```
 
 ## Whole Program Saving
+
+!!! warning "Security Notice: Whole Program Saving Uses Pickle"
+    Whole program saving uses `cloudpickle` for serialization, which has the same security risks as pickle files. Only load programs from trusted sources in secure environments.
 
 Starting from `dspy>=2.6.0`, DSPy supports saving the whole program, including the architecture and the state. This feature
 is powered by `cloudpickle`, which is a library for serializing and deserializing Python objects.

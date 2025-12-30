@@ -419,7 +419,7 @@ class GroundedProposer(Proposer):
             temperature=self.init_temperature,
         )
 
-        with dspy.settings.context(lm=rollout_lm):
+        with dspy.context(lm=rollout_lm):
             proposed_instruction = instruction_generator(
                 demo_candidates=demo_candidates,
                 pred_i=pred_i,

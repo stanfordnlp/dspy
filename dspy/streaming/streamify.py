@@ -64,7 +64,7 @@ def streamify(
     import asyncio
     import dspy
 
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
     # Create the program and wrap it with streaming functionality
     program = dspy.streamify(dspy.Predict("q->a"))
 
@@ -88,7 +88,7 @@ def streamify(
     import asyncio
     import dspy
 
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
     class MyStatusMessageProvider(StatusMessageProvider):
         def module_start_status_message(self, instance, inputs):
@@ -121,7 +121,7 @@ def streamify(
     import asyncio
     import dspy
 
-    dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini", cache=False))
 
     # Create the program and wrap it with streaming functionality
     predict = dspy.Predict("question->answer, reasoning")

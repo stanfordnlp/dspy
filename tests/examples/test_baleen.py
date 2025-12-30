@@ -57,7 +57,7 @@ def load_hotpotqa():
 def _test_baleen():
     lm = dspy.OpenAI(model="gpt-3.5-turbo")
     rm = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
-    dspy.settings.configure(lm=lm, rm=rm)
+    dspy.configure(lm=lm, rm=rm)
 
     # Ask any question you like to this simple RAG program.
     my_question = "How many storeys are in the castle that David Gregory inherited?"
@@ -98,7 +98,7 @@ def _test_compiled_baleen():
     trainset, devset = load_hotpotqa()
     lm = dspy.OpenAI(model="gpt-3.5-turbo")
     rm = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
-    dspy.settings.configure(lm=lm, rm=rm)
+    dspy.configure(lm=lm, rm=rm)
 
     uncompiled_baleen = SimplifiedBaleen()  # uncompiled (i.e., zero-shot) program
 

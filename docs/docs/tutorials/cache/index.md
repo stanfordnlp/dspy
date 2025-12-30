@@ -25,7 +25,7 @@ import time
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"), track_usage=True)
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), track_usage=True)
 
 predict = dspy.Predict("question->answer")
 
@@ -60,7 +60,7 @@ import os
 
 os.environ["ANTHROPIC_API_KEY"] = "{your_anthropic_key}"
 lm = dspy.LM(
-    "anthropic/claude-3-5-sonnet-20240620",
+    "anthropic/claude-sonnet-4-5-20250929",
     cache_control_injection_points=[
         {
             "location": "message",
@@ -167,7 +167,7 @@ import time
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 predict = dspy.Predict("question->answer")
 
@@ -193,7 +193,7 @@ from hashlib import sha256
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 class CustomCache(dspy.clients.Cache):
 

@@ -69,7 +69,7 @@ def count_messages_with_image_url_pattern(messages):
 def setup_predictor(signature, expected_output):
     """Helper to set up a predictor with DummyLM"""
     lm = DummyLM([expected_output])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     return dspy.Predict(signature), lm
 
 

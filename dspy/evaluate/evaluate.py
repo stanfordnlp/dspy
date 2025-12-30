@@ -233,7 +233,7 @@ class Evaluate:
             (
                 merge_dicts(example, prediction) | {metric_name: score}
                 if prediction_is_dictlike(prediction)
-                else dict(example) | {"prediction": prediction, metric_name: score}
+                else example.toDict() | {"prediction": prediction, metric_name: score}
             )
             for example, prediction, score in results
         ]
@@ -305,6 +305,12 @@ def prediction_is_dictlike(prediction):
 
 
 def merge_dicts(d1, d2) -> dict:
+    # Convert to dict if objects have toDict method (e.g., Example objects)
+    if hasattr(d1, "toDict"):
+        d1 = d1.toDict()
+    if hasattr(d2, "toDict"):
+        d2 = d2.toDict()
+
     merged = {}
     for k, v in d1.items():
         if k in d2:

@@ -8,12 +8,12 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="dspy"
 #replace_package_version_marker
-version="3.0.4b2"
+version="3.1.0b1"
 description = "DSPy"
 readme = "README.md"
 authors = [{ name = "Omar Khattab", email = "okhattab@stanford.edu" }]
 license = {file = "LICENSE"}
-requires-python = ">=3.10, <3.14"
+requires-python = ">=3.10, <3.15"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -21,8 +21,6 @@ classifiers = [
     "Programming Language :: Python :: 3"
 ]
 dependencies = [
-    "backoff>=2.2",
-    "joblib~=1.3",
     "openai>=0.28.1",
     "regex>=2023.10.3",
     "orjson>=3.9.0",
@@ -30,20 +28,17 @@ dependencies = [
     "requests>=2.31.0",
     "optuna>=3.4.0",
     "pydantic>=2.0",
-    "magicattr>=0.1.6",
     "litellm>=1.64.0",
     "diskcache>=5.6.0",
-    "json-repair>=0.30.0",
+    "json-repair>=0.54.2",
     "tenacity>=8.2.3",
     "anyio",
     "asyncer==0.0.8",
     "cachetools>=5.5.0",
     "cloudpickle>=3.0.0",
-    "rich>=13.7.1",
-    "pillow>=10.1.0",
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
-    "gepa[dspy]==0.0.18",
+    "gepa[dspy]==0.0.22",
 ]
 
 [project.optional-dependencies]
@@ -60,8 +55,8 @@ dev = [
     "pillow>=10.1.0",
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
-    "litellm>=1.64.0; sys_platform == 'win32'",
-    "litellm[proxy]>=1.64.0; sys_platform != 'win32'",
+    "litellm>=1.64.0; sys_platform == 'win32' or python_version == '3.14'",
+    "litellm[proxy]>=1.64.0; sys_platform != 'win32' and python_version < '3.14'",  # Remove 3.14 condition once uvloop supports
 ]
 test_extras = [
     "mcp; python_version >= '3.10'",

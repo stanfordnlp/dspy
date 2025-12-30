@@ -12,7 +12,7 @@ import os
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_api_key}"
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 class QA(dspy.Signature):
     question: str = dspy.InputField()
@@ -118,10 +118,10 @@ You may notice that `history` does not appear in the input fields section of the
 
 For example:
 
-```
+```python
 import dspy
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 
 class QA(dspy.Signature):
@@ -195,7 +195,7 @@ The capital of France is Paris.
 User message:
 
 [[ ## question ## ]]
-What is the capital of Germany?
+What is the capital of America?
 
 Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.
 
@@ -203,7 +203,7 @@ Respond with the corresponding output fields, starting with the field `[[ ## ans
 Response:
 
 [[ ## answer ## ]]
-The capital of Germany is Berlin.
+The capital of the United States of America is Washington, D.C.
 
 [[ ## completed ## ]]
 ```

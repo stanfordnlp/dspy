@@ -1,10 +1,14 @@
 import json
 import re
-from typing import Any, Optional, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Optional, get_args, get_origin
 
 import json_repair
 import pydantic
 from litellm import ModelResponseStream
+
+if TYPE_CHECKING:
+    from dspy.clients.lm import LM
+    from dspy.signatures.signature import Signature
 
 CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
 CUSTOM_TYPE_END_IDENTIFIER = "<<CUSTOM-TYPE-END-IDENTIFIER>>"
@@ -71,9 +75,29 @@ class Type(pydantic.BaseModel):
         return formatted
 
     @classmethod
-    def adapt_to_native_lm_feature(cls, lm, lm_kwargs) -> bool:
-        """Check whether the custom type is natively supported by the LM and adapt to the native feature if possible."""
-        return False
+    def adapt_to_native_lm_feature(
+        cls,
+        signature: type["Signature"],
+        field_name: str,
+        lm: "LM",
+        lm_kwargs: dict[str, Any],
+    ) -> type["Signature"]:
+        """Adapt the custom type to the native LM feature if possible.
+
+        When the LM and configuration supports the related native LM feature, e.g., native tool calling, native
+        reasoning, etc., we adapt the signature and `lm_kwargs` to enable the native LM feature.
+
+        Args:
+            signature: The DSPy signature for the LM call.
+            field_name: The name of the field in the signature to adapt to the native LM feature.
+            lm: The LM instance.
+            lm_kwargs: The keyword arguments for the LM call, subject to in-place updates if adaptation if required.
+
+        Returns:
+            The adapted signature. If the custom type is not natively supported by the LM, return the original
+            signature.
+        """
+        return signature
 
     @classmethod
     def is_streamable(cls) -> bool:

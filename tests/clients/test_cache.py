@@ -189,8 +189,12 @@ def test_save_and_load_memory_cache(cache, tmp_path):
         memory_max_entries=100,
     )
 
-    # Load the memory cache
-    new_cache.load_memory_cache(str(temp_cache_file))
+    # Load the memory cache without allowing pickle (default)
+    with pytest.raises(ValueError):
+        new_cache.load_memory_cache(str(temp_cache_file))
+
+    # Load the memory cache with allow_pickle=True
+    new_cache.load_memory_cache(str(temp_cache_file), allow_pickle=True)
 
     # Verify items are in the new memory cache
     for req in requests:
