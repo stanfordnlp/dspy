@@ -164,7 +164,7 @@ class Reasoning(Type):
 
         # If it's not a string method, provide a helpful error
         raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'. "
+            f"`{type(self).__name__}` object has no attribute '{name}'. "
             f"If you are using `dspy.ChainOfThought`, note that the 'reasoning' field in ChainOfThought is now a "
             "`dspy.Reasoning` object (not a plain string). "
             f"You can convert it to a string with str(reasoning) or access the content with reasoning.content."

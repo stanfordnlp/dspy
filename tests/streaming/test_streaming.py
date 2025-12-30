@@ -987,10 +987,6 @@ async def test_streaming_allows_custom_streamable_type():
         def parse_lm_response(cls, response: dict) -> "CustomType":
             return CustomType(message=response.split("\n\n")[0])
 
-        @classmethod
-        def adapt_to_native_lm_feature(cls, lm, lm_kwargs):
-            return True
-
     class CustomSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: CustomType = dspy.OutputField()

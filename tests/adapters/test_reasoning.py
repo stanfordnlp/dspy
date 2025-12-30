@@ -1,10 +1,11 @@
 """Test that dspy.Reasoning is fully str-like for backward compatibility."""
 
+import pytest
+
 import dspy
 
 
 def test_reasoning_basic_operations():
-    """Test basic string-like operations."""
     reasoning = dspy.Reasoning(content="Hello World")
 
     # Test str conversion
@@ -34,11 +35,8 @@ def test_reasoning_basic_operations():
     assert len(chars) == 11
     assert chars[0] == "H"
 
-    print("✓ Basic operations work")
-
 
 def test_reasoning_concatenation():
-    """Test string concatenation."""
     reasoning = dspy.Reasoning(content="Hello")
 
     # Test + operator
@@ -57,11 +55,8 @@ def test_reasoning_concatenation():
     assert isinstance(result3, dspy.Reasoning)
     assert result3.content == "Hello World"
 
-    print("✓ Concatenation works")
-
 
 def test_reasoning_string_methods():
-    """Test delegated string methods via __getattr__."""
     reasoning = dspy.Reasoning(content="  Hello World  ")
 
     # Test strip
@@ -93,8 +88,6 @@ def test_reasoning_string_methods():
     # Test join
     assert reasoning.strip().join(["a", "b", "c"]) == "aHello WorldbHello Worldc"
 
-    print("✓ String methods work")
-
 
 def test_reasoning_with_chain_of_thought():
     """Test Reasoning in actual ChainOfThought usage."""
@@ -113,28 +106,10 @@ def test_reasoning_with_chain_of_thought():
     assert "step by step" in result.reasoning
     assert len(result.reasoning) == 25
 
-    print("✓ ChainOfThought integration works")
-
 
 def test_reasoning_error_message():
     """Test that helpful error is shown for invalid attributes."""
     reasoning = dspy.Reasoning(content="Hello")
 
-    try:
-        _ = reasoning.nonexistent_method
-        assert False, "Should have raised AttributeError"
-    except AttributeError as e:
-        error_msg = str(e)
-        assert "Reasoning" in error_msg
-        assert "ChainOfThought" in error_msg
-        assert "dspy.Reasoning object" in error_msg
-        print(f"✓ Error message is helpful: {error_msg}")
-
-
-if __name__ == "__main__":
-    test_reasoning_basic_operations()
-    test_reasoning_concatenation()
-    test_reasoning_string_methods()
-    test_reasoning_with_chain_of_thought()
-    test_reasoning_error_message()
-    print("\n✅ All tests passed!")
+    with pytest.raises(AttributeError, match="`Reasoning` object has no attribute 'nonexistent_method'"):
+        reasoning.nonexistent_method
