@@ -154,3 +154,23 @@ def test_statistics_tracking_during_optimization():
     ), "Optimizer did not properly populate the latest results statistics"
 
     # Additional detailed checks can be added here to verify the contents of the tracked statistics
+
+
+def test_copro_compile_without_eval_kwargs():
+    """Test that COPRO.compile works without providing eval_kwargs (issue #9080)."""
+    lm = DummyLM(
+        [
+            {"proposed_instruction": "Optimized Prompt", "proposed_prefix_for_output_field": "Optimized Prefix"},
+            {"reasoning": "reasoning", "output": "blue"},
+            {"reasoning": "reasoning", "output": "Ring-ding-ding-ding-dingeringeding!"},
+        ]
+    )
+    dspy.configure(lm=lm)
+    optimizer = COPRO(metric=simple_metric, breadth=2, depth=1, init_temperature=1.4)
+
+    student = SimpleModule("input -> output")
+
+    # Compile without eval_kwargs - this should not raise an error
+    optimized_student = optimizer.compile(student, trainset=trainset)
+
+    assert optimized_student is not student, "Optimization did not return a new student"
