@@ -303,7 +303,7 @@ class BetterTogether(Teleprompter):
 
         student._compiled = True
         return student
-    
+
     def _prepare_student_and_teacher(
         self, student: Module, teacher: Module | list[Module] | None
     ) -> tuple[Module, list[Module] | None]:
@@ -358,7 +358,7 @@ class BetterTogether(Teleprompter):
             )
 
         return parsed_strategy
-    
+
     def _prepare_optimizer_compile_args(
         self,
         optimizer_compile_args: dict[str, dict[str, Any]] | None,
@@ -485,7 +485,7 @@ class BetterTogether(Teleprompter):
         # Sort candidates by score (best first), with earlier programs winning ties
         candidate_programs_with_idx = [(i, cp) for i, cp in enumerate(candidate_programs)]
         candidate_programs_with_idx.sort(
-            key=lambda x: (x[1]["score"] if x[1]["score"] is not None else float('-inf'), -x[0]),
+            key=lambda x: (x[1]["score"] if x[1]["score"] is not None else float("-inf"), -x[0]),
             reverse=True
         )
         candidate_programs = [cp for _, cp in candidate_programs_with_idx]
@@ -505,7 +505,7 @@ class BetterTogether(Teleprompter):
 
         logger.info(f"\n{BOLD}==> OPTIMIZATION SUMMARY <=={ENDC}")
         logger.info(f"{GREEN}Best score:{ENDC} {best_program['score']}")
-        strategy_display = best_program['strategy'] if best_program['strategy'] else 'original (no optimization)'
+        strategy_display = best_program["strategy"] if best_program["strategy"] else "original (no optimization)"
         logger.info(f"{GREEN}Best strategy:{ENDC} {strategy_display}")
         logger.info(f"{BLUE}Total candidates evaluated:{ENDC} {len(candidate_programs)}")
 
@@ -578,7 +578,7 @@ class BetterTogether(Teleprompter):
 
         # Check if this is the best score so far
         valid_scores = [cp["score"] for cp in candidate_programs if cp["score"] is not None]
-        best_score_so_far = max(valid_scores) if valid_scores else float('-inf')
+        best_score_so_far = max(valid_scores) if valid_scores else float("-inf")
         is_new_best = score is not None and score >= best_score_so_far
 
         return student, score, is_new_best, lms_relaunched
