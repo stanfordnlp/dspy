@@ -201,8 +201,8 @@ def test_typed_demos_after_dump_and_load_state():
 #     assert len(dumped_state["demos"]) == len(original_instance.demos)
 #     assert dumped_state["demos"][0]["input"] == original_instance.demos[0].input.model_dump_json()
 
-#     saved_state = ujson.dumps(dumped_state)
-#     loaded_state = ujson.loads(saved_state)
+#     saved_state = orjson.dumps(dumped_state).decode()
+#     loaded_state = orjson.loads(saved_state)
 
 #     new_instance = TypedPredictor(TypedTranslateToEnglish).predictor
 #     new_instance.load_state(loaded_state)
