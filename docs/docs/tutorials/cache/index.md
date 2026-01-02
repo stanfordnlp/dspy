@@ -153,7 +153,7 @@ class CustomCache(dspy.clients.Cache):
 
     def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
         messages = request.get("messages", [])
-        return sha256(ujson.dumps(messages, sort_keys=True).encode()).hexdigest()
+        return sha256(orjson.dumps(messages, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
 dspy.cache = CustomCache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=dspy.clients.DISK_CACHE_DIR)
 ```
@@ -188,7 +188,7 @@ import dspy
 import os
 import time
 from typing import Dict, Any, Optional
-import ujson
+import orjson
 from hashlib import sha256
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
@@ -199,7 +199,7 @@ class CustomCache(dspy.clients.Cache):
 
     def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
         messages = request.get("messages", [])
-        return sha256(ujson.dumps(messages, sort_keys=True).encode()).hexdigest()
+        return sha256(orjson.dumps(messages, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
 dspy.cache = CustomCache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=dspy.clients.DISK_CACHE_DIR)
 
