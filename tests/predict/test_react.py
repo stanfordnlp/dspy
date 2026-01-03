@@ -1,4 +1,3 @@
-import re
 
 import litellm
 import pytest
@@ -46,7 +45,7 @@ def test_tool_observation_preserves_custom_type():
     react = dspy.ReAct("question -> answer", tools=[make_images])
     react(question="Draw me something red")
 
-    sigs_with_obs = [sig for sig, inputs in captured_calls if "observation_0" in inputs]
+    sigs_with_obs = [sig for sig, inputs in captured_calls if "observation_0" in str(inputs)]
     assert sigs_with_obs, "Expected ReAct to format a trajectory containing observation_0"
 
     observation_content = lm.history[1]["messages"][1]["content"]
@@ -111,24 +110,41 @@ def test_tool_calling_with_pydantic_args():
     )
     assert outputs.invitation_letter == "It's my honor to invite Alice to the Science Fair event on Friday."
 
-    expected_trajectory = {
-        "thought_0": "I need to write an invitation letter for Alice to the Science Fair event.",
-        "tool_name_0": "write_invitation_letter",
-        "tool_args_0": {
-            "participant_name": "Alice",
-            "event_info": {
-                "name": "Science Fair",
-                "date": "Friday",
-                "participants": {"Alice": "female", "Bob": "male"},
-            },
-        },
-        "observation_0": "It's my honor to invite Alice to event Science Fair on Friday",
-        "thought_1": "I have successfully written the invitation letter for Alice to the Science Fair. Now I can finish the task.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
-    }
-    assert outputs.trajectory == expected_trajectory
+    # Verify trajectory is a History object with raw mode (tool call format)
+    traj = outputs.trajectory
+    assert isinstance(traj, dspy.History)
+    assert traj.mode == "raw"
+    # 2 tool calls (write_invitation_letter + finish), each = assistant + tool = 4 messages + 1 extract = 5 messages
+    assert len(traj.messages) == 5
+
+    # Check first message (tool call - assistant)
+    msg0 = traj.messages[0]
+    assert msg0["role"] == "assistant"
+    assert msg0["content"] == "I need to write an invitation letter for Alice to the Science Fair event."
+    assert len(msg0["tool_calls"]) == 1
+    assert msg0["tool_calls"][0]["function"]["name"] == "write_invitation_letter"
+
+    # Check second message (tool response)
+    msg1 = traj.messages[1]
+    assert msg1["role"] == "tool"
+    assert msg1["tool_call_id"] == msg0["tool_calls"][0]["id"]
+    assert "It's my honor to invite Alice to event Science Fair on Friday" in msg1["content"]
+
+    # Check third message (finish - assistant)
+    msg2 = traj.messages[2]
+    assert msg2["role"] == "assistant"
+    assert msg2["tool_calls"][0]["function"]["name"] == "finish"
+
+    # Check fourth message (finish - tool response)
+    msg3 = traj.messages[3]
+    assert msg3["role"] == "tool"
+    assert msg3["content"] == "Completed."
+
+    # Check last message (extract)
+    msg_extract = traj.messages[-1]
+    assert msg_extract["role"] == "assistant"
+    assert "This is a very rigorous reasoning process, trust me bro!" in msg_extract["content"]
+    assert "invitation_letter" in msg_extract["content"]
 
 
 def test_tool_calling_without_typehint():
@@ -147,20 +163,40 @@ def test_tool_calling_without_typehint():
     dspy.configure(lm=lm)
     outputs = react(a=1, b=2)
 
-    expected_trajectory = {
-        "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {
-            "a": 1,
-            "b": 2,
-        },
-        "observation_0": 3,
-        "thought_1": "I have the sum, now I can finish.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
-    }
-    assert outputs.trajectory == expected_trajectory
+    # Verify trajectory is a History object with raw mode
+    traj = outputs.trajectory
+    assert isinstance(traj, dspy.History)
+    assert traj.mode == "raw"
+    # 2 tool calls (each = assistant + tool) + 1 extract = 5 messages
+    assert len(traj.messages) == 5
+
+    # Check first message (tool call - assistant)
+    msg0 = traj.messages[0]
+    assert msg0["role"] == "assistant"
+    assert msg0["content"] == "I need to add two numbers."
+    assert msg0["tool_calls"][0]["function"]["name"] == "foo"
+
+    # Check second message (tool response)
+    msg1 = traj.messages[1]
+    assert msg1["role"] == "tool"
+    assert msg1["content"] == "3"  # JSON serialized
+
+    # Check third message (finish - assistant)
+    msg2 = traj.messages[2]
+    assert msg2["role"] == "assistant"
+    assert msg2["content"] == "I have the sum, now I can finish."
+    assert msg2["tool_calls"][0]["function"]["name"] == "finish"
+
+    # Check fourth message (finish - tool response)
+    msg3 = traj.messages[3]
+    assert msg3["role"] == "tool"
+    assert msg3["content"] == "Completed."
+
+    # Check last message (extract)
+    msg_extract = traj.messages[-1]
+    assert msg_extract["role"] == "assistant"
+    assert "I added the numbers successfully" in msg_extract["content"]
+    assert "c: 3" in msg_extract["content"]
 
 
 def test_trajectory_truncation():
@@ -198,9 +234,19 @@ def test_trajectory_truncation():
     # Call forward and get the result
     result = react(input_text="test input")
 
-    # Verify that older entries in the trajectory were truncated
-    assert "thought_0" not in result.trajectory
-    assert "thought_2" in result.trajectory
+    # Verify trajectory is a History object
+    traj = result.trajectory
+    assert isinstance(traj, dspy.History)
+    assert traj.mode == "raw"
+
+    # Verify that older entries were truncated (first assistant+tool pair removed)
+    # After truncation, we should have messages for: Thought 2 (assistant+tool), finish (assistant+tool), extract
+    assert len(traj.messages) >= 4
+
+    # First message should be Thought 2's assistant message (Thought 1 was truncated)
+    assert traj.messages[0]["role"] == "assistant"
+    assert traj.messages[0]["content"] == "Thought 2"
+
     assert result.output_text == "Final output"
 
 
@@ -280,24 +326,32 @@ def test_error_retry():
     outputs = react(a=1, b=2, max_iters=2)
     traj = outputs.trajectory
 
-    # --- exact-match checks (thoughts + tool calls) -------------------------
-    control_expected = {
-        "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {"a": 1, "b": 2},
-        "thought_1": "I need to add two numbers.",
-        "tool_name_1": "foo",
-        "tool_args_1": {"a": 1, "b": 2},
-    }
-    for k, v in control_expected.items():
-        assert traj[k] == v, f"{k} mismatch"
+    # Verify trajectory is a History object with raw mode
+    assert isinstance(traj, dspy.History)
+    assert traj.mode == "raw"
+    # 2 tool calls (each = assistant + tool) + 1 extract = 5 messages
+    assert len(traj.messages) == 5
 
-    # --- flexible checks for observations ----------------------------------
-    # We only care that each observation mentions our error string; we ignore
-    # any extra traceback detail or differing prefixes.
-    for i in range(2):
-        obs = traj[f"observation_{i}"]
-        assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+    # Check tool call messages have the expected structure
+    # Messages 0, 2 are assistant messages with tool_calls
+    # Messages 1, 3 are tool response messages
+    for i in [0, 2]:
+        msg = traj.messages[i]
+        assert msg["role"] == "assistant"
+        assert msg["content"] == "I need to add two numbers."
+        assert msg["tool_calls"][0]["function"]["name"] == "foo"
+
+    for i in [1, 3]:
+        msg = traj.messages[i]
+        assert msg["role"] == "tool"
+        # Observation should contain the error
+        assert "tool error" in msg["content"]
+
+    # Check extract message
+    msg_extract = traj.messages[-1]
+    assert msg_extract["role"] == "assistant"
+    assert "I added the numbers successfully" in msg_extract["content"]
+    assert "c: 3" in msg_extract["content"]
 
 
 @pytest.mark.asyncio
@@ -358,24 +412,37 @@ async def test_async_tool_calling_with_pydantic_args():
         )
     assert outputs.invitation_letter == "It's my honor to invite Alice to the Science Fair event on Friday."
 
-    expected_trajectory = {
-        "thought_0": "I need to write an invitation letter for Alice to the Science Fair event.",
-        "tool_name_0": "write_invitation_letter",
-        "tool_args_0": {
-            "participant_name": "Alice",
-            "event_info": {
-                "name": "Science Fair",
-                "date": "Friday",
-                "participants": {"Alice": "female", "Bob": "male"},
-            },
-        },
-        "observation_0": "It's my honor to invite Alice to event Science Fair on Friday",
-        "thought_1": "I have successfully written the invitation letter for Alice to the Science Fair. Now I can finish the task.",
-        "tool_name_1": "finish",
-        "tool_args_1": {},
-        "observation_1": "Completed.",
-    }
-    assert outputs.trajectory == expected_trajectory
+    # Verify trajectory is a History object with raw mode
+    traj = outputs.trajectory
+    assert isinstance(traj, dspy.History)
+    assert traj.mode == "raw"
+    # 2 tool calls (write_invitation_letter + finish), each = assistant + tool = 4 messages + 1 extract = 5 messages
+    assert len(traj.messages) == 5
+
+    # Check first message (tool call - assistant)
+    msg0 = traj.messages[0]
+    assert msg0["role"] == "assistant"
+    assert msg0["tool_calls"][0]["function"]["name"] == "write_invitation_letter"
+
+    # Check second message (tool response)
+    msg1 = traj.messages[1]
+    assert msg1["role"] == "tool"
+    assert "It's my honor to invite Alice to event Science Fair on Friday" in msg1["content"]
+
+    # Check third message (finish - assistant)
+    msg2 = traj.messages[2]
+    assert msg2["role"] == "assistant"
+    assert msg2["tool_calls"][0]["function"]["name"] == "finish"
+
+    # Check fourth message (finish - tool response)
+    msg3 = traj.messages[3]
+    assert msg3["role"] == "tool"
+    assert msg3["content"] == "Completed."
+
+    # Check last message (extract)
+    msg_extract = traj.messages[-1]
+    assert msg_extract["role"] == "assistant"
+    assert "This is a very rigorous reasoning process, trust me bro!" in msg_extract["content"]
 
 
 @pytest.mark.asyncio
@@ -405,21 +472,27 @@ async def test_async_error_retry():
         outputs = await react.acall(a=1, b=2, max_iters=2)
     traj = outputs.trajectory
 
-    # Exact-match checks (thoughts + tool calls)
-    control_expected = {
-        "thought_0": "I need to add two numbers.",
-        "tool_name_0": "foo",
-        "tool_args_0": {"a": 1, "b": 2},
-        "thought_1": "I need to add two numbers.",
-        "tool_name_1": "foo",
-        "tool_args_1": {"a": 1, "b": 2},
-    }
-    for k, v in control_expected.items():
-        assert traj[k] == v, f"{k} mismatch"
+    # Verify trajectory is a History object with raw mode
+    assert isinstance(traj, dspy.History)
+    assert traj.mode == "raw"
+    # 2 tool calls (each = assistant + tool) + 1 extract = 5 messages
+    assert len(traj.messages) == 5
 
-    # Flexible checks for observations
-    # We only care that each observation mentions our error string; we ignore
-    # any extra traceback detail or differing prefixes.
-    for i in range(2):
-        obs = traj[f"observation_{i}"]
-        assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+    # Check tool call messages have the expected structure
+    for i in [0, 2]:
+        msg = traj.messages[i]
+        assert msg["role"] == "assistant"
+        assert msg["content"] == "I need to add two numbers."
+        assert msg["tool_calls"][0]["function"]["name"] == "foo"
+
+    for i in [1, 3]:
+        msg = traj.messages[i]
+        assert msg["role"] == "tool"
+        # Observation should contain the error
+        assert "tool error" in msg["content"]
+
+    # Check extract message
+    msg_extract = traj.messages[-1]
+    assert msg_extract["role"] == "assistant"
+    assert "I added the numbers successfully" in msg_extract["content"]
+    assert "c: 3" in msg_extract["content"]
