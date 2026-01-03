@@ -1,5 +1,4 @@
 import asyncio
-import concurrent.futures
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,18 +32,10 @@ def sync_send_to_stream(stream, message):
     try:
         asyncio.get_running_loop()
 
-        # If we're in an event loop, offload to a new thread with its own event loop
-        def run_in_new_loop():
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            try:
-                return new_loop.run_until_complete(_send())
-            finally:
-                new_loop.close()
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(run_in_new_loop)
-            return future.result()
+        # If we're in an event loop, use send_nowait to avoid blocking
+        # The anyio MemoryObjectSendStream has a synchronous send_nowait method
+        stream.send_nowait(message)
+        return None
     except RuntimeError:
         # Not in an event loop, safe to use a new event loop in this thread
         return syncify(_send)()
