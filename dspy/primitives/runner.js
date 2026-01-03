@@ -42,11 +42,12 @@ for await (const line of readLines(Deno.stdin)) {
           for (const d of dirs) {
               cur += '/' + d;
               try {
-                  pyodide.FS.mkdir(cur);
-              } catch (e) {
-                  if (!(e && e.message && e.message.includes('File exists'))) {
-                      console.log("[DEBUG] Error creating directory in Pyodide file system:", cur, "|", e.message);
+                  const pathInfo = pyodide.FS.analyzePath(cur);
+                  if (!pathInfo.exists) {
+                      pyodide.FS.mkdir(cur);
                   }
+              } catch (e) {
+                  console.log("[DEBUG] Error creating directory in Pyodide file system:", cur, "|", e.message);
               }
           }
           pyodide.FS.writeFile(virtualPath, contents);
