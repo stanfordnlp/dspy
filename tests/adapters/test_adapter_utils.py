@@ -5,7 +5,7 @@ from typing import Literal, Optional, Union
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import parse_value
+from dspy.adapters.utils import _extract_first_json_object, parse_value
 
 
 class Profile(BaseModel):
@@ -105,3 +105,43 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # JSON at the start of text
+        ('{"name": "John", "age": 30} and some trailing text', '{"name": "John", "age": 30}'),
+        # JSON in the middle of text
+        ('Here is your result: {"status": "success", "data": [1, 2, 3]} done', '{"status": "success", "data": [1, 2, 3]}'),
+        # JSON at the end of text
+        ('The answer is {"result": 42}', '{"result": 42}'),
+        # Nested JSON objects
+        ('Response: {"outer": {"inner": {"deep": "value"}}, "count": 5}', '{"outer": {"inner": {"deep": "value"}}, "count": 5}'),
+        # JSON with braces inside string values
+        ('{"message": "Use {placeholders} like {this}", "valid": true}', '{"message": "Use {placeholders} like {this}", "valid": true}'),
+        # JSON with escaped quotes in strings
+        ('{"quote": "She said \\"hello\\" to me"}', '{"quote": "She said \\"hello\\" to me"}'),
+        # No JSON present
+        ("This is just plain text without any JSON", None),
+        # Empty JSON object
+        ("Here is an empty object: {}", "{}"),
+        # Unbalanced braces (no valid JSON)
+        ("This has { an opening but no closing", None),
+        # Multiple JSON objects - should extract only the first
+        ('{"first": 1} and then {"second": 2}', '{"first": 1}'),
+        # JSON with newlines
+        ("""Here is the result:
+    {
+        "name": "Alice",
+        "scores": [95, 87, 92]
+    }
+    End of message""", """{
+        "name": "Alice",
+        "scores": [95, 87, 92]
+    }"""),
+    ],
+)
+def test_extract_first_json_object(text, expected):
+    result = _extract_first_json_object(text)
+    assert result == expected
