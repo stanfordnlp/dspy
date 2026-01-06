@@ -110,7 +110,6 @@ def _extract_score_and_subscores(
         return None, subscores
 
 
-
 class PredictorFeedbackFn(Protocol):
     def __call__(
         self,
@@ -229,7 +228,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         new_prog = self.student.deepcopy()
 
         # Start with plain string instructions from candidate
-        predictor_candidates = {k: v for k, v in candidate.items() if not k.startswith(TOOL_MODULE_PREFIX)}
+        predictor_candidates = {
+            k: v for k, v in candidate.items() if not k.startswith(TOOL_MODULE_PREFIX)
+        }
 
         tool_candidates = {}
         if self.enable_tool_optimization:
@@ -248,7 +249,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         # Update predictor instructions
         for name, pred in new_prog.named_predictors():
             if name in predictor_candidates:
-                pred.signature = pred.signature.with_instructions(predictor_candidates[name])
+                pred.signature = pred.signature.with_instructions(
+                    predictor_candidates[name]
+                )
 
         # Update tool descriptions
         if tool_candidates:
@@ -256,7 +259,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         return new_prog
 
-    def _update_tool_descriptions(self, program: Module, tool_candidates: dict[str, Any]) -> None:
+    def _update_tool_descriptions(
+        self, program: Module, tool_candidates: dict[str, Any]
+    ) -> None:
         all_tools = self._collect_tools(program)
 
         for tool_name, tool_config in tool_candidates.items():
@@ -289,7 +294,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             elif isinstance(attr_value, dspy.Module):
                 _traverse(attr_value)
             elif isinstance(attr_value, list | dict):
-                items = attr_value if isinstance(attr_value, list) else attr_value.values()
+                items = (
+                    attr_value if isinstance(attr_value, list) else attr_value.values()
+                )
                 for item in items:
                     if isinstance(item, Tool):
                         all_tools[item.name] = item
@@ -309,7 +316,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         program = self.build_program(candidate)
         callback_metadata = (
             {"metric_key": "eval_full"}
-            if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size
+            if self.reflection_minibatch_size is None
+            or len(batch) > self.reflection_minibatch_size
             else {"disable_logging": True}
         )
 
@@ -342,7 +350,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return EvaluationBatch(
                 outputs=outputs,
                 scores=scores,
-                objective_scores=subscores,
+                subscores=subscores,
                 trajectories=trajs,
             )
         else:
@@ -369,7 +377,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return EvaluationBatch(
                 outputs=outputs,
                 scores=scores,
-                objective_scores=subscores,
+                subscores=subscores,
                 trajectories=None,
             )
 

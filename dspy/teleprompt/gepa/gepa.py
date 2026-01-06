@@ -187,9 +187,12 @@ class DspyGEPAResult:
             val_subscores=gepa_result.val_subscores,
             per_val_instance_best_candidates=gepa_result.per_val_instance_best_candidates,
             discovery_eval_counts=gepa_result.discovery_eval_counts,
-            val_aggregate_subscores=gepa_result.val_aggregate_subscores,
-            per_objective_best_candidates=gepa_result.per_objective_best_candidates,
-            objective_pareto_front=gepa_result.objective_pareto_front,
+            # These fields are optional and depend on the installed `gepa` version / frontier type.
+            val_aggregate_subscores=getattr(gepa_result, "val_aggregate_subscores", None),
+            per_objective_best_candidates=getattr(
+                gepa_result, "per_objective_best_candidates", None
+            ),
+            objective_pareto_front=getattr(gepa_result, "objective_pareto_front", None),
             total_metric_calls=gepa_result.total_metric_calls,
             num_full_val_evals=gepa_result.num_full_val_evals,
             log_dir=gepa_result.run_dir,
@@ -436,7 +439,9 @@ class GEPA(Teleprompter):
         self.metric_fn = metric
 
         # Budget configuration
-        assert (max_metric_calls is not None) + (max_full_evals is not None) + (auto is not None) == 1, (
+        assert (max_metric_calls is not None) + (max_full_evals is not None) + (
+            auto is not None
+        ) == 1, (
             "Exactly one of max_metric_calls, max_full_evals, auto must be set. "
             f"You set max_metric_calls={max_metric_calls}, "
             f"max_full_evals={max_full_evals}, "
@@ -532,9 +537,9 @@ class GEPA(Teleprompter):
                     continue
 
                 # Verify DSPy's two-predictor ReAct design
-                assert hasattr(module, "extract") and hasattr(module.extract, "predict"), (
-                    f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
-                )
+                assert hasattr(module, "extract") and hasattr(
+                    module.extract, "predict"
+                ), f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
 
                 # Get predictor names via object identity
                 extract_predictor = module.extract.predict
@@ -583,11 +588,18 @@ class GEPA(Teleprompter):
         return seed_candidate
 
     def auto_budget(
-        self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
+        self,
+        num_preds,
+        num_candidates,
+        valset_size: int,
+        minibatch_size: int = 35,
+        full_eval_steps: int = 5,
     ) -> int:
         import numpy as np
 
-        num_trials = int(max(2 * (num_preds * 2) * np.log2(num_candidates), 1.5 * num_candidates))
+        num_trials = int(
+            max(2 * (num_preds * 2) * np.log2(num_candidates), 1.5 * num_candidates)
+        )
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
             raise ValueError(
                 "num_trials, valset_size, and minibatch_size must be >= 0."
@@ -695,11 +707,15 @@ class GEPA(Teleprompter):
                         o["feedback"] = f"This trajectory got a score of {o['score']}."
                     return o
                 else:
-                    return dict(score=o, feedback=f"This trajectory got a score of {o}.")
+                    return dict(
+                        score=o, feedback=f"This trajectory got a score of {o}."
+                    )
 
             return feedback_fn
 
-        feedback_map = {k: feedback_fn_creator(k, v) for k, v in student.named_predictors()}
+        feedback_map = {
+            k: feedback_fn_creator(k, v) for k, v in student.named_predictors()
+        }
 
         # Build the DSPy adapter that encapsulates evaluation, trace capture, feedback extraction, and instruction proposal
         adapter = DspyAdapter(
