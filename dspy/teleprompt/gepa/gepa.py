@@ -187,8 +187,9 @@ class DspyGEPAResult:
             val_subscores=gepa_result.val_subscores,
             per_val_instance_best_candidates=gepa_result.per_val_instance_best_candidates,
             discovery_eval_counts=gepa_result.discovery_eval_counts,
-            # These fields are optional and depend on the installed `gepa` version / frontier type.
-            val_aggregate_subscores=getattr(gepa_result, "val_aggregate_subscores", None),
+            val_aggregate_subscores=getattr(
+                gepa_result, "val_aggregate_subscores", None
+            ),
             per_objective_best_candidates=getattr(
                 gepa_result, "per_objective_best_candidates", None
             ),
