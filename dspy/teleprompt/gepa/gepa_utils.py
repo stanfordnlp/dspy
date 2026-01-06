@@ -350,7 +350,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return EvaluationBatch(
                 outputs=outputs,
                 scores=scores,
-                subscores=subscores,
+                objective_scores=subscores,
                 trajectories=trajs,
             )
         else:
@@ -377,7 +377,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return EvaluationBatch(
                 outputs=outputs,
                 scores=scores,
-                subscores=subscores,
+                objective_scores=subscores,
                 trajectories=None,
             )
 
