@@ -71,6 +71,27 @@ def test_initialization(tmp_path):
     assert disabled_cache.disk_cache == {}
 
 
+def test_invalid_cache_initialization():
+    with pytest.raises(ValueError, match=r"`memory_max_entries` must be a positive number, but received -1"):
+        Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=True,
+            disk_cache_dir="",
+            disk_size_limit_bytes=0,
+            memory_max_entries=-1,
+        )
+    with pytest.raises(
+        ValueError, match=r"`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache."
+    ):
+        Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=True,
+            disk_cache_dir="",
+            disk_size_limit_bytes=0,
+            memory_max_entries=None,
+        )
+
+
 def test_cache_key_generation(cache):
     """Test cache key generation with different types of inputs."""
     # Test with simple dictionary
@@ -189,8 +210,12 @@ def test_save_and_load_memory_cache(cache, tmp_path):
         memory_max_entries=100,
     )
 
-    # Load the memory cache
-    new_cache.load_memory_cache(str(temp_cache_file))
+    # Load the memory cache without allowing pickle (default)
+    with pytest.raises(ValueError):
+        new_cache.load_memory_cache(str(temp_cache_file))
+
+    # Load the memory cache with allow_pickle=True
+    new_cache.load_memory_cache(str(temp_cache_file), allow_pickle=True)
 
     # Verify items are in the new memory cache
     for req in requests:

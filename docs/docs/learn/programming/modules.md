@@ -260,7 +260,7 @@ print(hop(claim="Stephen Curry is the best 3 pointer shooter ever in the human h
 DSPy provides built-in tracking of language model usage across all module calls. To enable tracking:
 
 ```python
-dspy.settings.configure(track_usage=True)
+dspy.configure(track_usage=True)
 ```
 
 Once enabled, you can access usage statistics from any `dspy.Prediction` object:
@@ -275,7 +275,7 @@ The usage data is returned as a dictionary that maps each language model name to
 import dspy
 
 # Configure DSPy with tracking enabled
-dspy.settings.configure(
+dspy.configure(
     lm=dspy.LM("openai/gpt-4o-mini", cache=False),
     track_usage=True
 )
@@ -326,7 +326,7 @@ When using DSPy's caching features (either in-memory or on-disk via litellm), ca
 
 ```python
 # Enable caching
-dspy.settings.configure(
+dspy.configure(
     lm=dspy.LM("openai/gpt-4o-mini", cache=True),
     track_usage=True
 )

@@ -1,6 +1,8 @@
 import json
+import tempfile
 import time
 import warnings
+from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
 
@@ -28,7 +30,7 @@ def make_response(output_blocks):
         model="openai/dspy-test-model",
         object="response",
         output=output_blocks,
-        metadata = {},
+        metadata={},
         parallel_tool_calls=False,
         temperature=1.0,
         tool_choice="auto",
@@ -105,9 +107,11 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
     cache = dspy.cache
 
     try:
-        with mock.patch.object(cache, "cache_key", wraps=cache.cache_key) as cache_key_spy, \
-             mock.patch.object(cache, "get", wraps=cache.get) as cache_get_spy, \
-             mock.patch.object(cache, "put", wraps=cache.put) as cache_put_spy:
+        with (
+            mock.patch.object(cache, "cache_key", wraps=cache.cache_key) as cache_key_spy,
+            mock.patch.object(cache, "get", wraps=cache.get) as cache_get_spy,
+            mock.patch.object(cache, "put", wraps=cache.put) as cache_put_spy,
+        ):
 
             def fake_completion(*, cache, num_retries, retry_strategy, **request):
                 return ModelResponse(
@@ -294,6 +298,7 @@ def test_reasoning_model_token_parameter():
         ("openai/gpt-5", True),
         ("openai/gpt-5-mini", True),
         ("openai/gpt-5-nano", True),
+        ("azure/gpt-5-chat", False),  # gpt-5-chat is NOT a reasoning model
         ("openai/gpt-4", False),
         ("anthropic/claude-2", False),
     ]
@@ -313,12 +318,13 @@ def test_reasoning_model_token_parameter():
             assert "max_tokens" in lm.kwargs
             assert lm.kwargs["max_tokens"] == 1000
 
-@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano"])
+
+@pytest.mark.parametrize("model_name", ["openai/o1", "openai/gpt-5-nano", "openai/gpt-5-mini"])
 def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
         ValueError,
-        match="reasoning models require passing temperature=1.0 and max_tokens >= 16000",
+        match="reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None",
     ):
         dspy.LM(
             model=model_name,
@@ -333,6 +339,28 @@ def test_reasoning_model_requirements(model_name):
         max_tokens=16_000,
     )
     assert lm.kwargs["max_completion_tokens"] == 16_000
+
+    # Should pass with no parameters
+    lm = dspy.LM(
+        model=model_name,
+    )
+    assert lm.kwargs["temperature"] is None
+    assert lm.kwargs["max_completion_tokens"] is None
+
+
+def test_gpt_5_chat_not_reasoning_model():
+    """Test that gpt-5-chat is NOT treated as a reasoning model."""
+    # Should NOT raise validation error - gpt-5-chat is not a reasoning model
+    lm = dspy.LM(
+        model="openai/gpt-5-chat",
+        temperature=0.7,  # Can be any value
+        max_tokens=1000,  # Can be any value
+    )
+    # Should use max_tokens, not max_completion_tokens
+    assert "max_completion_tokens" not in lm.kwargs
+    assert "max_tokens" in lm.kwargs
+    assert lm.kwargs["max_tokens"] == 1000
+    assert lm.kwargs["temperature"] == 0.7
 
 
 def test_dump_state():
@@ -507,6 +535,7 @@ def test_disable_history():
                 model="openai/gpt-4o-mini",
             )
 
+
 def test_responses_api():
     api_response = make_response(
         output_blocks=[
@@ -553,9 +582,7 @@ def test_responses_api():
 
 
 def test_lm_replaces_system_with_developer_role():
-    with mock.patch(
-        "dspy.clients.lm.litellm_responses_completion", return_value={"choices": []}
-    ) as mock_completion:
+    with mock.patch("dspy.clients.lm.litellm_responses_completion", return_value={"choices": []}) as mock_completion:
         lm = dspy.LM(
             "openai/gpt-4o-mini",
             cache=False,
@@ -563,10 +590,7 @@ def test_lm_replaces_system_with_developer_role():
             use_developer_role=True,
         )
         lm.forward(messages=[{"role": "system", "content": "hi"}])
-        assert (
-            mock_completion.call_args.kwargs["request"]["messages"][0]["role"]
-            == "developer"
-        )
+        assert mock_completion.call_args.kwargs["request"]["messages"][0]["role"] == "developer"
 
 
 def test_responses_api_tool_calls(litellm_test_server):
@@ -597,3 +621,367 @@ def test_responses_api_tool_calls(litellm_test_server):
 
         dspy_responses.assert_called_once()
         assert dspy_responses.call_args.kwargs["model"] == "openai/dspy-test-model"
+
+
+def test_reasoning_effort_responses_api():
+    """Test that reasoning_effort gets normalized to reasoning format for Responses API."""
+    with mock.patch("litellm.responses") as mock_responses:
+        # OpenAI model with Responses API - should normalize
+        lm = dspy.LM(
+            model="openai/gpt-5", model_type="responses", reasoning_effort="low", max_tokens=16000, temperature=1.0
+        )
+        lm("openai query")
+        call_kwargs = mock_responses.call_args.kwargs
+        assert "reasoning_effort" not in call_kwargs
+        assert call_kwargs["reasoning"] == {"effort": "low", "summary": "auto"}
+
+
+def test_call_reasoning_model_with_chat_api():
+    """Test that Chat API properly handles reasoning models and returns data in correct format."""
+    # Create message with reasoning_content attribute
+    message = Message(content="The answer is 4", role="assistant")
+    # Add reasoning_content attribute
+    message.reasoning_content = "Step 1: I need to add 2 + 2\nStep 2: 2 + 2 = 4\nTherefore, the answer is 4"
+
+    # Create choice with the message
+    mock_choice = Choices(message=message)
+
+    # Mock response with reasoning content for chat completion
+    mock_response = ModelResponse(
+        choices=[mock_choice],
+        model="anthropic/claude-3-7-sonnet-20250219",
+        usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+    )
+
+    with mock.patch("litellm.completion", return_value=mock_response) as mock_completion:
+        with mock.patch("litellm.supports_reasoning", return_value=True):
+            # Create reasoning model with chat API
+            lm = dspy.LM(
+                model="anthropic/claude-3-7-sonnet-20250219",
+                model_type="chat",
+                temperature=1.0,
+                max_tokens=16000,
+                reasoning_effort="low",
+                cache=False,
+            )
+
+            # Test the call
+            result = lm("What is 2 + 2?")
+
+            # Verify the response format
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], dict)
+            assert "text" in result[0]
+            assert "reasoning_content" in result[0]
+            assert result[0]["text"] == "The answer is 4"
+            assert "Step 1" in result[0]["reasoning_content"]
+
+            # Verify mock was called with correct parameters
+            mock_completion.assert_called_once()
+            call_kwargs = mock_completion.call_args.kwargs
+            assert call_kwargs["model"] == "anthropic/claude-3-7-sonnet-20250219"
+            assert call_kwargs["reasoning_effort"] == "low"
+
+
+def test_api_key_not_saved_in_json():
+    lm = dspy.LM(
+        model="openai/gpt-4o-mini",
+        model_type="chat",
+        temperature=1.0,
+        max_tokens=100,
+        api_key="sk-test-api-key-12345",
+    )
+
+    predict = dspy.Predict("question -> answer")
+    predict.lm = lm
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_path = Path(tmpdir) / "program.json"
+        predict.save(json_path)
+
+        with open(json_path) as f:
+            saved_state = json.load(f)
+
+        # Verify API key is not in the saved state
+        assert "api_key" not in saved_state.get("lm", {}), "API key should not be saved in JSON"
+
+        # Verify other attributes are saved
+        assert saved_state["lm"]["model"] == "openai/gpt-4o-mini"
+        assert saved_state["lm"]["temperature"] == 1.0
+        assert saved_state["lm"]["max_tokens"] == 100
+
+
+def test_responses_api_converts_images_correctly():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    # Test with base64 image
+    request_with_base64_image = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What's in this image?"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_base64_image)
+
+    assert "input" in result
+    assert len(result["input"]) == 1
+    assert result["input"][0]["role"] == "user"
+
+    content = result["input"][0]["content"]
+    assert len(content) == 2
+
+    # First item should be text converted to input_text format
+    assert content[0]["type"] == "input_text"
+    assert content[0]["text"] == "What's in this image?"
+
+    # Second item should be converted to input_image format
+    assert content[1]["type"] == "input_image"
+    assert content[1]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+    # Test with URL image
+    request_with_url_image = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "https://example.com/image.jpg"
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_url_image)
+
+    content = result["input"][0]["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "input_image"
+    assert content[0]["image_url"] == "https://example.com/image.jpg"
+
+
+def test_responses_api_converts_files_correctly():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    # Test with file data (base64 encoded)
+    request_with_file = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Analyze this file"},
+                    {
+                        "type": "file",
+                        "file": {
+                            "file_data": "data:text/plain;base64,SGVsbG8gV29ybGQ=",
+                            "filename": "test.txt",
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_file)
+
+    assert "input" in result
+    assert len(result["input"]) == 1
+    assert result["input"][0]["role"] == "user"
+
+    content = result["input"][0]["content"]
+    assert len(content) == 2
+
+    # First item should be text converted to input_text format
+    assert content[0]["type"] == "input_text"
+    assert content[0]["text"] == "Analyze this file"
+
+    # Second item should be converted to input_file format
+    assert content[1]["type"] == "input_file"
+    assert content[1]["file_data"] == "data:text/plain;base64,SGVsbG8gV29ybGQ="
+    assert content[1]["filename"] == "test.txt"
+
+    # Test with file_id
+    request_with_file_id = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "file",
+                        "file": {
+                            "file_id": "file-abc123",
+                            "filename": "document.pdf",
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_file_id)
+
+    content = result["input"][0]["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "input_file"
+    assert content[0]["file_id"] == "file-abc123"
+    assert content[0]["filename"] == "document.pdf"
+
+    # Test with all file fields
+    request_with_all_fields = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "file",
+                        "file": {
+                            "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
+                            "file_id": "file-xyz789",
+                            "filename": "report.pdf",
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = _convert_chat_request_to_responses_request(request_with_all_fields)
+
+    content = result["input"][0]["content"]
+    assert content[0]["type"] == "input_file"
+    assert content[0]["file_data"] == "data:application/pdf;base64,JVBERi0xLjQ="
+    assert content[0]["file_id"] == "file-xyz789"
+    assert content[0]["filename"] == "report.pdf"
+
+
+def test_responses_api_with_image_input():
+    api_response = make_response(
+        output_blocks=[
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {"type": "output_text", "text": "This is a test answer with image input.", "annotations": []}
+                    ],
+                },
+            ),
+        ]
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
+        lm = dspy.LM(
+            model="openai/gpt-5-mini",
+            model_type="responses",
+            cache=False,
+            temperature=1.0,
+            max_tokens=16000,
+        )
+
+        # Test with messages containing an image
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe this image"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                        }
+                    }
+                ]
+            }
+        ]
+
+        lm_result = lm(messages=messages)
+
+        assert lm_result == [{"text": "This is a test answer with image input."}]
+
+        dspy_responses.assert_called_once()
+        call_args = dspy_responses.call_args.kwargs
+
+        # Verify the request was converted correctly
+        assert "input" in call_args
+        content = call_args["input"][0]["content"]
+
+        # Check that image was converted to input_image format
+        image_content = [c for c in content if c.get("type") == "input_image"]
+        assert len(image_content) == 1
+        assert image_content[0]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+
+def test_responses_api_with_pydantic_model_input():
+    api_response = make_response(
+        output_blocks=[
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": '{"answer" : "This is a good test answer", "number" : 42}',
+                            "annotations": [],
+                        }
+                    ],
+                },
+            ),
+        ]
+    )
+
+    lm = dspy.LM(
+        model="openai/gpt-5-mini",
+        model_type="responses",
+        cache=False,
+        temperature=1.0,
+        max_tokens=16000,
+    )
+
+    class TestModel(pydantic.BaseModel):
+        answer: str
+        number: int
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
+        # Test with messages containing a Pydantic model as response format
+        lm_result = lm("What is a good test answer?", response_format=TestModel)
+
+    # Try to validate to Pydantic model
+    TestModel.model_validate_json(lm_result[0]["text"])
+
+    dspy_responses.assert_called_once()
+    call_args = dspy_responses.call_args.kwargs
+
+    # Verify the request was converted correctly
+    assert "text" in call_args
+    response_format = call_args["text"]["format"]
+
+    assert response_format == {
+        "name": TestModel.__name__,
+        "type": "json_schema",
+        "schema": TestModel.model_json_schema(),
+    }

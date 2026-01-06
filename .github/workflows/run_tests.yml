@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -91,11 +91,6 @@ jobs:
   llm_call_test:
     name: Run Tests with Real LM
     runs-on: ubuntu-latest
-    services:
-      ollama:
-        image: ollama/ollama:latest
-        ports:
-          - 11434:11434
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -116,22 +111,40 @@ jobs:
         run: |
           uv sync --dev -p .venv --extra dev
           uv pip list
-      - name: Pull LLM
+      - name: Cache Ollama models
+        id: cache-ollama
+        uses: actions/cache@v4
+        with:
+          path: ollama-data
+          key: ollama-llama3.2-3b-${{ runner.os }}-v1
+      - name: Start Ollama service
         run: |
+          mkdir -p ollama-data
+          docker run -d --name ollama \
+            -p 11434:11434 \
+            -v ${{ github.workspace }}/ollama-data:/root/.ollama \
+            ollama/ollama:latest
           timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
-          curl -X POST http://localhost:11434/api/pull \
-            -H "Content-Type: application/json" \
-            -d '{"name": "llama3.2:3b"}'
-          echo "LM_FOR_TEST=ollama/llama3.2:3b" >> $GITHUB_ENV
+      - name: Pull LLM
+        if: steps.cache-ollama.outputs.cache-hit != 'true'
+        run: docker exec ollama ollama pull llama3.2:3b
+      - name: Set LM environment variable
+        run: echo "LM_FOR_TEST=ollama/llama3.2:3b" >> $GITHUB_ENV
       - name: Run tests
         run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
+      - name: Fix permissions for cache
+        if: always()
+        run: sudo chown -R $USER:$USER ollama-data || true
+      - name: Stop Ollama service
+        if: always()
+        run: docker stop ollama && docker rm ollama
 
   build_package:
     name: Build Package
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

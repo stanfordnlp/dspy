@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from typing import Any
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
@@ -81,31 +82,55 @@ class BaseLM:
         return outputs
 
     @with_callbacks
-    def __call__(self, prompt=None, messages=None, **kwargs):
+    def __call__(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ) -> list[dict[str, Any] | str]:
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
 
         return outputs
 
     @with_callbacks
-    async def acall(self, prompt=None, messages=None, **kwargs):
+    async def acall(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ) -> list[dict[str, Any] | str]:
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
 
-    def forward(self, prompt=None, messages=None, **kwargs):
+    def forward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         """Forward pass for the language model.
 
-        Subclasses must implement this method, and the response should be identical to
-        [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+        Subclasses must implement this method, and the response should be identical to either of the following formats:
+        - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
+        - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
+        - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-    async def aforward(self, prompt=None, messages=None, **kwargs):
+    async def aforward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         """Async forward pass for the language model.
 
-        Subclasses that support async should implement this method, and the response should be identical to
-        [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+        Subclasses must implement this method, and the response should be identical to either of the following formats:
+        - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
+        - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
+        - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -179,6 +204,10 @@ class BaseLM:
         for c in response.choices:
             output = {}
             output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+
+            if hasattr(c, "message") and hasattr(c.message, "reasoning_content") and c.message.reasoning_content:
+                output["reasoning_content"] = c.message.reasoning_content
+
             if merged_kwargs.get("logprobs"):
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
@@ -194,7 +223,6 @@ class BaseLM:
         if all(len(output) == 1 for output in outputs):
             # Return a list if every output only has "text" key
             outputs = [output["text"] for output in outputs]
-
         return outputs
 
     def _extract_citations_from_response(self, choice):

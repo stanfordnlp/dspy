@@ -15,6 +15,7 @@ from dspy.adapters.utils import (
 )
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
+from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
@@ -26,6 +27,40 @@ class FieldInfoWithName(NamedTuple):
 
 
 class ChatAdapter(Adapter):
+    """Default Adapter for most language models.
+
+    The ChatAdapter formats DSPy signatures into a format compatible with most language models.
+    It uses delimiter patterns like `[[ ## field_name ## ]]` to clearly separate input and output fields in
+    the message content.
+
+    Key features:
+        - Structures inputs and outputs using field header markers for clear field delineation.
+        - Provides automatic fallback to JSONAdapter if the chat format fails.
+    """
+
+    def __init__(
+        self,
+        callbacks: list[BaseCallback] | None = None,
+        use_native_function_calling: bool = False,
+        native_response_types: list[type[type]] | None = None,
+        use_json_adapter_fallback: bool = True,
+    ):
+        """
+        Args:
+            callbacks: List of callback functions to execute during adapter methods.
+            use_native_function_calling: Whether to enable native function calling capabilities.
+            native_response_types: List of output field types handled by native LM features.
+            use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
+                If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
+                JSONAdapter. Defaults to True.
+        """
+        super().__init__(
+            callbacks=callbacks,
+            use_native_function_calling=use_native_function_calling,
+            native_response_types=native_response_types,
+        )
+        self.use_json_adapter_fallback = use_json_adapter_fallback
+
     def __call__(
         self,
         lm: LM,
@@ -40,9 +75,13 @@ class ChatAdapter(Adapter):
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
-            if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
-                # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
-                # adapter.
+            if (
+                isinstance(e, ContextWindowExceededError)
+                or isinstance(self, JSONAdapter)
+                or not self.use_json_adapter_fallback
+            ):
+                # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
+                # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
             return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
 
@@ -60,9 +99,13 @@ class ChatAdapter(Adapter):
             # fallback to JSONAdapter
             from dspy.adapters.json_adapter import JSONAdapter
 
-            if isinstance(e, ContextWindowExceededError) or isinstance(self, JSONAdapter):
-                # On context window exceeded error or already using JSONAdapter, we don't want to retry with a different
-                # adapter.
+            if (
+                isinstance(e, ContextWindowExceededError)
+                or isinstance(self, JSONAdapter)
+                or not self.use_json_adapter_fallback
+            ):
+                # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
+                # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
             return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
 

@@ -25,7 +25,7 @@ import time
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"), track_usage=True)
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), track_usage=True)
 
 predict = dspy.Predict("question->answer")
 
@@ -47,6 +47,39 @@ Total usage: {'openai/gpt-4o-mini': {'completion_tokens': 97, 'prompt_tokens': 1
 Time elapse:  0.000529
 Total usage: {}
 ```
+
+## Using Provider-Side Prompt Caching
+
+In addition to DSPy's built-in caching mechanism, you can leverage provider-side prompt caching offered by LLM providers like Anthropic and OpenAI. This feature is particularly useful when working with modules like `dspy.ReAct()` that send similar prompts repeatedly, as it reduces both latency and costs by caching prompt prefixes on the provider's servers.
+
+You can enable prompt caching by passing the `cache_control_injection_points` parameter to `dspy.LM()`. This works with supported providers like Anthropic and OpenAI. For more details on this feature, see the [LiteLLM prompt caching documentation](https://docs.litellm.ai/docs/tutorials/prompt_caching#configuration).
+
+```python
+import dspy
+import os
+
+os.environ["ANTHROPIC_API_KEY"] = "{your_anthropic_key}"
+lm = dspy.LM(
+    "anthropic/claude-sonnet-4-5-20250929",
+    cache_control_injection_points=[
+        {
+            "location": "message",
+            "role": "system",
+        }
+    ],
+)
+dspy.configure(lm=lm)
+
+# Use with any DSPy module
+predict = dspy.Predict("question->answer")
+result = predict(question="What is the capital of France?")
+```
+
+This is especially beneficial when:
+
+- Using `dspy.ReAct()` with the same instructions
+- Working with long system prompts that remain constant
+- Making multiple requests with similar context
 
 ## Disabling/Enabling DSPy Cache
 
@@ -120,7 +153,7 @@ class CustomCache(dspy.clients.Cache):
 
     def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
         messages = request.get("messages", [])
-        return sha256(ujson.dumps(messages, sort_keys=True).encode()).hexdigest()
+        return sha256(orjson.dumps(messages, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
 dspy.cache = CustomCache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=dspy.clients.DISK_CACHE_DIR)
 ```
@@ -134,7 +167,7 @@ import time
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 predict = dspy.Predict("question->answer")
 
@@ -155,18 +188,18 @@ import dspy
 import os
 import time
 from typing import Dict, Any, Optional
-import ujson
+import orjson
 from hashlib import sha256
 
 os.environ["OPENAI_API_KEY"] = "{your_openai_key}"
 
-dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 class CustomCache(dspy.clients.Cache):
 
     def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: Optional[list[str]] = None) -> str:
         messages = request.get("messages", [])
-        return sha256(ujson.dumps(messages, sort_keys=True).encode()).hexdigest()
+        return sha256(orjson.dumps(messages, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
 dspy.cache = CustomCache(enable_disk_cache=True, enable_memory_cache=True, disk_cache_dir=dspy.clients.DISK_CACHE_DIR)
 

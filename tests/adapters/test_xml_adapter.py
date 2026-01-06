@@ -1,3 +1,4 @@
+import sys
 from unittest import mock
 
 import pydantic
@@ -261,3 +262,75 @@ def test_xml_adapter_with_code():
             {"question": "Write a python program to print 'Hello, world!'"},
         )
         assert result[0]["code"].code == 'print("Hello, world!")'
+
+
+def test_xml_adapter_full_prompt():
+    class QA(dspy.Signature):
+        query: str = dspy.InputField()
+        context: str | None = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    adapter = dspy.XMLAdapter()
+    messages = adapter.format(QA, [], {"query": "when was Marie Curie born"})
+
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+
+    union_type_repr = "Union[str, NoneType]" if sys.version_info >= (3, 14) else "UnionType[str, NoneType]"
+
+    expected_system = (
+        "Your input fields are:\n"
+        "1. `query` (str): \n"
+        f"2. `context` ({union_type_repr}):\n"
+        "Your output fields are:\n"
+        "1. `answer` (str):\n"
+        "All interactions will be structured in the following way, with the appropriate values filled in.\n\n"
+        "<query>\n{query}\n</query>\n\n"
+        "<context>\n{context}\n</context>\n\n"
+        "<answer>\n{answer}\n</answer>\n"
+        "In adhering to this structure, your objective is: \n"
+        "        Given the fields `query`, `context`, produce the fields `answer`."
+    )
+
+    expected_user = (
+        "<query>\nwhen was Marie Curie born\n</query>\n\n"
+        "Respond with the corresponding output fields wrapped in XML tags `<answer>`."
+    )
+
+    assert messages[0]["content"] == expected_system
+    assert messages[1]["content"] == expected_user
+
+
+def test_format_system_message():
+    class MySignature(dspy.Signature):
+        """Answer the question with multiple answers and scores"""
+
+        question: str = dspy.InputField()
+        answers: list[str] = dspy.OutputField()
+        scores: list[float] = dspy.OutputField()
+
+    adapter = dspy.XMLAdapter()
+    system_message = adapter.format_system_message(MySignature)
+
+    expected_system_message = """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answers` (list[str]): 
+2. `scores` (list[float]):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+<question>
+{question}
+</question>
+
+<answers>
+{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
+</answers>
+
+<scores>
+{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
+</scores>
+In adhering to this structure, your objective is: 
+        Answer the question with multiple answers and scores"""
+    assert system_message == expected_system_message

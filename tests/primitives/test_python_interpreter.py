@@ -169,3 +169,36 @@ def test_enable_net_flag():
         )
         result = interpreter.execute(code)
         assert int(result) == 200, "Network access is permitted with enable_network_access"
+
+
+def test_interpreter_security_filesystem_access(tmp_path):
+    """
+    Verify that the interpreter cannot read arbitrary files from the host system
+    unless explicitly allowed.
+    """
+    # 1. Create a "secret" file on the host
+    secret_file = tmp_path / "secret.txt"
+    secret_content = "This is a secret content"
+    secret_file.write_text(secret_content)
+    secret_path_str = str(secret_file.absolute())
+
+    # 2. Attempt to read the file WITHOUT permission
+    malicious_code = f"""
+import js
+try:
+    content = js.Deno.readTextFileSync('{secret_path_str}')
+    print(content)
+except Exception as e:
+    print(f"Error: {{e}}")
+"""
+
+    with PythonInterpreter() as interpreter:
+        output = interpreter(malicious_code)
+        assert "Requires read access" in output
+        assert secret_content not in output
+
+    # 3. Attempt to read the file WITH permission
+    with PythonInterpreter(enable_read_paths=[secret_path_str]) as interpreter:
+        output = interpreter(malicious_code)
+        assert secret_content in output
+

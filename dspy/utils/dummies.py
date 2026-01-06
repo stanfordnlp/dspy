@@ -25,7 +25,7 @@ class DummyLM(LM):
 
     ```
     lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     predictor("What color is the sky?")
     # Output:
     # [[## answer ##]]
@@ -44,7 +44,7 @@ class DummyLM(LM):
 
     ```
     lm = DummyLM({"What color is the sky?": {"answer": "blue"}})
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     predictor("What color is the sky?")
     # Output:
     # [[## answer ##]]
@@ -58,7 +58,7 @@ class DummyLM(LM):
 
     ```
     lm = DummyLM([{"answer": "red"}], follow_examples=True)
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     predictor("What color is the sky?, demos=dspy.Example(input="What color is the sky?", output="blue"))
     # Output:
     # [[## answer ##]]

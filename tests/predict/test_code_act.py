@@ -34,7 +34,7 @@ def test_codeact_code_generation():
             {"reasoning": "Reason_B", "answer": "2"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])
     res = program(question="What is 1+1?")
     assert res.answer == "2"
@@ -66,7 +66,7 @@ def test_codeact_support_multiple_fields():
             {"reasoning": "Reason_B", "maximum": "6", "minimum": "2"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     program = CodeAct(ExtremumFinder, tools=[extract_maximum_minimum])
     res = program(input_list="2, 3, 5, 6")
     assert res.maximum == "6"
@@ -95,7 +95,7 @@ def test_codeact_code_parse_failure():
             {"reasoning": "Reason_B", "answer": "2"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])
     res = program(question="What is 1+1?")
     assert res.answer == "2"
@@ -125,7 +125,7 @@ def test_codeact_code_execution_failure():
             {"reasoning": "Reason_B", "answer": "2"},
         ]
     )
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
     program = CodeAct(BasicQA, tools=[add])
     res = program(question="What is 1+1?")
     assert res.answer == "2"

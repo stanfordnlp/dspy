@@ -23,7 +23,7 @@ import yfinance as yf
 
 # Configure DSPy
 lm = dspy.LM(model='openai/gpt-4o-mini')
-dspy.configure(lm=lm)
+dspy.configure(lm=lm, allow_tool_async_sync_conversion=True)
 
 # Convert LangChain Yahoo Finance tool to DSPy
 yahoo_finance_tool = YahooFinanceNewsTool()
@@ -151,6 +151,10 @@ When you run the agent with a query like "What's the latest news about Apple?", 
 ```
 Analysis: Given the current price of Apple (AAPL) at $196.58 and the slight increase of 0.48%, it appears that the stock is performing steadily in the market. However, the inability to access the latest news means that any significant developments that could influence investor sentiment and stock price are unknown. Investors should keep an eye on upcoming announcements or market trends that could impact Apple's performance, especially in comparison to other tech stocks like Microsoft (MSFT), which is also showing a positive trend.
 ```
+
+## Working with Async Tools
+
+Many Langchain tools use async operations for better performance. For details on async tools, see the [Tools documentation](../../learn/programming/tools.md#async-tools).
 
 ## Key Benefits
 

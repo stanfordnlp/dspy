@@ -189,7 +189,7 @@ def test_insantiating2():
 
 def test_multiline_instructions():
     lm = DummyLM([{"output": "short answer"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     class MySignature(Signature):
         """First line
@@ -418,7 +418,7 @@ def test_basic_custom_type():
     assert test_signature.input_fields["input"].annotation == CustomType
 
     lm = DummyLM([{"output": "processed"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     custom_obj = CustomType(value="test")
     pred = dspy.Predict(test_signature)(input=custom_obj)
@@ -432,7 +432,7 @@ def test_custom_type_from_different_module():
     assert test_signature.input_fields["input"].annotation == Path
 
     lm = DummyLM([{"output": "/test/path"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     path_obj = Path("/test/path")
     pred = dspy.Predict(test_signature)(input=path_obj)
@@ -568,7 +568,7 @@ def test_pep604_union_type_with_custom_types():
     assert sig.output_fields["output"].annotation == Union[int, str]
 
     lm = DummyLM([{"output": "processed"}])
-    dspy.settings.configure(lm=lm)
+    dspy.configure(lm=lm)
 
     custom_obj = CustomType(value="test")
     pred = dspy.Predict(sig)(input=custom_obj)

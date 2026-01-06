@@ -1,4 +1,5 @@
 import inspect
+import json
 import logging
 import random
 from dataclasses import dataclass
@@ -9,8 +10,10 @@ from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
 from dspy.clients.lm import LM
+from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import (
+    TOOL_MODULE_PREFIX,
     DspyAdapter,
     DSPyTrace,
     PredictorFeedbackFn,
@@ -31,6 +34,7 @@ AUTO_RUN_SETTINGS = {
 @experimental(version="3.0.0")
 class GEPAFeedbackMetric(Protocol):
     def __call__(
+        self,
         gold: Example,
         pred: Prediction,
         trace: Optional["DSPyTrace"],
@@ -49,8 +53,8 @@ class GEPAFeedbackMetric(Protocol):
         Note the `pred_name` and `pred_trace` arguments. During optimization, GEPA will call the metric to obtain
         feedback for individual predictors being optimized. GEPA provides the name of the predictor in `pred_name`
         and the sub-trace (of the trace) corresponding to the predictor in `pred_trace`.
-        If available at the predictor level, the metric should return dspy.Prediction(score: float, feedback: str) corresponding
-        to the predictor.
+        If available at the predictor level, the metric should return dspy.Prediction(score: float, feedback: str)
+        corresponding to the predictor.
         If not available at the predictor level, the metric can also return a text feedback at the program level
         (using just the gold, pred and trace).
         If no feedback is returned, GEPA will use a simple text feedback consisting of just the score:
@@ -292,7 +296,7 @@ class GEPA(Teleprompter):
             Note: When both instruction_proposer and reflection_lm are set, the instruction_proposer is called
             in the reflection_lm context. However, reflection_lm is optional when using a custom instruction_proposer.
             Custom instruction proposers can invoke their own LLMs if needed.
-        component_selector: Custom component selector implementing the ReflectionComponentSelector protocol,
+        component_selector: Custom component selector implementing the [ReflectionComponentSelector](https://github.com/gepa-ai/gepa/blob/main/src/gepa/proposer/reflective_mutation/base.py) protocol,
             or a string specifying a built-in selector strategy. Controls which components (predictors) are selected
             for optimization at each iteration. Defaults to 'round_robin' strategy which cycles through components
             one at a time. Available string options: 'round_robin' (cycles through components sequentially),
@@ -325,8 +329,40 @@ class GEPA(Teleprompter):
         warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is
             raised if a mismatch in module-level and predictor-level score is detected.
+        enable_tool_optimization: Whether to enable joint optimization of dspy.ReAct modules.
+            When enabled, GEPA jointly optimizes predictor instructions and tool descriptions together
+            for dspy.ReAct modules. See the
+            [Tool Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#tool-optimization)
+            for details on when to use this feature and how it works. Default is False.
         seed: The random seed to use for reproducibility. Default is 0.
-        gepa_kwargs: (Optional) provide additional kwargs to be passed to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py) method
+        gepa_kwargs: (Optional) Additional keyword arguments to pass directly to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py).
+            Useful for accessing advanced GEPA features not directly exposed through DSPy's GEPA interface.
+
+            Available parameters:
+            - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/batch_sampler.py) instance or a string
+              ('epoch_shuffled'). Defaults to 'epoch_shuffled'. Only valid when reflection_minibatch_size is None.
+            - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before
+              attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than 'full_eval'.
+              Default is 5.
+            - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single
+              [StopperProtocol](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py) or a list of StopperProtocol instances.
+              Examples: [FileStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py),
+              [TimeoutStopCondition](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py),
+              [SignalStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py),
+              [NoImprovementStopper](https://github.com/gepa-ai/gepa/blob/main/src/gepa/utils/stop_condition.py),
+              or custom stopping logic. Note: This overrides the default
+              max_metric_calls stopping condition.
+            - use_cloudpickle: Use cloudpickle instead of pickle for serialization. Can be helpful when the
+              serialized state contains dynamically generated DSPy signatures. Default is False.
+            - val_evaluation_policy: Strategy controlling which validation ids to score each iteration. Can be
+              'full_eval' (evaluate every id each time) or an [EvaluationPolicy](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/eval_policy.py) instance. Default is 'full_eval'.
+            - use_mlflow: If True, enables MLflow integration to log optimization progress.
+              MLflow can be used alongside Weights & Biases (WandB).
+            - mlflow_tracking_uri: The tracking URI to use for MLflow (when use_mlflow=True).
+            - mlflow_experiment_name: The experiment name to use for MLflow (when use_mlflow=True).
+
+            Note: Parameters already handled by DSPy's GEPA class will be overridden by the direct parameters
+            and should not be passed through gepa_kwargs.
 
     Note:
         Budget Configuration: Exactly one of `auto`, `max_full_evals`, or `max_metric_calls` must be provided.
@@ -375,13 +411,14 @@ class GEPA(Teleprompter):
         perfect_score: float = 1.0,
         frontier_type: Literal["instance", "objective", "hybrid"] = "instance",
         # Logging
-        log_dir: str = None,
+        log_dir: str | None = None,
         track_stats: bool = False,
         use_wandb: bool = False,
         wandb_api_key: str | None = None,
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
+        enable_tool_optimization: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -399,9 +436,7 @@ class GEPA(Teleprompter):
         self.metric_fn = metric
 
         # Budget configuration
-        assert (max_metric_calls is not None) + (max_full_evals is not None) + (
-            auto is not None
-        ) == 1, (
+        assert (max_metric_calls is not None) + (max_full_evals is not None) + (auto is not None) == 1, (
             "Exactly one of max_metric_calls, max_full_evals, auto must be set. "
             f"You set max_metric_calls={max_metric_calls}, "
             f"max_full_evals={max_full_evals}, "
@@ -448,6 +483,7 @@ class GEPA(Teleprompter):
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.enable_tool_optimization = enable_tool_optimization
         self.use_mlflow = use_mlflow
 
         if track_best_outputs:
@@ -472,19 +508,86 @@ class GEPA(Teleprompter):
         incoming_kwargs.setdefault("frontier_type", frontier_type)
         self.gepa_kwargs = incoming_kwargs
 
+    def _build_seed_candidate(self, student: Module) -> dict[str, str]:
+        """
+        Build the seed candidate configuration from the student module.
+
+        For ReAct modules (when tool optimization is enabled), creates a JSON config containing:
+        - react predictor instructions
+        - extract predictor instructions
+        - tool descriptions and argument descriptions
+
+        For regular predictors, uses their signature instructions directly.
+
+        Returns:
+            A dictionary mapping component names to their text representations (instructions or JSON configs).
+        """
+        seed_candidate = {}
+        claimed_predictor_names = set()
+
+        # Process ReAct modules when tool optimization is enabled
+        if self.enable_tool_optimization:
+            for module_path, module in student.named_sub_modules():
+                if not isinstance(module, ReAct):
+                    continue
+
+                # Verify DSPy's two-predictor ReAct design
+                assert hasattr(module, "extract") and hasattr(module.extract, "predict"), (
+                    f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
+                )
+
+                # Get predictor names via object identity
+                extract_predictor = module.extract.predict
+                react_predictor = module.react
+                extract_predictor_name = None
+                react_predictor_name = None
+                for name, pred in student.named_predictors():
+                    if pred is extract_predictor:
+                        extract_predictor_name = name
+                    elif pred is react_predictor:
+                        react_predictor_name = name
+
+                # Use extract.predict as the key since it is the target predictor for feedback lookup
+                module_key = f"{TOOL_MODULE_PREFIX}:{extract_predictor_name}"
+
+                # Build JSON config with dynamic predictor names as keys
+                config = {
+                    react_predictor_name: react_predictor.signature.instructions,
+                    extract_predictor_name: extract_predictor.signature.instructions,
+                    "tools": {
+                        tool_name: {"desc": tool.desc, "args": tool.args}
+                        for tool_name, tool in module.tools.items()
+                        if tool_name != "finish"  # Skip the built-in finish tool
+                    },
+                }
+
+                seed_candidate[module_key] = json.dumps(config, indent=2)
+                # Track predictor names that are part of ReAct modules
+                claimed_predictor_names.add(react_predictor_name)
+                claimed_predictor_names.add(extract_predictor_name)
+        else:
+            # Warn if ReAct modules found but tool optimization disabled
+            for module_path, module in student.named_sub_modules():
+                if isinstance(module, ReAct):
+                    logger.info(
+                        f"Detected ReAct module at '{module_path}'. Consider using "
+                        "`enable_tool_optimization=True` to jointly optimize react instructions, "
+                        "extract instructions, tool descriptions, and tool argument descriptions."
+                    )
+
+        # Add individual predictors that aren't part of ReAct module configs
+        for name, pred in student.named_predictors():
+            if name not in claimed_predictor_names:
+                seed_candidate[name] = pred.signature.instructions
+
+        return seed_candidate
+
     def auto_budget(
-        self,
-        num_preds,
-        num_candidates,
-        valset_size: int,
-        minibatch_size: int = 35,
-        full_eval_steps: int = 5,
+        self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
     ) -> int:
         import numpy as np
 
-        num_trials = int(
-            max(2 * (num_preds * 2) * np.log2(num_candidates), 1.5 * num_candidates)
-        )
+        num_trials = int(max(2 * (num_preds * 2) * np.log2(num_candidates), 1.5 * num_candidates))
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
             raise ValueError(
                 "num_trials, valset_size, and minibatch_size must be >= 0."
@@ -592,15 +695,11 @@ class GEPA(Teleprompter):
                         o["feedback"] = f"This trajectory got a score of {o['score']}."
                     return o
                 else:
-                    return dict(
-                        score=o, feedback=f"This trajectory got a score of {o}."
-                    )
+                    return dict(score=o, feedback=f"This trajectory got a score of {o}.")
 
             return feedback_fn
 
-        feedback_map = {
-            k: feedback_fn_creator(k, v) for k, v in student.named_predictors()
-        }
+        feedback_map = {k: feedback_fn_creator(k, v) for k, v in student.named_predictors()}
 
         # Build the DSPy adapter that encapsulates evaluation, trace capture, feedback extraction, and instruction proposal
         adapter = DspyAdapter(
@@ -614,15 +713,14 @@ class GEPA(Teleprompter):
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
+            enable_tool_optimization=self.enable_tool_optimization,
+            reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
-        # Instantiate GEPA with the simpler adapter-based API
-        base_program = {
-            name: pred.signature.instructions
-            for name, pred in student.named_predictors()
-        }
+        # Build the seed candidate configuration
+        seed_candidate = self._build_seed_candidate(student)
         gepa_result: GEPAResult = optimize(
-            seed_candidate=base_program,
+            seed_candidate=seed_candidate,
             trainset=trainset,
             valset=valset,
             adapter=adapter,
