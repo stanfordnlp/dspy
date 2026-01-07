@@ -28,6 +28,21 @@ class Embeddings:
             cache: MUST be False. Caching is explicitly unsupported and will raise AssertionError if enabled.
             brute_force_threshold: Threshold size for using brute-force search instead of FAISS. If corpus size is below this threshold, brute-force search is used. Defaults to 20,000.
             normalize: Whether to normalize embeddings to unit vectors before similarity calculation. Normalization ensures that cosine similarity equals dot product. Defaults to True.
+        
+        Example:
+        ```python
+        from dspy.retrievers.embeddings import Embeddings
+        def embedder(texts: list[str]):
+            embeddings = []
+            for text in texts:
+                if "cat" in text:
+                    embeddings.append(np.array([1, 0, 0], dtype=np.float32))
+                elif "dog" in text:
+                    embeddings.append(np.array([0, 1, 0], dtype=np.float32))
+                else:
+                    embeddings.append(np.array([0, 0, 1], dtype=np.float32))
+            return np.stack(embeddings)
+        ```
         """
         assert cache is False, "Caching is not supported for embeddings-based retrievers"
 

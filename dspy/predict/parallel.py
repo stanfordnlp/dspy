@@ -33,7 +33,7 @@ class Parallel:
         Example:
             ```python
             import dspy
-            from dspy.predict.parallel import Parallel
+            from dspy import Parallel
             lm = dspy.LM("openai/gpt-4o-mini")
             dspy.configure(lm=lm)
 
