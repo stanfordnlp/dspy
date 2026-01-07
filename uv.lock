@@ -729,7 +729,7 @@ wheels = [
 
 [[package]]
 name = "dspy"
-version = "3.1.0b1"
+version = "3.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
@@ -799,7 +799,7 @@ requires-dist = [
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
-    { name = "gepa", extras = ["dspy"], specifier = "==0.0.22" },
+    { name = "gepa", extras = ["dspy"], specifier = "==0.0.24" },
     { name = "json-repair", specifier = ">=0.54.2" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
     { name = "langchain-core", marker = "extra == 'test-extras'" },
@@ -1012,11 +1012,11 @@ wheels = [
 
 [[package]]
 name = "gepa"
-version = "0.0.22"
+version = "0.0.24"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ae/be/9a4c31c65c4910e73bd4a316df99347681bce4f2ef6d10877cc1ed8d57da/gepa-0.0.22.tar.gz", hash = "sha256:0b13a644efd2af52186e456eaad2ae28fcf88c6f796a9c999910c587863d4315", size = 116337, upload-time = "2025-11-10T21:39:27.044Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bc/2c/8f249827bcdc56212a445f4f671ee2201b864e433d2c88428933bd4b08f3/gepa-0.0.24.tar.gz", hash = "sha256:8035d1a0877661b6a63db457dc935b4878ee76acf7da1e488d7e6209bb32c054", size = 135673, upload-time = "2026-01-05T16:45:30.553Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/0e/d41272b28f2163f5bf840b508cbaf4a0bc01eaeaa6e5d447558d1050eb3b/gepa-0.0.22-py3-none-any.whl", hash = "sha256:ff57ee0442399a5cc62d01411935476bc80cfa8f1c318bed82e3db4c2c834665", size = 119666, upload-time = "2025-11-10T21:39:26.028Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/b1/33b035ff1aaf22d4e104c5b15ba48fe5050639764457048e967c20d6317a/gepa-0.0.24-py3-none-any.whl", hash = "sha256:6d8b16699e7b24ed01435dea7bbbc89156a88cbb4b877b14d90e7455db2b0032", size = 137539, upload-time = "2026-01-05T16:45:29.244Z" },
 ]
 
 [[package]]
@@ -1575,6 +1575,9 @@ name = "litellm-enterprise"
 version = "0.1.7"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/28/a4/d10b32cf325cf2d02a83a489342476987c5573860ff9d1034ce37999d60a/litellm_enterprise-0.1.7.tar.gz", hash = "sha256:1feb5b799bdbd27df1e02a31fa4d18351b945b6f72e337805cf80a64dd2ec870", size = 32369, upload-time = "2025-05-30T03:37:41.652Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/5e/64aa4b1d0a3d9f2856d8f4d8dc1388894ca4d046687a1597b21573836960/litellm_enterprise-0.1.7-py3-none-any.whl", hash = "sha256:0f77aebe4103359bb7e7e7fdaf6d9024ec9ea7700b6affb60c9e4dc2cae9f243", size = 90175, upload-time = "2025-12-05T19:11:17.26Z" },
+]
 
 [[package]]
 name = "litellm-proxy-extras"

@@ -31,7 +31,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
 
         ```python linenums="1"
         import dspy
-        lm = dspy.LM("openai/gpt-4o-mini", api_key="YOUR_OPENAI_API_KEY")
+        lm = dspy.LM("openai/gpt-5-mini", api_key="YOUR_OPENAI_API_KEY")
         dspy.configure(lm=lm)
         ```
 
