@@ -2,6 +2,7 @@ import logging
 import random
 
 from pydantic import BaseModel
+from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
@@ -151,6 +152,11 @@ class Predict(Module, Parameter):
                 # (https://platform.openai.com/docs/guides/predicted-outputs), we remove it from input kwargs and add it
                 # to the lm kwargs.
                 config["prediction"] = kwargs.pop("prediction")
+
+        # Populate default values for missing input fields.
+        for k, v in signature.input_fields.items():
+            if k not in kwargs and v.default is not PydanticUndefined:
+                kwargs[k] = v.default
 
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
