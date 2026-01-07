@@ -145,8 +145,22 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for name in instruction_components:
                     base_instruction = candidate[name]
                     dataset_with_feedback = reflective_dataset[name]
+
+                    # Always return a string from the reflection LM outputs
+                    # Even when it returns a dict with e.g., "text" and "reasoning" fields
+                    def reflection_lm_call(x: str) -> str:
+                        output = reflection_lm(x)[0]
+                        if type(output) == str:
+                            return output
+                        elif type(output) == dict:
+                            if "text" not in output:
+                                raise KeyError("Missing 'text' field in the output from the base LM!")
+                            return output["text"]
+                        else:
+                            raise TypeError("Unexpected output type for the base LM! Expected str or dict")
+
                     results[name] = InstructionProposalSignature.run(
-                        lm=(lambda x: reflection_lm(x)[0]),
+                        lm=reflection_lm_call,
                         input_dict={
                             "current_instruction_doc": base_instruction,
                             "dataset_with_feedback": dataset_with_feedback,
