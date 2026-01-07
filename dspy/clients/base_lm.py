@@ -221,7 +221,7 @@ class BaseLM:
             outputs.append(output)
 
         if all(len(output) == 1 for output in outputs) or merged_kwargs.get("text_output", False):
-            # Return a list if every output only has "text" key or if desired
+            # Return a list[str] if every output only has "text" key or if desired
             outputs = [output["text"] for output in outputs]
         return outputs
 
