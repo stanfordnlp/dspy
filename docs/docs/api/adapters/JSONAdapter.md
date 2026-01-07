@@ -15,6 +15,7 @@
             - format_field_structure
             - format_field_with_value
             - format_finetune_data
+            - format_system_message
             - format_task_description
             - format_user_message_content
             - parse

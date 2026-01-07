@@ -978,8 +978,11 @@ def test_json_adapter_with_responses_api():
     call_kwargs = mock_responses.call_args.kwargs
     assert "response_format" not in call_kwargs
     assert "text" in call_kwargs
-    assert isinstance(call_kwargs["text"]["format"], type)
-    assert issubclass(call_kwargs["text"]["format"], pydantic.BaseModel)
+
+    assert isinstance(call_kwargs["text"]["format"], dict)
+    assert isinstance(call_kwargs["text"]["format"]["name"], str)
+    assert call_kwargs["text"]["format"]["type"] == "json_schema"
+    assert isinstance(call_kwargs["text"]["format"]["schema"], dict)
 
 
 def test_format_system_message():
