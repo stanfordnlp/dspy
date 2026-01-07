@@ -1,4 +1,5 @@
 import asyncio
+import cloudpickle
 import contextvars
 import copy
 import threading
@@ -185,5 +186,27 @@ class Settings:
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 
+
+    def save(self, path):
+        """
+        Save the settings to a file by CloudPickle
+
+        Args:
+            path: The file path to save the settings to.
+        """
+        with open(path, "wb") as f:
+            cloudpickle.dump(dict(self.config), f)
+
+    def load(self, path):
+        """
+        Load the settings from a file by CloudPickle
+
+        Args:
+            path: The file path to load the settings from.
+        """
+        with open(path, "rb") as f:
+            configs = cloudpickle.load(f)
+
+        self.configure(**configs)
 
 settings = Settings()
