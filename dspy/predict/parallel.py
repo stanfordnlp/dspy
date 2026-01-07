@@ -43,7 +43,7 @@ class Parallel:
                 {"question": "Who wrote Hamlet?"},
             ]
 
-            module=dspy.Predict("question->answer")
+            module = dspy.Predict("question->answer")
             exec_pairs = [(module, example) for example in examples]
             parallel = Parallel(num_threads=3, disable_progress_bar=False)
             results = parallel(exec_pairs)
