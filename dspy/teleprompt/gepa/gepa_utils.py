@@ -145,7 +145,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 for name in instruction_components:
                     base_instruction = candidate[name]
                     dataset_with_feedback = reflective_dataset[name]
-
                     results[name] = InstructionProposalSignature.run(
                         lm=(lambda x: self.stripped_lm_call(x)[0]),
                         input_dict={
