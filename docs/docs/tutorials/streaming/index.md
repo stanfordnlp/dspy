@@ -354,7 +354,7 @@ Available hooks:
 - lm_start_status_message: status message at the start of calling dspy.LM.
 - lm_end_status_message: status message at the end of calling dspy.LM.
 - module_start_status_message: status message at the start of calling a dspy.Module.
-- module_end_status_message: status message at the start of calling a dspy.Module.
+- module_end_status_message: status message at the end of calling a dspy.Module.
 - tool_start_status_message: status message at the start of calling dspy.Tool.
 - tool_end_status_message: status message at the end of calling dspy.Tool.
 
