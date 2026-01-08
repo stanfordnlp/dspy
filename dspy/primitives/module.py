@@ -38,6 +38,34 @@ class ProgramMeta(type):
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
+    """Base class for all DSPy modules (programs).
+
+    A Module is a building block for DSPy programs that can contain predictors,
+    sub-modules, and custom logic. Modules can be composed together to create
+    complex pipelines and can be optimized using DSPy's teleprompters.
+
+    All DSPy programs should inherit from this class and implement a ``forward``
+    method that defines the program's logic.
+
+    Args:
+        callbacks: Optional list of callback handlers for instrumentation
+            and monitoring.
+
+    Attributes:
+        callbacks: List of registered callback handlers.
+        history: List of LM call history for this module.
+
+    Example:
+        >>> import dspy
+        >>> class MyProgram(dspy.Module):
+        ...     def __init__(self):
+        ...         super().__init__()
+        ...         self.predictor = dspy.Predict("question -> answer")
+        ...
+        ...     def forward(self, question):
+        ...         return self.predictor(question=question)
+    """
+
     def _base_init(self):
         self._compiled = False
         self.callbacks = []
@@ -101,18 +129,84 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return await self.aforward(*args, **kwargs)
 
     def named_predictors(self):
+        """Return all named Predict modules in this module.
+
+        Iterates through all parameters and returns those that are instances
+        of ``dspy.Predict``, along with their names.
+
+        Returns:
+            list[tuple[str, Predict]]: A list of (name, predictor) tuples
+                where name is the attribute path and predictor is the
+                Predict instance.
+
+        Example:
+            >>> import dspy
+            >>> class MyProgram(dspy.Module):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.qa = dspy.Predict("question -> answer")
+            ...         self.summarize = dspy.Predict("text -> summary")
+            ...
+            >>> program = MyProgram()
+            >>> for name, p in program.named_predictors():
+            ...     print(name)
+            qa
+            summarize
+        """
         from dspy.predict.predict import Predict
 
         return [(name, param) for name, param in self.named_parameters() if isinstance(param, Predict)]
 
     def predictors(self):
+        """Return all Predict modules in this module.
+
+        Returns:
+            list[Predict]: A list of all Predict instances in this module.
+
+        Example:
+            >>> import dspy
+            >>> class MyProgram(dspy.Module):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.qa = dspy.Predict("question -> answer")
+            ...
+            >>> program = MyProgram()
+            >>> len(program.predictors())
+            1
+        """
         return [param for _, param in self.named_predictors()]
 
     def set_lm(self, lm):
+        """Set the language model for all predictors in this module.
+
+        This method recursively sets the language model for all Predict
+        instances contained within this module.
+
+        Args:
+            lm: The language model instance to use for all predictors.
+
+        Example:
+            >>> import dspy
+            >>> lm = dspy.LM("openai/gpt-4o-mini")
+            >>> program = dspy.Predict("question -> answer")
+            >>> program.set_lm(lm)
+        """
         for _, param in self.named_predictors():
             param.lm = lm
 
     def get_lm(self):
+        """Get the language model used by this module's predictors.
+
+        Returns the language model if all predictors use the same LM.
+        Raises an error if multiple different LMs are in use.
+
+        Returns:
+            The language model instance used by this module's predictors.
+
+        Raises:
+            ValueError: If multiple different language models are being
+                used by the predictors in this module.
+        """
         all_used_lms = [param.lm for _, param in self.named_predictors()]
 
         if len(set(all_used_lms)) == 1:
@@ -129,12 +223,47 @@ class Module(BaseModule, metaclass=ProgramMeta):
         return "\n".join(s)
 
     def map_named_predictors(self, func):
-        """Applies a function to all named predictors."""
+        """Apply a function to all named predictors in this module.
+
+        This method iterates through all Predict instances in the module
+        and applies the given function to each, replacing the original
+        predictor with the function's return value.
+
+        Args:
+            func: A callable that takes a Predict instance and returns
+                a new Predict instance (or compatible object).
+
+        Returns:
+            Module: Returns self for method chaining.
+
+        Example:
+            >>> import dspy
+            >>> class MyProgram(dspy.Module):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.qa = dspy.Predict("question -> answer")
+            ...
+            >>> program = MyProgram()
+            >>> program.map_named_predictors(lambda p: p)
+        """
         for name, predictor in self.named_predictors():
             set_attribute_by_name(self, name, func(predictor))
         return self
 
     def inspect_history(self, n: int = 1):
+        """Display the LM call history for this module.
+
+        Prints a formatted view of the most recent language model calls
+        made by this module, useful for debugging and understanding
+        the module's behavior.
+
+        Args:
+            n: The number of recent history entries to display.
+                Defaults to 1.
+
+        Returns:
+            The formatted history output.
+        """
         return pretty_print_history(self.history, n)
 
     def batch(
