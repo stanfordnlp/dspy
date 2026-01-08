@@ -126,7 +126,6 @@ def test_input_field_partial_override_with_multiple_defaults():
 
 def test_input_field_no_warning_with_defaults():
     """Test that no warning is raised when all required fields are provided (including defaults)."""
-    import logging
 
     class TestSignature(dspy.Signature):
         """Answer the question."""
@@ -139,8 +138,7 @@ def test_input_field_no_warning_with_defaults():
     lm = DummyLM([{"answer": "test answer"}])
     dspy.configure(lm=lm)
 
-    # Capture logs to check if warning is raised
+    # This should not raise a warning since context has a default
     with dspy.context(lm=lm):
-        # This should not raise a warning since context has a default
         result = predictor(question="What is this?")
         assert result.answer == "test answer"
