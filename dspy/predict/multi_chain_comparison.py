@@ -5,6 +5,40 @@ from dspy.signatures.signature import ensure_signature
 
 
 class MultiChainComparison(Module):
+    """Ensembles multiple reasoning chains and selects a final answer via comparison.
+
+    This module implements the Multi-Chain Comparison technique where ``M`` separate
+    reasoning attempts are generated, their rationales and answers extracted, and
+    then fed to an internal ``Predict`` module to synthesize the best final response.
+
+    The signature is augmented with ``M`` input fields for reasoning attempts and
+    a prepended rationale output field that prompts holistic comparison.
+
+    Args:
+        signature: DSPy signature describing the inputs/outputs for prediction.
+        M: Number of parallel reasoning attempts to compare. Defaults to 3.
+        temperature: Sampling temperature passed to the underlying predictor.
+            Defaults to 0.7.
+        **config: Additional configuration forwarded to the underlying ``Predict``
+            module.
+
+    Example:
+        Compare multiple chain-of-thought reasoning attempts:
+
+        ```python
+        import dspy
+
+        # First generate M completions using ChainOfThought with n=M
+        cot = dspy.ChainOfThought("question -> answer", n=3)
+        completions = cot(question="What causes seasons on Earth?").completions
+
+        # Then use MultiChainComparison to select the best answer
+        mc = dspy.MultiChainComparison("question -> answer", M=3)
+        result = mc(completions, question="What causes seasons on Earth?")
+        print(result.answer)
+        ```
+    """
+
     def __init__(self, signature, M=3, temperature=0.7, **config):  # noqa: N803
         super().__init__()
 
