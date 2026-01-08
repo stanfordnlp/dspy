@@ -2,6 +2,7 @@ import logging
 import random
 
 from pydantic import BaseModel
+from pydantic_core import PydanticUndefined
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
@@ -158,7 +159,7 @@ class Predict(Module, Parameter):
                 # Field has a default value (either default or default_factory)
                 if field_info.default_factory is not None:
                     kwargs[field_name] = field_info.default_factory()
-                else:
+                elif field_info.default is not PydanticUndefined:
                     kwargs[field_name] = field_info.default
 
         if not all(k in kwargs for k in signature.input_fields):
