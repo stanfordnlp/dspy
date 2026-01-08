@@ -763,3 +763,26 @@ def test_per_module_history_disabled():
     for _ in range(10):
         program(question="What is the capital of France?")
     assert len(program.history) == 0
+
+def test_input_field_default_value():
+    class SpyLM(dspy.LM):
+        def __init__(self):
+            super().__init__("dummy")
+            self.calls = []
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.calls.append({"messages": messages})
+            return ["[[ ## answer ## ]]\ntest"]
+
+    class SignatureWithDefault(dspy.Signature):
+        context: str = dspy.InputField(default="DEFAULT_CONTEXT")
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    lm = SpyLM()
+    dspy.configure(lm=lm)
+    predictor = Predict(SignatureWithDefault)
+    predictor(question="test")
+
+    user_message = lm.calls[0]["messages"][-1]["content"]
+    assert "DEFAULT_CONTEXT" in user_message
