@@ -8,15 +8,27 @@ from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
+from dspy.utils.interpreter import ThreadLocalInterpreter
 
 logger = logging.getLogger(__name__)
+
 
 class CodeAct(ReAct, ProgramOfThought):
     """
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
+
+    **Thread Safety & Isolation**:
+    - Uses `ThreadLocalInterpreter` by default: Each thread operates in its own isolated Deno environment if no shared interpreter is passed.
+    - **Session Isolation**: Ensures that each step's code execution starts from a clean slate (reverting globals, modules, and env vars), preventing state pollution between iterations or threads.
     """
 
-    def __init__(self, signature: str | type[Signature], tools: list[Callable], max_iters: int = 5, interpreter: PythonInterpreter | None = None):
+    def __init__(
+        self,
+        signature: str | type[Signature],
+        tools: list[Callable],
+        max_iters: int = 5,
+        interpreter: PythonInterpreter | None = None,
+    ):
         """
         Initializes the CodeAct class with the specified model, temperature, and max tokens.
 
@@ -42,9 +54,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.history = []
 
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
-        if any(
-            not inspect.isfunction(tool.func) for tool in tools
-        ):
+        if any(not inspect.isfunction(tool.func) for tool in tools):
             raise ValueError("CodeAct only accepts functions and not callable objects.")
         tools = {tool.name: tool for tool in tools}
 
@@ -53,7 +63,13 @@ class CodeAct(ReAct, ProgramOfThought):
         codeact_signature = (
             dspy.Signature({**self.signature.input_fields}, "\n".join(instructions))
             .append("trajectory", dspy.InputField(), type_=str)
-            .append("generated_code", dspy.OutputField(desc="Python code that when executed, produces output relevant to answering the question"), type_=str)
+            .append(
+                "generated_code",
+                dspy.OutputField(
+                    desc="Python code that when executed, produces output relevant to answering the question"
+                ),
+                type_=str,
+            )
             .append("finished", dspy.OutputField(desc="a boolean flag to determine if the process is done"), type_=bool)
         )
 
@@ -66,7 +82,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.codeact = dspy.Predict(codeact_signature)
         self.extractor = dspy.ChainOfThought(extract_signature)
         # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or PythonInterpreter()
+        self.interpreter = interpreter or ThreadLocalInterpreter()
 
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []
@@ -115,5 +131,5 @@ class CodeAct(ReAct, ProgramOfThought):
                 break
 
         extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
-        self.interpreter.shutdown()
+        # self.interpreter.shutdown() # Removed for thread safety reuse
         return dspy.Prediction(trajectory=trajectory, **extract)

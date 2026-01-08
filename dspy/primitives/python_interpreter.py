@@ -2,11 +2,13 @@ import json
 import logging
 import os
 import subprocess
+import threading
 from os import PathLike
 from types import TracebackType
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
 
 class InterpreterError(RuntimeError):
     pass
@@ -15,6 +17,11 @@ class InterpreterError(RuntimeError):
 class PythonInterpreter:
     r"""
     PythonInterpreter that runs code in a sandboxed environment using Deno and Pyodide.
+
+    Features:
+    - **Sandboxed Execution**: Runs securely in a Deno subprocess.
+    - **Thread Safety**: Uses a `threading.Lock` to ensure safe concurrent usage of the subprocess stdin/stdout.
+    - **Session Isolation**: Supports `snapshot_state()` and `restore_state()` to revert globals, modules, and environment variables between runs, enabling clean execution contexts.
 
     Prerequisites:
     - Deno (https://docs.deno.com/runtime/getting_started/installation/).
@@ -39,8 +46,8 @@ class PythonInterpreter:
         """
         Args:
             deno_command: command list to launch Deno.
-            enable_read_paths: Files or directories to allow reading from in the sandbox. 
-            enable_write_paths: Files or directories to allow writing to in the sandbox. 
+            enable_read_paths: Files or directories to allow reading from in the sandbox.
+            enable_write_paths: Files or directories to allow writing to in the sandbox.
                 All write paths will also be able to be read from for mounting.
             enable_env_vars: Environment variable names to allow in the sandbox.
             enable_network_access: Domains or IPs to allow network access in the sandbox.
@@ -54,6 +61,7 @@ class PythonInterpreter:
         self.enable_env_vars = enable_env_vars or []
         self.enable_network_access = enable_network_access or []
         self.sync_files = sync_files
+        self.lock = threading.Lock()
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         if deno_command:
@@ -75,7 +83,7 @@ class PythonInterpreter:
                 allowed_read_paths.extend(str(p) for p in self.enable_write_paths)
             args.append(f"--allow-read={','.join(allowed_read_paths)}")
 
-            self._env_arg  = ""
+            self._env_arg = ""
             if self.enable_env_vars:
                 user_vars = [str(v).strip() for v in self.enable_env_vars]
                 args.append("--allow-env=" + ",".join(user_vars))
@@ -109,12 +117,7 @@ class PythonInterpreter:
         try:
             # Attempt to find deno in path or use just "deno"
             # We can't easily know which 'deno' will be used if not absolute, but 'deno' is a safe bet
-            result = subprocess.run(
-                ["deno", "info", "--json"],
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            result = subprocess.run(["deno", "info", "--json"], capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 info = json.loads(result.stdout)
                 cls._deno_dir_cache = info.get("denoDir")
@@ -158,13 +161,9 @@ class PythonInterpreter:
             return
         for path in self.enable_write_paths:
             virtual_path = f"/sandbox/{os.path.basename(path)}"
-            sync_msg = json.dumps({
-                "sync_file": virtual_path,
-                "host_file": str(path)
-            })
+            sync_msg = json.dumps({"sync_file": virtual_path, "host_file": str(path)})
             self.deno_process.stdin.write(sync_msg + "\n")
             self.deno_process.stdin.flush()
-
 
     def _ensure_deno_process(self) -> None:
         if self.deno_process is None or self.deno_process.poll() is not None:
@@ -176,7 +175,7 @@ class PythonInterpreter:
                     stderr=subprocess.PIPE,
                     text=True,
                     encoding="UTF-8",
-                    env=os.environ.copy()
+                    env=os.environ.copy(),
                 )
             except FileNotFoundError as e:
                 install_instructions = (
@@ -213,57 +212,116 @@ class PythonInterpreter:
         else:
             raise InterpreterError(f"Unsupported value type: {type(value).__name__}")
 
+    def snapshot_state(self) -> None:
+        """
+        Creates a secure snapshot of the current interpreter state.
+
+        This captures:
+        1. globals() dictionary
+        2. sys.modules (loaded imports)
+        3. os.environ (environment variables)
+
+        The snapshot is stored in the Deno host process, inaccessible to the guest Python code.
+        """
+        self._ensure_deno_process()
+        with self.lock:
+            # Send snapshot command
+            cmd = json.dumps({"snapshot": True})
+            self.deno_process.stdin.write(cmd + "\n")
+            self.deno_process.stdin.flush()
+
+            # Read response
+            output = self.deno_process.stdout.readline()
+            if not output:
+                raise InterpreterError("Deno subprocess closed during snapshot.")
+            try:
+                res = json.loads(output)
+            except json.JSONDecodeError:
+                raise InterpreterError(f"Failed to parse snapshot response: {output}")
+
+            if "error" in res:
+                raise InterpreterError(f"Snapshot failed: {res['error']}")
+
+    def restore_state(self) -> None:
+        """
+        Restores the interpreter state from the previously taken snapshot.
+
+        This revers:
+        1. Globals (clears new, restores old/modified)
+        2. sys.modules (unloads modules imported since snapshot)
+        3. os.environ (reverts changes)
+        """
+        self._ensure_deno_process()
+        with self.lock:
+            # Send restore command
+            cmd = json.dumps({"restore": True})
+            self.deno_process.stdin.write(cmd + "\n")
+            self.deno_process.stdin.flush()
+
+            # Read response
+            output = self.deno_process.stdout.readline()
+            if not output:
+                raise InterpreterError("Deno subprocess closed during restore.")
+            try:
+                res = json.loads(output)
+            except json.JSONDecodeError:
+                raise InterpreterError(f"Failed to parse restore response: {output}")
+
+            if "error" in res:
+                raise InterpreterError(f"Restore failed: {res['error']}")
+
     def execute(
         self,
         code: str,
         variables: dict[str, Any] | None = None,
     ) -> Any:
-        variables = variables or {}
-        code = self._inject_variables(code, variables)
-        self._ensure_deno_process()
-        self._mount_files()
-
-        # Send the code as JSON
-        input_data = json.dumps({"code": code})
-        try:
-            self.deno_process.stdin.write(input_data + "\n")
-            self.deno_process.stdin.flush()
-        except BrokenPipeError:
-            # If the process died, restart and try again once
+        with self.lock:
+            variables = variables or {}
+            code = self._inject_variables(code, variables)
             self._ensure_deno_process()
-            self.deno_process.stdin.write(input_data + "\n")
-            self.deno_process.stdin.flush()
+            self._mount_files()
 
-        # Read one JSON line from stdout
-        output_line = self.deno_process.stdout.readline().strip()
-        if not output_line:
-            # Possibly the subprocess died or gave no output
-            err_output = self.deno_process.stderr.read()
-            raise InterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
+            # Send the code as JSON
+            input_data = json.dumps({"code": code})
+            try:
+                self.deno_process.stdin.write(input_data + "\n")
+                self.deno_process.stdin.flush()
+            except BrokenPipeError:
+                # If the process died, restart and try again once
+                self._ensure_deno_process()
+                self.deno_process.stdin.write(input_data + "\n")
+                self.deno_process.stdin.flush()
 
-        # Parse that line as JSON
-        try:
-            result = json.loads(output_line)
-        except json.JSONDecodeError:
-            # If not valid JSON, just return raw text
-            result = {"output": output_line}
+            # Read one JSON line from stdout
+            output_line = self.deno_process.stdout.readline().strip()
+            if not output_line:
+                # Possibly the subprocess died or gave no output
+                err_output = self.deno_process.stderr.read()
+                raise InterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
 
-        # If we have an error, determine if it's a SyntaxError or other error using error.errorType.
-        if "error" in result:
-            error_msg = result["error"]
-            error_type = result.get("errorType", "Sandbox Error")
-            if error_type == "FinalAnswer":
-                # The `FinalAnswer` trick to receive output from the sandbox interpreter,
-                # just simply replace the output with the arguments.
-                result["output"] = result.get("errorArgs", None)
-            elif error_type == "SyntaxError":
-                raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
-            else:
-                raise InterpreterError(f"{error_type}: {result.get('errorArgs') or error_msg}")
+            # Parse that line as JSON
+            try:
+                result = json.loads(output_line)
+            except json.JSONDecodeError:
+                # If not valid JSON, just return raw text
+                result = {"output": output_line}
 
-        # If there's no error or got `FinalAnswer`, return the "output" field
-        self._sync_files()
-        return result.get("output", None)
+            # If we have an error, determine if it's a SyntaxError or other error using error.errorType.
+            if "error" in result:
+                error_msg = result["error"]
+                error_type = result.get("errorType", "Sandbox Error")
+                if error_type == "FinalAnswer":
+                    # The `FinalAnswer` trick to receive output from the sandbox interpreter,
+                    # just simply replace the output with the arguments.
+                    result["output"] = result.get("errorArgs", None)
+                elif error_type == "SyntaxError":
+                    raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
+                else:
+                    raise InterpreterError(f"{error_type}: {result.get('errorArgs') or error_msg}")
+
+            # If there's no error or got `FinalAnswer`, return the "output" field
+            self._sync_files()
+            return result.get("output", None)
 
     def __enter__(self):
         return self
@@ -285,10 +343,16 @@ class PythonInterpreter:
         return self.execute(code, variables)
 
     def shutdown(self) -> None:
-        if self.deno_process and self.deno_process.poll() is None:
-            shutdown_message = json.dumps({"shutdown": True}) + "\n"
-            self.deno_process.stdin.write(shutdown_message)
-            self.deno_process.stdin.flush()
-            self.deno_process.stdin.close()
-            self.deno_process.wait()
-            self.deno_process = None
+        with self.lock:
+            if self.deno_process and self.deno_process.poll() is None:
+                try:
+                    shutdown_message = json.dumps({"shutdown": True}) + "\n"
+                    if self.deno_process.stdin:
+                        self.deno_process.stdin.write(shutdown_message)
+                        self.deno_process.stdin.flush()
+                        self.deno_process.stdin.close()
+                    self.deno_process.wait()
+                except (BrokenPipeError, OSError):
+                    pass  # Process already dead
+                finally:
+                    self.deno_process = None
