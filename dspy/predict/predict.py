@@ -152,6 +152,15 @@ class Predict(Module, Parameter):
                 # to the lm kwargs.
                 config["prediction"] = kwargs.pop("prediction")
 
+        # Populate missing input fields with their default values if available
+        for field_name, field_info in signature.input_fields.items():
+            if field_name not in kwargs and not field_info.is_required():
+                # Field has a default value (either default or default_factory)
+                if field_info.default_factory is not None:
+                    kwargs[field_name] = field_info.default_factory()
+                else:
+                    kwargs[field_name] = field_info.default
+
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
