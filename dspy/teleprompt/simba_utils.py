@@ -7,6 +7,7 @@ import orjson
 
 import dspy
 from dspy.adapters.utils import get_field_description_string
+from dspy.metrics import resolve_metric_score
 from dspy.signatures import InputField, OutputField
 
 logger = logging.getLogger(__name__)
@@ -41,22 +42,17 @@ def wrap_program(program: dspy.Module, metric: Callable):
                 logger.warning(e)
             trace = dspy.settings.trace.copy()
 
-        output = None
         score = 0.0
         output_metadata = {}
 
         try:
-            output = metric(example, prediction)
-            if isinstance(output, (int, float)):
-                score = output
-            elif isinstance(output, dspy.Prediction):
-                if not hasattr(output, "score"):
-                    raise ValueError("When `metric` returns a `dspy.Prediction`, it must contain a `score` field.")
-                score = output.score
-                # Extract fields from the output dspy.Prediction, excluding `score``
-                output_metadata = {
-                    k: v for k, v in output.items() if k != "score"
-                }
+            score_obj, output_metadata = resolve_metric_score(
+                metric,
+                example,
+                prediction,
+                context="SIMBA metric",
+            )
+            score = float(score_obj.scalar)
         except Exception as e:
             logger.warning(e)
 

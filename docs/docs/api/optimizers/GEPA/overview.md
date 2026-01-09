@@ -40,6 +40,14 @@ One of the key insights behind GEPA is its ability to leverage domain-specific t
 <!-- END_API_REF -->
 
 When `track_stats=True`, GEPA returns detailed results about all of the proposed candidates, and metadata about the optimization run. The results are available in the `detailed_results` attribute of the optimized program returned by GEPA, and has the following type:
+
+!!! tip "Pareto frontier tracking modes"
+    GEPA now supports three tracking modes controlled by the `frontier_type` argument (`"instance"`, `"objective"`, or `"hybrid"`).
+    Instance tracking matches the classic behavior of maintaining a Pareto frontier over validation examples. Objective
+    tracking aggregates the metric subscores you declare via `dspy.metrics.subscore`, enabling multi-objective optimization.
+    Hybrid tracking combines both views, keeping the best candidates per objective and per validation example simultaneously.
+    The resulting `DspyGEPAResult` exposes `frontier_dimension_labels` so you can interpret each tracked dimension.
+
 <!-- START_API_REF -->
 ::: dspy.teleprompt.gepa.gepa.DspyGEPAResult
     handler: python
@@ -64,10 +72,13 @@ See GEPA usage tutorials in [GEPA Tutorials](../../../tutorials/gepa_ai_program/
 GEPA can act as a test-time/inference search mechanism. By setting your `valset` to your _evaluation batch_ and using `track_best_outputs=True`, GEPA produces for each batch element the highest-scoring outputs found during the evolutionary search.
 
 ```python
-gepa = dspy.GEPA(metric=metric, track_stats=True, ...)
+gepa = dspy.GEPA(metric=metric, track_stats=True, frontier_type="hybrid", ...)
 new_prog = gepa.compile(student, trainset=my_tasks, valset=my_tasks)
-highest_score_achieved_per_task = new_prog.detailed_results.highest_score_achieved_per_val_task
+best_scores = new_prog.detailed_results.highest_score_achieved_per_frontier_dimension
 best_outputs = new_prog.detailed_results.best_outputs_valset
+
+for dimension, score in best_scores.items():
+    print(f"{dimension}: {score:.3f}")
 ```
 
 ## How Does GEPA Work?

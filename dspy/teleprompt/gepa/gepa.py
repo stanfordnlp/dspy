@@ -73,8 +73,8 @@ class DspyGEPAResult:
     - candidates: list of proposed candidates (component_name -> component_text)
     - parents: lineage info; for each candidate i, parents[i] is a list of parent indices or None
     - val_aggregate_scores: per-candidate aggregate score on the validation set (higher is better)
-    - val_subscores: per-candidate per-instance scores on the validation set (len == num_val_instances)
-    - per_val_instance_best_candidates: for each val instance t, a set of candidate indices achieving the best score on t
+    - val_subscores: per-candidate mapping from validation id to score (sparse dict)
+    - per_val_instance_best_candidates: for each val instance, a set of candidate indices achieving the best score
     - discovery_eval_counts: Budget (number of metric calls / rollouts) consumed up to the discovery of each candidate
 
     - total_metric_calls: total number of metric calls made across the run
@@ -84,18 +84,28 @@ class DspyGEPAResult:
 
     - best_idx: candidate index with the highest val_aggregate_scores
     - best_candidate: the program text mapping for best_idx
+
+    Additional tracking data:
+    - val_aggregate_subscores: optional per-candidate aggregate subscores across objectives
+    - per_objective_best_candidates: optional per-objective set of candidate indices achieving best aggregate subscore
+    - objective_pareto_front: optional best scores per objective on the Pareto front
     """
 
     # Data about the proposed candidates
     candidates: list[Module]
     parents: list[list[int | None]]
     val_aggregate_scores: list[float]
-    val_subscores: list[list[float]]
-    per_val_instance_best_candidates: list[set[int]]
+    val_subscores: list[dict[Any, float]]
+    per_val_instance_best_candidates: dict[Any, set[int]]
     discovery_eval_counts: list[int]
 
     # Optional data
-    best_outputs_valset: list[list[tuple[int, list[Prediction]]]] | None = None
+    best_outputs_valset: dict[Any, list[tuple[int, list[Prediction]]]] | None = None
+
+    # Objective tracking metadata
+    val_aggregate_subscores: list[dict[str, float]] | None = None
+    per_objective_best_candidates: dict[str, set[int]] | None = None
+    objective_pareto_front: dict[str, float] | None = None
 
     # Optimization metadata
     total_metric_calls: int | None = None
@@ -113,11 +123,29 @@ class DspyGEPAResult:
         return self.candidates[self.best_idx]
 
     @property
-    def highest_score_achieved_per_val_task(self) -> list[float]:
-        return [
-            self.val_subscores[list(self.per_val_instance_best_candidates[val_idx])[0]][val_idx]
-            for val_idx in range(len(self.val_subscores[0]))
-        ]
+    def highest_score_achieved_per_val_instance(self) -> dict[Any, float]:
+        """Returns best scores for each validation instance."""
+        scores_by_instance: dict[Any, float] = {}
+        for (
+            val_id,
+            best_candidate_indices,
+        ) in self.per_val_instance_best_candidates.items():
+            dimension_scores = [
+                self.val_subscores[cand_idx].get(val_id, 0.0)
+                for cand_idx in best_candidate_indices
+                if cand_idx < len(self.val_subscores)
+            ]
+            scores_by_instance[val_id] = (
+                max(dimension_scores) if dimension_scores else 0.0
+            )
+        return scores_by_instance
+
+    @property
+    def highest_score_achieved_per_objective(self) -> dict[str, float]:
+        """Returns best scores for each objective (if objective tracking is enabled)."""
+        if self.objective_pareto_front is not None:
+            return dict(self.objective_pareto_front)
+        return {}
 
     def to_dict(self) -> dict[str, Any]:
         cands = [{k: v for k, v in cand.items()} for cand in self.candidates]
@@ -128,8 +156,18 @@ class DspyGEPAResult:
             val_aggregate_scores=self.val_aggregate_scores,
             best_outputs_valset=self.best_outputs_valset,
             val_subscores=self.val_subscores,
-            per_val_instance_best_candidates=[list(s) for s in self.per_val_instance_best_candidates],
+            per_val_instance_best_candidates={
+                val_id: list(s)
+                for val_id, s in self.per_val_instance_best_candidates.items()
+            },
             discovery_eval_counts=self.discovery_eval_counts,
+            val_aggregate_subscores=self.val_aggregate_subscores,
+            per_objective_best_candidates=(
+                {k: list(v) for k, v in self.per_objective_best_candidates.items()}
+                if self.per_objective_best_candidates is not None
+                else None
+            ),
+            objective_pareto_front=self.objective_pareto_front,
             total_metric_calls=self.total_metric_calls,
             num_full_val_evals=self.num_full_val_evals,
             log_dir=self.log_dir,
@@ -138,7 +176,9 @@ class DspyGEPAResult:
         )
 
     @staticmethod
-    def from_gepa_result(gepa_result: "GEPAResult", adapter: "DspyAdapter") -> "DspyGEPAResult":
+    def from_gepa_result(
+        gepa_result: "GEPAResult", adapter: "DspyAdapter"
+    ) -> "DspyGEPAResult":
         return DspyGEPAResult(
             candidates=[adapter.build_program(c) for c in gepa_result.candidates],
             parents=gepa_result.parents,
@@ -147,6 +187,13 @@ class DspyGEPAResult:
             val_subscores=gepa_result.val_subscores,
             per_val_instance_best_candidates=gepa_result.per_val_instance_best_candidates,
             discovery_eval_counts=gepa_result.discovery_eval_counts,
+            val_aggregate_subscores=getattr(
+                gepa_result, "val_aggregate_subscores", None
+            ),
+            per_objective_best_candidates=getattr(
+                gepa_result, "per_objective_best_candidates", None
+            ),
+            objective_pareto_front=getattr(gepa_result, "objective_pareto_front", None),
             total_metric_calls=gepa_result.total_metric_calls,
             num_full_val_evals=gepa_result.num_full_val_evals,
             log_dir=gepa_result.run_dir,
@@ -268,6 +315,9 @@ class GEPA(Teleprompter):
         failure_score: The score to assign to failed examples. Default is 0.0.
         perfect_score: The maximum score achievable by the metric. Default is 1.0. Used by GEPA
             to determine if all examples in a minibatch are perfect.
+        frontier_type: Controls how GEPA maintains its Pareto frontier. Options are "instance"
+            (default, per-validation example), "objective" (per-metric subscore), or
+            "hybrid" (track both objective subscores and validation instances).
         log_dir: The directory to save the logs. GEPA saves elaborate logs, along with all candidate
             programs, in this directory. Running GEPA with the same `log_dir` will resume the run
             from the last checkpoint.
@@ -363,6 +413,7 @@ class GEPA(Teleprompter):
         num_threads: int | None = None,
         failure_score: float = 0.0,
         perfect_score: float = 1.0,
+        frontier_type: Literal["instance", "objective", "hybrid"] = "instance",
         # Logging
         log_dir: str | None = None,
         track_stats: bool = False,
@@ -389,7 +440,9 @@ class GEPA(Teleprompter):
         self.metric_fn = metric
 
         # Budget configuration
-        assert (max_metric_calls is not None) + (max_full_evals is not None) + (auto is not None) == 1, (
+        assert (max_metric_calls is not None) + (max_full_evals is not None) + (
+            auto is not None
+        ) == 1, (
             "Exactly one of max_metric_calls, max_full_evals, auto must be set. "
             f"You set max_metric_calls={max_metric_calls}, "
             f"max_full_evals={max_full_evals}, "
@@ -422,6 +475,13 @@ class GEPA(Teleprompter):
         self.failure_score = failure_score
         self.perfect_score = perfect_score
 
+        valid_frontier_types = {"instance", "objective", "hybrid"}
+        if frontier_type not in valid_frontier_types:
+            raise ValueError(
+                "frontier_type must be one of {'instance', 'objective', 'hybrid'}"
+            )
+        self.frontier_type = frontier_type
+
         # Logging configuration
         self.log_dir = log_dir
         self.track_stats = track_stats
@@ -433,7 +493,9 @@ class GEPA(Teleprompter):
         self.use_mlflow = use_mlflow
 
         if track_best_outputs:
-            assert track_stats, "track_stats must be True if track_best_outputs is True."
+            assert (
+                track_stats
+            ), "track_stats must be True if track_best_outputs is True."
         self.track_best_outputs = track_best_outputs
 
         # Reproducibility
@@ -441,7 +503,16 @@ class GEPA(Teleprompter):
 
         self.custom_instruction_proposer = instruction_proposer
         self.component_selector = component_selector
-        self.gepa_kwargs = gepa_kwargs or {}
+        incoming_kwargs = dict(gepa_kwargs or {})
+        if (
+            "frontier_type" in incoming_kwargs
+            and incoming_kwargs["frontier_type"] != frontier_type
+        ):
+            raise ValueError(
+                "Conflicting frontier_type values provided in GEPA(..., frontier_type=...) and gepa_kwargs."
+            )
+        incoming_kwargs.setdefault("frontier_type", frontier_type)
+        self.gepa_kwargs = incoming_kwargs
 
     def _build_seed_candidate(self, student: Module) -> dict[str, str]:
         """
@@ -467,9 +538,9 @@ class GEPA(Teleprompter):
                     continue
 
                 # Verify DSPy's two-predictor ReAct design
-                assert hasattr(module, "extract") and hasattr(module.extract, "predict"), (
-                    f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
-                )
+                assert hasattr(module, "extract") and hasattr(
+                    module.extract, "predict"
+                ), f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
 
                 # Get predictor names via object identity
                 extract_predictor = module.extract.predict
@@ -518,13 +589,22 @@ class GEPA(Teleprompter):
         return seed_candidate
 
     def auto_budget(
-        self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
+        self,
+        num_preds,
+        num_candidates,
+        valset_size: int,
+        minibatch_size: int = 35,
+        full_eval_steps: int = 5,
     ) -> int:
         import numpy as np
 
-        num_trials = int(max(2 * (num_preds * 2) * np.log2(num_candidates), 1.5 * num_candidates))
+        num_trials = int(
+            max(2 * (num_preds * 2) * np.log2(num_candidates), 1.5 * num_candidates)
+        )
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
-            raise ValueError("num_trials, valset_size, and minibatch_size must be >= 0.")
+            raise ValueError(
+                "num_trials, valset_size, and minibatch_size must be >= 0."
+            )
         if full_eval_steps < 1:
             raise ValueError("full_eval_steps must be >= 1.")
 
@@ -572,7 +652,9 @@ class GEPA(Teleprompter):
 
         from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, LoggerAdapter
 
-        assert trainset is not None and len(trainset) > 0, "Trainset must be provided and non-empty"
+        assert (
+            trainset is not None and len(trainset) > 0
+        ), "Trainset must be provided and non-empty"
         assert teacher is None, "Teacher is not supported in DspyGEPA yet."
 
         if self.auto is not None:
@@ -582,9 +664,13 @@ class GEPA(Teleprompter):
                 valset_size=len(valset) if valset is not None else len(trainset),
             )
         elif self.max_full_evals is not None:
-            self.max_metric_calls = self.max_full_evals * (len(trainset) + (len(valset) if valset is not None else 0))
+            self.max_metric_calls = self.max_full_evals * (
+                len(trainset) + (len(valset) if valset is not None else 0)
+            )
         else:
-            assert self.max_metric_calls is not None, "Either auto, max_full_evals, or max_metric_calls must be set."
+            assert (
+                self.max_metric_calls is not None
+            ), "Either auto, max_full_evals, or max_metric_calls must be set."
 
         logger.info(
             f"Running GEPA for approx {self.max_metric_calls} metric calls of the program. This amounts to {self.max_metric_calls / len(trainset) if valset is None else self.max_metric_calls / (len(trainset) + len(valset)):.2f} full evals on the {'train' if valset is None else 'train+val'} set."
@@ -622,11 +708,15 @@ class GEPA(Teleprompter):
                         o["feedback"] = f"This trajectory got a score of {o['score']}."
                     return o
                 else:
-                    return dict(score=o, feedback=f"This trajectory got a score of {o}.")
+                    return dict(
+                        score=o, feedback=f"This trajectory got a score of {o}."
+                    )
 
             return feedback_fn
 
-        feedback_map = {k: feedback_fn_creator(k, v) for k, v in student.named_predictors()}
+        feedback_map = {
+            k: feedback_fn_creator(k, v) for k, v in student.named_predictors()
+        }
 
         # Build the DSPy adapter that encapsulates evaluation, trace capture, feedback extraction, and instruction proposal
         adapter = DspyAdapter(
@@ -646,14 +736,17 @@ class GEPA(Teleprompter):
 
         # Build the seed candidate configuration
         seed_candidate = self._build_seed_candidate(student)
-
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
             trainset=trainset,
             valset=valset,
             adapter=adapter,
             # Reflection-based configuration
-            reflection_lm=(lambda x: self.reflection_lm(x)[0]) if self.reflection_lm is not None else None,
+            reflection_lm=(
+                (lambda x: self.reflection_lm(x)[0])
+                if self.reflection_lm is not None
+                else None
+            ),
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
             reflection_minibatch_size=self.reflection_minibatch_size,
