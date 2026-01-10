@@ -175,6 +175,33 @@ Prediction(
 )
 ```
 
+### Example F: Video understanding with Gemini
+
+```python
+class VideoQA(dspy.Signature):
+    """Answer questions about a video."""
+    video: dspy.Video = dspy.InputField(desc="The video to analyze")
+    question: str = dspy.InputField(desc="Question about the video")
+    answer: str = dspy.OutputField(desc="Answer based on the video content")
+
+# Configure with a Gemini model (video understanding requires Gemini)
+lm = dspy.LM("gemini/gemini-2.0-flash")
+dspy.configure(lm=lm)
+
+qa = dspy.Predict(VideoQA)
+qa(video=dspy.Video("./my_video.mp4"), question="What is happening in this video?")
+```
+
+**Possible Output:**
+
+```text
+Prediction(
+    answer='The video shows a person walking through a park on a sunny day.'
+)
+```
+
+Note: `dspy.Video` supports local files, URLs, YouTube links, and pre-uploaded file IDs. For videos larger than 20MB, use the `upload()` method to upload via Gemini's Files API first.
+
 ## Type Resolution in Signatures
 
 DSPy signatures support various annotation types:
@@ -183,7 +210,7 @@ DSPy signatures support various annotation types:
 2. **Typing module types** like `list[str]`, `dict[str, int]`, `Optional[float]`. `Union[str, int]`
 3. **Custom types** defined in your code
 4. **Dot notation** for nested types with proper configuration
-5. **Special data types** like `dspy.Image, dspy.History`
+5. **Special data types** like `dspy.Image`, `dspy.Video`, `dspy.Audio`, `dspy.History`
 
 ### Working with Custom Types
 

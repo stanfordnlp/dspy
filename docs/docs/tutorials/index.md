@@ -25,6 +25,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Program Of Thought](program_of_thought/index.ipynb)
     - [Image Generation Prompt iteration](image_generation_prompting/index.ipynb)
     - [Audio](audio/index.ipynb)
+    - [Video Understanding with Gemini](video/index.md)
 
 
 - Optimize AI Programs with DSPy
