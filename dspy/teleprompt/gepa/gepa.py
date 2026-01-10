@@ -618,7 +618,12 @@ class GEPA(Teleprompter):
                     trace_for_pred,
                 )
                 if hasattr(o, "feedback"):
-                    if o["feedback"] is None:
+                    if o["feedback"] is None or not o["feedback"]:
+                        logger.warning(
+                            f"Metric for prediction '{pred_name}' returned empty feedback. "
+                            "GEPA relies on textual feedback for optimization. "
+                            "Using default score-based feedback."
+                        )
                         o["feedback"] = f"This trajectory got a score of {o['score']}."
                     return o
                 else:
