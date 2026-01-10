@@ -39,7 +39,26 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
+    """An adapter that formats inputs and parses outputs in JSON format.
+
+    This adapter ensures that the language model (LM) receives instructions to respond with a
+    JSON object and parses the resulting JSON string back into a dictionary matching the
+    signature's output fields. It supports OpenAI-style Structured Outputs when possible,
+    falling back to standard JSON mode if the model or signature is not compatible.
+
+    Key features:
+        - Structures outputs using JSON schema for models that support it.
+        - Provides robust parsing with fallback mechanisms for non-conforming responses.
+        - Automatically handles Structured Outputs for OpenAI and compatible providers.
+    """
+
     def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
+        """
+        Args:
+            callbacks: List of callback functions to execute during adapter methods.
+            use_native_function_calling: Whether to use native function calling for tool calls.
+                Defaults to True for JSONAdapter.
+        """
         # JSONAdapter uses native function calling by default.
         super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
 
