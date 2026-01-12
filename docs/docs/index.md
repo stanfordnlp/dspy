@@ -102,6 +102,7 @@ Instead of wrangling prompts or training jobs, DSPy (Declarative Self-improving 
                        api_key="local", model_type="chat")
           dspy.configure(lm=lm)
           ```
+        VLLM too works over here, if you face any issues here, first try to successfully communicate with your language server (SGlang/VLLM/ or any other self hosted OpenAI api compatible server) directly from litellm examples provided here https://docs.litellm.ai/docs/providers
 
     === "Other providers"
         In DSPy, you can use any of the dozens of [LLM providers supported by LiteLLM](https://docs.litellm.ai/docs/providers). Simply follow their instructions for which `{PROVIDER}_API_KEY` to set and how to write pass the `{provider_name}/{model_name}` to the constructor.
