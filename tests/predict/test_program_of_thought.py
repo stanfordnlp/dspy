@@ -22,7 +22,7 @@ def test_pot_code_generation():
         [
             {
                 "reasoning": "Reason_A",
-                "generated_code": "```python\nresult = 1+1\nfinal_answer({'answer': result})\n```",
+                "generated_code": "```python\nresult = 1+1\nFINAL({'answer': result})\n```",
             },
             {"reasoning": "Reason_B", "answer": "2"},
         ]
@@ -62,7 +62,7 @@ def test_pot_support_multiple_fields():
         [
             {
                 "reasoning": "Reason_A",
-                "generated_code": "```python\nmaximum = 6\nminimum = 2\nfinal_answer({'maximum': maximum, 'minimum': minimum})\n```",
+                "generated_code": "```python\nmaximum = 6\nminimum = 2\nFINAL({'maximum': maximum, 'minimum': minimum})\n```",
             },
             {"reasoning": "Reason_B", "maximum": "6", "minimum": "2"},
         ]
@@ -81,11 +81,11 @@ def test_pot_code_generation_with_one_error():
         [
             {
                 "reasoning": "Reason_A",
-                "generated_code": "```python\nresult = 1+0/0\nfinal_answer({'answer': result})\n```",
+                "generated_code": "```python\nresult = 1+0/0\nFINAL({'answer': result})\n```",
             },
             {
                 "reasoning": "Reason_B",
-                "generated_code": "```python\nresult = 1+1\nfinal_answer({'answer': result})\n```",
+                "generated_code": "```python\nresult = 1+1\nFINAL({'answer': result})\n```",
             },
             {"reasoning": "Reason_C", "answer": "2"},
         ]
@@ -104,7 +104,7 @@ def test_pot_code_generation_persistent_errors():
         [
             {
                 "reasoning": "Reason_A",
-                "generated_code": "```python\nresult = 1+0/0\nfinal_answer({'answer': result})\n```",
+                "generated_code": "```python\nresult = 1+0/0\nFINAL({'answer': result})\n```",
             },
         ]
         * max_iters
