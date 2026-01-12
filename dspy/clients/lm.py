@@ -351,6 +351,17 @@ def _get_stream_completion_fn(
 
 
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    """
+    Synchronous wrapper for litellm.completion.
+
+    Args:
+        request: The request parameters to pass to litellm.completion.
+        num_retries: The number of retries for failed requests.
+        cache: Cache configuration for the request.
+
+    Returns:
+        The text completion response from litellm.
+    """
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -369,6 +380,17 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
 
 
 def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    """
+    Synchronous wrapper for litellm.text_completion.
+
+    Args:
+        request: The request parameters.
+        num_retries: Number of retries for failed requests.
+        cache: Cache configuration.
+
+    Returns:
+        The text completion response.
+    """
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -399,6 +421,17 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
 
 
 async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    """
+    Asynchronous wrapper for litellm.acompletion.
+
+    Args:
+        request: The request parameters.
+        num_retries: Number of retries for failed requests.
+        cache: Cache configuration.
+
+    Returns:
+        The async completion response from litellm.
+    """
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -417,6 +450,17 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
 
 
 async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    """
+    Asynchronous wrapper for litellm.atext_completion.
+
+    Args:
+        request: The request parameters.
+        num_retries: Number of retries for failed requests.
+        cache: Cache configuration.
+
+    Returns:
+        The async text completion response.
+    """
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
