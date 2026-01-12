@@ -226,28 +226,21 @@ def streamify(
 
 
 def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
-    """
-    Convert an async streaming generator to a sync generator.
-    """
     queue = Queue()
     stop_sentinel = object()
     exception_sentinel = object()
-
     context = contextvars.copy_context()
 
     def producer():
-        """Runs in a background thread to fetch items asynchronously."""
-        async def runner():
-            try:
+        try:
+            async def runner():
                 async for item in async_generator:
                     queue.put(item)
-                queue.put(stop_sentinel)
-            except BaseException as e:
-                # Catch BaseException (KeyboardInterrupt, SystemExit, etc.)
-                # and transport it to the main thread via the queue.
-                queue.put((exception_sentinel, e))
 
-        context.run(asyncio.run, runner())
+            context.run(asyncio.run, runner())
+            queue.put(stop_sentinel)
+        except BaseException as e:
+            queue.put((exception_sentinel, e))
 
     thread = threading.Thread(target=producer, daemon=True)
     thread.start()
@@ -255,18 +248,14 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
     try:
         while True:
             item = queue.get()
-
             if item is stop_sentinel:
                 break
-
             if isinstance(item, tuple) and len(item) == 2 and item[0] is exception_sentinel:
                 exc = item[1]
 
                 if hasattr(exc, "exceptions") and len(exc.exceptions) == 1:
                     raise exc.exceptions[0]
-
                 raise exc
-
             yield item
     finally:
         thread.join(timeout=1.0)
