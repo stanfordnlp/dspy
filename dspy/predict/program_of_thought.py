@@ -4,8 +4,8 @@ import re
 
 import dspy
 from dspy.primitives.local_sandbox import LocalSandbox
-from dspy.primitives.sandbox import FinalAnswerResult
 from dspy.primitives.module import Module
+from dspy.primitives.sandbox import FinalAnswerResult
 from dspy.signatures.signature import Signature, ensure_signature
 
 logger = logging.getLogger(__name__)

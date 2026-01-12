@@ -8,6 +8,8 @@ to programmatically examine, decompose, and recursively call sub-LLMs over snipp
 Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re
@@ -106,14 +108,14 @@ class RLM(Module):
 
     def __init__(
         self,
-        signature: type["Signature"] | str,
+        signature: type[Signature] | str,
         max_iterations: int = 20,
         max_llm_calls: int = DEFAULT_MAX_LLM_CALLS,
         max_output_chars: int = 100_000,
         verbose: bool = False,
         tools: dict[str, Callable[..., str]] | None = None,
-        sub_lm: "dspy.LM | None" = None,
-        interpreter: "Sandbox | None" = None,
+        sub_lm: dspy.LM | None = None,
+        interpreter: Sandbox | None = None,
     ):
         """Initialize the RLM module.
 
@@ -372,9 +374,9 @@ class REPLVariable(pydantic.BaseModel):
         cls,
         name: str,
         value: Any,
-        field_info: "FieldInfo | None" = None,
+        field_info: FieldInfo | None = None,
         preview_chars: int = 500,
-    ) -> "REPLVariable":
+    ) -> REPLVariable:
         """Create REPLVariable from an actual value and optional field info.
 
         Args:
@@ -464,7 +466,7 @@ class REPLHistory(pydantic.BaseModel):
     def serialize_model(self) -> str:
         return self.format()
 
-    def append(self, *, reasoning: str = "", code: str, output: str) -> "REPLHistory":
+    def append(self, *, reasoning: str = "", code: str, output: str) -> REPLHistory:
         """Return a new REPLHistory with the entry appended."""
         new_entry = REPLEntry(reasoning=reasoning, code=code, output=output)
         return REPLHistory(entries=list(self.entries) + [new_entry])
