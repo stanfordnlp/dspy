@@ -10,7 +10,7 @@ import random
 
 import pytest
 
-from dspy.predict.rlm import REPLEntry, REPLHistory, REPLVariable, RLM
+from dspy.predict.rlm import RLM, REPLEntry, REPLHistory, REPLVariable
 from dspy.primitives.local_sandbox import LocalSandbox
 from dspy.primitives.mock_sandbox import MockSandbox
 from dspy.primitives.sandbox import FinalAnswerResult, SandboxError
