@@ -236,7 +236,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
         ```python linenums="1"       
         def evaluate_math(expression: str):
-            return dspy.PythonInterpreter({}).execute(expression)
+            return dspy.LocalSandbox({}).execute(expression)
 
         def search_wikipedia(query: str):
             results = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")(query, k=3)

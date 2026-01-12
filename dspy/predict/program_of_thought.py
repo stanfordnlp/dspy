@@ -3,8 +3,8 @@ import logging
 import re
 
 import dspy
+from dspy.primitives.local_sandbox import LocalSandbox
 from dspy.primitives.module import Module
-from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
 
 logger = logging.getLogger(__name__)
@@ -26,12 +26,12 @@ class ProgramOfThought(Module):
     ```
     """
 
-    def __init__(self, signature: str | type[Signature], max_iters: int = 3, interpreter: PythonInterpreter | None = None):
+    def __init__(self, signature: str | type[Signature], max_iters: int = 3, interpreter: LocalSandbox | None = None):
         """
         Args:
             signature: The signature of the module.
             max_iters: The maximum number of iterations to retry code generation and execution.
-            interpreter: PythonInterpreter instance to use. If None, a new one is instantiated.
+            interpreter: LocalSandbox instance to use. If None, a new one is instantiated.
         """
         super().__init__()
         self.signature = signature = ensure_signature(signature)
@@ -59,7 +59,7 @@ class ProgramOfThought(Module):
             ),
         )
         # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or PythonInterpreter()
+        self.interpreter = interpreter or LocalSandbox()
 
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
@@ -159,7 +159,7 @@ class ProgramOfThought(Module):
 
     def _execute_code(self, code):
         """
-        Execute the code using PythonInterpreter and return the output or error.
+        Execute the code using LocalSandbox and return the output or error.
         """
         if not code:
             return None, "Error: Empty code before execution."

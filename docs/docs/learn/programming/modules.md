@@ -199,7 +199,7 @@ We also have some function-style modules:
 
         ```python linenums="1"       
         def evaluate_math(expression: str) -> float:
-            return dspy.PythonInterpreter({}).execute(expression)
+            return dspy.LocalSandbox({}).execute(expression)
 
         def search_wikipedia(query: str) -> str:
             results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)

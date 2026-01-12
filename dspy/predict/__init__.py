@@ -9,6 +9,7 @@ from dspy.predict.predict import Predict
 from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct, Tool
 from dspy.predict.refine import Refine
+from dspy.predict.rlm import RLM
 
 __all__ = [
     "majority",
@@ -21,6 +22,7 @@ __all__ = [
     "ProgramOfThought",
     "ReAct",
     "Refine",
+    "RLM",
     "Tool",
     "Parallel",
 ]

@@ -46,6 +46,7 @@ anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 mcp = ["mcp; python_version >= '3.10'"]
 langchain = ["langchain_core"]
+e2b = ["e2b-code-interpreter>=2.4.0"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
@@ -109,6 +110,9 @@ exclude_lines = [
 ]
 
 [tool.pytest.ini_options]
+markers = [
+    "integration: tests requiring external dependencies (Deno, LM)",
+]
 filterwarnings = [
     # litellm uses deprecated pydantic config classes sometimes.
     # The issue has been fixed repeatedly, but still keeps showing up.

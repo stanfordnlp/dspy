@@ -1,9 +1,66 @@
-// Adapted from "Simon Willison’s TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
+// Adapted from "Simon Willison's TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
 
 import pyodideModule from "npm:pyodide/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
+// Global handler to prevent uncaught promise rejections from crashing Deno
+// These can occur during async Python <-> JS interop
+globalThis.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  console.log(JSON.stringify({
+    error: `Unhandled async error: ${event.reason?.message || event.reason}`,
+    errorType: "UnhandledPromiseRejection"
+  }));
+});
+
 const pyodide = await pyodideModule.loadPyodide();
+
+// Tool call support: allows Python code to call host-side functions
+// The stdin reader is shared so tool_call can read responses during execution
+const stdinReader = readLines(Deno.stdin);
+let requestIdCounter = 0;
+
+// This function is called from Python to invoke a host-side tool
+async function toolCallBridge(name, argsJson) {
+  const requestId = `req_${++requestIdCounter}`;
+
+  try {
+    // Send tool call request to host
+    console.log(JSON.stringify({
+      type: "tool_call",
+      id: requestId,
+      name: name,
+      args: JSON.parse(argsJson)
+    }));
+
+    // Wait for response from host
+    const { value: responseLine, done } = await stdinReader.next();
+    if (done) {
+      throw new Error("stdin closed while waiting for tool response");
+    }
+
+    const response = JSON.parse(responseLine);
+    if (response.type !== "tool_response" || response.id !== requestId) {
+      throw new Error(`Unexpected response: expected tool_response with id ${requestId}`);
+    }
+
+    if (response.error) {
+      throw new Error(response.error);
+    }
+
+    // Deserialize result based on type
+    if (response.result_type === "json") {
+      return JSON.parse(response.result);
+    }
+    return response.result;
+  } catch (error) {
+    // Re-throw with context so Python can catch it properly
+    throw new Error(`Tool bridge error for '${name}': ${error.message}`);
+  }
+}
+
+// Expose the bridge to Python
+pyodide.globals.set("_js_tool_call", toolCallBridge);
 
 try {
   const env_vars = (Deno.args[0] ?? "").split(",").filter(Boolean);
@@ -20,7 +77,11 @@ os.environ[${JSON.stringify(key)}] = ${JSON.stringify(val)}
   console.error("Error setting environment variables in Pyodide:", e);
 }
 
-for await (const line of readLines(Deno.stdin)) {
+// Main loop using shared stdin reader
+while (true) {
+  const { value: line, done } = await stdinReader.next();
+  if (done) break;
+
   let input;
   try {
     input = JSON.parse(line);
@@ -33,127 +94,81 @@ for await (const line of readLines(Deno.stdin)) {
   }
 
   if (input.mount_file) {
-      const hostPath = input.mount_file;
-      const virtualPath = input.virtual_path || hostPath;
-      try {
-          const contents = await Deno.readFile(hostPath);
-          const dirs = virtualPath.split('/').slice(1, -1);
-          let cur = '';
-          for (const d of dirs) {
-              cur += '/' + d;
-              try {
-                  pyodide.FS.mkdir(cur);
-              } catch (e) {
-                  if (!(e && e.message && e.message.includes('File exists'))) {
-                      console.log("[DEBUG] Error creating directory in Pyodide file system:", cur, "|", e.message);
-                  }
-              }
-          }
-          pyodide.FS.writeFile(virtualPath, contents);
-      } catch (e) {
-          console.log(JSON.stringify({error: "Failed to mount file: " + e.message}));
+    const virtualPath = input.virtual_path || input.mount_file;
+    try {
+      const contents = await Deno.readFile(input.mount_file);
+      for (let cur = '', dirs = virtualPath.split('/').slice(1, -1), i = 0; i < dirs.length; i++) {
+        cur += '/' + dirs[i];
+        try { pyodide.FS.mkdir(cur); } catch (e) { /* ignore if exists */ }
       }
-      continue;      
-  }
-
-  if (input.sync_file) {
-      const virtualPath = input.sync_file;
-      const hostPath = input.host_file || virtualPath;
-      try {
-          const contents = pyodide.FS.readFile(virtualPath);
-          await Deno.writeFile(hostPath, contents);
-      } catch (e) {
-          console.log("[DEBUG] Failed to sync file:", hostPath, "|", e.message);
-      }
-      continue;
-  }
-
-
-  // Expecting an object like { "code": "...", ... }
-  if (typeof input !== 'object' || input === null) {
-    console.log(JSON.stringify({
-      error: "Input is not a JSON object",
-      errorType: "ValueError"
-    }));
+      pyodide.FS.writeFile(virtualPath, contents);
+    } catch (e) {
+      console.log(JSON.stringify({error: "Failed to mount file: " + e.message}));
+    }
     continue;
   }
 
-  // Check for shutdown
-  if (input.shutdown) {
-    break;
+  if (input.sync_file) {
+    try {
+      await Deno.writeFile(input.host_file || input.sync_file, pyodide.FS.readFile(input.sync_file));
+    } catch (e) { /* ignore sync errors */ }
+    continue;
+  }
+
+  if (typeof input !== 'object' || input === null) {
+    console.log(JSON.stringify({ error: "Input is not a JSON object", errorType: "ValueError" }));
+    continue;
+  }
+
+  if (input.shutdown) break;
+
+  // Register tools: creates Python wrapper functions for each tool
+  if (input.register_tools) {
+    for (const toolName of input.register_tools) {
+      pyodide.runPython(`
+import json
+from pyodide.ffi import run_sync, JsProxy
+def ${toolName}(*args, **kwargs):
+    result = run_sync(_js_tool_call("${toolName}", json.dumps({"args": args, "kwargs": kwargs})))
+    return result.to_py() if isinstance(result, JsProxy) else result
+`);
+    }
+    console.log(JSON.stringify({ tools_registered: input.register_tools }));
+    continue;
   }
 
   const code = input.code || "";
 
-  // Wrap execution in a try/catch so we can handle syntax errors, etc.
   try {
     await pyodide.loadPackagesFromImports(code);
-    // 1. Temporarily override stdout/stderr so we can capture prints.
+    // Setup stdout capture, FinalAnswer bridge, and exception args extractor
     pyodide.runPython(`
-import sys
-import io
-
-# Keep references to the old stdout/stderr so we can restore them later
-old_stdout = sys.stdout
-old_stderr = sys.stderr
-
-# New "file-like" buffers
-buf_stdout = io.StringIO()
-buf_stderr = io.StringIO()
-
-sys.stdout = buf_stdout
-sys.stderr = buf_stderr
-    `);
-
-    // 2. Setup proper exception arguments extractor and FinalAnswer bridge
-    // The idea is borrowed from `smolagents` that uses the exception to simulate non-local exit
-    pyodide.runPython(`
-import json
+import sys, io, json
+old_stdout, old_stderr = sys.stdout, sys.stderr
+buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
+sys.stdout, sys.stderr = buf_stdout, buf_stderr
 
 def last_exception_args():
-    return json.dumps(sys.last_exc.args) if sys.last_exc else None 
+    return json.dumps(sys.last_exc.args) if sys.last_exc else None
 
 class FinalAnswer(Exception):
     pass
 
-def final_answer(*args):
-    raise FinalAnswer(*args)
-      `);
+def FINAL(answer):
+    raise FinalAnswer(answer)
 
-    // 3. Run the user's code asynchronously
+def FINAL_VAR(var_name):
+    if var_name in globals():
+        raise FinalAnswer(globals()[var_name])
+    raise NameError(f"Variable '{var_name}' not found")
+`);
+    // Run the user's code
     const result = await pyodide.runPythonAsync(code);
-
-    // 4. Retrieve captured stdout/stderr
     const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
-    const capturedStderr = pyodide.runPython("buf_stderr.getvalue()");
+    pyodide.runPython("sys.stdout, sys.stderr = old_stdout, old_stderr");
 
-    // 5. Restore original stdout/stderr
-    pyodide.runPython(`
-sys.stdout = old_stdout
-sys.stderr = old_stderr
-    `);
-
-    // 6. Build our output object according to the rules:
-    //    - If result is None (or Python "None" => JS null), output all prints
-    //    - Else output the result only
-    // Note: `None` in Python becomes `null` in JS.
-    let output;
-    if (result === null || result === undefined) {
-      // The final statement was None or no return => deliver printed output
-      // If you want to combine capturedStderr as well, you can append it
-      // But here we'll just do stdout for clarity
-      output = capturedStdout;
-      // If there's something in stderr, you might want to include that or log it
-      // output += capturedStderr;
-    } else {
-      // If the code returned a real value, just return that
-      try {
-        output = result.toJs();
-      } catch (e) {
-        output = result;
-      }
-    }
-
+    // If result is None, output prints; otherwise output the result
+    let output = (result === null || result === undefined) ? capturedStdout : (result.toJs?.() ?? result);
     console.log(JSON.stringify({ output }));
   } catch (error) {
     // We have an error => check if it's a SyntaxError or something else
@@ -172,12 +187,6 @@ sys.stderr = old_stderr
       // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
       errorArgs = JSON.parse(last_exception_args()) || [];
     }
-
-
-    console.log(JSON.stringify({
-      error: errorMessage,
-      errorArgs: errorArgs,
-      errorType: errorType
-    }));
+    console.log(JSON.stringify({ error: errorMessage, errorArgs, errorType }));
   }
 }

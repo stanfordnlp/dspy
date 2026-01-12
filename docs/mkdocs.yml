@@ -151,7 +151,7 @@ nav:
         - Tools:
             - ColBERTv2: api/tools/ColBERTv2.md
             - Embeddings: api/tools/Embeddings.md
-            - PythonInterpreter: api/tools/PythonInterpreter.md
+            - LocalSandbox: api/tools/LocalSandbox.md
         - Utils:
             - StatusMessage: api/utils/StatusMessage.md
             - StatusMessageProvider: api/utils/StatusMessageProvider.md
