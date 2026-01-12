@@ -210,7 +210,7 @@ class RLM(Module):
             return f"`{name}` (must be one of: {', '.join(repr(v) for v in valid_values)})"
         return f"`{name}`"
 
-    def _build_signatures(self) -> tuple[dspy.Signature, dspy.Signature]:
+    def _build_signatures(self) -> tuple[Signature, Signature]:
         """Build the action and extract signatures from templates."""
         inputs_str = ", ".join(f"`{n}`" for n in self.signature.input_fields)
         outputs_str = ", ".join(
