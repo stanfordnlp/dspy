@@ -3,6 +3,45 @@
 import pyodideModule from "npm:pyodide/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
+// =============================================================================
+// Python Code Templates
+// =============================================================================
+
+// Setup code run before each user code execution.
+// Captures stdout, defines FINAL/FINAL_VAR for early termination, and
+// provides a helper to extract exception args across the JS/Python boundary.
+const PYTHON_SETUP_CODE = `
+import sys, io, json
+old_stdout, old_stderr = sys.stdout, sys.stderr
+buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
+sys.stdout, sys.stderr = buf_stdout, buf_stderr
+
+def last_exception_args():
+    return json.dumps(sys.last_exc.args) if sys.last_exc else None
+
+class FinalAnswer(BaseException):
+    # Control-flow exception to signal completion (like StopIteration)
+    pass
+
+def FINAL(answer):
+    raise FinalAnswer(answer)
+
+def FINAL_VAR(var_name):
+    if var_name in globals():
+        raise FinalAnswer(globals()[var_name])
+    raise NameError(f"Variable '{var_name}' not found")
+`;
+
+// Template for generating a tool wrapper function.
+// The toolName is interpolated to create a callable that bridges to the host.
+const makeToolWrapper = (toolName) => `
+import json
+from pyodide.ffi import run_sync, JsProxy
+def ${toolName}(*args, **kwargs):
+    result = run_sync(_js_tool_call("${toolName}", json.dumps({"args": args, "kwargs": kwargs})))
+    return result.to_py() if isinstance(result, JsProxy) else result
+`;
+
 // Global handler to prevent uncaught promise rejections from crashing Deno
 // These can occur during async Python <-> JS interop
 globalThis.addEventListener("unhandledrejection", (event) => {
@@ -125,13 +164,7 @@ while (true) {
   // Register tools: creates Python wrapper functions for each tool
   if (input.register_tools) {
     for (const toolName of input.register_tools) {
-      pyodide.runPython(`
-import json
-from pyodide.ffi import run_sync, JsProxy
-def ${toolName}(*args, **kwargs):
-    result = run_sync(_js_tool_call("${toolName}", json.dumps({"args": args, "kwargs": kwargs})))
-    return result.to_py() if isinstance(result, JsProxy) else result
-`);
+      pyodide.runPython(makeToolWrapper(toolName));
     }
     console.log(JSON.stringify({ tools_registered: input.register_tools }));
     continue;
@@ -141,27 +174,7 @@ def ${toolName}(*args, **kwargs):
 
   try {
     await pyodide.loadPackagesFromImports(code);
-    // Setup stdout capture, FinalAnswer bridge, and exception args extractor
-    pyodide.runPython(`
-import sys, io, json
-old_stdout, old_stderr = sys.stdout, sys.stderr
-buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
-sys.stdout, sys.stderr = buf_stdout, buf_stderr
-
-def last_exception_args():
-    return json.dumps(sys.last_exc.args) if sys.last_exc else None
-
-class FinalAnswer(Exception):
-    pass
-
-def FINAL(answer):
-    raise FinalAnswer(answer)
-
-def FINAL_VAR(var_name):
-    if var_name in globals():
-        raise FinalAnswer(globals()[var_name])
-    raise NameError(f"Variable '{var_name}' not found")
-`);
+    pyodide.runPython(PYTHON_SETUP_CODE);
     // Run the user's code
     const result = await pyodide.runPythonAsync(code);
     const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
