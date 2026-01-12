@@ -152,7 +152,7 @@ class JSONAdapter(ChatAdapter):
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
         fields = json_repair.loads(completion)
-        
+
         if not isinstance(fields, dict):
             pattern = r"\{(?:[^{}]|(?R))*\}"
             match = regex.search(pattern, completion, regex.DOTALL)
