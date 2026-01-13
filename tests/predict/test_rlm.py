@@ -11,8 +11,8 @@ import random
 import pytest
 
 from dspy.predict.rlm import RLM, REPLEntry, REPLHistory, REPLVariable
-from dspy.primitives.local_interpreter import PythonInterpreter
 from dspy.primitives.interpreter import FinalAnswerResult, InterpreterError
+from dspy.primitives.local_interpreter import PythonInterpreter
 from tests.mock_interpreter import MockInterpreter
 
 # ============================================================================

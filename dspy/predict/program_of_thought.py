@@ -3,9 +3,9 @@ import logging
 import re
 
 import dspy
+from dspy.primitives.interpreter import FinalAnswerResult
 from dspy.primitives.local_interpreter import PythonInterpreter
 from dspy.primitives.module import Module
-from dspy.primitives.interpreter import FinalAnswerResult
 from dspy.signatures.signature import Signature, ensure_signature
 
 logger = logging.getLogger(__name__)

@@ -23,10 +23,10 @@ from pydantic import Field
 
 import dspy
 from dspy.adapters.utils import parse_value
+from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
 from dspy.primitives.local_interpreter import PythonInterpreter
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
 from dspy.signatures.signature import ensure_signature
 
 if TYPE_CHECKING:
