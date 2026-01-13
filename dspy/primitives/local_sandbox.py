@@ -6,6 +6,7 @@ WASM environment using Deno and Pyodide. It implements the Sandbox
 protocol defined in sandbox.py.
 """
 
+import functools
 import inspect
 import json
 import keyword
@@ -15,7 +16,7 @@ import subprocess
 from os import PathLike
 from typing import Any, Callable
 
-from dspy.primitives.sandbox import FinalAnswerResult, SandboxError
+from dspy.primitives.sandbox import SIMPLE_TYPES, FinalAnswerResult, SandboxError
 
 __all__ = ["LocalSandbox", "PythonInterpreter", "FinalAnswerResult", "SandboxError"]
 
@@ -131,20 +132,13 @@ class LocalSandbox:
         self.deno_process = None
         self._mounted_files = False
 
-    _deno_dir_cache = None
-
-    @classmethod
-    def _get_deno_dir(cls) -> str | None:
-        if cls._deno_dir_cache:
-            return cls._deno_dir_cache
-
+    @staticmethod
+    @functools.lru_cache(maxsize=1)
+    def _get_deno_dir() -> str | None:
         if "DENO_DIR" in os.environ:
-            cls._deno_dir_cache = os.environ["DENO_DIR"]
-            return cls._deno_dir_cache
+            return os.environ["DENO_DIR"]
 
         try:
-            # Attempt to find deno in path or use just "deno"
-            # We can't easily know which 'deno' will be used if not absolute, but 'deno' is a safe bet
             result = subprocess.run(
                 ["deno", "info", "--json"],
                 capture_output=True,
@@ -153,11 +147,9 @@ class LocalSandbox:
             )
             if result.returncode == 0:
                 info = json.loads(result.stdout)
-                cls._deno_dir_cache = info.get("denoDir")
-                return cls._deno_dir_cache
+                return info.get("denoDir")
         except Exception:
             logger.warning("Unable to find the Deno cache dir.")
-            pass
 
         return None
 
@@ -201,9 +193,6 @@ class LocalSandbox:
             self.deno_process.stdin.write(sync_msg + "\n")
             self.deno_process.stdin.flush()
 
-    # Simple types that can be used directly in Python function signatures
-    _SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
-
     def _extract_parameters(self, fn: Callable) -> list[dict]:
         """Extract parameter info from a callable for sandbox registration."""
         sig = inspect.signature(fn)
@@ -213,7 +202,7 @@ class LocalSandbox:
             # Only include type for simple types that work in function signatures
             # Complex types like Union, Optional, etc. are not included
             if param.annotation != inspect.Parameter.empty:
-                if param.annotation in self._SIMPLE_TYPES:
+                if param.annotation in SIMPLE_TYPES:
                     p["type"] = param.annotation.__name__
             if param.default != inspect.Parameter.empty:
                 p["default"] = param.default

@@ -14,8 +14,8 @@ import json
 import logging
 import re
 import threading
-from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, get_args, get_origin
 
 import pydantic
@@ -26,7 +26,7 @@ from dspy.adapters.utils import parse_value
 from dspy.primitives.local_sandbox import LocalSandbox
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.sandbox import FinalAnswerResult, Sandbox, SandboxError
+from dspy.primitives.sandbox import SIMPLE_TYPES, FinalAnswerResult, Sandbox, SandboxError
 from dspy.signatures.signature import ensure_signature
 
 if TYPE_CHECKING:
@@ -165,10 +165,7 @@ class RLM(Module):
                 raise TypeError(f"Tool '{name}' must be callable, got {type(func).__name__}")
 
     def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
-        """Create llm_query and llm_query_batched tools with a fresh call counter.
-
-        Called at the start of each forward() to reset the call counter.
-        """
+        """Create llm_query and llm_query_batched tools with a fresh call counter."""
         state = {"call_count": 0}
         lock = threading.Lock()
         lm = self.sub_lm
@@ -217,24 +214,23 @@ class RLM(Module):
 
     @property
     def tools(self) -> dict[str, Callable]:
-        """Get tools dict. Note: LLM tools are created fresh each forward() call."""
-        tools = self._make_llm_tools()
-        tools.update(self._user_tools)
-        return tools
-
-    def _format_output_field(self, name: str, field) -> str:
-        """Format an output field name with type info if it's a Literal."""
-        annotation = getattr(field, "annotation", None)
-        if annotation and get_origin(annotation) is Literal:
-            valid_values = get_args(annotation)
-            return f"`{name}` (must be one of: {', '.join(repr(v) for v in valid_values)})"
-        return f"`{name}`"
+        """User-provided tools (excludes internal llm_query/llm_query_batched)."""
+        return dict(self._user_tools)
 
     def _build_signatures(self) -> tuple[Signature, Signature]:
         """Build the action and extract signatures from templates."""
         inputs_str = ", ".join(f"`{n}`" for n in self.signature.input_fields)
+
+        # Format output fields, adding valid values for Literal types
+        def format_output_field(name: str, field) -> str:
+            annotation = getattr(field, "annotation", None)
+            if annotation and get_origin(annotation) is Literal:
+                valid_values = get_args(annotation)
+                return f"`{name}` (must be one of: {', '.join(repr(v) for v in valid_values)})"
+            return f"`{name}`"
+
         outputs_str = ", ".join(
-            self._format_output_field(n, f)
+            format_output_field(n, f)
             for n, f in self.signature.output_fields.items()
         )
 
@@ -259,9 +255,6 @@ class RLM(Module):
 
         return action_sig, extract_sig
 
-    # Simple types that can be used directly in Python function signatures
-    _SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
-
     def _get_output_fields_info(self) -> list[dict]:
         """Get output field info for sandbox registration."""
         fields = []
@@ -270,7 +263,7 @@ class RLM(Module):
             field_info = {"name": name}
             # Only include type for simple types that work in function signatures
             # Complex types like Literal, Union, etc. are not included
-            if annotation in self._SIMPLE_TYPES:
+            if annotation in SIMPLE_TYPES:
                 field_info["type"] = annotation.__name__
             fields.append(field_info)
         return fields
@@ -459,6 +452,109 @@ class RLM(Module):
 
             # Max iterations reached - use extract fallback
             return self._extract_fallback(variables, history, output_field_names)
+
+    async def _aextract_fallback(
+        self,
+        variables: list[REPLVariable],
+        history: REPLHistory,
+        output_field_names: list[str],
+    ) -> Prediction:
+        """Async version: Use extract module when max iterations reached."""
+        logger.warning("RLM reached max iterations, using extract to get final answer")
+
+        extract_pred = await self.extract.acall(
+            variables_info=variables,
+            repl_history=history,
+        )
+
+        return Prediction(
+            trajectory=[e.model_dump() for e in history],
+            final_reasoning="Extract forced final answer",
+            **{name: getattr(extract_pred, name) for name in output_field_names},
+        )
+
+    async def _aexecute_iteration(
+        self,
+        repl: Sandbox,
+        variables: list[REPLVariable],
+        history: REPLHistory,
+        iteration: int,
+        input_args: dict[str, Any],
+        output_field_names: list[str],
+    ) -> Prediction | REPLHistory:
+        """Async version: Execute one iteration."""
+        pred = await self.generate_action.acall(
+            variables_info=variables,
+            repl_history=history,
+            iteration=f"{iteration + 1}/{self.max_iterations}",
+        )
+        if self.verbose:
+            logger.info(
+                f"RLM iteration {iteration + 1}/{self.max_iterations}\n"
+                f"Reasoning: {pred.reasoning}\nCode:\n{pred.code}"
+            )
+
+        try:
+            code = _strip_code_fences(pred.code)
+            result = repl.execute(code, variables=dict(input_args))
+
+            if isinstance(result, FinalAnswerResult):
+                parsed_outputs, error = self._process_final_answer(result, output_field_names)
+
+                if error:
+                    return history.append(reasoning=pred.reasoning, code=pred.code, output=error)
+
+                final_history = history.append(
+                    reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}"
+                )
+                return Prediction(
+                    **parsed_outputs,
+                    trajectory=[e.model_dump() for e in final_history],
+                    final_reasoning=pred.reasoning,
+                )
+
+            if isinstance(result, list):
+                output = "\n".join(map(str, result))
+            else:
+                output = str(result) if result else ""
+
+        except (SandboxError, SyntaxError) as e:
+            output = f"[Error] {e}"
+
+        output = self._format_output(output)
+        return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+
+    async def aforward(self, **input_args) -> Prediction:
+        """Async version of forward(). Execute RLM to produce outputs.
+
+        Args:
+            **input_args: Input values matching the signature's input fields
+
+        Returns:
+            Prediction with output field(s) from the signature and 'trajectory' for debugging
+
+        Raises:
+            ValueError: If required input fields are missing
+        """
+        self._validate_inputs(input_args)
+
+        output_field_names = list(self.signature.output_fields.keys())
+        execution_tools = self._prepare_execution_tools()
+        variables = self._build_variables(**input_args)
+
+        with self._sandbox_context(execution_tools) as repl:
+            history = REPLHistory()
+
+            for iteration in range(self.max_iterations):
+                result = await self._aexecute_iteration(
+                    repl, variables, history, iteration, input_args, output_field_names
+                )
+                if isinstance(result, Prediction):
+                    return result
+                history = result
+
+            # Max iterations reached - use extract fallback
+            return await self._aextract_fallback(variables, history, output_field_names)
 
 
 # =============================================================================

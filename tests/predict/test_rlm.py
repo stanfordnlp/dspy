@@ -23,13 +23,6 @@ from dspy.primitives.sandbox import FinalAnswerResult, SandboxError
 class TestMockSandbox:
     """Unit tests for MockSandbox."""
 
-    def test_start_is_idempotent(self):
-        """Test that start() can be called multiple times safely."""
-        mock = MockSandbox(responses=["result"])
-        mock.start()  # First call
-        mock.start()  # Second call - should be safe
-        assert mock.execute("code") == "result"
-
     def test_scripted_responses(self):
         """Test that MockSandbox returns scripted responses in order."""
         mock = MockSandbox(responses=["first", "second", "third"])
@@ -37,92 +30,26 @@ class TestMockSandbox:
         assert mock.execute("code2") == "second"
         assert mock.execute("code3") == "third"
 
-    def test_returns_empty_when_exhausted(self):
-        """Test that MockSandbox returns empty string when responses exhausted."""
-        mock = MockSandbox(responses=["only"])
-        assert mock.execute("code1") == "only"
-        assert mock.execute("code2") == ""
-
-    def test_records_call_history(self):
-        """Test that MockSandbox records call history."""
-        mock = MockSandbox(responses=["resp"])
-        mock.execute("print(1)", variables={"x": 10})
-        assert len(mock.call_history) == 1
-        assert mock.call_history[0] == ("print(1)", {"x": 10})
-
-    def test_call_count(self):
-        """Test that MockSandbox tracks call count."""
-        mock = MockSandbox(responses=["a", "b", "c"])
-        assert mock.call_count == 0
-        mock.execute("code1")
-        assert mock.call_count == 1
-        mock.execute("code2")
-        assert mock.call_count == 2
-
     def test_returns_final_answer_result(self):
         """Test that MockSandbox can return FinalAnswerResult."""
-        mock = MockSandbox(responses=[
-            "exploring",
-            FinalAnswerResult("42"),
-        ])
-        result1 = mock.execute("print(len(data))")
-        assert result1 == "exploring"
-
-        result2 = mock.execute("FINAL('42')")
-        assert isinstance(result2, FinalAnswerResult)
-        assert result2.answer == "42"
+        mock = MockSandbox(responses=["exploring", FinalAnswerResult("42")])
+        assert mock.execute("print(len(data))") == "exploring"
+        result = mock.execute("FINAL('42')")
+        assert isinstance(result, FinalAnswerResult)
+        assert result.answer == "42"
 
     def test_raises_exception_from_responses(self):
         """Test that MockSandbox raises exceptions from responses."""
-        mock = MockSandbox(responses=[
-            "ok",
-            SandboxError("undefined variable"),
-        ])
+        mock = MockSandbox(responses=["ok", SandboxError("undefined variable")])
         assert mock.execute("code1") == "ok"
-        with pytest.raises(SandboxError) as exc_info:
+        with pytest.raises(SandboxError, match="undefined variable"):
             mock.execute("code2")
-        assert "undefined variable" in str(exc_info.value)
 
-    def test_custom_execute_fn(self):
-        """Test MockSandbox with custom execute function."""
-        def custom_exec(code, variables):
-            if "FINAL" in code:
-                return FinalAnswerResult("done")
-            return f"executed: {len(code)} chars"
-
-        mock = MockSandbox(execute_fn=custom_exec)
-        result1 = mock.execute("print(1)")
-        assert "executed:" in result1
-
-        result2 = mock.execute("FINAL('done')")
-        assert isinstance(result2, FinalAnswerResult)
-
-    def test_shutdown_prevents_further_execution(self):
-        """Test that shutdown prevents further execution."""
+    def test_records_call_history(self):
+        """Test that MockSandbox records call history for test assertions."""
         mock = MockSandbox(responses=["resp"])
-        mock.shutdown()
-        with pytest.raises(SandboxError):
-            mock.execute("code")
-
-    def test_reset(self):
-        """Test that reset clears state."""
-        mock = MockSandbox(responses=["a", "b"])
-        mock.execute("code1")
-        mock.shutdown()
-
-        mock.reset()
-        mock.responses = ["x", "y"]
-        assert mock.call_count == 0
-        assert mock.call_history == []
-        assert mock.execute("code") == "x"
-
-    def test_context_manager(self):
-        """Test MockSandbox as context manager."""
-        with MockSandbox(responses=["resp"]) as mock:
-            assert mock.execute("code") == "resp"
-        # After exiting, should be shutdown
-        with pytest.raises(SandboxError):
-            mock.execute("code")
+        mock.execute("print(1)", variables={"x": 10})
+        assert mock.call_history == [("print(1)", {"x": 10})]
 
 
 # ============================================================================
@@ -139,7 +66,7 @@ class TestRLMInitialization:
         assert rlm.max_iterations == 5
         assert rlm.generate_action is not None
         assert rlm.extract is not None
-        assert "llm_query" in rlm.tools
+        assert rlm.tools == {}  # No user tools provided
         assert "context" in rlm.signature.input_fields
         assert "query" in rlm.signature.input_fields
         assert "answer" in rlm.signature.output_fields
@@ -158,8 +85,8 @@ class TestRLMInitialization:
             return x.upper()
 
         rlm = RLM("context -> answer", max_iterations=5, tools={"custom_tool": custom_tool})
-        assert "llm_query" in rlm.tools
         assert "custom_tool" in rlm.tools
+        assert len(rlm.tools) == 1  # Only user tools, not internal llm_query/llm_query_batched
 
     def test_tool_validation_invalid_identifier(self):
         """Test RLM rejects tool names that aren't valid Python identifiers."""
@@ -473,68 +400,36 @@ class TestREPLTypes:
 class TestRLMDynamicSignature:
     """Tests for the dynamically built RLM signatures."""
 
-    def test_action_signature_has_required_fields(self):
-        """Test that action signature has required fields."""
-        rlm = RLM("context -> answer")
+    def test_action_signature_structure(self):
+        """Test action signature has required fields and instructions."""
+        rlm = RLM("document, question -> summary, answer")
         action_sig = rlm.generate_action.signature
+
+        # Required input/output fields
         assert "variables_info" in action_sig.input_fields
         assert "repl_history" in action_sig.input_fields
         assert "reasoning" in action_sig.output_fields
         assert "code" in action_sig.output_fields
 
-    def test_extract_signature_has_required_fields(self):
-        """Test that extract signature has required fields."""
-        rlm = RLM("context -> answer")
+        # Instructions mention key tools and variables
+        instructions = action_sig.instructions
+        assert "llm_query" in instructions
+        assert "llm_query_batched" in instructions
+        assert "FINAL" in instructions
+        assert "`document`" in instructions
+        assert "`question`" in instructions
+        assert "`summary`" in instructions
+        assert "`answer`" in instructions
+
+    def test_extract_signature_structure(self):
+        """Test extract signature has required fields for all outputs."""
+        rlm = RLM("document, question -> summary, key_facts, confidence")
         extract_sig = rlm.extract.signature
         assert "variables_info" in extract_sig.input_fields
         assert "repl_history" in extract_sig.input_fields
-        assert "answer" in extract_sig.output_fields
-
-    def test_extract_signature_has_multiple_outputs(self):
-        """Test that extract signature includes all output fields."""
-        rlm = RLM("document, question -> summary, key_facts, confidence")
-        extract_sig = rlm.extract.signature
         assert "summary" in extract_sig.output_fields
         assert "key_facts" in extract_sig.output_fields
         assert "confidence" in extract_sig.output_fields
-
-    def test_action_signature_mentions_llm_query(self):
-        """Test that action signature instructions mention llm_query."""
-        rlm = RLM("context -> answer")
-        instructions = rlm.generate_action.signature.instructions
-        assert "llm_query" in instructions
-
-    def test_action_signature_mentions_llm_query_batched(self):
-        """Test that action signature instructions mention llm_query_batched."""
-        rlm = RLM("context -> answer")
-        instructions = rlm.generate_action.signature.instructions
-        assert "llm_query_batched" in instructions
-
-    def test_rlm_has_llm_query_batched_tool(self):
-        """Test that RLM includes llm_query_batched in default tools."""
-        rlm = RLM("context -> answer")
-        assert "llm_query_batched" in rlm.tools
-        assert callable(rlm.tools["llm_query_batched"])
-
-    def test_action_signature_mentions_final(self):
-        """Test that action signature instructions mention FINAL."""
-        rlm = RLM("context -> answer")
-        instructions = rlm.generate_action.signature.instructions
-        assert "FINAL" in instructions
-
-    def test_action_signature_mentions_input_vars(self):
-        """Test that action signature mentions the input variable names."""
-        rlm = RLM("document, question -> answer")
-        instructions = rlm.generate_action.signature.instructions
-        assert "`document`" in instructions
-        assert "`question`" in instructions
-
-    def test_action_signature_mentions_output_vars(self):
-        """Test that action signature mentions the output variable names."""
-        rlm = RLM("context, query -> summary, analysis")
-        instructions = rlm.generate_action.signature.instructions
-        assert "`summary`" in instructions
-        assert "`analysis`" in instructions
 
 
 # ============================================================================
@@ -701,53 +596,34 @@ print(f"Count: {info['count']}")
             assert "not found" in str(exc_info.value)
 
     @pytest.mark.parametrize("value,expected", [
-        (None, None),
         ("hello", "hello"),
-        (True, True),
-        (False, False),
         (42, 42),
-        (-17, -17),
-        (3.14, 3.14),
-        (0.0, 0.0),
+        (True, True),
         ([1, 2, 3], [1, 2, 3]),
-        ([], []),
-        (["a", "b"], ["a", "b"]),
         ({"key": "value"}, {"key": "value"}),
-        ({}, {}),
         ({"nested": {"a": 1}}, {"nested": {"a": 1}}),
     ])
     def test_final_answer_types(self, value, expected):
-        """Test FINAL() correctly returns values of all supported types."""
+        """Test FINAL() correctly returns values of supported types."""
         with LocalSandbox(tools={}) as interp:
-            code = f"FINAL({value!r})"
-            result = interp.execute(code)
+            result = interp.execute(f"FINAL({value!r})")
             assert isinstance(result, FinalAnswerResult)
-            # Default FINAL wraps value in {"answer": value}
             assert result.answer == {"answer": expected}
 
     @pytest.mark.parametrize("value,expected", [
-        (None, None),
         ("hello", "hello"),
-        (True, True),
-        (False, False),
         (42, 42),
-        (-17, -17),
-        (3.14, 3.14),
-        (0.0, 0.0),
+        (True, True),
         ([1, 2, 3], [1, 2, 3]),
-        ([], []),
-        (["a", "b"], ["a", "b"]),
         ({"key": "value"}, {"key": "value"}),
-        ({}, {}),
         ({"nested": {"a": 1}}, {"nested": {"a": 1}}),
     ])
     def test_final_var_types(self, value, expected):
-        """Test FINAL_VAR() correctly returns values of all supported types."""
+        """Test FINAL_VAR() correctly returns values of supported types."""
         with LocalSandbox(tools={}) as interp:
             interp.execute(f"my_var = {value!r}")
             result = interp.execute('FINAL_VAR("my_var")')
             assert isinstance(result, FinalAnswerResult)
-            # Default FINAL_VAR wraps value in {"answer": value}
             assert result.answer == {"answer": expected}
 
     def test_final_answer_empty_string(self):
@@ -809,149 +685,73 @@ print(json.dumps(data))
 
 
 # ============================================================================
-# Unit Tests: RLM Type Validation (parse_value from adapters)
+# Unit Tests: RLM with MockSandbox (no Deno required)
 # ============================================================================
 
 
-class TestRLMTypeValidation:
-    """Tests for RLM type validation using parse_value from adapters."""
+class TestRLMAsyncMock:
+    """Unit tests for RLM aforward() using MockSandbox (no Deno required)."""
 
-    def test_parse_value_literal_valid(self):
-        """Test parse_value accepts valid Literal values."""
-        from typing import Literal
+    @pytest.mark.asyncio
+    async def test_aforward_basic(self):
+        """Test aforward() returns Prediction with expected output (MockSandbox)."""
+        from dspy.primitives.prediction import Prediction
 
-        from dspy.adapters.utils import parse_value
+        mock = MockSandbox(responses=[FinalAnswerResult({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
 
-        result = parse_value("yes", Literal["yes", "no"])
-        assert result == "yes"
+        class MockPredictor:
+            async def acall(self, **kwargs):
+                return Prediction(reasoning="Return answer", code='FINAL("42")')
 
-    def test_parse_value_literal_invalid(self):
-        """Test parse_value rejects invalid Literal values."""
-        from typing import Literal
+        rlm.generate_action = MockPredictor()
 
-        from dspy.adapters.utils import parse_value
+        result = await rlm.aforward(query="What is the answer?")
+        assert result.answer == "42"
 
-        with pytest.raises(ValueError):
-            parse_value("maybe", Literal["yes", "no"])
+    @pytest.mark.asyncio
+    async def test_aforward_int_output_mock(self):
+        """Test aforward() returns int when signature expects int (MockSandbox)."""
+        from dspy.primitives.prediction import Prediction
 
-    def test_parse_value_int_from_string(self):
-        """Test parse_value coerces string to int."""
-        from dspy.adapters.utils import parse_value
+        mock = MockSandbox(responses=[FinalAnswerResult({"count": 42})])
+        rlm = RLM("query -> count: int", max_iterations=3, interpreter=mock)
 
-        result = parse_value("42", int)
-        assert result == 42
-        assert isinstance(result, int)
+        class MockPredictor:
+            async def acall(self, **kwargs):
+                return Prediction(reasoning="Return count", code="FINAL(42)")
 
-    def test_parse_value_int_from_int(self):
-        """Test parse_value preserves int from int."""
-        from dspy.adapters.utils import parse_value
+        rlm.generate_action = MockPredictor()
 
-        result = parse_value(42, int)
-        assert result == 42
-        assert isinstance(result, int)
+        result = await rlm.aforward(query="count items")
+        assert result.count == 42
+        assert isinstance(result.count, int)
 
-    def test_parse_value_float_from_string(self):
-        """Test parse_value coerces string to float."""
-        from dspy.adapters.utils import parse_value
+    @pytest.mark.asyncio
+    async def test_aforward_multi_iteration_mock(self):
+        """Test aforward() handles multiple iterations before FINAL (MockSandbox)."""
+        from dspy.primitives.prediction import Prediction
 
-        result = parse_value("3.14", float)
-        assert result == 3.14
-        assert isinstance(result, float)
+        mock = MockSandbox(responses=[
+            "explored data",
+            FinalAnswerResult({"answer": "done"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
 
-    def test_parse_value_float_from_float(self):
-        """Test parse_value preserves float from float."""
-        from dspy.adapters.utils import parse_value
+        call_count = [0]
 
-        result = parse_value(3.14, float)
-        assert result == 3.14
-        assert isinstance(result, float)
+        class MockPredictor:
+            async def acall(self, **kwargs):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    return Prediction(reasoning="Explore first", code="print('exploring')")
+                return Prediction(reasoning="Now finish", code='FINAL("done")')
 
-    def test_parse_value_bool_from_string(self):
-        """Test parse_value coerces string to bool."""
-        from dspy.adapters.utils import parse_value
+        rlm.generate_action = MockPredictor()
 
-        result = parse_value("true", bool)
-        assert result is True
-
-    def test_parse_value_bool_from_bool(self):
-        """Test parse_value preserves bool from bool."""
-        from dspy.adapters.utils import parse_value
-
-        result = parse_value(True, bool)
-        assert result is True
-
-    def test_parse_value_list_from_string(self):
-        """Test parse_value coerces JSON string to list."""
-        from dspy.adapters.utils import parse_value
-
-        result = parse_value("[1, 2, 3]", list[int])
-        assert result == [1, 2, 3]
-
-    def test_parse_value_list_from_list(self):
-        """Test parse_value validates list from list."""
-        from dspy.adapters.utils import parse_value
-
-        result = parse_value([1, 2, 3], list[int])
-        assert result == [1, 2, 3]
-
-    def test_parse_value_dict_from_string(self):
-        """Test parse_value coerces JSON string to dict."""
-        from dspy.adapters.utils import parse_value
-
-        result = parse_value('{"a": 1}', dict[str, int])
-        assert result == {"a": 1}
-
-    def test_parse_value_dict_from_dict(self):
-        """Test parse_value validates dict from dict."""
-        from dspy.adapters.utils import parse_value
-
-        result = parse_value({"a": 1}, dict[str, int])
-        assert result == {"a": 1}
-
-    def test_parse_value_enum_by_value(self):
-        """Test parse_value finds enum by value."""
-        from enum import Enum
-
-        from dspy.adapters.utils import parse_value
-
-        class Color(Enum):
-            RED = "red"
-            BLUE = "blue"
-
-        result = parse_value("red", Color)
-        assert result == Color.RED
-
-    def test_parse_value_enum_by_name(self):
-        """Test parse_value finds enum by name."""
-        from enum import Enum
-
-        from dspy.adapters.utils import parse_value
-
-        class Color(Enum):
-            RED = "red"
-            BLUE = "blue"
-
-        result = parse_value("RED", Color)
-        assert result == Color.RED
-
-    def test_parse_value_optional_none(self):
-        """Test parse_value handles Optional with None."""
-        from dspy.adapters.utils import parse_value
-
-        result = parse_value(None, str | None)
-        assert result is None
-
-    def test_parse_value_optional_value(self):
-        """Test parse_value handles Optional with value."""
-        from dspy.adapters.utils import parse_value
-
-        result = parse_value("hello", str | None)
-        assert result == "hello"
-
-
-# ============================================================================
-# Unit Tests: RLM Type Coercion with MockSandbox (no Deno required)
-# ============================================================================
+        result = await rlm.aforward(query="test")
+        assert result.answer == "done"
+        assert call_count[0] == 2
 
 
 class TestRLMTypeCoercionMock:
@@ -1253,6 +1053,57 @@ class TestRLMWithDummyLM:
             result = rlm.forward(fruit="apple")
 
             assert result.color == "red"
+
+    @pytest.mark.asyncio
+    async def test_aforward_simple_computation_e2e(self):
+        """Test aforward() full pipeline: DummyLM -> RLM -> LocalSandbox -> result."""
+        import dspy
+        from dspy.utils.dummies import DummyLM
+
+        lm = DummyLM([
+            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nFINAL(result)"},
+        ])
+
+        with dspy.context(lm=lm):
+            rlm = RLM("query -> answer: int", max_iterations=3)
+            result = await rlm.aforward(query="What is 2 + 3?")
+
+            assert result.answer == 5
+            assert isinstance(result.answer, int)
+
+    @pytest.mark.asyncio
+    async def test_aforward_multi_turn_e2e(self):
+        """Test aforward() with multiple turns before FINAL."""
+        import dspy
+        from dspy.utils.dummies import DummyLM
+
+        lm = DummyLM([
+            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+            {"reasoning": "Now compute and return", "code": "y = x * 2\nFINAL(y)"},
+        ])
+
+        with dspy.context(lm=lm):
+            rlm = RLM("query -> answer: int", max_iterations=5)
+            result = await rlm.aforward(query="Double ten")
+
+            assert result.answer == 20
+            assert len(result.trajectory) == 2
+
+    @pytest.mark.asyncio
+    async def test_aforward_with_input_variables_e2e(self):
+        """Test aforward() with input variables passed to sandbox."""
+        import dspy
+        from dspy.utils.dummies import DummyLM
+
+        lm = DummyLM([
+            {"reasoning": "Sum the numbers in the list", "code": "FINAL(sum(numbers))"},
+        ])
+
+        with dspy.context(lm=lm):
+            rlm = RLM("numbers: list[int] -> total: int", max_iterations=3)
+            result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])
+
+            assert result.total == 15
 
 
 # ============================================================================

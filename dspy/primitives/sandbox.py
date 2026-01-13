@@ -9,6 +9,9 @@ code-executing modules to work with different sandbox implementations:
 
 from typing import Any, Callable, Protocol, runtime_checkable
 
+# Types that can be used directly in Python function signatures for FINAL()
+SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
+
 
 class SandboxError(RuntimeError):
     """Error raised during code execution in a sandbox.
