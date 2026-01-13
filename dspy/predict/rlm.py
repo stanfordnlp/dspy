@@ -7,6 +7,7 @@ to programmatically examine, decompose, and recursively call sub-LLMs over snipp
 
 Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 """
+
 from __future__ import annotations
 
 import json
@@ -22,10 +23,10 @@ from pydantic import Field
 
 import dspy
 from dspy.adapters.utils import parse_value
-from dspy.primitives.local_sandbox import PythonInterpreter
+from dspy.primitives.local_interpreter import PythonInterpreter
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.sandbox import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
+from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
 from dspy.signatures.signature import ensure_signature
 
 if TYPE_CHECKING:
@@ -212,8 +213,11 @@ class RLM(Module):
             for n, f in self.signature.output_fields.items()
         )
 
+        # Include original signature instructions (docstring) if present
+        task_instructions = f"{self.signature.instructions}\n\n" if self.signature.instructions else ""
+
         action_sig = (
-            dspy.Signature({}, ACTION_INSTRUCTIONS_TEMPLATE.format(
+            dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
                 inputs=inputs_str, outputs=outputs_str, max_llm_calls=self.max_llm_calls
             ))
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
@@ -223,14 +227,17 @@ class RLM(Module):
             .append("code", dspy.OutputField(desc="Python code to execute. Use print() to see results, llm_query() for semantic analysis, FINAL()/FINAL_VAR() to submit."), type_=str)
         )
 
-        # Extract signature: includes the original signature's output fields.
+        # Extract signature: includes the original signature's output fields and task instructions.
         extract_instructions = """You ran out of iterations. Based on your REPL trajectory, extract the final outputs now.
 
             Review your trajectory to see what information you gathered and what values you computed, then provide the final outputs."""
 
+        # Prepend original task instructions to extract instructions so the LLM knows what task to extract for
+        full_extract_instructions = task_instructions + extract_instructions if task_instructions else extract_instructions
+
         extract_sig = dspy.Signature(
             {**self.signature.output_fields},
-            extract_instructions,
+            full_extract_instructions,
         )
         extract_sig = extract_sig.prepend("repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory)
         extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
