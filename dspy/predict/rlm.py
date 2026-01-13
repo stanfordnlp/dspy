@@ -244,6 +244,22 @@ class RLM(Module):
 
         return action_sig, extract_sig
 
+    # Simple types that can be used directly in Python function signatures
+    _SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
+
+    def _get_output_fields_info(self) -> list[dict]:
+        """Get output field info for sandbox registration."""
+        fields = []
+        for name, field in self.signature.output_fields.items():
+            annotation = getattr(field, "annotation", str)
+            field_info = {"name": name}
+            # Only include type for simple types that work in function signatures
+            # Complex types like Literal, Union, etc. are not included
+            if annotation in self._SIMPLE_TYPES:
+                field_info["type"] = annotation.__name__
+            fields.append(field_info)
+        return fields
+
     def _build_variables(self, **input_args: Any) -> list[REPLVariable]:
         """Build REPLVariable list from input arguments with field metadata."""
         variables = []
@@ -277,7 +293,6 @@ class RLM(Module):
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
         output_field_names = list(self.signature.output_fields.keys())
-        primary_output_name = output_field_names[0] if output_field_names else "answer"
 
         # Create fresh tools for this execution
         execution_tools = self._make_llm_tools()
@@ -289,7 +304,10 @@ class RLM(Module):
             repl = self._interpreter
             owns_interpreter = False
         else:
-            repl = LocalSandbox(tools=execution_tools)
+            repl = LocalSandbox(
+                tools=execution_tools,
+                output_fields=self._get_output_fields_info(),
+            )
             owns_interpreter = True
 
         variables = self._build_variables(**input_args)
@@ -312,23 +330,39 @@ class RLM(Module):
                     result = repl.execute(code, variables=dict(input_args))
 
                     if isinstance(result, FinalAnswerResult):
-                        raw_answer = result.answer
-                        # Get the output field's type annotation for validation
-                        output_field = self.signature.output_fields[primary_output_name]
-                        annotation = getattr(output_field, "annotation", str)
+                        raw_answer = result.answer  # Dict with field names as keys
 
-                        # Validate/coerce the answer to the expected type
-                        try:
-                            output_value = parse_value(raw_answer, annotation)
-                        except (ValueError, pydantic.ValidationError) as e:
-                            # If type validation fails, include error in output and continue iteration
-                            output = f"[Type Error] Expected {annotation}, got {type(raw_answer).__name__}: {e}"
+                        # Validate all required output fields are present
+                        if not isinstance(raw_answer, dict):
+                            output = f"[Error] FINAL returned {type(raw_answer).__name__}, expected dict with fields: {output_field_names}"
                             history = history.append(reasoning=pred.reasoning, code=pred.code, output=output)
-                            continue  # Let the LLM try again
+                            continue
 
-                        history = history.append(reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {output_value}")
+                        missing = set(output_field_names) - set(raw_answer.keys())
+                        if missing:
+                            output = f"[Error] Missing output fields: {sorted(missing)}. Use FINAL({', '.join(output_field_names)})"
+                            history = history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+                            continue
+
+                        # Parse and validate each output field
+                        parsed_outputs = {}
+                        type_errors = []
+                        for name in output_field_names:
+                            field = self.signature.output_fields[name]
+                            annotation = getattr(field, "annotation", str)
+                            try:
+                                parsed_outputs[name] = parse_value(raw_answer[name], annotation)
+                            except (ValueError, pydantic.ValidationError) as e:
+                                type_errors.append(f"{name}: expected {annotation.__name__ if hasattr(annotation, '__name__') else annotation}, got {type(raw_answer[name]).__name__}: {e}")
+
+                        if type_errors:
+                            output = "[Type Error] " + "; ".join(type_errors)
+                            history = history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+                            continue
+
+                        history = history.append(reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}")
                         return Prediction(
-                            **{primary_output_name: output_value},
+                            **parsed_outputs,
                             trajectory=[e.model_dump() for e in history],
                             final_reasoning=pred.reasoning,
                         )

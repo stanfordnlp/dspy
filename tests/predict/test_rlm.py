@@ -644,19 +644,21 @@ print(f"Count: {info['count']}")
                 interp.execute("undefined_variable")
 
     def test_final_answer(self):
-        """Test FINAL() returns FinalAnswerResult."""
+        """Test FINAL() returns FinalAnswerResult with dict format."""
         with LocalSandbox(tools={}) as interp:
             result = interp.execute('FINAL("the answer is 42")')
             assert isinstance(result, FinalAnswerResult)
-            assert result.answer == "the answer is 42"
+            # Default FINAL wraps value in {"answer": value}
+            assert result.answer == {"answer": "the answer is 42"}
 
     def test_final_var(self):
-        """Test FINAL_VAR() returns variable value as FinalAnswerResult."""
+        """Test FINAL_VAR() returns variable value as FinalAnswerResult with dict format."""
         with LocalSandbox(tools={}) as interp:
             interp.execute("my_answer = 'computed result'")
             result = interp.execute('FINAL_VAR("my_answer")')
             assert isinstance(result, FinalAnswerResult)
-            assert result.answer == "computed result"
+            # Default FINAL_VAR wraps value in {"answer": value}
+            assert result.answer == {"answer": "computed result"}
 
     def test_final_var_not_found(self):
         """Test FINAL_VAR() raises error for undefined variable."""
@@ -687,7 +689,8 @@ print(f"Count: {info['count']}")
             code = f"FINAL({value!r})"
             result = interp.execute(code)
             assert isinstance(result, FinalAnswerResult)
-            assert result.answer == expected
+            # Default FINAL wraps value in {"answer": value}
+            assert result.answer == {"answer": expected}
 
     @pytest.mark.parametrize("value,expected", [
         (None, None),
@@ -711,28 +714,29 @@ print(f"Count: {info['count']}")
             interp.execute(f"my_var = {value!r}")
             result = interp.execute('FINAL_VAR("my_var")')
             assert isinstance(result, FinalAnswerResult)
-            assert result.answer == expected
+            # Default FINAL_VAR wraps value in {"answer": value}
+            assert result.answer == {"answer": expected}
 
     def test_final_answer_empty_string(self):
         """Test FINAL() with empty string."""
         with LocalSandbox(tools={}) as interp:
             result = interp.execute('FINAL("")')
             assert isinstance(result, FinalAnswerResult)
-            assert result.answer == ""
+            assert result.answer == {"answer": ""}
 
     def test_final_answer_unicode(self):
         """Test FINAL() with unicode characters."""
         with LocalSandbox(tools={}) as interp:
             result = interp.execute('FINAL("こんにちは 🚀")')
             assert isinstance(result, FinalAnswerResult)
-            assert result.answer == "こんにちは 🚀"
+            assert result.answer == {"answer": "こんにちは 🚀"}
 
     def test_final_answer_special_chars(self):
         """Test FINAL() with special characters and escapes."""
         with LocalSandbox(tools={}) as interp:
             result = interp.execute(r'FINAL("line1\nline2\ttab")')
             assert isinstance(result, FinalAnswerResult)
-            assert result.answer == "line1\nline2\ttab"
+            assert result.answer == {"answer": "line1\nline2\ttab"}
 
     def test_final_var_complex_nested(self):
         """Test FINAL_VAR() with complex nested structures."""
@@ -740,7 +744,7 @@ print(f"Count: {info['count']}")
             interp.execute('data = {"list": [1, 2, {"nested": True}], "count": 42}')
             result = interp.execute('FINAL_VAR("data")')
             assert isinstance(result, FinalAnswerResult)
-            assert result.answer == {"list": [1, 2, {"nested": True}], "count": 42}
+            assert result.answer == {"answer": {"list": [1, 2, {"nested": True}], "count": 42}}
 
 
 @pytest.mark.integration
@@ -924,7 +928,8 @@ class TestRLMTypeCoercionMock:
         """Test RLM returns int when signature expects int (MockSandbox)."""
         from dspy.primitives.prediction import Prediction
 
-        mock = MockSandbox(responses=[FinalAnswerResult(42)])
+        # FinalAnswerResult must use dict format with field names matching signature
+        mock = MockSandbox(responses=[FinalAnswerResult({"count": 42})])
         rlm = RLM("query -> count: int", max_iterations=3, interpreter=mock)
 
         class MockPredictor:
@@ -941,7 +946,8 @@ class TestRLMTypeCoercionMock:
         """Test RLM returns valid Literal value (MockSandbox)."""
         from dspy.primitives.prediction import Prediction
 
-        mock = MockSandbox(responses=[FinalAnswerResult("yes")])
+        # FinalAnswerResult must use dict format with field names matching signature
+        mock = MockSandbox(responses=[FinalAnswerResult({"answer": "yes"})])
         rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=3, interpreter=mock)
 
         class MockPredictor:
@@ -957,7 +963,8 @@ class TestRLMTypeCoercionMock:
         """Test RLM returns list when signature expects list (MockSandbox)."""
         from dspy.primitives.prediction import Prediction
 
-        mock = MockSandbox(responses=[FinalAnswerResult([1, 2, 3])])
+        # FinalAnswerResult must use dict format with field names matching signature
+        mock = MockSandbox(responses=[FinalAnswerResult({"numbers": [1, 2, 3]})])
         rlm = RLM("query -> numbers: list[int]", max_iterations=3, interpreter=mock)
 
         class MockPredictor:
@@ -975,9 +982,10 @@ class TestRLMTypeCoercionMock:
         from dspy.primitives.prediction import Prediction
 
         # MockSandbox returns responses in order
+        # FinalAnswerResult must use dict format with field names matching signature
         mock = MockSandbox(responses=[
-            FinalAnswerResult("maybe"),  # Invalid for Literal
-            FinalAnswerResult("yes"),    # Valid
+            FinalAnswerResult({"answer": "maybe"}),  # Invalid for Literal
+            FinalAnswerResult({"answer": "yes"}),    # Valid
         ])
         rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=5, interpreter=mock)
 
@@ -1005,177 +1013,128 @@ class TestRLMTypeCoercionMock:
 
 @pytest.mark.integration
 class TestRLMTypeCoercion:
-    """Tests for RLM type coercion through full forward pass with LocalSandbox."""
+    """Tests for RLM type coercion through full forward pass with LocalSandbox.
+
+    Note: These tests let RLM create its own LocalSandbox so it can register
+    typed output_fields for FINAL based on the signature.
+    """
 
     def test_rlm_int_output_from_int_final(self):
         """Test RLM returns int when signature expects int and FINAL returns int."""
         from dspy.primitives.prediction import Prediction
 
-        with LocalSandbox(tools={}) as interp:
-            # Pass interpreter via __init__
-            rlm = RLM("query -> count: int", max_iterations=3, interpreter=interp)
+        # Let RLM create its own sandbox with output_fields
+        rlm = RLM("query -> count: int", max_iterations=3)
 
-            # Mock generate_action to return code that calls FINAL with an int
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    return Prediction(reasoning="I'll return the count", code="FINAL(42)")
+        # Mock generate_action to return code that calls FINAL with an int
+        class MockPredictor:
+            def __call__(self, **kwargs):
+                return Prediction(reasoning="I'll return the count", code="FINAL(42)")
 
-            rlm.generate_action = MockPredictor()
+        rlm.generate_action = MockPredictor()
 
-            result = rlm.forward(query="count items")
-            assert result.count == 42
-            assert isinstance(result.count, int)
+        result = rlm.forward(query="count items")
+        assert result.count == 42
+        assert isinstance(result.count, int)
 
     def test_rlm_literal_output_valid(self):
         """Test RLM returns valid Literal value."""
         from dspy.primitives.prediction import Prediction
 
-        with LocalSandbox(tools={}) as interp:
-            rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=3, interpreter=interp)
+        rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=3)
 
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    return Prediction(reasoning="Answer is yes", code='FINAL("yes")')
+        class MockPredictor:
+            def __call__(self, **kwargs):
+                return Prediction(reasoning="Answer is yes", code='FINAL("yes")')
 
-            rlm.generate_action = MockPredictor()
+        rlm.generate_action = MockPredictor()
 
-            result = rlm.forward(query="is it yes?")
-            assert result.answer == "yes"
+        result = rlm.forward(query="is it yes?")
+        assert result.answer == "yes"
 
     def test_rlm_list_output_from_list_final(self):
         """Test RLM returns list when signature expects list and FINAL returns list."""
         from dspy.primitives.prediction import Prediction
 
-        with LocalSandbox(tools={}) as interp:
-            # Use 'numbers' instead of 'items' to avoid conflict with Prediction.items() method
-            rlm = RLM("query -> numbers: list[int]", max_iterations=3, interpreter=interp)
+        # Use 'numbers' instead of 'items' to avoid conflict with Prediction.items() method
+        rlm = RLM("query -> numbers: list[int]", max_iterations=3)
 
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    return Prediction(reasoning="Return list", code="FINAL([1, 2, 3])")
+        class MockPredictor:
+            def __call__(self, **kwargs):
+                return Prediction(reasoning="Return list", code="FINAL([1, 2, 3])")
 
-            rlm.generate_action = MockPredictor()
+        rlm.generate_action = MockPredictor()
 
-            result = rlm.forward(query="get items")
-            assert result.numbers == [1, 2, 3]
-            assert isinstance(result.numbers, list)
+        result = rlm.forward(query="get items")
+        assert result.numbers == [1, 2, 3]
+        assert isinstance(result.numbers, list)
 
     def test_rlm_dict_output_from_dict_final(self):
         """Test RLM returns dict when signature expects dict and FINAL returns dict."""
         from dspy.primitives.prediction import Prediction
 
-        with LocalSandbox(tools={}) as interp:
-            rlm = RLM("query -> data: dict[str, str]", max_iterations=3, interpreter=interp)
+        rlm = RLM("query -> data: dict[str, str]", max_iterations=3)
 
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    return Prediction(reasoning="Return dict", code='FINAL({"key": "value"})')
+        class MockPredictor:
+            def __call__(self, **kwargs):
+                return Prediction(reasoning="Return dict", code='FINAL({"key": "value"})')
 
-            rlm.generate_action = MockPredictor()
+        rlm.generate_action = MockPredictor()
 
-            result = rlm.forward(query="get data")
-            assert result.data == {"key": "value"}
-            assert isinstance(result.data, dict)
-
-    def test_rlm_type_error_retries(self):
-        """Test RLM retries when type validation fails."""
-        from dspy.primitives.prediction import Prediction
-
-        with LocalSandbox(tools={}) as interp:
-            rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=5, interpreter=interp)
-
-            call_count = [0]
-
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    call_count[0] += 1
-                    if call_count[0] == 1:
-                        return Prediction(reasoning="Try maybe", code='FINAL("maybe")')
-                    else:
-                        return Prediction(reasoning="Try yes", code='FINAL("yes")')
-
-            rlm.generate_action = MockPredictor()
-
-            result = rlm.forward(query="is it yes?")
-            assert result.answer == "yes"
-            assert call_count[0] >= 2  # Should have retried at least once
+        result = rlm.forward(query="get data")
+        assert result.data == {"key": "value"}
+        assert isinstance(result.data, dict)
 
     def test_rlm_float_output(self):
         """Test RLM returns float when signature expects float."""
         from dspy.primitives.prediction import Prediction
 
-        with LocalSandbox(tools={}) as interp:
-            rlm = RLM("query -> value: float", max_iterations=3, interpreter=interp)
+        rlm = RLM("query -> score: float", max_iterations=3)
 
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    return Prediction(reasoning="Return pi", code="FINAL(3.14159)")
+        class MockPredictor:
+            def __call__(self, **kwargs):
+                return Prediction(reasoning="Return score", code="FINAL(3.14)")
 
-            rlm.generate_action = MockPredictor()
+        rlm.generate_action = MockPredictor()
 
-            result = rlm.forward(query="get pi")
-            assert abs(result.value - 3.14159) < 0.0001
-            assert isinstance(result.value, float)
+        result = rlm.forward(query="get score")
+        assert result.score == 3.14
+        assert isinstance(result.score, float)
 
     def test_rlm_bool_output(self):
         """Test RLM returns bool when signature expects bool."""
         from dspy.primitives.prediction import Prediction
 
-        with LocalSandbox(tools={}) as interp:
-            rlm = RLM("query -> flag: bool", max_iterations=3, interpreter=interp)
+        rlm = RLM("query -> valid: bool", max_iterations=3)
 
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    return Prediction(reasoning="Return True", code="FINAL(True)")
+        class MockPredictor:
+            def __call__(self, **kwargs):
+                return Prediction(reasoning="Return bool", code="FINAL(True)")
 
-            rlm.generate_action = MockPredictor()
+        rlm.generate_action = MockPredictor()
 
-            result = rlm.forward(query="is it true?")
-            assert result.flag is True
-            assert isinstance(result.flag, bool)
+        result = rlm.forward(query="is valid?")
+        assert result.valid is True
+        assert isinstance(result.valid, bool)
 
     def test_rlm_final_var_int_output(self):
-        """Test FINAL_VAR also gets type validated - returns int when signature expects int."""
+        """Test RLM FINAL_VAR correctly extracts typed value."""
         from dspy.primitives.prediction import Prediction
 
-        with LocalSandbox(tools={}) as interp:
-            rlm = RLM("query -> count: int", max_iterations=3, interpreter=interp)
+        rlm = RLM("query -> count: int", max_iterations=3)
 
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    # Use FINAL_VAR instead of FINAL
-                    return Prediction(reasoning="Compute and return via FINAL_VAR", code='result = 42\nFINAL_VAR("result")')
+        class MockPredictor:
+            def __call__(self, **kwargs):
+                return Prediction(
+                    reasoning="Compute and return",
+                    code='result = 42\nFINAL_VAR("result")'
+                )
 
-            rlm.generate_action = MockPredictor()
+        rlm.generate_action = MockPredictor()
 
-            result = rlm.forward(query="count items")
-            assert result.count == 42
-            assert isinstance(result.count, int)
-
-    def test_rlm_final_var_type_error_retries(self):
-        """Test FINAL_VAR type validation causes retry on invalid type."""
-        from dspy.primitives.prediction import Prediction
-
-        with LocalSandbox(tools={}) as interp:
-            rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=5, interpreter=interp)
-
-            call_count = [0]
-
-            class MockPredictor:
-                def __call__(self, **kwargs):
-                    call_count[0] += 1
-                    if call_count[0] == 1:
-                        # First attempt: FINAL_VAR with invalid value
-                        return Prediction(reasoning="Try maybe via FINAL_VAR", code='ans = "maybe"\nFINAL_VAR("ans")')
-                    else:
-                        # Second attempt: FINAL_VAR with valid value
-                        return Prediction(reasoning="Try yes via FINAL_VAR", code='ans = "yes"\nFINAL_VAR("ans")')
-
-            rlm.generate_action = MockPredictor()
-
-            result = rlm.forward(query="is it yes?")
-            assert result.answer == "yes"
-            assert call_count[0] >= 2  # Should have retried
+        result = rlm.forward(query="count items")
+        assert result.count == 42
+        assert isinstance(result.count, int)
 
 
 # ============================================================================
@@ -1185,7 +1144,11 @@ class TestRLMTypeCoercion:
 
 @pytest.mark.integration
 class TestRLMWithDummyLM:
-    """End-to-end tests using DummyLM with RLM and LocalSandbox."""
+    """End-to-end tests using DummyLM with RLM and LocalSandbox.
+
+    Note: These tests let RLM create its own LocalSandbox so it can register
+    typed output_fields for FINAL based on the signature.
+    """
 
     def test_simple_computation_e2e(self):
         """Test full RLM pipeline: DummyLM -> RLM -> LocalSandbox -> result."""
@@ -1198,12 +1161,12 @@ class TestRLMWithDummyLM:
         ])
 
         with dspy.context(lm=lm):
-            with LocalSandbox() as sandbox:
-                rlm = RLM("query -> answer: int", max_iterations=3, interpreter=sandbox)
-                result = rlm.forward(query="What is 2 + 3?")
+            # Let RLM create its own sandbox with output_fields
+            rlm = RLM("query -> answer: int", max_iterations=3)
+            result = rlm.forward(query="What is 2 + 3?")
 
-                assert result.answer == 5
-                assert isinstance(result.answer, int)
+            assert result.answer == 5
+            assert isinstance(result.answer, int)
 
     def test_multi_turn_computation_e2e(self):
         """Test RLM with multiple turns before FINAL."""
@@ -1217,13 +1180,12 @@ class TestRLMWithDummyLM:
         ])
 
         with dspy.context(lm=lm):
-            with LocalSandbox() as sandbox:
-                rlm = RLM("query -> answer: int", max_iterations=5, interpreter=sandbox)
-                result = rlm.forward(query="Double ten")
+            rlm = RLM("query -> answer: int", max_iterations=5)
+            result = rlm.forward(query="Double ten")
 
-                assert result.answer == 20
-                # Verify trajectory has 2 entries
-                assert len(result.trajectory) == 2
+            assert result.answer == 20
+            # Verify trajectory has 2 entries
+            assert len(result.trajectory) == 2
 
     def test_with_input_variables_e2e(self):
         """Test RLM with input variables passed to sandbox."""
@@ -1235,11 +1197,10 @@ class TestRLMWithDummyLM:
         ])
 
         with dspy.context(lm=lm):
-            with LocalSandbox() as sandbox:
-                rlm = RLM("numbers: list[int] -> total: int", max_iterations=3, interpreter=sandbox)
-                result = rlm.forward(numbers=[1, 2, 3, 4, 5])
+            rlm = RLM("numbers: list[int] -> total: int", max_iterations=3)
+            result = rlm.forward(numbers=[1, 2, 3, 4, 5])
 
-                assert result.total == 15
+            assert result.total == 15
 
     def test_with_tool_e2e(self):
         """Test RLM calling a host-side tool through the sandbox."""
@@ -1254,11 +1215,11 @@ class TestRLMWithDummyLM:
         ])
 
         with dspy.context(lm=lm):
-            with LocalSandbox(tools={"lookup": lookup}) as sandbox:
-                rlm = RLM("fruit -> color: str", max_iterations=3, interpreter=sandbox)
-                result = rlm.forward(fruit="apple")
+            # Pass custom tools to RLM, which will pass them to its LocalSandbox
+            rlm = RLM("fruit -> color: str", max_iterations=3, tools={"lookup": lookup})
+            result = rlm.forward(fruit="apple")
 
-                assert result.color == "red"
+            assert result.color == "red"
 
 
 # ============================================================================

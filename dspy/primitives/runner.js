@@ -23,24 +23,124 @@ class FinalAnswer(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
     pass
 
-def FINAL(answer):
-    raise FinalAnswer(answer)
+# Default FINAL/FINAL_VAR for single-output signatures.
+# Only define if not already registered with typed signatures.
+if 'FINAL' not in dir():
+    def FINAL(answer):
+        raise FinalAnswer({"answer": answer})
 
-def FINAL_VAR(var_name):
-    if var_name in globals():
-        raise FinalAnswer(globals()[var_name])
-    raise NameError(f"Variable '{var_name}' not found")
+if 'FINAL_VAR' not in dir():
+    def FINAL_VAR(var_name):
+        if var_name in globals():
+            raise FinalAnswer({"answer": globals()[var_name]})
+        raise NameError(f"Variable '{var_name}' not found")
 `;
 
-// Template for generating a tool wrapper function.
-// The toolName is interpolated to create a callable that bridges to the host.
-const makeToolWrapper = (toolName) => `
+// Generate a tool wrapper function with typed signature.
+// Parameters is an array of {name, type?, default?} objects.
+// Convert a JavaScript/JSON value to Python literal syntax
+const toPythonLiteral = (value) => {
+  if (value === null) return 'None';
+  if (value === true) return 'True';
+  if (value === false) return 'False';
+  return JSON.stringify(value);  // Works for strings, numbers, arrays, objects
+};
+
+const makeToolWrapper = (toolName, parameters = []) => {
+  // Build signature parts: "query: str, limit: int = 10"
+  const sigParts = parameters.map(p => {
+    let part = p.name;
+    if (p.type) part += `: ${p.type}`;
+    if (p.default !== undefined) part += ` = ${toPythonLiteral(p.default)}`;
+    return part;
+  });
+  const signature = sigParts.join(', ');
+  const argNames = parameters.map(p => p.name);
+
+  // If no parameters, fall back to *args, **kwargs for flexibility
+  if (parameters.length === 0) {
+    return `
 import json
 from pyodide.ffi import run_sync, JsProxy
 def ${toolName}(*args, **kwargs):
     result = run_sync(_js_tool_call("${toolName}", json.dumps({"args": args, "kwargs": kwargs})))
     return result.to_py() if isinstance(result, JsProxy) else result
 `;
+  }
+
+  return `
+import json
+from pyodide.ffi import run_sync, JsProxy
+def ${toolName}(${signature}):
+    _args = [${argNames.join(', ')}]
+    result = run_sync(_js_tool_call("${toolName}", json.dumps({"args": _args, "kwargs": {}})))
+    return result.to_py() if isinstance(result, JsProxy) else result
+`;
+};
+
+// Generate FINAL function with output field signature.
+// Outputs is an array of {name, type?} objects.
+const makeFinalWrapper = (outputs) => {
+  if (!outputs || outputs.length === 0) {
+    // Fallback to single-arg FINAL if no outputs defined
+    return `
+def FINAL(answer):
+    raise FinalAnswer({"answer": answer})
+`;
+  }
+
+  const sigParts = outputs.map(o => {
+    let part = o.name;
+    if (o.type) part += `: ${o.type}`;
+    return part;
+  });
+  const dictParts = outputs.map(o => `"${o.name}": ${o.name}`);
+
+  return `
+def FINAL(${sigParts.join(', ')}):
+    raise FinalAnswer({${dictParts.join(', ')}})
+`;
+};
+
+// Generate FINAL_VAR function with positional args mapped to output fields.
+// Usage: FINAL_VAR("var1", "var2") maps to output fields in order.
+const makeFinalVarWrapper = (outputs) => {
+  if (!outputs || outputs.length === 0) {
+    // Single-output fallback: FINAL_VAR("var_name")
+    return `
+def FINAL_VAR(var_name):
+    if var_name not in globals():
+        raise NameError(f"Variable '{var_name}' not found")
+    raise FinalAnswer({"answer": globals()[var_name]})
+`;
+  }
+
+  // Multi-output: positional args mapped to fields in order
+  const fieldNames = outputs.map(o => `"${o.name}"`);
+  const expectedCount = outputs.length;
+  const fieldList = fieldNames.join(', ');
+
+  return `
+def FINAL_VAR(*var_names):
+    """Pass variable names positionally, mapped to output fields in order.
+
+    Output fields: ${outputs.map(o => o.name).join(', ')}
+    Usage: FINAL_VAR(${outputs.map(o => `"${o.name}_var"`).join(', ')})
+    """
+    _output_fields = [${fieldList}]
+    if len(var_names) != ${expectedCount}:
+        raise ValueError(
+            f"FINAL_VAR expects ${expectedCount} variable names for output fields {_output_fields}, "
+            f"got {len(var_names)}"
+        )
+    _result = {}
+    for field_name, var_name in zip(_output_fields, var_names):
+        if var_name not in globals():
+            raise NameError(f"Variable '{var_name}' not found for output field '{field_name}'")
+        _result[field_name] = globals()[var_name]
+    raise FinalAnswer(_result)
+`;
+};
 
 // Global handler to prevent uncaught promise rejections from crashing Deno
 // These can occur during async Python <-> JS interop
@@ -169,12 +269,34 @@ while (true) {
 
   if (input.shutdown) break;
 
-  // Register tools: creates Python wrapper functions for each tool
-  if (input.register_tools) {
-    for (const toolName of input.register_tools) {
-      pyodide.runPython(makeToolWrapper(toolName));
+  // Register tools and/or output fields
+  if (input.register_tools || input.register_outputs) {
+    const toolNames = [];
+
+    // Register tools with typed signatures
+    if (input.register_tools) {
+      for (const tool of input.register_tools) {
+        // Support both old format (string) and new format (object with parameters)
+        if (typeof tool === 'string') {
+          pyodide.runPython(makeToolWrapper(tool, []));
+          toolNames.push(tool);
+        } else {
+          pyodide.runPython(makeToolWrapper(tool.name, tool.parameters || []));
+          toolNames.push(tool.name);
+        }
+      }
     }
-    console.log(JSON.stringify({ tools_registered: input.register_tools }));
+
+    // Register FINAL/FINAL_VAR with output signature
+    if (input.register_outputs) {
+      pyodide.runPython(makeFinalWrapper(input.register_outputs));
+      pyodide.runPython(makeFinalVarWrapper(input.register_outputs));
+    }
+
+    console.log(JSON.stringify({
+      tools_registered: toolNames,
+      outputs_registered: input.register_outputs ? input.register_outputs.map(o => o.name) : []
+    }));
     continue;
   }
 

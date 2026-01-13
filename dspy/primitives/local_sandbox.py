@@ -6,6 +6,7 @@ WASM environment using Deno and Pyodide. It implements the Sandbox
 protocol defined in sandbox.py.
 """
 
+import inspect
 import json
 import keyword
 import logging
@@ -61,6 +62,7 @@ class LocalSandbox:
         enable_network_access: list[str] | None = None,
         sync_files: bool = True,
         tools: dict[str, Callable[..., str]] | None = None,
+        output_fields: list[dict] | None = None,
     ) -> None:
         """
         Args:
@@ -74,6 +76,8 @@ class LocalSandbox:
             tools: Dictionary mapping tool names to callable functions.
                    Each function should accept keyword arguments and return a string.
                    Tools are callable directly from sandbox code by name.
+            output_fields: List of output field definitions for typed FINAL signature.
+                   Each dict should have 'name' and optionally 'type' keys.
         """
         if isinstance(deno_command, dict):
             raise TypeError("deno_command must be a list of strings, not a dict")
@@ -84,6 +88,7 @@ class LocalSandbox:
         self.enable_network_access = enable_network_access or []
         self.sync_files = sync_files
         self.tools = dict(tools) if tools else {}
+        self.output_fields = output_fields
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -196,18 +201,58 @@ class LocalSandbox:
             self.deno_process.stdin.write(sync_msg + "\n")
             self.deno_process.stdin.flush()
 
+    # Simple types that can be used directly in Python function signatures
+    _SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
+
+    def _extract_parameters(self, fn: Callable) -> list[dict]:
+        """Extract parameter info from a callable for sandbox registration."""
+        sig = inspect.signature(fn)
+        params = []
+        for name, param in sig.parameters.items():
+            p = {"name": name}
+            # Only include type for simple types that work in function signatures
+            # Complex types like Union, Optional, etc. are not included
+            if param.annotation != inspect.Parameter.empty:
+                if param.annotation in self._SIMPLE_TYPES:
+                    p["type"] = param.annotation.__name__
+            if param.default != inspect.Parameter.empty:
+                p["default"] = param.default
+            params.append(p)
+        return params
+
     def _register_tools(self) -> None:
-        """Register tools with the sandbox by sending tool names to runner.js."""
-        if self._tools_registered or not self.tools:
+        """Register tools and output fields with the sandbox."""
+        if self._tools_registered:
+            return
+
+        # Build registration message with typed tool signatures
+        msg = {}
+
+        if self.tools:
+            tools_info = []
+            for name, fn in self.tools.items():
+                tools_info.append({
+                    "name": name,
+                    "parameters": self._extract_parameters(fn)
+                })
+            msg["register_tools"] = tools_info
+
+        if self.output_fields:
+            msg["register_outputs"] = self.output_fields
+
+        # Skip if nothing to register
+        if not msg:
             self._tools_registered = True
             return
-        self.deno_process.stdin.write(json.dumps({"register_tools": list(self.tools.keys())}) + "\n")
+
+        self.deno_process.stdin.write(json.dumps(msg) + "\n")
         self.deno_process.stdin.flush()
         response_line = self.deno_process.stdout.readline().strip()
         if not response_line:
-            raise SandboxError("No response when registering tools")
-        if "tools_registered" not in json.loads(response_line):
-            raise SandboxError(f"Unexpected response when registering tools: {response_line}")
+            raise SandboxError("No response when registering tools/outputs")
+        response = json.loads(response_line)
+        if "tools_registered" not in response and "outputs_registered" not in response:
+            raise SandboxError(f"Unexpected response when registering: {response_line}")
         self._tools_registered = True
 
     def _handle_tool_call(self, request: dict) -> None:

@@ -67,7 +67,7 @@ def test_exception_args():
 
 
 def test_final_with_list():
-    """Test FINAL() with a list argument returns FinalAnswerResult."""
+    """Test FINAL() with a list argument returns FinalAnswerResult with dict format."""
     from dspy.primitives.sandbox import FinalAnswerResult
 
     with LocalSandbox() as interpreter:
@@ -76,7 +76,8 @@ def test_final_with_list():
         result = interpreter(code)
 
         assert isinstance(result, FinalAnswerResult)
-        assert result.answer == ["The result is", token]
+        # FINAL now always returns a dict with "answer" key for single-output default
+        assert result.answer == {"answer": ["The result is", token]}
 
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
@@ -248,4 +249,155 @@ def test_deno_command_dict_raises_type_error():
     """Test that passing a dict as deno_command raises TypeError."""
     with pytest.raises(TypeError, match="deno_command must be a list"):
         LocalSandbox(deno_command={"invalid": "dict"})
+
+
+# =============================================================================
+# Typed Tool Signature Tests
+# =============================================================================
+
+def test_tool_with_typed_signature():
+    """Test that tools get proper typed signatures from inspect."""
+    def my_tool(query: str, limit: int = 10) -> str:
+        return f"searched '{query}' with limit {limit}"
+
+    with LocalSandbox(tools={"my_tool": my_tool}) as sandbox:
+        # Tool should be callable with typed signature
+        result = sandbox.execute('my_tool(query="test", limit=5)')
+        assert result == "searched 'test' with limit 5"
+
+
+def test_tool_positional_args():
+    """Test that tools work with positional arguments."""
+    def search(query: str, limit: int = 10) -> str:
+        return f"query={query}, limit={limit}"
+
+    with LocalSandbox(tools={"search": search}) as sandbox:
+        result = sandbox.execute('search("hello")')
+        assert result == "query=hello, limit=10"
+
+
+def test_tool_keyword_args():
+    """Test that tools work with keyword arguments."""
+    def search(query: str, limit: int = 10) -> str:
+        return f"query={query}, limit={limit}"
+
+    with LocalSandbox(tools={"search": search}) as sandbox:
+        result = sandbox.execute('search(query="hello", limit=5)')
+        assert result == "query=hello, limit=5"
+
+
+def test_tool_default_args():
+    """Test that tool default arguments work correctly."""
+    def greet(name: str, greeting: str = "Hello") -> str:
+        return f"{greeting}, {name}!"
+
+    with LocalSandbox(tools={"greet": greet}) as sandbox:
+        # Without default
+        result = sandbox.execute('greet("World")')
+        assert result == "Hello, World!"
+
+        # Overriding default
+        result = sandbox.execute('greet("World", "Hi")')
+        assert result == "Hi, World!"
+
+
+# =============================================================================
+# Multi-Output FINAL Tests
+# =============================================================================
+
+def test_final_with_typed_signature():
+    """Test FINAL with typed output signature."""
+    from dspy.primitives.sandbox import FinalAnswerResult
+
+    output_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "confidence", "type": "float"},
+    ]
+
+    with LocalSandbox(output_fields=output_fields) as sandbox:
+        result = sandbox.execute('FINAL(answer="the answer", confidence=0.95)')
+
+        assert isinstance(result, FinalAnswerResult)
+        assert result.answer == {"answer": "the answer", "confidence": 0.95}
+
+
+def test_final_positional_args():
+    """Test FINAL with positional arguments."""
+    from dspy.primitives.sandbox import FinalAnswerResult
+
+    output_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "confidence", "type": "float"},
+    ]
+
+    with LocalSandbox(output_fields=output_fields) as sandbox:
+        result = sandbox.execute('FINAL("the answer", 0.95)')
+
+        assert isinstance(result, FinalAnswerResult)
+        assert result.answer == {"answer": "the answer", "confidence": 0.95}
+
+
+def test_final_var_multi_output():
+    """Test FINAL_VAR with multiple output fields using positional args."""
+    from dspy.primitives.sandbox import FinalAnswerResult
+
+    output_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "score", "type": "int"},
+    ]
+
+    with LocalSandbox(output_fields=output_fields) as sandbox:
+        # Positional args: variable names mapped to output fields in order
+        code = """
+a = "my answer"
+s = 42
+FINAL_VAR("a", "s")
+"""
+        result = sandbox.execute(code)
+
+        assert isinstance(result, FinalAnswerResult)
+        assert result.answer == {"answer": "my answer", "score": 42}
+
+
+def test_final_var_wrong_arg_count():
+    """Test FINAL_VAR with wrong number of args gives clear error."""
+    from dspy.primitives.sandbox import SandboxError
+
+    output_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "score", "type": "int"},
+    ]
+
+    with LocalSandbox(output_fields=output_fields) as sandbox:
+        with pytest.raises(SandboxError) as exc_info:
+            sandbox.execute('x = 1; FINAL_VAR("x")')  # Only 1 arg, expects 2
+        assert "expects 2 variable names" in str(exc_info.value)
+
+
+def test_extract_parameters():
+    """Test that _extract_parameters correctly extracts function signatures."""
+    def example_fn(required: str, optional: int = 5, untyped=None) -> str:
+        pass
+
+    sandbox = LocalSandbox()
+    params = sandbox._extract_parameters(example_fn)
+
+    assert len(params) == 3
+    assert params[0] == {"name": "required", "type": "str"}
+    assert params[1] == {"name": "optional", "type": "int", "default": 5}
+    assert params[2] == {"name": "untyped", "default": None}
+
+
+def test_extract_parameters_complex_types():
+    """Test that _extract_parameters handles complex types gracefully."""
+    def complex_fn(items: list | None = None, data: dict[str, int] | None = None) -> list:
+        pass
+
+    sandbox = LocalSandbox()
+    params = sandbox._extract_parameters(complex_fn)
+
+    assert len(params) == 2
+    # Complex types like Union are not included in type annotation
+    assert params[0] == {"name": "items", "default": None}
+    assert params[1] == {"name": "data", "default": None}
 
