@@ -90,7 +90,7 @@ class RLM(Module):
     sub-LLMs for semantic analysis, and build up answers iteratively.
 
     The default sandbox is LocalSandbox (Deno/Pyodide/WASM), but you
-    can provide any Sandbox implementation (e.g., E2BSandbox, MockSandbox).
+    can provide any Sandbox implementation (e.g., MockSandbox).
 
     Example:
         ```python
@@ -131,7 +131,7 @@ class RLM(Module):
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
             interpreter: Sandbox implementation to use. Defaults to LocalSandbox.
-                        Pass a MockSandbox for testing or E2BSandbox for production.
+                        Pass a MockSandbox for testing.
         """
         super().__init__()
         self.signature = ensure_signature(signature)

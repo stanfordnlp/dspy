@@ -4,7 +4,6 @@ Abstract sandbox interface for code execution environments.
 This module defines the Sandbox protocol that allows RLM and other
 code-executing modules to work with different sandbox implementations:
 - LocalSandbox: Local Deno/Pyodide WASM sandbox
-- E2BSandbox: E2B cloud-based Firecracker microVM
 - MockSandbox: Scriptable responses for testing
 """
 
@@ -58,7 +57,6 @@ class Sandbox(Protocol):
 
     Example implementations:
         - LocalSandbox: Deno/Pyodide WASM sandbox (local)
-        - E2BSandbox: E2B cloud-based execution
         - MockSandbox: Scriptable responses for testing
 
     Pooling:
