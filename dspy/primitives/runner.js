@@ -61,7 +61,7 @@ let requestIdCounter = 0;
 
 // This function is called from Python to invoke a host-side tool
 async function toolCallBridge(name, argsJson) {
-  const requestId = `req_${++requestIdCounter}`;
+  const requestId = `req_${Date.now()}_${++requestIdCounter}`;
 
   try {
     // Send tool call request to host
@@ -136,9 +136,17 @@ while (true) {
     const virtualPath = input.virtual_path || input.mount_file;
     try {
       const contents = await Deno.readFile(input.mount_file);
-      for (let cur = '', dirs = virtualPath.split('/').slice(1, -1), i = 0; i < dirs.length; i++) {
-        cur += '/' + dirs[i];
-        try { pyodide.FS.mkdir(cur); } catch (e) { /* ignore if exists */ }
+      const dirs = virtualPath.split('/').slice(1, -1);
+      let cur = '';
+      for (const d of dirs) {
+        cur += '/' + d;
+        try {
+          pyodide.FS.mkdir(cur);
+        } catch (e) {
+          if (!e.message?.includes('File exists')) {
+            throw e;
+          }
+        }
       }
       pyodide.FS.writeFile(virtualPath, contents);
     } catch (e) {
