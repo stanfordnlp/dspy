@@ -195,7 +195,7 @@ class RLM(Module):
                     try:
                         results[idx] = future.result()
                     except Exception as e:
-                        results[idx] = f"Error: {e}"
+                        results[idx] = f"[ERROR] {e}"
             return [results[i] for i in range(len(prompts))]
 
         return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
@@ -268,7 +268,14 @@ class RLM(Module):
 
         Returns:
             Prediction with output field(s) from the signature and 'trajectory' for debugging
+
+        Raises:
+            ValueError: If required input fields are missing
         """
+        missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
+        if missing:
+            raise ValueError(f"Missing required inputs: {sorted(missing)}")
+
         output_field_names = list(self.signature.output_fields.keys())
         primary_output_name = output_field_names[0] if output_field_names else "answer"
 

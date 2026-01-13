@@ -189,25 +189,54 @@ class TestRLMInitialization:
         rlm = RLM("context -> answer")
         assert rlm.sub_lm is None
 
+    def test_forward_validates_required_inputs(self):
+        """Test that forward() raises ValueError for missing required inputs."""
+        mock = MockSandbox(responses=["result"])
+        rlm = RLM("context, query -> answer", max_iterations=3, interpreter=mock)
+
+        with pytest.raises(ValueError, match="Missing required input"):
+            rlm.forward(context="some context")  # Missing 'query'
+
+    def test_forward_validates_all_missing_inputs(self):
+        """Test that forward() reports all missing inputs."""
+        mock = MockSandbox(responses=["result"])
+        rlm = RLM("a, b, c -> answer", max_iterations=3, interpreter=mock)
+
+        with pytest.raises(ValueError) as exc_info:
+            rlm.forward(a="only a")  # Missing 'b' and 'c'
+        assert "b" in str(exc_info.value)
+        assert "c" in str(exc_info.value)
+
+    def test_batched_query_errors_have_clear_markers(self):
+        """Test that errors in llm_query_batched are prefixed with [ERROR]."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock()
+        mock_lm.side_effect = RuntimeError("LM failed")
+
+        rlm = RLM("context -> answer", max_llm_calls=10, sub_lm=mock_lm)
+        tools = rlm._make_llm_tools()
+
+        results = tools["llm_query_batched"](prompts=["test prompt"])
+        assert len(results) == 1
+        assert results[0].startswith("[ERROR]")
+        assert "LM failed" in results[0]
+
     def test_tools_call_counter_is_thread_safe(self):
         """Test that the LLM call counter is thread-safe for concurrent llm_query_batched calls.
 
         The call counter must be protected by a lock since llm_query_batched uses
         ThreadPoolExecutor for concurrent execution.
         """
-        import dspy
         from concurrent.futures import ThreadPoolExecutor
         from unittest.mock import MagicMock
 
-        # Create a mock LM that returns quickly
         mock_lm = MagicMock()
         mock_lm.return_value = ["response"]
 
         rlm = RLM("context -> answer", max_llm_calls=10, sub_lm=mock_lm)
         tools = rlm._make_llm_tools()
 
-        # Call llm_query concurrently from multiple threads
-        # If the counter isn't thread-safe, we might exceed the limit or get wrong counts
         call_count = [0]
         errors = []
 
@@ -223,11 +252,9 @@ class TestRLMInitialization:
             for f in futures:
                 f.result()
 
-        # All 10 calls should succeed (within the limit)
         assert call_count[0] == 10, f"Expected 10 successful calls, got {call_count[0]}"
         assert len(errors) == 0, f"Unexpected errors: {errors}"
 
-        # Now verify the limit is enforced - next call should fail
         with pytest.raises(RuntimeError, match="LLM call limit exceeded"):
             tools["llm_query"](prompt="one more")
 

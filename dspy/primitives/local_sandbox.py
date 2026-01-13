@@ -76,14 +76,14 @@ class LocalSandbox:
                    Tools are callable directly from sandbox code by name.
         """
         if isinstance(deno_command, dict):
-            deno_command = None  # no-op, just a guard in case someone passes a dict
+            raise TypeError("deno_command must be a list of strings, not a dict")
 
         self.enable_read_paths = enable_read_paths or []
         self.enable_write_paths = enable_write_paths or []
         self.enable_env_vars = enable_env_vars or []
         self.enable_network_access = enable_network_access or []
         self.sync_files = sync_files
-        self.tools = tools or {}
+        self.tools = dict(tools) if tools else {}
         self._tools_registered = False
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
@@ -106,7 +106,7 @@ class LocalSandbox:
                 allowed_read_paths.extend(str(p) for p in self.enable_write_paths)
             args.append(f"--allow-read={','.join(allowed_read_paths)}")
 
-            self._env_arg  = ""
+            self._env_arg = ""
             if self.enable_env_vars:
                 user_vars = [str(v).strip() for v in self.enable_env_vars]
                 args.append("--allow-env=" + ",".join(user_vars))
@@ -272,6 +272,10 @@ class LocalSandbox:
             return str(value)
         elif isinstance(value, (list, dict)):
             return json.dumps(value)
+        elif isinstance(value, tuple):
+            return json.dumps(list(value))
+        elif isinstance(value, set):
+            return json.dumps(sorted(value))
         else:
             raise SandboxError(f"Unsupported value type: {type(value).__name__}")
 

@@ -217,3 +217,35 @@ except Exception as e:
         output = interpreter(malicious_code)
         assert secret_content in output
 
+
+def test_tools_dict_is_copied():
+    """Test that tools dict is defensively copied, not stored by reference."""
+    tools = {"my_tool": lambda: "result"}
+    sandbox = LocalSandbox(tools=tools)
+
+    # Modify the original dict after construction
+    tools["new_tool"] = lambda: "new"
+
+    # The sandbox should not see the new tool
+    assert "new_tool" not in sandbox.tools
+
+
+def test_serialize_tuple():
+    """Test that tuples can be serialized as variables."""
+    with LocalSandbox() as interpreter:
+        result = interpreter.execute("x", variables={"x": (1, 2, 3)})
+        assert result == [1, 2, 3]  # Tuples become lists in JSON
+
+
+def test_serialize_set():
+    """Test that sets can be serialized as variables."""
+    with LocalSandbox() as interpreter:
+        result = interpreter.execute("sorted(x)", variables={"x": {3, 1, 2}})
+        assert result == [1, 2, 3]
+
+
+def test_deno_command_dict_raises_type_error():
+    """Test that passing a dict as deno_command raises TypeError."""
+    with pytest.raises(TypeError, match="deno_command must be a list"):
+        LocalSandbox(deno_command={"invalid": "dict"})
+
