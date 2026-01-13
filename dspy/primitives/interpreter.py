@@ -1,10 +1,10 @@
 """
-Abstract sandbox interface for code execution environments.
+Abstract interpreter interface for code execution environments.
 
-This module defines the Sandbox protocol that allows RLM and other
-code-executing modules to work with different sandbox implementations:
-- LocalSandbox: Local Deno/Pyodide WASM sandbox
-- MockSandbox: Scriptable responses for testing
+This module defines the Interpreter protocol that allows RLM and other
+code-executing modules to work with different interpreter implementations:
+- LocalInterpreter: Local Deno/Pyodide WASM interpreter
+- MockInterpreter: Scriptable responses for testing
 """
 
 from typing import Any, Callable, Protocol, runtime_checkable
@@ -13,8 +13,8 @@ from typing import Any, Callable, Protocol, runtime_checkable
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
-class SandboxError(RuntimeError):
-    """Error raised during code execution in a sandbox.
+class InterpreterError(RuntimeError):
+    """Error raised during code execution in an interpreter.
 
     This covers runtime errors, undefined variables, tool call failures, etc.
     SyntaxError is raised separately for invalid Python syntax.
@@ -22,7 +22,7 @@ class SandboxError(RuntimeError):
 
 
 class FinalAnswerResult:
-    """Returned by sandbox.execute() when FINAL() or FINAL_VAR() is called.
+    """Returned by interpreter.execute() when FINAL() or FINAL_VAR() is called.
 
     This signals that the code execution loop should terminate and return
     the contained answer to the caller.
@@ -41,38 +41,38 @@ class FinalAnswerResult:
 
 
 @runtime_checkable
-class Sandbox(Protocol):
-    """Protocol for code execution environments (sandboxes).
+class Interpreter(Protocol):
+    """Protocol for code execution environments (interpreters).
 
     Implementations must provide:
-    - start(): Initialize the sandbox (optional, can be lazy)
+    - start(): Initialize the interpreter (optional, can be lazy)
     - execute(): Run code and return results
     - shutdown(): Clean up resources
 
-    The sandbox maintains state across execute() calls within a session,
+    The interpreter maintains state across execute() calls within a session,
     allowing variables defined in one call to be used in subsequent calls.
 
     Lifecycle:
         1. Create instance (config only, no resources allocated)
-        2. start() - Initialize sandbox (explicit) or let execute() do it (lazy)
+        2. start() - Initialize interpreter (explicit) or let execute() do it (lazy)
         3. execute() - Run code (can be called many times)
         4. shutdown() - Release resources
 
     Example implementations:
-        - LocalSandbox: Deno/Pyodide WASM sandbox (local)
-        - MockSandbox: Scriptable responses for testing
+        - LocalInterpreter: Deno/Pyodide WASM interpreter (local)
+        - MockInterpreter: Scriptable responses for testing
 
     Pooling:
-        For sandbox pooling, call start() to pre-warm instances, then
+        For interpreter pooling, call start() to pre-warm instances, then
         distribute execute() calls across the pool.
     """
 
     @property
     def tools(self) -> dict[str, Callable[..., str]]:
-        """Tools available for sandbox code to call.
+        """Tools available for interpreter code to call.
 
         Tools are host-side functions that can be invoked from within the
-        sandbox. Each tool accepts keyword arguments and returns a string.
+        interpreter. Each tool accepts keyword arguments and returns a string.
 
         Implementations should accept tools via constructor and expose them
         through this property.
@@ -80,10 +80,10 @@ class Sandbox(Protocol):
         ...
 
     def start(self) -> None:
-        """Initialize the sandbox and allocate resources.
+        """Initialize the interpreter and allocate resources.
 
-        This method prepares the sandbox for code execution. It can be called
-        explicitly to pre-warm the sandbox, or implementations may call it
+        This method prepares the interpreter for code execution. It can be called
+        explicitly to pre-warm the interpreter, or implementations may call it
         lazily on first execute().
 
         For pooling scenarios, call start() on multiple instances to have
@@ -113,7 +113,7 @@ class Sandbox(Protocol):
             - None: If no output was produced
 
         Raises:
-            SandboxError: On runtime errors (undefined vars, tool failures, etc.)
+            InterpreterError: On runtime errors (undefined vars, tool failures, etc.)
             SyntaxError: On invalid Python syntax
 
         Note:
@@ -125,9 +125,9 @@ class Sandbox(Protocol):
         ...
 
     def shutdown(self) -> None:
-        """Release resources and terminate the sandbox session.
+        """Release resources and terminate the interpreter session.
 
-        After shutdown(), the sandbox should not be used again.
+        After shutdown(), the interpreter should not be used again.
         A new instance should be created for a fresh session.
         """
         ...

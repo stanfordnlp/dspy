@@ -7,7 +7,6 @@ to programmatically examine, decompose, and recursively call sub-LLMs over snipp
 
 Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 """
-
 from __future__ import annotations
 
 import json
@@ -23,10 +22,10 @@ from pydantic import Field
 
 import dspy
 from dspy.adapters.utils import parse_value
-from dspy.primitives.local_sandbox import LocalSandbox
+from dspy.primitives.local_sandbox import PythonInterpreter
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
-from dspy.primitives.sandbox import SIMPLE_TYPES, FinalAnswerResult, Sandbox, SandboxError
+from dspy.primitives.sandbox import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
 from dspy.signatures.signature import ensure_signature
 
 if TYPE_CHECKING:
@@ -36,13 +35,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
-# =============================================================================
-# Prompt Templates
-# =============================================================================
-
-# TODO: Convert llm_query, llm_query_batched, FINAL, FINAL_VAR to dspy.Tool objects
-# and add them to the signature for better discoverability.
+# TODO: Optimize this prompt across a diverse benchmark
 
 ACTION_INSTRUCTIONS_TEMPLATE = """You are tasked with producing {outputs} given the inputs {inputs}. You can access, transform, and analyze these inputs interactively in a REPL environment that can recursively query sub-LLMs, which you are strongly encouraged to use. You will be queried iteratively until you provide a final answer.
 
@@ -64,19 +57,11 @@ IMPORTANT: Do not submit a final answer on your first turn - explore the data fi
 1. Use FINAL({outputs}) to provide the answer directly
 2. Use FINAL_VAR("variable_name") to return a variable you created in the REPL as your final output"""
 
-EXTRACT_INSTRUCTIONS_TEMPLATE = """You ran out of iterations. Based on your REPL trajectory, extract the final outputs now.
-
-Review your trajectory to see what information you gathered and what values you computed, then provide the final outputs."""
-
-
-DEFAULT_MAX_LLM_CALLS = 50
-
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
 _CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*?)\n```\s*$", re.DOTALL)
 
 
 def _strip_code_fences(code: str) -> str:
-    """Strip markdown code fences from LLM-generated code."""
     code = code.strip()
     match = _CODE_FENCE_PATTERN.match(code)
     if match:
@@ -91,8 +76,8 @@ class RLM(Module):
     through code execution. The LLM writes Python code to examine data, call
     sub-LLMs for semantic analysis, and build up answers iteratively.
 
-    The default sandbox is LocalSandbox (Deno/Pyodide/WASM), but you
-    can provide any Sandbox implementation (e.g., MockSandbox).
+    The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but you
+    can provide any Interpreter implementation (e.g., MockInterpreter, or write a custom one using E2B or Modal).
 
     Example:
         ```python
@@ -100,11 +85,6 @@ class RLM(Module):
         rlm = dspy.RLM("context, query -> answer", max_iterations=10)
         result = rlm(context="...very long text...", query="What is the magic number?")
         print(result.answer)
-
-        # With custom sandbox
-        from dspy.primitives import MockSandbox
-        mock = MockSandbox(responses=["explored", FinalAnswerResult("42")])
-        rlm = dspy.RLM("context -> answer", interpreter=mock)
         ```
     """
 
@@ -112,15 +92,14 @@ class RLM(Module):
         self,
         signature: type[Signature] | str,
         max_iterations: int = 20,
-        max_llm_calls: int = DEFAULT_MAX_LLM_CALLS,
+        max_llm_calls: int = 50,
         max_output_chars: int = 100_000,
         verbose: bool = False,
         tools: dict[str, Callable[..., str]] | None = None,
         sub_lm: dspy.LM | None = None,
-        interpreter: Sandbox | None = None,
+        interpreter: Interpreter | None = None,
     ):
-        """Initialize the RLM module.
-
+        """
         Args:
             signature: Defines inputs and outputs. String like "context, query -> answer"
                       or a Signature class.
@@ -128,12 +107,11 @@ class RLM(Module):
             max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched) per execution.
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
-            tools: Additional tool functions callable from sandbox code.
+            tools: Additional tool functions callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
-            interpreter: Sandbox implementation to use. Defaults to LocalSandbox.
-                        Pass a MockSandbox for testing.
+            interpreter: Interpreter implementation to use. Defaults to PythonInterpreter.
         """
         super().__init__()
         self.signature = ensure_signature(signature)
@@ -245,10 +223,14 @@ class RLM(Module):
             .append("code", dspy.OutputField(desc="Python code to execute. Use print() to see results, llm_query() for semantic analysis, FINAL()/FINAL_VAR() to submit."), type_=str)
         )
 
-        # Extract signature: includes the original output fields directly (like ReAct's fallback)
+        # Extract signature: includes the original signature's output fields.
+        extract_instructions = """You ran out of iterations. Based on your REPL trajectory, extract the final outputs now.
+
+            Review your trajectory to see what information you gathered and what values you computed, then provide the final outputs."""
+
         extract_sig = dspy.Signature(
             {**self.signature.output_fields},
-            EXTRACT_INSTRUCTIONS_TEMPLATE.format(outputs=outputs_str),
+            extract_instructions,
         )
         extract_sig = extract_sig.prepend("repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory)
         extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
@@ -297,12 +279,12 @@ class RLM(Module):
         return execution_tools
 
     @contextmanager
-    def _sandbox_context(self, execution_tools: dict[str, Callable]) -> Iterator[Sandbox]:
-        """Yield sandbox, creating LocalSandbox if none provided at init."""
+    def _interpreter_context(self, execution_tools: dict[str, Callable]) -> Iterator[Interpreter]:
+        """Yield interpreter, creating PythonInterpreter if none provided at init."""
         if self._interpreter is not None:
             yield self._interpreter
         else:
-            repl = LocalSandbox(
+            repl = PythonInterpreter(
                 tools=execution_tools,
                 output_fields=self._get_output_fields_info(),
             )
@@ -369,7 +351,7 @@ class RLM(Module):
 
     def _execute_iteration(
         self,
-        repl: Sandbox,
+        repl: Interpreter,
         variables: list[REPLVariable],
         history: REPLHistory,
         iteration: int,
@@ -377,7 +359,7 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
-        pred = self.generate_action(
+        action = self.generate_action(
             variables_info=variables,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iterations}",
@@ -385,12 +367,12 @@ class RLM(Module):
         if self.verbose:
             logger.info(
                 f"RLM iteration {iteration + 1}/{self.max_iterations}\n"
-                f"Reasoning: {pred.reasoning}\nCode:\n{pred.code}"
+                f"Reasoning: {action.reasoning}\nCode:\n{action.code}"
             )
 
         try:
             # Strip markdown code fences if present
-            code = _strip_code_fences(pred.code)
+            code = _strip_code_fences(action.code)
             # Always inject input variables - ensures they're available even if sandbox restarts
             result = repl.execute(code, variables=dict(input_args))
 
@@ -398,15 +380,15 @@ class RLM(Module):
                 parsed_outputs, error = self._process_final_answer(result, output_field_names)
 
                 if error:
-                    return history.append(reasoning=pred.reasoning, code=pred.code, output=error)
+                    return history.append(reasoning=action.reasoning, code=action.code, output=error)
 
                 final_history = history.append(
-                    reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}"
+                    reasoning=action.reasoning, code=action.code, output=f"FINAL: {parsed_outputs}"
                 )
                 return Prediction(
                     **parsed_outputs,
                     trajectory=[e.model_dump() for e in final_history],
-                    final_reasoning=pred.reasoning,
+                    final_reasoning=action.reasoning,
                 )
 
             # Format non-final result as output
@@ -415,11 +397,11 @@ class RLM(Module):
             else:
                 output = str(result) if result else ""
 
-        except (SandboxError, SyntaxError) as e:
+        except (InterpreterError, SyntaxError) as e:
             output = f"[Error] {e}"
 
         output = self._format_output(output)
-        return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+        return history.append(reasoning=action.reasoning, code=action.code, output=output)
 
     def forward(self, **input_args) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
@@ -439,7 +421,7 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._sandbox_context(execution_tools) as repl:
+        with self._interpreter_context(execution_tools) as repl:
             history = REPLHistory()
 
             for iteration in range(self.max_iterations):
@@ -475,7 +457,7 @@ class RLM(Module):
 
     async def _aexecute_iteration(
         self,
-        repl: Sandbox,
+        repl: Interpreter,
         variables: list[REPLVariable],
         history: REPLHistory,
         iteration: int,
@@ -518,7 +500,7 @@ class RLM(Module):
             else:
                 output = str(result) if result else ""
 
-        except (SandboxError, SyntaxError) as e:
+        except (InterpreterError, SyntaxError) as e:
             output = f"[Error] {e}"
 
         output = self._format_output(output)
@@ -542,7 +524,7 @@ class RLM(Module):
         execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
 
-        with self._sandbox_context(execution_tools) as repl:
+        with self._interpreter_context(execution_tools) as repl:
             history = REPLHistory()
 
             for iteration in range(self.max_iterations):
@@ -560,9 +542,6 @@ class RLM(Module):
 # =============================================================================
 # REPL Types (internal to RLM)
 # =============================================================================
-
-EMPTY_HISTORY_MESSAGE = "You have not interacted with the REPL environment yet."
-
 
 class REPLVariable(pydantic.BaseModel):
     """Metadata about a variable available in the REPL environment."""
@@ -664,9 +643,8 @@ class REPLHistory(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(frozen=True)
 
     def format(self, max_output_chars: int = 5000) -> str:
-        """Format the history for inclusion in prompts."""
         if not self.entries:
-            return EMPTY_HISTORY_MESSAGE
+            return "You have not interacted with the REPL environment yet."
         return "\n".join(entry.format(index=i, max_output_chars=max_output_chars) for i, entry in enumerate(self.entries))
 
     @pydantic.model_serializer()

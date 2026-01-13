@@ -2,8 +2,8 @@
 Tests for the RLM (Recursive Language Model) module.
 
 Test organization:
-- Unit tests (no Deno required): MockSandbox, RLM formatting, signatures
-- Integration tests (@pytest.mark.integration): LocalSandbox with Deno
+- Unit tests (no Deno required): MockInterpreter, RLM formatting, signatures
+- Integration tests (@pytest.mark.integration): PythonInterpreter with Deno
 """
 
 import random
@@ -11,43 +11,43 @@ import random
 import pytest
 
 from dspy.predict.rlm import RLM, REPLEntry, REPLHistory, REPLVariable
-from dspy.primitives.local_sandbox import LocalSandbox
-from dspy.primitives.mock_sandbox import MockSandbox
-from dspy.primitives.sandbox import FinalAnswerResult, SandboxError
+from dspy.primitives.local_interpreter import PythonInterpreter
+from dspy.primitives.interpreter import FinalAnswerResult, InterpreterError
+from tests.mock_interpreter import MockInterpreter
 
 # ============================================================================
-# Unit Tests: MockSandbox
+# Unit Tests: MockInterpreter
 # ============================================================================
 
 
-class TestMockSandbox:
-    """Unit tests for MockSandbox."""
+class TestMockInterpreter:
+    """Unit tests for MockInterpreter."""
 
     def test_scripted_responses(self):
-        """Test that MockSandbox returns scripted responses in order."""
-        mock = MockSandbox(responses=["first", "second", "third"])
+        """Test that MockInterpreter returns scripted responses in order."""
+        mock = MockInterpreter(responses=["first", "second", "third"])
         assert mock.execute("code1") == "first"
         assert mock.execute("code2") == "second"
         assert mock.execute("code3") == "third"
 
     def test_returns_final_answer_result(self):
-        """Test that MockSandbox can return FinalAnswerResult."""
-        mock = MockSandbox(responses=["exploring", FinalAnswerResult("42")])
+        """Test that MockInterpreter can return FinalAnswerResult."""
+        mock = MockInterpreter(responses=["exploring", FinalAnswerResult("42")])
         assert mock.execute("print(len(data))") == "exploring"
         result = mock.execute("FINAL('42')")
         assert isinstance(result, FinalAnswerResult)
         assert result.answer == "42"
 
     def test_raises_exception_from_responses(self):
-        """Test that MockSandbox raises exceptions from responses."""
-        mock = MockSandbox(responses=["ok", SandboxError("undefined variable")])
+        """Test that MockInterpreter raises exceptions from responses."""
+        mock = MockInterpreter(responses=["ok", InterpreterError("undefined variable")])
         assert mock.execute("code1") == "ok"
-        with pytest.raises(SandboxError, match="undefined variable"):
+        with pytest.raises(InterpreterError, match="undefined variable"):
             mock.execute("code2")
 
     def test_records_call_history(self):
-        """Test that MockSandbox records call history for test assertions."""
-        mock = MockSandbox(responses=["resp"])
+        """Test that MockInterpreter records call history for test assertions."""
+        mock = MockInterpreter(responses=["resp"])
         mock.execute("print(1)", variables={"x": 10})
         assert mock.call_history == [("print(1)", {"x": 10})]
 
@@ -123,7 +123,7 @@ class TestRLMInitialization:
 
     def test_interpreter_parameter(self):
         """Test RLM accepts interpreter parameter."""
-        mock = MockSandbox()
+        mock = MockInterpreter()
         rlm = RLM("context -> answer", interpreter=mock)
         assert rlm._interpreter is mock
 
@@ -151,7 +151,7 @@ class TestRLMInitialization:
 
     def test_forward_validates_required_inputs(self):
         """Test that forward() raises ValueError for missing required inputs."""
-        mock = MockSandbox(responses=["result"])
+        mock = MockInterpreter(responses=["result"])
         rlm = RLM("context, query -> answer", max_iterations=3, interpreter=mock)
 
         with pytest.raises(ValueError, match="Missing required input"):
@@ -159,7 +159,7 @@ class TestRLMInitialization:
 
     def test_forward_validates_all_missing_inputs(self):
         """Test that forward() reports all missing inputs."""
-        mock = MockSandbox(responses=["result"])
+        mock = MockInterpreter(responses=["result"])
         rlm = RLM("a, b, c -> answer", max_iterations=3, interpreter=mock)
 
         with pytest.raises(ValueError) as exc_info:
@@ -433,17 +433,17 @@ class TestRLMDynamicSignature:
 
 
 # ============================================================================
-# Integration Tests: LocalSandbox (require Deno)
+# Integration Tests: PythonInterpreter (require Deno)
 # ============================================================================
 
 
 @pytest.mark.integration
-class TestLocalSandbox:
+class TestPythonInterpreter:
     """Integration tests for the secure sandbox with tool support."""
 
     def test_start_prewarms_sandbox(self):
         """Test that start() pre-warms the sandbox."""
-        interp = LocalSandbox()
+        interp = PythonInterpreter()
         try:
             # Before start, deno_process should be None
             assert interp.deno_process is None
@@ -459,7 +459,7 @@ class TestLocalSandbox:
 
     def test_start_is_idempotent(self):
         """Test that start() can be called multiple times safely."""
-        interp = LocalSandbox()
+        interp = PythonInterpreter()
         try:
             interp.start()
             first_process = interp.deno_process
@@ -470,13 +470,13 @@ class TestLocalSandbox:
 
     def test_basic_execution(self):
         """Test basic code execution."""
-        with LocalSandbox() as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute("print(1 + 1)")
             assert "2" in result
 
     def test_variable_injection(self):
         """Test variable injection."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             result = interp.execute(
                 "print(x + y)",
                 variables={"x": 10, "y": 5}
@@ -488,7 +488,7 @@ class TestLocalSandbox:
         def echo(message: str = "") -> str:
             return f"Echo: {message}"
 
-        with LocalSandbox(tools={"echo": echo}) as interp:
+        with PythonInterpreter(tools={"echo": echo}) as interp:
             result = interp.execute('print(echo(message="hello"))')
             assert "Echo: hello" in result
 
@@ -497,7 +497,7 @@ class TestLocalSandbox:
         def greet(name: str) -> str:
             return f"Hello: {name}"
 
-        with LocalSandbox(tools={"greet": greet}) as interp:
+        with PythonInterpreter(tools={"greet": greet}) as interp:
             result = interp.execute('print(greet("world"))')
             assert "Hello: world" in result
 
@@ -509,7 +509,7 @@ class TestLocalSandbox:
         def multiply(a: int = 0, b: int = 0) -> str:
             return str(a * b)
 
-        with LocalSandbox(tools={"add": add, "multiply": multiply}) as interp:
+        with PythonInterpreter(tools={"add": add, "multiply": multiply}) as interp:
             result = interp.execute("""
 sum_result = add(a=3, b=4)
 prod_result = multiply(a=3, b=4)
@@ -524,7 +524,7 @@ print(f"Sum: {sum_result}, Product: {prod_result}")
             items = items or []
             return [f"processed_{item}" for item in items]
 
-        with LocalSandbox(tools={"batch_process": batch_process}) as interp:
+        with PythonInterpreter(tools={"batch_process": batch_process}) as interp:
             result = interp.execute("""
 results = batch_process(items=["a", "b", "c"])
 print(f"Type: {type(results).__name__}")
@@ -541,7 +541,7 @@ print(f"All: {results}")
         def get_info() -> dict:
             return {"name": "test", "count": 42}
 
-        with LocalSandbox(tools={"get_info": get_info}) as interp:
+        with PythonInterpreter(tools={"get_info": get_info}) as interp:
             result = interp.execute("""
 info = get_info()
 print(f"Type: {type(info).__name__}")
@@ -554,26 +554,26 @@ print(f"Count: {info['count']}")
 
     def test_state_persists(self):
         """Test that state persists across executions."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             interp.execute("x = 10")
             result = interp.execute("print(x + 5)")
             assert "15" in result
 
     def test_syntax_error(self):
         """Test syntax error handling."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             with pytest.raises(SyntaxError):
                 interp.execute("def incomplete(")
 
     def test_runtime_error(self):
         """Test runtime error handling."""
-        with LocalSandbox(tools={}) as interp:
-            with pytest.raises(SandboxError):
+        with PythonInterpreter(tools={}) as interp:
+            with pytest.raises(InterpreterError):
                 interp.execute("undefined_variable")
 
     def test_final_answer(self):
         """Test FINAL() returns FinalAnswerResult with dict format."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             result = interp.execute('FINAL("the answer is 42")')
             assert isinstance(result, FinalAnswerResult)
             # Default FINAL wraps value in {"answer": value}
@@ -581,7 +581,7 @@ print(f"Count: {info['count']}")
 
     def test_final_var(self):
         """Test FINAL_VAR() returns variable value as FinalAnswerResult with dict format."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             interp.execute("my_answer = 'computed result'")
             result = interp.execute('FINAL_VAR("my_answer")')
             assert isinstance(result, FinalAnswerResult)
@@ -590,8 +590,8 @@ print(f"Count: {info['count']}")
 
     def test_final_var_not_found(self):
         """Test FINAL_VAR() raises error for undefined variable."""
-        with LocalSandbox(tools={}) as interp:
-            with pytest.raises(SandboxError) as exc_info:
+        with PythonInterpreter(tools={}) as interp:
+            with pytest.raises(InterpreterError) as exc_info:
                 interp.execute('FINAL_VAR("nonexistent")')
             assert "not found" in str(exc_info.value)
 
@@ -605,7 +605,7 @@ print(f"Count: {info['count']}")
     ])
     def test_final_answer_types(self, value, expected):
         """Test FINAL() correctly returns values of supported types."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             result = interp.execute(f"FINAL({value!r})")
             assert isinstance(result, FinalAnswerResult)
             assert result.answer == {"answer": expected}
@@ -620,7 +620,7 @@ print(f"Count: {info['count']}")
     ])
     def test_final_var_types(self, value, expected):
         """Test FINAL_VAR() correctly returns values of supported types."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             interp.execute(f"my_var = {value!r}")
             result = interp.execute('FINAL_VAR("my_var")')
             assert isinstance(result, FinalAnswerResult)
@@ -628,28 +628,28 @@ print(f"Count: {info['count']}")
 
     def test_final_answer_empty_string(self):
         """Test FINAL() with empty string."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             result = interp.execute('FINAL("")')
             assert isinstance(result, FinalAnswerResult)
             assert result.answer == {"answer": ""}
 
     def test_final_answer_unicode(self):
         """Test FINAL() with unicode characters."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             result = interp.execute('FINAL("こんにちは 🚀")')
             assert isinstance(result, FinalAnswerResult)
             assert result.answer == {"answer": "こんにちは 🚀"}
 
     def test_final_answer_special_chars(self):
         """Test FINAL() with special characters and escapes."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             result = interp.execute(r'FINAL("line1\nline2\ttab")')
             assert isinstance(result, FinalAnswerResult)
             assert result.answer == {"answer": "line1\nline2\ttab"}
 
     def test_final_var_complex_nested(self):
         """Test FINAL_VAR() with complex nested structures."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             interp.execute('data = {"list": [1, 2, {"nested": True}], "count": 42}')
             result = interp.execute('FINAL_VAR("data")')
             assert isinstance(result, FinalAnswerResult)
@@ -662,8 +662,8 @@ class TestSandboxSecurity:
 
     def test_no_network_access(self):
         """Test that network access is blocked."""
-        with LocalSandbox(tools={}) as interp:
-            with pytest.raises(SandboxError) as exc_info:
+        with PythonInterpreter(tools={}) as interp:
+            with pytest.raises(InterpreterError) as exc_info:
                 interp.execute("""
 from pyodide.http import pyfetch
 import asyncio
@@ -673,7 +673,7 @@ asyncio.get_event_loop().run_until_complete(pyfetch("https://example.com"))
 
     def test_imports_work(self):
         """Test that standard library imports work."""
-        with LocalSandbox(tools={}) as interp:
+        with PythonInterpreter(tools={}) as interp:
             result = interp.execute("""
 import json
 import re
@@ -685,19 +685,19 @@ print(json.dumps(data))
 
 
 # ============================================================================
-# Unit Tests: RLM with MockSandbox (no Deno required)
+# Unit Tests: RLM with MockInterpreter (no Deno required)
 # ============================================================================
 
 
 class TestRLMAsyncMock:
-    """Unit tests for RLM aforward() using MockSandbox (no Deno required)."""
+    """Unit tests for RLM aforward() using MockInterpreter (no Deno required)."""
 
     @pytest.mark.asyncio
     async def test_aforward_basic(self):
-        """Test aforward() returns Prediction with expected output (MockSandbox)."""
+        """Test aforward() returns Prediction with expected output (MockInterpreter)."""
         from dspy.primitives.prediction import Prediction
 
-        mock = MockSandbox(responses=[FinalAnswerResult({"answer": "42"})])
+        mock = MockInterpreter(responses=[FinalAnswerResult({"answer": "42"})])
         rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
 
         class MockPredictor:
@@ -711,10 +711,10 @@ class TestRLMAsyncMock:
 
     @pytest.mark.asyncio
     async def test_aforward_int_output_mock(self):
-        """Test aforward() returns int when signature expects int (MockSandbox)."""
+        """Test aforward() returns int when signature expects int (MockInterpreter)."""
         from dspy.primitives.prediction import Prediction
 
-        mock = MockSandbox(responses=[FinalAnswerResult({"count": 42})])
+        mock = MockInterpreter(responses=[FinalAnswerResult({"count": 42})])
         rlm = RLM("query -> count: int", max_iterations=3, interpreter=mock)
 
         class MockPredictor:
@@ -729,10 +729,10 @@ class TestRLMAsyncMock:
 
     @pytest.mark.asyncio
     async def test_aforward_multi_iteration_mock(self):
-        """Test aforward() handles multiple iterations before FINAL (MockSandbox)."""
+        """Test aforward() handles multiple iterations before FINAL (MockInterpreter)."""
         from dspy.primitives.prediction import Prediction
 
-        mock = MockSandbox(responses=[
+        mock = MockInterpreter(responses=[
             "explored data",
             FinalAnswerResult({"answer": "done"}),
         ])
@@ -755,14 +755,14 @@ class TestRLMAsyncMock:
 
 
 class TestRLMTypeCoercionMock:
-    """Unit tests for RLM type coercion using MockSandbox (no Deno required)."""
+    """Unit tests for RLM type coercion using MockInterpreter (no Deno required)."""
 
     def test_rlm_int_output_mock(self):
-        """Test RLM returns int when signature expects int (MockSandbox)."""
+        """Test RLM returns int when signature expects int (MockInterpreter)."""
         from dspy.primitives.prediction import Prediction
 
         # FinalAnswerResult must use dict format with field names matching signature
-        mock = MockSandbox(responses=[FinalAnswerResult({"count": 42})])
+        mock = MockInterpreter(responses=[FinalAnswerResult({"count": 42})])
         rlm = RLM("query -> count: int", max_iterations=3, interpreter=mock)
 
         class MockPredictor:
@@ -776,11 +776,11 @@ class TestRLMTypeCoercionMock:
         assert isinstance(result.count, int)
 
     def test_rlm_literal_output_mock(self):
-        """Test RLM returns valid Literal value (MockSandbox)."""
+        """Test RLM returns valid Literal value (MockInterpreter)."""
         from dspy.primitives.prediction import Prediction
 
         # FinalAnswerResult must use dict format with field names matching signature
-        mock = MockSandbox(responses=[FinalAnswerResult({"answer": "yes"})])
+        mock = MockInterpreter(responses=[FinalAnswerResult({"answer": "yes"})])
         rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=3, interpreter=mock)
 
         class MockPredictor:
@@ -793,11 +793,11 @@ class TestRLMTypeCoercionMock:
         assert result.answer == "yes"
 
     def test_rlm_list_output_mock(self):
-        """Test RLM returns list when signature expects list (MockSandbox)."""
+        """Test RLM returns list when signature expects list (MockInterpreter)."""
         from dspy.primitives.prediction import Prediction
 
         # FinalAnswerResult must use dict format with field names matching signature
-        mock = MockSandbox(responses=[FinalAnswerResult({"numbers": [1, 2, 3]})])
+        mock = MockInterpreter(responses=[FinalAnswerResult({"numbers": [1, 2, 3]})])
         rlm = RLM("query -> numbers: list[int]", max_iterations=3, interpreter=mock)
 
         class MockPredictor:
@@ -811,12 +811,12 @@ class TestRLMTypeCoercionMock:
         assert isinstance(result.numbers, list)
 
     def test_rlm_type_error_retries_mock(self):
-        """Test RLM retries when type validation fails (MockSandbox)."""
+        """Test RLM retries when type validation fails (MockInterpreter)."""
         from dspy.primitives.prediction import Prediction
 
-        # MockSandbox returns responses in order
+        # MockInterpreter returns responses in order
         # FinalAnswerResult must use dict format with field names matching signature
-        mock = MockSandbox(responses=[
+        mock = MockInterpreter(responses=[
             FinalAnswerResult({"answer": "maybe"}),  # Invalid for Literal
             FinalAnswerResult({"answer": "yes"}),    # Valid
         ])
@@ -840,15 +840,15 @@ class TestRLMTypeCoercionMock:
 
 
 # ============================================================================
-# Integration Tests: RLM Type Coercion with LocalSandbox
+# Integration Tests: RLM Type Coercion with PythonInterpreter
 # ============================================================================
 
 
 @pytest.mark.integration
 class TestRLMTypeCoercion:
-    """Tests for RLM type coercion through full forward pass with LocalSandbox.
+    """Tests for RLM type coercion through full forward pass with PythonInterpreter.
 
-    Note: These tests let RLM create its own LocalSandbox so it can register
+    Note: These tests let RLM create its own PythonInterpreter so it can register
     typed output_fields for FINAL based on the signature.
     """
 
@@ -971,20 +971,20 @@ class TestRLMTypeCoercion:
 
 
 # ============================================================================
-# Integration Tests: RLM with DummyLM and LocalSandbox
+# Integration Tests: RLM with DummyLM and PythonInterpreter
 # ============================================================================
 
 
 @pytest.mark.integration
 class TestRLMWithDummyLM:
-    """End-to-end tests using DummyLM with RLM and LocalSandbox.
+    """End-to-end tests using DummyLM with RLM and PythonInterpreter.
 
-    Note: These tests let RLM create its own LocalSandbox so it can register
+    Note: These tests let RLM create its own PythonInterpreter so it can register
     typed output_fields for FINAL based on the signature.
     """
 
     def test_simple_computation_e2e(self):
-        """Test full RLM pipeline: DummyLM -> RLM -> LocalSandbox -> result."""
+        """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         import dspy
         from dspy.utils.dummies import DummyLM
 
@@ -1048,7 +1048,7 @@ class TestRLMWithDummyLM:
         ])
 
         with dspy.context(lm=lm):
-            # Pass custom tools to RLM, which will pass them to its LocalSandbox
+            # Pass custom tools to RLM, which will pass them to its PythonInterpreter
             rlm = RLM("fruit -> color: str", max_iterations=3, tools={"lookup": lookup})
             result = rlm.forward(fruit="apple")
 
@@ -1056,7 +1056,7 @@ class TestRLMWithDummyLM:
 
     @pytest.mark.asyncio
     async def test_aforward_simple_computation_e2e(self):
-        """Test aforward() full pipeline: DummyLM -> RLM -> LocalSandbox -> result."""
+        """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
         import dspy
         from dspy.utils.dummies import DummyLM
 

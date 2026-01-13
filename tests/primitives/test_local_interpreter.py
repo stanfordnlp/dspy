@@ -4,7 +4,8 @@ import shutil
 
 import pytest
 
-from dspy.primitives.local_sandbox import LocalSandbox, SandboxError
+from dspy.primitives.local_interpreter import PythonInterpreter
+from dspy.primitives.interpreter import InterpreterError
 
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 if shutil.which("deno") is None:
@@ -12,21 +13,21 @@ if shutil.which("deno") is None:
 
 
 def test_execute_simple_code():
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         code = "print('Hello, World!')"
         result = interpreter.execute(code)
         assert result == "Hello, World!\n", "Simple print statement should return 'Hello World!\n'"
 
 
 def test_import():
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         code = "import math\nresult = math.sqrt(4)\nresult"
         result = interpreter.execute(code)
         assert result == 2, "Should be able to import and use math.sqrt"
 
 
 def test_user_variable_definitions():
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         code = "result = number + 1\nresult"
         result = interpreter.execute(code, variables={"number": 4})
         assert result == 5, "User variable assignment should work"
@@ -34,43 +35,43 @@ def test_user_variable_definitions():
 
 def test_rejects_python_keywords_as_variable_names():
     """Test that Python keywords are rejected as variable names."""
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         # These are valid Python identifiers but reserved keywords
         # Using them as variable names would cause syntax errors
         keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
 
         for keyword in keywords_to_test:
-            with pytest.raises(SandboxError, match="Invalid variable name"):
+            with pytest.raises(InterpreterError, match="Invalid variable name"):
                 interpreter.execute("print(x)", variables={keyword: 42})
 
 
 def test_failure_syntax_error():
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         code = "+++"
         with pytest.raises(SyntaxError, match="Invalid Python syntax"):
             interpreter.execute(code)
 
 
 def test_failure_zero_division():
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         code = "1+0/0"
-        with pytest.raises(SandboxError, match="ZeroDivisionError"):
+        with pytest.raises(InterpreterError, match="ZeroDivisionError"):
             interpreter.execute(code)
 
 
 def test_exception_args():
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"raise ValueError({token})"
-        with pytest.raises(SandboxError, match=rf"ValueError: \[{token}\]"):
+        with pytest.raises(InterpreterError, match=rf"ValueError: \[{token}\]"):
             interpreter.execute(code)
 
 
 def test_final_with_list():
     """Test FINAL() with a list argument returns FinalAnswerResult with dict format."""
-    from dspy.primitives.sandbox import FinalAnswerResult
+    from dspy.primitives.interpreter import FinalAnswerResult
 
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"FINAL(['The result is', {token}])"
         result = interpreter(code)
@@ -82,12 +83,12 @@ def test_final_with_list():
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
 
-    with LocalSandbox(enable_env_vars=None) as interpreter:
+    with PythonInterpreter(enable_env_vars=None) as interpreter:
         code = "import os\nresult = os.getenv('FOO_TEST_ENV')\nresult"
         result = interpreter.execute(code)
         assert result == "", "Environment variables should be inaccessible without allow-env"
 
-    with LocalSandbox(enable_env_vars=["FOO_TEST_ENV"]) as interpreter:
+    with PythonInterpreter(enable_env_vars=["FOO_TEST_ENV"]) as interpreter:
         code = "import os\nresult = os.getenv('FOO_TEST_ENV')\nresult"
         result = interpreter.execute(code)
         assert result == "test_value", "Environment variables should be accessible with allow-env"
@@ -100,7 +101,7 @@ def test_read_file_access_control(tmp_path):
     with open(testfile_path, "w") as f:
         f.write("test content")
 
-    with LocalSandbox(enable_read_paths=[str(testfile_path)]) as interpreter:
+    with PythonInterpreter(enable_read_paths=[str(testfile_path)]) as interpreter:
         code = (
             f"with open({virtual_path!r}, 'r') as f:\n"
             f"    data = f.read()\n"
@@ -109,7 +110,7 @@ def test_read_file_access_control(tmp_path):
         result = interpreter.execute(code)
         assert result == "test content", "Test file should be accessible with enable_read_paths and specified file"
 
-    with LocalSandbox(enable_read_paths=None) as interpreter:
+    with PythonInterpreter(enable_read_paths=None) as interpreter:
         code = (
             f"try:\n"
             f"    with open({virtual_path!r}, 'r') as f:\n"
@@ -125,7 +126,7 @@ def test_enable_write_flag(tmp_path):
     testfile_path = tmp_path / "test_temp_output.txt"
     virtual_path = f"/sandbox/{testfile_path.name}"
 
-    with LocalSandbox(enable_write_paths=None) as interpreter:
+    with PythonInterpreter(enable_write_paths=None) as interpreter:
         code = (
             f"try:\n"
             f"    with open({virtual_path!r}, 'w') as f:\n"
@@ -138,7 +139,7 @@ def test_enable_write_flag(tmp_path):
         result = interpreter.execute(code)
         assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be writable without enable_write_paths"
 
-    with LocalSandbox(enable_write_paths=[str(testfile_path)]) as interpreter:
+    with PythonInterpreter(enable_write_paths=[str(testfile_path)]) as interpreter:
         code = (
             f"with open({virtual_path!r}, 'w') as f:\n"
             f"    f.write('allowed')\n"
@@ -152,7 +153,7 @@ def test_enable_write_flag(tmp_path):
 
     with open(testfile_path, "w") as f:
         f.write("original_content")
-    with LocalSandbox(enable_write_paths=[str(testfile_path)], sync_files=False) as interpreter:
+    with PythonInterpreter(enable_write_paths=[str(testfile_path)], sync_files=False) as interpreter:
         code = (
             f"with open({virtual_path!r}, 'w') as f:\n"
             f"    f.write('should_not_sync')\n"
@@ -168,16 +169,16 @@ def test_enable_write_flag(tmp_path):
 def test_enable_net_flag():
     test_url = "https://example.com"
 
-    with LocalSandbox(enable_network_access=None) as interpreter:
+    with PythonInterpreter(enable_network_access=None) as interpreter:
         code = (
             "import js\n"
             f"resp = await js.fetch({test_url!r})\n"
             "resp.status"
         )
-        with pytest.raises(SandboxError, match="PythonError"):
+        with pytest.raises(InterpreterError, match="PythonError"):
             interpreter.execute(code)
 
-    with LocalSandbox(enable_network_access=["example.com"]) as interpreter:
+    with PythonInterpreter(enable_network_access=["example.com"]) as interpreter:
         code = (
             "import js\n"
             f"resp = await js.fetch({test_url!r})\n"
@@ -208,13 +209,13 @@ except Exception as e:
     print(f"Error: {{e}}")
 """
 
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         output = interpreter(malicious_code)
         assert "Requires read access" in output
         assert secret_content not in output
 
     # 3. Attempt to read the file WITH permission
-    with LocalSandbox(enable_read_paths=[secret_path_str]) as interpreter:
+    with PythonInterpreter(enable_read_paths=[secret_path_str]) as interpreter:
         output = interpreter(malicious_code)
         assert secret_content in output
 
@@ -222,7 +223,7 @@ except Exception as e:
 def test_tools_dict_is_copied():
     """Test that tools dict is defensively copied, not stored by reference."""
     tools = {"my_tool": lambda: "result"}
-    sandbox = LocalSandbox(tools=tools)
+    sandbox = PythonInterpreter(tools=tools)
 
     # Modify the original dict after construction
     tools["new_tool"] = lambda: "new"
@@ -233,14 +234,14 @@ def test_tools_dict_is_copied():
 
 def test_serialize_tuple():
     """Test that tuples can be serialized as variables."""
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         result = interpreter.execute("x", variables={"x": (1, 2, 3)})
         assert result == [1, 2, 3]  # Tuples become lists in JSON
 
 
 def test_serialize_set():
     """Test that sets can be serialized as variables."""
-    with LocalSandbox() as interpreter:
+    with PythonInterpreter() as interpreter:
         result = interpreter.execute("sorted(x)", variables={"x": {3, 1, 2}})
         assert result == [1, 2, 3]
 
@@ -248,7 +249,7 @@ def test_serialize_set():
 def test_deno_command_dict_raises_type_error():
     """Test that passing a dict as deno_command raises TypeError."""
     with pytest.raises(TypeError, match="deno_command must be a list"):
-        LocalSandbox(deno_command={"invalid": "dict"})
+        PythonInterpreter(deno_command={"invalid": "dict"})
 
 
 # =============================================================================
@@ -260,7 +261,7 @@ def test_tool_with_typed_signature():
     def my_tool(query: str, limit: int = 10) -> str:
         return f"searched '{query}' with limit {limit}"
 
-    with LocalSandbox(tools={"my_tool": my_tool}) as sandbox:
+    with PythonInterpreter(tools={"my_tool": my_tool}) as sandbox:
         # Tool should be callable with typed signature
         result = sandbox.execute('my_tool(query="test", limit=5)')
         assert result == "searched 'test' with limit 5"
@@ -271,7 +272,7 @@ def test_tool_positional_args():
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
 
-    with LocalSandbox(tools={"search": search}) as sandbox:
+    with PythonInterpreter(tools={"search": search}) as sandbox:
         result = sandbox.execute('search("hello")')
         assert result == "query=hello, limit=10"
 
@@ -281,7 +282,7 @@ def test_tool_keyword_args():
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
 
-    with LocalSandbox(tools={"search": search}) as sandbox:
+    with PythonInterpreter(tools={"search": search}) as sandbox:
         result = sandbox.execute('search(query="hello", limit=5)')
         assert result == "query=hello, limit=5"
 
@@ -291,7 +292,7 @@ def test_tool_default_args():
     def greet(name: str, greeting: str = "Hello") -> str:
         return f"{greeting}, {name}!"
 
-    with LocalSandbox(tools={"greet": greet}) as sandbox:
+    with PythonInterpreter(tools={"greet": greet}) as sandbox:
         # Without default
         result = sandbox.execute('greet("World")')
         assert result == "Hello, World!"
@@ -307,14 +308,14 @@ def test_tool_default_args():
 
 def test_final_with_typed_signature():
     """Test FINAL with typed output signature."""
-    from dspy.primitives.sandbox import FinalAnswerResult
+    from dspy.primitives.interpreter import FinalAnswerResult
 
     output_fields = [
         {"name": "answer", "type": "str"},
         {"name": "confidence", "type": "float"},
     ]
 
-    with LocalSandbox(output_fields=output_fields) as sandbox:
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
         result = sandbox.execute('FINAL(answer="the answer", confidence=0.95)')
 
         assert isinstance(result, FinalAnswerResult)
@@ -323,14 +324,14 @@ def test_final_with_typed_signature():
 
 def test_final_positional_args():
     """Test FINAL with positional arguments."""
-    from dspy.primitives.sandbox import FinalAnswerResult
+    from dspy.primitives.interpreter import FinalAnswerResult
 
     output_fields = [
         {"name": "answer", "type": "str"},
         {"name": "confidence", "type": "float"},
     ]
 
-    with LocalSandbox(output_fields=output_fields) as sandbox:
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
         result = sandbox.execute('FINAL("the answer", 0.95)')
 
         assert isinstance(result, FinalAnswerResult)
@@ -339,14 +340,14 @@ def test_final_positional_args():
 
 def test_final_var_multi_output():
     """Test FINAL_VAR with multiple output fields using positional args."""
-    from dspy.primitives.sandbox import FinalAnswerResult
+    from dspy.primitives.interpreter import FinalAnswerResult
 
     output_fields = [
         {"name": "answer", "type": "str"},
         {"name": "score", "type": "int"},
     ]
 
-    with LocalSandbox(output_fields=output_fields) as sandbox:
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
         # Positional args: variable names mapped to output fields in order
         code = """
 a = "my answer"
@@ -361,15 +362,15 @@ FINAL_VAR("a", "s")
 
 def test_final_var_wrong_arg_count():
     """Test FINAL_VAR with wrong number of args gives clear error."""
-    from dspy.primitives.sandbox import SandboxError
+    from dspy.primitives.interpreter import InterpreterError
 
     output_fields = [
         {"name": "answer", "type": "str"},
         {"name": "score", "type": "int"},
     ]
 
-    with LocalSandbox(output_fields=output_fields) as sandbox:
-        with pytest.raises(SandboxError) as exc_info:
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        with pytest.raises(InterpreterError) as exc_info:
             sandbox.execute('x = 1; FINAL_VAR("x")')  # Only 1 arg, expects 2
         assert "expects 2 variable names" in str(exc_info.value)
 
@@ -379,7 +380,7 @@ def test_extract_parameters():
     def example_fn(required: str, optional: int = 5, untyped=None) -> str:
         pass
 
-    sandbox = LocalSandbox()
+    sandbox = PythonInterpreter()
     params = sandbox._extract_parameters(example_fn)
 
     assert len(params) == 3
@@ -393,7 +394,7 @@ def test_extract_parameters_complex_types():
     def complex_fn(items: list | None = None, data: dict[str, int] | None = None) -> list:
         pass
 
-    sandbox = LocalSandbox()
+    sandbox = PythonInterpreter()
     params = sandbox._extract_parameters(complex_fn)
 
     assert len(params) == 2

@@ -6,7 +6,7 @@ import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct
-from dspy.primitives.local_sandbox import LocalSandbox
+from dspy.primitives.local_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ class CodeAct(ReAct, ProgramOfThought):
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
     """
 
-    def __init__(self, signature: str | type[Signature], tools: list[Callable], max_iters: int = 5, interpreter: LocalSandbox | None = None):
+    def __init__(self, signature: str | type[Signature], tools: list[Callable], max_iters: int = 5, interpreter: PythonInterpreter | None = None):
         """
         Initializes the CodeAct class with the specified model, temperature, and max tokens.
 
@@ -24,7 +24,7 @@ class CodeAct(ReAct, ProgramOfThought):
             signature (Union[str, Type[Signature]]): The signature of the module.
             tools (list[Callable]): The tool callables to be used. CodeAct only accepts functions and not callable objects.
             max_iters (int): The maximum number of iterations to generate the answer.
-            interpreter: LocalSandbox instance to use. If None, a new one is instantiated.
+            interpreter: PythonInterpreter instance to use. If None, a new one is instantiated.
         Example:
             ```python
             from dspy.predict import CodeAct
@@ -66,7 +66,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.codeact = dspy.Predict(codeact_signature)
         self.extractor = dspy.ChainOfThought(extract_signature)
         # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or LocalSandbox()
+        self.interpreter = interpreter or PythonInterpreter()
 
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []

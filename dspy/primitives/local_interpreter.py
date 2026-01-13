@@ -1,9 +1,9 @@
 """
-Local sandbox for secure Python code execution using Deno/Pyodide.
+Local interpreter for secure Python code execution using Deno/Pyodide.
 
-This module provides LocalSandbox, which runs Python code in a sandboxed
-WASM environment using Deno and Pyodide. It implements the Sandbox
-protocol defined in sandbox.py.
+This module provides PythonInterpreter, which runs Python code in a sandboxed
+WASM environment using Deno and Pyodide. It implements the Interpreter
+protocol defined in interpreter.py.
 """
 
 import functools
@@ -16,17 +16,17 @@ import subprocess
 from os import PathLike
 from typing import Any, Callable
 
-from dspy.primitives.sandbox import SIMPLE_TYPES, FinalAnswerResult, SandboxError
+from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, InterpreterError
 
-__all__ = ["LocalSandbox", "PythonInterpreter", "FinalAnswerResult", "SandboxError"]
+__all__ = ["PythonInterpreter", "FinalAnswerResult", "InterpreterError"]
 
 logger = logging.getLogger(__name__)
 
 
-class LocalSandbox:
-    """Local sandbox for secure Python execution using Deno and Pyodide.
+class PythonInterpreter:
+    """Local interpreter for secure Python execution using Deno and Pyodide.
 
-    Implements the Sandbox protocol for secure code execution in a
+    Implements the Interpreter protocol for secure code execution in a
     WASM-based sandbox. Code runs in an isolated Pyodide environment with
     no access to the host filesystem, network, or environment by default.
 
@@ -34,23 +34,23 @@ class LocalSandbox:
         Deno must be installed: https://docs.deno.com/runtime/getting_started/installation/
 
     Features:
-        - Secure sandbox via Deno + Pyodide (WASM)
-        - Host-side tools callable from sandbox code
+        - Secure execution via Deno + Pyodide (WASM)
+        - Host-side tools callable from interpreter code
         - Optional file mounting for read/write access
         - State persists across execute() calls
 
     Example:
         ```python
         # Basic execution
-        with LocalSandbox() as sandbox:
-            result = sandbox("print(1 + 2)")  # Returns "3"
+        with PythonInterpreter() as interp:
+            result = interp("print(1 + 2)")  # Returns "3"
 
         # With host-side tools
         def my_tool(question: str) -> str:
             return "answer"
 
-        with LocalSandbox(tools={"my_tool": my_tool}) as sandbox:
-            result = sandbox("print(my_tool(question='test'))")
+        with PythonInterpreter(tools={"my_tool": my_tool}) as interp:
+            result = interp("print(my_tool(question='test'))")
         ```
     """
 
@@ -238,10 +238,10 @@ class LocalSandbox:
         self.deno_process.stdin.flush()
         response_line = self.deno_process.stdout.readline().strip()
         if not response_line:
-            raise SandboxError("No response when registering tools/outputs")
+            raise InterpreterError("No response when registering tools/outputs")
         response = json.loads(response_line)
         if "tools_registered" not in response and "outputs_registered" not in response:
-            raise SandboxError(f"Unexpected response when registering: {response_line}")
+            raise InterpreterError(f"Unexpected response when registering: {response_line}")
         self._tools_registered = True
 
     def _handle_tool_call(self, request: dict) -> None:
@@ -251,7 +251,7 @@ class LocalSandbox:
 
         try:
             if tool_name not in self.tools:
-                raise SandboxError(f"Unknown tool: {tool_name}")
+                raise InterpreterError(f"Unknown tool: {tool_name}")
             result = self.tools[tool_name](*call_args.get("args", []), **call_args.get("kwargs", {}))
             is_json = isinstance(result, (list, dict))
             response = {"type": "tool_response", "id": request_id, "error": None,
@@ -284,13 +284,13 @@ class LocalSandbox:
                     "> brew install deno\n"
                     "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
                 )
-                raise SandboxError(install_instructions) from e
+                raise InterpreterError(install_instructions) from e
 
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
         for key in variables:
             if not key.isidentifier() or keyword.iskeyword(key):
-                raise SandboxError(f"Invalid variable name: '{key}'")
+                raise InterpreterError(f"Invalid variable name: '{key}'")
         assignments = [f"{k} = {self._serialize_value(v)}" for k, v in variables.items()]
         return "\n".join(assignments) + "\n" + code if assignments else code
 
@@ -311,7 +311,7 @@ class LocalSandbox:
         elif isinstance(value, set):
             return json.dumps(sorted(value))
         else:
-            raise SandboxError(f"Unsupported value type: {type(value).__name__}")
+            raise InterpreterError(f"Unsupported value type: {type(value).__name__}")
 
     def execute(
         self,
@@ -344,7 +344,7 @@ class LocalSandbox:
             if not output_line:
                 # Possibly the subprocess died or gave no output
                 err_output = self.deno_process.stderr.read()
-                raise SandboxError(f"No output from Deno subprocess. Stderr: {err_output}")
+                raise InterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
 
             # Parse that line as JSON
             try:
@@ -370,7 +370,7 @@ class LocalSandbox:
                 elif error_type == "SyntaxError":
                     raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
                 else:
-                    raise SandboxError(f"{error_type}: {error_args or error_msg}")
+                    raise InterpreterError(f"{error_type}: {error_args or error_msg}")
 
             # If there's no error or got `FinalAnswer`, return the "output" field
             self._sync_files()
@@ -407,7 +407,3 @@ class LocalSandbox:
             self.deno_process.stdin.close()
             self.deno_process.wait()
         self.deno_process = None
-
-
-# Backwards-compatible alias
-PythonInterpreter = LocalSandbox
