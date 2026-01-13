@@ -161,6 +161,39 @@ class TestRLMInitialization:
         assert "llm_query" in rlm.tools
         assert "custom_tool" in rlm.tools
 
+    def test_tool_validation_invalid_identifier(self):
+        """Test RLM rejects tool names that aren't valid Python identifiers."""
+        def my_tool() -> str:
+            return "result"
+
+        with pytest.raises(ValueError, match="must be a valid Python identifier"):
+            RLM("context -> answer", tools={"invalid-name": my_tool})
+
+        with pytest.raises(ValueError, match="must be a valid Python identifier"):
+            RLM("context -> answer", tools={"123start": my_tool})
+
+    def test_tool_validation_reserved_names(self):
+        """Test RLM rejects tool names that conflict with built-in functions."""
+        def my_tool() -> str:
+            return "result"
+
+        with pytest.raises(ValueError, match="conflicts with built-in"):
+            RLM("context -> answer", tools={"llm_query": my_tool})
+
+        with pytest.raises(ValueError, match="conflicts with built-in"):
+            RLM("context -> answer", tools={"FINAL": my_tool})
+
+        with pytest.raises(ValueError, match="conflicts with built-in"):
+            RLM("context -> answer", tools={"print": my_tool})
+
+    def test_tool_validation_not_callable(self):
+        """Test RLM rejects tools that aren't callable."""
+        with pytest.raises(TypeError, match="must be callable"):
+            RLM("context -> answer", tools={"my_tool": "not a function"})
+
+        with pytest.raises(TypeError, match="must be callable"):
+            RLM("context -> answer", tools={"my_tool": 123})
+
     def test_interpreter_parameter(self):
         """Test RLM accepts interpreter parameter."""
         mock = MockSandbox()

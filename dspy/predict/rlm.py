@@ -144,11 +144,25 @@ class RLM(Module):
         self.sub_lm = sub_lm
         self._interpreter = interpreter
         self._user_tools = tools or {}
+        self._validate_tools(self._user_tools)
 
         # Build the action and extract signatures
         action_sig, extract_sig = self._build_signatures()
         self.generate_action = dspy.Predict(action_sig)
         self.extract = dspy.Predict(extract_sig)
+
+    # Reserved tool names that conflict with built-in sandbox functions
+    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "FINAL", "FINAL_VAR", "print"})
+
+    def _validate_tools(self, tools: dict[str, Callable]) -> None:
+        """Validate user-provided tools have valid names and are callable."""
+        for name, func in tools.items():
+            if not name.isidentifier():
+                raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier")
+            if name in self._RESERVED_TOOL_NAMES:
+                raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
+            if not callable(func):
+                raise TypeError(f"Tool '{name}' must be callable, got {type(func).__name__}")
 
     def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
         """Create llm_query and llm_query_batched tools with a fresh call counter.
