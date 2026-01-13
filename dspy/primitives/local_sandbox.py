@@ -7,6 +7,7 @@ protocol defined in sandbox.py.
 """
 
 import json
+import keyword
 import logging
 import os
 import subprocess
@@ -254,7 +255,7 @@ class LocalSandbox:
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
         for key in variables:
-            if not key.isidentifier():
+            if not key.isidentifier() or keyword.iskeyword(key):
                 raise SandboxError(f"Invalid variable name: '{key}'")
         assignments = [f"{k} = {self._serialize_value(v)}" for k, v in variables.items()]
         return "\n".join(assignments) + "\n" + code if assignments else code

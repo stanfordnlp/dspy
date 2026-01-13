@@ -32,6 +32,18 @@ def test_user_variable_definitions():
         assert result == 5, "User variable assignment should work"
 
 
+def test_rejects_python_keywords_as_variable_names():
+    """Test that Python keywords are rejected as variable names."""
+    with LocalSandbox() as interpreter:
+        # These are valid Python identifiers but reserved keywords
+        # Using them as variable names would cause syntax errors
+        keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
+
+        for keyword in keywords_to_test:
+            with pytest.raises(SandboxError, match="Invalid variable name"):
+                interpreter.execute("print(x)", variables={keyword: 42})
+
+
 def test_failure_syntax_error():
     with LocalSandbox() as interpreter:
         code = "+++"
