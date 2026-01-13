@@ -366,6 +366,7 @@ class PythonInterpreter:
 
                 if error_type == "FinalAnswer":
                     answer = error_args[0] if error_args else None
+                    self._sync_files()
                     return FinalAnswerResult(answer)
                 elif error_type == "SyntaxError":
                     raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")

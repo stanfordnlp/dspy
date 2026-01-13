@@ -285,10 +285,25 @@ class RLM(Module):
         execution_tools.update(self._user_tools)
         return execution_tools
 
+    def _inject_execution_context(self, interpreter: Interpreter, execution_tools: dict[str, Callable]) -> None:
+        """Inject execution tools and output fields into an interpreter.
+
+        This ensures llm_query, llm_query_batched, and typed FINAL signatures are available,
+        even for user-provided interpreters. Each forward() call gets fresh tools with a
+        fresh call counter, so we must inject on every execution.
+        """
+        interpreter.tools.update(execution_tools)
+        if hasattr(interpreter, "output_fields"):
+            interpreter.output_fields = self._get_output_fields_info()
+        # Reset registration flag to force re-registration with fresh tools
+        if hasattr(interpreter, "_tools_registered"):
+            interpreter._tools_registered = False
+
     @contextmanager
     def _interpreter_context(self, execution_tools: dict[str, Callable]) -> Iterator[Interpreter]:
         """Yield interpreter, creating PythonInterpreter if none provided at init."""
         if self._interpreter is not None:
+            self._inject_execution_context(self._interpreter, execution_tools)
             yield self._interpreter
         else:
             repl = PythonInterpreter(
