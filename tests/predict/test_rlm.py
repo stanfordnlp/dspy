@@ -189,6 +189,48 @@ class TestRLMInitialization:
         rlm = RLM("context -> answer")
         assert rlm.sub_lm is None
 
+    def test_tools_call_counter_is_thread_safe(self):
+        """Test that the LLM call counter is thread-safe for concurrent llm_query_batched calls.
+
+        The call counter must be protected by a lock since llm_query_batched uses
+        ThreadPoolExecutor for concurrent execution.
+        """
+        import dspy
+        from concurrent.futures import ThreadPoolExecutor
+        from unittest.mock import MagicMock
+
+        # Create a mock LM that returns quickly
+        mock_lm = MagicMock()
+        mock_lm.return_value = ["response"]
+
+        rlm = RLM("context -> answer", max_llm_calls=10, sub_lm=mock_lm)
+        tools = rlm._make_llm_tools()
+
+        # Call llm_query concurrently from multiple threads
+        # If the counter isn't thread-safe, we might exceed the limit or get wrong counts
+        call_count = [0]
+        errors = []
+
+        def make_call():
+            try:
+                tools["llm_query"](prompt="test")
+                call_count[0] += 1
+            except RuntimeError as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(make_call) for _ in range(10)]
+            for f in futures:
+                f.result()
+
+        # All 10 calls should succeed (within the limit)
+        assert call_count[0] == 10, f"Expected 10 successful calls, got {call_count[0]}"
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+        # Now verify the limit is enforced - next call should fail
+        with pytest.raises(RuntimeError, match="LLM call limit exceeded"):
+            tools["llm_query"](prompt="one more")
+
 
 class TestRLMFormatting:
     """Tests for RLM formatting helpers."""

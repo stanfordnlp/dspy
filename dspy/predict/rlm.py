@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, get_args, get_origin
 
@@ -154,15 +155,17 @@ class RLM(Module):
         Called at the start of each forward() to reset the call counter.
         """
         state = {"call_count": 0}
+        lock = threading.Lock()
         lm = self.sub_lm
 
         def _check_and_increment(n: int = 1) -> None:
-            if state["call_count"] + n > self.max_llm_calls:
-                raise RuntimeError(
-                    f"LLM call limit exceeded: {state['call_count']} + {n} > {self.max_llm_calls}. "
-                    f"Use Python code for aggregation instead of making more LLM calls."
-                )
-            state["call_count"] += n
+            with lock:
+                if state["call_count"] + n > self.max_llm_calls:
+                    raise RuntimeError(
+                        f"LLM call limit exceeded: {state['call_count']} + {n} > {self.max_llm_calls}. "
+                        f"Use Python code for aggregation instead of making more LLM calls."
+                    )
+                state["call_count"] += n
 
         def _query_lm(prompt: str) -> str:
             target_lm = lm if lm is not None else dspy.settings.lm
@@ -269,13 +272,17 @@ class RLM(Module):
         output_field_names = list(self.signature.output_fields.keys())
         primary_output_name = output_field_names[0] if output_field_names else "answer"
 
+        # Create fresh tools for this execution
+        execution_tools = self._make_llm_tools()
+        execution_tools.update(self._user_tools)
+
         # Use provided interpreter or create a new one
         # If we create it, we're responsible for shutting it down
         if self._interpreter is not None:
             repl = self._interpreter
             owns_interpreter = False
         else:
-            repl = LocalSandbox(tools=self.tools)
+            repl = LocalSandbox(tools=execution_tools)
             owns_interpreter = True
 
         variables = self._build_variables(**input_args)
