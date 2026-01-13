@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import threading
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, get_args, get_origin
 
@@ -276,6 +277,143 @@ class RLM(Module):
             return output[:self.max_output_chars] + "\n... (truncated)"
         return output
 
+    def _validate_inputs(self, input_args: dict[str, Any]) -> None:
+        """Raise ValueError if required input fields are missing."""
+        missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
+        if missing:
+            raise ValueError(f"Missing required inputs: {sorted(missing)}")
+
+    def _prepare_execution_tools(self) -> dict[str, Callable]:
+        """Create fresh LLM tools and merge with user-provided tools."""
+        execution_tools = self._make_llm_tools()
+        execution_tools.update(self._user_tools)
+        return execution_tools
+
+    @contextmanager
+    def _sandbox_context(self, execution_tools: dict[str, Callable]) -> Iterator[Sandbox]:
+        """Yield sandbox, creating LocalSandbox if none provided at init."""
+        if self._interpreter is not None:
+            yield self._interpreter
+        else:
+            repl = LocalSandbox(
+                tools=execution_tools,
+                output_fields=self._get_output_fields_info(),
+            )
+            try:
+                yield repl
+            finally:
+                repl.shutdown()
+
+    def _extract_fallback(
+        self,
+        variables: list[REPLVariable],
+        history: REPLHistory,
+        output_field_names: list[str],
+    ) -> Prediction:
+        """Use extract module to get final answer when max iterations reached."""
+        logger.warning("RLM reached max iterations, using extract to get final answer")
+
+        extract_pred = self.extract(
+            variables_info=variables,
+            repl_history=history,
+        )
+
+        return Prediction(
+            trajectory=[e.model_dump() for e in history],
+            final_reasoning="Extract forced final answer",
+            **{name: getattr(extract_pred, name) for name in output_field_names},
+        )
+
+    def _process_final_answer(
+        self,
+        result: FinalAnswerResult,
+        output_field_names: list[str],
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """Validate and parse FinalAnswerResult. Returns (parsed_outputs, None) or (None, error)."""
+        raw_answer = result.answer
+
+        # Validate raw_answer is a dict
+        if not isinstance(raw_answer, dict):
+            return None, f"[Error] FINAL returned {type(raw_answer).__name__}, expected dict with fields: {output_field_names}"
+
+        # Validate all required output fields are present
+        missing = set(output_field_names) - set(raw_answer.keys())
+        if missing:
+            return None, f"[Error] Missing output fields: {sorted(missing)}. Use FINAL({', '.join(output_field_names)})"
+
+        # Parse and validate each output field
+        parsed_outputs = {}
+        type_errors = []
+        for name in output_field_names:
+            field = self.signature.output_fields[name]
+            annotation = getattr(field, "annotation", str)
+            try:
+                parsed_outputs[name] = parse_value(raw_answer[name], annotation)
+            except (ValueError, pydantic.ValidationError) as e:
+                type_errors.append(
+                    f"{name}: expected {annotation.__name__ if hasattr(annotation, '__name__') else annotation}, "
+                    f"got {type(raw_answer[name]).__name__}: {e}"
+                )
+
+        if type_errors:
+            return None, "[Type Error] " + "; ".join(type_errors)
+
+        return parsed_outputs, None
+
+    def _execute_iteration(
+        self,
+        repl: Sandbox,
+        variables: list[REPLVariable],
+        history: REPLHistory,
+        iteration: int,
+        input_args: dict[str, Any],
+        output_field_names: list[str],
+    ) -> Prediction | REPLHistory:
+        """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
+        pred = self.generate_action(
+            variables_info=variables,
+            repl_history=history,
+            iteration=f"{iteration + 1}/{self.max_iterations}",
+        )
+        if self.verbose:
+            logger.info(
+                f"RLM iteration {iteration + 1}/{self.max_iterations}\n"
+                f"Reasoning: {pred.reasoning}\nCode:\n{pred.code}"
+            )
+
+        try:
+            # Strip markdown code fences if present
+            code = _strip_code_fences(pred.code)
+            # Always inject input variables - ensures they're available even if sandbox restarts
+            result = repl.execute(code, variables=dict(input_args))
+
+            if isinstance(result, FinalAnswerResult):
+                parsed_outputs, error = self._process_final_answer(result, output_field_names)
+
+                if error:
+                    return history.append(reasoning=pred.reasoning, code=pred.code, output=error)
+
+                final_history = history.append(
+                    reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}"
+                )
+                return Prediction(
+                    **parsed_outputs,
+                    trajectory=[e.model_dump() for e in final_history],
+                    final_reasoning=pred.reasoning,
+                )
+
+            # Format non-final result as output
+            if isinstance(result, list):
+                output = "\n".join(map(str, result))
+            else:
+                output = str(result) if result else ""
+
+        except (SandboxError, SyntaxError) as e:
+            output = f"[Error] {e}"
+
+        output = self._format_output(output)
+        return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+
     def forward(self, **input_args) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
 
@@ -288,114 +426,25 @@ class RLM(Module):
         Raises:
             ValueError: If required input fields are missing
         """
-        missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
-        if missing:
-            raise ValueError(f"Missing required inputs: {sorted(missing)}")
+        self._validate_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
-
-        # Create fresh tools for this execution
-        execution_tools = self._make_llm_tools()
-        execution_tools.update(self._user_tools)
-
-        # Use provided interpreter or create a new one
-        # If we create it, we're responsible for shutting it down
-        if self._interpreter is not None:
-            repl = self._interpreter
-            owns_interpreter = False
-        else:
-            repl = LocalSandbox(
-                tools=execution_tools,
-                output_fields=self._get_output_fields_info(),
-            )
-            owns_interpreter = True
-
+        execution_tools = self._prepare_execution_tools()
         variables = self._build_variables(**input_args)
-        history = REPLHistory()
 
-        try:
+        with self._sandbox_context(execution_tools) as repl:
+            history = REPLHistory()
+
             for iteration in range(self.max_iterations):
-                pred = self.generate_action(
-                    variables_info=variables,
-                    repl_history=history,
-                    iteration=f"{iteration + 1}/{self.max_iterations}",
+                result = self._execute_iteration(
+                    repl, variables, history, iteration, input_args, output_field_names
                 )
-                if self.verbose:
-                    logger.info(f"RLM iteration {iteration + 1}/{self.max_iterations}\nReasoning: {pred.reasoning}\nCode:\n{pred.code}")
+                if isinstance(result, Prediction):
+                    return result
+                history = result
 
-                try:
-                    # Strip markdown code fences if present (LLMs sometimes wrap code in ```python...```)
-                    code = _strip_code_fences(pred.code)
-                    # Always inject input variables - ensures they're available even if sandbox restarts
-                    result = repl.execute(code, variables=dict(input_args))
-
-                    if isinstance(result, FinalAnswerResult):
-                        raw_answer = result.answer  # Dict with field names as keys
-
-                        # Validate all required output fields are present
-                        if not isinstance(raw_answer, dict):
-                            output = f"[Error] FINAL returned {type(raw_answer).__name__}, expected dict with fields: {output_field_names}"
-                            history = history.append(reasoning=pred.reasoning, code=pred.code, output=output)
-                            continue
-
-                        missing = set(output_field_names) - set(raw_answer.keys())
-                        if missing:
-                            output = f"[Error] Missing output fields: {sorted(missing)}. Use FINAL({', '.join(output_field_names)})"
-                            history = history.append(reasoning=pred.reasoning, code=pred.code, output=output)
-                            continue
-
-                        # Parse and validate each output field
-                        parsed_outputs = {}
-                        type_errors = []
-                        for name in output_field_names:
-                            field = self.signature.output_fields[name]
-                            annotation = getattr(field, "annotation", str)
-                            try:
-                                parsed_outputs[name] = parse_value(raw_answer[name], annotation)
-                            except (ValueError, pydantic.ValidationError) as e:
-                                type_errors.append(f"{name}: expected {annotation.__name__ if hasattr(annotation, '__name__') else annotation}, got {type(raw_answer[name]).__name__}: {e}")
-
-                        if type_errors:
-                            output = "[Type Error] " + "; ".join(type_errors)
-                            history = history.append(reasoning=pred.reasoning, code=pred.code, output=output)
-                            continue
-
-                        history = history.append(reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}")
-                        return Prediction(
-                            **parsed_outputs,
-                            trajectory=[e.model_dump() for e in history],
-                            final_reasoning=pred.reasoning,
-                        )
-
-                    if isinstance(result, list):
-                        output = "\n".join(map(str, result))
-                    else:
-                        output = str(result) if result else ""
-
-                except (SandboxError, SyntaxError) as e:
-                    output = f"[Error] {e}"
-
-                output = self._format_output(output)
-                history = history.append(reasoning=pred.reasoning, code=pred.code, output=output)
-
-            # Max iterations reached - use extract to get final answer directly
-            logger.warning("RLM reached max iterations, using extract to get final answer")
-
-            extract_pred = self.extract(
-                variables_info=variables,
-                repl_history=history,
-            )
-
-            # Extract produces the output fields directly (like ReAct's fallback)
-            return Prediction(
-                trajectory=[e.model_dump() for e in history],
-                final_reasoning="Extract forced final answer",
-                **{name: getattr(extract_pred, name) for name in output_field_names},
-            )
-
-        finally:
-            if owns_interpreter:
-                repl.shutdown()
+            # Max iterations reached - use extract fallback
+            return self._extract_fallback(variables, history, output_field_names)
 
 
 # =============================================================================
