@@ -10,7 +10,6 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import threading
@@ -19,18 +18,17 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 import pydantic
-from pydantic import Field
 
 import dspy
-from dspy.adapters.utils import parse_value, serialize_for_json, translate_field_type
+from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
 from dspy.primitives.local_interpreter import PythonInterpreter
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
+from dspy.primitives.repl_types import REPLHistory, REPLVariable
 from dspy.signatures.signature import ensure_signature
 
 if TYPE_CHECKING:
-    from pydantic.fields import FieldInfo
 
     from dspy.signatures.signature import Signature
 
@@ -133,6 +131,10 @@ class RLM(Module):
         self.generate_action = dspy.Predict(action_sig)
         self.extract = dspy.Predict(extract_sig)
 
+    # =========================================================================
+    # Tool Creation and Validation
+    # =========================================================================
+
     # Reserved tool names that conflict with built-in sandbox functions
     _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "FINAL", "FINAL_VAR", "print"})
 
@@ -199,6 +201,10 @@ class RLM(Module):
         """User-provided tools (excludes internal llm_query/llm_query_batched)."""
         return dict(self._user_tools)
 
+    # =========================================================================
+    # Signature Building
+    # =========================================================================
+
     def _build_signatures(self) -> tuple[Signature, Signature]:
         """Build the action and extract signatures from templates."""
         inputs_str = ", ".join(f"`{n}`" for n in self.signature.input_fields)
@@ -247,6 +253,10 @@ class RLM(Module):
 
         return action_sig, extract_sig
 
+    # =========================================================================
+    # Input/Output Processing
+    # =========================================================================
+
     def _get_output_fields_info(self) -> list[dict]:
         """Get output field info for sandbox registration."""
         fields = []
@@ -281,6 +291,10 @@ class RLM(Module):
         missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
+
+    # =========================================================================
+    # Interpreter Lifecycle
+    # =========================================================================
 
     def _prepare_execution_tools(self) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
@@ -317,6 +331,10 @@ class RLM(Module):
                 yield repl
             finally:
                 repl.shutdown()
+
+    # =========================================================================
+    # Execution Core
+    # =========================================================================
 
     def _extract_fallback(
         self,
@@ -374,6 +392,56 @@ class RLM(Module):
 
         return parsed_outputs, None
 
+    def _process_execution_result(
+        self,
+        pred: Any,
+        result: Any,
+        history: REPLHistory,
+        output_field_names: list[str],
+    ) -> Prediction | REPLHistory:
+        """Process interpreter result, returning Prediction if final, else updated history.
+
+        This shared helper reduces duplication between sync and async execution paths.
+
+        Args:
+            pred: The prediction containing reasoning and code attributes
+            result: Result from interpreter.execute() - FinalAnswerResult, list, str, or error string
+            history: Current REPL history
+            output_field_names: List of expected output field names
+
+        Returns:
+            Prediction if FINAL was called successfully, else updated REPLHistory
+        """
+        # Handle error strings from caught exceptions
+        if isinstance(result, str) and result.startswith("[Error]"):
+            output = self._format_output(result)
+            return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+
+        # Handle FINAL answer
+        if isinstance(result, FinalAnswerResult):
+            parsed_outputs, error = self._process_final_answer(result, output_field_names)
+
+            if error:
+                return history.append(reasoning=pred.reasoning, code=pred.code, output=error)
+
+            final_history = history.append(
+                reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}"
+            )
+            return Prediction(
+                **parsed_outputs,
+                trajectory=[e.model_dump() for e in final_history],
+                final_reasoning=pred.reasoning,
+            )
+
+        # Format non-final result as output
+        if isinstance(result, list):
+            output = "\n".join(map(str, result))
+        else:
+            output = str(result) if result else ""
+
+        output = self._format_output(output)
+        return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+
     def _execute_iteration(
         self,
         repl: Interpreter,
@@ -396,37 +464,16 @@ class RLM(Module):
             )
 
         try:
-            # Strip markdown code fences if present
             code = _strip_code_fences(action.code)
-            # Always inject input variables - ensures they're available even if sandbox restarts
             result = repl.execute(code, variables=dict(input_args))
-
-            if isinstance(result, FinalAnswerResult):
-                parsed_outputs, error = self._process_final_answer(result, output_field_names)
-
-                if error:
-                    return history.append(reasoning=action.reasoning, code=action.code, output=error)
-
-                final_history = history.append(
-                    reasoning=action.reasoning, code=action.code, output=f"FINAL: {parsed_outputs}"
-                )
-                return Prediction(
-                    **parsed_outputs,
-                    trajectory=[e.model_dump() for e in final_history],
-                    final_reasoning=action.reasoning,
-                )
-
-            # Format non-final result as output
-            if isinstance(result, list):
-                output = "\n".join(map(str, result))
-            else:
-                output = str(result) if result else ""
-
         except (InterpreterError, SyntaxError) as e:
-            output = f"[Error] {e}"
+            result = f"[Error] {e}"
 
-        output = self._format_output(output)
-        return history.append(reasoning=action.reasoning, code=action.code, output=output)
+        return self._process_execution_result(action, result, history, output_field_names)
+
+    # =========================================================================
+    # Public Interface
+    # =========================================================================
 
     def forward(self, **input_args) -> Prediction:
         """Execute RLM to produce outputs from the given inputs.
@@ -504,32 +551,10 @@ class RLM(Module):
         try:
             code = _strip_code_fences(pred.code)
             result = repl.execute(code, variables=dict(input_args))
-
-            if isinstance(result, FinalAnswerResult):
-                parsed_outputs, error = self._process_final_answer(result, output_field_names)
-
-                if error:
-                    return history.append(reasoning=pred.reasoning, code=pred.code, output=error)
-
-                final_history = history.append(
-                    reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}"
-                )
-                return Prediction(
-                    **parsed_outputs,
-                    trajectory=[e.model_dump() for e in final_history],
-                    final_reasoning=pred.reasoning,
-                )
-
-            if isinstance(result, list):
-                output = "\n".join(map(str, result))
-            else:
-                output = str(result) if result else ""
-
         except (InterpreterError, SyntaxError) as e:
-            output = f"[Error] {e}"
+            result = f"[Error] {e}"
 
-        output = self._format_output(output)
-        return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+        return self._process_execution_result(pred, result, history, output_field_names)
 
     async def aforward(self, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
@@ -562,131 +587,3 @@ class RLM(Module):
 
             # Max iterations reached - use extract fallback
             return await self._aextract_fallback(variables, history, output_field_names)
-
-
-# =============================================================================
-# REPL Types (internal to RLM)
-# =============================================================================
-
-class REPLVariable(pydantic.BaseModel):
-    """Metadata about a variable available in the REPL environment."""
-
-    name: str
-    type_name: str
-    desc: str = ""
-    constraints: str = ""
-    total_length: int
-    preview: str
-
-    model_config = pydantic.ConfigDict(frozen=True)
-
-    @classmethod
-    def from_value(
-        cls,
-        name: str,
-        value: Any,
-        field_info: FieldInfo | None = None,
-        preview_chars: int = 500,
-    ) -> REPLVariable:
-        """Create REPLVariable from an actual value and optional field info.
-
-        Args:
-            name: Variable name
-            value: The actual value
-            field_info: Optional pydantic FieldInfo with desc/constraints metadata
-            preview_chars: Max characters for preview
-        """
-        jsonable = serialize_for_json(value)
-        if isinstance(jsonable, (dict, list)):
-            value_str = json.dumps(jsonable, indent=2)
-        else:
-            value_str = str(jsonable)
-        is_truncated = len(value_str) > preview_chars
-        preview = value_str[:preview_chars] + ("..." if is_truncated else "")
-
-        # Extract desc and constraints from field_info if provided
-        desc = ""
-        constraints = ""
-        if field_info and hasattr(field_info, "json_schema_extra") and field_info.json_schema_extra:
-            raw_desc = field_info.json_schema_extra.get("desc", "")
-            # Skip placeholder descs like "${name}"
-            if raw_desc and not raw_desc.startswith("${"):
-                desc = raw_desc
-            constraints = field_info.json_schema_extra.get("constraints", "")
-
-        return cls(
-            name=name,
-            type_name=type(value).__name__,
-            desc=desc,
-            constraints=constraints,
-            total_length=len(value_str),
-            preview=preview,
-        )
-
-    def format(self) -> str:
-        """Format variable metadata for prompt inclusion."""
-        lines = [f"Variable: `{self.name}` (access it in your code)"]
-        lines.append(f"Type: {self.type_name}")
-        if self.desc:
-            lines.append(f"Description: {self.desc}")
-        if self.constraints:
-            lines.append(f"Constraints: {self.constraints}")
-        lines.append(f"Total length: {self.total_length:,} characters")
-        lines.append(f"Preview:\n```\n{self.preview}\n```")
-        return "\n".join(lines)
-
-    @pydantic.model_serializer()
-    def serialize_model(self) -> str:
-        return self.format()
-
-
-class REPLEntry(pydantic.BaseModel):
-    """A single REPL interaction entry containing reasoning, code, and output."""
-
-    reasoning: str = ""
-    code: str
-    output: str
-
-    model_config = pydantic.ConfigDict(frozen=True)
-
-    def format(self, index: int, max_output_chars: int = 5000) -> str:
-        """Format this entry for inclusion in prompts."""
-        output = self.output
-        if len(output) > max_output_chars:
-            output = output[:max_output_chars] + f"\n... (truncated to {max_output_chars}/{len(self.output):,} chars)"
-        reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
-        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n```python\n{self.code}\n```\nOutput ({len(self.output):,} chars):\n{output}"
-
-
-class REPLHistory(pydantic.BaseModel):
-    """Container for REPL interaction history.
-
-    Immutable: append() returns a new instance with the entry added.
-    """
-
-    entries: list[REPLEntry] = Field(default_factory=list)
-
-    model_config = pydantic.ConfigDict(frozen=True)
-
-    def format(self, max_output_chars: int = 5000) -> str:
-        if not self.entries:
-            return "You have not interacted with the REPL environment yet."
-        return "\n".join(entry.format(index=i, max_output_chars=max_output_chars) for i, entry in enumerate(self.entries))
-
-    @pydantic.model_serializer()
-    def serialize_model(self) -> str:
-        return self.format()
-
-    def append(self, *, reasoning: str = "", code: str, output: str) -> REPLHistory:
-        """Return a new REPLHistory with the entry appended."""
-        new_entry = REPLEntry(reasoning=reasoning, code=code, output=output)
-        return REPLHistory(entries=list(self.entries) + [new_entry])
-
-    def __len__(self) -> int:
-        return len(self.entries)
-
-    def __iter__(self) -> Iterator[REPLEntry]:
-        return iter(self.entries)
-
-    def __bool__(self) -> bool:
-        return len(self.entries) > 0
