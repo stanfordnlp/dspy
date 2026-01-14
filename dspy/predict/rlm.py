@@ -224,16 +224,19 @@ class RLM(Module):
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
             .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iterations"), type_=str)
             .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
-            .append("code", dspy.OutputField(desc="Python code to execute. Use print() to see results, llm_query() for semantic analysis, FINAL()/FINAL_VAR() to submit."), type_=str)
+            .append("code", dspy.OutputField(desc="Python code to execute."), type_=str)
         )
 
         # Extract signature: includes the original signature's output fields and task instructions.
-        extract_instructions = """You ran out of iterations. Based on your REPL trajectory, extract the final outputs now.
+        extract_instructions = """Based on the REPL trajectory, extract the final outputs now.
 
             Review your trajectory to see what information you gathered and what values you computed, then provide the final outputs."""
 
         # Prepend original task instructions to extract instructions so the LLM knows what task to extract for
-        full_extract_instructions = task_instructions + extract_instructions if task_instructions else extract_instructions
+        extended_task_instructions = ""
+        if task_instructions:
+            extended_task_instructions = "The trajectory was generated with the following objective: \n" + task_instructions + "\n"
+        full_extract_instructions = extended_task_instructions + extract_instructions
 
         extract_sig = dspy.Signature(
             {**self.signature.output_fields},
