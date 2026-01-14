@@ -16,13 +16,13 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 import pydantic
 from pydantic import Field
 
 import dspy
-from dspy.adapters.utils import parse_value
+from dspy.adapters.utils import parse_value, serialize_for_json, translate_field_type
 from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
 from dspy.primitives.local_interpreter import PythonInterpreter
 from dspy.primitives.module import Module
@@ -38,14 +38,17 @@ logger = logging.getLogger(__name__)
 
 # TODO: Optimize this prompt across a diverse benchmark
 
-ACTION_INSTRUCTIONS_TEMPLATE = """You are tasked with producing {outputs} given the inputs {inputs}. You can access, transform, and analyze these inputs interactively in a REPL environment that can recursively query sub-LLMs, which you are strongly encouraged to use. You will be queried iteratively until you provide a final answer.
+ACTION_INSTRUCTIONS_TEMPLATE = """You are tasked with producing the following outputs given the inputs {inputs}:
+{output_fields}
+
+You can access, transform, and analyze inputs interactively in a REPL environment that can recursively query sub-LLMs. You will be queried iteratively until you provide a final answer.
 
 The REPL environment is initialized with:
 1. Variables {inputs} containing your input data. Check the content to understand what you are working with and look through it sufficiently as you answer.
 2. `llm_query(prompt)` - query an LLM (handles ~500K chars) for semantic analysis. Use this especially when analyzing semantics of the data.
 3. `llm_query_batched(prompts)` - query multiple prompts concurrently, returns list of responses in same order. Much faster than sequential llm_query calls for independent queries.
 4. `print()` - view outputs and continue reasoning. Use variables as buffers to build up your final answer.
-5. `FINAL({outputs})` - submit your final output directly, or `FINAL_VAR("variable_name")` to submit a variable's value.
+5. `FINAL({output_names})` - submit your final output directly, or `FINAL_VAR("variable_name")` to submit a variable's value.
 6. Standard libraries: re, json, collections, math, etc.
 
 Make sure to explicitly look through the entire input data in the REPL before answering. An example strategy is to first examine the data and figure out a chunking strategy, break it into smart chunks (by size, semantic boundaries, or structural markers), query an LLM per chunk with a particular question and save answers to a buffer, then query an LLM with all the buffers to produce your final answer.
@@ -55,7 +58,7 @@ Your sub-LLMs are powerful - they can handle around 500K characters, so don't be
 You have a maximum of {max_llm_calls} sub-LLM calls. For tasks with many items (e.g., counting), use Python code with regex/string matching instead of calling llm_query() per item. Reserve LLM calls for semantic understanding.
 
 IMPORTANT: Do not submit a final answer on your first turn - explore the data first. When you are done with the iterative process, you MUST provide a final answer inside a FINAL function, NOT in code. You have two options:
-1. Use FINAL({outputs}) to provide the answer directly
+1. Use FINAL({output_names}) to provide the answer directly
 2. Use FINAL_VAR("variable_name") to return a variable you created in the REPL as your final output"""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
@@ -200,16 +203,12 @@ class RLM(Module):
         """Build the action and extract signatures from templates."""
         inputs_str = ", ".join(f"`{n}`" for n in self.signature.input_fields)
 
-        # Format output fields, adding valid values for Literal types
-        def format_output_field(name: str, field) -> str:
-            annotation = getattr(field, "annotation", None)
-            if annotation and get_origin(annotation) is Literal:
-                valid_values = get_args(annotation)
-                return f"`{name}` (must be one of: {', '.join(repr(v) for v in valid_values)})"
-            return f"`{name}`"
+        # Simple names for FINAL() examples
+        output_names = ", ".join(self.signature.output_fields.keys())
 
-        outputs_str = ", ".join(
-            format_output_field(n, f)
+        # Full field descriptions with type constraints (reuses adapter logic)
+        output_fields = "\n".join(
+            f"- {translate_field_type(n, f)}"
             for n, f in self.signature.output_fields.items()
         )
 
@@ -218,7 +217,8 @@ class RLM(Module):
 
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
-                inputs=inputs_str, outputs=outputs_str, max_llm_calls=self.max_llm_calls
+                inputs=inputs_str, output_names=output_names, output_fields=output_fields,
+                max_llm_calls=self.max_llm_calls,
             ))
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
@@ -593,10 +593,11 @@ class REPLVariable(pydantic.BaseModel):
             field_info: Optional pydantic FieldInfo with desc/constraints metadata
             preview_chars: Max characters for preview
         """
-        if isinstance(value, (list, dict)):
-            value_str = json.dumps(value, indent=2, default=str)
+        jsonable = serialize_for_json(value)
+        if isinstance(jsonable, (dict, list)):
+            value_str = json.dumps(jsonable, indent=2)
         else:
-            value_str = str(value)
+            value_str = str(jsonable)
         is_truncated = len(value_str) > preview_chars
         preview = value_str[:preview_chars] + ("..." if is_truncated else "")
 
