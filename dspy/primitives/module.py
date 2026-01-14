@@ -145,6 +145,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
         return_failed_examples: bool = False,
         provide_traceback: bool | None = None,
         disable_progress_bar: bool = False,
+        timeout: int = 120,
+        straggler_limit: int = 3,
     ) -> list[Example] | tuple[list[Example], list[Example], list[Exception]]:
         """
         Processes a list of dspy.Example instances in parallel using the Parallel module.
@@ -157,6 +159,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return_failed_examples: Whether to return failed examples and exceptions.
             provide_traceback: Whether to include traceback information in error logs.
             disable_progress_bar: Whether to display the progress bar.
+            timeout: Seconds before a straggler task is resubmitted. Set to 0 to disable.
+            straggler_limit: Only check for stragglers when this many or fewer tasks remain.
 
         Returns:
             List of results, and optionally failed examples and exceptions.
@@ -171,6 +175,8 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return_failed_examples=return_failed_examples,
             provide_traceback=provide_traceback,
             disable_progress_bar=disable_progress_bar,
+            timeout=timeout,
+            straggler_limit=straggler_limit,
         )
 
         # Execute the forward method of Parallel
