@@ -23,9 +23,9 @@ import pydantic
 import dspy
 from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
-from dspy.primitives.local_interpreter import PythonInterpreter
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
+from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLHistory, REPLVariable
 from dspy.signatures.signature import ensure_signature
 

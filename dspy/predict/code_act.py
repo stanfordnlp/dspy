@@ -6,7 +6,7 @@ import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.predict.program_of_thought import ProgramOfThought
 from dspy.predict.react import ReAct
-from dspy.primitives.local_interpreter import PythonInterpreter
+from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
 
 logger = logging.getLogger(__name__)

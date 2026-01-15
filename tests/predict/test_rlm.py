@@ -12,7 +12,7 @@ import pytest
 
 from dspy.predict.rlm import RLM
 from dspy.primitives.interpreter import FinalAnswerResult, InterpreterError
-from dspy.primitives.local_interpreter import PythonInterpreter
+from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from tests.mock_interpreter import MockInterpreter
 

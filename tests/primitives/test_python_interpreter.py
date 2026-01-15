@@ -5,7 +5,7 @@ import shutil
 import pytest
 
 from dspy.primitives.interpreter import InterpreterError
-from dspy.primitives.local_interpreter import PythonInterpreter
+from dspy.primitives.python_interpreter import PythonInterpreter
 
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 if shutil.which("deno") is None:
