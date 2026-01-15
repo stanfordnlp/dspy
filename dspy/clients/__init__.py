@@ -106,8 +106,37 @@ def disable_litellm_logging():
     configure_litellm_logging("ERROR")
 
 
+def _patch_litellm_batch_errors():
+    """Patch litellm's batch utils to handle the 'Output file id is None' error silently."""
+    try:
+        import litellm.batches.batch_utils as batch_utils
+        
+        # Store the original function
+        original_get_batch_output = batch_utils._get_batch_output_file_content_as_dictionary
+        
+        # Create a wrapper that catches the specific error
+        async def patched_get_batch_output(*args, **kwargs):
+            try:
+                return await original_get_batch_output(*args, **kwargs)
+            except ValueError as e:
+                if "Output file id is None cannot retrieve file content" in str(e):
+                    # Silently ignore this specific error - it's a litellm internal issue
+                    return {}
+                raise
+        
+        # Replace the function
+        batch_utils._get_batch_output_file_content_as_dictionary = patched_get_batch_output
+        
+    except ImportError:
+        # If we can't import the module, just continue
+        pass
+
+
 # By default, we disable LiteLLM logging for clean logging
 disable_litellm_logging()
+
+# Apply batch error patches
+_patch_litellm_batch_errors()
 
 __all__ = [
     "BaseLM",

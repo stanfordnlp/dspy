@@ -3,13 +3,18 @@ from typing import Any
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.example import Example
-from dspy.utils.parallelizer import ParallelExecutor
+from dspy.utils.parallelizer import ParallelExecutor, BatchExecutor
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class Parallel:
     def __init__(
         self,
         num_threads: int | None = None,
+        batch_mode: bool = False,
         max_errors: int | None = None,
         access_examples: bool = True,
         return_failed_examples: bool = False,
@@ -18,6 +23,7 @@ class Parallel:
     ):
         super().__init__()
         self.num_threads = num_threads or settings.num_threads
+        self.batch_mode = batch_mode
         self.max_errors = settings.max_errors if max_errors is None else max_errors
         self.access_examples = access_examples
         self.return_failed_examples = return_failed_examples
@@ -30,39 +36,49 @@ class Parallel:
         self.failed_examples = []
         self.exceptions = []
 
-    def forward(self, exec_pairs: list[tuple[Any, Example]], num_threads: int | None = None) -> list[Any]:
-        num_threads = num_threads if num_threads is not None else self.num_threads
+    def _process_pair(self, pair):
+        result = None
+        module, example = pair
 
-        executor = ParallelExecutor(
-            num_threads=num_threads,
-            max_errors=self.max_errors,
-            provide_traceback=self.provide_traceback,
-            disable_progress_bar=self.disable_progress_bar,
-        )
-
-        def process_pair(pair):
-            result = None
-            module, example = pair
-
-            if isinstance(example, Example):
-                if self.access_examples:
-                    result = module(**example.inputs())
-                else:
-                    result = module(example)
-            elif isinstance(example, dict):
-                result = module(**example)
-            elif isinstance(example, list) and module.__class__.__name__ == "Parallel":
-                result = module(example)
-            elif isinstance(example, tuple):
-                result = module(*example)
+        if isinstance(example, Example):
+            if self.access_examples:
+                result = module(**example.inputs())
             else:
-                raise ValueError(
-                    f"Invalid example type: {type(example)}, only supported types are Example, dict, list and tuple"
-                )
-            return result
+                result = module(example)
+        elif isinstance(example, dict):
+            result = module(**example)
+        elif isinstance(example, list) and module.__class__.__name__ == "Parallel":
+            result = module(example)
+        elif isinstance(example, tuple):
+            result = module(*example)
+        else:
+            raise ValueError(
+                f"Invalid example type: {type(example)}, only supported types are Example, dict, list and tuple"
+            )
+        return result
 
-        # Execute the processing function over the execution pairs
-        results = executor.execute(process_pair, exec_pairs)
+    def forward(self, exec_pairs: list[tuple[Any, Example]], num_threads: int | None = None) -> list[Any]:
+        if self.batch_mode:
+            if not exec_pairs:
+                return []
+            
+            # Extract the module from the first exec_pair
+            # ASSUMPTION: All exec_pairs have the same module type for stage-by-stage batching
+            # TODO: Could be enhanced to group by unique module types and batch each group separately
+            module = exec_pairs[0][0]
+            
+            # Use staged batch execution
+            executor = BatchExecutor()
+            results = executor.execute(module, exec_pairs)
+        else:
+            num_threads = num_threads if num_threads is not None else self.num_threads
+            executor = ParallelExecutor(
+                num_threads=num_threads,
+                max_errors=self.max_errors,
+                provide_traceback=self.provide_traceback,
+                disable_progress_bar=self.disable_progress_bar,
+            )
+            results = executor.execute(self._process_pair, exec_pairs)
 
         # Populate failed examples and exceptions from the executor
         if self.return_failed_examples:
