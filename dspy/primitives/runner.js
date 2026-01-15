@@ -22,6 +22,18 @@ def last_exception_args():
 class FinalAnswer(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
     pass
+
+# Default FINAL/FINAL_VAR for single-output signatures (e.g., Program of Thought).
+# Only define if not already registered with typed signatures.
+if 'FINAL' not in dir():
+    def FINAL(answer):
+        raise FinalAnswer({"answer": answer})
+
+if 'FINAL_VAR' not in dir():
+    def FINAL_VAR(var_name):
+        if var_name in globals():
+            raise FinalAnswer({"answer": globals()[var_name]})
+        raise NameError(f"Variable '{var_name}' not found")
 `;
 
 // Generate a tool wrapper function with typed signature.
@@ -69,6 +81,14 @@ def ${toolName}(${signature}):
 // Generate FINAL function with output field signature.
 // Outputs is an array of {name, type?} objects.
 const makeFinalWrapper = (outputs) => {
+  if (!outputs || outputs.length === 0) {
+    // Fallback to single-arg FINAL if no outputs defined
+    return `
+def FINAL(answer):
+    raise FinalAnswer({"answer": answer})
+`;
+  }
+
   const sigParts = outputs.map(o => {
     let part = o.name;
     if (o.type) part += `: ${o.type}`;
@@ -85,7 +105,17 @@ def FINAL(${sigParts.join(', ')}):
 // Generate FINAL_VAR function with positional args mapped to output fields.
 // Usage: FINAL_VAR("var1", "var2") maps to output fields in order.
 const makeFinalVarWrapper = (outputs) => {
-  // Positional args mapped to fields in order
+  if (!outputs || outputs.length === 0) {
+    // Single-output fallback: FINAL_VAR("var_name")
+    return `
+def FINAL_VAR(var_name):
+    if var_name not in globals():
+        raise NameError(f"Variable '{var_name}' not found")
+    raise FinalAnswer({"answer": globals()[var_name]})
+`;
+  }
+
+  // Multi-output: positional args mapped to fields in order
   const fieldNames = outputs.map(o => `"${o.name}"`);
   const expectedCount = outputs.length;
   const fieldList = fieldNames.join(', ');
