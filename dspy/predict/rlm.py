@@ -10,6 +10,7 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 import threading
@@ -39,25 +40,44 @@ logger = logging.getLogger(__name__)
 ACTION_INSTRUCTIONS_TEMPLATE = """You are tasked with producing the following outputs given the inputs {inputs}:
 {output_fields}
 
-You can access, transform, and analyze inputs interactively in a REPL environment that can recursively query sub-LLMs. You will be queried iteratively until you provide a final answer.
+You have access to a Python REPL. Your code is EXECUTED DIRECTLY - just write the code, don't wrap it in strings.
 
-The REPL environment is initialized with:
-1. Variables {inputs} containing your input data. Check the content to understand what you are working with and look through it sufficiently as you answer.
-2. `llm_query(prompt)` - query an LLM (handles ~500K chars) for semantic analysis. Use this especially when analyzing semantics of the data.
-3. `llm_query_batched(prompts)` - query multiple prompts concurrently, returns list of responses in same order. Much faster than sequential llm_query calls for independent queries.
-4. `print()` - view outputs and continue reasoning. Use variables as buffers to build up your final answer.
-5. `FINAL({output_names})` - submit your final output directly, or `FINAL_VAR("variable_name")` to submit a variable's value.
-6. Standard libraries: re, json, collections, math, etc.
+WRONG (code as string - NOT executed):
+```python
+code = '''
+result = some_function()
+print(result)
+'''
+```
 
-Make sure to explicitly look through the entire input data in the REPL before answering. An example strategy is to first examine the data and figure out a chunking strategy, break it into smart chunks (by size, semantic boundaries, or structural markers), query an LLM per chunk with a particular question and save answers to a buffer, then query an LLM with all the buffers to produce your final answer.
+CORRECT (code executed directly):
+```python
+result = some_function()
+print(result)
+```
 
-Your sub-LLMs are powerful - they can handle around 500K characters, so don't be afraid to put a lot of context into them. A viable strategy is to feed multiple documents per sub-LLM query. Analyze your input data and see if it fits in just a few sub-LLM calls.
+Available in the REPL:
+- Variables: {inputs} (your input data)
+- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
+- `llm_query_batched(prompts)` - query multiple prompts concurrently, returns list in same order
+- `print()` - view outputs (ALWAYS print to see results!)
+- `FINAL({final_output_names})` - submit final answer
+- `FINAL_VAR({final_var_output_names})` - submit a variable as final answer
+- Standard libraries: re, json, collections, math, etc.
 
-You have a maximum of {max_llm_calls} sub-LLM calls. For tasks with many items (e.g., counting), use Python code with regex/string matching instead of calling llm_query() per item. Reserve LLM calls for semantic understanding.
+WORKFLOW:
+1. Write SHORT snippets (5-15 lines) that execute and print results
+2. State persists - variables you create remain available in the next iteration
+3. Build incrementally: explore → process → FINAL()
 
-IMPORTANT: Do not submit a final answer on your first turn - explore the data first. When you are done with the iterative process, you MUST provide a final answer inside a FINAL function, NOT in code. You have two options:
-1. Use FINAL({output_names}) to provide the answer directly
-2. Use FINAL_VAR("variable_name") to return a variable you created in the REPL as your final output"""
+Example session:
+  Iteration 1: `files = glob_files("**/*.py"); print(files[:10])`  # See what's there
+  Iteration 2: `content = read_file(files[0]); print(content[:500])`  # Inspect a file
+  Iteration 3: `FINAL(answer="Found X files...")`  # Done!
+
+You have max {max_llm_calls} sub-LLM calls. Use Python for pattern matching; reserve LLM calls for semantic understanding.
+
+CALL FINAL() or FINAL_VAR() when you have enough information. Don't over-explore - after 2-3 iterations with useful data, finish up."""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
 _CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*?)\n```\s*$", re.DOTALL)
@@ -148,6 +168,40 @@ class RLM(Module):
             if not callable(func):
                 raise TypeError(f"Tool '{name}' must be callable, got {type(func).__name__}")
 
+    def _format_tool_docs(self, tools: dict[str, Callable]) -> str:
+        """Format user-provided tools for inclusion in instructions."""
+        if not tools:
+            return ""
+
+        lines = ["\nAdditional tools available (use these instead of standard library equivalents):"]
+        for name, func in tools.items():
+            # Get function signature with return type
+            try:
+                sig = inspect.signature(func)
+                params = []
+                for p in sig.parameters.values():
+                    if p.annotation != inspect.Parameter.empty:
+                        type_name = getattr(p.annotation, "__name__", str(p.annotation))
+                        params.append(f"{p.name}: {type_name}")
+                    else:
+                        params.append(p.name)
+                params_str = ", ".join(params)
+
+                # Get return type
+                if sig.return_annotation != inspect.Parameter.empty:
+                    ret_type = getattr(sig.return_annotation, "__name__", str(sig.return_annotation))
+                    sig_str = f"{name}({params_str}) -> {ret_type}"
+                else:
+                    sig_str = f"{name}({params_str})"
+            except (ValueError, TypeError):
+                sig_str = f"{name}(...)"
+
+            # Get first line of docstring
+            doc = func.__doc__.strip().split("\n")[0] if func.__doc__ else "No description"
+            lines.append(f"- `{sig_str}` - {doc}")
+
+        return "\n".join(lines)
+
     def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
         """Create llm_query and llm_query_batched tools with a fresh call counter."""
         state = {"call_count": 0}
@@ -210,9 +264,11 @@ class RLM(Module):
         inputs_str = ", ".join(f"`{n}`" for n in self.signature.input_fields)
 
         # Simple names for FINAL() examples
-        output_names = ", ".join(self.signature.output_fields.keys())
+        final_output_names = ", ".join(self.signature.output_fields.keys())
 
-        # Full field descriptions with type constraints (reuses adapter logic)
+        # Final output names for FINAL_VAR() examples
+        final_var_output_names = ", ".join(f"`{n}`" for n in self.signature.output_fields.keys())
+
         output_fields = "\n".join(
             f"- {translate_field_type(n, f)}"
             for n, f in self.signature.output_fields.items()
@@ -221,11 +277,14 @@ class RLM(Module):
         # Include original signature instructions (docstring) if present
         task_instructions = f"{self.signature.instructions}\n\n" if self.signature.instructions else ""
 
+        # Format tool documentation for user-provided tools
+        tool_docs = self._format_tool_docs(self._user_tools)
+
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
-                inputs=inputs_str, output_names=output_names, output_fields=output_fields,
+                inputs=inputs_str, final_output_names=final_output_names, final_var_output_names=final_var_output_names, output_fields=output_fields,
                 max_llm_calls=self.max_llm_calls,
-            ))
+            ) + tool_docs)
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
             .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iterations"), type_=str)
@@ -494,10 +553,10 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
-            history = REPLHistory()
+            history: REPLHistory = REPLHistory()
 
             for iteration in range(self.max_iterations):
-                result = self._execute_iteration(
+                result: Prediction | REPLHistory = self._execute_iteration(
                     repl, variables, history, iteration, input_args, output_field_names
                 )
                 if isinstance(result, Prediction):
