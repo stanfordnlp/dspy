@@ -2,10 +2,13 @@ import asyncio
 import cloudpickle
 import contextvars
 import copy
+import logging
 import threading
 from contextlib import contextmanager
 
 from dspy.dsp.utils.utils import dotdict
+
+_logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = dotdict(
     lm=None,
@@ -187,19 +190,38 @@ class Settings:
         return repr(combined_config)
 
 
-    def save(self, path):
+    def save(self, path, modules_to_serialize=None):
         """
-        Save the settings to a file by CloudPickle
+        Save the settings to a file using CloudPickle
 
         Args:
             path: The file path to save the settings to.
+            modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
+                If None, then no modules will be registered for serialization.
         """
-        with open(path, "wb") as f:
-            cloudpickle.dump(dict(self.config), f)
+        _logger.warning(
+            "DSpy settings are serialized using CloudPickle. Because CloudPickle allows for the "
+            "execution of arbitrary code during deserialization, you should only load files from "
+            "verified sources within a trusted environment."
+        )
+        try:
+            modules_to_serialize = modules_to_serialize or []
+            for module in modules_to_serialize:
+                cloudpickle.register_pickle_by_value(module)
+
+            with open(path, "wb") as f:
+                cloudpickle.dump(dict(self.config), f)
+        except Exception as e:
+            raise RuntimeError(
+                f"Saving failed with error: {e}. Please remove the non-picklable attributes from the values "
+                "in the DSpy settings."
+            )
 
     def load(self, path):
         """
-        Load the settings from a file by CloudPickle
+        Load the settings from a file using CloudPickle.
+
+        Note: The `load` method can only be called from the thread that first configured settings
 
         Args:
             path: The file path to load the settings from.

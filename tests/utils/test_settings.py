@@ -191,3 +191,15 @@ async def test_dspy_configure_allowance_async():
     await asyncio.gather(foo1(), foo2(), foo3())
 
     foo4()
+
+
+def test_dspy_settings_save_load(tmp_path):
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
+
+    dspy.settings.save(tmp_path / "settings.pkl")
+    dspy.configure(lm=None, adapter=None, callbacks=None)
+
+    dspy.settings.load(tmp_path / "settings.pkl")
+    assert dspy.settings.lm.model == "openai/gpt-4o"
+    assert isinstance(dspy.settings.adapter, dspy.JSONAdapter)
+    assert len(dspy.settings.callbacks) == 1
