@@ -6,15 +6,73 @@ Test organization:
 - Integration tests (@pytest.mark.integration): PythonInterpreter with Deno
 """
 
-import random
+from contextlib import contextmanager
 
 import pytest
 
 from dspy.predict.rlm import RLM
 from dspy.primitives.interpreter import FinalAnswerResult, InterpreterError
+from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from tests.mock_interpreter import MockInterpreter
+
+# ============================================================================
+# Test Helpers and Factories
+# ============================================================================
+
+
+def make_mock_predictor(responses: list[dict], async_mode: bool = False):
+    """Factory for mock predictors with scripted responses.
+
+    Args:
+        responses: List of dicts with keys like 'reasoning', 'code'.
+        async_mode: If True, returns a predictor with acall() instead of __call__().
+    """
+
+    class MockPredictor:
+        def __init__(self):
+            self.idx = 0
+
+        def _next_response(self):
+            result = responses[self.idx % len(responses)]
+            self.idx += 1
+            return Prediction(**result)
+
+        def __call__(self, **kwargs):
+            return self._next_response()
+
+        async def acall(self, **kwargs):
+            return self._next_response()
+
+    return MockPredictor()
+
+
+@contextmanager
+def dummy_lm_context(responses: list[dict]):
+    """Context manager for DummyLM setup."""
+    import dspy
+    from dspy.utils.dummies import DummyLM
+
+    lm = DummyLM(responses)
+    with dspy.context(lm=lm):
+        yield lm
+
+
+# Common test tools
+def echo_tool(text: str = "") -> str:
+    """Echo the input text."""
+    return f"Echo: {text}"
+
+
+def add_tool(a: int = 0, b: int = 0) -> str:
+    """Add two numbers."""
+    return str(a + b)
+
+
+def multiply_tool(a: int = 0, b: int = 0) -> str:
+    """Multiply two numbers."""
+    return str(a * b)
 
 # ============================================================================
 # Unit Tests: MockInterpreter
@@ -89,80 +147,59 @@ class TestRLMInitialization:
         assert "custom_tool" in rlm.tools
         assert len(rlm.tools) == 1  # Only user tools, not internal llm_query/llm_query_batched
 
-    def test_tool_validation_invalid_identifier(self):
+    @pytest.mark.parametrize("tool_name", ["invalid-name", "123start"])
+    def test_tool_validation_invalid_identifier(self, tool_name):
         """Test RLM rejects tool names that aren't valid Python identifiers."""
         def my_tool() -> str:
             return "result"
 
         with pytest.raises(ValueError, match="must be a valid Python identifier"):
-            RLM("context -> answer", tools={"invalid-name": my_tool})
+            RLM("context -> answer", tools={tool_name: my_tool})
 
-        with pytest.raises(ValueError, match="must be a valid Python identifier"):
-            RLM("context -> answer", tools={"123start": my_tool})
-
-    def test_tool_validation_reserved_names(self):
+    @pytest.mark.parametrize("tool_name", ["llm_query", "FINAL", "print"])
+    def test_tool_validation_reserved_names(self, tool_name):
         """Test RLM rejects tool names that conflict with built-in functions."""
         def my_tool() -> str:
             return "result"
 
         with pytest.raises(ValueError, match="conflicts with built-in"):
-            RLM("context -> answer", tools={"llm_query": my_tool})
+            RLM("context -> answer", tools={tool_name: my_tool})
 
-        with pytest.raises(ValueError, match="conflicts with built-in"):
-            RLM("context -> answer", tools={"FINAL": my_tool})
-
-        with pytest.raises(ValueError, match="conflicts with built-in"):
-            RLM("context -> answer", tools={"print": my_tool})
-
-    def test_tool_validation_not_callable(self):
+    @pytest.mark.parametrize("invalid_value", ["not a function", 123])
+    def test_tool_validation_not_callable(self, invalid_value):
         """Test RLM rejects tools that aren't callable."""
         with pytest.raises(TypeError, match="must be callable"):
-            RLM("context -> answer", tools={"my_tool": "not a function"})
+            RLM("context -> answer", tools={"my_tool": invalid_value})
 
-        with pytest.raises(TypeError, match="must be callable"):
-            RLM("context -> answer", tools={"my_tool": 123})
+    def test_optional_parameters(self):
+        """Test RLM optional parameters and their defaults."""
+        import dspy
 
-    def test_interpreter_parameter(self):
-        """Test RLM accepts interpreter parameter."""
-        mock = MockInterpreter()
-        rlm = RLM("context -> answer", interpreter=mock)
-        assert rlm._interpreter is mock
-
-    def test_max_llm_calls_parameter(self):
-        """Test RLM accepts max_llm_calls parameter."""
-        rlm = RLM("context -> answer", max_llm_calls=100)
-        assert rlm.max_llm_calls == 100
-
-    def test_default_max_llm_calls(self):
-        """Test RLM has default max_llm_calls of 50."""
+        # Test defaults
         rlm = RLM("context -> answer")
         assert rlm.max_llm_calls == 50
-
-    def test_sub_lm_parameter(self):
-        """Test RLM accepts sub_lm parameter."""
-        import dspy
-        mock_lm = dspy.LM("openai/gpt-4o-mini")
-        rlm = RLM("context -> answer", sub_lm=mock_lm)
-        assert rlm.sub_lm is mock_lm
-
-    def test_sub_lm_default_none(self):
-        """Test RLM defaults sub_lm to None."""
-        rlm = RLM("context -> answer")
         assert rlm.sub_lm is None
+        assert rlm._interpreter is None
+
+        # Test custom values
+        mock = MockInterpreter()
+        mock_lm = dspy.LM("openai/gpt-4o-mini")
+        rlm = RLM("context -> answer", max_llm_calls=100, sub_lm=mock_lm, interpreter=mock)
+        assert rlm.max_llm_calls == 100
+        assert rlm.sub_lm is mock_lm
+        assert rlm._interpreter is mock
 
     def test_forward_validates_required_inputs(self):
         """Test that forward() raises ValueError for missing required inputs."""
         mock = MockInterpreter(responses=["result"])
-        rlm = RLM("context, query -> answer", max_iterations=3, interpreter=mock)
 
+        # Single missing input
+        rlm = RLM("context, query -> answer", max_iterations=3, interpreter=mock)
         with pytest.raises(ValueError, match="Missing required input"):
             rlm.forward(context="some context")  # Missing 'query'
 
-    def test_forward_validates_all_missing_inputs(self):
-        """Test that forward() reports all missing inputs."""
-        mock = MockInterpreter(responses=["result"])
+        # Multiple missing inputs - all should be reported
         rlm = RLM("a, b, c -> answer", max_iterations=3, interpreter=mock)
-
         with pytest.raises(ValueError) as exc_info:
             rlm.forward(a="only a")  # Missing 'b' and 'c'
         assert "b" in str(exc_info.value)
@@ -612,16 +649,11 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_basic(self):
         """Test aforward() returns Prediction with expected output (MockInterpreter)."""
-        from dspy.primitives.prediction import Prediction
-
         mock = MockInterpreter(responses=[FinalAnswerResult({"answer": "42"})])
         rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
-
-        class MockPredictor:
-            async def acall(self, **kwargs):
-                return Prediction(reasoning="Return answer", code='FINAL("42")')
-
-        rlm.generate_action = MockPredictor()
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'FINAL("42")'},
+        ])
 
         result = await rlm.aforward(query="What is the answer?")
         assert result.answer == "42"
@@ -629,16 +661,11 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_int_output_mock(self):
         """Test aforward() returns int when signature expects int (MockInterpreter)."""
-        from dspy.primitives.prediction import Prediction
-
         mock = MockInterpreter(responses=[FinalAnswerResult({"count": 42})])
         rlm = RLM("query -> count: int", max_iterations=3, interpreter=mock)
-
-        class MockPredictor:
-            async def acall(self, **kwargs):
-                return Prediction(reasoning="Return count", code="FINAL(42)")
-
-        rlm.generate_action = MockPredictor()
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return count", "code": "FINAL(42)"},
+        ])
 
         result = await rlm.aforward(query="count items")
         assert result.count == 42
@@ -647,113 +674,55 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_multi_iteration_mock(self):
         """Test aforward() handles multiple iterations before FINAL (MockInterpreter)."""
-        from dspy.primitives.prediction import Prediction
-
         mock = MockInterpreter(responses=[
             "explored data",
             FinalAnswerResult({"answer": "done"}),
         ])
         rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
-
-        call_count = [0]
-
-        class MockPredictor:
-            async def acall(self, **kwargs):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    return Prediction(reasoning="Explore first", code="print('exploring')")
-                return Prediction(reasoning="Now finish", code='FINAL("done")')
-
-        rlm.generate_action = MockPredictor()
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore first", "code": "print('exploring')"},
+            {"reasoning": "Now finish", "code": 'FINAL("done")'},
+        ])
 
         result = await rlm.aforward(query="test")
         assert result.answer == "done"
-        assert call_count[0] == 2
 
 
 class TestRLMTypeCoercionMock:
     """Unit tests for RLM type coercion using MockInterpreter (no Deno required)."""
 
-    def test_rlm_int_output_mock(self):
-        """Test RLM returns int when signature expects int (MockInterpreter)."""
-        from dspy.primitives.prediction import Prediction
+    @pytest.mark.parametrize("output_field,output_type,final_value,code,expected", [
+        ("count", "int", 42, "FINAL(42)", 42),
+        ("score", "float", 3.14, "FINAL(3.14)", 3.14),
+        ("valid", "bool", True, "FINAL(True)", True),
+        ("numbers", "list[int]", [1, 2, 3], "FINAL([1, 2, 3])", [1, 2, 3]),
+        ("answer", "Literal['yes', 'no']", "yes", 'FINAL("yes")', "yes"),
+    ])
+    def test_type_coercion(self, output_field, output_type, final_value, code, expected):
+        """Test RLM type coercion for various types (MockInterpreter)."""
+        mock = MockInterpreter(responses=[FinalAnswerResult({output_field: final_value})])
+        rlm = RLM(f"query -> {output_field}: {output_type}", max_iterations=3, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return value", "code": code},
+        ])
 
-        # FinalAnswerResult must use dict format with field names matching signature
-        mock = MockInterpreter(responses=[FinalAnswerResult({"count": 42})])
-        rlm = RLM("query -> count: int", max_iterations=3, interpreter=mock)
+        result = rlm.forward(query="test")
+        assert getattr(result, output_field) == expected
 
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="Return count", code="FINAL(42)")
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="count items")
-        assert result.count == 42
-        assert isinstance(result.count, int)
-
-    def test_rlm_literal_output_mock(self):
-        """Test RLM returns valid Literal value (MockInterpreter)."""
-        from dspy.primitives.prediction import Prediction
-
-        # FinalAnswerResult must use dict format with field names matching signature
-        mock = MockInterpreter(responses=[FinalAnswerResult({"answer": "yes"})])
-        rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=3, interpreter=mock)
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="Answer yes", code='FINAL("yes")')
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="is it yes?")
-        assert result.answer == "yes"
-
-    def test_rlm_list_output_mock(self):
-        """Test RLM returns list when signature expects list (MockInterpreter)."""
-        from dspy.primitives.prediction import Prediction
-
-        # FinalAnswerResult must use dict format with field names matching signature
-        mock = MockInterpreter(responses=[FinalAnswerResult({"numbers": [1, 2, 3]})])
-        rlm = RLM("query -> numbers: list[int]", max_iterations=3, interpreter=mock)
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="Return list", code="FINAL([1, 2, 3])")
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="get numbers")
-        assert result.numbers == [1, 2, 3]
-        assert isinstance(result.numbers, list)
-
-    def test_rlm_type_error_retries_mock(self):
+    def test_type_error_retries(self):
         """Test RLM retries when type validation fails (MockInterpreter)."""
-        from dspy.primitives.prediction import Prediction
-
-        # MockInterpreter returns responses in order
-        # FinalAnswerResult must use dict format with field names matching signature
         mock = MockInterpreter(responses=[
             FinalAnswerResult({"answer": "maybe"}),  # Invalid for Literal
             FinalAnswerResult({"answer": "yes"}),    # Valid
         ])
         rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=5, interpreter=mock)
-
-        call_count = [0]
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    return Prediction(reasoning="Try maybe", code='FINAL("maybe")')
-                else:
-                    return Prediction(reasoning="Try yes", code='FINAL("yes")')
-
-        rlm.generate_action = MockPredictor()
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Try maybe", "code": 'FINAL("maybe")'},
+            {"reasoning": "Try yes", "code": 'FINAL("yes")'},
+        ])
 
         result = rlm.forward(query="is it yes?")
         assert result.answer == "yes"
-        assert call_count[0] >= 2  # Should have retried
 
 
 # ============================================================================
@@ -769,122 +738,146 @@ class TestRLMTypeCoercion:
     typed output_fields for FINAL based on the signature.
     """
 
-    def test_rlm_int_output_from_int_final(self):
-        """Test RLM returns int when signature expects int and FINAL returns int."""
-        from dspy.primitives.prediction import Prediction
+    @pytest.mark.parametrize("output_field,output_type,code,expected,expected_type", [
+        ("count", "int", "FINAL(42)", 42, int),
+        ("score", "float", "FINAL(3.14)", 3.14, float),
+        ("valid", "bool", "FINAL(True)", True, bool),
+        ("numbers", "list[int]", "FINAL([1, 2, 3])", [1, 2, 3], list),
+        ("data", "dict[str, str]", 'FINAL({"key": "value"})', {"key": "value"}, dict),
+        ("answer", "Literal['yes', 'no']", 'FINAL("yes")', "yes", str),
+    ])
+    def test_type_coercion(self, output_field, output_type, code, expected, expected_type):
+        """Test RLM type coercion for various types with PythonInterpreter."""
+        rlm = RLM(f"query -> {output_field}: {output_type}", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return value", "code": code},
+        ])
 
-        # Let RLM create its own sandbox with output_fields
-        rlm = RLM("query -> count: int", max_iterations=3)
+        result = rlm.forward(query="test")
+        assert getattr(result, output_field) == expected
+        assert isinstance(getattr(result, output_field), expected_type)
 
-        # Mock generate_action to return code that calls FINAL with an int
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="I'll return the count", code="FINAL(42)")
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="count items")
-        assert result.count == 42
-        assert isinstance(result.count, int)
-
-    def test_rlm_literal_output_valid(self):
-        """Test RLM returns valid Literal value."""
-        from dspy.primitives.prediction import Prediction
-
-        rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=3)
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="Answer is yes", code='FINAL("yes")')
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="is it yes?")
-        assert result.answer == "yes"
-
-    def test_rlm_list_output_from_list_final(self):
-        """Test RLM returns list when signature expects list and FINAL returns list."""
-        from dspy.primitives.prediction import Prediction
-
-        # Use 'numbers' instead of 'items' to avoid conflict with Prediction.items() method
-        rlm = RLM("query -> numbers: list[int]", max_iterations=3)
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="Return list", code="FINAL([1, 2, 3])")
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="get items")
-        assert result.numbers == [1, 2, 3]
-        assert isinstance(result.numbers, list)
-
-    def test_rlm_dict_output_from_dict_final(self):
-        """Test RLM returns dict when signature expects dict and FINAL returns dict."""
-        from dspy.primitives.prediction import Prediction
-
-        rlm = RLM("query -> data: dict[str, str]", max_iterations=3)
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="Return dict", code='FINAL({"key": "value"})')
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="get data")
-        assert result.data == {"key": "value"}
-        assert isinstance(result.data, dict)
-
-    def test_rlm_float_output(self):
-        """Test RLM returns float when signature expects float."""
-        from dspy.primitives.prediction import Prediction
-
-        rlm = RLM("query -> score: float", max_iterations=3)
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="Return score", code="FINAL(3.14)")
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="get score")
-        assert result.score == 3.14
-        assert isinstance(result.score, float)
-
-    def test_rlm_bool_output(self):
-        """Test RLM returns bool when signature expects bool."""
-        from dspy.primitives.prediction import Prediction
-
-        rlm = RLM("query -> valid: bool", max_iterations=3)
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(reasoning="Return bool", code="FINAL(True)")
-
-        rlm.generate_action = MockPredictor()
-
-        result = rlm.forward(query="is valid?")
-        assert result.valid is True
-        assert isinstance(result.valid, bool)
-
-    def test_rlm_final_var_int_output(self):
+    def test_final_var_extracts_typed_value(self):
         """Test RLM FINAL_VAR correctly extracts typed value."""
-        from dspy.primitives.prediction import Prediction
-
         rlm = RLM("query -> count: int", max_iterations=3)
-
-        class MockPredictor:
-            def __call__(self, **kwargs):
-                return Prediction(
-                    reasoning="Compute and return",
-                    code='result = 42\nFINAL_VAR("result")'
-                )
-
-        rlm.generate_action = MockPredictor()
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Compute and return", "code": 'result = 42\nFINAL_VAR("result")'},
+        ])
 
         result = rlm.forward(query="count items")
         assert result.count == 42
         assert isinstance(result.count, int)
+
+
+# ============================================================================
+# Integration Tests: RLM Multiple Output Fields
+# ============================================================================
+
+
+@pytest.mark.integration
+class TestRLMMultipleOutputs:
+    """Tests for signatures with multiple typed output fields.
+
+    Tests FINAL() and FINAL_VAR() calling patterns with multi-output signatures.
+    """
+
+    def test_multi_output_final_kwargs(self):
+        """FINAL(field1=val1, field2=val2) with keyword args."""
+        rlm = RLM("query -> name: str, count: int", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return both outputs", "code": 'FINAL(name="alice", count=5)'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.name == "alice"
+        assert result.count == 5
+        assert isinstance(result.count, int)
+
+    def test_multi_output_final_positional(self):
+        """FINAL(val1, val2) with positional args mapped to field order."""
+        rlm = RLM("query -> name: str, count: int", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return both outputs positionally", "code": 'FINAL("bob", 10)'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.name == "bob"
+        assert result.count == 10
+
+    def test_multi_output_three_fields(self):
+        """Signature with 3+ output fields of different types."""
+        rlm = RLM("query -> name: str, age: int, active: bool", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return all three", "code": 'FINAL(name="carol", age=30, active=True)'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.name == "carol"
+        assert result.age == 30
+        assert result.active is True
+
+    def test_multi_output_final_missing_field_errors(self):
+        """FINAL() with missing field should return error in output."""
+        rlm = RLM("query -> name: str, count: int", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Missing count field", "code": 'FINAL(name="alice")'},
+            {"reasoning": "Now provide both", "code": 'FINAL(name="alice", count=5)'},
+        ])
+
+        # RLM should retry after getting error for missing field
+        result = rlm.forward(query="test")
+        assert result.name == "alice"
+        assert result.count == 5
+
+    def test_multi_output_final_var(self):
+        """FINAL_VAR("var1", "var2") maps variables to output fields."""
+        rlm = RLM("query -> name: str, count: int", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Use FINAL_VAR", "code": 'n = "dave"\nc = 15\nFINAL_VAR("n", "c")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.name == "dave"
+        assert result.count == 15
+
+    def test_multi_output_final_var_wrong_count_errors(self):
+        """FINAL_VAR with wrong number of args should error and retry."""
+        rlm = RLM("query -> name: str, count: int", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Wrong arg count", "code": 'n = "eve"\nFINAL_VAR("n")'},  # Missing second arg
+            {"reasoning": "Now correct", "code": 'FINAL(name="eve", count=20)'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.name == "eve"
+        assert result.count == 20
+
+    def test_multi_output_final_var_undefined_errors(self):
+        """FINAL_VAR with undefined variable should error and retry."""
+        rlm = RLM("query -> name: str, count: int", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Undefined var", "code": 'n = "frank"\nFINAL_VAR("n", "undefined_var")'},
+            {"reasoning": "Now correct", "code": 'FINAL(name="frank", count=25)'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.name == "frank"
+        assert result.count == 25
+
+    def test_multi_output_type_coercion(self):
+        """Each output field is coerced to its declared type."""
+        rlm = RLM("query -> count: int, ratio: float, flag: bool", max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return mixed types", "code": "FINAL(count=42, ratio=3.14, flag=True)"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.count == 42
+        assert isinstance(result.count, int)
+        assert result.ratio == 3.14
+        assert isinstance(result.ratio, float)
+        assert result.flag is True
+        assert isinstance(result.flag, bool)
 
 
 # ============================================================================
@@ -902,16 +895,9 @@ class TestRLMWithDummyLM:
 
     def test_simple_computation_e2e(self):
         """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
-        import dspy
-        from dspy.utils.dummies import DummyLM
-
-        # DummyLM returns responses with reasoning and code fields
-        lm = DummyLM([
+        with dummy_lm_context([
             {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nFINAL(result)"},
-        ])
-
-        with dspy.context(lm=lm):
-            # Let RLM create its own sandbox with output_fields
+        ]):
             rlm = RLM("query -> answer: int", max_iterations=3)
             result = rlm.forward(query="What is 2 + 3?")
 
@@ -920,33 +906,21 @@ class TestRLMWithDummyLM:
 
     def test_multi_turn_computation_e2e(self):
         """Test RLM with multiple turns before FINAL."""
-        import dspy
-        from dspy.utils.dummies import DummyLM
-
-        # First turn: explore the data, second turn: compute and return
-        lm = DummyLM([
+        with dummy_lm_context([
             {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
             {"reasoning": "Now compute and return", "code": "y = x * 2\nFINAL(y)"},
-        ])
-
-        with dspy.context(lm=lm):
+        ]):
             rlm = RLM("query -> answer: int", max_iterations=5)
             result = rlm.forward(query="Double ten")
 
             assert result.answer == 20
-            # Verify trajectory has 2 entries
             assert len(result.trajectory) == 2
 
     def test_with_input_variables_e2e(self):
         """Test RLM with input variables passed to sandbox."""
-        import dspy
-        from dspy.utils.dummies import DummyLM
-
-        lm = DummyLM([
+        with dummy_lm_context([
             {"reasoning": "Sum the numbers in the list", "code": "FINAL(sum(numbers))"},
-        ])
-
-        with dspy.context(lm=lm):
+        ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iterations=3)
             result = rlm.forward(numbers=[1, 2, 3, 4, 5])
 
@@ -954,18 +928,12 @@ class TestRLMWithDummyLM:
 
     def test_with_tool_e2e(self):
         """Test RLM calling a host-side tool through the sandbox."""
-        import dspy
-        from dspy.utils.dummies import DummyLM
-
         def lookup(key: str) -> str:
             return {"apple": "red", "banana": "yellow"}.get(key, "unknown")
 
-        lm = DummyLM([
+        with dummy_lm_context([
             {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nFINAL(color)'},
-        ])
-
-        with dspy.context(lm=lm):
-            # Pass custom tools to RLM, which will pass them to its PythonInterpreter
+        ]):
             rlm = RLM("fruit -> color: str", max_iterations=3, tools={"lookup": lookup})
             result = rlm.forward(fruit="apple")
 
@@ -974,14 +942,9 @@ class TestRLMWithDummyLM:
     @pytest.mark.asyncio
     async def test_aforward_simple_computation_e2e(self):
         """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
-        import dspy
-        from dspy.utils.dummies import DummyLM
-
-        lm = DummyLM([
+        with dummy_lm_context([
             {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nFINAL(result)"},
-        ])
-
-        with dspy.context(lm=lm):
+        ]):
             rlm = RLM("query -> answer: int", max_iterations=3)
             result = await rlm.aforward(query="What is 2 + 3?")
 
@@ -991,15 +954,10 @@ class TestRLMWithDummyLM:
     @pytest.mark.asyncio
     async def test_aforward_multi_turn_e2e(self):
         """Test aforward() with multiple turns before FINAL."""
-        import dspy
-        from dspy.utils.dummies import DummyLM
-
-        lm = DummyLM([
+        with dummy_lm_context([
             {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
             {"reasoning": "Now compute and return", "code": "y = x * 2\nFINAL(y)"},
-        ])
-
-        with dspy.context(lm=lm):
+        ]):
             rlm = RLM("query -> answer: int", max_iterations=5)
             result = await rlm.aforward(query="Double ten")
 
@@ -1009,14 +967,9 @@ class TestRLMWithDummyLM:
     @pytest.mark.asyncio
     async def test_aforward_with_input_variables_e2e(self):
         """Test aforward() with input variables passed to sandbox."""
-        import dspy
-        from dspy.utils.dummies import DummyLM
-
-        lm = DummyLM([
+        with dummy_lm_context([
             {"reasoning": "Sum the numbers in the list", "code": "FINAL(sum(numbers))"},
-        ])
-
-        with dspy.context(lm=lm):
+        ]):
             rlm = RLM("numbers: list[int] -> total: int", max_iterations=3)
             result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])
 
@@ -1055,55 +1008,6 @@ class TestRLMIntegration:
             query="Use llm_query to describe what animal is mentioned as lazy."
         )
         assert "dog" in result.answer.lower()
-
-
-# ============================================================================
-# Benchmark Data Generators (for manual testing)
-# ============================================================================
-
-
-def generate_needle_haystack(
-    num_lines: int = 10000,
-    needle_value: str | None = None,
-    needle_position: float = 0.5,
-) -> tuple[str, str]:
-    """Generate a needle-in-haystack benchmark."""
-    if needle_value is None:
-        needle_value = str(random.randint(1000000, 9999999))
-
-    random_words = ["blah", "random", "text", "data", "content", "info", "sample", "test"]
-    lines = []
-
-    for _ in range(num_lines):
-        num_words = random.randint(3, 8)
-        line = " ".join(random.choice(random_words) for _ in range(num_words))
-        lines.append(line)
-
-    needle_pos = int(num_lines * needle_position)
-    lines[needle_pos] = f"The magic number is {needle_value}"
-
-    return "\n".join(lines), needle_value
-
-
-def generate_label_counting_context(
-    num_items: int = 10,
-    labels: list[str] | None = None,
-) -> tuple[str, dict[str, int]]:
-    """Generate a label counting benchmark (Oolong-style)."""
-    if labels is None:
-        labels = ["spam", "ham"]
-
-    items = []
-    counts = dict.fromkeys(labels, 0)
-
-    for i in range(num_items):
-        label = random.choice(labels)
-        counts[label] += 1
-        text = f"Item {i+1}: This is a {label} message with some content."
-        items.append(text)
-
-    context = "\n".join(items)
-    return context, counts
 
 
 if __name__ == "__main__":

@@ -33,12 +33,6 @@ class PythonInterpreter:
     Prerequisites:
         Deno must be installed: https://docs.deno.com/runtime/getting_started/installation/
 
-    Features:
-        - Secure execution via Deno + Pyodide (WASM)
-        - Host-side tools callable from interpreter code
-        - Optional file mounting for read/write access
-        - State persists across execute() calls
-
     Example:
         ```python
         # Basic execution

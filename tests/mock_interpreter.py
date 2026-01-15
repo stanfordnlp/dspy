@@ -65,13 +65,6 @@ class MockInterpreter:
         self._shutdown = False
 
     def start(self) -> None:
-        """Initialize the mock interpreter.
-
-        No-op for MockInterpreter since no resources need allocation.
-        Provided for protocol compliance and pooling scenarios.
-
-        Idempotent: safe to call multiple times.
-        """
         pass
 
     def execute(
@@ -115,7 +108,6 @@ class MockInterpreter:
         return response
 
     def shutdown(self) -> None:
-        """Mark the interpreter as shutdown."""
         self._shutdown = True
 
     def reset(self) -> None:
