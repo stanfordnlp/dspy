@@ -10,7 +10,7 @@ or uses a custom function to generate responses. Useful for:
 
 from typing import Any, Callable
 
-from dspy.primitives.interpreter import FinalAnswerResult, InterpreterError
+from dspy.primitives.code_interpreter import CodeInterpreterError, FinalAnswerResult
 
 __all__ = ["MockInterpreter"]
 
@@ -82,11 +82,11 @@ class MockInterpreter:
             The next response from the responses list, or result from execute_fn
 
         Raises:
-            InterpreterError: If the interpreter was shutdown, or if an Exception
+            CodeInterpreterError: If the interpreter was shutdown, or if an Exception
                              is in the responses list
         """
         if self._shutdown:
-            raise InterpreterError("MockInterpreter has been shutdown")
+            raise CodeInterpreterError("MockInterpreter has been shutdown")
 
         variables = variables or {}
         self.call_history.append((code, variables))

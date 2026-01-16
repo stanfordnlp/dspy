@@ -22,12 +22,13 @@ import pydantic
 
 import dspy
 from dspy.adapters.utils import parse_value, translate_field_type
-from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, Interpreter, InterpreterError
+from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalAnswerResult
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLHistory, REPLVariable
 from dspy.signatures.signature import ensure_signature
+from dspy.utils.annotation import experimental
 
 if TYPE_CHECKING:
 
@@ -40,44 +41,24 @@ logger = logging.getLogger(__name__)
 ACTION_INSTRUCTIONS_TEMPLATE = """You are tasked with producing the following outputs given the inputs {inputs}:
 {output_fields}
 
-You have access to a Python REPL. Your code is EXECUTED DIRECTLY - just write the code, don't wrap it in strings.
+You have access to a Python REPL environment. Write Python code and it will be executed. You will see the output, then write more code based on what you learned. This is an iterative process.
 
-WRONG (code as string - NOT executed):
-```python
-code = '''
-result = some_function()
-print(result)
-'''
-```
-
-CORRECT (code executed directly):
-```python
-result = some_function()
-print(result)
-```
-
-Available in the REPL:
+Available:
 - Variables: {inputs} (your input data)
 - `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
-- `llm_query_batched(prompts)` - query multiple prompts concurrently, returns list in same order
-- `print()` - view outputs (ALWAYS print to see results!)
-- `FINAL({final_output_names})` - submit final answer
-- `FINAL_VAR({final_var_output_names})` - submit a variable as final answer
+- `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
+- `print()` - ALWAYS print to see results
+- `FINAL({final_output_names})` - submit final answer when done
 - Standard libraries: re, json, collections, math, etc.
 
-WORKFLOW:
-1. Write SHORT snippets (5-15 lines) that execute and print results
-2. State persists - variables you create remain available in the next iteration
-3. Build incrementally: explore → process → FINAL()
+IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
 
-Example session:
-  Iteration 1: `files = glob_files("**/*.py"); print(files[:10])`  # See what's there
-  Iteration 2: `content = read_file(files[0]); print(content[:500])`  # Inspect a file
-  Iteration 3: `FINAL(answer="Found X files...")`  # Done!
+1. EXPLORE FIRST - Look at your data before processing it. Print samples, check types/lengths, understand the structure.
+2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.
+3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
+4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
 
-You have max {max_llm_calls} sub-LLM calls. Use Python for pattern matching; reserve LLM calls for semantic understanding.
-
-CALL FINAL() or FINAL_VAR() when you have enough information. Don't over-explore - after 2-3 iterations with useful data, finish up."""
+You have max {max_llm_calls} sub-LLM calls. When done, call FINAL() with your answer."""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
 _CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*?)\n```\s*$", re.DOTALL)
@@ -91,6 +72,7 @@ def _strip_code_fences(code: str) -> str:
     return code
 
 
+@experimental
 class RLM(Module):
     """Recursive Language Model module.
 
@@ -99,7 +81,7 @@ class RLM(Module):
     sub-LLMs for semantic analysis, and build up answers iteratively.
 
     The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but you
-    can provide any Interpreter implementation (e.g., MockInterpreter, or write a custom one using E2B or Modal).
+    can provide any CodeInterpreter implementation (e.g., MockInterpreter, or write a custom one using E2B or Modal).
 
     Example:
         ```python
@@ -119,7 +101,7 @@ class RLM(Module):
         verbose: bool = False,
         tools: dict[str, Callable[..., str]] | None = None,
         sub_lm: dspy.LM | None = None,
-        interpreter: Interpreter | None = None,
+        interpreter: CodeInterpreter | None = None,
     ):
         """
         Args:
@@ -133,7 +115,7 @@ class RLM(Module):
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
-            interpreter: Interpreter implementation to use. Defaults to PythonInterpreter.
+            interpreter: CodeInterpreter implementation to use. Defaults to PythonInterpreter.
         """
         super().__init__()
         self.signature = ensure_signature(signature)
@@ -352,7 +334,7 @@ class RLM(Module):
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
 
     # =========================================================================
-    # Interpreter Lifecycle
+    # CodeInterpreter Lifecycle
     # =========================================================================
 
     def _prepare_execution_tools(self) -> dict[str, Callable]:
@@ -361,7 +343,7 @@ class RLM(Module):
         execution_tools.update(self._user_tools)
         return execution_tools
 
-    def _inject_execution_context(self, interpreter: Interpreter, execution_tools: dict[str, Callable]) -> None:
+    def _inject_execution_context(self, interpreter: CodeInterpreter, execution_tools: dict[str, Callable]) -> None:
         """Inject execution tools and output fields into an interpreter.
 
         This ensures llm_query, llm_query_batched, and typed FINAL signatures are available,
@@ -376,7 +358,7 @@ class RLM(Module):
             interpreter._tools_registered = False
 
     @contextmanager
-    def _interpreter_context(self, execution_tools: dict[str, Callable]) -> Iterator[Interpreter]:
+    def _interpreter_context(self, execution_tools: dict[str, Callable]) -> Iterator[CodeInterpreter]:
         """Yield interpreter, creating PythonInterpreter if none provided at init."""
         if self._interpreter is not None:
             self._inject_execution_context(self._interpreter, execution_tools)
@@ -503,7 +485,7 @@ class RLM(Module):
 
     def _execute_iteration(
         self,
-        repl: Interpreter,
+        repl: CodeInterpreter,
         variables: list[REPLVariable],
         history: REPLHistory,
         iteration: int,
@@ -525,7 +507,7 @@ class RLM(Module):
         try:
             code = _strip_code_fences(action.code)
             result = repl.execute(code, variables=dict(input_args))
-        except (InterpreterError, SyntaxError) as e:
+        except (CodeInterpreterError, SyntaxError) as e:
             result = f"[Error] {e}"
 
         return self._process_execution_result(action, result, history, output_field_names)
@@ -588,7 +570,7 @@ class RLM(Module):
 
     async def _aexecute_iteration(
         self,
-        repl: Interpreter,
+        repl: CodeInterpreter,
         variables: list[REPLVariable],
         history: REPLHistory,
         iteration: int,
@@ -610,7 +592,7 @@ class RLM(Module):
         try:
             code = _strip_code_fences(pred.code)
             result = repl.execute(code, variables=dict(input_args))
-        except (InterpreterError, SyntaxError) as e:
+        except (CodeInterpreterError, SyntaxError) as e:
             result = f"[Error] {e}"
 
         return self._process_execution_result(pred, result, history, output_field_names)

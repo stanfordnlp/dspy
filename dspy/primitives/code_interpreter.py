@@ -13,7 +13,7 @@ from typing import Any, Callable, Protocol, runtime_checkable
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
-class InterpreterError(RuntimeError):
+class CodeInterpreterError(RuntimeError):
     """Error raised during code execution in an interpreter.
 
     This covers runtime errors, undefined variables, tool call failures, etc.
@@ -41,7 +41,7 @@ class FinalAnswerResult:
 
 
 @runtime_checkable
-class Interpreter(Protocol):
+class CodeInterpreter(Protocol):
     """Protocol for code execution environments (interpreters).
 
     Implementations must provide:
@@ -113,7 +113,7 @@ class Interpreter(Protocol):
             - None: If no output was produced
 
         Raises:
-            InterpreterError: On runtime errors (undefined vars, tool failures, etc.)
+            CodeInterpreterError: On runtime errors (undefined vars, tool failures, etc.)
             SyntaxError: On invalid Python syntax
 
         Note:

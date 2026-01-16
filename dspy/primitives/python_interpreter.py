@@ -16,9 +16,9 @@ import subprocess
 from os import PathLike
 from typing import Any, Callable
 
-from dspy.primitives.interpreter import SIMPLE_TYPES, FinalAnswerResult, InterpreterError
+from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalAnswerResult
 
-__all__ = ["PythonInterpreter", "FinalAnswerResult", "InterpreterError"]
+__all__ = ["PythonInterpreter", "FinalAnswerResult", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
 
@@ -232,10 +232,10 @@ class PythonInterpreter:
         self.deno_process.stdin.flush()
         response_line = self.deno_process.stdout.readline().strip()
         if not response_line:
-            raise InterpreterError("No response when registering tools/outputs")
+            raise CodeInterpreterError("No response when registering tools/outputs")
         response = json.loads(response_line)
         if "tools_registered" not in response and "outputs_registered" not in response:
-            raise InterpreterError(f"Unexpected response when registering: {response_line}")
+            raise CodeInterpreterError(f"Unexpected response when registering: {response_line}")
         self._tools_registered = True
 
     def _handle_tool_call(self, request: dict) -> None:
@@ -245,7 +245,7 @@ class PythonInterpreter:
 
         try:
             if tool_name not in self.tools:
-                raise InterpreterError(f"Unknown tool: {tool_name}")
+                raise CodeInterpreterError(f"Unknown tool: {tool_name}")
             result = self.tools[tool_name](*call_args.get("args", []), **call_args.get("kwargs", {}))
             is_json = isinstance(result, (list, dict))
             response = {"type": "tool_response", "id": request_id, "error": None,
@@ -278,13 +278,13 @@ class PythonInterpreter:
                     "> brew install deno\n"
                     "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
                 )
-                raise InterpreterError(install_instructions) from e
+                raise CodeInterpreterError(install_instructions) from e
 
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
         for key in variables:
             if not key.isidentifier() or keyword.iskeyword(key):
-                raise InterpreterError(f"Invalid variable name: '{key}'")
+                raise CodeInterpreterError(f"Invalid variable name: '{key}'")
         assignments = [f"{k} = {self._serialize_value(v)}" for k, v in variables.items()]
         return "\n".join(assignments) + "\n" + code if assignments else code
 
@@ -305,7 +305,7 @@ class PythonInterpreter:
         elif isinstance(value, set):
             return json.dumps(sorted(value))
         else:
-            raise InterpreterError(f"Unsupported value type: {type(value).__name__}")
+            raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
     def execute(
         self,
@@ -338,7 +338,7 @@ class PythonInterpreter:
             if not output_line:
                 # Possibly the subprocess died or gave no output
                 err_output = self.deno_process.stderr.read()
-                raise InterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
+                raise CodeInterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
 
             # Parse that line as JSON
             try:
@@ -365,7 +365,7 @@ class PythonInterpreter:
                 elif error_type == "SyntaxError":
                     raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
                 else:
-                    raise InterpreterError(f"{error_type}: {error_args or error_msg}")
+                    raise CodeInterpreterError(f"{error_type}: {error_args or error_msg}")
 
             # If there's no error or got `FinalAnswer`, return the "output" field
             self._sync_files()

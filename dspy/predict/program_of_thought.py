@@ -3,7 +3,7 @@ import logging
 import re
 
 import dspy
-from dspy.primitives.interpreter import FinalAnswerResult
+from dspy.primitives.code_interpreter import FinalAnswerResult
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature

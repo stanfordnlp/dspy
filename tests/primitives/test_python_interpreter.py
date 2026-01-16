@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from dspy.primitives.interpreter import InterpreterError
+from dspy.primitives.code_interpreter import CodeInterpreterError, FinalAnswerResult
 from dspy.primitives.python_interpreter import PythonInterpreter
 
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
@@ -41,7 +41,7 @@ def test_rejects_python_keywords_as_variable_names():
         keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
 
         for keyword in keywords_to_test:
-            with pytest.raises(InterpreterError, match="Invalid variable name"):
+            with pytest.raises(CodeInterpreterError, match="Invalid variable name"):
                 interpreter.execute("print(x)", variables={keyword: 42})
 
 
@@ -55,7 +55,7 @@ def test_failure_syntax_error():
 def test_failure_zero_division():
     with PythonInterpreter() as interpreter:
         code = "1+0/0"
-        with pytest.raises(InterpreterError, match="ZeroDivisionError"):
+        with pytest.raises(CodeInterpreterError, match="ZeroDivisionError"):
             interpreter.execute(code)
 
 
@@ -63,13 +63,12 @@ def test_exception_args():
     with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"raise ValueError({token})"
-        with pytest.raises(InterpreterError, match=rf"ValueError: \[{token}\]"):
+        with pytest.raises(CodeInterpreterError, match=rf"ValueError: \[{token}\]"):
             interpreter.execute(code)
 
 
 def test_final_with_list():
     """Test FINAL() with a list argument returns FinalAnswerResult with dict format."""
-    from dspy.primitives.interpreter import FinalAnswerResult
 
     with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
@@ -175,7 +174,7 @@ def test_enable_net_flag():
             f"resp = await js.fetch({test_url!r})\n"
             "resp.status"
         )
-        with pytest.raises(InterpreterError, match="PythonError"):
+        with pytest.raises(CodeInterpreterError, match="PythonError"):
             interpreter.execute(code)
 
     with PythonInterpreter(enable_network_access=["example.com"]) as interpreter:
@@ -308,7 +307,6 @@ def test_tool_default_args():
 
 def test_final_with_typed_signature():
     """Test FINAL with typed output signature."""
-    from dspy.primitives.interpreter import FinalAnswerResult
 
     output_fields = [
         {"name": "answer", "type": "str"},
@@ -324,7 +322,6 @@ def test_final_with_typed_signature():
 
 def test_final_positional_args():
     """Test FINAL with positional arguments."""
-    from dspy.primitives.interpreter import FinalAnswerResult
 
     output_fields = [
         {"name": "answer", "type": "str"},
@@ -340,7 +337,6 @@ def test_final_positional_args():
 
 def test_final_var_multi_output():
     """Test FINAL_VAR with multiple output fields using positional args."""
-    from dspy.primitives.interpreter import FinalAnswerResult
 
     output_fields = [
         {"name": "answer", "type": "str"},
@@ -362,7 +358,6 @@ FINAL_VAR("a", "s")
 
 def test_final_var_wrong_arg_count():
     """Test FINAL_VAR with wrong number of args gives clear error."""
-    from dspy.primitives.interpreter import InterpreterError
 
     output_fields = [
         {"name": "answer", "type": "str"},
@@ -370,7 +365,7 @@ def test_final_var_wrong_arg_count():
     ]
 
     with PythonInterpreter(output_fields=output_fields) as sandbox:
-        with pytest.raises(InterpreterError) as exc_info:
+        with pytest.raises(CodeInterpreterError) as exc_info:
             sandbox.execute('x = 1; FINAL_VAR("x")')  # Only 1 arg, expects 2
         assert "expects 2 variable names" in str(exc_info.value)
 

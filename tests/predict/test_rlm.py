@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import pytest
 
 from dspy.predict.rlm import RLM
-from dspy.primitives.interpreter import FinalAnswerResult, InterpreterError
+from dspy.primitives.code_interpreter import CodeInterpreterError, FinalAnswerResult
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
@@ -99,9 +99,9 @@ class TestMockInterpreter:
 
     def test_raises_exception_from_responses(self):
         """Test that MockInterpreter raises exceptions from responses."""
-        mock = MockInterpreter(responses=["ok", InterpreterError("undefined variable")])
+        mock = MockInterpreter(responses=["ok", CodeInterpreterError("undefined variable")])
         assert mock.execute("code1") == "ok"
-        with pytest.raises(InterpreterError, match="undefined variable"):
+        with pytest.raises(CodeInterpreterError, match="undefined variable"):
             mock.execute("code2")
 
     def test_records_call_history(self):
@@ -606,7 +606,7 @@ print(f"Count: {info['count']}")
     def test_runtime_error(self):
         """Test runtime error handling."""
         with PythonInterpreter(tools={}) as interp:
-            with pytest.raises(InterpreterError):
+            with pytest.raises(CodeInterpreterError):
                 interp.execute("undefined_variable")
 
 
@@ -617,7 +617,7 @@ class TestSandboxSecurity:
     def test_no_network_access(self):
         """Test that network access is blocked."""
         with PythonInterpreter(tools={}) as interp:
-            with pytest.raises(InterpreterError) as exc_info:
+            with pytest.raises(CodeInterpreterError) as exc_info:
                 interp.execute("""
 from pyodide.http import pyfetch
 import asyncio
