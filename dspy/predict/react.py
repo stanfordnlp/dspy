@@ -42,51 +42,65 @@ class ReAct(Module):
         self.signature = signature = ensure_signature(signature)
         self.max_iters = max_iters
 
+        self.base_instructions = signature.instructions
+
+
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
-        tools = {tool.name: tool for tool in tools}
+        self.tools = {tool.name: tool for tool in tools}
 
-        inputs = ", ".join([f"`{k}`" for k in signature.input_fields.keys()])
-        outputs = ", ".join([f"`{k}`" for k in signature.output_fields.keys()])
-        instr = [f"{signature.instructions}\n"] if signature.instructions else []
+        self._refresh_react_signature()
 
-        instr.extend(
-            [
-                f"You are an Agent. In each episode, you will be given the fields {inputs} as input. And you can see your past trajectory so far.",
-                f"Your goal is to use one or more of the supplied tools to collect any necessary information for producing {outputs}.\n",
-                "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.",
-                "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
-                "When writing next_thought, you may reason about the current situation and plan for future steps.",
-                "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
-            ]
-        )
 
-        tools["finish"] = Tool(
-            func=lambda: "Completed.",
-            name="finish",
-            desc=f"Marks the task as complete. That is, signals that all information for producing the outputs, i.e. {outputs}, are now available to be extracted.",
-            args={},
-        )
 
-        for idx, tool in enumerate(tools.values()):
+    def _refresh_react_signature(self):
+        """Synchronizes tool metadata and base instructions into the Predictor's prompt."""
+        if hasattr(self, "react"):
+            curr_instr = self.react.signature.instructions
+
+            if curr_instr != self.base_instructions and "You are an Agent" not in curr_instr:
+                self.base_instructions = curr_instr
+
+        inputs = ", ".join([f"`{k}`" for k in self.signature.input_fields.keys()])
+        outputs = ", ".join([f"`{k}`" for k in self.signature.output_fields.keys()])
+
+        instr = [f"{self.base_instructions}\n"] if self.base_instructions else []
+        instr.extend([
+            f"You are an Agent. In each episode, you will be given the fields {inputs} as input. And you can see your past trajectory so far.",
+            f"Your goal is to use one or more of the supplied tools to collect any necessary information for producing {outputs}.\n",
+            "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.",
+            "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
+            "When writing next_thought, you may reason about the current situation and plan for future steps.",
+            "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
+        ])
+
+
+        if "finish" not in self.tools:
+            self.tools["finish"] = Tool(
+                func=lambda: "Completed.",
+                name="finish",
+                desc=f"Marks the task as complete. Signals that all information for producing {outputs} are now available.",
+                args={},
+            )
+
+        for idx, tool in enumerate(self.tools.values()):
             instr.append(f"({idx + 1}) {tool}")
+
         instr.append("When providing `next_tool_args`, the value inside the field must be in JSON format")
 
         react_signature = (
-            dspy.Signature({**signature.input_fields}, "\n".join(instr))
+            dspy.Signature({**self.signature.input_fields}, "\n".join(instr))
             .append("trajectory", dspy.InputField(), type_=str)
             .append("next_thought", dspy.OutputField(), type_=str)
-            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
+            .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(self.tools.keys())])
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
         )
 
-        fallback_signature = dspy.Signature(
-            {**signature.input_fields, **signature.output_fields},
-            signature.instructions,
-        ).append("trajectory", dspy.InputField(), type_=str)
-
-        self.tools = tools
-        self.react = dspy.Predict(react_signature)
-        self.extract = dspy.ChainOfThought(fallback_signature)
+        if not hasattr(self, "react"):
+            self.react = dspy.Predict(react_signature)
+            fallback_sig = dspy.Signature({**self.signature.input_fields, **self.signature.output_fields}, self.base_instructions)
+            self.extract = dspy.ChainOfThought(fallback_sig.append("trajectory", dspy.InputField(), type_=str))
+        else:
+            self.react.signature = react_signature
 
     def _format_trajectory(self, trajectory: dict[str, Any]):
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
@@ -94,6 +108,8 @@ class ReAct(Module):
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
+
+        self._refresh_react_signature()
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
@@ -119,6 +135,7 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
+        self._refresh_react_signature()
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):

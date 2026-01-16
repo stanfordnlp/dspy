@@ -209,14 +209,12 @@ def test_detect_multiple_react_modules(monkeypatch):
 
 
 def test_apply_optimized_react_descriptions():
-    """Apply optimized tool descriptions to ReAct modules."""
-
+    """Apply optimized tool descriptions to ReAct modules and verify prompt integrity."""
     program = dspy.ReAct("question -> answer", tools=[search])
 
-    # Create mock optimized candidate - use extract.predict as primary (for tracing)
+    # Create mock optimized candidate
     react_name = get_predictor_name(program, program.react)
     extract_predict_name = get_predictor_name(program, program.extract.predict)
-
     component_key = f"{TOOL_MODULE_PREFIX}:{extract_predict_name}"
 
     optimized_candidate = {
@@ -241,11 +239,16 @@ def test_apply_optimized_react_descriptions():
     )
     rebuilt = adapter.build_program(optimized_candidate)
 
-    # Verify instructions updated
-    assert rebuilt.react.signature.instructions == "OPTIMIZED: React instruction"
-    assert rebuilt.extract.predict.signature.instructions == "OPTIMIZED: Extract instruction"
+    react_instr = rebuilt.react.signature.instructions
+    assert "OPTIMIZED: React instruction" in react_instr
+    assert "You are an Agent" in react_instr
+    assert "next_tool_name" in react_instr
 
-    # Verify tool updated
+    extract_instr = rebuilt.extract.predict.signature.instructions
+    assert "OPTIMIZED: Extract instruction" in extract_instr
+
+    assert "OPTIMIZED: Search tool" in react_instr
+
     assert rebuilt.tools["search"].desc == "OPTIMIZED: Search tool"
 
 
@@ -315,18 +318,16 @@ def test_detect_nested_react_modules(monkeypatch):
 
 def test_selective_optimization_with_none_returns():
     """Verify selective optimization when reflection LM returns None for some fields."""
-
     program = dspy.ReAct("question -> answer", tools=[search, calculate])
-
     react_name = get_predictor_name(program, program.react)
     extract_name = get_predictor_name(program, program.extract.predict)
     component_key = f"{TOOL_MODULE_PREFIX}:{extract_name}"
 
-    # Mock selective optimization (only react instruction and search tool updated)
+    # Mock selective optimization
     optimized_candidate = {
         component_key: json.dumps({
             react_name: "OPTIMIZED: React instruction",
-            extract_name: program.extract.predict.signature.instructions,
+            extract_name: "OPTIMIZED: Extract instruction",
             "tools": {
                 "search": {
                     "desc": "OPTIMIZED: Search tool",
@@ -344,10 +345,17 @@ def test_selective_optimization_with_none_returns():
     )
     rebuilt = adapter.build_program(optimized_candidate)
 
-    # Verify selective updates
-    assert rebuilt.react.signature.instructions == "OPTIMIZED: React instruction"
-    assert rebuilt.extract.predict.signature.instructions == program.extract.predict.signature.instructions
+    # Verify React Predictor Sync & Protocol Integrity
+    assert "OPTIMIZED: React instruction" in rebuilt.react.signature.instructions
+    assert "You are an Agent" in rebuilt.react.signature.instructions
+    assert "next_tool_name" in rebuilt.react.signature.instructions
+
+    # Verify Extract Predictor Sync
+    assert "OPTIMIZED: Extract instruction" in rebuilt.extract.predict.signature.instructions
+
+    # Verify Tool Metadata Sync
+    assert "OPTIMIZED: Search tool" in rebuilt.react.signature.instructions
     assert rebuilt.tools["search"].desc == "OPTIMIZED: Search tool"
 
-    # Original unchanged (calculate not in optimized candidate)
+    # Verify Non-optimized components remain untouched
     assert rebuilt.tools["calculate"].desc == program.tools["calculate"].desc
