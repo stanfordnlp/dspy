@@ -1,4 +1,6 @@
 import asyncio
+import importlib
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
@@ -206,8 +208,6 @@ def test_dspy_settings_save_load(tmp_path):
 
 
 def test_settings_save_with_extra_modules(tmp_path):
-    import sys
-
     # Create a temporary Python file with our custom module
     custom_module_path = tmp_path / "custom_module.py"
     with open(custom_module_path, "w") as f:
@@ -215,7 +215,8 @@ def test_settings_save_with_extra_modules(tmp_path):
             """
 def callback(x):
     return x + 1
-""")
+"""
+        )
 
     # Add the tmp_path to Python path so we can import the module
     sys.path.insert(0, str(tmp_path))
@@ -230,6 +231,7 @@ def callback(x):
         sys.modules.pop("custom_module", None)
         # Also remove it from sys.path
         sys.path.remove(str(tmp_path))
+        importlib.invalidate_caches()
         del custom_module
 
         with pytest.raises(ModuleNotFoundError):
