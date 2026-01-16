@@ -54,7 +54,7 @@ class ReAct(Module):
 
     def _refresh_react_signature(self):
         """Synchronizes tool metadata and base instructions into the Predictor's prompt."""
-        if hasattr(self, "react"):
+        if hasattr(self, "react") and hasattr(self.react, "signature"):
             curr_instr = self.react.signature.instructions
 
             if curr_instr != self.base_instructions and "You are an Agent" not in curr_instr:
