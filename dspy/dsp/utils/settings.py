@@ -8,7 +8,7 @@ from contextlib import contextmanager
 
 from dspy.dsp.utils.utils import dotdict
 
-_logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = dotdict(
     lm=None,
@@ -192,14 +192,14 @@ class Settings:
 
     def save(self, path, modules_to_serialize=None):
         """
-        Save the settings to a file using CloudPickle
+        Save the settings to a file using cloudpickle.
 
         Args:
             path: The file path to save the settings to.
             modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
                 If None, then no modules will be registered for serialization.
         """
-        _logger.warning(
+        logger.warning(
             "DSpy settings are serialized using CloudPickle. Because CloudPickle allows for the "
             "execution of arbitrary code during deserialization, you should only load files from "
             "verified sources within a trusted environment."
@@ -219,7 +219,7 @@ class Settings:
 
     def load(self, path):
         """
-        Load the settings from a file using CloudPickle.
+        Load the settings from a file using cloudpickle.
 
         Note: The `load` method can only be called from the thread that first configured settings
 
