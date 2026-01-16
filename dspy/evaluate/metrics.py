@@ -60,6 +60,44 @@ def F1(prediction, answers_list):  # noqa: N802
     return max(f1_score(prediction, ans) for ans in answers_list)
 
 
+def Precision(prediction, answers_list):  # noqa: N802
+    """Compute the maximum token-level Precision score against reference answers.
+
+    Strings are normalized (same as in `EM`) and whitespace-tokenized. The function
+    returns the maximum Precision over all provided references.
+
+    Args:
+        prediction (str): Predicted answer string.
+        answers_list (list[str]): List of reference answers.
+
+    Returns:
+        float: Highest Precision score in [0.0, 1.0].
+    """
+    if not isinstance(answers_list, list):
+        raise ValueError(f"`answers_list` must be a list, got {type(answers_list)}")
+
+    return max(precision_score(prediction, ans) for ans in answers_list)
+
+
+def Recall(prediction, answers_list):  # noqa: N802
+    """Compute the maximum token-level Recall score against reference answers.
+
+    Strings are normalized (same as in `EM`) and whitespace-tokenized. The function
+    returns the maximum Recall over all provided references.
+
+    Args:
+        prediction (str): Predicted answer string.
+        answers_list (list[str]): List of reference answers.
+
+    Returns:
+        float: Highest Recall score in [0.0, 1.0].
+    """
+    if not isinstance(answers_list, list):
+        raise ValueError(f"`answers_list` must be a list, got {type(answers_list)}")
+
+    return max(recall_score(prediction, ans) for ans in answers_list)
+
+
 def HotPotF1(prediction, answers_list):  # noqa: N802
     """Compute the maximum HotPotQA-style F1 score against reference answers.
 
@@ -254,6 +292,39 @@ def precision_score(prediction, ground_truth):
 
     precision = 1.0 * num_same / len(prediction_tokens)
     return precision
+
+
+def recall_score(prediction, ground_truth):
+    """Compute token-level recall of prediction against reference (after normalization).
+
+    Recall is (# overlapping tokens) / (# tokens in ground truth). If there is no
+    token overlap, returns 0. If both sides are empty, a diagnostic message is printed;
+    recall remains 0.
+
+    Args:
+        prediction (str): Predicted answer.
+        ground_truth (str): Reference answer.
+
+    Returns:
+        float: Recall in [0.0, 1.0].
+    """
+    prediction_tokens = normalize_text(prediction).split()
+    ground_truth_tokens = normalize_text(ground_truth).split()
+
+    common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
+    num_same = sum(common.values())
+
+    if len(prediction_tokens) == len(ground_truth_tokens) == 0:
+        # Unlike most tasks, QReCC and SQuAD-2.0 assign 1.0 in this edge case. We don't for uniformity.
+        print_message(
+            "\n#> Recall Metric: Rare edge case of len(prediction_tokens) == len(ground_truth_tokens) == 0.\n"
+        )
+
+    if num_same == 0:
+        return 0
+
+    recall = 1.0 * num_same / len(ground_truth_tokens)
+    return recall
 
 
 def _passage_match(passages: list[str], answers: list[str]) -> bool:
