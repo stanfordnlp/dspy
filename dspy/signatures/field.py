@@ -51,11 +51,72 @@ def _translate_pydantic_field_constraints(**kwargs):
     return ", ".join(constraints)
 
 
-def InputField(**kwargs): # noqa: N802
+def InputField(**kwargs):  # noqa: N802
+    """Create a DSPy input field with optional metadata.
+
+    Wraps ``pydantic.Field`` while tagging the field as a DSPy input. Supports
+    DSPy-specific arguments like ``desc``, ``prefix``, ``format``, and ``parser``
+    in addition to standard Pydantic field arguments.
+
+    Args:
+        **kwargs: Keyword arguments including:
+            - desc (str): Human-readable description of the field.
+            - prefix (str): Prompt prefix used when rendering the field.
+            - format (Callable): Function to format the field value.
+            - parser (Callable): Function to parse model output for this field.
+            - Any standard ``pydantic.Field`` arguments (e.g., ``default``,
+              ``description``, ``gt``, ``min_length``).
+
+    Returns:
+        pydantic.fields.FieldInfo: A Pydantic FieldInfo object marked as a DSPy
+            input field.
+
+    Example:
+        Define input fields in a DSPy signature:
+
+        ```python
+        import dspy
+
+        class QASignature(dspy.Signature):
+            question: str = dspy.InputField(desc="The question to answer")
+            context: str = dspy.InputField(desc="Supporting context", default="")
+        ```
+    """
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
-def OutputField(**kwargs): # noqa: N802
+def OutputField(**kwargs):  # noqa: N802
+    """Create a DSPy output field with optional metadata.
+
+    Wraps ``pydantic.Field`` while tagging the field as a DSPy output. Supports
+    DSPy-specific arguments like ``desc``, ``prefix``, ``format``, and ``parser``
+    in addition to standard Pydantic field arguments.
+
+    Args:
+        **kwargs: Keyword arguments including:
+            - desc (str): Human-readable description of the field.
+            - prefix (str): Prompt prefix used when rendering the field.
+            - format (Callable): Function to format the field value.
+            - parser (Callable): Function to parse model output for this field.
+            - Any standard ``pydantic.Field`` arguments (e.g., ``default``,
+              ``description``).
+
+    Returns:
+        pydantic.fields.FieldInfo: A Pydantic FieldInfo object marked as a DSPy
+            output field.
+
+    Example:
+        Define output fields in a DSPy signature:
+
+        ```python
+        import dspy
+
+        class QASignature(dspy.Signature):
+            question: str = dspy.InputField()
+            answer: str = dspy.OutputField(desc="A concise answer to the question")
+            confidence: float = dspy.OutputField(desc="Confidence score from 0 to 1")
+        ```
+    """
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
 
