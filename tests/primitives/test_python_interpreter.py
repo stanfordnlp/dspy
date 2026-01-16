@@ -4,7 +4,8 @@ import shutil
 
 import pytest
 
-from dspy.primitives.python_interpreter import InterpreterError, PythonInterpreter
+from dspy.primitives.code_interpreter import CodeInterpreterError, FinalAnswerResult
+from dspy.primitives.python_interpreter import PythonInterpreter
 
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 if shutil.which("deno") is None:
@@ -32,6 +33,18 @@ def test_user_variable_definitions():
         assert result == 5, "User variable assignment should work"
 
 
+def test_rejects_python_keywords_as_variable_names():
+    """Test that Python keywords are rejected as variable names."""
+    with PythonInterpreter() as interpreter:
+        # These are valid Python identifiers but reserved keywords
+        # Using them as variable names would cause syntax errors
+        keywords_to_test = ["for", "class", "import", "def", "return", "if", "while"]
+
+        for keyword in keywords_to_test:
+            with pytest.raises(CodeInterpreterError, match="Invalid variable name"):
+                interpreter.execute("print(x)", variables={keyword: 42})
+
+
 def test_failure_syntax_error():
     with PythonInterpreter() as interpreter:
         code = "+++"
@@ -42,7 +55,7 @@ def test_failure_syntax_error():
 def test_failure_zero_division():
     with PythonInterpreter() as interpreter:
         code = "1+0/0"
-        with pytest.raises(InterpreterError, match="ZeroDivisionError"):
+        with pytest.raises(CodeInterpreterError, match="ZeroDivisionError"):
             interpreter.execute(code)
 
 
@@ -50,18 +63,21 @@ def test_exception_args():
     with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"raise ValueError({token})"
-        with pytest.raises(InterpreterError, match=rf"ValueError: \[{token}\]"):
+        with pytest.raises(CodeInterpreterError, match=rf"ValueError: \[{token}\]"):
             interpreter.execute(code)
 
 
-def test_final_answer_trick():
+def test_final_with_list():
+    """Test FINAL() with a list argument returns FinalAnswerResult with dict format."""
+
     with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
-        code = f"final_answer('The result is', {token})"
+        code = f"FINAL(['The result is', {token}])"
         result = interpreter(code)
 
-        # They should maintain the same order
-        assert result == ["The result is", token], "The returned results are differ, `final_answer` trick doesn't work"
+        assert isinstance(result, FinalAnswerResult)
+        # FINAL now always returns a dict with "answer" key for single-output default
+        assert result.answer == {"answer": ["The result is", token]}
 
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
@@ -158,7 +174,7 @@ def test_enable_net_flag():
             f"resp = await js.fetch({test_url!r})\n"
             "resp.status"
         )
-        with pytest.raises(InterpreterError, match="PythonError"):
+        with pytest.raises(CodeInterpreterError, match="PythonError"):
             interpreter.execute(code)
 
     with PythonInterpreter(enable_network_access=["example.com"]) as interpreter:
@@ -201,4 +217,193 @@ except Exception as e:
     with PythonInterpreter(enable_read_paths=[secret_path_str]) as interpreter:
         output = interpreter(malicious_code)
         assert secret_content in output
+
+
+def test_tools_dict_is_copied():
+    """Test that tools dict is defensively copied, not stored by reference."""
+    tools = {"my_tool": lambda: "result"}
+    sandbox = PythonInterpreter(tools=tools)
+
+    # Modify the original dict after construction
+    tools["new_tool"] = lambda: "new"
+
+    # The sandbox should not see the new tool
+    assert "new_tool" not in sandbox.tools
+
+
+def test_serialize_tuple():
+    """Test that tuples can be serialized as variables."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("x", variables={"x": (1, 2, 3)})
+        assert result == [1, 2, 3]  # Tuples become lists in JSON
+
+
+def test_serialize_set():
+    """Test that sets can be serialized as variables."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("sorted(x)", variables={"x": {3, 1, 2}})
+        assert result == [1, 2, 3]
+
+
+def test_serialize_set_mixed_types():
+    """Test that sets with mixed types can be serialized (fallback to list)."""
+    with PythonInterpreter() as interpreter:
+        # Mixed types can't be sorted, so they serialize as a list in arbitrary order
+        # We verify the list contains the expected elements
+        result = interpreter.execute("x", variables={"x": {1, "a"}})
+        assert isinstance(result, list)
+        assert set(result) == {1, "a"}
+
+
+def test_deno_command_dict_raises_type_error():
+    """Test that passing a dict as deno_command raises TypeError."""
+    with pytest.raises(TypeError, match="deno_command must be a list"):
+        PythonInterpreter(deno_command={"invalid": "dict"})
+
+
+# =============================================================================
+# Typed Tool Signature Tests
+# =============================================================================
+
+def test_tool_with_typed_signature():
+    """Test that tools get proper typed signatures from inspect."""
+    def my_tool(query: str, limit: int = 10) -> str:
+        return f"searched '{query}' with limit {limit}"
+
+    with PythonInterpreter(tools={"my_tool": my_tool}) as sandbox:
+        # Tool should be callable with typed signature
+        result = sandbox.execute('my_tool(query="test", limit=5)')
+        assert result == "searched 'test' with limit 5"
+
+
+def test_tool_positional_args():
+    """Test that tools work with positional arguments."""
+    def search(query: str, limit: int = 10) -> str:
+        return f"query={query}, limit={limit}"
+
+    with PythonInterpreter(tools={"search": search}) as sandbox:
+        result = sandbox.execute('search("hello")')
+        assert result == "query=hello, limit=10"
+
+
+def test_tool_keyword_args():
+    """Test that tools work with keyword arguments."""
+    def search(query: str, limit: int = 10) -> str:
+        return f"query={query}, limit={limit}"
+
+    with PythonInterpreter(tools={"search": search}) as sandbox:
+        result = sandbox.execute('search(query="hello", limit=5)')
+        assert result == "query=hello, limit=5"
+
+
+def test_tool_default_args():
+    """Test that tool default arguments work correctly."""
+    def greet(name: str, greeting: str = "Hello") -> str:
+        return f"{greeting}, {name}!"
+
+    with PythonInterpreter(tools={"greet": greet}) as sandbox:
+        # Without default
+        result = sandbox.execute('greet("World")')
+        assert result == "Hello, World!"
+
+        # Overriding default
+        result = sandbox.execute('greet("World", "Hi")')
+        assert result == "Hi, World!"
+
+
+# =============================================================================
+# Multi-Output FINAL Tests
+# =============================================================================
+
+def test_final_with_typed_signature():
+    """Test FINAL with typed output signature."""
+
+    output_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "confidence", "type": "float"},
+    ]
+
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        result = sandbox.execute('FINAL(answer="the answer", confidence=0.95)')
+
+        assert isinstance(result, FinalAnswerResult)
+        assert result.answer == {"answer": "the answer", "confidence": 0.95}
+
+
+def test_final_positional_args():
+    """Test FINAL with positional arguments."""
+
+    output_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "confidence", "type": "float"},
+    ]
+
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        result = sandbox.execute('FINAL("the answer", 0.95)')
+
+        assert isinstance(result, FinalAnswerResult)
+        assert result.answer == {"answer": "the answer", "confidence": 0.95}
+
+
+def test_final_var_multi_output():
+    """Test FINAL_VAR with multiple output fields using positional args."""
+
+    output_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "score", "type": "int"},
+    ]
+
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        # Positional args: variable names mapped to output fields in order
+        code = """
+a = "my answer"
+s = 42
+FINAL_VAR("a", "s")
+"""
+        result = sandbox.execute(code)
+
+        assert isinstance(result, FinalAnswerResult)
+        assert result.answer == {"answer": "my answer", "score": 42}
+
+
+def test_final_var_wrong_arg_count():
+    """Test FINAL_VAR with wrong number of args gives clear error."""
+
+    output_fields = [
+        {"name": "answer", "type": "str"},
+        {"name": "score", "type": "int"},
+    ]
+
+    with PythonInterpreter(output_fields=output_fields) as sandbox:
+        with pytest.raises(CodeInterpreterError) as exc_info:
+            sandbox.execute('x = 1; FINAL_VAR("x")')  # Only 1 arg, expects 2
+        assert "expects 2 variable names" in str(exc_info.value)
+
+
+def test_extract_parameters():
+    """Test that _extract_parameters correctly extracts function signatures."""
+    def example_fn(required: str, optional: int = 5, untyped=None) -> str:
+        pass
+
+    sandbox = PythonInterpreter()
+    params = sandbox._extract_parameters(example_fn)
+
+    assert len(params) == 3
+    assert params[0] == {"name": "required", "type": "str"}
+    assert params[1] == {"name": "optional", "type": "int", "default": 5}
+    assert params[2] == {"name": "untyped", "default": None}
+
+
+def test_extract_parameters_complex_types():
+    """Test that _extract_parameters handles complex types gracefully."""
+    def complex_fn(items: list | None = None, data: dict[str, int] | None = None) -> list:
+        pass
+
+    sandbox = PythonInterpreter()
+    params = sandbox._extract_parameters(complex_fn)
+
+    assert len(params) == 2
+    # Complex types like Union are not included in type annotation
+    assert params[0] == {"name": "items", "default": None}
+    assert params[1] == {"name": "data", "default": None}
 
