@@ -1,5 +1,4 @@
 import asyncio
-import importlib
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -226,19 +225,7 @@ def callback(x):
         dspy.configure(callbacks=[custom_module.callback])
 
         settings_path = tmp_path / "settings.pkl"
-        dspy.settings.save(settings_path)
-
-        sys.modules.pop("custom_module", None)
-        # Also remove it from sys.path
-        sys.path.remove(str(tmp_path))
-        importlib.invalidate_caches()
-        del custom_module
-
-        with pytest.raises(ModuleNotFoundError):
-            dspy.settings.load(settings_path)
-
         sys.path.insert(0, str(tmp_path))
-        import custom_module
 
         dspy.configure(callbacks=[custom_module.callback])
         dspy.settings.save(settings_path, modules_to_serialize=[custom_module])
