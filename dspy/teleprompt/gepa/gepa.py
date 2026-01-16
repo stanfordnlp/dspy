@@ -647,13 +647,21 @@ class GEPA(Teleprompter):
         # Build the seed candidate configuration
         seed_candidate = self._build_seed_candidate(student)
 
+        def reflection_wrapper(prompt):
+            res = self.reflection_lm(prompt)
+            if isinstance(res, list) and len(res) > 0:
+                res = res[0]
+            if hasattr(res, 'answer'):
+                return str(res.answer)
+            return str(res)
+
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
             trainset=trainset,
             valset=valset,
             adapter=adapter,
             # Reflection-based configuration
-            reflection_lm=(lambda x: self.reflection_lm(x)[0]) if self.reflection_lm is not None else None,
+            reflection_lm=reflection_wrapper if self.reflection_lm is not None else None,
             candidate_selection_strategy=self.candidate_selection_strategy,
             skip_perfect_score=self.skip_perfect_score,
             reflection_minibatch_size=self.reflection_minibatch_size,
