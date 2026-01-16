@@ -435,6 +435,69 @@ class TestREPLTypes:
         assert question_var.desc == "The question to answer"
 
 
+class TestRLMCallMethod:
+    """Tests for RLM __call__ method."""
+
+    def test_call_is_alias_for_forward(self):
+        """Test that __call__ is an alias for forward()."""
+        mock = MockInterpreter(responses=[FinalAnswerResult({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'FINAL("42")'},
+        ])
+
+        result = rlm(query="What is the answer?")
+        assert result.answer == "42"
+
+
+class TestRLMMaxIterationsFallback:
+    """Tests for max_iterations reached and extract fallback."""
+
+    def test_max_iterations_triggers_extract(self):
+        """Test that reaching max_iterations uses extract fallback."""
+        mock = MockInterpreter(responses=[
+            "exploring...",
+            "still exploring...",
+            "more exploring...",
+        ])
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore 1", "code": "print('exploring')"},
+            {"reasoning": "Explore 2", "code": "print('exploring')"},
+            {"reasoning": "Explore 3", "code": "print('exploring')"},
+        ])
+        # Mock the extract predictor to return a value
+        rlm.extract = make_mock_predictor([
+            {"answer": "extracted_answer"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "extracted_answer"
+        assert result.final_reasoning == "Extract forced final answer"
+
+
+class TestRLMToolExceptions:
+    """Tests for tool exception handling."""
+
+    def test_tool_exception_returns_error_in_output(self):
+        """Test that tool exceptions are caught and returned as errors."""
+        def failing_tool() -> str:
+            raise RuntimeError("Tool failed!")
+
+        mock = MockInterpreter(responses=[
+            CodeInterpreterError("RuntimeError: Tool failed!"),
+            FinalAnswerResult({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock, tools={"failing_tool": failing_tool})
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Call tool", "code": "failing_tool()"},
+            {"reasoning": "Recover", "code": 'FINAL("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+
+
 class TestRLMDynamicSignature:
     """Tests for the dynamically built RLM signatures."""
 

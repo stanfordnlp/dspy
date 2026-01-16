@@ -49,6 +49,7 @@ Available:
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
 - `FINAL({final_output_names})` - submit final answer when done
+- `FINAL_VAR({final_var_output_names})` - submit final answer using variable names
 - Standard libraries: re, json, collections, math, etc.
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
@@ -58,7 +59,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
 4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
 
-You have max {max_llm_calls} sub-LLM calls. When done, call FINAL() with your answer."""
+You have max {max_llm_calls} sub-LLM calls. When done, call FINAL() or FINAL_VAR() with your answer."""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
 _CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*?)\n```\s*$", re.DOTALL)
@@ -82,6 +83,10 @@ class RLM(Module):
 
     The default interpreter is PythonInterpreter (Deno/Pyodide/WASM), but you
     can provide any CodeInterpreter implementation (e.g., MockInterpreter, or write a custom one using E2B or Modal).
+
+    Note: RLM instances are not thread-safe when using a custom interpreter.
+    Create separate RLM instances for concurrent use, or use the default
+    PythonInterpreter which creates a fresh instance per forward() call.
 
     Example:
         ```python
@@ -206,10 +211,10 @@ class RLM(Module):
             response = target_lm(prompt)
             return response[0] if isinstance(response, list) and response else str(response)
 
-        def llm_query(prompt: str = "") -> str:
+        def llm_query(prompt: str) -> str:
             """Query the LLM with a prompt string."""
             if not prompt:
-                raise ValueError("prompt is required")
+                raise ValueError("prompt cannot be empty")
             _check_and_increment(1)
             return _query_lm(prompt)
 
@@ -628,3 +633,7 @@ class RLM(Module):
 
             # Max iterations reached - use extract fallback
             return await self._aextract_fallback(variables, history, output_field_names)
+
+    def __call__(self, **input_args) -> Prediction:
+        """Execute RLM. Alias for forward()."""
+        return self.forward(**input_args)

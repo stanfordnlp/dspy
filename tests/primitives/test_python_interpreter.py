@@ -245,6 +245,16 @@ def test_serialize_set():
         assert result == [1, 2, 3]
 
 
+def test_serialize_set_mixed_types():
+    """Test that sets with mixed types can be serialized (fallback to list)."""
+    with PythonInterpreter() as interpreter:
+        # Mixed types can't be sorted, so they serialize as a list in arbitrary order
+        # We verify the list contains the expected elements
+        result = interpreter.execute("x", variables={"x": {1, "a"}})
+        assert isinstance(result, list)
+        assert set(result) == {1, "a"}
+
+
 def test_deno_command_dict_raises_type_error():
     """Test that passing a dict as deno_command raises TypeError."""
     with pytest.raises(TypeError, match="deno_command must be a list"):

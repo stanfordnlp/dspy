@@ -303,7 +303,10 @@ class PythonInterpreter:
         elif isinstance(value, tuple):
             return json.dumps(list(value))
         elif isinstance(value, set):
-            return json.dumps(sorted(value))
+            try:
+                return json.dumps(sorted(value))
+            except TypeError:
+                return json.dumps(list(value))
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
