@@ -1,10 +1,11 @@
 import asyncio
-import cloudpickle
 import contextvars
 import copy
 import logging
 import threading
 from contextlib import contextmanager
+
+import cloudpickle
 
 from dspy.dsp.utils.utils import dotdict
 
@@ -189,7 +190,6 @@ class Settings:
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 
-
     def save(self, path, modules_to_serialize=None):
         """
         Save the settings to a file using cloudpickle.
@@ -200,7 +200,7 @@ class Settings:
                 If None, then no modules will be registered for serialization.
         """
         logger.warning(
-            "DSpy settings are serialized using CloudPickle. Because CloudPickle allows for the "
+            "`dspy.settings` are serialized using cloudpickle. Because cloudpickle allows for the "
             "execution of arbitrary code during deserialization, you should only load files from "
             "verified sources within a trusted environment."
         )
@@ -214,7 +214,7 @@ class Settings:
         except Exception as e:
             raise RuntimeError(
                 f"Saving failed with error: {e}. Please remove the non-picklable attributes from the values "
-                "in the DSpy settings."
+                "in the `dspy.settings`."
             )
 
     def load(self, path):
@@ -230,5 +230,6 @@ class Settings:
             configs = cloudpickle.load(f)
 
         self.configure(**configs)
+
 
 settings = Settings()
