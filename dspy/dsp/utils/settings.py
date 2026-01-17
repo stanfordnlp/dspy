@@ -1,10 +1,15 @@
 import asyncio
 import contextvars
 import copy
+import logging
 import threading
 from contextlib import contextmanager
 
+import cloudpickle
+
 from dspy.dsp.utils.utils import dotdict
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = dotdict(
     lm=None,
@@ -184,6 +189,47 @@ class Settings:
         overrides = thread_local_overrides.get()
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
+
+    def save(self, path, modules_to_serialize=None):
+        """
+        Save the settings to a file using cloudpickle.
+
+        Args:
+            path: The file path to save the settings to.
+            modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
+                If None, then no modules will be registered for serialization.
+        """
+        logger.warning(
+            "`dspy.settings` are serialized using cloudpickle. Because cloudpickle allows for the "
+            "execution of arbitrary code during deserialization, you should only load files from "
+            "verified sources within a trusted environment."
+        )
+        try:
+            modules_to_serialize = modules_to_serialize or []
+            for module in modules_to_serialize:
+                cloudpickle.register_pickle_by_value(module)
+
+            with open(path, "wb") as f:
+                cloudpickle.dump(dict(self.config), f)
+        except Exception as e:
+            raise RuntimeError(
+                f"Saving failed with error: {e}. Please remove the non-picklable attributes from the values "
+                "in the `dspy.settings`."
+            )
+
+    def load(self, path):
+        """
+        Load the settings from a file using cloudpickle.
+
+        Note: The `load` method can only be called from the thread that first configured settings
+
+        Args:
+            path: The file path to load the settings from.
+        """
+        with open(path, "rb") as f:
+            configs = cloudpickle.load(f)
+
+        self.configure(**configs)
 
 
 settings = Settings()

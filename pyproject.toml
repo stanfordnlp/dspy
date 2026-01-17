@@ -109,6 +109,9 @@ exclude_lines = [
 ]
 
 [tool.pytest.ini_options]
+markers = [
+    "integration: tests requiring external dependencies (Deno, LM)",
+]
 filterwarnings = [
     # litellm uses deprecated pydantic config classes sometimes.
     # The issue has been fixed repeatedly, but still keeps showing up.
