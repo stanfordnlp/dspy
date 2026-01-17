@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
+import pytest
 
 import dspy
 from dspy.teleprompt.gepa import instruction_proposal
@@ -297,7 +298,8 @@ def test_image_serialization_into_strings():
     )
 
 
-def test_default_proposer():
+@pytest.mark.parametrize("reasoning", [True, False])
+def test_default_proposer(reasoning: bool):
     student = dspy.Predict("image -> label")
 
     image = dspy.Image("https://picsum.photos/id/237/200/300")
@@ -332,7 +334,8 @@ def test_default_proposer():
             {"improved_instruction": "Consider contextual clues in the image"},
             {"improved_instruction": "Analyze shape, color, and texture patterns"},
             {"improved_instruction": "Look for distinguishing characteristics"},
-        ]
+        ],
+        reasoning=reasoning,
     )
 
     gepa = dspy.GEPA(
