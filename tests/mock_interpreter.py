@@ -4,7 +4,7 @@ Mock interpreter for testing RLM and other code-executing modules.
 This interpreter doesn't actually execute code - it returns scripted responses
 or uses a custom function to generate responses. Useful for:
 - Unit testing without Deno/Pyodide dependencies
-- Testing specific execution paths (errors, FINAL, etc.)
+- Testing specific execution paths (errors, SUBMIT, etc.)
 - Recording what code was submitted for execution
 """
 
@@ -28,11 +28,11 @@ class MockInterpreter:
             FinalAnswerResult("42"),
         ])
         result1 = mock.execute("print(len(context))")  # Returns "data explored"
-        result2 = mock.execute("FINAL('42')")  # Returns FinalAnswerResult("42")
+        result2 = mock.execute("SUBMIT('42')")  # Returns FinalAnswerResult("42")
 
         # Use custom execution function
         def custom_exec(code, variables):
-            if "FINAL" in code:
+            if "SUBMIT" in code:
                 return FinalAnswerResult("done")
             return f"executed: {code[:20]}..."
 
