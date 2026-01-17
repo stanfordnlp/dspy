@@ -58,6 +58,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.
 3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
 4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
+5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
 
 You have max {max_llm_calls} sub-LLM calls. When done, call FINAL() or FINAL_VAR() with your answer."""
 
@@ -272,7 +273,7 @@ class RLM(Module):
                 inputs=inputs_str, final_output_names=final_output_names, final_var_output_names=final_var_output_names, output_fields=output_fields,
                 max_llm_calls=self.max_llm_calls,
             ) + tool_docs)
-            .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
+            .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
             .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iterations"), type_=str)
             .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
@@ -295,7 +296,7 @@ class RLM(Module):
             full_extract_instructions,
         )
         extract_sig = extract_sig.prepend("repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory)
-        extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
+        extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
 
         return action_sig, extract_sig
 
@@ -391,8 +392,9 @@ class RLM(Module):
         """Use extract module to get final answer when max iterations reached."""
         logger.warning("RLM reached max iterations, using extract to get final answer")
 
+        variables_info = [variable.format() for variable in variables]
         extract_pred = self.extract(
-            variables_info=variables,
+            variables_info=variables_info,
             repl_history=history,
         )
 
@@ -498,8 +500,9 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
+        variables_info = [variable.format() for variable in variables]
         action = self.generate_action(
-            variables_info=variables,
+            variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iterations}",
         )
@@ -562,8 +565,9 @@ class RLM(Module):
         """Async version: Use extract module when max iterations reached."""
         logger.warning("RLM reached max iterations, using extract to get final answer")
 
+        variables_info = [variable.format() for variable in variables]
         extract_pred = await self.extract.acall(
-            variables_info=variables,
+            variables_info=variables_info,
             repl_history=history,
         )
 
@@ -583,8 +587,9 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction | REPLHistory:
         """Async version: Execute one iteration."""
+        variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
-            variables_info=variables,
+            variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iterations}",
         )
