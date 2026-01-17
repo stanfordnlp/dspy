@@ -9,7 +9,7 @@ code-executing modules to work with different interpreter implementations:
 
 from typing import Any, Callable, Protocol, runtime_checkable
 
-# Types that can be used directly in Python function signatures for FINAL()
+# Types that can be used directly in Python function signatures for SUBMIT()
 SIMPLE_TYPES = (str, int, float, bool, list, dict, type(None))
 
 
@@ -22,7 +22,7 @@ class CodeInterpreterError(RuntimeError):
 
 
 class FinalAnswerResult:
-    """Returned by interpreter.execute() when FINAL() or FINAL_VAR() is called.
+    """Returned by interpreter.execute() when SUBMIT() is called.
 
     This signals that the code execution loop should terminate and return
     the contained answer to the caller.
@@ -107,7 +107,7 @@ class CodeInterpreter(Protocol):
 
         Returns:
             One of:
-            - FinalAnswerResult: If FINAL() or FINAL_VAR() was called in code
+            - FinalAnswerResult: If SUBMIT() was called in code
             - str: Captured stdout from print() statements
             - list: Multiple output lines
             - None: If no output was produced

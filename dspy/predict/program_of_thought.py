@@ -118,7 +118,7 @@ class ProgramOfThought(Module):
             instr = [
                 f"You will be given {mode_inputs} and you will respond with {mode_outputs}.",
                 f"Generating executable Python code that programmatically computes the correct {mode_outputs}.",
-                "After you're done with the computation and think you have the answer, make sure to provide your answer by calling the preloaded function `FINAL()`.",
+                "After you're done with the computation and think you have the answer, make sure to provide your answer by calling the preloaded function `SUBMIT()`.",
                 f'You should structure your answer in a dict object, like {{"field_a": answer_a, ...}}, evaluates to the correct value mapping for {final_outputs}.',
             ]
         elif mode == "regenerate":
