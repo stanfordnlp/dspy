@@ -21,23 +21,23 @@ class CodeInterpreterError(RuntimeError):
     """
 
 
-class FinalAnswerResult:
+class FinalOutput:
     """Returned by interpreter.execute() when SUBMIT() is called.
 
     This signals that the code execution loop should terminate and return
-    the contained answer to the caller.
+    the contained output to the caller.
     """
 
-    def __init__(self, answer: Any):
-        self.answer = answer
+    def __init__(self, output: Any):
+        self.output = output
 
     def __repr__(self) -> str:
-        return f"FinalAnswerResult({self.answer!r})"
+        return f"FinalOutput({self.output!r})"
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, FinalAnswerResult):
+        if not isinstance(other, FinalOutput):
             return NotImplemented
-        return self.answer == other.answer
+        return self.output == other.output
 
 
 @runtime_checkable
@@ -107,7 +107,7 @@ class CodeInterpreter(Protocol):
 
         Returns:
             One of:
-            - FinalAnswerResult: If SUBMIT() was called in code
+            - FinalOutput: If SUBMIT() was called in code
             - str: Captured stdout from print() statements
             - list: Multiple output lines
             - None: If no output was produced

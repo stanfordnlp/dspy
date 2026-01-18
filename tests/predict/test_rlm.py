@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import pytest
 
 from dspy.predict.rlm import RLM
-from dspy.primitives.code_interpreter import CodeInterpreterError, FinalAnswerResult
+from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
@@ -89,13 +89,13 @@ class TestMockInterpreter:
         assert mock.execute("code2") == "second"
         assert mock.execute("code3") == "third"
 
-    def test_returns_final_answer_result(self):
-        """Test that MockInterpreter can return FinalAnswerResult."""
-        mock = MockInterpreter(responses=["exploring", FinalAnswerResult("42")])
+    def test_returns_final_output_result(self):
+        """Test that MockInterpreter can return FinalOutput."""
+        mock = MockInterpreter(responses=["exploring", FinalOutput("42")])
         assert mock.execute("print(len(data))") == "exploring"
         result = mock.execute("SUBMIT('42')")
-        assert isinstance(result, FinalAnswerResult)
-        assert result.answer == "42"
+        assert isinstance(result, FinalOutput)
+        assert result.output == "42"
 
     def test_raises_exception_from_responses(self):
         """Test that MockInterpreter raises exceptions from responses."""
@@ -440,7 +440,7 @@ class TestRLMCallMethod:
 
     def test_call_is_alias_for_forward(self):
         """Test that __call__ is an alias for forward()."""
-        mock = MockInterpreter(responses=[FinalAnswerResult({"answer": "42"})])
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -473,7 +473,7 @@ class TestRLMMaxIterationsFallback:
 
         result = rlm.forward(query="test")
         assert result.answer == "extracted_answer"
-        assert result.final_reasoning == "Extract forced final answer"
+        assert result.final_reasoning == "Extract forced final output"
 
 
 class TestRLMToolExceptions:
@@ -486,7 +486,7 @@ class TestRLMToolExceptions:
 
         mock = MockInterpreter(responses=[
             CodeInterpreterError("RuntimeError: Tool failed!"),
-            FinalAnswerResult({"answer": "recovered"}),
+            FinalOutput({"answer": "recovered"}),
         ])
         rlm = RLM("query -> answer", max_iterations=5, interpreter=mock, tools={"failing_tool": failing_tool})
         rlm.generate_action = make_mock_predictor([
@@ -712,7 +712,7 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_basic(self):
         """Test aforward() returns Prediction with expected output (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalAnswerResult({"answer": "42"})])
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
@@ -724,7 +724,7 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_int_output_mock(self):
         """Test aforward() returns int when signature expects int (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalAnswerResult({"count": 42})])
+        mock = MockInterpreter(responses=[FinalOutput({"count": 42})])
         rlm = RLM("query -> count: int", max_iterations=3, interpreter=mock)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return count", "code": "SUBMIT(42)"},
@@ -739,7 +739,7 @@ class TestRLMAsyncMock:
         """Test aforward() handles multiple iterations before SUBMIT (MockInterpreter)."""
         mock = MockInterpreter(responses=[
             "explored data",
-            FinalAnswerResult({"answer": "done"}),
+            FinalOutput({"answer": "done"}),
         ])
         rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
         rlm.generate_action = make_mock_predictor([
@@ -763,7 +763,7 @@ class TestRLMTypeCoercionMock:
     ])
     def test_type_coercion(self, output_field, output_type, final_value, code, expected):
         """Test RLM type coercion for various types (MockInterpreter)."""
-        mock = MockInterpreter(responses=[FinalAnswerResult({output_field: final_value})])
+        mock = MockInterpreter(responses=[FinalOutput({output_field: final_value})])
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iterations=3, interpreter=mock)
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Return value", "code": code},
@@ -775,8 +775,8 @@ class TestRLMTypeCoercionMock:
     def test_type_error_retries(self):
         """Test RLM retries when type validation fails (MockInterpreter)."""
         mock = MockInterpreter(responses=[
-            FinalAnswerResult({"answer": "maybe"}),  # Invalid for Literal
-            FinalAnswerResult({"answer": "yes"}),    # Valid
+            FinalOutput({"answer": "maybe"}),  # Invalid for Literal
+            FinalOutput({"answer": "yes"}),    # Valid
         ])
         rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=5, interpreter=mock)
         rlm.generate_action = make_mock_predictor([

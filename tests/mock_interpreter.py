@@ -10,7 +10,7 @@ or uses a custom function to generate responses. Useful for:
 
 from typing import Any, Callable
 
-from dspy.primitives.code_interpreter import CodeInterpreterError, FinalAnswerResult
+from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 
 __all__ = ["MockInterpreter"]
 
@@ -25,15 +25,15 @@ class MockInterpreter:
         # Script specific responses
         mock = MockInterpreter(responses=[
             "data explored",
-            FinalAnswerResult("42"),
+            FinalOutput("42"),
         ])
         result1 = mock.execute("print(len(context))")  # Returns "data explored"
-        result2 = mock.execute("SUBMIT('42')")  # Returns FinalAnswerResult("42")
+        result2 = mock.execute("SUBMIT('42')")  # Returns FinalOutput("42")
 
         # Use custom execution function
         def custom_exec(code, variables):
             if "SUBMIT" in code:
-                return FinalAnswerResult("done")
+                return FinalOutput("done")
             return f"executed: {code[:20]}..."
 
         mock = MockInterpreter(execute_fn=custom_exec)
@@ -42,7 +42,7 @@ class MockInterpreter:
 
     def __init__(
         self,
-        responses: list[str | FinalAnswerResult | Exception] | None = None,
+        responses: list[str | FinalOutput | Exception] | None = None,
         execute_fn: Callable[[str, dict[str, Any]], Any] | None = None,
         tools: dict[str, Callable[..., str]] | None = None,
     ):

@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from dspy.primitives.code_interpreter import CodeInterpreterError, FinalAnswerResult
+from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.python_interpreter import PythonInterpreter
 
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
@@ -68,16 +68,16 @@ def test_exception_args():
 
 
 def test_submit_with_list():
-    """Test SUBMIT() with a list argument returns FinalAnswerResult with dict format."""
+    """Test SUBMIT() with a list argument returns FinalOutput with dict format."""
 
     with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
         code = f"SUBMIT(['The result is', {token}])"
         result = interpreter(code)
 
-        assert isinstance(result, FinalAnswerResult)
-        # SUBMIT now always returns a dict with "answer" key for single-output default
-        assert result.answer == {"answer": ["The result is", token]}
+        assert isinstance(result, FinalOutput)
+        # SUBMIT now always returns a dict with "output" key for single-output default
+        assert result.output == {"output": ["The result is", token]}
 
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
@@ -326,8 +326,8 @@ def test_submit_with_typed_signature():
     with PythonInterpreter(output_fields=output_fields) as sandbox:
         result = sandbox.execute('SUBMIT(answer="the answer", confidence=0.95)')
 
-        assert isinstance(result, FinalAnswerResult)
-        assert result.answer == {"answer": "the answer", "confidence": 0.95}
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "the answer", "confidence": 0.95}
 
 
 def test_submit_positional_args():
@@ -341,8 +341,8 @@ def test_submit_positional_args():
     with PythonInterpreter(output_fields=output_fields) as sandbox:
         result = sandbox.execute('SUBMIT("the answer", 0.95)')
 
-        assert isinstance(result, FinalAnswerResult)
-        assert result.answer == {"answer": "the answer", "confidence": 0.95}
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "the answer", "confidence": 0.95}
 
 
 def test_submit_multi_output():
@@ -362,8 +362,8 @@ SUBMIT(a, s)
 """
         result = sandbox.execute(code)
 
-        assert isinstance(result, FinalAnswerResult)
-        assert result.answer == {"answer": "my answer", "score": 42}
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "my answer", "score": 42}
 
 
 def test_submit_wrong_arg_count():
