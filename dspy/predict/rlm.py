@@ -48,8 +48,7 @@ Available:
 - `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
-- `FINAL({final_output_names})` - submit final answer when done
-- `FINAL_VAR({final_var_output_names})` - submit final answer using variable names
+- `SUBMIT({final_output_names})` - submit final output when done
 - Standard libraries: re, json, collections, math, etc.
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
@@ -58,8 +57,10 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.
 3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
 4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
+5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
+6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 
-You have max {max_llm_calls} sub-LLM calls. When done, call FINAL() or FINAL_VAR() with your answer."""
+You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
 _CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*?)\n```\s*$", re.DOTALL)
@@ -143,7 +144,7 @@ class RLM(Module):
     # =========================================================================
 
     # Reserved tool names that conflict with built-in sandbox functions
-    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "FINAL", "FINAL_VAR", "print"})
+    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
 
     def _validate_tools(self, tools: dict[str, Callable]) -> None:
         """Validate user-provided tools have valid names and are callable."""
@@ -250,11 +251,8 @@ class RLM(Module):
         """Build the action and extract signatures from templates."""
         inputs_str = ", ".join(f"`{n}`" for n in self.signature.input_fields)
 
-        # Simple names for FINAL() examples
+        # Simple names for SUBMIT() examples
         final_output_names = ", ".join(self.signature.output_fields.keys())
-
-        # Final output names for FINAL_VAR() examples
-        final_var_output_names = ", ".join(f"`{n}`" for n in self.signature.output_fields.keys())
 
         output_fields = "\n".join(
             f"- {translate_field_type(n, f)}"
@@ -269,10 +267,10 @@ class RLM(Module):
 
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
-                inputs=inputs_str, final_output_names=final_output_names, final_var_output_names=final_var_output_names, output_fields=output_fields,
+                inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
                 max_llm_calls=self.max_llm_calls,
             ) + tool_docs)
-            .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
+            .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
             .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iterations"), type_=str)
             .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
@@ -295,7 +293,7 @@ class RLM(Module):
             full_extract_instructions,
         )
         extract_sig = extract_sig.prepend("repl_history", dspy.InputField(desc="Your REPL interactions so far"), type_=REPLHistory)
-        extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=list[REPLVariable])
+        extract_sig = extract_sig.prepend("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
 
         return action_sig, extract_sig
 
@@ -389,10 +387,11 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction:
         """Use extract module to get final answer when max iterations reached."""
-        logger.warning("RLM reached max iterations, using extract to get final answer")
+        logger.warning("RLM reached max iterations, using extract to get final output")
 
+        variables_info = [variable.format() for variable in variables]
         extract_pred = self.extract(
-            variables_info=variables,
+            variables_info=variables_info,
             repl_history=history,
         )
 
@@ -417,7 +416,7 @@ class RLM(Module):
         # Validate all required output fields are present
         missing = set(output_field_names) - set(raw_answer.keys())
         if missing:
-            return None, f"[Error] Missing output fields: {sorted(missing)}. Use FINAL({', '.join(output_field_names)})"
+            return None, f"[Error] Missing output fields: {sorted(missing)}. Use SUBMIT({', '.join(output_field_names)})"
 
         # Parse and validate each output field
         parsed_outputs = {}
@@ -498,8 +497,9 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction | REPLHistory:
         """Execute one iteration. Returns Prediction if done, else updated REPLHistory."""
+        variables_info = [variable.format() for variable in variables]
         action = self.generate_action(
-            variables_info=variables,
+            variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iterations}",
         )
@@ -560,10 +560,11 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction:
         """Async version: Use extract module when max iterations reached."""
-        logger.warning("RLM reached max iterations, using extract to get final answer")
+        logger.warning("RLM reached max iterations, using extract to get final output")
 
+        variables_info = [variable.format() for variable in variables]
         extract_pred = await self.extract.acall(
-            variables_info=variables,
+            variables_info=variables_info,
             repl_history=history,
         )
 
@@ -583,8 +584,9 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction | REPLHistory:
         """Async version: Execute one iteration."""
+        variables_info = [variable.format() for variable in variables]
         pred = await self.generate_action.acall(
-            variables_info=variables,
+            variables_info=variables_info,
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iterations}",
         )

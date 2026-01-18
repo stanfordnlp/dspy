@@ -67,16 +67,16 @@ def test_exception_args():
             interpreter.execute(code)
 
 
-def test_final_with_list():
-    """Test FINAL() with a list argument returns FinalAnswerResult with dict format."""
+def test_submit_with_list():
+    """Test SUBMIT() with a list argument returns FinalAnswerResult with dict format."""
 
     with PythonInterpreter() as interpreter:
         token = random.randint(1, 10**9)
-        code = f"FINAL(['The result is', {token}])"
+        code = f"SUBMIT(['The result is', {token}])"
         result = interpreter(code)
 
         assert isinstance(result, FinalAnswerResult)
-        # FINAL now always returns a dict with "answer" key for single-output default
+        # SUBMIT now always returns a dict with "answer" key for single-output default
         assert result.answer == {"answer": ["The result is", token]}
 
 def test_enable_env_vars_flag():
@@ -312,11 +312,11 @@ def test_tool_default_args():
 
 
 # =============================================================================
-# Multi-Output FINAL Tests
+# Multi-Output SUBMIT Tests
 # =============================================================================
 
-def test_final_with_typed_signature():
-    """Test FINAL with typed output signature."""
+def test_submit_with_typed_signature():
+    """Test SUBMIT with typed output signature."""
 
     output_fields = [
         {"name": "answer", "type": "str"},
@@ -324,14 +324,14 @@ def test_final_with_typed_signature():
     ]
 
     with PythonInterpreter(output_fields=output_fields) as sandbox:
-        result = sandbox.execute('FINAL(answer="the answer", confidence=0.95)')
+        result = sandbox.execute('SUBMIT(answer="the answer", confidence=0.95)')
 
         assert isinstance(result, FinalAnswerResult)
         assert result.answer == {"answer": "the answer", "confidence": 0.95}
 
 
-def test_final_positional_args():
-    """Test FINAL with positional arguments."""
+def test_submit_positional_args():
+    """Test SUBMIT with positional arguments."""
 
     output_fields = [
         {"name": "answer", "type": "str"},
@@ -339,14 +339,14 @@ def test_final_positional_args():
     ]
 
     with PythonInterpreter(output_fields=output_fields) as sandbox:
-        result = sandbox.execute('FINAL("the answer", 0.95)')
+        result = sandbox.execute('SUBMIT("the answer", 0.95)')
 
         assert isinstance(result, FinalAnswerResult)
         assert result.answer == {"answer": "the answer", "confidence": 0.95}
 
 
-def test_final_var_multi_output():
-    """Test FINAL_VAR with multiple output fields using positional args."""
+def test_submit_multi_output():
+    """Test SUBMIT with multiple output fields using positional args."""
 
     output_fields = [
         {"name": "answer", "type": "str"},
@@ -354,11 +354,11 @@ def test_final_var_multi_output():
     ]
 
     with PythonInterpreter(output_fields=output_fields) as sandbox:
-        # Positional args: variable names mapped to output fields in order
+        # Positional args: values mapped to output fields in order
         code = """
 a = "my answer"
 s = 42
-FINAL_VAR("a", "s")
+SUBMIT(a, s)
 """
         result = sandbox.execute(code)
 
@@ -366,8 +366,8 @@ FINAL_VAR("a", "s")
         assert result.answer == {"answer": "my answer", "score": 42}
 
 
-def test_final_var_wrong_arg_count():
-    """Test FINAL_VAR with wrong number of args gives clear error."""
+def test_submit_wrong_arg_count():
+    """Test SUBMIT with wrong number of args gives clear error."""
 
     output_fields = [
         {"name": "answer", "type": "str"},
@@ -376,8 +376,8 @@ def test_final_var_wrong_arg_count():
 
     with PythonInterpreter(output_fields=output_fields) as sandbox:
         with pytest.raises(CodeInterpreterError) as exc_info:
-            sandbox.execute('x = 1; FINAL_VAR("x")')  # Only 1 arg, expects 2
-        assert "expects 2 variable names" in str(exc_info.value)
+            sandbox.execute("x = 1; SUBMIT(x)")  # Only 1 arg, expects 2
+        assert "missing 1 required positional argument" in str(exc_info.value)
 
 
 def test_extract_parameters():
@@ -406,4 +406,3 @@ def test_extract_parameters_complex_types():
     # Complex types like Union are not included in type annotation
     assert params[0] == {"name": "items", "default": None}
     assert params[1] == {"name": "data", "default": None}
-

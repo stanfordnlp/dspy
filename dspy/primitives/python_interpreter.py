@@ -71,7 +71,7 @@ class PythonInterpreter:
             tools: Dictionary mapping tool names to callable functions.
                    Each function should accept keyword arguments and return a string.
                    Tools are callable directly from sandbox code by name.
-            output_fields: List of output field definitions for typed FINAL signature.
+            output_fields: List of output field definitions for typed SUBMIT signature.
                    Each dict should have 'name' and optionally 'type' keys.
         """
         if isinstance(deno_command, dict):
