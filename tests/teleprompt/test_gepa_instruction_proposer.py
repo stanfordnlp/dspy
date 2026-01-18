@@ -347,7 +347,8 @@ def test_default_proposer(reasoning: bool, caplog):
     )
 
     with caplog.at_level(logging.INFO, logger="dspy.teleprompt.gepa.gepa"):
-        # Let logs propagate up to root
+        # Let logs propagate up to root because gepa uses try-catch and logs the error
+        # https://github.com/gepa-ai/gepa/blob/1b5eff5133be1015210e0512953c25a4b85ad454/src/gepa/proposer/reflective_mutation/reflective_mutation.py#L128
         dspy_logger = logging.getLogger("dspy")
         original_propagate = dspy_logger.propagate
         dspy_logger.propagate = True
