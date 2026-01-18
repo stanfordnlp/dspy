@@ -164,8 +164,13 @@ class LM(BaseLM):
 
         self._check_truncation(results)
 
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
-            settings.usage_tracker.add_usage(self.model, dict(results.usage))
+        if not getattr(results, "cache_hit", False):
+            if dspy.settings.usage_tracker and hasattr(results, "usage"):
+                settings.usage_tracker.add_usage(self.model, dict(results.usage))
+            if dspy.settings.cost_tracker:
+                cost = getattr(results, "_hidden_params", {}).get("response_cost")
+                usage = dict(results.usage) if hasattr(results, "usage") else None
+                settings.cost_tracker.add_cost(self.model, cost, usage)
         return results
 
     async def aforward(
@@ -202,8 +207,13 @@ class LM(BaseLM):
 
         self._check_truncation(results)
 
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
-            settings.usage_tracker.add_usage(self.model, dict(results.usage))
+        if not getattr(results, "cache_hit", False):
+            if dspy.settings.usage_tracker and hasattr(results, "usage"):
+                settings.usage_tracker.add_usage(self.model, dict(results.usage))
+            if dspy.settings.cost_tracker:
+                cost = getattr(results, "_hidden_params", {}).get("response_cost")
+                usage = dict(results.usage) if hasattr(results, "usage") else None
+                settings.cost_tracker.add_cost(self.model, cost, usage)
         return results
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
