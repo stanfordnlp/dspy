@@ -48,7 +48,7 @@ Available:
 - `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
 - `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
 - `print()` - ALWAYS print to see results
-- `SUBMIT({final_output_names})` - submit final answer when done
+- `SUBMIT({final_output_names})` - submit final output when done
 - Standard libraries: re, json, collections, math, etc.
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
@@ -60,7 +60,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
 6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 
-You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your answer."""
+You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
 _CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*?)\n```\s*$", re.DOTALL)
@@ -387,7 +387,7 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction:
         """Use extract module to get final answer when max iterations reached."""
-        logger.warning("RLM reached max iterations, using extract to get final answer")
+        logger.warning("RLM reached max iterations, using extract to get final output")
 
         variables_info = [variable.format() for variable in variables]
         extract_pred = self.extract(
@@ -560,7 +560,7 @@ class RLM(Module):
         output_field_names: list[str],
     ) -> Prediction:
         """Async version: Use extract module when max iterations reached."""
-        logger.warning("RLM reached max iterations, using extract to get final answer")
+        logger.warning("RLM reached max iterations, using extract to get final output")
 
         variables_info = [variable.format() for variable in variables]
         extract_pred = await self.extract.acall(
