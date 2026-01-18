@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+import logging
 import pytest
 
 import dspy
@@ -300,7 +301,7 @@ def test_image_serialization_into_strings():
 
 
 @pytest.mark.parametrize("reasoning", [True, False])
-def test_default_proposer(reasoning: bool):
+def test_default_proposer(reasoning: bool, caplog):
     student = dspy.Predict("image -> label")
 
     image = dspy.Image("https://picsum.photos/id/237/200/300")
@@ -345,7 +346,18 @@ def test_default_proposer(reasoning: bool):
         reflection_lm=reflection_lm,
     )
 
-    gepa.compile(student, trainset=examples, valset=examples)
+    with caplog.at_level(logging.INFO, logger="dspy.teleprompt.gepa.gepa"):
+        # Let logs propagate up to root
+        dspy_logger = logging.getLogger("dspy")
+        original_propagate = dspy_logger.propagate
+        dspy_logger.propagate = True
+
+        gepa.compile(student, trainset=examples, valset=examples)
+
+        dspy_logger.propagate = original_propagate
+
+        # Check that no internal GEPA reflection errors occured
+        assert "Exception during reflection/proposal" not in caplog.text
 
     assert len(lm.history) > 0, "LM should have been called"
     assert len(reflection_lm.history) > 0, "Reflection LM should have been called"
