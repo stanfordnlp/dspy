@@ -194,3 +194,37 @@ def test_batch_with_failed_examples():
     assert len(exceptions) == 1
     assert isinstance(exceptions[0], ValueError)
     assert str(exceptions[0]) == "test error"
+
+
+def test_parallel_with_track_usage():
+    """Test that usage tracking works correctly when using Parallel inside a Module."""
+    lm = DummyLM(
+        [
+            {"output": "test output 1"},
+            {"output": "test output 2"},
+        ]
+    )
+
+    class MyModule(dspy.Module):
+        def forward(self):
+            predictor = dspy.Predict("input -> output")
+            parallel = dspy.Parallel(num_threads=2)
+            return parallel(
+                [
+                    (predictor, {"input": "test input 1"}),
+                    (predictor, {"input": "test input 2"}),
+                ]
+            )
+
+    # Test with track_usage enabled
+    with dspy.settings.context(lm=lm, track_usage=True):
+        results = MyModule()()
+
+    # Verify that results are Prediction objects with usage data set
+    assert len(results) == 2
+    assert all(isinstance(r, dspy.Prediction) for r in results)
+    assert all(r.get_lm_usage() is not None for r in results)
+
+    # Verify predictions have the expected outputs
+    expected_outputs = {"test output 1", "test output 2"}
+    assert {r.output for r in results} == expected_outputs
