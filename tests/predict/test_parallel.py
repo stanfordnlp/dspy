@@ -272,3 +272,39 @@ def test_parallel_with_track_usage_and_tuple_return():
     
     # Verify trace is preserved
     assert trace == {"trace": "some_trace_data"}
+
+
+def test_track_usage_with_nested_and_dict_structures():
+    """Test that usage tracking works with nested lists, dicts, and mixed structures."""
+    lm = DummyLM([{"output": "test1"}, {"output": "test2"}, {"output": "test3"}])
+
+    class NestedStructureModule(dspy.Module):
+        def forward(self):
+            predictor = dspy.Predict("input -> output")
+            p1 = predictor(input="input1")
+            p2 = predictor(input="input2")
+            p3 = predictor(input="input3")
+            # Return a complex nested structure
+            return {
+                "nested_list": [[p1, p2]],
+                "single": p3,
+            }
+
+    # Test with track_usage enabled
+    with dspy.settings.context(lm=lm, track_usage=True):
+        result = NestedStructureModule()()
+
+    # Verify structure
+    assert isinstance(result, dict)
+    assert "nested_list" in result
+    assert "single" in result
+
+    # Verify all predictions have usage data
+    all_predictions = result["nested_list"][0] + [result["single"]]
+    assert len(all_predictions) == 3
+    assert all(isinstance(p, dspy.Prediction) for p in all_predictions)
+    assert all(p.get_lm_usage() is not None for p in all_predictions)
+
+    # Verify predictions have the expected outputs
+    expected_outputs = {"test1", "test2", "test3"}
+    assert {p.output for p in all_predictions} == expected_outputs

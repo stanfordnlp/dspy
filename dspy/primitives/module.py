@@ -182,22 +182,35 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return results
 
     def _set_lm_usage(self, tokens: dict[str, Any], output: Any):
-        # Some optimizers (e.g., GEPA bootstrap tracing) temporarily patch
-        # module.forward to return a tuple: (prediction, trace).
-        # When usage tracking is enabled, ensure we attach usage to the
-        # prediction object if present.
+        # When usage tracking is enabled, recursively find all Prediction objects
+        # in the output and set usage on them. This handles any structure:
+        # - Single Prediction
+        # - List/tuple of Predictions
+        # - Nested structures (e.g., [[Prediction, ...], ...])
+        # - Tuples from optimizers (e.g., (prediction, trace))
         predictions_in_output = []
-        if isinstance(output, Prediction):
-            predictions_in_output = [output]
-        elif isinstance(output, tuple) and len(output) > 0:
-            # Handle tuple cases: (Prediction, trace) or ([Prediction, ...], trace)
-            first_element = output[0]
-            if isinstance(first_element, Prediction):
-                predictions_in_output = [first_element]
-            elif isinstance(first_element, list) and first_element and all(isinstance(item, Prediction) for item in first_element):
-                predictions_in_output = first_element
-        elif isinstance(output, list) and output and all(isinstance(item, Prediction) for item in output):
-            predictions_in_output = output
+        
+        def collect_predictions(obj, seen=None):
+            """Recursively collect all Prediction objects from any structure."""
+            if seen is None:
+                seen = set()
+            
+            # Avoid infinite recursion on circular references
+            obj_id = id(obj)
+            if obj_id in seen:
+                return
+            seen.add(obj_id)
+            
+            if isinstance(obj, Prediction):
+                predictions_in_output.append(obj)
+            elif isinstance(obj, (list, tuple)):
+                for item in obj:
+                    collect_predictions(item, seen)
+            elif isinstance(obj, dict):
+                for value in obj.values():
+                    collect_predictions(value, seen)
+        
+        collect_predictions(output)
         
         if predictions_in_output:
             for prediction in predictions_in_output:
