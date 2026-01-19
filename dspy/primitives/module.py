@@ -186,13 +186,22 @@ class Module(BaseModule, metaclass=ProgramMeta):
         # module.forward to return a tuple: (prediction, trace).
         # When usage tracking is enabled, ensure we attach usage to the
         # prediction object if present.
-        prediction_in_output = None
+        predictions_in_output = []
         if isinstance(output, Prediction):
-            prediction_in_output = output
-        elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
-            prediction_in_output = output[0]
-        if prediction_in_output:
-            prediction_in_output.set_lm_usage(tokens)
+            predictions_in_output = [output]
+        elif isinstance(output, tuple) and len(output) > 0:
+            # Handle tuple cases: (Prediction, trace) or ([Prediction, ...], trace)
+            first_element = output[0]
+            if isinstance(first_element, Prediction):
+                predictions_in_output = [first_element]
+            elif isinstance(first_element, list) and first_element and all(isinstance(item, Prediction) for item in first_element):
+                predictions_in_output = first_element
+        elif isinstance(output, list) and output and all(isinstance(item, Prediction) for item in output):
+            predictions_in_output = output
+        
+        if predictions_in_output:
+            for prediction in predictions_in_output:
+                prediction.set_lm_usage(tokens)
         else:
             logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
 
