@@ -4,7 +4,7 @@ import mimetypes
 import os
 import warnings
 from functools import lru_cache
-from typing import Any, Union
+from typing import Any, Literal, Union
 from urllib.parse import urlparse
 
 import pydantic
@@ -20,8 +20,12 @@ except ImportError:
     PIL_AVAILABLE = False
 
 
+ImageDetail = Literal["low", "high", "auto"]
+
+
 class Image(Type):
     url: str
+    detail: ImageDetail | None = None
 
     model_config = pydantic.ConfigDict(
         frozen=True,
@@ -30,7 +34,7 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, url: Any = None, *, download: bool = False, **data):
+    def __init__(self, url: Any = None, *, download: bool = False, detail: ImageDetail | None = None, **data):
         """Create an Image.
 
         Parameters
@@ -47,8 +51,18 @@ class Image(Type):
         download:
             Whether remote URLs should be downloaded to infer their MIME type.
 
+        detail:
+            Per-image vision detail level for compatible APIs (e.g., OpenAI, Gemini via LiteLLM).
+            Allowed values: "low", "high", "auto". When set, this is included in the formatted
+            message content block. Note: some OpenAI-compatible servers do not support this
+            parameter and may reject requests when it is present. Use only when you know your
+            provider supports it.
+
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
         """
+
+        if detail is not None and "detail" not in data:
+            data["detail"] = detail
 
         if url is not None and "url" not in data:
             # Support a positional argument while allowing ``url=`` in **data.
@@ -66,13 +80,18 @@ class Image(Type):
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
 
-    @lru_cache(maxsize=32)
+    @lru_cache(maxsize=32)  # noqa: B019
     def format(self) -> list[dict[str, Any]] | str:
         try:
             image_url = encode_image(self.url)
         except Exception as e:
             raise ValueError(f"Failed to format image for DSPy: {e}")
-        return [{"type": "image_url", "image_url": {"url": image_url}}]
+
+        image_url_block: dict[str, Any] = {"url": image_url}
+        if self.detail is not None:
+            image_url_block["detail"] = self.detail
+
+        return [{"type": "image_url", "image_url": image_url_block}]
 
     @classmethod
     def from_url(cls, url: str, download: bool = False):
@@ -154,7 +173,9 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
                 return image
         else:
             # Unsupported string format
-            raise ValueError(f"Unrecognized file string: {image}; If this file type should be supported, please open an issue.")
+            raise ValueError(
+                f"Unrecognized file string: {image}; If this file type should be supported, please open an issue."
+            )
     elif PIL_AVAILABLE and isinstance(image, PILImage.Image):
         # PIL Image
         return _encode_pil_image(image)
