@@ -188,10 +188,20 @@ class Module(BaseModule, metaclass=ProgramMeta):
         # - List/tuple of Predictions
         # - Nested structures (e.g., [[Prediction, ...], ...])
         # - Tuples from optimizers (e.g., (prediction, trace))
+        # - Dicts with Prediction values
+        # - Any combination of the above
         predictions_in_output = []
         
         def collect_predictions(obj, seen=None):
-            """Recursively collect all Prediction objects from any structure."""
+            """Recursively collect all Prediction objects from any structure.
+            
+            Args:
+                obj: The object to search for Predictions (can be any type)
+                seen: Set of object ids already visited (prevents infinite recursion on circular refs)
+            
+            Side effects:
+                Appends found Prediction objects to predictions_in_output list in outer scope
+            """
             if seen is None:
                 seen = set()
             
