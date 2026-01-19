@@ -194,9 +194,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
             first_element = output[0]
             if isinstance(first_element, Prediction):
                 predictions_in_output = [first_element]
-            elif isinstance(first_element, list) and all(isinstance(item, Prediction) for item in first_element):
+            elif isinstance(first_element, list) and first_element and all(isinstance(item, Prediction) for item in first_element):
                 predictions_in_output = first_element
-        elif isinstance(output, list) and all(isinstance(item, Prediction) for item in output):
+        elif isinstance(output, list) and output and all(isinstance(item, Prediction) for item in output):
             predictions_in_output = output
         
         if predictions_in_output:
