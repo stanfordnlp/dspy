@@ -116,3 +116,56 @@ class Reasoning(Type):
             return self.content == other.content
         if isinstance(other, str):
             return self.content == other
+        return False
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    def __len__(self) -> int:
+        return len(self.content)
+
+    def __getitem__(self, key):
+        return self.content[key]
+
+    def __contains__(self, item) -> bool:
+        return item in self.content
+
+    def __iter__(self):
+        return iter(self.content)
+
+    def __add__(self, other):
+        if isinstance(other, Reasoning):
+            return Reasoning(content=self.content + other.content)
+        if isinstance(other, str):
+            return self.content + other
+        return NotImplemented
+
+    def __radd__(self, other):
+        if isinstance(other, str):
+            return other + self.content
+        if isinstance(other, Reasoning):
+            return Reasoning(content=other.content + self.content)
+        return NotImplemented
+
+    def __getattr__(self, name):
+        """
+        Delegate string methods to the underlying content.
+
+        This makes Reasoning fully str-like by forwarding any string method calls
+        (like .strip(), .lower(), .split(), etc.) to the content string.
+
+        Note: This is called only when the attribute is not found on the Reasoning instance,
+        so it won't interfere with Pydantic fields or existing methods.
+        """
+        # Check if this is a valid string method/attribute
+        if hasattr(str, name):
+            # Delegate to the content string
+            return getattr(self.content, name)
+
+        # If it's not a string method, provide a helpful error
+        raise AttributeError(
+            f"`{type(self).__name__}` object has no attribute '{name}'. "
+            f"If you are using `dspy.ChainOfThought`, note that the 'reasoning' field in ChainOfThought is now a "
+            "`dspy.Reasoning` object (not a plain string). "
+            f"You can convert it to a string with str(reasoning) or access the content with reasoning.content."
+        )
