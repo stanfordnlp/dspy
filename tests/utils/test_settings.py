@@ -201,23 +201,23 @@ def test_dspy_settings_save_load(tmp_path):
     dspy.configure(lm=None, adapter=None, callbacks=None)
 
     loaded_settings = dspy.load_settings(tmp_path / "settings.pkl")
-    dspy.settings.configure(**loaded_settings)
+    dspy.configure(**loaded_settings)
     assert dspy.settings.lm.model == "openai/gpt-4o"
     assert isinstance(dspy.settings.adapter, dspy.JSONAdapter)
     assert len(dspy.settings.callbacks) == 1
 
 
 def test_dspy_settings_save_exclude_keys(tmp_path):
-    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), track_usage=True)
 
-    dspy.settings.save(tmp_path / "settings.pkl", exclude_keys=["adapter", "callbacks"])
-    dspy.configure(lm=None, adapter=None, callbacks=None)
+    dspy.settings.save(tmp_path / "settings.pkl", exclude_keys=["adapter", "track_usage"])
+    dspy.configure(lm=None, adapter=None, track_usage=False)
 
     loaded_settings = dspy.load_settings(tmp_path / "settings.pkl")
-    dspy.settings.configure(**loaded_settings)
+    dspy.configure(**loaded_settings)
     assert dspy.settings.lm.model == "openai/gpt-4o"
     assert dspy.settings.adapter is None
-    assert dspy.settings.callbacks is None
+    assert not dspy.settings.track_usage
 
 
 
