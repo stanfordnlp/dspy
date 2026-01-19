@@ -4,6 +4,7 @@ import copy
 import logging
 import threading
 from contextlib import contextmanager
+from typing import Any
 
 import cloudpickle
 
@@ -190,14 +191,19 @@ class Settings:
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 
-    def save(self, path, modules_to_serialize=None):
+    def save(
+        self, path: str,
+        modules_to_serialize: list[str] | None = None,
+        exclude_keys: list[str] | None = None,
+    ):
         """
         Save the settings to a file using cloudpickle.
 
         Args:
             path: The file path to save the settings to.
-            modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
+            modules_to_serialize (list or None): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
                 If None, then no modules will be registered for serialization.
+            exclude_keys (list or None): A list of keys to exclude during saving.
         """
         logger.warning(
             "`dspy.settings` are serialized using cloudpickle. Because cloudpickle allows for the "
@@ -209,27 +215,31 @@ class Settings:
             for module in modules_to_serialize:
                 cloudpickle.register_pickle_by_value(module)
 
+            exclude_keys = exclude_keys or []
+            data = {key: value for key, value in self.config.items() if key not in exclude_keys}
             with open(path, "wb") as f:
-                cloudpickle.dump(dict(self.config), f)
+                cloudpickle.dump(data, f)
         except Exception as e:
             raise RuntimeError(
                 f"Saving failed with error: {e}. Please remove the non-picklable attributes from the values "
                 "in the `dspy.settings`."
             )
 
-    def load(self, path):
+    @classmethod
+    def load(cls, path: str) -> dict[str, Any]:
         """
         Load the settings from a file using cloudpickle.
 
-        Note: The `load` method can only be called from the thread that first configured settings
-
         Args:
             path: The file path to load the settings from.
+
+        Returns:
+            A dict that stores the loaded settings.
         """
         with open(path, "rb") as f:
             configs = cloudpickle.load(f)
 
-        self.configure(**configs)
+        return configs
 
 
 settings = Settings()
