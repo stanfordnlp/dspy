@@ -1,5 +1,8 @@
+import logging
 from dataclasses import dataclass
 from typing import Any
+
+import pytest
 
 import dspy
 from dspy.teleprompt.gepa import instruction_proposal
@@ -297,7 +300,8 @@ def test_image_serialization_into_strings():
     )
 
 
-def test_default_proposer():
+@pytest.mark.parametrize("reasoning", [True, False])
+def test_default_proposer(reasoning: bool, caplog):
     student = dspy.Predict("image -> label")
 
     image = dspy.Image("https://picsum.photos/id/237/200/300")
@@ -332,7 +336,8 @@ def test_default_proposer():
             {"improved_instruction": "Consider contextual clues in the image"},
             {"improved_instruction": "Analyze shape, color, and texture patterns"},
             {"improved_instruction": "Look for distinguishing characteristics"},
-        ]
+        ],
+        reasoning=reasoning,
     )
 
     gepa = dspy.GEPA(
@@ -341,7 +346,19 @@ def test_default_proposer():
         reflection_lm=reflection_lm,
     )
 
-    gepa.compile(student, trainset=examples, valset=examples)
+    with caplog.at_level(logging.INFO, logger="dspy.teleprompt.gepa.gepa"):
+        # Let logs propagate up to root because gepa uses try-catch and logs the error
+        # https://github.com/gepa-ai/gepa/blob/1b5eff5133be1015210e0512953c25a4b85ad454/src/gepa/proposer/reflective_mutation/reflective_mutation.py#L128
+        dspy_logger = logging.getLogger("dspy")
+        original_propagate = dspy_logger.propagate
+        dspy_logger.propagate = True
+
+        gepa.compile(student, trainset=examples, valset=examples)
+
+        dspy_logger.propagate = original_propagate
+
+        # Check that no internal GEPA reflection errors occured
+        assert "Exception during reflection/proposal" not in caplog.text
 
     assert len(lm.history) > 0, "LM should have been called"
     assert len(reflection_lm.history) > 0, "Reflection LM should have been called"

@@ -67,12 +67,19 @@ class DummyLM(LM):
 
     """
 
-    def __init__(self, answers: list[dict[str, Any]] | dict[str, dict[str, Any]], follow_examples: bool = False, adapter=None):
+    def __init__(
+        self,
+        answers: list[dict[str, Any]] | dict[str, dict[str, Any]],
+        follow_examples: bool = False,
+        reasoning: bool = False,
+        adapter=None,
+    ):
         super().__init__("dummy", "chat", 0.0, 1000, True)
         self.answers = answers
         if isinstance(answers, list):
             self.answers = iter(answers)
         self.follow_examples = follow_examples
+        self.reasoning = reasoning
 
         # Set adapter, defaulting to ChatAdapter
         if adapter is None:
@@ -122,16 +129,23 @@ class DummyLM(LM):
             kwargs = {**self.kwargs, **kwargs}
 
             if self.follow_examples:
-                outputs.append(self._use_example(messages))
+                current_output = self._use_example(messages)
             elif isinstance(self.answers, dict):
-                outputs.append(
-                    next(
-                        (format_answer_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
-                        "No more responses",
-                    )
+                current_output = next(
+                    (format_answer_fields(v) for k, v in self.answers.items() if k in messages[-1]["content"]),
+                    "No more responses",
                 )
             else:
-                outputs.append(format_answer_fields(next(self.answers, {"answer": "No more responses"})))
+                current_output = format_answer_fields(next(self.answers, {"answer": "No more responses"}))
+
+            # Mock reasoning
+            if self.reasoning:
+                current_output = {
+                    "text": current_output,
+                    "reasoning_content": "Some reasoning",
+                }
+            # Store the output
+            outputs.append(current_output)
 
             # Logging, with removed api key & where `cost` is None on cache hit.
             kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
