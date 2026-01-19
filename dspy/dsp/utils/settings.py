@@ -191,15 +191,19 @@ class Settings:
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 
-    def save(self, path, modules_to_serialize=None, exclude_keys=None):
+    def save(
+        self, path: str,
+        modules_to_serialize: list[str] | None = None,
+        exclude_keys: list[str] | None = None,
+    ):
         """
         Save the settings to a file using cloudpickle.
 
         Args:
             path: The file path to save the settings to.
-            modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
+            modules_to_serialize (list or None): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
                 If None, then no modules will be registered for serialization.
-            exclude_keys: A list of keys to exclude during saving.
+            exclude_keys (list or None): A list of keys to exclude during saving.
         """
         logger.warning(
             "`dspy.settings` are serialized using cloudpickle. Because cloudpickle allows for the "
@@ -211,10 +215,8 @@ class Settings:
             for module in modules_to_serialize:
                 cloudpickle.register_pickle_by_value(module)
 
-            data = dict(self.config)
-            if exclude_keys:
-                for key in exclude_keys:
-                    data.pop(key, None)
+            exclude_keys = exclude_keys or []
+            data = {key: value for key, value in self.config.items() if key not in exclude_keys}
             with open(path, "wb") as f:
                 cloudpickle.dump(data, f)
         except Exception as e:
@@ -224,11 +226,9 @@ class Settings:
             )
 
     @classmethod
-    def load(cls, path) -> dict[str, Any]:
+    def load(cls, path: str) -> dict[str, Any]:
         """
         Load the settings from a file using cloudpickle.
-
-        Note: The `load` method can only be called from the thread that first configured settings
 
         Args:
             path: The file path to load the settings from.

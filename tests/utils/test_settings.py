@@ -207,6 +207,20 @@ def test_dspy_settings_save_load(tmp_path):
     assert len(dspy.settings.callbacks) == 1
 
 
+def test_dspy_settings_save_exclude_keys(tmp_path):
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
+
+    dspy.settings.save(tmp_path / "settings.pkl", exclude_keys=["adapter", "callbacks"])
+    dspy.configure(lm=None, adapter=None, callbacks=None)
+
+    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl")
+    dspy.settings.configure(**loaded_settings)
+    assert dspy.settings.lm.model == "openai/gpt-4o"
+    assert dspy.settings.adapter is None
+    assert dspy.settings.callbacks is None
+
+
+
 def test_settings_save_with_extra_modules(tmp_path):
     # Create a temporary Python file with our custom module
     custom_module_path = tmp_path / "custom_module.py"
