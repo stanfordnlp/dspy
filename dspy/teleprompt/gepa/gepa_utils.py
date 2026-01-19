@@ -199,27 +199,29 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         return new_prog
 
+
+
     def _update_tool_descriptions(self, program: Module, tool_candidates: dict[str, Any]) -> None:
         all_tools = self._collect_tools(program)
 
         for tool_name, tool_config in tool_candidates.items():
             if tool_name not in all_tools:
-                logger.warning(
-                    f"Skipping updates for tool:'{tool_name}' because it cannot be detected on the student program."
-                )
+                logger.warning(f"Skipping updates for tool:'{tool_name}' because it cannot be detected.")
                 continue
 
             tool = all_tools[tool_name]
-
-            # Update tool description if present.
             if tool_config.get("desc"):
                 tool.desc = tool_config["desc"]
 
-            # Update arg descriptions if present.
             args_schema = tool_config.get("args") or {}
             for arg_name, arg_schema in args_schema.items():
                 if arg_schema.get("description") is not None:
                     tool.args[arg_name]["description"] = arg_schema["description"]
+
+        from dspy.predict.react import ReAct
+        for _, module in program.named_sub_modules():
+            if isinstance(module, ReAct):
+                module._refresh_react_signature()
 
     def _collect_tools(self, module: Module) -> dict[str, Tool]:
         """Recursively collect all Tool instances from a module and its sub-modules."""
