@@ -228,3 +228,47 @@ def test_parallel_with_track_usage():
     # Verify predictions have the expected outputs
     expected_outputs = {"test output 1", "test output 2"}
     assert {r.output for r in results} == expected_outputs
+
+
+def test_parallel_with_track_usage_and_tuple_return():
+    """Test that usage tracking works when Module returns a tuple with list of Predictions."""
+    lm = DummyLM(
+        [
+            {"output": "test output 1"},
+            {"output": "test output 2"},
+        ]
+    )
+
+    class MyModule(dspy.Module):
+        def forward(self):
+            predictor = dspy.Predict("input -> output")
+            parallel = dspy.Parallel(num_threads=2)
+            results = parallel(
+                [
+                    (predictor, {"input": "test input 1"}),
+                    (predictor, {"input": "test input 2"}),
+                ]
+            )
+            # Return tuple mimicking optimizer behavior (e.g., GEPA bootstrap tracing)
+            return (results, {"trace": "some_trace_data"})
+
+    # Test with track_usage enabled
+    with dspy.settings.context(lm=lm, track_usage=True):
+        output = MyModule()()
+
+    # Verify that output is a tuple
+    assert isinstance(output, tuple)
+    assert len(output) == 2
+    results, trace = output
+
+    # Verify that results are Prediction objects with usage data set
+    assert len(results) == 2
+    assert all(isinstance(r, dspy.Prediction) for r in results)
+    assert all(r.get_lm_usage() is not None for r in results)
+
+    # Verify predictions have the expected outputs
+    expected_outputs = {"test output 1", "test output 2"}
+    assert {r.output for r in results} == expected_outputs
+    
+    # Verify trace is preserved
+    assert trace == {"trace": "some_trace_data"}

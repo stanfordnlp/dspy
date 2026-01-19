@@ -189,8 +189,13 @@ class Module(BaseModule, metaclass=ProgramMeta):
         predictions_in_output = []
         if isinstance(output, Prediction):
             predictions_in_output = [output]
-        elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
-            predictions_in_output = [output[0]]
+        elif isinstance(output, tuple) and len(output) > 0:
+            # Handle tuple cases: (Prediction, trace) or ([Prediction, ...], trace)
+            first_element = output[0]
+            if isinstance(first_element, Prediction):
+                predictions_in_output = [first_element]
+            elif isinstance(first_element, list) and all(isinstance(item, Prediction) for item in first_element):
+                predictions_in_output = first_element
         elif isinstance(output, list) and all(isinstance(item, Prediction) for item in output):
             predictions_in_output = output
         
