@@ -82,26 +82,27 @@ class Module(BaseModule, metaclass=ProgramMeta):
             elif settings.track_usage:
                 # Tracker exists (nested call) - capture usage for this specific module call
                 usage_tracker = thread_local_overrides.get().get("usage_tracker")
-                if usage_tracker:
-                    # Get current token count before calling forward
-                    tokens_before = usage_tracker.get_total_tokens()
-                    output = self.forward(*args, **kwargs)
-                    # Get tokens used by this module call
-                    tokens_after = usage_tracker.get_total_tokens()
-                    
-                    # Calculate the delta (tokens used by this module call only)
-                    tokens_delta = {}
-                    for lm_name in tokens_after:
-                        if lm_name in tokens_before:
-                            # Compute difference for each token type
-                            tokens_delta[lm_name] = self._compute_token_delta(tokens_before[lm_name], tokens_after[lm_name])
-                        else:
-                            tokens_delta[lm_name] = tokens_after[lm_name]
-                    
-                    self._set_lm_usage(tokens_delta, output)
-                    return output
-                else:
-                    return self.forward(*args, **kwargs)
+                # Get current token count before calling forward
+                tokens_before = usage_tracker.get_total_tokens()
+                output = self.forward(*args, **kwargs)
+                # Get tokens used by this module call
+                tokens_after = usage_tracker.get_total_tokens()
+                
+                # Calculate the delta (tokens used by this module call only)
+                tokens_delta = {}
+                # Process all LM names from both before and after
+                all_lm_names = set(tokens_before.keys()) | set(tokens_after.keys())
+                for lm_name in all_lm_names:
+                    if lm_name in tokens_before and lm_name in tokens_after:
+                        # Compute difference for each token type
+                        tokens_delta[lm_name] = self._compute_token_delta(tokens_before[lm_name], tokens_after[lm_name])
+                    elif lm_name in tokens_after:
+                        # New LM used in this call
+                        tokens_delta[lm_name] = tokens_after[lm_name]
+                    # If lm_name only in tokens_before, it means no usage in this call, so skip
+                
+                self._set_lm_usage(tokens_delta, output)
+                return output
             else:
                 return self.forward(*args, **kwargs)
 
@@ -216,14 +217,24 @@ class Module(BaseModule, metaclass=ProgramMeta):
             Dictionary with the delta (difference) in token usage
         """
         delta = {}
-        for key, value_after in tokens_after.items():
-            value_before = tokens_before.get(key, 0)
-            if isinstance(value_after, dict) and isinstance(value_before, dict):
+        # Process all keys from both dicts
+        all_keys = set(tokens_before.keys()) | set(tokens_after.keys())
+        for key in all_keys:
+            value_before = tokens_before.get(key)
+            value_after = tokens_after.get(key)
+            
+            if isinstance(value_after, dict) or isinstance(value_before, dict):
                 # Recursively compute delta for nested dicts
-                delta[key] = self._compute_token_delta(value_before, value_after)
-            elif value_after is not None or value_before is not None:
-                # Compute numeric difference
+                delta[key] = self._compute_token_delta(
+                    value_before if isinstance(value_before, dict) else {},
+                    value_after if isinstance(value_after, dict) else {}
+                )
+            elif isinstance(value_after, (int, float)) or isinstance(value_before, (int, float)):
+                # Compute numeric difference only for numeric types
                 delta[key] = (value_after or 0) - (value_before or 0)
+            elif value_after is not None:
+                # For non-numeric types (strings, etc.), just use the after value
+                delta[key] = value_after
         return delta
 
     def _set_lm_usage(self, tokens: dict[str, Any], output: Any):
