@@ -1,5 +1,3 @@
-"""Test that dspy.Reasoning is fully str-like for backward compatibility."""
-
 import pytest
 
 import dspy
@@ -90,7 +88,6 @@ def test_reasoning_string_methods():
 
 
 def test_reasoning_with_chain_of_thought():
-    """Test Reasoning in actual ChainOfThought usage."""
     from dspy.utils import DummyLM
 
     lm = DummyLM([{"reasoning": "Let me think step by step", "answer": "42"}])
@@ -108,7 +105,6 @@ def test_reasoning_with_chain_of_thought():
 
 
 def test_reasoning_error_message():
-    """Test that helpful error is shown for invalid attributes."""
     reasoning = dspy.Reasoning(content="Hello")
 
     with pytest.raises(AttributeError, match="`Reasoning` object has no attribute 'nonexistent_method'"):
