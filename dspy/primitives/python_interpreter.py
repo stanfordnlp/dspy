@@ -16,9 +16,9 @@ import subprocess
 from os import PathLike
 from typing import Any, Callable
 
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalAnswerResult
+from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
 
-__all__ = ["PythonInterpreter", "FinalAnswerResult", "CodeInterpreterError"]
+__all__ = ["PythonInterpreter", "FinalOutput", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
 
@@ -361,10 +361,10 @@ class PythonInterpreter:
                 error_type = result.get("errorType", "Sandbox Error")
                 error_args = result.get("errorArgs", [])
 
-                if error_type == "FinalAnswer":
-                    answer = error_args[0] if error_args else None
+                if error_type == "FinalOutput":
+                    output = error_args[0] if error_args else None
                     self._sync_files()
-                    return FinalAnswerResult(answer)
+                    return FinalOutput(output)
                 elif error_type == "SyntaxError":
                     raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
                 else:

@@ -1,5 +1,5 @@
 from dspy.primitives.base_module import BaseModule
-from dspy.primitives.code_interpreter import CodeInterpreter, CodeInterpreterError, FinalAnswerResult
+from dspy.primitives.code_interpreter import CodeInterpreter, CodeInterpreterError, FinalOutput
 from dspy.primitives.example import Example
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Completions, Prediction
@@ -10,7 +10,7 @@ __all__ = [
     "CodeInterpreter",
     "Completions",
     "Example",
-    "FinalAnswerResult",
+    "FinalOutput",
     "CodeInterpreterError",
     "Module",
     "Prediction",

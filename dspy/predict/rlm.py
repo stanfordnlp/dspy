@@ -22,7 +22,7 @@ import pydantic
 
 import dspy
 from dspy.adapters.utils import parse_value, translate_field_type
-from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalAnswerResult
+from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalOutput
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -92,9 +92,9 @@ class RLM(Module):
     Example:
         ```python
         # Basic usage
-        rlm = dspy.RLM("context, query -> answer", max_iterations=10)
+        rlm = dspy.RLM("context, query -> output", max_iterations=10)
         result = rlm(context="...very long text...", query="What is the magic number?")
-        print(result.answer)
+        print(result.output)
         ```
     """
 
@@ -386,7 +386,7 @@ class RLM(Module):
         history: REPLHistory,
         output_field_names: list[str],
     ) -> Prediction:
-        """Use extract module to get final answer when max iterations reached."""
+        """Use extract module to get final output when max iterations reached."""
         logger.warning("RLM reached max iterations, using extract to get final output")
 
         variables_info = [variable.format() for variable in variables]
@@ -397,24 +397,24 @@ class RLM(Module):
 
         return Prediction(
             trajectory=[e.model_dump() for e in history],
-            final_reasoning="Extract forced final answer",
+            final_reasoning="Extract forced final output",
             **{name: getattr(extract_pred, name) for name in output_field_names},
         )
 
-    def _process_final_answer(
+    def _process_final_output(
         self,
-        result: FinalAnswerResult,
+        result: FinalOutput,
         output_field_names: list[str],
     ) -> tuple[dict[str, Any] | None, str | None]:
-        """Validate and parse FinalAnswerResult. Returns (parsed_outputs, None) or (None, error)."""
-        raw_answer = result.answer
+        """Validate and parse FinalOutput. Returns (parsed_outputs, None) or (None, error)."""
+        raw_output = result.output
 
-        # Validate raw_answer is a dict
-        if not isinstance(raw_answer, dict):
-            return None, f"[Error] FINAL returned {type(raw_answer).__name__}, expected dict with fields: {output_field_names}"
+        # Validate raw_output is a dict
+        if not isinstance(raw_output, dict):
+            return None, f"[Error] FINAL returned {type(raw_output).__name__}, expected dict with fields: {output_field_names}"
 
         # Validate all required output fields are present
-        missing = set(output_field_names) - set(raw_answer.keys())
+        missing = set(output_field_names) - set(raw_output.keys())
         if missing:
             return None, f"[Error] Missing output fields: {sorted(missing)}. Use SUBMIT({', '.join(output_field_names)})"
 
@@ -425,11 +425,11 @@ class RLM(Module):
             field = self.signature.output_fields[name]
             annotation = getattr(field, "annotation", str)
             try:
-                parsed_outputs[name] = parse_value(raw_answer[name], annotation)
+                parsed_outputs[name] = parse_value(raw_output[name], annotation)
             except (ValueError, pydantic.ValidationError) as e:
                 type_errors.append(
                     f"{name}: expected {annotation.__name__ if hasattr(annotation, '__name__') else annotation}, "
-                    f"got {type(raw_answer[name]).__name__}: {e}"
+                    f"got {type(raw_output[name]).__name__}: {e}"
                 )
 
         if type_errors:
@@ -450,7 +450,7 @@ class RLM(Module):
 
         Args:
             pred: The prediction containing reasoning and code attributes
-            result: Result from interpreter.execute() - FinalAnswerResult, list, str, or error string
+            result: Result from interpreter.execute() - FinalOutput, list, str, or error string
             history: Current REPL history
             output_field_names: List of expected output field names
 
@@ -462,9 +462,9 @@ class RLM(Module):
             output = self._format_output(result)
             return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
 
-        # Handle FINAL answer
-        if isinstance(result, FinalAnswerResult):
-            parsed_outputs, error = self._process_final_answer(result, output_field_names)
+        # Handle FINAL output
+        if isinstance(result, FinalOutput):
+            parsed_outputs, error = self._process_final_output(result, output_field_names)
 
             if error:
                 return history.append(reasoning=pred.reasoning, code=pred.code, output=error)
@@ -570,7 +570,7 @@ class RLM(Module):
 
         return Prediction(
             trajectory=[e.model_dump() for e in history],
-            final_reasoning="Extract forced final answer",
+            final_reasoning="Extract forced final output",
             **{name: getattr(extract_pred, name) for name in output_field_names},
         )
 
@@ -635,7 +635,3 @@ class RLM(Module):
 
             # Max iterations reached - use extract fallback
             return await self._aextract_fallback(variables, history, output_field_names)
-
-    def __call__(self, **input_args) -> Prediction:
-        """Execute RLM. Alias for forward()."""
-        return self.forward(**input_args)

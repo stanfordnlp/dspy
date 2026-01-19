@@ -19,15 +19,15 @@ sys.stdout, sys.stderr = buf_stdout, buf_stderr
 def last_exception_args():
     return json.dumps(sys.last_exc.args) if sys.last_exc else None
 
-class FinalAnswer(BaseException):
+class FinalOutput(BaseException):
     # Control-flow exception to signal completion (like StopIteration)
     pass
 
 # Default SUBMIT for single-output signatures (e.g., Program of Thought).
 # Only define if not already registered with typed signatures.
 if 'SUBMIT' not in dir():
-    def SUBMIT(answer):
-        raise FinalAnswer({"answer": answer})
+    def SUBMIT(output):
+        raise FinalOutput({"output": output})
 `;
 
 // Generate a tool wrapper function with typed signature.
@@ -78,8 +78,8 @@ const makeSubmitWrapper = (outputs) => {
   if (!outputs || outputs.length === 0) {
     // Fallback to single-arg SUBMIT if no outputs defined
     return `
-def SUBMIT(answer):
-    raise FinalAnswer({"answer": answer})
+def SUBMIT(output):
+    raise FinalOutput({"output": output})
 `;
   }
 
@@ -92,7 +92,7 @@ def SUBMIT(answer):
 
   return `
 def SUBMIT(${sigParts.join(', ')}):
-    raise FinalAnswer({${dictParts.join(', ')}})
+    raise FinalOutput({${dictParts.join(', ')}})
 `;
 };
 

@@ -3,7 +3,7 @@ import logging
 import re
 
 import dspy
-from dspy.primitives.code_interpreter import FinalAnswerResult
+from dspy.primitives.code_interpreter import FinalOutput
 from dspy.primitives.module import Module
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.signatures.signature import Signature, ensure_signature
@@ -53,7 +53,7 @@ class ProgramOfThought(Module):
                 self._generate_instruction("regenerate"),
             ),
         )
-        self.generate_answer = dspy.ChainOfThought(
+        self.generate_output = dspy.ChainOfThought(
             dspy.Signature(
                 self._generate_signature("answer").fields,
                 self._generate_instruction("answer"),
@@ -167,8 +167,8 @@ class ProgramOfThought(Module):
 
         try:
             result = self.interpreter.execute(code)
-            if isinstance(result, FinalAnswerResult):
-                result = result.answer
+            if isinstance(result, FinalOutput):
+                result = result.output
             # Since it's more complex structure now, just blindly use json to represents all.
             output = json.dumps(result)
             return output, None
@@ -196,6 +196,6 @@ class ProgramOfThought(Module):
                 output, error = self._execute_code(code)
             hop += 1
         input_kwargs.update({"final_generated_code": code, "code_output": output})
-        answer_gen_result = self.generate_answer(**input_kwargs)
+        output_gen_result = self.generate_output(**input_kwargs)
         self.interpreter.shutdown()
-        return answer_gen_result
+        return output_gen_result
