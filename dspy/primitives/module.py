@@ -72,14 +72,38 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
         with settings.context(caller_modules=caller_modules):
             if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
+                # No existing tracker - create a new one for this module call
                 with track_usage() as usage_tracker:
                     output = self.forward(*args, **kwargs)
                 tokens = usage_tracker.get_total_tokens()
                 self._set_lm_usage(tokens, output)
 
                 return output
-
-            return self.forward(*args, **kwargs)
+            elif settings.track_usage:
+                # Tracker exists (nested call) - capture usage for this specific module call
+                usage_tracker = thread_local_overrides.get().get("usage_tracker")
+                if usage_tracker:
+                    # Get current token count before calling forward
+                    tokens_before = usage_tracker.get_total_tokens()
+                    output = self.forward(*args, **kwargs)
+                    # Get tokens used by this module call
+                    tokens_after = usage_tracker.get_total_tokens()
+                    
+                    # Calculate the delta (tokens used by this module call only)
+                    tokens_delta = {}
+                    for lm_name in tokens_after:
+                        if lm_name in tokens_before:
+                            # Compute difference for each token type
+                            tokens_delta[lm_name] = self._compute_token_delta(tokens_before[lm_name], tokens_after[lm_name])
+                        else:
+                            tokens_delta[lm_name] = tokens_after[lm_name]
+                    
+                    self._set_lm_usage(tokens_delta, output)
+                    return output
+                else:
+                    return self.forward(*args, **kwargs)
+            else:
+                return self.forward(*args, **kwargs)
 
     @with_callbacks
     async def acall(self, *args, **kwargs) -> Prediction:
@@ -180,6 +204,27 @@ class Module(BaseModule, metaclass=ProgramMeta):
         else:
             results = parallel_executor.forward(exec_pairs)
             return results
+
+    def _compute_token_delta(self, tokens_before: dict[str, Any], tokens_after: dict[str, Any]) -> dict[str, Any]:
+        """Compute the difference in token usage between two snapshots.
+        
+        Args:
+            tokens_before: Token usage before the operation
+            tokens_after: Token usage after the operation
+            
+        Returns:
+            Dictionary with the delta (difference) in token usage
+        """
+        delta = {}
+        for key, value_after in tokens_after.items():
+            value_before = tokens_before.get(key, 0)
+            if isinstance(value_after, dict) and isinstance(value_before, dict):
+                # Recursively compute delta for nested dicts
+                delta[key] = self._compute_token_delta(value_before, value_after)
+            elif value_after is not None or value_before is not None:
+                # Compute numeric difference
+                delta[key] = (value_after or 0) - (value_before or 0)
+        return delta
 
     def _set_lm_usage(self, tokens: dict[str, Any], output: Any):
         # When usage tracking is enabled, recursively find all Prediction objects

@@ -308,3 +308,42 @@ def test_track_usage_with_nested_and_dict_structures():
     # Verify predictions have the expected outputs
     expected_outputs = {"test1", "test2", "test3"}
     assert {p.output for p in all_predictions} == expected_outputs
+
+
+def test_track_usage_with_nested_modules():
+    """Test that usage tracking works correctly for nested module calls."""
+    lm = DummyLM([{"output": "inner1"}, {"output": "inner2"}])
+
+    class InnerModule(dspy.Module):
+        def forward(self, input):
+            predictor = dspy.Predict("input -> output")
+            result = predictor(input=input)
+            # Verify usage is set inside the nested module
+            assert result.get_lm_usage() is not None, "Nested module should have usage set"
+            return result
+
+    class OuterModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.inner = InnerModule()
+
+        def forward(self):
+            r1 = self.inner(input="test1")
+            r2 = self.inner(input="test2")
+            # Verify usage is set on nested module results
+            assert r1.get_lm_usage() is not None, "Nested call result should have usage set"
+            assert r2.get_lm_usage() is not None, "Nested call result should have usage set"
+            return [r1, r2]
+
+    # Test with track_usage enabled
+    with dspy.settings.context(lm=lm, track_usage=True):
+        results = OuterModule()()
+
+    # Verify all results have usage data
+    assert len(results) == 2
+    assert all(isinstance(r, dspy.Prediction) for r in results)
+    assert all(r.get_lm_usage() is not None for r in results)
+
+    # Verify predictions have the expected outputs
+    expected_outputs = {"inner1", "inner2"}
+    assert {r.output for r in results} == expected_outputs
