@@ -210,7 +210,12 @@ class RLM(Module):
             if target_lm is None:
                 raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
             response = target_lm(prompt)
-            return response[0] if isinstance(response, list) and response else str(response)
+            if isinstance(response, list) and response:
+                item = response[0]
+                if isinstance(item, dict) and "text" in item:
+                    return item["text"]
+                return item
+            return str(response)
 
         def llm_query(prompt: str) -> str:
             """Query the LLM with a prompt string."""
