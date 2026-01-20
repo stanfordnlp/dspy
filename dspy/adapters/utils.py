@@ -313,3 +313,26 @@ def _extract_first_json_object(text: str) -> str | None:
                     return text[start : i + 1]
 
     return None
+
+
+def _extract_braces_raw(text: str) -> str | None:
+    """Fallback: balance braces ignoring string contents.
+
+    This is intentionally simpler than _extract_first_json_object - it doesn't
+    track strings, so it can extract JSON even when string delimiters are malformed.
+    The result can then be passed to json_repair to fix string issues.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+
+    return None

@@ -5,7 +5,7 @@ from typing import Literal, Optional, Union
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import _extract_first_json_object, parse_value
+from dspy.adapters.utils import _extract_braces_raw, _extract_first_json_object, parse_value
 
 
 class Profile(BaseModel):
@@ -148,4 +148,28 @@ def test_parse_value_json_repair():
 )
 def test_extract_first_json_object(text, expected):
     result = _extract_first_json_object(text)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # Basic case - same as _extract_first_json_object
+        ('{"key": "value"}', '{"key": "value"}'),
+        # Nested braces
+        ('{"outer": {"inner": 1}}', '{"outer": {"inner": 1}}'),
+        # Malformed string with unmatched quote - this is why the fallback exists
+        # _extract_first_json_object returns None, but _extract_braces_raw extracts it
+        ('{"key": "value with unmatched quote}', '{"key": "value with unmatched quote}'),
+        # Brace inside string - extracts incorrectly (stops at first })
+        # This is expected - the fallback is intentionally simple
+        ('{"msg": "hello }"}', '{"msg": "hello }'),
+        # No JSON
+        ("no json here", None),
+        # Unbalanced braces
+        ("{ no closing", None),
+    ],
+)
+def test_extract_braces_raw(text, expected):
+    result = _extract_braces_raw(text)
     assert result == expected
