@@ -122,6 +122,10 @@ def test_parse_value_json_repair():
         ('{"message": "Use {placeholders} like {this}", "valid": true}', '{"message": "Use {placeholders} like {this}", "valid": true}'),
         # JSON with escaped quotes in strings
         ('{"quote": "She said \\"hello\\" to me"}', '{"quote": "She said \\"hello\\" to me"}'),
+        # String ending with escaped backslash (backslash before closing quote)
+        ('{"path": "C:\\\\"}', '{"path": "C:\\\\"}'),
+        # Escaped backslash followed by escaped quote (tests escape state reset)
+        ('{"a": "\\\\\\"\\""}', '{"a": "\\\\\\"\\""}'),
         # No JSON present
         ("This is just plain text without any JSON", None),
         # Empty JSON object
