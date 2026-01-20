@@ -247,7 +247,7 @@ def test_load_with_version_mismatch(tmp_path):
 
 @pytest.mark.llm_call
 def test_single_module_call_with_usage_tracker(lm_for_test):
-    dspy.configure(lm=dspy.LM(lm_for_test, cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0), track_usage=True)
 
     predict = dspy.ChainOfThought("question -> answer")
     output = predict(question="What is the capital of France?")
@@ -259,7 +259,7 @@ def test_single_module_call_with_usage_tracker(lm_for_test):
     assert lm_usage[lm_for_test]["total_tokens"] > 0
 
     # Test no usage being tracked when cache is enabled
-    dspy.configure(lm=dspy.LM(lm_for_test, cache=True), track_usage=True)
+    dspy.configure(lm=dspy.LM(lm_for_test, cache=True, temperature=0.0), track_usage=True)
     for _ in range(2):
         output = predict(question="What is the capital of France?")
 
@@ -268,7 +268,7 @@ def test_single_module_call_with_usage_tracker(lm_for_test):
 
 @pytest.mark.llm_call
 def test_multi_module_call_with_usage_tracker(lm_for_test):
-    dspy.configure(lm=dspy.LM(lm_for_test, cache=False), track_usage=True)
+    dspy.configure(lm=dspy.LM(lm_for_test, cache=False, temperature=0.0), track_usage=True)
 
     class MyProgram(dspy.Module):
         def __init__(self):
