@@ -9,6 +9,7 @@
 **Documentation:** [DSPy Docs](https://dspy.ai/)
 
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/dspy?period=monthly)](https://pepy.tech/projects/dspy)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/stanfordnlp/dspy)
 
 
 ----
