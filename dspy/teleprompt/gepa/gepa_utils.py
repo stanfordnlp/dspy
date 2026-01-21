@@ -13,6 +13,7 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.adapters.types.tool import Tool
 from dspy.evaluate import Evaluate
+from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
@@ -193,9 +194,18 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             if name in predictor_candidates:
                 pred.signature = pred.signature.with_instructions(predictor_candidates[name])
 
-        # Update tool descriptions
-        if tool_candidates:
-            self._update_tool_descriptions(new_prog, tool_candidates)
+        if self.enable_tool_optimization:
+            # Update tool descriptions
+            if tool_candidates:
+                self._update_tool_descriptions(new_prog, tool_candidates)
+
+            # Re-sync ReAct tool schema after updating instructions.
+            for _, module in new_prog.named_sub_modules(type_=ReAct):
+                instr = [module.react.signature.instructions]
+                for idx, tool in enumerate(module.tools.values()):
+                    instr.append(f"({idx + 1}) {tool}")
+                instr.append("When providing `next_tool_args`, the value inside the field must be in JSON format")
+                module.react.signature = module.react.signature.with_instructions("\n".join(instr))
 
         return new_prog
 
