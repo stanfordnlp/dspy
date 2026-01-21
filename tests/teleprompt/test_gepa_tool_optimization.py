@@ -242,7 +242,8 @@ def test_apply_optimized_react_descriptions():
     rebuilt = adapter.build_program(optimized_candidate)
 
     # Verify instructions updated
-    assert rebuilt.react.signature.instructions == "OPTIMIZED: React instruction"
+    assert rebuilt.react.signature.instructions.startswith("OPTIMIZED: React instruction")
+    assert "OPTIMIZED: Search tool" in rebuilt.react.signature.instructions
     assert rebuilt.extract.predict.signature.instructions == "OPTIMIZED: Extract instruction"
 
     # Verify tool updated
@@ -345,7 +346,7 @@ def test_selective_optimization_with_none_returns():
     rebuilt = adapter.build_program(optimized_candidate)
 
     # Verify selective updates
-    assert rebuilt.react.signature.instructions == "OPTIMIZED: React instruction"
+    assert rebuilt.react.signature.instructions.startswith("OPTIMIZED: React instruction")
     assert rebuilt.extract.predict.signature.instructions == program.extract.predict.signature.instructions
     assert rebuilt.tools["search"].desc == "OPTIMIZED: Search tool"
 
