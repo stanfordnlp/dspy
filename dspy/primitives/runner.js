@@ -240,6 +240,18 @@ while (true) {
   const requestId = input.id; // May be undefined for notifications
 
   // Handle notifications (no response expected)
+  if (method === "sync_file") {
+    try {
+      const virtualPath = params.virtual_path;
+      const hostPath = params.host_path || virtualPath;
+      await Deno.writeFile(hostPath, pyodide.FS.readFile(virtualPath));
+    } catch (e) { /* ignore sync errors */ }
+    continue;
+  }
+
+  if (method === "shutdown") break;
+
+  // Handle requests (expect response)
   if (method === "mount_file") {
     const hostPath = params.host_path;
     const virtualPath = params.virtual_path || hostPath;
@@ -258,25 +270,13 @@ while (true) {
         }
       }
       pyodide.FS.writeFile(virtualPath, contents);
+      console.log(jsonrpcResult({ mounted: virtualPath }, requestId));
     } catch (e) {
-      // Notifications don't get responses, but we can log errors for debugging
-      console.error("Failed to mount file: " + e.message);
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to mount file: ${e.message}`, requestId));
     }
     continue;
   }
 
-  if (method === "sync_file") {
-    try {
-      const virtualPath = params.virtual_path;
-      const hostPath = params.host_path || virtualPath;
-      await Deno.writeFile(hostPath, pyodide.FS.readFile(virtualPath));
-    } catch (e) { /* ignore sync errors */ }
-    continue;
-  }
-
-  if (method === "shutdown") break;
-
-  // Handle requests (expect response)
   if (method === "register") {
     const toolNames = [];
 

@@ -235,9 +235,19 @@ class PythonInterpreter:
                 else:
                     raise FileNotFoundError(f"Cannot mount non-existent file: {path}")
             virtual_path = f"/sandbox/{os.path.basename(path)}"
-            mount_msg = _jsonrpc_notification("mount_file", {"host_path": str(path), "virtual_path": virtual_path})
+            self._request_id += 1
+            request_id = self._request_id
+            mount_msg = _jsonrpc_request("mount_file", {"host_path": str(path), "virtual_path": virtual_path}, request_id)
             self.deno_process.stdin.write(mount_msg + "\n")
             self.deno_process.stdin.flush()
+            response_line = self.deno_process.stdout.readline().strip()
+            if not response_line:
+                raise CodeInterpreterError(f"No response when mounting file: {path}")
+            response = json.loads(response_line)
+            if response.get("id") != request_id:
+                raise CodeInterpreterError(f"Response ID mismatch when mounting: expected {request_id}, got {response.get('id')}")
+            if "error" in response:
+                raise CodeInterpreterError(f"Failed to mount {path}: {response['error'].get('message', 'Unknown error')}")
         self._mounted_files = True
 
     def _sync_files(self):
@@ -418,6 +428,7 @@ class PythonInterpreter:
         except BrokenPipeError:
             # If the process died, restart and try again once
             self._tools_registered = False
+            self._mounted_files = False
             self._ensure_deno_process()
             self._register_tools()
             self.deno_process.stdin.write(input_data + "\n")
@@ -448,6 +459,8 @@ class PythonInterpreter:
 
             # Handle success response
             if "result" in msg:
+                if msg.get("id") != execute_request_id:
+                    raise CodeInterpreterError(f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}")
                 result = msg["result"]
                 self._sync_files()
                 # Check for SUBMIT (encoded as success with "final" field)
@@ -457,6 +470,10 @@ class PythonInterpreter:
 
             # Handle error response
             if "error" in msg:
+                # Errors with id=null are unsolicited errors (e.g., unhandled async rejections)
+                # Treat them as errors for the current request
+                if msg.get("id") is not None and msg.get("id") != execute_request_id:
+                    raise CodeInterpreterError(f"Response ID mismatch: expected {execute_request_id}, got {msg.get('id')}")
                 error = msg["error"]
                 error_code = error.get("code", JSONRPC_APP_ERRORS["Unknown"])
                 error_message = error.get("message", "Unknown error")
@@ -467,6 +484,9 @@ class PythonInterpreter:
                     raise SyntaxError(f"Invalid Python syntax. message: {error_message}")
                 else:
                     raise CodeInterpreterError(f"{error_type}: {error_data.get('args') or error_message}")
+
+            # Unexpected message format - neither a recognized method nor a response
+            raise CodeInterpreterError(f"Unexpected message format from sandbox: {msg}")
 
     def start(self) -> None:
         """Initialize the Deno/Pyodide sandbox.
