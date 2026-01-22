@@ -96,14 +96,54 @@ def SUBMIT(${sigParts.join(', ')}):
 `;
 };
 
+// =============================================================================
+// JSON-RPC 2.0 Helpers
+// =============================================================================
+
+// JSON-RPC 2.0 protocol errors (reserved range: -32700 to -32600)
+const JSONRPC_PROTOCOL_ERRORS = {
+  ParseError: -32700,
+  InvalidRequest: -32600,
+  MethodNotFound: -32601,
+};
+
+// Application errors (range: -32000 to -32099)
+const JSONRPC_APP_ERRORS = {
+  SyntaxError: -32000,
+  NameError: -32001,
+  TypeError: -32002,
+  ValueError: -32003,
+  AttributeError: -32004,
+  IndexError: -32005,
+  KeyError: -32006,
+  RuntimeError: -32007,
+  CodeInterpreterError: -32008,
+  Unknown: -32099,
+};
+
+const jsonrpcRequest = (method, params, id) =>
+  JSON.stringify({ jsonrpc: "2.0", method, params, id });
+
+const jsonrpcNotification = (method, params = null) => {
+  const msg = { jsonrpc: "2.0", method };
+  if (params) msg.params = params;
+  return JSON.stringify(msg);
+};
+
+const jsonrpcResult = (result, id) =>
+  JSON.stringify({ jsonrpc: "2.0", result, id });
+
+const jsonrpcError = (code, message, id, data = null) => {
+  const err = { code, message };
+  if (data) err.data = data;
+  return JSON.stringify({ jsonrpc: "2.0", error: err, id });
+};
+
 // Global handler to prevent uncaught promise rejections from crashing Deno
 // These can occur during async Python <-> JS interop
 globalThis.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
-  console.log(JSON.stringify({
-    error: `Unhandled async error: ${event.reason?.message || event.reason}`,
-    errorType: "UnhandledPromiseRejection"
-  }));
+  console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Unhandled async error: ${event.reason?.message || event.reason}`, null));
 });
 
 const pyodide = await pyodideModule.loadPyodide();
@@ -115,16 +155,18 @@ let requestIdCounter = 0;
 
 // This function is called from Python to invoke a host-side tool
 async function toolCallBridge(name, argsJson) {
-  const requestId = `req_${Date.now()}_${++requestIdCounter}`;
+  const requestId = `tc_${Date.now()}_${++requestIdCounter}`;
 
   try {
-    // Send tool call request to host
-    console.log(JSON.stringify({
-      type: "tool_call",
-      id: requestId,
+    // Parse args to extract positional and keyword args
+    const parsedArgs = JSON.parse(argsJson);
+
+    // Send tool call request to host using JSON-RPC
+    console.log(jsonrpcRequest("tool_call", {
       name: name,
-      args: JSON.parse(argsJson)
-    }));
+      args: parsedArgs.args || [],
+      kwargs: parsedArgs.kwargs || {}
+    }, requestId));
 
     // Wait for response from host
     const { value: responseLine, done } = await stdinReader.next();
@@ -133,19 +175,22 @@ async function toolCallBridge(name, argsJson) {
     }
 
     const response = JSON.parse(responseLine);
-    if (response.type !== "tool_response" || response.id !== requestId) {
-      throw new Error(`Unexpected response: expected tool_response with id ${requestId}`);
+
+    // Expect JSON-RPC result or error with matching id
+    if (response.id !== requestId) {
+      throw new Error(`Unexpected response: expected id ${requestId}, got ${response.id}`);
     }
 
     if (response.error) {
-      throw new Error(response.error);
+      throw new Error(response.error.message || "Tool call failed");
     }
 
     // Deserialize result based on type
-    if (response.result_type === "json") {
-      return JSON.parse(response.result);
+    const result = response.result;
+    if (result.type === "json") {
+      return JSON.parse(result.value);
     }
-    return response.result;
+    return result.value;
   } catch (error) {
     // Re-throw with context so Python can catch it properly
     throw new Error(`Tool bridge error for '${name}': ${error.message}`);
@@ -179,17 +224,39 @@ while (true) {
   try {
     input = JSON.parse(line);
   } catch (error) {
-    console.log(JSON.stringify({
-      error: "Invalid JSON input: " + error.message,
-      errorType: "ValueError"
-    }));
+    // JSON-RPC parse error
+    console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.ParseError, "Invalid JSON input: " + error.message, null));
     continue;
   }
 
-  if (input.mount_file) {
-    const virtualPath = input.virtual_path || input.mount_file;
+  // Validate JSON-RPC format
+  if (typeof input !== 'object' || input === null || input.jsonrpc !== "2.0") {
+    console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.InvalidRequest, "Invalid Request: not a JSON-RPC 2.0 message", null));
+    continue;
+  }
+
+  const method = input.method;
+  const params = input.params || {};
+  const requestId = input.id; // May be undefined for notifications
+
+  // Handle notifications (no response expected)
+  if (method === "sync_file") {
     try {
-      const contents = await Deno.readFile(input.mount_file);
+      const virtualPath = params.virtual_path;
+      const hostPath = params.host_path || virtualPath;
+      await Deno.writeFile(hostPath, pyodide.FS.readFile(virtualPath));
+    } catch (e) { /* ignore sync errors */ }
+    continue;
+  }
+
+  if (method === "shutdown") break;
+
+  // Handle requests (expect response)
+  if (method === "mount_file") {
+    const hostPath = params.host_path;
+    const virtualPath = params.virtual_path || hostPath;
+    try {
+      const contents = await Deno.readFile(hostPath);
       const dirs = virtualPath.split('/').slice(1, -1);
       let cur = '';
       for (const d of dirs) {
@@ -203,33 +270,19 @@ while (true) {
         }
       }
       pyodide.FS.writeFile(virtualPath, contents);
+      console.log(jsonrpcResult({ mounted: virtualPath }, requestId));
     } catch (e) {
-      console.log(JSON.stringify({error: "Failed to mount file: " + e.message}));
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to mount file: ${e.message}`, requestId));
     }
     continue;
   }
 
-  if (input.sync_file) {
-    try {
-      await Deno.writeFile(input.host_file || input.sync_file, pyodide.FS.readFile(input.sync_file));
-    } catch (e) { /* ignore sync errors */ }
-    continue;
-  }
-
-  if (typeof input !== 'object' || input === null) {
-    console.log(JSON.stringify({ error: "Input is not a JSON object", errorType: "ValueError" }));
-    continue;
-  }
-
-  if (input.shutdown) break;
-
-  // Register tools and/or output fields
-  if (input.register_tools || input.register_outputs) {
+  if (method === "register") {
     const toolNames = [];
 
     // Register tools with typed signatures
-    if (input.register_tools) {
-      for (const tool of input.register_tools) {
+    if (params.tools) {
+      for (const tool of params.tools) {
         // Support both old format (string) and new format (object with parameters)
         if (typeof tool === 'string') {
           pyodide.runPython(makeToolWrapper(tool, []));
@@ -242,47 +295,77 @@ while (true) {
     }
 
     // Register SUBMIT with output signature
-    if (input.register_outputs) {
-      pyodide.runPython(makeSubmitWrapper(input.register_outputs));
+    if (params.outputs) {
+      pyodide.runPython(makeSubmitWrapper(params.outputs));
     }
 
-    console.log(JSON.stringify({
-      tools_registered: toolNames,
-      outputs_registered: input.register_outputs ? input.register_outputs.map(o => o.name) : []
-    }));
+    console.log(jsonrpcResult({
+      tools: toolNames,
+      outputs: params.outputs ? params.outputs.map(o => o.name) : []
+    }, requestId));
     continue;
   }
 
-  const code = input.code || "";
+  if (method === "execute") {
+    const code = params.code || "";
+    let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
 
-  try {
-    await pyodide.loadPackagesFromImports(code);
-    pyodide.runPython(PYTHON_SETUP_CODE);
-    // Run the user's code
-    const result = await pyodide.runPythonAsync(code);
-    const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
-    pyodide.runPython("sys.stdout, sys.stderr = old_stdout, old_stderr");
+    try {
+      await pyodide.loadPackagesFromImports(code);
+      pyodide.runPython(PYTHON_SETUP_CODE);
+      setupCompleted = true;  // Mark setup as complete - old_stdout/old_stderr now exist
 
-    // If result is None, output prints; otherwise output the result
-    let output = (result === null || result === undefined) ? capturedStdout : (result.toJs?.() ?? result);
-    console.log(JSON.stringify({ output }));
-  } catch (error) {
-    // We have an error => check if it's a SyntaxError or something else
-    // The Python error class name is stored in error.type: https://pyodide.org/en/stable/usage/api/js-api.html#pyodide.ffi.PythonError
-    const errorType = error.type || "Error";
-    // error.message is mostly blank.
-    const errorMessage = (error.message || "").trim();
-    // The arguments of the exception are stored in sys.last_exc.args,
-    // which is always helpful but pyodide don't extract them for us.
-    // Use a bridge function to get them.
-    let errorArgs = [];
-    if (errorType !== "SyntaxError") {
-      // Only python exceptions have args.
-      const last_exception_args = pyodide.globals.get("last_exception_args");
-      // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
-      // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
-      errorArgs = JSON.parse(last_exception_args()) || [];
+      // Run the user's code
+      const result = await pyodide.runPythonAsync(code);
+      const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
+
+      // If result is None, output prints; otherwise output the result
+      let output = (result === null || result === undefined) ? capturedStdout : (result.toJs?.() ?? result);
+      console.log(jsonrpcResult({ output }, requestId));
+    } catch (error) {
+      // We have an error => check if it's a SyntaxError or something else
+      // The Python error class name is stored in error.type: https://pyodide.org/en/stable/usage/api/js-api.html#pyodide.ffi.PythonError
+      const errorType = error.type || "Error";
+      // error.message is mostly blank.
+      const errorMessage = (error.message || "").trim();
+
+      // Handle FinalOutput as a success result, not an error
+      if (errorType === "FinalOutput") {
+        const last_exception_args = pyodide.globals.get("last_exception_args");
+        const errorArgs = JSON.parse(last_exception_args()) || [];
+        const answer = errorArgs[0] || null;
+        console.log(jsonrpcResult({ final: answer }, requestId));
+        continue;
+      }
+
+      // Get error args for other exception types
+      let errorArgs = [];
+      if (errorType !== "SyntaxError") {
+        // Only python exceptions have args.
+        const last_exception_args = pyodide.globals.get("last_exception_args");
+        // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
+        // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
+        errorArgs = JSON.parse(last_exception_args()) || [];
+      }
+
+      // Map error type to JSON-RPC error code
+      const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;
+      console.log(jsonrpcError(errorCode, errorMessage, requestId, { type: errorType, args: errorArgs }));
+    } finally {
+      // Always restore stdout/stderr if setup completed, even after errors.
+      // This prevents stream corruption where subsequent executions capture
+      // StringIO buffers as old_stdout/old_stderr instead of real streams.
+      if (setupCompleted) {
+        try {
+          pyodide.runPython("sys.stdout, sys.stderr = old_stdout, old_stderr");
+        } catch (e) {
+          // Ignore restoration errors to avoid masking the original error
+        }
+      }
     }
-    console.log(JSON.stringify({ error: errorMessage, errorArgs, errorType }));
+    continue;
   }
+
+  // Unknown method
+  console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.MethodNotFound, `Method not found: ${method}`, requestId));
 }
