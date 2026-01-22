@@ -430,6 +430,7 @@ class PythonInterpreter:
             self._tools_registered = False
             self._mounted_files = False
             self._ensure_deno_process()
+            self._mount_files()
             self._register_tools()
             self.deno_process.stdin.write(input_data + "\n")
             self.deno_process.stdin.flush()

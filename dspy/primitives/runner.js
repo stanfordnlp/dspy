@@ -308,14 +308,16 @@ while (true) {
 
   if (method === "execute") {
     const code = params.code || "";
+    let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
 
     try {
       await pyodide.loadPackagesFromImports(code);
       pyodide.runPython(PYTHON_SETUP_CODE);
+      setupCompleted = true;  // Mark setup as complete - old_stdout/old_stderr now exist
+
       // Run the user's code
       const result = await pyodide.runPythonAsync(code);
       const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
-      pyodide.runPython("sys.stdout, sys.stderr = old_stdout, old_stderr");
 
       // If result is None, output prints; otherwise output the result
       let output = (result === null || result === undefined) ? capturedStdout : (result.toJs?.() ?? result);
@@ -349,6 +351,17 @@ while (true) {
       // Map error type to JSON-RPC error code
       const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;
       console.log(jsonrpcError(errorCode, errorMessage, requestId, { type: errorType, args: errorArgs }));
+    } finally {
+      // Always restore stdout/stderr if setup completed, even after errors.
+      // This prevents stream corruption where subsequent executions capture
+      // StringIO buffers as old_stdout/old_stderr instead of real streams.
+      if (setupCompleted) {
+        try {
+          pyodide.runPython("sys.stdout, sys.stderr = old_stdout, old_stderr");
+        } catch (e) {
+          // Ignore restoration errors to avoid masking the original error
+        }
+      }
     }
     continue;
   }
