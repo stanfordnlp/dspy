@@ -448,16 +448,18 @@ class RLM(Module):
         result: Any,
         history: REPLHistory,
         output_field_names: list[str],
+        code: str,
     ) -> Prediction | REPLHistory:
         """Process interpreter result, returning Prediction if final, else updated history.
 
         This shared helper reduces duplication between sync and async execution paths.
 
         Args:
-            pred: The prediction containing reasoning and code attributes
+            pred: The prediction containing reasoning attribute
             result: Result from interpreter.execute() - FinalOutput, list, str, or error string
             history: Current REPL history
             output_field_names: List of expected output field names
+            code: The stripped code (without markdown fences) to store in history
 
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
@@ -465,17 +467,17 @@ class RLM(Module):
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
-            return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+            return history.append(reasoning=pred.reasoning, code=code, output=output)
 
         # Handle FINAL output
         if isinstance(result, FinalOutput):
             parsed_outputs, error = self._process_final_output(result, output_field_names)
 
             if error:
-                return history.append(reasoning=pred.reasoning, code=pred.code, output=error)
+                return history.append(reasoning=pred.reasoning, code=code, output=error)
 
             final_history = history.append(
-                reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}"
+                reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}"
             )
             return Prediction(
                 **parsed_outputs,
@@ -490,7 +492,7 @@ class RLM(Module):
             output = str(result) if result else ""
 
         output = self._format_output(output)
-        return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+        return history.append(reasoning=pred.reasoning, code=code, output=output)
 
     def _execute_iteration(
         self,
@@ -520,7 +522,7 @@ class RLM(Module):
         except (CodeInterpreterError, SyntaxError) as e:
             result = f"[Error] {e}"
 
-        return self._process_execution_result(action, result, history, output_field_names)
+        return self._process_execution_result(action, result, history, output_field_names, code=code)
 
     # =========================================================================
     # Public Interface
@@ -607,7 +609,7 @@ class RLM(Module):
         except (CodeInterpreterError, SyntaxError) as e:
             result = f"[Error] {e}"
 
-        return self._process_execution_result(pred, result, history, output_field_names)
+        return self._process_execution_result(pred, result, history, output_field_names, code=code)
 
     async def aforward(self, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
