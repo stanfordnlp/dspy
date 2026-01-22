@@ -448,22 +448,22 @@ class RLM(Module):
         result: Any,
         history: REPLHistory,
         output_field_names: list[str],
-        code: str,
     ) -> Prediction | REPLHistory:
         """Process interpreter result, returning Prediction if final, else updated history.
 
         This shared helper reduces duplication between sync and async execution paths.
 
         Args:
-            pred: The prediction containing reasoning attribute
+            pred: The prediction containing reasoning and code attributes
             result: Result from interpreter.execute() - FinalOutput, list, str, or error string
             history: Current REPL history
             output_field_names: List of expected output field names
-            code: The stripped code (without markdown fences) to store in history
 
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
         """
+        # Strip markdown fences from code for history (format() will re-add them)
+        code = _strip_code_fences(pred.code)
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
@@ -522,7 +522,7 @@ class RLM(Module):
         except (CodeInterpreterError, SyntaxError) as e:
             result = f"[Error] {e}"
 
-        return self._process_execution_result(action, result, history, output_field_names, code=code)
+        return self._process_execution_result(action, result, history, output_field_names)
 
     # =========================================================================
     # Public Interface
@@ -609,7 +609,7 @@ class RLM(Module):
         except (CodeInterpreterError, SyntaxError) as e:
             result = f"[Error] {e}"
 
-        return self._process_execution_result(pred, result, history, output_field_names, code=code)
+        return self._process_execution_result(pred, result, history, output_field_names)
 
     async def aforward(self, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
