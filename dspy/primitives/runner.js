@@ -306,6 +306,19 @@ while (true) {
     continue;
   }
 
+  if (method === "inject_var") {
+    const { name, value } = params;
+    try {
+      try { pyodide.FS.mkdir('/tmp'); } catch (e) { /* exists */ }
+      try { pyodide.FS.mkdir('/tmp/dspy_vars'); } catch (e) { /* exists */ }
+      pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.txt`, new TextEncoder().encode(value));
+      console.log(jsonrpcResult({ injected: name }, requestId));
+    } catch (e) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to inject var: ${e.message}`, requestId));
+    }
+    continue;
+  }
+
   if (method === "execute") {
     const code = params.code || "";
     let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
