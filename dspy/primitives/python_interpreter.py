@@ -23,6 +23,10 @@ __all__ = ["PythonInterpreter", "FinalOutput", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
 
+# Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
+# injection for strings above 100MB to stay safely below this limit.
+LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
+
 # =============================================================================
 # JSON-RPC 2.0 Helpers
 # =============================================================================
@@ -179,6 +183,7 @@ class PythonInterpreter:
         self._mounted_files = False
         self._request_id = 0
         self._owner_thread: int | None = None
+        self._pending_large_vars = {}
 
     def _check_thread_ownership(self) -> None:
         """Ensure this interpreter is only used from a single thread."""
@@ -235,19 +240,7 @@ class PythonInterpreter:
                 else:
                     raise FileNotFoundError(f"Cannot mount non-existent file: {path}")
             virtual_path = f"/sandbox/{os.path.basename(path)}"
-            self._request_id += 1
-            request_id = self._request_id
-            mount_msg = _jsonrpc_request("mount_file", {"host_path": str(path), "virtual_path": virtual_path}, request_id)
-            self.deno_process.stdin.write(mount_msg + "\n")
-            self.deno_process.stdin.flush()
-            response_line = self.deno_process.stdout.readline().strip()
-            if not response_line:
-                raise CodeInterpreterError(f"No response when mounting file: {path}")
-            response = json.loads(response_line)
-            if response.get("id") != request_id:
-                raise CodeInterpreterError(f"Response ID mismatch when mounting: expected {request_id}, got {response.get('id')}")
-            if "error" in response:
-                raise CodeInterpreterError(f"Failed to mount {path}: {response['error'].get('message', 'Unknown error')}")
+            self._send_request("mount_file", {"host_path": str(path), "virtual_path": virtual_path}, f"mounting {path}")
         self._mounted_files = True
 
     def _sync_files(self):
@@ -300,17 +293,7 @@ class PythonInterpreter:
             self._tools_registered = True
             return
 
-        self._request_id += 1
-        request_id = self._request_id
-        register_msg = _jsonrpc_request("register", params, request_id)
-        self.deno_process.stdin.write(register_msg + "\n")
-        self.deno_process.stdin.flush()
-        response_line = self.deno_process.stdout.readline().strip()
-        if not response_line:
-            raise CodeInterpreterError("No response when registering tools/outputs")
-        response = json.loads(response_line)
-        if "result" not in response or response.get("id") != request_id:
-            raise CodeInterpreterError(f"Unexpected response when registering: {response_line}")
+        self._send_request("register", params, "registering tools/outputs")
         self._tools_registered = True
 
     def _handle_tool_call(self, request: dict) -> None:
@@ -362,26 +345,74 @@ class PythonInterpreter:
                 raise CodeInterpreterError(install_instructions) from e
             self._health_check()
 
-    def _health_check(self) -> None:
-        """Verify the subprocess is alive by executing a simple expression."""
+    def _send_request(self, method: str, params: dict, context: str) -> dict:
+        """Send a JSON-RPC request and return the parsed response."""
         self._request_id += 1
         request_id = self._request_id
-        ping_msg = _jsonrpc_request("execute", {"code": "print(1+1)"}, request_id)
-        self.deno_process.stdin.write(ping_msg + "\n")
+        msg = _jsonrpc_request(method, params, request_id)
+        self.deno_process.stdin.write(msg + "\n")
         self.deno_process.stdin.flush()
+
         response_line = self.deno_process.stdout.readline().strip()
         if not response_line:
-            raise CodeInterpreterError("Subprocess not responding")
+            exit_code = self.deno_process.poll()
+            if exit_code is not None:
+                stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
+                raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
+            raise CodeInterpreterError(f"No response {context}")
+
         response = json.loads(response_line)
+        if response.get("id") != request_id:
+            raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
+        if "error" in response:
+            raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
+        return response
+
+    def _health_check(self) -> None:
+        """Verify the subprocess is alive by executing a simple expression."""
+        response = self._send_request("execute", {"code": "print(1+1)"}, "during health check")
         if response.get("result", {}).get("output", "").strip() != "2":
-            raise CodeInterpreterError(f"Unexpected ping response: {response_line}")
+            raise CodeInterpreterError(f"Unexpected ping response: {response}")
+
+    def _to_json_compatible(self, value: Any) -> Any:
+        """Recursively convert Python values to JSON-compatible types."""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        elif isinstance(value, dict):
+            return {k: self._to_json_compatible(v) for k, v in value.items()}
+        elif isinstance(value, (list, tuple)):
+            return [self._to_json_compatible(v) for v in value]
+        elif isinstance(value, set):
+            try:
+                return sorted(self._to_json_compatible(v) for v in value)
+            except TypeError:
+                return [self._to_json_compatible(v) for v in value]
+        else:
+            raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
         for key in variables:
-            if not key.isidentifier() or keyword.iskeyword(key):
+            if not key.isidentifier() or keyword.iskeyword(key) or key == "json":
                 raise CodeInterpreterError(f"Invalid variable name: '{key}'")
-        assignments = [f"{k} = {self._serialize_value(v)}" for k, v in variables.items()]
+
+        large_vars = {}
+        small_assignments = []
+        for k, v in variables.items():
+            serialized = self._serialize_value(v)
+            if len(serialized) > LARGE_VAR_THRESHOLD:
+                large_vars[k] = json.dumps(self._to_json_compatible(v))
+            else:
+                small_assignments.append(f"{k} = {serialized}")
+
+        self._pending_large_vars = large_vars
+
+        if large_vars:
+            large_assignments = [f"{k} = json.loads(open('/tmp/dspy_vars/{k}.json').read())" for k in large_vars]
+            assignments = ["import json"] + small_assignments + large_assignments
+        else:
+            assignments = small_assignments
+
         return "\n".join(assignments) + "\n" + code if assignments else code
 
     def _serialize_value(self, value: Any) -> str:
@@ -394,17 +425,14 @@ class PythonInterpreter:
             return str(value)
         elif isinstance(value, (int, float)):
             return str(value)
-        elif isinstance(value, (list, dict)):
-            return json.dumps(value)
-        elif isinstance(value, tuple):
-            return json.dumps(list(value))
-        elif isinstance(value, set):
-            try:
-                return json.dumps(sorted(value))
-            except TypeError:
-                return json.dumps(list(value))
+        elif isinstance(value, (list, dict, tuple, set)):
+            return json.dumps(self._to_json_compatible(value))
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
+
+    def _inject_large_var(self, name: str, value: str) -> None:
+        """Inject a large variable via the virtual filesystem."""
+        self._send_request("inject_var", {"name": name, "value": value}, f"injecting variable '{name}'")
 
     def execute(
         self,
@@ -417,6 +445,9 @@ class PythonInterpreter:
         self._ensure_deno_process()
         self._mount_files()
         self._register_tools()
+
+        for name, value in self._pending_large_vars.items():
+            self._inject_large_var(name, value)
 
         # Send the code as JSON-RPC request
         self._request_id += 1
@@ -432,6 +463,8 @@ class PythonInterpreter:
             self._ensure_deno_process()
             self._mount_files()
             self._register_tools()
+            for name, value in self._pending_large_vars.items():
+                self._inject_large_var(name, value)
             self.deno_process.stdin.write(input_data + "\n")
             self.deno_process.stdin.flush()
 
