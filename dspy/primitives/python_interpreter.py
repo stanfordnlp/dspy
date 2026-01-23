@@ -478,7 +478,7 @@ class PythonInterpreter:
                 raise CodeInterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
 
             # Skip non-JSON lines (e.g., Pyodide package loading messages)
-            if not output_line.startswith('{'):
+            if not output_line.startswith("{"):
                 logger.info(f"Skipping non-JSON output: {output_line}")
                 continue
 
