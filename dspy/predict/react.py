@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 from litellm import ContextWindowExceededError
 
 import dspy
+from dspy.adapters.types.history import History
 from dspy.adapters.types.tool import Tool
+from dspy.primitives.example import Example
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
 
@@ -93,6 +95,34 @@ class ReAct(Module):
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
+    def _format_history_with_trajectory(self, history: History | None) -> History | None:
+        if history is None or not history.messages:
+            return history
+
+        formatted_messages = []
+        changed = False
+
+        for message in history.messages:
+            if isinstance(message, Example):
+                message_data = dict(message.items())
+            elif isinstance(message, dict):
+                message_data = dict(message)
+            else:
+                formatted_messages.append(message)
+                continue
+
+            trajectory_value = message_data.get("trajectory")
+            if trajectory_value and not isinstance(trajectory_value, str):
+                message_data["trajectory"] = self._format_trajectory(trajectory_value)
+                changed = True
+
+            formatted_messages.append(message_data)
+
+        if not changed:
+            return history
+
+        return History(messages=formatted_messages)
+
     def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
@@ -146,10 +176,14 @@ class ReAct(Module):
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         for _ in range(3):
             try:
-                return module(
-                    **input_args,
-                    trajectory=self._format_trajectory(trajectory),
-                )
+                call_kwargs = dict(input_args)
+                call_kwargs["trajectory"] = self._format_trajectory(trajectory)
+
+                history_value = call_kwargs.get("history")
+                if isinstance(history_value, History):
+                    call_kwargs["history"] = self._format_history_with_trajectory(history_value)
+
+                return module(**call_kwargs)
             except ContextWindowExceededError:
                 logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
                 trajectory = self.truncate_trajectory(trajectory)
@@ -158,10 +192,14 @@ class ReAct(Module):
     async def _async_call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
         for _ in range(3):
             try:
-                return await module.acall(
-                    **input_args,
-                    trajectory=self._format_trajectory(trajectory),
-                )
+                call_kwargs = dict(input_args)
+                call_kwargs["trajectory"] = self._format_trajectory(trajectory)
+
+                history_value = call_kwargs.get("history")
+                if isinstance(history_value, History):
+                    call_kwargs["history"] = self._format_history_with_trajectory(history_value)
+
+                return await module.acall(**call_kwargs)
             except ContextWindowExceededError:
                 logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
                 trajectory = self.truncate_trajectory(trajectory)
