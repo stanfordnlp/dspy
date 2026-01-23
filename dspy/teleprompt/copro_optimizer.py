@@ -120,7 +120,7 @@ class COPRO(Teleprompter):
         assert hasattr(predictor, "signature")
         predictor.signature = updated_signature
 
-    def compile(self, student, *, trainset, eval_kwargs):
+    def compile(self, student, *, trainset, eval_kwargs=None):
         """
         optimizes `signature` of `student` program - note that it may be zero-shot or already pre-optimized (demos already chosen - `demos != []`)
 
@@ -133,6 +133,7 @@ class COPRO(Teleprompter):
         Returns optimized version of `student`.
         """
         module = student.deepcopy()
+        eval_kwargs = eval_kwargs or {}
         evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
         total_calls = 0
         results_best = {
