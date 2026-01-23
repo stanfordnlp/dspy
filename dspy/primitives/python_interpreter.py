@@ -477,13 +477,18 @@ class PythonInterpreter:
                 err_output = self.deno_process.stderr.read()
                 raise CodeInterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
 
+            # Skip non-JSON lines (e.g., Pyodide package loading messages)
+            if not output_line.startswith('{'):
+                logger.info(f"Skipping non-JSON output: {output_line}")
+                continue
+
             # Parse that line as JSON
             try:
                 msg = json.loads(output_line)
             except json.JSONDecodeError:
-                # If not valid JSON, just return raw text
-                self._sync_files()
-                return output_line
+                # Malformed JSON starting with '{' - log and continue
+                logger.info(f"Skipping malformed JSON: {output_line[:100]}")
+                continue
 
             # Handle incoming requests (tool calls from sandbox)
             if "method" in msg:
