@@ -183,6 +183,7 @@ class PythonInterpreter:
         self._mounted_files = False
         self._request_id = 0
         self._owner_thread: int | None = None
+        self._pending_large_vars = {}
 
     def _check_thread_ownership(self) -> None:
         """Ensure this interpreter is only used from a single thread."""
@@ -462,6 +463,8 @@ class PythonInterpreter:
             self._ensure_deno_process()
             self._mount_files()
             self._register_tools()
+            for name, value in self._pending_large_vars.items():
+                self._inject_large_var(name, value)
             self.deno_process.stdin.write(input_data + "\n")
             self.deno_process.stdin.flush()
 
