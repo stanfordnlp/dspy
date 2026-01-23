@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import textwrap
 from typing import Callable
@@ -90,6 +91,7 @@ class Refine(Module):
         self.N = N
         self.fail_count = fail_count or N  # default to N if fail_count is not provided
         self.module_code = inspect.getsource(module.__class__)
+        self._is_reward_async = asyncio.iscoroutinefunction(reward_fn)
         try:
             self.reward_fn_code = inspect.getsource(reward_fn)
         except TypeError:
@@ -176,6 +178,100 @@ class Refine(Module):
             dspy.settings.trace.extend(best_trace)
         return best_pred
 
+    async def aforward(self, **kwargs):
+        """Async version of forward."""
+        lm = self.module.get_lm() or dspy.settings.lm
+        start = lm.kwargs.get("rollout_id", 0)
+        rollout_ids = [start + i for i in range(self.N)]
+        best_pred, best_trace, best_reward = None, None, -float("inf")
+        advice = None
+        adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        fail_count = self.fail_count
+
+        for idx, rid in enumerate(rollout_ids):
+            lm_ = lm.copy(rollout_id=rid, temperature=1.0)
+            mod = self.module.deepcopy()
+            mod.set_lm(lm_)
+
+            predictor2name = {predictor: name for name, predictor in mod.named_predictors()}
+            signature2name = {predictor.signature: name for name, predictor in mod.named_predictors()}
+            module_names = [name for name, _ in mod.named_predictors()]
+
+            try:
+                with dspy.context(trace=[]):
+                    if not advice:
+                        if hasattr(mod, "aforward"):
+                            outputs = await mod.aforward(**kwargs)
+                        else:
+                            outputs = await mod.acall(**kwargs)
+                    else:
+                        class WrapperAdapter(adapter.__class__):
+                            def __call__(self_, lm, lm_kwargs, signature, demos, inputs):
+                                inputs["hint_"] = advice.get(signature2name[signature], "N/A")
+                                signature = signature.append(
+                                    "hint_", InputField(desc="A hint to the module from an earlier run")
+                                )
+                                return adapter(lm, lm_kwargs, signature, demos, inputs)
+
+                        with dspy.context(adapter=WrapperAdapter()):
+                            if hasattr(mod, "aforward"):
+                                outputs = await mod.aforward(**kwargs)
+                            else:
+                                outputs = await mod.acall(**kwargs)
+
+                    trace = dspy.settings.trace.copy()
+
+                # Support async and sync reward functions
+                if self._is_reward_async:
+                    reward = await self.reward_fn(kwargs, outputs)
+                else:
+                    reward = self.reward_fn(kwargs, outputs)
+
+                if reward > best_reward:
+                    best_reward, best_pred, best_trace = reward, outputs, trace
+
+                if self.threshold is not None and reward >= self.threshold:
+                    break
+
+                if idx == self.N - 1:
+                    break
+
+                # Generate advice
+                modules = {"program_code": self.module_code, "modules_defn": inspect_modules(mod)}
+                trajectory = [{"module_name": predictor2name[p], "inputs": i, "outputs": dict(o)} for p, i, o in trace]
+                trajectory = {
+                    "program_inputs": kwargs,
+                    "program_trajectory": trajectory,
+                    "program_outputs": dict(outputs),
+                }
+                reward_info = {
+                    "reward_code": self.reward_fn_code,
+                    "target_threshold": self.threshold,
+                    "reward_value": reward,
+                }
+
+                advise_kwargs = dict(**modules, **trajectory, **reward_info, module_names=module_names)
+                advise_kwargs = {
+                    k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
+                    for k, v in advise_kwargs.items()
+                }
+
+                try:
+                    advice_result = await dspy.Predict(OfferFeedback).acall(**advise_kwargs)
+                    advice = advice_result.advice if hasattr(advice_result, "advice") else {}
+                except Exception as advice_error:
+                    print(f"Refine: Failed to generate advice: {advice_error}")
+                    advice = {}
+
+            except Exception as e:
+                print(f"Refine: Attempt failed with rollout id {rid}: {e}")
+                if idx >= fail_count:
+                    raise e
+                fail_count -= 1
+
+        if best_trace:
+            dspy.settings.trace.extend(best_trace)
+        return best_pred
 
 def inspect_modules(program):
     separator = "-" * 80
