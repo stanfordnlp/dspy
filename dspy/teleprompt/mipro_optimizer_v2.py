@@ -2,9 +2,7 @@ import logging
 import random
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Literal
-
 import numpy as np
-
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.propose import GroundedProposer
@@ -22,6 +20,8 @@ from dspy.teleprompt.utils import (
 
 if TYPE_CHECKING:
     import optuna
+
+from optuna.samplers import BaseSampler
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,8 @@ class MIPROv2(Teleprompter):
         fewshot_aware_proposer: bool = True,
         requires_permission_to_run: bool | None = None, # deprecated
         provide_traceback: bool | None = None,
+        sampler: BaseSampler | None = None,
+        n_jobs: int = 1
     ) -> Any:
         if requires_permission_to_run == False:
             logger.warning(
@@ -257,6 +259,8 @@ class MIPROv2(Teleprompter):
                 minibatch_size,
                 minibatch_full_eval_steps,
                 seed,
+                sampler,
+                n_jobs
             )
 
         return best_program
@@ -492,6 +496,8 @@ class MIPROv2(Teleprompter):
 
         return instruction_candidates
 
+
+    
     def _optimize_prompt_parameters(
         self,
         program: Any,
@@ -504,6 +510,8 @@ class MIPROv2(Teleprompter):
         minibatch_size: int,
         minibatch_full_eval_steps: int,
         seed: int,
+        sampler: BaseSampler,
+        n_jobs: int
     ) -> Any | None:
         import optuna
 
@@ -643,8 +651,16 @@ class MIPROv2(Teleprompter):
 
             return score
 
-        sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
-        study = optuna.create_study(direction="maximize", sampler=sampler)
+        if not sampler:
+            _sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
+        elif sampler.__class__.__name__ == 'qEISampler':
+            # batch Expected Improvement Sampler; allows parallelization in optuna
+            _sampler = sampler
+            _sampler.create_search_space(instruction_candidates, demo_candidates)
+        else:
+            _sampler = sampler
+
+        study = optuna.create_study(direction="maximize", sampler=_sampler)
 
         default_params = {f"{i}_predictor_instruction": 0 for i in range(len(program.predictors()))}
         if demo_candidates:
@@ -657,7 +673,8 @@ class MIPROv2(Teleprompter):
             value=default_score,
         )
         study.add_trial(trial)
-        study.optimize(objective, n_trials=num_trials)
+        study.optimize(objective, n_trials=num_trials, n_jobs=n_jobs)
+        self.study = study
 
         # Attach logs to best program
         if best_program is not None and self.track_stats:
@@ -766,7 +783,8 @@ class MIPROv2(Teleprompter):
                 predictor.demos = demo_candidates[i][demos_idx]
                 trial_logs[trial_num][f"{i}_predictor_demos"] = demos_idx
                 chosen_params.append(f"Predictor {i}: Few-Shot Set {demos_idx}")
-                raw_chosen_params[f"{i}_predictor_demos"] = instruction_idx
+                raw_chosen_params[f"{i}_predictor_demos"] = demos_idx
+#                raw_chosen_params[f"{i}_predictor_demos"] = instruction_idx
 
         return chosen_params, raw_chosen_params
 
