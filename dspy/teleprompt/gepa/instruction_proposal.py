@@ -333,7 +333,8 @@ class GenerateImprovedToolModuleDescriptionsFromFeedback(dspy.Signature):
     examples_with_feedback = dspy.InputField(desc="Execution examples with feedback showing successes and failures")
 
     improved_predictor_instruction: str | None = dspy.OutputField(
-        desc="Improved instruction for the predictor", default=None
+        desc="Improved instruction for the predictor. Do NOT include tool schema (tool names, descriptions, or arguments) - those are optimized separately via the tool-specific fields below.",
+        default=None,
     )
 
 
