@@ -393,7 +393,7 @@ class PythonInterpreter:
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
         for key in variables:
-            if not key.isidentifier() or keyword.iskeyword(key):
+            if not key.isidentifier() or keyword.iskeyword(key) or key == "json":
                 raise CodeInterpreterError(f"Invalid variable name: '{key}'")
 
         large_vars = {}
