@@ -63,7 +63,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
-_CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*?)\n```\s*$", re.DOTALL)
+_CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*)\n```\s*$", re.DOTALL)
 
 
 def _strip_code_fences(code: str) -> str:
@@ -279,7 +279,7 @@ class RLM(Module):
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
             .append("iteration", dspy.InputField(desc="Current iteration number (1-indexed) out of max_iterations"), type_=str)
             .append("reasoning", dspy.OutputField(desc="Think step-by-step: what do you know? What remains? Plan your next action."), type_=str)
-            .append("code", dspy.OutputField(desc="Python code to execute."), type_=str)
+            .append("code", dspy.OutputField(desc="Python code to execute. Use markdown code block format: ```python\\n<code>\\n```"), type_=str)
         )
 
         # Extract signature: includes the original signature's output fields and task instructions.
@@ -462,20 +462,22 @@ class RLM(Module):
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
         """
+        # Strip markdown fences from code for history (format() will re-add them)
+        code = _strip_code_fences(pred.code)
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
-            return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+            return history.append(reasoning=pred.reasoning, code=code, output=output)
 
         # Handle FINAL output
         if isinstance(result, FinalOutput):
             parsed_outputs, error = self._process_final_output(result, output_field_names)
 
             if error:
-                return history.append(reasoning=pred.reasoning, code=pred.code, output=error)
+                return history.append(reasoning=pred.reasoning, code=code, output=error)
 
             final_history = history.append(
-                reasoning=pred.reasoning, code=pred.code, output=f"FINAL: {parsed_outputs}"
+                reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}"
             )
             return Prediction(
                 **parsed_outputs,
@@ -490,7 +492,7 @@ class RLM(Module):
             output = str(result) if result else ""
 
         output = self._format_output(output)
-        return history.append(reasoning=pred.reasoning, code=pred.code, output=output)
+        return history.append(reasoning=pred.reasoning, code=code, output=output)
 
     def _execute_iteration(
         self,
