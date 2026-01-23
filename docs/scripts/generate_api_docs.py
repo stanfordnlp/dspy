@@ -20,6 +20,7 @@ API_MAPPING = {
         dspy.Prediction,
         dspy.Tool,
         dspy.ToolCalls,
+        dspy.Video,
     ],
     "signatures": [
         dspy.Signature,
