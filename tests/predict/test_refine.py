@@ -1,5 +1,5 @@
-import pytest
 import asyncio
+import pytest
 
 import dspy
 from dspy.predict.predict import Predict
