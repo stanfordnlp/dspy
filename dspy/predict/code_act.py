@@ -117,3 +117,34 @@ class CodeAct(ReAct, ProgramOfThought):
         extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
         self.interpreter.shutdown()
         return dspy.Prediction(trajectory=trajectory, **extract)
+
+    async def aforward(self, **kwargs):
+        # Define the tool functions in the interpreter
+        for tool in self.tools.values():
+            self.interpreter(inspect.getsource(tool.func))
+
+        trajectory = {}
+        max_iters = kwargs.pop("max_iters", self.max_iters)
+        for idx in range(max_iters):
+            code_data = await self.codeact.acall(trajectory=trajectory, **kwargs)
+            output = None
+            code, error = self._parse_code(code_data)
+
+            if error:
+                trajectory[f"observation_{idx}"] = f"Failed to parse the generated code: {error}"
+                continue
+
+            trajectory[f"generated_code_{idx}"] = code
+            output, error = self._execute_code(code)
+
+            if not error:
+                trajectory[f"code_output_{idx}"] = output
+            else:
+                trajectory[f"observation_{idx}"] = f"Failed to execute the generated code: {error}"
+
+            if code_data.finished:
+                break
+
+        extract = await self._async_call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
+        self.interpreter.shutdown()
+        return dspy.Prediction(trajectory=trajectory, **extract)
