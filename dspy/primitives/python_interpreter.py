@@ -6,6 +6,7 @@ WASM environment using Deno and Pyodide. It implements the Interpreter
 protocol defined in interpreter.py.
 """
 
+import base64
 import functools
 import inspect
 import json
@@ -26,6 +27,22 @@ logger = logging.getLogger(__name__)
 # Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
 # injection for strings above 100MB to stay safely below this limit.
 LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
+
+# Maximum serialized DataFrame size (500MB)
+MAX_DATAFRAME_SIZE = 500 * 1024 * 1024
+
+# Row count threshold for warning about large DataFrames
+LARGE_DATAFRAME_ROWS_WARNING = 1_000_000
+
+
+def _is_dataframe(value: Any) -> bool:
+    """Check if value is a pandas DataFrame without requiring pandas import.
+
+    This allows DSPy to work without pandas installed when DataFrames aren't used.
+    """
+    type_module = getattr(type(value), "__module__", "")
+    type_name = type(value).__name__
+    return type_module.startswith("pandas") and type_name == "DataFrame"
 
 # =============================================================================
 # JSON-RPC 2.0 Helpers
@@ -141,6 +158,7 @@ class PythonInterpreter:
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self._tools_registered = False
+        self._pending_dataframe_vars: dict[str, bytes] = {}
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         if deno_command:
@@ -390,28 +408,107 @@ class PythonInterpreter:
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
+    def _serialize_dataframe_to_parquet(self, df: Any, name: str) -> bytes:
+        """Serialize DataFrame to Parquet bytes.
+
+        Args:
+            df: A pandas DataFrame
+            name: Variable name (for error messages)
+
+        Returns:
+            Parquet-serialized bytes
+
+        Raises:
+            CodeInterpreterError: If pandas/pyarrow not installed or DataFrame too large
+        """
+        import io
+
+        try:
+            import pyarrow  # noqa: F401
+        except ImportError:
+            raise CodeInterpreterError(
+                "pyarrow is required to pass DataFrames to RLM. "
+                "Install with: pip install pyarrow"
+            )
+
+        if len(df) > LARGE_DATAFRAME_ROWS_WARNING:
+            logger.warning(
+                f"DataFrame '{name}' has {len(df):,} rows. "
+                f"Consider sampling or filtering for better RLM performance."
+            )
+
+        try:
+            buffer = io.BytesIO()
+            df.to_parquet(buffer, engine="pyarrow", index=True, compression="snappy")
+            parquet_bytes = buffer.getvalue()
+        except Exception as e:
+            # Fallback: convert problematic columns to string
+            logger.warning(f"DataFrame '{name}' has columns that couldn't be serialized directly: {e}")
+            df_copy = df.copy()
+            for col in df_copy.columns:
+                try:
+                    test_buffer = io.BytesIO()
+                    df_copy[[col]].to_parquet(test_buffer, engine="pyarrow")
+                except Exception:
+                    df_copy[col] = df_copy[col].astype(str)
+
+            buffer = io.BytesIO()
+            df_copy.to_parquet(buffer, engine="pyarrow", index=True, compression="snappy")
+            parquet_bytes = buffer.getvalue()
+
+        if len(parquet_bytes) > MAX_DATAFRAME_SIZE:
+            raise CodeInterpreterError(
+                f"DataFrame '{name}' serializes to {len(parquet_bytes) / 1024 / 1024:.1f}MB. "
+                f"Maximum supported size is {MAX_DATAFRAME_SIZE / 1024 / 1024:.0f}MB. "
+                f"Please filter or sample the DataFrame."
+            )
+
+        return parquet_bytes
+
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
         """Insert Python assignments for each variable at the top of the code."""
         for key in variables:
             if not key.isidentifier() or keyword.iskeyword(key) or key == "json":
                 raise CodeInterpreterError(f"Invalid variable name: '{key}'")
 
+        dataframe_vars: dict[str, bytes] = {}
         large_vars = {}
         small_assignments = []
+
         for k, v in variables.items():
-            serialized = self._serialize_value(v)
-            if len(serialized) > LARGE_VAR_THRESHOLD:
-                large_vars[k] = json.dumps(self._to_json_compatible(v))
+            if _is_dataframe(v):
+                # DataFrames use Parquet injection
+                dataframe_vars[k] = self._serialize_dataframe_to_parquet(v, k)
             else:
-                small_assignments.append(f"{k} = {serialized}")
+                serialized = self._serialize_value(v)
+                if len(serialized) > LARGE_VAR_THRESHOLD:
+                    large_vars[k] = json.dumps(self._to_json_compatible(v))
+                else:
+                    small_assignments.append(f"{k} = {serialized}")
 
         self._pending_large_vars = large_vars
+        self._pending_dataframe_vars = dataframe_vars
 
+        # Build imports
+        imports = []
         if large_vars:
-            large_assignments = [f"{k} = json.loads(open('/tmp/dspy_vars/{k}.json').read())" for k in large_vars]
-            assignments = ["import json"] + small_assignments + large_assignments
-        else:
-            assignments = small_assignments
+            imports.append("import json")
+        if dataframe_vars:
+            imports.append("import pandas as pd")
+
+        # Build assignments for large JSON vars
+        large_assignments = [
+            f"{k} = json.loads(open('/tmp/dspy_vars/{k}.json').read())"
+            for k in large_vars
+        ]
+
+        # Build assignments for DataFrame vars
+        df_assignments = [
+            f"{k} = pd.read_parquet('/tmp/dspy_vars/{k}.parquet')"
+            for k in dataframe_vars
+        ]
+
+        assignments = imports + small_assignments + large_assignments + df_assignments
 
         return "\n".join(assignments) + "\n" + code if assignments else code
 
@@ -430,9 +527,19 @@ class PythonInterpreter:
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
-    def _inject_large_var(self, name: str, value: str) -> None:
-        """Inject a large variable via the virtual filesystem."""
-        self._send_request("inject_var", {"name": name, "value": value}, f"injecting variable '{name}'")
+    def _inject_large_var(self, name: str, value: str, format: str = "json") -> None:
+        """Inject a large variable via the virtual filesystem.
+
+        Args:
+            name: Variable name
+            value: Serialized value (JSON string or base64-encoded bytes)
+            format: Either "json" or "parquet"
+        """
+        self._send_request(
+            "inject_var",
+            {"name": name, "value": value, "format": format},
+            f"injecting variable '{name}'"
+        )
 
     def execute(
         self,
@@ -447,7 +554,12 @@ class PythonInterpreter:
         self._register_tools()
 
         for name, value in self._pending_large_vars.items():
-            self._inject_large_var(name, value)
+            self._inject_large_var(name, value, format="json")
+
+        # Inject DataFrame variables as base64-encoded Parquet
+        for name, parquet_bytes in self._pending_dataframe_vars.items():
+            encoded = base64.b64encode(parquet_bytes).decode("ascii")
+            self._inject_large_var(name, encoded, format="parquet")
 
         # Send the code as JSON-RPC request
         self._request_id += 1
@@ -464,7 +576,10 @@ class PythonInterpreter:
             self._mount_files()
             self._register_tools()
             for name, value in self._pending_large_vars.items():
-                self._inject_large_var(name, value)
+                self._inject_large_var(name, value, format="json")
+            for name, parquet_bytes in self._pending_dataframe_vars.items():
+                encoded = base64.b64encode(parquet_bytes).decode("ascii")
+                self._inject_large_var(name, encoded, format="parquet")
             self.deno_process.stdin.write(input_data + "\n")
             self.deno_process.stdin.flush()
 

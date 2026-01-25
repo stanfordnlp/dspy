@@ -5,7 +5,7 @@ import shutil
 import pytest
 
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
-from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.primitives.python_interpreter import PythonInterpreter, _is_dataframe
 
 # This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 if shutil.which("deno") is None:
@@ -534,3 +534,245 @@ def test_large_variable_threshold_boundary():
     interpreter._pending_large_vars = {}
     interpreter._inject_variables("print(x)", {"x": over_threshold})
     assert "x" in interpreter._pending_large_vars, "Serialized size over threshold should use filesystem"
+
+
+# =============================================================================
+# DataFrame Support Tests
+# =============================================================================
+
+# Check if pandas is available for DataFrame tests
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+
+
+@pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
+class TestDataFrameDetection:
+    """Tests for DataFrame detection without sandbox."""
+
+    def test_is_dataframe_detects_dataframe(self):
+        """Test that _is_dataframe correctly identifies pandas DataFrames."""
+        df = pd.DataFrame({"a": [1, 2, 3]})
+        assert _is_dataframe(df) is True
+
+    def test_is_dataframe_rejects_non_dataframe(self):
+        """Test that _is_dataframe rejects non-DataFrame types."""
+        assert _is_dataframe([1, 2, 3]) is False
+        assert _is_dataframe({"a": 1}) is False
+        assert _is_dataframe("string") is False
+        assert _is_dataframe(123) is False
+        assert _is_dataframe(None) is False
+
+    def test_is_dataframe_rejects_series(self):
+        """Test that _is_dataframe rejects pandas Series."""
+        series = pd.Series([1, 2, 3])
+        assert _is_dataframe(series) is False
+
+
+@pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
+class TestDataFrameSerialization:
+    """Tests for DataFrame serialization (no sandbox needed)."""
+
+    def test_serialize_dataframe_to_parquet(self):
+        """Test DataFrame serialization to Parquet bytes."""
+        import io
+
+        df = pd.DataFrame({
+            "int_col": [1, 2, 3],
+            "float_col": [1.1, 2.2, 3.3],
+            "str_col": ["a", "b", "c"],
+        })
+
+        interpreter = PythonInterpreter()
+        parquet_bytes = interpreter._serialize_dataframe_to_parquet(df, "test")
+
+        assert isinstance(parquet_bytes, bytes)
+        assert len(parquet_bytes) > 0
+
+        # Verify it can be deserialized
+        restored_df = pd.read_parquet(io.BytesIO(parquet_bytes))
+        pd.testing.assert_frame_equal(df, restored_df)
+
+    def test_serialize_dataframe_preserves_dtypes(self):
+        """Test that DataFrame serialization preserves column dtypes."""
+        import io
+        import numpy as np
+
+        df = pd.DataFrame({
+            "int64_col": pd.array([1, 2, 3], dtype="int64"),
+            "float64_col": pd.array([1.1, 2.2, 3.3], dtype="float64"),
+            "bool_col": pd.array([True, False, True], dtype="bool"),
+            "str_col": pd.array(["a", "b", "c"], dtype="object"),
+        })
+
+        interpreter = PythonInterpreter()
+        parquet_bytes = interpreter._serialize_dataframe_to_parquet(df, "test")
+
+        restored_df = pd.read_parquet(io.BytesIO(parquet_bytes))
+        assert restored_df["int64_col"].dtype == np.int64
+        assert restored_df["float64_col"].dtype == np.float64
+        assert restored_df["bool_col"].dtype == bool
+
+    def test_inject_variables_with_dataframe(self):
+        """Test variable injection code generation for DataFrames."""
+        df = pd.DataFrame({"x": [1, 2, 3]})
+
+        interpreter = PythonInterpreter()
+        interpreter._pending_dataframe_vars = {}
+        code = interpreter._inject_variables("print(df)", {"df": df})
+
+        assert "import pandas as pd" in code
+        assert "pd.read_parquet" in code
+        assert "/tmp/dspy_vars/df.parquet" in code
+        assert "df" in interpreter._pending_dataframe_vars
+
+
+# Pyodide CDN domains needed to download packages
+PYODIDE_CDN_DOMAINS = ["cdn.jsdelivr.net", "pypi.org", "files.pythonhosted.org"]
+
+
+def _can_load_pandas_in_pyodide():
+    """Check if pandas can be loaded in Pyodide sandbox.
+
+    This may fail due to network issues, Pyodide version compatibility,
+    or missing permissions. Returns True if pandas loads successfully.
+    """
+    try:
+        # Quick test with permissive settings
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            interp.execute("import pandas")
+        return True
+    except Exception:
+        return False
+
+
+# Skip integration tests if pandas can't load in Pyodide
+# This can happen due to network issues or Pyodide environment problems
+PYODIDE_PANDAS_SKIP_REASON = (
+    "Cannot load pandas in Pyodide sandbox. "
+    "This may be due to network restrictions or Pyodide environment issues."
+)
+
+
+@pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
+@pytest.mark.slow
+class TestDataFrameInjection:
+    """Integration tests for DataFrame injection into sandbox.
+
+    These tests require:
+    - Network access to download pandas into Pyodide
+    - Deno installed with proper permissions
+    - A compatible Pyodide environment
+
+    Note: These tests may be slow as they need to download packages.
+    """
+
+    def test_basic_dataframe_injection(self):
+        """Test DataFrame is accessible in sandbox."""
+        df = pd.DataFrame({
+            "name": ["Alice", "Bob", "Charlie"],
+            "age": [25, 30, 35],
+        })
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "(len(df), list(df.columns))",
+                variables={"df": df}
+            )
+            assert result[0] == 3
+            assert result[1] == ["name", "age"]
+
+    def test_dataframe_dtype_preservation(self):
+        """Test that column dtypes are preserved through Parquet serialization."""
+        df = pd.DataFrame({
+            "int_col": pd.array([1, 2, 3], dtype="int64"),
+            "float_col": pd.array([1.1, 2.2, 3.3], dtype="float64"),
+        })
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "str(df['int_col'].dtype) + ',' + str(df['float_col'].dtype)",
+                variables={"df": df}
+            )
+            assert "int64" in result
+            assert "float64" in result
+
+    def test_dataframe_operations(self):
+        """Test pandas operations work on injected DataFrame."""
+        df = pd.DataFrame({
+            "value": [10, 20, 30, 40, 50],
+        })
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "int(df['value'].sum())",
+                variables={"df": df}
+            )
+            assert result == 150
+
+    def test_dataframe_with_datetime(self):
+        """Test DataFrame with datetime columns."""
+        df = pd.DataFrame({
+            "date": pd.date_range("2024-01-01", periods=3),
+            "value": [1, 2, 3],
+        })
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "str(df['date'].dtype)",
+                variables={"df": df}
+            )
+            assert "datetime64" in result
+
+    def test_dataframe_with_categorical(self):
+        """Test DataFrame with categorical columns."""
+        df = pd.DataFrame({
+            "category": pd.Categorical(["a", "b", "a", "c"]),
+        })
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "str(df['category'].dtype)",
+                variables={"df": df}
+            )
+            assert "category" in result
+
+    def test_multiple_dataframes(self):
+        """Test multiple DataFrames can be injected."""
+        df1 = pd.DataFrame({"x": [1, 2, 3]})
+        df2 = pd.DataFrame({"y": [4, 5, 6]})
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "(len(df1), len(df2))",
+                variables={"df1": df1, "df2": df2}
+            )
+            assert result == [3, 3]
+
+    def test_dataframe_with_other_variables(self):
+        """Test DataFrame mixed with other variable types."""
+        df = pd.DataFrame({"value": [1, 2, 3]})
+        multiplier = 10
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "int(df['value'].sum() * m)",
+                variables={"df": df, "m": multiplier}
+            )
+            assert result == 60
+
+    def test_dataframe_groupby_operation(self):
+        """Test groupby operations work on injected DataFrame."""
+        df = pd.DataFrame({
+            "category": ["A", "B", "A", "B"],
+            "value": [10, 20, 30, 40],
+        })
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "df.groupby('category')['value'].sum().to_dict()",
+                variables={"df": df}
+            )
+            assert result == {"A": 40, "B": 60}

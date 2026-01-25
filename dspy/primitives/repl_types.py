@@ -23,6 +23,13 @@ if TYPE_CHECKING:
 __all__ = ["REPLVariable", "REPLEntry", "REPLHistory"]
 
 
+def _is_dataframe(value: Any) -> bool:
+    """Check if value is a pandas DataFrame without requiring pandas import."""
+    type_module = getattr(type(value), "__module__", "")
+    type_name = type(value).__name__
+    return type_module.startswith("pandas") and type_name == "DataFrame"
+
+
 class REPLVariable(pydantic.BaseModel):
     """Metadata about a variable available in the REPL environment."""
 
@@ -51,6 +58,10 @@ class REPLVariable(pydantic.BaseModel):
             field_info: Optional pydantic FieldInfo with desc/constraints metadata
             preview_chars: Max characters for preview
         """
+        # Handle DataFrames specially with rich metadata
+        if _is_dataframe(value):
+            return cls._from_dataframe(name, value, field_info)
+
         jsonable = serialize_for_json(value)
         if isinstance(jsonable, (dict, list)):
             value_str = json.dumps(jsonable, indent=2)
@@ -78,6 +89,76 @@ class REPLVariable(pydantic.BaseModel):
             preview=preview,
         )
 
+    @classmethod
+    def _from_dataframe(
+        cls,
+        name: str,
+        df: Any,
+        field_info: FieldInfo | None = None,
+    ) -> REPLVariable:
+        """Create REPLVariable with rich DataFrame metadata.
+
+        Args:
+            name: Variable name
+            df: A pandas DataFrame
+            field_info: Optional pydantic FieldInfo with desc/constraints metadata
+        """
+        shape = df.shape
+
+        # Build column info with dtypes and null counts
+        columns_info = []
+        for col in df.columns:
+            dtype = str(df[col].dtype)
+            null_count = int(df[col].isna().sum())
+            null_info = f" ({null_count:,} nulls)" if null_count > 0 else ""
+            columns_info.append(f"  - {col}: {dtype}{null_info}")
+
+        # Calculate memory usage
+        memory_bytes = df.memory_usage(deep=True).sum()
+        if memory_bytes >= 1024 * 1024:
+            memory_str = f"{memory_bytes / (1024 * 1024):.1f} MB"
+        else:
+            memory_str = f"{memory_bytes / 1024:.1f} KB"
+
+        # Build informative preview
+        preview_lines = [
+            f"Shape: {shape[0]:,} rows x {shape[1]} columns",
+            f"Memory: {memory_str}",
+            "",
+            "Columns:",
+            *columns_info,
+            "",
+            "First 3 rows:",
+            df.head(3).to_string(),
+        ]
+
+        if shape[0] > 6:
+            preview_lines.extend([
+                "",
+                "Last 3 rows:",
+                df.tail(3).to_string(),
+            ])
+
+        preview = "\n".join(preview_lines)
+
+        # Extract desc and constraints from field_info if provided
+        desc = ""
+        constraints = ""
+        if field_info and hasattr(field_info, "json_schema_extra") and field_info.json_schema_extra:
+            raw_desc = field_info.json_schema_extra.get("desc", "")
+            if raw_desc and not raw_desc.startswith("${"):
+                desc = raw_desc
+            constraints = field_info.json_schema_extra.get("constraints", "")
+
+        return cls(
+            name=name,
+            type_name="DataFrame",
+            desc=desc,
+            constraints=constraints,
+            total_length=shape[0],  # Use row count as "length" for DataFrames
+            preview=preview,
+        )
+
     def format(self) -> str:
         """Format variable metadata for prompt inclusion."""
         lines = [f"Variable: `{self.name}` (access it in your code)"]
@@ -86,7 +167,13 @@ class REPLVariable(pydantic.BaseModel):
             lines.append(f"Description: {self.desc}")
         if self.constraints:
             lines.append(f"Constraints: {self.constraints}")
-        lines.append(f"Total length: {self.total_length:,} characters")
+
+        # Use appropriate label for total_length based on type
+        if self.type_name == "DataFrame":
+            lines.append(f"Total rows: {self.total_length:,}")
+        else:
+            lines.append(f"Total length: {self.total_length:,} characters")
+
         lines.append(f"Preview:\n```\n{self.preview}\n```")
         return "\n".join(lines)
 

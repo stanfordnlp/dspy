@@ -307,11 +307,20 @@ while (true) {
   }
 
   if (method === "inject_var") {
-    const { name, value } = params;
+    const { name, value, format } = params;
     try {
       try { pyodide.FS.mkdir('/tmp'); } catch (e) { /* exists */ }
       try { pyodide.FS.mkdir('/tmp/dspy_vars'); } catch (e) { /* exists */ }
-      pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
+
+      if (format === "parquet") {
+        // Decode base64 and write binary Parquet data
+        const binaryData = Uint8Array.from(atob(value), c => c.charCodeAt(0));
+        pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.parquet`, binaryData);
+      } else {
+        // Default: write JSON as text
+        pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
+      }
+
       console.log(jsonrpcResult({ injected: name }, requestId));
     } catch (e) {
       console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to inject var: ${e.message}`, requestId));
