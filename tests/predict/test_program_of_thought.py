@@ -121,17 +121,79 @@ def test_pot_code_parse_error():
     max_iters = 3
     lm = DummyLM(
         [
-            {"reasoning": "Reason_A", "generated_code": "```python\ninvalid=python=code\n```"},
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\nx = [1, 2, 3\nprint(x)\n```",
+            },
         ]
         * max_iters
     )
     dspy.configure(lm=lm)
     pot = ProgramOfThought(BasicQA, max_iters=max_iters)
+
     with (
         patch("dspy.predict.program_of_thought.ProgramOfThought._execute_code") as mock_execute_code,
         pytest.raises(
-            RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: Error: Code format is not correct."
+            RuntimeError,
+            match=r"SyntaxError: .* at line 1",
         ),
     ):
         pot(question="What is 1+1?")
+
     mock_execute_code.assert_not_called()
+
+
+
+@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
+def test_pot_preserves_string_escape_sequences():
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\ntext = \"Line1\\nLine2\"\nSUBMIT({'answer': text})\n```",
+            },
+            {"reasoning": "Reason_B", "answer": "Line1\nLine2"},
+        ]
+    )
+    dspy.configure(lm=lm)
+    pot = ProgramOfThought(BasicQA)
+
+    res = pot(question="Return text")
+    assert res.answer == "Line1\nLine2"
+
+
+@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
+def test_pot_does_not_corrupt_strings_with_equals():
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\ndata = \"users=Alice,Bob=25\"\nSUBMIT({'answer': data})\n```",
+            },
+            {"reasoning": "Reason_B", "answer": "users=Alice,Bob=25"},
+        ]
+    )
+    dspy.configure(lm=lm)
+    pot = ProgramOfThought(BasicQA)
+
+    res = pot(question="Return data")
+    assert res.answer == "users=Alice,Bob=25"
+
+
+def test_pot_reports_precise_syntax_error_location():
+    lm = DummyLM(
+        [
+            {
+                "reasoning": "Reason_A",
+                "generated_code": "```python\nx = [1, 2, 3\nprint(x)\n```",
+            },
+        ]
+    )
+    dspy.configure(lm=lm)
+    pot = ProgramOfThought(BasicQA, max_iters=1)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"SyntaxError: .* at line 1",
+    ):
+        pot(question="What is x?")
