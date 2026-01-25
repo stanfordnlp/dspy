@@ -38,7 +38,7 @@ dependencies = [
     "cloudpickle>=3.0.0",
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
-    "gepa[dspy]==0.0.25",
+    "gepa[dspy]==0.0.26",
 ]
 
 [project.optional-dependencies]
