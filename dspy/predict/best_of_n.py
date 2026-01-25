@@ -85,4 +85,4 @@ class BestOfN(Module):
 
         if best_trace:
             dspy.settings.trace.extend(best_trace)
-        return best_pred
+        return best_pred, best_reward
