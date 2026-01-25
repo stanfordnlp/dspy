@@ -185,10 +185,21 @@ class PythonInterpreter:
                 user_vars = [str(v).strip() for v in self.enable_env_vars]
                 args.append("--allow-env=" + ",".join(user_vars))
                 self._env_arg = ",".join(user_vars)
+
+            # Network access: Pyodide CDN (for package downloads) + user-specified domains
+            allowed_net = ["cdn.jsdelivr.net"]
             if self.enable_network_access:
-                args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
+                allowed_net.extend(str(x) for x in self.enable_network_access)
+            args.append(f"--allow-net={','.join(allowed_net)}")
+
+            # Write paths: Deno cache (for Pyodide package caching) + user-specified paths
+            allowed_write_paths = []
+            if deno_dir:
+                allowed_write_paths.append(deno_dir)
             if self.enable_write_paths:
-                args.append(f"--allow-write={','.join(str(x) for x in self.enable_write_paths)}")
+                allowed_write_paths.extend(str(p) for p in self.enable_write_paths)
+            if allowed_write_paths:
+                args.append(f"--allow-write={','.join(allowed_write_paths)}")
 
             args.append(self._get_runner_path())
 
@@ -371,15 +382,29 @@ class PythonInterpreter:
         self.deno_process.stdin.write(msg + "\n")
         self.deno_process.stdin.flush()
 
-        response_line = self.deno_process.stdout.readline().strip()
-        if not response_line:
-            exit_code = self.deno_process.poll()
-            if exit_code is not None:
-                stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
-                raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
-            raise CodeInterpreterError(f"No response {context}")
+        # Read lines until we get a valid JSON-RPC response
+        # (skip non-JSON lines like package loading progress messages)
+        while True:
+            response_line = self.deno_process.stdout.readline().strip()
+            if not response_line:
+                exit_code = self.deno_process.poll()
+                if exit_code is not None:
+                    stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
+                    raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
+                raise CodeInterpreterError(f"No response {context}")
 
-        response = json.loads(response_line)
+            # Skip non-JSON lines (e.g., Pyodide package loading messages)
+            if not response_line.startswith("{"):
+                logger.debug(f"Skipping non-JSON output: {response_line}")
+                continue
+
+            try:
+                response = json.loads(response_line)
+                break
+            except json.JSONDecodeError:
+                logger.debug(f"Skipping malformed JSON: {response_line[:100]}")
+                continue
+
         if response.get("id") != request_id:
             raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
         if "error" in response:

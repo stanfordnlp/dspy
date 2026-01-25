@@ -1,6 +1,6 @@
 // Adapted from "Simon Willison's TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
 
-import pyodideModule from "npm:pyodide/pyodide.js";
+import pyodideModule from "npm:pyodide@0.29.2/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
 // =============================================================================
@@ -313,6 +313,8 @@ while (true) {
       try { pyodide.FS.mkdir('/tmp/dspy_vars'); } catch (e) { /* exists */ }
 
       if (format === "parquet") {
+        // Pre-load pyarrow for parquet support (pandas needs it for read_parquet)
+        await pyodide.loadPackage(["pandas", "pyarrow"]);
         // Decode base64 and write binary Parquet data
         const binaryData = Uint8Array.from(atob(value), c => c.charCodeAt(0));
         pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.parquet`, binaryData);
