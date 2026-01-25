@@ -30,6 +30,11 @@ class _DataFrameAnnotation:
     This class provides the __get_pydantic_core_schema__ method that tells
     Pydantic how to validate and serialize pandas DataFrames, without
     requiring arbitrary_types_allowed=True globally.
+
+    WARNING: dspy.DataFrame should only be used with dspy.RLM, which provides
+    a Python sandbox where the DataFrame is available for code execution.
+    Other modules (ChainOfThought, Predict, etc.) will only see a string
+    representation of the DataFrame, not the actual data.
     """
 
     @classmethod
@@ -37,6 +42,15 @@ class _DataFrameAnnotation:
         cls, source_type: Any, handler: GetCoreSchemaHandler
     ) -> CoreSchema:
         """Return a Pydantic core schema that accepts any DataFrame instance."""
+        import warnings
+
+        warnings.warn(
+            "dspy.DataFrame should only be used with dspy.RLM. "
+            "Other modules (ChainOfThought, Predict, etc.) will only see a string "
+            "representation, not the actual DataFrame data.",
+            UserWarning,
+            stacklevel=6,
+        )
 
         def validate_dataframe(value: Any) -> Any:
             if not _is_dataframe(value):
@@ -54,6 +68,10 @@ class _DataFrameAnnotation:
 
 # Type alias for use in DSPy Signatures: `dataframe: dspy.DataFrame = dspy.InputField()`
 # This uses Annotated to attach the Pydantic schema handler to the pandas DataFrame type
+#
+# WARNING: dspy.DataFrame should only be used with dspy.RLM, which provides a Python
+# sandbox where the DataFrame is available for code execution. Other modules
+# (ChainOfThought, Predict, etc.) will only see a string representation.
 try:
     import pandas as pd
     DataFrame = Annotated[pd.DataFrame, _DataFrameAnnotation()]

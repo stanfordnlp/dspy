@@ -330,6 +330,28 @@ while (true) {
     continue;
   }
 
+  if (method === "get_variable") {
+    const { name } = params;
+    try {
+      // Get the variable from Python globals and serialize it
+      const result = pyodide.runPython(`
+import json
+_var = ${name}
+if hasattr(_var, 'to_dict'):
+    _result = json.dumps(_var.to_dict())
+elif isinstance(_var, (list, dict, str, int, float, bool, type(None))):
+    _result = json.dumps(_var)
+else:
+    _result = str(_var)
+_result
+`);
+      console.log(jsonrpcResult({ value: result }, requestId));
+    } catch (e) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to get variable '${name}': ${e.message}`, requestId));
+    }
+    continue;
+  }
+
   if (method === "execute") {
     const code = params.code || "";
     let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
