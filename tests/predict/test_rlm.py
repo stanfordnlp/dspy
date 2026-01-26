@@ -1074,6 +1074,7 @@ class TestRLMWithDataFrame:
     def test_dataframe_input_basic(self):
         """Test RLM with DataFrame input field."""
         import warnings
+
         import dspy
         from dspy.primitives.repl_types import DataFrame
 
@@ -1098,6 +1099,7 @@ class TestRLMWithDataFrame:
     def test_dataframe_column_operations(self):
         """Test RLM performing pandas operations on DataFrame."""
         import warnings
+
         import dspy
         from dspy.primitives.repl_types import DataFrame
 
@@ -1136,6 +1138,7 @@ class TestRLMWithDataFrame:
     def test_dataframe_dtypes_preserved(self):
         """Test that DataFrame dtypes are preserved through RLM pipeline."""
         import warnings
+
         import dspy
         from dspy.primitives.repl_types import DataFrame
 

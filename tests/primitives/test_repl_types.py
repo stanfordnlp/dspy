@@ -2,12 +2,12 @@
 
 import pytest
 
-from dspy.primitives.repl_types import REPLVariable, REPLEntry, REPLHistory
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 
 # Check if pandas is available for DataFrame tests
 try:
-    import pandas as pd
     import numpy as np
+    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -259,6 +259,7 @@ class TestDataFrameTypeAnnotation:
     def test_dataframe_type_in_signature(self):
         """Test dspy.DataFrame works as type annotation in Signature."""
         import warnings
+
         import dspy
         from dspy.primitives.repl_types import DataFrame
 
@@ -277,6 +278,7 @@ class TestDataFrameTypeAnnotation:
     def test_dataframe_type_warns_on_serialization(self):
         """Test warning is raised when dspy.DataFrame is serialized (non-RLM usage)."""
         import warnings
+
         import dspy
         from dspy.primitives.repl_types import DataFrame
 
@@ -303,9 +305,10 @@ class TestDataFrameTypeAnnotation:
 
     def test_dataframe_type_validates_dataframe(self):
         """Test dspy.DataFrame rejects non-DataFrame values."""
+        import pydantic
+
         import dspy
         from dspy.primitives.repl_types import DataFrame
-        import pydantic
 
         class ValidateSig(dspy.Signature):
             """Test signature."""
@@ -325,6 +328,7 @@ class TestDataFrameTypeAnnotation:
     def test_dataframe_type_serializes_to_records(self):
         """Test dspy.DataFrame serializes to list of records."""
         import warnings
+
         import dspy
         from dspy.primitives.repl_types import DataFrame
 

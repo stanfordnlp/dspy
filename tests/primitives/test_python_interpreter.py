@@ -598,6 +598,7 @@ class TestDataFrameSerialization:
     def test_serialize_dataframe_preserves_dtypes(self):
         """Test that DataFrame serialization preserves column dtypes."""
         import io
+
         import numpy as np
 
         df = pd.DataFrame({
@@ -861,6 +862,7 @@ class TestDataFrameEdgeCases:
     def test_dataframe_with_nulls_serialization(self):
         """Test that DataFrames with null values serialize correctly."""
         import io
+
         import numpy as np
 
         df = pd.DataFrame({
