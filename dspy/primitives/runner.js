@@ -2,6 +2,7 @@
 
 import pyodideModule from "npm:pyodide@0.29.2/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
+import { decode as decodeBase64 } from "https://deno.land/std@0.186.0/encoding/base64.ts";
 
 // =============================================================================
 // Python Code Templates
@@ -315,10 +316,8 @@ while (true) {
       if (format === "parquet") {
         // Pre-load pyarrow for parquet support (pandas needs it for read_parquet)
         await pyodide.loadPackage(["pandas", "pyarrow"]);
-        // Decode base64 and write binary Parquet data
-        // Note: atob() + Uint8Array.from() creates intermediate copies.
-        // DataFrames are already size-limited to MAX_DATAFRAME_SIZE (500MB) on Python side.
-        const binaryData = Uint8Array.from(atob(value), c => c.charCodeAt(0));
+        // Decode base64 directly to Uint8Array (avoids intermediate string copy from atob)
+        const binaryData = decodeBase64(value);
         pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.parquet`, binaryData);
       } else {
         // Default: write JSON as text
