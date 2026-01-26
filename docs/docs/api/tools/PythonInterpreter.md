@@ -7,6 +7,7 @@
         members:
             - __call__
             - execute
+            - get_variable
             - shutdown
             - start
         show_source: true

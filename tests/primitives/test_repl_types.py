@@ -245,3 +245,99 @@ class TestREPLHistory:
         formatted = history.format()
         assert "Step 1" in formatted
         assert "Step 2" in formatted
+
+
+# =============================================================================
+# dspy.DataFrame Type Annotation Tests
+# =============================================================================
+
+
+@pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
+class TestDataFrameTypeAnnotation:
+    """Tests for dspy.DataFrame Pydantic type annotation."""
+
+    def test_dataframe_type_in_signature(self):
+        """Test dspy.DataFrame works as type annotation in Signature."""
+        import warnings
+        import dspy
+        from dspy.primitives.repl_types import DataFrame
+
+        # Suppress the expected warning during test
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+
+            class DataSig(dspy.Signature):
+                """Process data."""
+                data: DataFrame = dspy.InputField()
+                result: str = dspy.OutputField()
+
+            # Verify the signature was created successfully
+            assert "data" in DataSig.model_fields
+
+    def test_dataframe_type_warns_on_use(self):
+        """Test warning is raised when dspy.DataFrame is used in Signature."""
+        import warnings
+        import dspy
+        from dspy.primitives.repl_types import DataFrame
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            class WarningSig(dspy.Signature):
+                """Test signature."""
+                df: DataFrame = dspy.InputField()
+                output: str = dspy.OutputField()
+
+            # Check that our warning was raised
+            dataframe_warnings = [
+                warning for warning in w
+                if "dspy.DataFrame should only be used with dspy.RLM" in str(warning.message)
+            ]
+            assert len(dataframe_warnings) >= 1, "Expected warning about RLM-only usage"
+
+    def test_dataframe_type_validates_dataframe(self):
+        """Test dspy.DataFrame rejects non-DataFrame values."""
+        import warnings
+        import dspy
+        from dspy.primitives.repl_types import DataFrame
+        import pydantic
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+
+            class ValidateSig(dspy.Signature):
+                """Test signature."""
+                df: DataFrame = dspy.InputField()
+                output: str = dspy.OutputField()
+
+            # Valid DataFrame should work
+            df = pd.DataFrame({"a": [1, 2, 3]})
+            # This tests the validator accepts DataFrame
+            validated = ValidateSig.model_validate({"df": df, "output": "test"})
+            assert validated.df is df
+
+            # Invalid type should fail
+            with pytest.raises(pydantic.ValidationError):
+                ValidateSig.model_validate({"df": "not a dataframe", "output": "test"})
+
+    def test_dataframe_type_serializes_to_records(self):
+        """Test dspy.DataFrame serializes to list of records."""
+        import warnings
+        import dspy
+        from dspy.primitives.repl_types import DataFrame
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+
+            class SerializeSig(dspy.Signature):
+                """Test signature."""
+                df: DataFrame = dspy.InputField()
+                output: str = dspy.OutputField()
+
+            df = pd.DataFrame({"name": ["Alice", "Bob"], "age": [25, 30]})
+            instance = SerializeSig.model_validate({"df": df, "output": "test"})
+
+            # Serialize to dict - DataFrame becomes list of records
+            serialized = instance.model_dump()
+            expected = [{"name": "Alice", "age": 25}, {"name": "Bob", "age": 30}]
+            assert serialized["df"] == expected

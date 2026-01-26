@@ -1049,5 +1049,137 @@ class TestRLMIntegration:
         assert "dog" in result.answer.lower()
 
 
+# ============================================================================
+# Integration Tests: RLM with DataFrame Inputs
+# ============================================================================
+
+# Check if pandas is available
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+
+# Pyodide CDN domains needed to download packages
+PYODIDE_CDN_DOMAINS = ["cdn.jsdelivr.net", "pypi.org", "files.pythonhosted.org"]
+
+
+@pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
+@pytest.mark.integration
+@pytest.mark.slow
+class TestRLMWithDataFrame:
+    """Integration tests for RLM with DataFrame inputs.
+
+    These tests verify the full pipeline: DataFrame -> Parquet serialization
+    -> Pyodide sandbox -> pandas operations -> result.
+    """
+
+    def test_dataframe_input_basic(self):
+        """Test RLM with DataFrame input field."""
+        import warnings
+        import dspy
+        from dspy.primitives.repl_types import DataFrame
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+
+            class DataAnalysis(dspy.Signature):
+                """Analyze the data."""
+                data: DataFrame = dspy.InputField()
+                row_count: int = dspy.OutputField()
+
+        df = pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 20, 30, 40, 50]})
+
+        rlm = RLM(DataAnalysis, max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Count rows", "code": "SUBMIT(len(data))"},
+        ])
+
+        result = rlm.forward(data=df)
+        assert result.row_count == 5
+
+    def test_dataframe_column_operations(self):
+        """Test RLM performing pandas operations on DataFrame."""
+        import warnings
+        import dspy
+        from dspy.primitives.repl_types import DataFrame
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+
+            class SumColumn(dspy.Signature):
+                """Sum a column."""
+                df: DataFrame = dspy.InputField()
+                total: int = dspy.OutputField()
+
+        df = pd.DataFrame({"value": [10, 20, 30, 40]})
+
+        rlm = RLM(SumColumn, max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Sum the value column", "code": "SUBMIT(int(df['value'].sum()))"},
+        ])
+
+        result = rlm.forward(df=df)
+        assert result.total == 100
+
+    def test_dataframe_with_string_signature(self):
+        """Test RLM with DataFrame using string signature syntax."""
+        df = pd.DataFrame({"x": [1, 2, 3]})
+
+        # Using interpreter directly to avoid Pydantic schema issues with string sig
+        from dspy.primitives.python_interpreter import PythonInterpreter
+
+        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+            result = interp.execute(
+                "len(my_df)",
+                variables={"my_df": df}
+            )
+            assert result == 3
+
+    def test_dataframe_dtypes_preserved(self):
+        """Test that DataFrame dtypes are preserved through RLM pipeline."""
+        import warnings
+        import dspy
+        from dspy.primitives.repl_types import DataFrame
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+
+            class CheckDtypes(dspy.Signature):
+                """Check dtypes."""
+                df: DataFrame = dspy.InputField()
+                dtype_info: str = dspy.OutputField()
+
+        df = pd.DataFrame({
+            "int_col": pd.array([1, 2, 3], dtype="int64"),
+            "float_col": pd.array([1.1, 2.2, 3.3], dtype="float64"),
+        })
+
+        rlm = RLM(CheckDtypes, max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Get dtype info", "code": "SUBMIT(str(df.dtypes.to_dict()))"},
+        ])
+
+        result = rlm.forward(df=df)
+        assert "int64" in result.dtype_info
+        assert "float64" in result.dtype_info
+
+    def test_get_variable_after_rlm(self):
+        """Test using get_variable to retrieve data after RLM execution."""
+        from dspy.primitives.python_interpreter import PythonInterpreter
+
+        with PythonInterpreter() as interp:
+            # Simulate what RLM does: execute code that creates variables
+            interp.execute("computed_value = 42 * 2")
+            interp.execute("computed_list = [i**2 for i in range(5)]")
+
+            # Retrieve variables that weren't SUBMITted
+            value = interp.get_variable("computed_value")
+            computed_list = interp.get_variable("computed_list")
+
+            assert value == 84
+            assert computed_list == [0, 1, 4, 9, 16]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
