@@ -186,11 +186,10 @@ class PythonInterpreter:
                 args.append("--allow-env=" + ",".join(user_vars))
                 self._env_arg = ",".join(user_vars)
 
-            # Network access: Pyodide CDN (for package downloads) + user-specified domains
-            allowed_net = ["cdn.jsdelivr.net"]
+            # Network access: user-specified domains
             if self.enable_network_access:
-                allowed_net.extend(str(x) for x in self.enable_network_access)
-            args.append(f"--allow-net={','.join(allowed_net)}")
+                allowed_net = [str(x) for x in self.enable_network_access]
+                args.append(f"--allow-net={','.join(allowed_net)}")
 
             # Write paths: Deno cache (for Pyodide package caching) + user-specified paths
             allowed_write_paths = []

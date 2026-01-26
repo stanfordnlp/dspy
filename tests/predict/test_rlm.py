@@ -1060,9 +1060,6 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
 
-# Pyodide CDN domains needed to download packages
-PYODIDE_CDN_DOMAINS = ["cdn.jsdelivr.net", "pypi.org", "files.pythonhosted.org"]
-
 
 @pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
 @pytest.mark.integration
@@ -1129,7 +1126,7 @@ class TestRLMWithDataFrame:
         # Using interpreter directly to avoid Pydantic schema issues with string sig
         from dspy.primitives.python_interpreter import PythonInterpreter
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "len(my_df)",
                 variables={"my_df": df}

@@ -628,34 +628,6 @@ class TestDataFrameSerialization:
         assert "/tmp/dspy_vars/df.parquet" in code
         assert "df" in interpreter._pending_dataframe_vars
 
-
-# Pyodide CDN domains needed to download packages
-PYODIDE_CDN_DOMAINS = ["cdn.jsdelivr.net", "pypi.org", "files.pythonhosted.org"]
-
-
-def _can_load_pandas_in_pyodide():
-    """Check if pandas can be loaded in Pyodide sandbox.
-
-    This may fail due to network issues, Pyodide version compatibility,
-    or missing permissions. Returns True if pandas loads successfully.
-    """
-    try:
-        # Quick test with permissive settings
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
-            interp.execute("import pandas")
-        return True
-    except Exception:
-        return False
-
-
-# Skip integration tests if pandas can't load in Pyodide
-# This can happen due to network issues or Pyodide environment problems
-PYODIDE_PANDAS_SKIP_REASON = (
-    "Cannot load pandas in Pyodide sandbox. "
-    "This may be due to network restrictions or Pyodide environment issues."
-)
-
-
 @pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
 @pytest.mark.slow
 class TestDataFrameInjection:
@@ -676,7 +648,7 @@ class TestDataFrameInjection:
             "age": [25, 30, 35],
         })
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "(len(df), list(df.columns))",
                 variables={"df": df}
@@ -691,7 +663,7 @@ class TestDataFrameInjection:
             "float_col": pd.array([1.1, 2.2, 3.3], dtype="float64"),
         })
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "str(df['int_col'].dtype) + ',' + str(df['float_col'].dtype)",
                 variables={"df": df}
@@ -705,7 +677,7 @@ class TestDataFrameInjection:
             "value": [10, 20, 30, 40, 50],
         })
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "int(df['value'].sum())",
                 variables={"df": df}
@@ -719,7 +691,7 @@ class TestDataFrameInjection:
             "value": [1, 2, 3],
         })
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "str(df['date'].dtype)",
                 variables={"df": df}
@@ -732,7 +704,7 @@ class TestDataFrameInjection:
             "category": pd.Categorical(["a", "b", "a", "c"]),
         })
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "str(df['category'].dtype)",
                 variables={"df": df}
@@ -744,7 +716,7 @@ class TestDataFrameInjection:
         df1 = pd.DataFrame({"x": [1, 2, 3]})
         df2 = pd.DataFrame({"y": [4, 5, 6]})
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "(len(df1), len(df2))",
                 variables={"df1": df1, "df2": df2}
@@ -756,7 +728,7 @@ class TestDataFrameInjection:
         df = pd.DataFrame({"value": [1, 2, 3]})
         multiplier = 10
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "int(df['value'].sum() * m)",
                 variables={"df": df, "m": multiplier}
@@ -770,7 +742,7 @@ class TestDataFrameInjection:
             "value": [10, 20, 30, 40],
         })
 
-        with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+        with PythonInterpreter() as interp:
             result = interp.execute(
                 "df.groupby('category')['value'].sum().to_dict()",
                 variables={"df": df}
@@ -856,9 +828,104 @@ def test_get_variable_preserves_state():
 @pytest.mark.slow
 def test_get_variable_dataframe():
     """Test retrieving a DataFrame variable (returns dict representation)."""
-    with PythonInterpreter(enable_network_access=PYODIDE_CDN_DOMAINS) as interp:
+    with PythonInterpreter() as interp:
         interp.execute("import pandas as pd; df = pd.DataFrame({'a': [1, 2], 'b': [3, 4]})")
         result = interp.get_variable("df")
         # DataFrame.to_dict() returns column-oriented dict by default
         assert "a" in result
         assert "b" in result
+
+
+# =============================================================================
+# DataFrame Edge Case Tests
+# =============================================================================
+
+
+@pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
+class TestDataFrameEdgeCases:
+    """Tests for DataFrame edge cases (no sandbox needed)."""
+
+    def test_empty_dataframe_serialization(self):
+        """Test that empty DataFrames serialize correctly."""
+        import io
+
+        df = pd.DataFrame()
+
+        interpreter = PythonInterpreter()
+        parquet_bytes = interpreter._serialize_dataframe_to_parquet(df, "empty")
+
+        assert isinstance(parquet_bytes, bytes)
+        restored = pd.read_parquet(io.BytesIO(parquet_bytes))
+        assert len(restored) == 0
+
+    def test_dataframe_with_nulls_serialization(self):
+        """Test that DataFrames with null values serialize correctly."""
+        import io
+        import numpy as np
+
+        df = pd.DataFrame({
+            "with_nulls": [1.0, np.nan, 3.0, np.nan, 5.0],
+            "no_nulls": [1, 2, 3, 4, 5],
+        })
+
+        interpreter = PythonInterpreter()
+        parquet_bytes = interpreter._serialize_dataframe_to_parquet(df, "nulls")
+
+        restored = pd.read_parquet(io.BytesIO(parquet_bytes))
+        assert restored["with_nulls"].isna().sum() == 2
+        assert restored["no_nulls"].isna().sum() == 0
+
+    def test_dataframe_with_special_column_names(self):
+        """Test DataFrame with special characters in column names."""
+        import io
+
+        df = pd.DataFrame({
+            "column with spaces": [1, 2],
+            "column-with-dashes": [3, 4],
+            "column.with.dots": [5, 6],
+        })
+
+        interpreter = PythonInterpreter()
+        parquet_bytes = interpreter._serialize_dataframe_to_parquet(df, "special")
+
+        restored = pd.read_parquet(io.BytesIO(parquet_bytes))
+        assert list(restored.columns) == list(df.columns)
+
+
+@pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
+@pytest.mark.slow
+class TestDataFrameEdgeCasesIntegration:
+    """Integration tests for DataFrame edge cases (require Pyodide)."""
+
+    def test_empty_dataframe_injection(self):
+        """Test injecting an empty DataFrame into sandbox."""
+        df = pd.DataFrame()
+
+        with PythonInterpreter() as interp:
+            result = interp.execute("len(df)", variables={"df": df})
+            assert result == 0
+
+    def test_dataframe_with_nulls_injection(self):
+        """Test injecting DataFrame with null values."""
+        import numpy as np
+
+        df = pd.DataFrame({
+            "values": [1.0, np.nan, 3.0],
+        })
+
+        with PythonInterpreter() as interp:
+            result = interp.execute("int(df['values'].isna().sum())", variables={"df": df})
+            assert result == 1
+
+    def test_dataframe_with_mixed_types(self):
+        """Test DataFrame with mixed column types."""
+        df = pd.DataFrame({
+            "int_col": [1, 2, 3],
+            "float_col": [1.1, 2.2, 3.3],
+            "str_col": ["a", "b", "c"],
+            "bool_col": [True, False, True],
+        })
+
+        with PythonInterpreter() as interp:
+            result = interp.execute("len(df.columns)", variables={"df": df})
+            assert result == 4
