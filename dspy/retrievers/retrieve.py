@@ -16,6 +16,40 @@ def single_query_passage(passages):
 
 
 class Retrieve(Parameter):
+    """Retrieve passages for a query using the configured retrieval model.
+
+    Uses ``dspy.settings.rm`` (the configured retrieval model) to fetch relevant
+    passages given a search query. This module exposes retrieval as a trainable
+    DSPy parameter that can be optimized alongside other components.
+
+    Requires a retrieval model to be configured via ``dspy.configure(rm=...)``.
+
+    Args:
+        k: Default number of passages to retrieve. Defaults to 3.
+        callbacks: Optional list of callbacks invoked during retrieval.
+
+    Attributes:
+        name: Display name for the retrieval operation ("Search").
+        input_variable: Name of the input variable ("query").
+        desc: Description of the retrieval operation.
+
+    Example:
+        Retrieve passages for a question:
+
+        ```python
+        import dspy
+
+        # Configure a retrieval model (e.g., ColBERTv2)
+        rm = dspy.ColBERTv2(url="http://localhost:8893/api/search")
+        dspy.configure(rm=rm)
+
+        # Create retriever and fetch passages
+        retriever = dspy.Retrieve(k=5)
+        result = retriever("What causes rainbows?")
+        print(result.passages)
+        ```
+    """
+
     name = "Search"
     input_variable = "query"
     desc = "takes a search query and returns one or more potentially relevant passages from a corpus"

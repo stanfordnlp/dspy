@@ -7,10 +7,39 @@ def default_normalize(s):
 
 
 def majority(prediction_or_completions, normalize=default_normalize, field=None):
-    """
-    Returns the most common completion for the target field (or the last field) in the signature.
-    When normalize returns None, that completion is ignored.
-    In case of a tie, earlier completion are prioritized.
+    """Select the most common completion among multiple candidates.
+
+    Aggregates completions by normalizing values, counting occurrences, and
+    returning the value with the highest count. Values that normalize to ``None``
+    are ignored. In case of a tie, the earliest occurrence wins.
+
+    Args:
+        prediction_or_completions: A ``Prediction`` object, ``Completions`` object,
+            or a list of completion dictionaries to aggregate.
+        normalize: Function applied to each value before counting. Values that
+            normalize to ``None`` are excluded from voting. Defaults to
+            ``default_normalize`` which applies text normalization.
+        field: Name of the field to aggregate. If ``None``, uses the last output
+            field from the signature or the last key in the completion dict.
+
+    Returns:
+        Prediction: A ``Prediction`` object containing the completion with the
+            majority value for the specified field.
+
+    Example:
+        Select the most common answer from multiple completions:
+
+        ```python
+        import dspy
+
+        # Generate multiple completions
+        cot = dspy.ChainOfThought("question -> answer", n=5)
+        result = cot(question="What is 2 + 2?")
+
+        # Select the majority answer
+        final = dspy.majority(result)
+        print(final.answer)
+        ```
     """
 
     assert any(isinstance(prediction_or_completions, t) for t in [Prediction, Completions, list])
