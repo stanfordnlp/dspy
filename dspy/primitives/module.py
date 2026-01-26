@@ -1,7 +1,9 @@
 import inspect
 import logging
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
+import dspy
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
 from dspy.primitives.base_module import BaseModule
@@ -11,6 +13,10 @@ from dspy.utils import magicattr
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 from dspy.utils.usage_tracker import track_usage
+
+if TYPE_CHECKING:
+    from dspy.predict.predict import Predict
+    from dspy.utils.callback import BaseCallback
 
 logger = logging.getLogger(__name__)
 
@@ -38,24 +44,24 @@ class ProgramMeta(type):
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
-    def _base_init(self):
+    def _base_init(self) -> None:
         self._compiled = False
         self.callbacks = []
         self.history = []
 
-    def __init__(self, callbacks=None):
+    def __init__(self, callbacks: list[BaseCallback] | None = None):
         self.callbacks = callbacks or []
         self._compiled = False
         # LM calling history of the module.
         self.history = []
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict[str, Any]:
         state = self.__dict__.copy()
         state.pop("history", None)
         state.pop("callbacks", None)
         return state
 
-    def __setstate__(self, state):
+    def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__.update(state)
         if not hasattr(self, "history"):
             self.history = []
@@ -63,7 +69,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             self.callbacks = []
 
     @with_callbacks
-    def __call__(self, *args, **kwargs) -> Prediction:
+    def __call__(self, *args: Any, **kwargs: Any) -> Prediction:
         from dspy.dsp.utils.settings import thread_local_overrides
 
         caller_modules = settings.caller_modules or []
@@ -82,7 +88,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return self.forward(*args, **kwargs)
 
     @with_callbacks
-    async def acall(self, *args, **kwargs) -> Prediction:
+    async def acall(self, *args: Any, **kwargs: Any) -> Prediction:
         from dspy.dsp.utils.settings import thread_local_overrides
 
         caller_modules = settings.caller_modules or []
@@ -100,19 +106,19 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
             return await self.aforward(*args, **kwargs)
 
-    def named_predictors(self):
+    def named_predictors(self) -> "list[tuple[str, Predict]]":
         from dspy.predict.predict import Predict
 
         return [(name, param) for name, param in self.named_parameters() if isinstance(param, Predict)]
 
-    def predictors(self):
+    def predictors(self) -> "list[Predict]":
         return [param for _, param in self.named_predictors()]
 
-    def set_lm(self, lm):
+    def set_lm(self, lm: dspy.LM) -> None:
         for _, param in self.named_predictors():
             param.lm = lm
 
-    def get_lm(self):
+    def get_lm(self) -> dspy.LM:
         all_used_lms = [param.lm for _, param in self.named_predictors()]
 
         if len(set(all_used_lms)) == 1:
@@ -120,7 +126,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
         raise ValueError("Multiple LMs are being used in the module. There's no unique LM to return.")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         s = []
 
         for name, param in self.named_predictors():
@@ -128,13 +134,13 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
         return "\n".join(s)
 
-    def map_named_predictors(self, func):
+    def map_named_predictors(self, func: "Callable[[Predict], Predict]") -> "Module":
         """Applies a function to all named predictors."""
         for name, predictor in self.named_predictors():
             set_attribute_by_name(self, name, func(predictor))
         return self
 
-    def inspect_history(self, n: int = 1):
+    def inspect_history(self, n: int = 1) -> None:
         return pretty_print_history(self.history, n)
 
     def batch(
@@ -187,7 +193,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             results = parallel_executor.forward(exec_pairs)
             return results
 
-    def _set_lm_usage(self, tokens: dict[str, Any], output: Any):
+    def _set_lm_usage(self, tokens: dict[str, Any], output: Any) -> None:
         # Some optimizers (e.g., GEPA bootstrap tracing) temporarily patch
         # module.forward to return a tuple: (prediction, trace).
         # When usage tracking is enabled, ensure we attach usage to the
@@ -200,10 +206,11 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if prediction_in_output:
             prediction_in_output.set_lm_usage(tokens)
         else:
-            logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
+            logger.warning(
+                "Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking."
+            )
 
-
-    def __getattribute__(self, name):
+    def __getattribute__(self, name: str) -> Any:
         attr = super().__getattribute__(name)
 
         if name == "forward" and callable(attr):
