@@ -42,25 +42,27 @@ class _DataFrameAnnotation:
         cls, source_type: Any, handler: GetCoreSchemaHandler
     ) -> CoreSchema:
         """Return a Pydantic core schema that accepts any DataFrame instance."""
-        import warnings
-
-        warnings.warn(
-            "dspy.DataFrame should only be used with dspy.RLM. "
-            "Other modules (ChainOfThought, Predict, etc.) will only see a string "
-            "representation, not the actual DataFrame data.",
-            UserWarning,
-            stacklevel=6,
-        )
 
         def validate_dataframe(value: Any) -> Any:
             if not _is_dataframe(value):
                 raise ValueError(f"Expected a pandas DataFrame, got {type(value).__name__}")
             return value
 
+        def serialize_dataframe(x: Any) -> list:
+            import warnings
+
+            warnings.warn(
+                "dspy.DataFrame is being serialized to JSON. "
+                "Only dspy.RLM preserves DataFrame data; other modules receive a string representation.",
+                UserWarning,
+                stacklevel=6,
+            )
+            return x.to_dict(orient="records")
+
         return core_schema.no_info_plain_validator_function(
             validate_dataframe,
             serialization=core_schema.plain_serializer_function_ser_schema(
-                lambda x: x.to_dict(orient="records"),
+                serialize_dataframe,
                 info_arg=False,
             ),
         )
@@ -117,7 +119,7 @@ class REPLVariable(pydantic.BaseModel):
         """
         # Handle DataFrames specially with rich metadata
         if _is_dataframe(value):
-            return cls._from_dataframe(name, value, field_info)
+            return cls._from_dataframe(name, value, field_info, preview_chars)
 
         jsonable = serialize_for_json(value)
         if isinstance(jsonable, (dict, list)):
@@ -152,6 +154,7 @@ class REPLVariable(pydantic.BaseModel):
         name: str,
         df: Any,
         field_info: FieldInfo | None = None,
+        preview_chars: int = 500,
     ) -> REPLVariable:
         """Create REPLVariable with rich DataFrame metadata.
 
@@ -159,6 +162,7 @@ class REPLVariable(pydantic.BaseModel):
             name: Variable name
             df: A pandas DataFrame
             field_info: Optional pydantic FieldInfo with desc/constraints metadata
+            preview_chars: Max characters for preview
         """
         shape = df.shape
 
@@ -197,6 +201,10 @@ class REPLVariable(pydantic.BaseModel):
             ])
 
         preview = "\n".join(preview_lines)
+
+        # Apply preview_chars limit to DataFrame previews
+        if preview_chars and len(preview) > preview_chars:
+            preview = preview[:preview_chars] + "..."
 
         # Extract desc and constraints from field_info if provided
         desc = ""

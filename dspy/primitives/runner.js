@@ -316,6 +316,8 @@ while (true) {
         // Pre-load pyarrow for parquet support (pandas needs it for read_parquet)
         await pyodide.loadPackage(["pandas", "pyarrow"]);
         // Decode base64 and write binary Parquet data
+        // Note: atob() + Uint8Array.from() creates intermediate copies.
+        // DataFrames are already size-limited to MAX_DATAFRAME_SIZE (500MB) on Python side.
         const binaryData = Uint8Array.from(atob(value), c => c.charCodeAt(0));
         pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.parquet`, binaryData);
       } else {
@@ -332,11 +334,20 @@ while (true) {
 
   if (method === "get_variable") {
     const { name } = params;
+
+    // Validate name is a valid Python identifier (not starting/ending with __)
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name) || (name.startsWith("__") && name.endsWith("__"))) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Invalid variable name: ${name}`, requestId));
+      continue;
+    }
+
     try {
-      // Get the variable from Python globals and serialize it
+      // Safe: use globals().get() with quoted string literal
       const result = pyodide.runPython(`
 import json
-_var = ${name}
+_var = globals().get(${JSON.stringify(name)})
+if _var is None and ${JSON.stringify(name)} not in globals():
+    raise NameError(f"name {${JSON.stringify(name)}!r} is not defined")
 if hasattr(_var, 'to_dict'):
     _result = json.dumps(_var.to_dict())
 elif isinstance(_var, (list, dict, str, int, float, bool, type(None))):

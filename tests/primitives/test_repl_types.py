@@ -274,51 +274,53 @@ class TestDataFrameTypeAnnotation:
             # Verify the signature was created successfully
             assert "data" in DataSig.model_fields
 
-    def test_dataframe_type_warns_on_use(self):
-        """Test warning is raised when dspy.DataFrame is used in Signature."""
+    def test_dataframe_type_warns_on_serialization(self):
+        """Test warning is raised when dspy.DataFrame is serialized (non-RLM usage)."""
         import warnings
         import dspy
         from dspy.primitives.repl_types import DataFrame
 
+        # Create signature without warning (schema creation doesn't warn)
+        class WarningSig(dspy.Signature):
+            """Test signature."""
+            df: DataFrame = dspy.InputField()
+            output: str = dspy.OutputField()
+
+        df = pd.DataFrame({"a": [1, 2, 3]})
+        instance = WarningSig.model_validate({"df": df, "output": "test"})
+
+        # Warning should be raised during serialization (non-RLM path)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-
-            class WarningSig(dspy.Signature):
-                """Test signature."""
-                df: DataFrame = dspy.InputField()
-                output: str = dspy.OutputField()
+            instance.model_dump()
 
             # Check that our warning was raised
             dataframe_warnings = [
                 warning for warning in w
-                if "dspy.DataFrame should only be used with dspy.RLM" in str(warning.message)
+                if "dspy.DataFrame is being serialized to JSON" in str(warning.message)
             ]
-            assert len(dataframe_warnings) >= 1, "Expected warning about RLM-only usage"
+            assert len(dataframe_warnings) >= 1, "Expected warning about JSON serialization"
 
     def test_dataframe_type_validates_dataframe(self):
         """Test dspy.DataFrame rejects non-DataFrame values."""
-        import warnings
         import dspy
         from dspy.primitives.repl_types import DataFrame
         import pydantic
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
+        class ValidateSig(dspy.Signature):
+            """Test signature."""
+            df: DataFrame = dspy.InputField()
+            output: str = dspy.OutputField()
 
-            class ValidateSig(dspy.Signature):
-                """Test signature."""
-                df: DataFrame = dspy.InputField()
-                output: str = dspy.OutputField()
+        # Valid DataFrame should work
+        df = pd.DataFrame({"a": [1, 2, 3]})
+        # This tests the validator accepts DataFrame
+        validated = ValidateSig.model_validate({"df": df, "output": "test"})
+        assert validated.df is df
 
-            # Valid DataFrame should work
-            df = pd.DataFrame({"a": [1, 2, 3]})
-            # This tests the validator accepts DataFrame
-            validated = ValidateSig.model_validate({"df": df, "output": "test"})
-            assert validated.df is df
-
-            # Invalid type should fail
-            with pytest.raises(pydantic.ValidationError):
-                ValidateSig.model_validate({"df": "not a dataframe", "output": "test"})
+        # Invalid type should fail
+        with pytest.raises(pydantic.ValidationError):
+            ValidateSig.model_validate({"df": "not a dataframe", "output": "test"})
 
     def test_dataframe_type_serializes_to_records(self):
         """Test dspy.DataFrame serializes to list of records."""
@@ -326,18 +328,17 @@ class TestDataFrameTypeAnnotation:
         import dspy
         from dspy.primitives.repl_types import DataFrame
 
+        class SerializeSig(dspy.Signature):
+            """Test signature."""
+            df: DataFrame = dspy.InputField()
+            output: str = dspy.OutputField()
+
+        df = pd.DataFrame({"name": ["Alice", "Bob"], "age": [25, 30]})
+        instance = SerializeSig.model_validate({"df": df, "output": "test"})
+
+        # Serialize to dict - DataFrame becomes list of records (ignore serialization warning)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-
-            class SerializeSig(dspy.Signature):
-                """Test signature."""
-                df: DataFrame = dspy.InputField()
-                output: str = dspy.OutputField()
-
-            df = pd.DataFrame({"name": ["Alice", "Bob"], "age": [25, 30]})
-            instance = SerializeSig.model_validate({"df": df, "output": "test"})
-
-            # Serialize to dict - DataFrame becomes list of records
             serialized = instance.model_dump()
-            expected = [{"name": "Alice", "age": 25}, {"name": "Bob", "age": 30}]
-            assert serialized["df"] == expected
+        expected = [{"name": "Alice", "age": 25}, {"name": "Bob", "age": 30}]
+        assert serialized["df"] == expected

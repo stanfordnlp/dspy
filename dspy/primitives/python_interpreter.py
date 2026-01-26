@@ -708,6 +708,12 @@ class PythonInterpreter:
         self._check_thread_ownership()
         self._ensure_deno_process()
 
+        # Validate the variable name before sending to sandbox
+        if not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name):
+            raise CodeInterpreterError(f"Invalid variable name: {name!r}")
+        if name.startswith("__") and name.endswith("__"):
+            raise CodeInterpreterError(f"Access to dunder variable {name!r} is not allowed")
+
         response = self._send_request("get_variable", {"name": name}, f"getting variable '{name}'")
         value = response.get("result", {}).get("value")
 

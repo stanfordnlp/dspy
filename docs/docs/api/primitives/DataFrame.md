@@ -77,10 +77,12 @@ SUBMIT(result.to_dict())
 After RLM execution, you can retrieve variables from the sandbox using `get_variable()`:
 
 ```python
-# Access the interpreter after execution
-interpreter = result._interpreter
+# Pass your own interpreter to RLM (optional, but required if you want to use get_variable)
+interpreter = dspy.PythonInterpreter()
+analyzer = dspy.RLM(DataAnalysis, interpreter=interpreter)
+result = analyzer(data=df)
 
-# Retrieve any variable that was created during execution
+# Now use the interpreter directly to retrieve variables
 chart_data = interpreter.get_variable("chart_base64")
 intermediate_df = interpreter.get_variable("filtered_data")
 ```
