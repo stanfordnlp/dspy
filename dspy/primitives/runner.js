@@ -1,7 +1,8 @@
 // Adapted from "Simon Willison's TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
 
-import pyodideModule from "npm:pyodide/pyodide.js";
+import pyodideModule from "npm:pyodide@0.29.2/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
+import { decode as decodeBase64 } from "https://deno.land/std@0.186.0/encoding/base64.ts";
 
 // =============================================================================
 // Python Code Templates
@@ -307,14 +308,56 @@ while (true) {
   }
 
   if (method === "inject_var") {
-    const { name, value } = params;
+    const { name, value, format } = params;
     try {
       try { pyodide.FS.mkdir('/tmp'); } catch (e) { /* exists */ }
       try { pyodide.FS.mkdir('/tmp/dspy_vars'); } catch (e) { /* exists */ }
-      pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
+
+      if (format === "parquet") {
+        // Pre-load pyarrow for parquet support (pandas needs it for read_parquet)
+        await pyodide.loadPackage(["pandas", "pyarrow"]);
+        // Decode base64 directly to Uint8Array (avoids intermediate string copy from atob)
+        const binaryData = decodeBase64(value);
+        pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.parquet`, binaryData);
+      } else {
+        // Default: write JSON as text
+        pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
+      }
+
       console.log(jsonrpcResult({ injected: name }, requestId));
     } catch (e) {
       console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to inject var: ${e.message}`, requestId));
+    }
+    continue;
+  }
+
+  if (method === "get_variable") {
+    const { name } = params;
+
+    // Validate name is a valid Python identifier (not starting/ending with __)
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name) || (name.startsWith("__") && name.endsWith("__"))) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Invalid variable name: ${name}`, requestId));
+      continue;
+    }
+
+    try {
+      // Safe: use globals().get() with quoted string literal
+      const result = pyodide.runPython(`
+import json
+_var = globals().get(${JSON.stringify(name)})
+if _var is None and ${JSON.stringify(name)} not in globals():
+    raise NameError(f"name {${JSON.stringify(name)}!r} is not defined")
+if hasattr(_var, 'to_dict'):
+    _result = json.dumps(_var.to_dict())
+elif isinstance(_var, (list, dict, str, int, float, bool, type(None))):
+    _result = json.dumps(_var)
+else:
+    _result = str(_var)
+_result
+`);
+      console.log(jsonrpcResult({ value: result }, requestId));
+    } catch (e) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to get variable '${name}': ${e.message}`, requestId));
     }
     continue;
   }

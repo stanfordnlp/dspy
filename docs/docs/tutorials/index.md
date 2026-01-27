@@ -23,6 +23,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Multi-Hop RAG](multihop_search/index.ipynb)
     - [Privacy-Conscious Delegation](papillon/index.md)
     - [Program Of Thought](program_of_thought/index.ipynb)
+    - [DataFrames with RLM](dataframes_rlm/index.ipynb)
     - [Image Generation Prompt iteration](image_generation_prompting/index.ipynb)
     - [Audio](audio/index.ipynb)
 
