@@ -288,6 +288,11 @@ class GEPA(Teleprompter):
             for dspy.ReAct modules. See the
             [Tool Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#tool-optimization)
             for details on when to use this feature and how it works. Default is False.
+        use_full_trace_reflection: Whether to use full trace reflection mode. When enabled, GEPA reflects
+            on the entire agent trajectory (all predictor calls) instead of selecting specific parts of the
+            trace. The candidate is also serialized as a single JSON object, allowing the reflection model
+            to propose updates to all components at once based on the full execution context. This is inspired
+            by the full program adapter approach. Default is False (current behavior).
         seed: The random seed to use for reproducibility. Default is 0.
         gepa_kwargs: (Optional) Additional keyword arguments to pass directly to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py).
             Useful for accessing advanced GEPA features not directly exposed through DSPy's GEPA interface.
@@ -372,6 +377,7 @@ class GEPA(Teleprompter):
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
         enable_tool_optimization: bool = False,
+        use_full_trace_reflection: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -430,6 +436,7 @@ class GEPA(Teleprompter):
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.enable_tool_optimization = enable_tool_optimization
+        self.use_full_trace_reflection = use_full_trace_reflection
         self.use_mlflow = use_mlflow
 
         if track_best_outputs:
@@ -454,8 +461,13 @@ class GEPA(Teleprompter):
 
         For regular predictors, uses their signature instructions directly.
 
+        When use_full_trace_reflection is enabled, the entire candidate is serialized as a single
+        JSON object under the key "candidate_config", allowing the reflection model to propose
+        updates to all components at once based on the full execution context.
+
         Returns:
             A dictionary mapping component names to their text representations (instructions or JSON configs).
+            In full trace mode, returns {"candidate_config": <json string of all components>}.
         """
         seed_candidate = {}
         claimed_predictor_names = set()
@@ -514,6 +526,12 @@ class GEPA(Teleprompter):
         for name, pred in student.named_predictors():
             if name not in claimed_predictor_names:
                 seed_candidate[name] = pred.signature.instructions
+
+        # In full trace reflection mode, serialize the entire candidate as a single JSON object
+        if self.use_full_trace_reflection:
+            from dspy.teleprompt.gepa.gepa_utils import FULL_TRACE_CANDIDATE_KEY
+
+            return {FULL_TRACE_CANDIDATE_KEY: json.dumps(seed_candidate, indent=2)}
 
         return seed_candidate
 
@@ -641,6 +659,7 @@ class GEPA(Teleprompter):
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             enable_tool_optimization=self.enable_tool_optimization,
+            use_full_trace_reflection=self.use_full_trace_reflection,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
