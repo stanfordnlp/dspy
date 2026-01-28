@@ -37,6 +37,36 @@ def _default_instructions(cls) -> str:
     return f"Given the fields {inputs_}, produce the fields {outputs_}."
 
 
+class CodeVerifier:
+    """
+    Static analysis tool to verify generated Python code.
+    Addresses DSPy Issue #9152.
+    """
+
+    @staticmethod
+    def verify(code_string: str, input_vars: list[str]) -> dict:
+        report = {"is_valid": True, "errors": [], "warnings": [], "imports": []}
+        try:
+            tree = ast.parse(code_string)
+
+            found_names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+            for var in input_vars:
+                if var not in found_names:
+                    report["warnings"].append(f"Input variable '{var}' missing.")
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    report["imports"].extend([n.name for n in node.names])
+                elif isinstance(node, ast.ImportFrom):
+                    report["imports"].append(node.module)
+
+        except SyntaxError as e:
+            report["is_valid"] = False
+            report["errors"].append(f"Syntax Error: {e!s}")
+
+        return report
+
+
 class SignatureMeta(type(BaseModel)):
     def __call__(cls, *args, **kwargs):
         if cls is Signature:
@@ -141,6 +171,7 @@ class SignatureMeta(type(BaseModel)):
         if sys.version_info >= (3, 14):
             try:
                 import annotationlib
+
                 # Try to get from explicit __annotations__ first (e.g., from __future__ import annotations)
                 raw_annotations = namespace.get("__annotations__")
 
@@ -149,8 +180,7 @@ class SignatureMeta(type(BaseModel)):
                     annotate_func = annotationlib.get_annotate_from_class_namespace(namespace)
                     if annotate_func:
                         raw_annotations = annotationlib.call_annotate_function(
-                            annotate_func,
-                            format=annotationlib.Format.FORWARDREF
+                            annotate_func, format=annotationlib.Format.FORWARDREF
                         )
                     else:
                         raw_annotations = {}
@@ -204,11 +234,14 @@ class SignatureMeta(type(BaseModel)):
         for name, field in cls.model_fields.items():
             extra = field.json_schema_extra or {}
             field_type = extra.get("__dspy_field_type")
+
             if field_type not in ["input", "output"]:
                 raise TypeError(
-                    f"Field `{name}` in `{cls.__name__}` must be declared with InputField or OutputField, but "
-                    f"field `{name}` has `field.json_schema_extra={field.json_schema_extra}`",
+                    f"Field `{name}` in `{cls.__name__}` must be declared with InputField or OutputField..."
                 )
+
+            if "Code" in str(field.annotation):
+                field.json_schema_extra["__require_verification"] = True
 
     @property
     def instructions(cls) -> str:
