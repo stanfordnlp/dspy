@@ -191,10 +191,8 @@ class PythonInterpreter:
                 allowed_net = [str(x) for x in self.enable_network_access]
                 args.append(f"--allow-net={','.join(allowed_net)}")
 
-            # Write paths: Deno cache (for Pyodide package caching) + user-specified paths
+            # Write paths: user-specified paths only
             allowed_write_paths = []
-            if deno_dir:
-                allowed_write_paths.append(deno_dir)
             if self.enable_write_paths:
                 allowed_write_paths.extend(str(p) for p in self.enable_write_paths)
             if allowed_write_paths:
