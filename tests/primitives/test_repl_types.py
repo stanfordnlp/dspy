@@ -319,7 +319,10 @@ class TestDataFrameTypeAnnotation:
         df = pd.DataFrame({"a": [1, 2, 3]})
         # This tests the validator accepts DataFrame
         validated = ValidateSig.model_validate({"df": df, "output": "test"})
-        assert validated.df is df
+        # DataFrame is wrapped, check the underlying data
+        assert validated.df.data is df
+        # Attribute proxy should work
+        assert validated.df.shape == (3, 1)
 
         # Invalid type should fail
         with pytest.raises(pydantic.ValidationError):

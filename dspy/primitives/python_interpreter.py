@@ -44,6 +44,20 @@ def _is_dataframe(value: Any) -> bool:
     type_name = type(value).__name__
     return type_module.startswith("pandas") and type_name == "DataFrame"
 
+
+def _unwrap_dataframe(value: Any) -> Any:
+    """Unwrap dspy.DataFrame to pandas.DataFrame if needed.
+
+    Handles both raw pandas DataFrames and dspy.DataFrame wrappers.
+    """
+    # Check if it's a dspy.DataFrame wrapper (avoid importing to prevent circular deps)
+    if (hasattr(value, '__class__') and
+        value.__class__.__name__ == 'DataFrame' and
+        hasattr(value, 'data') and
+        _is_dataframe(value.data)):
+        return value.data
+    return value
+
 # =============================================================================
 # JSON-RPC 2.0 Helpers
 # =============================================================================
@@ -498,6 +512,8 @@ class PythonInterpreter:
         small_assignments = []
 
         for k, v in variables.items():
+            # Unwrap dspy.DataFrame to pandas.DataFrame if needed
+            v = _unwrap_dataframe(v)
             if _is_dataframe(v):
                 # DataFrames use Parquet injection
                 dataframe_vars[k] = self._serialize_dataframe_to_parquet(v, k)

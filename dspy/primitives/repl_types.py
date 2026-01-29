@@ -10,76 +10,18 @@ These types represent the state and history of REPL-based execution:
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Annotated, Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 import pydantic
-from pydantic import Field, GetCoreSchemaHandler
-from pydantic_core import CoreSchema, core_schema
+from pydantic import Field
 
+from dspy.adapters.types.dataframe import DataFrame
 from dspy.adapters.utils import serialize_for_json
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
 
 __all__ = ["REPLVariable", "REPLEntry", "REPLHistory", "DataFrame"]
-
-
-class _DataFrameAnnotation:
-    """Pydantic-compatible annotation for pandas DataFrames.
-
-    This class provides the __get_pydantic_core_schema__ method that tells
-    Pydantic how to validate and serialize pandas DataFrames, without
-    requiring arbitrary_types_allowed=True globally.
-
-    WARNING: dspy.DataFrame should only be used with dspy.RLM, which provides
-    a Python sandbox where the DataFrame is available for code execution.
-    Other modules (ChainOfThought, Predict, etc.) will only see a string
-    representation of the DataFrame, not the actual data.
-    """
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: GetCoreSchemaHandler
-    ) -> CoreSchema:
-        """Return a Pydantic core schema that accepts any DataFrame instance."""
-
-        def validate_dataframe(value: Any) -> Any:
-            if not _is_dataframe(value):
-                raise ValueError(f"Expected a pandas DataFrame, got {type(value).__name__}")
-            return value
-
-        def serialize_dataframe(x: Any) -> list:
-            import warnings
-
-            warnings.warn(
-                "dspy.DataFrame is being serialized to JSON. "
-                "Only dspy.RLM preserves DataFrame data; other modules receive a string representation.",
-                UserWarning,
-                stacklevel=6,
-            )
-            return x.to_dict(orient="records")
-
-        return core_schema.no_info_plain_validator_function(
-            validate_dataframe,
-            serialization=core_schema.plain_serializer_function_ser_schema(
-                serialize_dataframe,
-                info_arg=False,
-            ),
-        )
-
-
-# Type alias for use in DSPy Signatures: `dataframe: dspy.DataFrame = dspy.InputField()`
-# This uses Annotated to attach the Pydantic schema handler to the pandas DataFrame type
-#
-# WARNING: dspy.DataFrame should only be used with dspy.RLM, which provides a Python
-# sandbox where the DataFrame is available for code execution. Other modules
-# (ChainOfThought, Predict, etc.) will only see a string representation.
-try:
-    import pandas as pd
-    DataFrame = Annotated[pd.DataFrame, _DataFrameAnnotation()]
-except ImportError:
-    # If pandas is not installed, create a placeholder that will fail gracefully
-    DataFrame = Any
 
 
 def _is_dataframe(value: Any) -> bool:
