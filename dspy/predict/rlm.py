@@ -185,7 +185,7 @@ class RLM(Module):
                 sig_str = f"{name}(...)"
 
             # Get first line of docstring
-            doc = func.__doc__.strip().split("\n")[0] if func.__doc__ else "No description"
+            doc = func.__doc__.strip() if func.__doc__ else "No description"
             lines.append(f"- `{sig_str}` - {doc}")
 
         return "\n".join(lines)

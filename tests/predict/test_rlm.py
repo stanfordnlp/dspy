@@ -584,6 +584,30 @@ class TestPythonInterpreter:
             )
             assert "15" in result
 
+    def test_variable_injection_with_none_values(self):
+        """Test variable injection with None values in dicts/lists (JSON null -> Python None)."""
+        with PythonInterpreter(tools={}) as interp:
+            # Test None in dict
+            result = interp.execute(
+                "print(data['key'] is None)",
+                variables={"data": {"key": None, "other": "value"}}
+            )
+            assert "True" in result
+
+            # Test None in list
+            result = interp.execute(
+                "print(items[1] is None)",
+                variables={"items": [1, None, 3]}
+            )
+            assert "True" in result
+
+            # Test nested None
+            result = interp.execute(
+                "print(nested['inner']['value'] is None)",
+                variables={"nested": {"inner": {"value": None}}}
+            )
+            assert "True" in result
+
     def test_tool_call_kwargs(self):
         """Test tool call with keyword arguments."""
         def echo(message: str = "") -> str:

@@ -416,17 +416,37 @@ class PythonInterpreter:
         return "\n".join(assignments) + "\n" + code if assignments else code
 
     def _serialize_value(self, value: Any) -> str:
-        """Serialize a Python value to a string representation for injection."""
+        """Serialize a Python value to a Python literal string for injection."""
         if value is None:
             return "None"
         elif isinstance(value, str):
             return repr(value)
         elif isinstance(value, bool):
-            return str(value)
+            # Must check bool before int since bool is a subclass of int
+            return "True" if value else "False"
         elif isinstance(value, (int, float)):
             return str(value)
-        elif isinstance(value, (list, dict, tuple, set)):
-            return json.dumps(self._to_json_compatible(value))
+        elif isinstance(value, list):
+            items = ", ".join(self._serialize_value(item) for item in value)
+            return f"[{items}]"
+        elif isinstance(value, dict):
+            items = ", ".join(
+                f"{self._serialize_value(k)}: {self._serialize_value(v)}"
+                for k, v in value.items()
+            )
+            return f"{{{items}}}"
+        elif isinstance(value, tuple):
+            if len(value) == 0:
+                return "()"
+            elif len(value) == 1:
+                return f"({self._serialize_value(value[0])},)"
+            items = ", ".join(self._serialize_value(item) for item in value)
+            return f"({items})"
+        elif isinstance(value, set):
+            if not value:
+                return "set()"
+            items = ", ".join(self._serialize_value(item) for item in value)
+            return f"{{{items}}}"
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
