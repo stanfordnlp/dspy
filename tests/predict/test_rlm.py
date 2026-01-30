@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 import pytest
 
+from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
@@ -143,7 +144,7 @@ class TestRLMInitialization:
         def custom_tool(x: str = "") -> str:
             return x.upper()
 
-        rlm = RLM("context -> answer", max_iterations=5, tools={"custom_tool": custom_tool})
+        rlm = RLM("context -> answer", max_iterations=5, tools=[custom_tool])
         assert "custom_tool" in rlm.tools
         assert len(rlm.tools) == 1  # Only user tools, not internal llm_query/llm_query_batched
 
@@ -153,8 +154,9 @@ class TestRLMInitialization:
         def my_tool() -> str:
             return "result"
 
+        tool = Tool(my_tool, name=tool_name)
         with pytest.raises(ValueError, match="must be a valid Python identifier"):
-            RLM("context -> answer", tools={tool_name: my_tool})
+            RLM("context -> answer", tools=[tool])
 
     @pytest.mark.parametrize("tool_name", ["llm_query", "SUBMIT", "print"])
     def test_tool_validation_reserved_names(self, tool_name):
@@ -162,14 +164,23 @@ class TestRLMInitialization:
         def my_tool() -> str:
             return "result"
 
+        tool = Tool(my_tool, name=tool_name)
         with pytest.raises(ValueError, match="conflicts with built-in"):
-            RLM("context -> answer", tools={tool_name: my_tool})
+            RLM("context -> answer", tools=[tool])
 
     @pytest.mark.parametrize("invalid_value", ["not a function", 123])
     def test_tool_validation_not_callable(self, invalid_value):
         """Test RLM rejects tools that aren't callable."""
         with pytest.raises(TypeError, match="must be callable"):
-            RLM("context -> answer", tools={"my_tool": invalid_value})
+            RLM("context -> answer", tools=[invalid_value])
+
+    def test_tools_dict_rejected(self):
+        """Test RLM rejects dict format for tools with helpful error."""
+        def my_tool() -> str:
+            return "result"
+
+        with pytest.raises(TypeError, match="tools must be a list, not a dict"):
+            RLM("context -> answer", tools={"my_tool": my_tool})
 
     def test_optional_parameters(self):
         """Test RLM optional parameters and their defaults."""
@@ -488,7 +499,7 @@ class TestRLMToolExceptions:
             CodeInterpreterError("RuntimeError: Tool failed!"),
             FinalOutput({"answer": "recovered"}),
         ])
-        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock, tools={"failing_tool": failing_tool})
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock, tools=[failing_tool])
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Call tool", "code": "failing_tool()"},
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
@@ -997,7 +1008,7 @@ class TestRLMWithDummyLM:
         with dummy_lm_context([
             {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
         ]):
-            rlm = RLM("fruit -> color: str", max_iterations=3, tools={"lookup": lookup})
+            rlm = RLM("fruit -> color: str", max_iterations=3, tools=[lookup])
             result = rlm.forward(fruit="apple")
 
             assert result.color == "red"
