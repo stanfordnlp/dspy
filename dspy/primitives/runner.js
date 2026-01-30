@@ -331,37 +331,6 @@ while (true) {
     continue;
   }
 
-  if (method === "get_variable") {
-    const { name } = params;
-
-    // Validate name is a valid Python identifier (not starting/ending with __)
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name) || (name.startsWith("__") && name.endsWith("__"))) {
-      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Invalid variable name: ${name}`, requestId));
-      continue;
-    }
-
-    try {
-      // Safe: use globals().get() with quoted string literal
-      const result = pyodide.runPython(`
-import json
-_var = globals().get(${JSON.stringify(name)})
-if _var is None and ${JSON.stringify(name)} not in globals():
-    raise NameError(f"name {${JSON.stringify(name)}!r} is not defined")
-if hasattr(_var, 'to_dict'):
-    _result = json.dumps(_var.to_dict())
-elif isinstance(_var, (list, dict, str, int, float, bool, type(None))):
-    _result = json.dumps(_var)
-else:
-    _result = str(_var)
-_result
-`);
-      console.log(jsonrpcResult({ value: result }, requestId));
-    } catch (e) {
-      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to get variable '${name}': ${e.message}`, requestId));
-    }
-    continue;
-  }
-
   if (method === "execute") {
     const code = params.code || "";
     let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully

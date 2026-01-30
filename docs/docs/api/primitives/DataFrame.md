@@ -72,26 +72,6 @@ result = data.groupby('category')['value'].mean()
 SUBMIT(result.to_dict())
 ```
 
-## Retrieving Variables After Execution
-
-After RLM execution, you can retrieve variables from the sandbox using `get_variable()`:
-
-```python
-# Pass your own interpreter to RLM (optional, but required if you want to use get_variable)
-interpreter = dspy.PythonInterpreter()
-analyzer = dspy.RLM(DataAnalysis, interpreter=interpreter)
-result = analyzer(data=df)
-
-# Now use the interpreter directly to retrieve variables
-chart_data = interpreter.get_variable("chart_base64")
-intermediate_df = interpreter.get_variable("filtered_data")
-```
-
-This is useful for retrieving:
-- Base64-encoded images from matplotlib charts
-- Intermediate DataFrames created during analysis
-- Any other computed values not included in SUBMIT
-
 ## Limitations
 
 - Maximum DataFrame size: 500MB (serialized)

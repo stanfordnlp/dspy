@@ -1122,20 +1122,6 @@ class TestRLMWithDataFrame:
         assert "int64" in result.dtype_info
         assert "float64" in result.dtype_info
 
-    def test_get_variable_after_rlm(self):
-        """Test using get_variable to retrieve data after RLM execution."""
-        with PythonInterpreter() as interp:
-            # Simulate what RLM does: execute code that creates variables
-            interp.execute("computed_value = 42 * 2")
-            interp.execute("computed_list = [i**2 for i in range(5)]")
-
-            # Retrieve variables that weren't SUBMITted
-            value = interp.get_variable("computed_value")
-            computed_list = interp.get_variable("computed_list")
-
-            assert value == 84
-            assert computed_list == [0, 1, 4, 9, 16]
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

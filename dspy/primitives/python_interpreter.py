@@ -704,41 +704,6 @@ class PythonInterpreter:
     ) -> Any:
         return self.execute(code, variables)
 
-    def get_variable(self, name: str) -> Any:
-        """Retrieve a variable's value from the sandbox.
-
-        This can be used after RLM execution to retrieve values like
-        base64-encoded images that were generated but not SUBMITted.
-
-        Args:
-            name: The variable name to retrieve from the sandbox.
-
-        Returns:
-            The variable's value (JSON-deserialized if possible, else string).
-
-        Raises:
-            CodeInterpreterError: If the variable doesn't exist or can't be retrieved.
-        """
-        self._check_thread_ownership()
-        self._ensure_deno_process()
-
-        # Validate the variable name before sending to sandbox
-        if not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name):
-            raise CodeInterpreterError(f"Invalid variable name: {name!r}")
-        if name.startswith("__") and name.endswith("__"):
-            raise CodeInterpreterError(f"Access to dunder variable {name!r} is not allowed")
-
-        response = self._send_request("get_variable", {"name": name}, f"getting variable '{name}'")
-        value = response.get("result", {}).get("value")
-
-        # Try to JSON-deserialize the value
-        if value is not None:
-            try:
-                return json.loads(value)
-            except (json.JSONDecodeError, TypeError):
-                return value
-        return value
-
     def shutdown(self) -> None:
         if self.deno_process and self.deno_process.poll() is None:
             self.deno_process.stdin.write(_jsonrpc_notification("shutdown") + "\n")
