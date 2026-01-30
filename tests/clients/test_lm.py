@@ -727,11 +727,11 @@ def test_responses_api_converts_images_correctly():
                         "type": "image_url",
                         "image_url": {
                             "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-                        }
-                    }
-                ]
+                        },
+                    },
+                ],
             }
-        ]
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_base64_image)
@@ -749,24 +749,17 @@ def test_responses_api_converts_images_correctly():
 
     # Second item should be converted to input_image format
     assert content[1]["type"] == "input_image"
-    assert content[1]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    assert (
+        content[1]["image_url"]
+        == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
 
     # Test with URL image
     request_with_url_image = {
         "model": "openai/gpt-5-mini",
         "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": "https://example.com/image.jpg"
-                        }
-                    }
-                ]
-            }
-        ]
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}]}
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_url_image)
@@ -793,11 +786,11 @@ def test_responses_api_converts_files_correctly():
                         "file": {
                             "file_data": "data:text/plain;base64,SGVsbG8gV29ybGQ=",
                             "filename": "test.txt",
-                        }
-                    }
-                ]
+                        },
+                    },
+                ],
             }
-        ]
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_file)
@@ -830,11 +823,11 @@ def test_responses_api_converts_files_correctly():
                         "file": {
                             "file_id": "file-abc123",
                             "filename": "document.pdf",
-                        }
+                        },
                     }
-                ]
+                ],
             }
-        ]
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_file_id)
@@ -858,11 +851,11 @@ def test_responses_api_converts_files_correctly():
                             "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
                             "file_id": "file-xyz789",
                             "filename": "report.pdf",
-                        }
+                        },
                     }
-                ]
+                ],
             }
-        ]
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_all_fields)
@@ -910,9 +903,9 @@ def test_responses_api_with_image_input():
                         "type": "image_url",
                         "image_url": {
                             "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-                        }
-                    }
-                ]
+                        },
+                    },
+                ],
             }
         ]
 
@@ -930,7 +923,10 @@ def test_responses_api_with_image_input():
         # Check that image was converted to input_image format
         image_content = [c for c in content if c.get("type") == "input_image"]
         assert len(image_content) == 1
-        assert image_content[0]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        assert (
+            image_content[0]["image_url"]
+            == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
 
 
 def test_responses_api_with_pydantic_model_input():
