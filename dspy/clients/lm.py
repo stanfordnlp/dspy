@@ -306,6 +306,7 @@ def _get_stream_completion_fn(
     request: dict[str, Any],
     cache_kwargs: dict[str, Any],
     sync=True,
+    headers: dict[str, Any] | None = None,
 ):
     stream = dspy.settings.send_stream
     caller_predict = dspy.settings.caller_predict
@@ -320,12 +321,13 @@ def _get_stream_completion_fn(
     if dspy.settings.track_usage:
         request["stream_options"] = {"include_usage": True}
 
+    headers = _get_headers(headers)
+
     async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
-        headers = request.pop("headers", None)
         response = await litellm.acompletion(
             cache=cache_kwargs,
             stream=True,
-            headers=_get_headers(headers),
+            headers=headers,
             **request,
         )
         chunks = []
@@ -355,7 +357,7 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     request = dict(request)
     request.pop("rollout_id", None)
     headers = request.pop("headers", None)
-    stream_completion = _get_stream_completion_fn(request, cache, sync=True)
+    stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers)
     if stream_completion is None:
         return litellm.completion(
             cache=cache,
