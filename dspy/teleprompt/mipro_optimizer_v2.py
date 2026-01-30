@@ -1,7 +1,7 @@
 import logging
 import random
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import numpy as np
 
@@ -19,6 +19,7 @@ from dspy.teleprompt.utils import (
     save_candidate_program,
     set_signature,
 )
+from dspy.primitives import Module
 
 if TYPE_CHECKING:
     import optuna
@@ -42,6 +43,8 @@ GREEN = "\033[92m"
 BLUE = "\033[94m"
 BOLD = "\033[1m"
 ENDC = "\033[0m"  # Resets the color to default
+
+M = TypeVar("M", bound=Module)
 
 
 class MIPROv2(Teleprompter):
@@ -91,11 +94,13 @@ class MIPROv2(Teleprompter):
         self.rng = None
 
         if not self.prompt_model or not self.task_model:
-            raise ValueError("Either provide both prompt_model and task_model or set a default LM through dspy.configure(lm=...)")
+            raise ValueError(
+                "Either provide both prompt_model and task_model or set a default LM through dspy.configure(lm=...)"
+            )
 
     def compile(
         self,
-        student: Any,
+        student: M,
         *,
         trainset: list,
         teacher: Any = None,
@@ -112,28 +117,22 @@ class MIPROv2(Teleprompter):
         view_data_batch_size: int = 10,
         tip_aware_proposer: bool = True,
         fewshot_aware_proposer: bool = True,
-        requires_permission_to_run: bool | None = None, # deprecated
+        requires_permission_to_run: bool | None = None,  # deprecated
         provide_traceback: bool | None = None,
-    ) -> Any:
+    ) -> M:
         if requires_permission_to_run == False:
-            logger.warning(
-                "'requires_permission_to_run' is deprecated and will be removed in a future version."
-            )
+            logger.warning("'requires_permission_to_run' is deprecated and will be removed in a future version.")
         elif requires_permission_to_run == True:
-            raise ValueError("User confirmation is removed from MIPROv2. Please remove the 'requires_permission_to_run' argument.")
+            raise ValueError(
+                "User confirmation is removed from MIPROv2. Please remove the 'requires_permission_to_run' argument."
+            )
 
-        effective_max_errors = (
-            self.max_errors
-            if self.max_errors is not None
-            else dspy.settings.max_errors
-        )
+        effective_max_errors = self.max_errors if self.max_errors is not None else dspy.settings.max_errors
 
         effective_max_bootstrapped_demos = (
             max_bootstrapped_demos if max_bootstrapped_demos is not None else self.max_bootstrapped_demos
         )
-        effective_max_labeled_demos = (
-            max_labeled_demos if max_labeled_demos is not None else self.max_labeled_demos
-        )
+        effective_max_labeled_demos = max_labeled_demos if max_labeled_demos is not None else self.max_labeled_demos
 
         zeroshot_opt = (effective_max_bootstrapped_demos == 0) and (effective_max_labeled_demos == 0)
 
@@ -157,19 +156,14 @@ class MIPROv2(Teleprompter):
         seed = seed or self.seed
         self._set_random_seeds(seed)
 
-
         # Set training & validation sets
         trainset, valset = self._set_and_validate_datasets(trainset, valset)
 
         num_instruct_candidates = (
-            self.num_instruct_candidates
-            if self.num_instruct_candidates is not None
-            else self.num_candidates
+            self.num_instruct_candidates if self.num_instruct_candidates is not None else self.num_candidates
         )
         num_fewshot_candidates = (
-            self.num_fewshot_candidates
-            if self.num_fewshot_candidates is not None
-            else self.num_candidates
+            self.num_fewshot_candidates if self.num_fewshot_candidates is not None else self.num_candidates
         )
 
         # Set hyperparameters based on run mode (if set)
@@ -419,9 +413,7 @@ class MIPROv2(Teleprompter):
             num_candidate_sets=num_fewshot_candidates,
             trainset=trainset,
             max_labeled_demos=(LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else max_labeled_demos),
-            max_bootstrapped_demos=(
-                BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else max_bootstrapped_demos
-            ),
+            max_bootstrapped_demos=(BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT if zeroshot else max_bootstrapped_demos),
             metric=self.metric,
             max_errors=max_errors,
             teacher=teacher,
