@@ -8,13 +8,15 @@ Test organization:
 
 from contextlib import contextmanager
 
+import pandas as pd
 import pytest
 
+import dspy
 from dspy.predict.rlm import RLM
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
+from dspy.primitives.repl_types import DataFrame, REPLEntry, REPLHistory, REPLVariable
 from tests.mock_interpreter import MockInterpreter
 
 # ============================================================================
@@ -173,8 +175,6 @@ class TestRLMInitialization:
 
     def test_optional_parameters(self):
         """Test RLM optional parameters and their defaults."""
-        import dspy
-
         # Test defaults
         rlm = RLM("context -> answer")
         assert rlm.max_llm_calls == 50
@@ -389,8 +389,6 @@ class TestREPLTypes:
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""
-        import dspy
-
         # Create a field with description and constraints
         field = dspy.InputField(desc="The user's question", ge=0, le=100)
 
@@ -416,8 +414,6 @@ class TestREPLTypes:
 
     def test_build_variables_includes_field_metadata(self):
         """Test _build_variables passes field_info to REPLVariable."""
-        import dspy
-
         class QASig(dspy.Signature):
             """Answer questions."""
             context: str = dspy.InputField(desc="Background information")
@@ -1073,18 +1069,10 @@ class TestRLMWithDataFrame:
 
     def test_dataframe_input_basic(self):
         """Test RLM with DataFrame input field."""
-        import warnings
-
-        import dspy
-        from dspy.primitives.repl_types import DataFrame
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-
-            class DataAnalysis(dspy.Signature):
-                """Analyze the data."""
-                data: DataFrame = dspy.InputField()
-                row_count: int = dspy.OutputField()
+        class DataAnalysis(dspy.Signature):
+            """Analyze the data."""
+            data: DataFrame = dspy.InputField()
+            row_count: int = dspy.OutputField()
 
         df = pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 20, 30, 40, 50]})
 
@@ -1098,18 +1086,10 @@ class TestRLMWithDataFrame:
 
     def test_dataframe_column_operations(self):
         """Test RLM performing pandas operations on DataFrame."""
-        import warnings
-
-        import dspy
-        from dspy.primitives.repl_types import DataFrame
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-
-            class SumColumn(dspy.Signature):
-                """Sum a column."""
-                df: DataFrame = dspy.InputField()
-                total: int = dspy.OutputField()
+        class SumColumn(dspy.Signature):
+            """Sum a column."""
+            df: DataFrame = dspy.InputField()
+            total: int = dspy.OutputField()
 
         df = pd.DataFrame({"value": [10, 20, 30, 40]})
 
@@ -1126,8 +1106,6 @@ class TestRLMWithDataFrame:
         df = pd.DataFrame({"x": [1, 2, 3]})
 
         # Using interpreter directly to avoid Pydantic schema issues with string sig
-        from dspy.primitives.python_interpreter import PythonInterpreter
-
         with PythonInterpreter() as interp:
             result = interp.execute(
                 "len(my_df)",
@@ -1137,18 +1115,10 @@ class TestRLMWithDataFrame:
 
     def test_dataframe_dtypes_preserved(self):
         """Test that DataFrame dtypes are preserved through RLM pipeline."""
-        import warnings
-
-        import dspy
-        from dspy.primitives.repl_types import DataFrame
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-
-            class CheckDtypes(dspy.Signature):
-                """Check dtypes."""
-                df: DataFrame = dspy.InputField()
-                dtype_info: str = dspy.OutputField()
+        class CheckDtypes(dspy.Signature):
+            """Check dtypes."""
+            df: DataFrame = dspy.InputField()
+            dtype_info: str = dspy.OutputField()
 
         df = pd.DataFrame({
             "int_col": pd.array([1, 2, 3], dtype="int64"),
@@ -1166,8 +1136,6 @@ class TestRLMWithDataFrame:
 
     def test_get_variable_after_rlm(self):
         """Test using get_variable to retrieve data after RLM execution."""
-        from dspy.primitives.python_interpreter import PythonInterpreter
-
         with PythonInterpreter() as interp:
             # Simulate what RLM does: execute code that creates variables
             interp.execute("computed_value = 42 * 2")
