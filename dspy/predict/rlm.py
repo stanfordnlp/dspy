@@ -10,7 +10,6 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 
 from __future__ import annotations
 
-import inspect
 import logging
 import re
 import threading
@@ -21,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
+from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalOutput
 from dspy.primitives.module import Module
@@ -105,7 +105,7 @@ class RLM(Module):
         max_llm_calls: int = 50,
         max_output_chars: int = 100_000,
         verbose: bool = False,
-        tools: dict[str, Callable[..., str]] | None = None,
+        tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
         interpreter: CodeInterpreter | None = None,
     ):
@@ -117,7 +117,7 @@ class RLM(Module):
             max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched) per execution.
             max_output_chars: Maximum characters to include from REPL output.
             verbose: Whether to log detailed execution info.
-            tools: Additional tool functions callable from interpreter code.
+            tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
             sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
@@ -131,7 +131,7 @@ class RLM(Module):
         self.verbose = verbose
         self.sub_lm = sub_lm
         self._interpreter = interpreter
-        self._user_tools = tools or {}
+        self._user_tools = self._normalize_tools(tools)
         self._validate_tools(self._user_tools)
 
         # Build the action and extract signatures
@@ -146,47 +146,55 @@ class RLM(Module):
     # Reserved tool names that conflict with built-in sandbox functions
     _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
 
-    def _validate_tools(self, tools: dict[str, Callable]) -> None:
-        """Validate user-provided tools have valid names and are callable."""
-        for name, func in tools.items():
+    def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
+        """Normalize tools list to a dict of Tool objects keyed by name."""
+        if not tools:
+            return {}
+
+        if isinstance(tools, dict):
+            raise TypeError(
+                "tools must be a list, not a dict. "
+                "Change tools={'name': func} to tools=[func] "
+                "(tool names are inferred from function names, or use dspy.Tool(func, name='custom_name'))"
+            )
+
+        def to_tool(func: Callable | Tool) -> Tool:
+            if isinstance(func, Tool):
+                return func
+            if not callable(func):
+                raise TypeError(f"Tool {func!r} must be callable, got {type(func).__name__}")
+            return Tool(func)
+
+        # List of callables/Tools -> normalize to Tool objects
+        tool_list = [to_tool(t) for t in tools]
+        return {tool.name: tool for tool in tool_list}
+
+    def _validate_tools(self, tools: dict[str, Tool]) -> None:
+        """Validate user-provided tools have valid names."""
+        for name, tool in tools.items():
             if not name.isidentifier():
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier")
             if name in self._RESERVED_TOOL_NAMES:
                 raise ValueError(f"Tool name '{name}' conflicts with built-in sandbox function")
-            if not callable(func):
-                raise TypeError(f"Tool '{name}' must be callable, got {type(func).__name__}")
 
-    def _format_tool_docs(self, tools: dict[str, Callable]) -> str:
+    def _format_tool_docs(self, tools: dict[str, Tool]) -> str:
         """Format user-provided tools for inclusion in instructions."""
         if not tools:
             return ""
 
         lines = ["\nAdditional tools available (use these instead of standard library equivalents):"]
-        for name, func in tools.items():
-            # Get function signature with return type
-            try:
-                sig = inspect.signature(func)
-                params = []
-                for p in sig.parameters.values():
-                    if p.annotation != inspect.Parameter.empty:
-                        type_name = getattr(p.annotation, "__name__", str(p.annotation))
-                        params.append(f"{p.name}: {type_name}")
-                    else:
-                        params.append(p.name)
-                params_str = ", ".join(params)
+        for tool in tools.values():
+            # Build signature string from Tool's args
+            params = []
+            for arg_name, arg_schema in (tool.args or {}).items():
+                arg_type = arg_schema.get("type", "Any")
+                params.append(f"{arg_name}: {arg_type}")
+            params_str = ", ".join(params)
+            sig_str = f"{tool.name}({params_str})"
 
-                # Get return type
-                if sig.return_annotation != inspect.Parameter.empty:
-                    ret_type = getattr(sig.return_annotation, "__name__", str(sig.return_annotation))
-                    sig_str = f"{name}({params_str}) -> {ret_type}"
-                else:
-                    sig_str = f"{name}({params_str})"
-            except (ValueError, TypeError):
-                sig_str = f"{name}(...)"
-
-            # Get first line of docstring
-            doc = func.__doc__.strip().split("\n")[0] if func.__doc__ else "No description"
-            lines.append(f"- `{sig_str}` - {doc}")
+            # Get description with newlines escaped
+            desc = (tool.desc or "No description").replace("\n", "  ")
+            lines.append(f"- `{sig_str}` - {desc}")
 
         return "\n".join(lines)
 
@@ -244,7 +252,7 @@ class RLM(Module):
         return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
 
     @property
-    def tools(self) -> dict[str, Callable]:
+    def tools(self) -> dict[str, Tool]:
         """User-provided tools (excludes internal llm_query/llm_query_batched)."""
         return dict(self._user_tools)
 
@@ -348,7 +356,8 @@ class RLM(Module):
     def _prepare_execution_tools(self) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
         execution_tools = self._make_llm_tools()
-        execution_tools.update(self._user_tools)
+        # Extract underlying functions from Tool objects for the interpreter
+        execution_tools.update({name: tool.func for name, tool in self._user_tools.items()})
         return execution_tools
 
     def _inject_execution_context(self, interpreter: CodeInterpreter, execution_tools: dict[str, Callable]) -> None:

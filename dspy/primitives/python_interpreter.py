@@ -416,17 +416,38 @@ class PythonInterpreter:
         return "\n".join(assignments) + "\n" + code if assignments else code
 
     def _serialize_value(self, value: Any) -> str:
-        """Serialize a Python value to a string representation for injection."""
+        """Serialize a Python value to a Python literal string for injection.
+
+        Sets and tuples are converted to lists for JSON round-trip compatibility,
+        since the sandbox returns values via JSON which doesn't support these types.
+        """
         if value is None:
             return "None"
         elif isinstance(value, str):
             return repr(value)
         elif isinstance(value, bool):
-            return str(value)
+            # Must check bool before int since bool is a subclass of int
+            return "True" if value else "False"
         elif isinstance(value, (int, float)):
             return str(value)
-        elif isinstance(value, (list, dict, tuple, set)):
-            return json.dumps(self._to_json_compatible(value))
+        elif isinstance(value, (list, tuple)):
+            # Tuples become lists for JSON compatibility
+            items = ", ".join(self._serialize_value(item) for item in value)
+            return f"[{items}]"
+        elif isinstance(value, dict):
+            items = ", ".join(
+                f"{self._serialize_value(k)}: {self._serialize_value(v)}"
+                for k, v in value.items()
+            )
+            return f"{{{items}}}"
+        elif isinstance(value, set):
+            # Sets become sorted lists (or unsorted if mixed types) for JSON compatibility
+            try:
+                sorted_items = sorted(value)
+            except TypeError:
+                sorted_items = list(value)
+            items = ", ".join(self._serialize_value(item) for item in sorted_items)
+            return f"[{items}]"
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
