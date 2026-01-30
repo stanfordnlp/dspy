@@ -10,7 +10,6 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 
 from __future__ import annotations
 
-import inspect
 import logging
 import re
 import threading
