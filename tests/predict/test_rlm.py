@@ -8,13 +8,15 @@ Test organization:
 
 from contextlib import contextmanager
 
+import pandas as pd
 import pytest
 
+import dspy
 from dspy.predict.rlm import RLM
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
+from dspy.primitives.repl_types import DataFrame, REPLEntry, REPLHistory, REPLVariable
 from tests.mock_interpreter import MockInterpreter
 
 # ============================================================================
@@ -173,8 +175,6 @@ class TestRLMInitialization:
 
     def test_optional_parameters(self):
         """Test RLM optional parameters and their defaults."""
-        import dspy
-
         # Test defaults
         rlm = RLM("context -> answer")
         assert rlm.max_llm_calls == 50
@@ -389,8 +389,6 @@ class TestREPLTypes:
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""
-        import dspy
-
         # Create a field with description and constraints
         field = dspy.InputField(desc="The user's question", ge=0, le=100)
 
@@ -416,8 +414,6 @@ class TestREPLTypes:
 
     def test_build_variables_includes_field_metadata(self):
         """Test _build_variables passes field_info to REPLVariable."""
-        import dspy
-
         class QASig(dspy.Signature):
             """Answer questions."""
             context: str = dspy.InputField(desc="Background information")
@@ -1047,6 +1043,84 @@ class TestRLMIntegration:
             query="Use llm_query to describe what animal is mentioned as lazy."
         )
         assert "dog" in result.answer.lower()
+
+
+# ============================================================================
+# Integration Tests: RLM with DataFrame Inputs
+# ============================================================================
+
+# Check if pandas is available
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+
+
+@pytest.mark.skipif(not PANDAS_AVAILABLE, reason="pandas not installed")
+@pytest.mark.integration
+@pytest.mark.slow
+class TestRLMWithDataFrame:
+    """Integration tests for RLM with DataFrame inputs.
+
+    These tests verify the full pipeline: DataFrame -> Parquet serialization
+    -> Pyodide sandbox -> pandas operations -> result.
+    """
+
+    def test_dataframe_input_basic(self):
+        """Test RLM with DataFrame input field."""
+        class DataAnalysis(dspy.Signature):
+            """Analyze the data."""
+            data: DataFrame = dspy.InputField()
+            row_count: int = dspy.OutputField()
+
+        df = pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 20, 30, 40, 50]})
+
+        rlm = RLM(DataAnalysis, max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Count rows", "code": "SUBMIT(len(data))"},
+        ])
+
+        result = rlm.forward(data=df)
+        assert result.row_count == 5
+
+    def test_dataframe_column_operations(self):
+        """Test RLM performing pandas operations on DataFrame."""
+        class SumColumn(dspy.Signature):
+            """Sum a column."""
+            df: DataFrame = dspy.InputField()
+            total: int = dspy.OutputField()
+
+        df = pd.DataFrame({"value": [10, 20, 30, 40]})
+
+        rlm = RLM(SumColumn, max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Sum the value column", "code": "SUBMIT(int(df['value'].sum()))"},
+        ])
+
+        result = rlm.forward(df=df)
+        assert result.total == 100
+
+    def test_dataframe_dtypes_preserved(self):
+        """Test that DataFrame dtypes are preserved through RLM pipeline."""
+        class CheckDtypes(dspy.Signature):
+            """Check dtypes."""
+            df: DataFrame = dspy.InputField()
+            dtype_info: str = dspy.OutputField()
+
+        df = pd.DataFrame({
+            "int_col": pd.array([1, 2, 3], dtype="int64"),
+            "float_col": pd.array([1.1, 2.2, 3.3], dtype="float64"),
+        })
+
+        rlm = RLM(CheckDtypes, max_iterations=3)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Get dtype info", "code": "SUBMIT(str(df.dtypes.to_dict()))"},
+        ])
+
+        result = rlm.forward(df=df)
+        assert "int64" in result.dtype_info
+        assert "float64" in result.dtype_info
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 // Adapted from "Simon Willison's TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
 
-import pyodideModule from "npm:pyodide/pyodide.js";
+import pyodideModule from "npm:pyodide@0.29.2/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
+import { decode as decodeBase64 } from "https://deno.land/std@0.186.0/encoding/base64.ts";
 
 // =============================================================================
 // Python Code Templates
@@ -307,11 +308,22 @@ while (true) {
   }
 
   if (method === "inject_var") {
-    const { name, value } = params;
+    const { name, value, format } = params;
     try {
       try { pyodide.FS.mkdir('/tmp'); } catch (e) { /* exists */ }
       try { pyodide.FS.mkdir('/tmp/dspy_vars'); } catch (e) { /* exists */ }
-      pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
+
+      if (format === "parquet") {
+        // Pre-load pyarrow for parquet support (pandas needs it for read_parquet)
+        await pyodide.loadPackage(["pandas", "pyarrow"]);
+        // Decode base64 directly to Uint8Array (avoids intermediate string copy from atob)
+        const binaryData = decodeBase64(value);
+        pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.parquet`, binaryData);
+      } else {
+        // Default: write JSON as text
+        pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
+      }
+
       console.log(jsonrpcResult({ injected: name }, requestId));
     } catch (e) {
       console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to inject var: ${e.message}`, requestId));
