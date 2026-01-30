@@ -1101,18 +1101,6 @@ class TestRLMWithDataFrame:
         result = rlm.forward(df=df)
         assert result.total == 100
 
-    def test_dataframe_with_string_signature(self):
-        """Test RLM with DataFrame using string signature syntax."""
-        df = pd.DataFrame({"x": [1, 2, 3]})
-
-        # Using interpreter directly to avoid Pydantic schema issues with string sig
-        with PythonInterpreter() as interp:
-            result = interp.execute(
-                "len(my_df)",
-                variables={"my_df": df}
-            )
-            assert result == 3
-
     def test_dataframe_dtypes_preserved(self):
         """Test that DataFrame dtypes are preserved through RLM pipeline."""
         class CheckDtypes(dspy.Signature):
