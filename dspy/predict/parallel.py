@@ -7,6 +7,46 @@ from dspy.utils.parallelizer import ParallelExecutor
 
 
 class Parallel:
+    """Runs DSPy modules across examples in parallel using threads.
+
+    Pairs modules with examples and executes them concurrently via
+    ``ParallelExecutor``. Supports examples provided as ``Example``, ``dict``,
+    ``list``, or ``tuple`` objects. Error tracking can be enabled to surface
+    failed examples and, optionally, their tracebacks.
+
+    Args:
+        num_threads: Number of worker threads to use. Defaults to
+            ``settings.num_threads`` when ``None``.
+        max_errors: Maximum errors tolerated before execution stops. Defaults
+            to ``settings.max_errors`` when ``None``.
+        access_examples: If ``True``, calls the module with the example's inputs
+            unpacked as keyword arguments. If ``False``, passes the example
+            object directly.
+        return_failed_examples: If ``True``, returns a tuple of
+            ``(results, failed_examples, exceptions)`` instead of just results.
+        provide_traceback: If ``True``, include traceback details with failures.
+            If ``False``, omit them. When ``None``, uses the library default.
+        disable_progress_bar: If ``True``, suppresses the progress bar display.
+
+    Example:
+        Run multiple examples through a DSPy module in parallel:
+
+        ```python
+        import dspy
+        from dspy.predict.parallel import Parallel
+
+        classify = dspy.Predict("text -> label")
+        executor = Parallel(num_threads=4)
+
+        exec_pairs = [
+            (classify, dspy.Example(text="I love this product!")),
+            (classify, dspy.Example(text="This is terrible.")),
+            (classify, {"text": "It works fine."}),
+        ]
+        results = executor(exec_pairs)
+        ```
+    """
+
     def __init__(
         self,
         num_threads: int | None = None,
