@@ -11,6 +11,184 @@ from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
 logger = logging.getLogger(__name__)
 
 
+class GenerateImprovedConfigFromFullTrace(dspy.Signature):
+    """I provided an LLM-based program with instructions for each of its components to perform a task.
+
+    The program has multiple components (predictors), each with its own instruction text.
+
+    Below you will see:
+    1. The current configuration mapping component names to their instruction text
+    2. Execution examples showing the full program trace - all component calls with their inputs, outputs, and feedback
+
+    Your task is to write improved instructions for the components based on analyzing these execution traces.
+
+    ## Analysis Steps
+
+    1. Read the program inputs carefully and identify the input format. Infer detailed task description about the task the program is trying to solve.
+
+    2. Analyze the full execution trace for each example:
+       - How do the different components interact during program execution?
+       - What patterns in the trace lead to successful vs failed executions?
+       - Which specific component calls contributed to failures?
+
+    3. Read all the component outputs and the corresponding feedback. Identify:
+       - All niche and domain-specific factual information about the task (this may not be available to the components in the future, so include it in the instructions)
+       - Any generalizable strategies that worked well across examples
+       - Common failure modes and how to avoid them
+
+    ## Output Requirements
+
+    - The new configuration MUST have the exact same JSON structure and keys as the current configuration
+    - Each component's instruction should be improved based on the observed patterns or retained if it works well
+    - Focus on making instructions that help each component perform better in the context of the overall program execution
+    - Be specific and actionable - include concrete guidance, domain knowledge, and strategies
+    - If a component's current instruction works well, refine it rather than rewriting entirely
+    """
+
+    current_config: str = dspy.InputField(
+        desc="The current configuration as a JSON string, mapping component names to their instruction text"
+    )
+    execution_examples: str = dspy.InputField(
+        desc="Execution examples showing program inputs, outputs, full traces of all predictor calls, and feedback"
+    )
+
+    trace_analysis: str = dspy.OutputField(
+        desc="Step-by-step analysis: (1) What is the task and input format? (2) What patterns in the traces indicate success vs failure? (3) What domain knowledge and strategies should be included in the instructions?"
+    )
+    new_config: str = dspy.OutputField(
+        desc="The new configuration as valid JSON with the exact same structure and keys as current_config, with improved instruction text for each component"
+    )
+
+
+class FullTraceInstructionProposer(dspy.Module):
+    """
+    DSPy Module for proposing improved instructions based on full program traces.
+
+    This is used when `use_full_trace_reflection=True` in GEPA. Instead of reflecting on
+    individual predictor calls, this module receives the entire execution trajectory
+    for each example and proposes updates to all component instructions at once.
+
+    The approach is inspired by the full_program_adapter which reflects on entire agent
+    trajectories to propose holistic improvements to the program.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.propose_config = dspy.Predict(GenerateImprovedConfigFromFullTrace)
+
+    def forward(self, current_config: str, dataset_with_feedback: list[dict[str, Any]]) -> str:
+        """
+        Generate an improved configuration based on full trace examples.
+
+        Args:
+            current_config: JSON string of the current component configuration
+            dataset_with_feedback: List of dicts with full trace examples
+
+        Returns:
+            str: New configuration as JSON string
+        """
+        # Format the examples for the signature
+        formatted_examples = self._format_examples(dataset_with_feedback)
+
+        # Call the predictor
+        result = self.propose_config(
+            current_config=current_config,
+            execution_examples=formatted_examples,
+        )
+
+        # Extract and validate JSON from the output
+        new_config = self._extract_json(result.new_config, current_config)
+        return new_config
+
+    def _format_examples(self, dataset_with_feedback: list[dict[str, Any]]) -> str:
+        """Format the full trace examples into a readable string."""
+        formatted_parts = []
+
+        for i, example in enumerate(dataset_with_feedback, 1):
+            parts = [f"### Example {i}"]
+
+            # Program Inputs
+            if "Program Inputs" in example:
+                parts.append("\n**Program Inputs:**")
+                parts.append("```json")
+                parts.append(json.dumps(example["Program Inputs"], indent=2, default=str))
+                parts.append("```")
+
+            # Program Outputs
+            if "Program Outputs" in example:
+                parts.append("\n**Program Outputs:**")
+                parts.append("```json")
+                parts.append(json.dumps(example["Program Outputs"], indent=2, default=str))
+                parts.append("```")
+
+            # Program Trace
+            if "Program Trace" in example:
+                parts.append("\n**Program Trace (all predictor calls):**")
+                for j, trace_item in enumerate(example["Program Trace"], 1):
+                    parts.append(f"\n*Call {j}: {trace_item.get('Called Module', 'Unknown Module')}*")
+                    parts.append("  - Inputs:")
+                    parts.append("    ```json")
+                    parts.append(
+                        "    "
+                        + json.dumps(trace_item.get("Inputs", {}), indent=2, default=str).replace("\n", "\n    ")
+                    )
+                    parts.append("    ```")
+                    parts.append("  - Generated Outputs:")
+                    outputs = trace_item.get("Generated Outputs", {})
+                    if isinstance(outputs, str):
+                        parts.append(f"    {outputs}")
+                    else:
+                        parts.append("    ```json")
+                        parts.append("    " + json.dumps(outputs, indent=2, default=str).replace("\n", "\n    "))
+                        parts.append("    ```")
+
+            # Feedback
+            if "Feedback" in example:
+                parts.append(f"\n**Feedback:** {example['Feedback']}")
+
+            parts.append("\n---\n")
+            formatted_parts.append("\n".join(parts))
+
+        return "\n".join(formatted_parts)
+
+    def _extract_json(self, completion: str, fallback_config: str) -> str:
+        """
+        Extract JSON configuration from the completion.
+
+        Tries to find a valid JSON object in the completion. If parsing fails,
+        returns the fallback configuration.
+        """
+        import re
+
+        # Try to find JSON block in markdown code fence
+        json_pattern = r"```(?:json)?\s*\n?([\s\S]*?)\n?```"
+        matches = re.findall(json_pattern, completion)
+
+        for match in matches:
+            try:
+                parsed = json.loads(match.strip())
+                if isinstance(parsed, dict):
+                    return json.dumps(parsed, indent=2)
+            except json.JSONDecodeError:
+                continue
+
+        # Try to parse the whole completion as JSON
+        try:
+            start_idx = completion.find("{")
+            end_idx = completion.rfind("}")
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                potential_json = completion[start_idx : end_idx + 1]
+                parsed = json.loads(potential_json)
+                if isinstance(parsed, dict):
+                    return json.dumps(parsed, indent=2)
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback: return the original config
+        logger.warning("Failed to extract valid JSON from completion, returning original config")
+        return fallback_config
+
+
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):
     """I provided an assistant with instructions to perform a task involving visual content, but the assistant's performance needs improvement based on the examples and feedback below.
 
