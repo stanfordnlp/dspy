@@ -1,6 +1,6 @@
 import inspect
 import textwrap
-from typing import Callable, Union
+from typing import Callable
 
 import orjson
 
@@ -47,11 +47,7 @@ class Refine(Module):
             self,
             module: Module,
             N: int,  # noqa: N803
-            reward_fn: Union[
-                Callable[[dict, Prediction], float],
-                Callable[[dict, Prediction], tuple[float, str]],
-                Callable[[dict, Prediction], Prediction],
-            ],
+            reward_fn: Callable[[dict, Prediction], float] | Callable[[dict, Prediction], tuple[float, str]] | Callable[[dict, Prediction], Prediction],
             threshold: float,
             fail_count: int | None = None,
     ):
@@ -138,7 +134,7 @@ class Refine(Module):
         if isinstance(result, Prediction):
             reward = result.score
             reward_feedback = getattr(
-                result, 'feedback',
+                result, "feedback",
                 f"Reward {reward} is below threshold {self.threshold}"
             )
         elif isinstance(result, tuple) and len(result) == 2:
