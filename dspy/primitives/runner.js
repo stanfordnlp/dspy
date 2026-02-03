@@ -261,20 +261,13 @@ while (true) {
       let cur = '';
       for (const d of dirs) {
         cur += '/' + d;
+        // Check if directory exists before creating
         try {
+          pyodide.FS.stat(cur);
+          // Directory exists, continue to next
+        } catch {
+          // Directory doesn't exist, create it
           pyodide.FS.mkdir(cur);
-        } catch (e) {
-          // Pyodide's ErrnoError has errno but no message property
-          // Treat EEXIST ("file/directory already exists") as non-fatal
-          const eexistErrno =
-            pyodide?.FS?.ErrnoError?.ERRNO_CODES?.EEXIST;
-          const isExistsError =
-            e?.code === "EEXIST" ||
-            (typeof eexistErrno === "number" && e?.errno === eexistErrno) ||
-            e?.message?.includes("File exists");
-          if (!isExistsError) {
-            throw e;
-          }
         }
       }
       pyodide.FS.writeFile(virtualPath, contents);
