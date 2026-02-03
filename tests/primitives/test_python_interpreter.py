@@ -543,7 +543,10 @@ def test_enable_read_paths_multiple_files(tmp_path):
         code = (
             "import os\n"
             "files = sorted(os.listdir('/sandbox'))\n"
-            "contents = {f: open(f'/sandbox/{f}').read() for f in files}\n"
+            "contents = {}\n"
+            "for f in files:\n"
+            "    with open(f'/sandbox/{f}') as fh:\n"
+            "        contents[f] = fh.read()\n"
             "(files, contents)"
         )
         result = interpreter.execute(code)
