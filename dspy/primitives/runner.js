@@ -261,12 +261,13 @@ while (true) {
       let cur = '';
       for (const d of dirs) {
         cur += '/' + d;
+        // Check if directory exists before creating
         try {
+          pyodide.FS.stat(cur);
+          // Directory exists, continue to next
+        } catch {
+          // Directory doesn't exist, create it
           pyodide.FS.mkdir(cur);
-        } catch (e) {
-          if (!e.message?.includes('File exists')) {
-            throw e;
-          }
         }
       }
       pyodide.FS.writeFile(virtualPath, contents);

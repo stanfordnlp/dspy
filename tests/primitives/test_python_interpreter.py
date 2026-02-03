@@ -79,6 +79,7 @@ def test_submit_with_list():
         # SUBMIT now always returns a dict with "output" key for single-output default
         assert result.output == {"output": ["The result is", token]}
 
+
 def test_enable_env_vars_flag():
     os.environ["FOO_TEST_ENV"] = "test_value"
 
@@ -93,7 +94,6 @@ def test_enable_env_vars_flag():
         assert result == "test_value", "Environment variables should be accessible with allow-env"
 
 
-
 def test_read_file_access_control(tmp_path):
     testfile_path = tmp_path / "test_temp_file.txt"
     virtual_path = f"/sandbox/{testfile_path.name}"
@@ -101,11 +101,7 @@ def test_read_file_access_control(tmp_path):
         f.write("test content")
 
     with PythonInterpreter(enable_read_paths=[str(testfile_path)]) as interpreter:
-        code = (
-            f"with open({virtual_path!r}, 'r') as f:\n"
-            f"    data = f.read()\n"
-            f"data"
-        )
+        code = f"with open({virtual_path!r}, 'r') as f:\n    data = f.read()\ndata"
         result = interpreter.execute(code)
         assert result == "test content", "Test file should be accessible with enable_read_paths and specified file"
 
@@ -119,7 +115,10 @@ def test_read_file_access_control(tmp_path):
             f"data"
         )
         result = interpreter.execute(code)
-        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be accessible without enable_read_paths"
+        assert "PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower(), (
+            "Test file should not be accessible without enable_read_paths"
+        )
+
 
 def test_enable_write_flag(tmp_path):
     testfile_path = tmp_path / "test_temp_output.txt"
@@ -136,14 +135,12 @@ def test_enable_write_flag(tmp_path):
             f"result"
         )
         result = interpreter.execute(code)
-        assert ("PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower()), "Test file should not be writable without enable_write_paths"
+        assert "PermissionDenied" in result or "denied" in result.lower() or "no such file" in result.lower(), (
+            "Test file should not be writable without enable_write_paths"
+        )
 
     with PythonInterpreter(enable_write_paths=[str(testfile_path)]) as interpreter:
-        code = (
-            f"with open({virtual_path!r}, 'w') as f:\n"
-            f"    f.write('allowed')\n"
-            f"'ok'"
-        )
+        code = f"with open({virtual_path!r}, 'w') as f:\n    f.write('allowed')\n'ok'"
         result = interpreter.execute(code)
         assert result == "ok", "Test file should be writable with enable_write_paths"
     assert testfile_path.exists()
@@ -153,36 +150,23 @@ def test_enable_write_flag(tmp_path):
     with open(testfile_path, "w") as f:
         f.write("original_content")
     with PythonInterpreter(enable_write_paths=[str(testfile_path)], sync_files=False) as interpreter:
-        code = (
-            f"with open({virtual_path!r}, 'w') as f:\n"
-            f"    f.write('should_not_sync')\n"
-            f"'done_no_sync'"
-        )
+        code = f"with open({virtual_path!r}, 'w') as f:\n    f.write('should_not_sync')\n'done_no_sync'"
         result = interpreter.execute(code)
         assert result == "done_no_sync"
     with open(testfile_path) as f:
         assert f.read() == "original_content", "File should not be changed when sync_files is False"
 
 
-
 def test_enable_net_flag():
     test_url = "https://example.com"
 
     with PythonInterpreter(enable_network_access=None) as interpreter:
-        code = (
-            "import js\n"
-            f"resp = await js.fetch({test_url!r})\n"
-            "resp.status"
-        )
+        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
         with pytest.raises(CodeInterpreterError, match="PythonError"):
             interpreter.execute(code)
 
     with PythonInterpreter(enable_network_access=["example.com"]) as interpreter:
-        code = (
-            "import js\n"
-            f"resp = await js.fetch({test_url!r})\n"
-            "resp.status"
-        )
+        code = f"import js\nresp = await js.fetch({test_url!r})\nresp.status"
         result = interpreter.execute(code)
         assert int(result) == 200, "Network access is permitted with enable_network_access"
 
@@ -265,8 +249,10 @@ def test_deno_command_dict_raises_type_error():
 # Typed Tool Signature Tests
 # =============================================================================
 
+
 def test_tool_with_typed_signature():
     """Test that tools get proper typed signatures from inspect."""
+
     def my_tool(query: str, limit: int = 10) -> str:
         return f"searched '{query}' with limit {limit}"
 
@@ -278,6 +264,7 @@ def test_tool_with_typed_signature():
 
 def test_tool_positional_args():
     """Test that tools work with positional arguments."""
+
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
 
@@ -288,6 +275,7 @@ def test_tool_positional_args():
 
 def test_tool_keyword_args():
     """Test that tools work with keyword arguments."""
+
     def search(query: str, limit: int = 10) -> str:
         return f"query={query}, limit={limit}"
 
@@ -298,6 +286,7 @@ def test_tool_keyword_args():
 
 def test_tool_default_args():
     """Test that tool default arguments work correctly."""
+
     def greet(name: str, greeting: str = "Hello") -> str:
         return f"{greeting}, {name}!"
 
@@ -314,6 +303,7 @@ def test_tool_default_args():
 # =============================================================================
 # Multi-Output SUBMIT Tests
 # =============================================================================
+
 
 def test_submit_with_typed_signature():
     """Test SUBMIT with typed output signature."""
@@ -382,6 +372,7 @@ def test_submit_wrong_arg_count():
 
 def test_extract_parameters():
     """Test that _extract_parameters correctly extracts function signatures."""
+
     def example_fn(required: str, optional: int = 5, untyped=None) -> str:
         pass
 
@@ -396,6 +387,7 @@ def test_extract_parameters():
 
 def test_extract_parameters_complex_types():
     """Test that _extract_parameters handles complex types gracefully."""
+
     def complex_fn(items: list | None = None, data: dict[str, int] | None = None) -> list:
         pass
 
@@ -411,6 +403,7 @@ def test_extract_parameters_complex_types():
 # =============================================================================
 # Large Variable Injection Tests
 # =============================================================================
+
 
 def test_large_variable_injection():
     """Test that large strings are injected via filesystem to avoid Pyodide's FFI size limit."""
@@ -487,11 +480,7 @@ def test_large_list_variable():
 
 def test_nested_sets_and_tuples():
     """Test that nested structures with sets and tuples are converted to JSON-compatible types."""
-    complex_data = {
-        "tags": {1, 2, 3},
-        "coords": (10, 20),
-        "nested": [{"inner_set": {"a", "b"}}]
-    }
+    complex_data = {"tags": {1, 2, 3}, "coords": (10, 20), "nested": [{"inner_set": {"a", "b"}}]}
 
     with PythonInterpreter() as interpreter:
         result = interpreter.execute("data", variables={"data": complex_data})
@@ -534,3 +523,36 @@ def test_large_variable_threshold_boundary():
     interpreter._pending_large_vars = {}
     interpreter._inject_variables("print(x)", {"x": over_threshold})
     assert "x" in interpreter._pending_large_vars, "Serialized size over threshold should use filesystem"
+
+
+def test_enable_read_paths_multiple_files(tmp_path):
+    """Test that enable_read_paths works with multiple files in the same directory.
+
+    Regression test for bug where mounting multiple files to /sandbox/ failed
+    because Pyodide's ErrnoError has errno but no message property, causing
+    the 'directory exists' check to fail on the second file.
+    """
+    file1 = tmp_path / "test1.txt"
+    file2 = tmp_path / "test2.txt"
+    file3 = tmp_path / "test3.txt"
+    file1.write_text("Content 1")
+    file2.write_text("Content 2")
+    file3.write_text("Content 3")
+
+    with PythonInterpreter(enable_read_paths=[str(file1), str(file2), str(file3)]) as interpreter:
+        code = (
+            "import os\n"
+            "files = sorted(os.listdir('/sandbox'))\n"
+            "contents = {}\n"
+            "for f in files:\n"
+            "    with open(f'/sandbox/{f}') as fh:\n"
+            "        contents[f] = fh.read()\n"
+            "(files, contents)"
+        )
+        result = interpreter.execute(code)
+        files, contents = result
+
+        assert files == ["test1.txt", "test2.txt", "test3.txt"], "All three files should be mounted"
+        assert contents["test1.txt"] == "Content 1"
+        assert contents["test2.txt"] == "Content 2"
+        assert contents["test3.txt"] == "Content 3"
