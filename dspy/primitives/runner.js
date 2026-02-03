@@ -264,7 +264,10 @@ while (true) {
         try {
           pyodide.FS.mkdir(cur);
         } catch (e) {
-          if (!e.message?.includes('File exists')) {
+          // Pyodide's ErrnoError has errno but no message property
+          // errno 20 = EEXIST (file/directory already exists)
+          const isExistsError = e.errno === 20 || e.message?.includes('File exists');
+          if (!isExistsError) {
             throw e;
           }
         }
