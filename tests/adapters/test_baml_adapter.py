@@ -166,6 +166,104 @@ def test_baml_adapter_raise_error_on_circular_references():
     assert "BAMLAdapter cannot handle recursive pydantic models" in str(error.value)
 
 
+def test_baml_adapter_handles_model_reuse_in_schema():
+    """Test that the same model can be used multiple times within a schema without recursion issues.
+
+    This is a regression test for issue #8715 where using the same Pydantic model
+    in multiple fields was incorrectly flagged as recursion.
+    """
+
+    class Attribute(pydantic.BaseModel):
+        value: str
+        tags: list[str]
+
+    class Event(pydantic.BaseModel):
+        title: Attribute
+        location: Attribute
+
+    class TestSignature(dspy.Signature):
+        email: str = dspy.InputField()
+        output: Event = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    # This should not raise an error - the same model (Attribute) is used twice
+    # but this is not recursion, just reuse
+    schema = adapter.format_field_structure(TestSignature)
+
+    # Should include both instances of Attribute without treating as recursion
+    assert schema.count("value: string,") == 2  # One for title, one for location
+    assert schema.count("tags: string[],") == 2
+
+
+def test_baml_adapter_handles_model_reuse_with_descriptions():
+    """Test model reuse with field descriptions appears correctly in both places."""
+
+    class CommonFields(pydantic.BaseModel):
+        name: str = pydantic.Field(description="A descriptive name")
+        metadata: list[str] = pydantic.Field(description="Associated metadata tags")
+
+    class DocumentInfo(pydantic.BaseModel):
+        source: CommonFields = pydantic.Field(description="Source information")
+        target: CommonFields = pydantic.Field(description="Target information")
+        version: int
+
+    class TestSignature(dspy.Signature):
+        query: str = dspy.InputField()
+        document: DocumentInfo = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    schema = adapter.format_field_structure(TestSignature)
+
+    # Should include both instances of CommonFields
+    assert schema.count("name: string,") == 2
+    assert schema.count("metadata: string[],") == 2
+    assert schema.count(f"{COMMENT_SYMBOL} A descriptive name") == 2
+    assert schema.count(f"{COMMENT_SYMBOL} Associated metadata tags") == 2
+    assert "version: int," in schema
+
+
+def test_baml_adapter_detects_recursive_models_with_union_annotations():
+    """Recursive models wrapped in union types (Optional) should still be rejected."""
+
+    class RecursiveNode(pydantic.BaseModel):
+        label: str
+        child: "RecursiveNode | None" = None
+
+    RecursiveNode.model_rebuild()
+
+    class TestSignature(dspy.Signature):
+        prompt: str = dspy.InputField()
+        node: RecursiveNode = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    with pytest.raises(ValueError, match="BAMLAdapter cannot handle recursive pydantic models"):
+        adapter.format_field_structure(TestSignature)
+
+
+def test_baml_adapter_detects_deep_recursive_cycles():
+    """Cycles spanning multiple models should be caught even through unions."""
+
+    class StepThree(pydantic.BaseModel):
+        back: "StepTwo | None" = None
+
+    class StepTwo(pydantic.BaseModel):
+        next_step: StepThree | None = None
+
+    StepTwo.model_rebuild()
+    StepThree.model_rebuild()
+
+    class Wrapper(pydantic.BaseModel):
+        branch: StepTwo
+
+    class TestSignature(dspy.Signature):
+        query: str = dspy.InputField()
+        wrapper: Wrapper = dspy.OutputField()
+
+    adapter = BAMLAdapter()
+    with pytest.raises(ValueError, match="BAMLAdapter cannot handle recursive pydantic models"):
+        adapter.format_field_structure(TestSignature)
+
+
 def test_baml_adapter_formats_pydantic_inputs_as_clean_json():
     """Test that Pydantic input instances are formatted as clean JSON."""
 
