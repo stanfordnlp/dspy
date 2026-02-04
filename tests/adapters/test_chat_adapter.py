@@ -398,6 +398,23 @@ def test_chat_adapter_with_code():
         assert result[0]["code"].code == 'print("Hello, world!")'
 
 
+def test_custom_type_output_fields_no_json_schema_in_prompt():
+    """Regression test for #9251: custom types should use description(), not JSON schema."""
+    class CodeGeneration(dspy.Signature):
+        """Generate code to answer the question"""
+        question: str = dspy.InputField()
+        code: dspy.Code = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(CodeGeneration, [], {"question": "Hello"})
+    system_content = messages[0]["content"]
+
+    assert dspy.Code.description() in system_content
+    assert "JSON schema" not in system_content
+    assert '"properties"' not in system_content
+    assert "Code type in DSPy" not in system_content
+
+
 def test_chat_adapter_formats_conversation_history():
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()

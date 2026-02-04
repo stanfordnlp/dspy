@@ -100,6 +100,9 @@ def translate_field_type(field_name, field_info):
             # literal or returning a value of the form 'Literal[<selected_value>]'
             f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
         )
+    elif inspect.isclass(field_type) and issubclass(field_type, DspyType) and field_type.description():
+        # Custom types with description() already provide format guidance via get_field_description_string.
+        desc = ""
     else:
         desc = f"must adhere to the JSON schema: {json.dumps(_get_json_schema(field_type), ensure_ascii=False)}"
 
