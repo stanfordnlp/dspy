@@ -97,7 +97,7 @@ def test_reasoning_with_chain_of_thought():
     result = cot(question="What is the answer?")
 
     # Test that we can use string methods on result.reasoning
-    assert isinstance(result.reasoning, dspy.Reasoning)
+    assert isinstance(result.reasoning, str)
     assert result.reasoning.strip() == "Let me think step by step"
     assert result.reasoning.lower() == "let me think step by step"
     assert "step by step" in result.reasoning
