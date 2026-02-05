@@ -46,32 +46,21 @@ class Refine(Module):
     def __init__(
             self,
             module: Module,
-            N: int,  # noqa: N803
-            reward_fn: Callable[[dict, Prediction], float] | Callable[[dict, Prediction], tuple[float, str]] | Callable[[dict, Prediction], Prediction],
+            N: int,
+            reward_fn: Callable[[dict, Prediction], float] | Callable[[dict, Prediction], Prediction],
             threshold: float,
             fail_count: int | None = None,
     ):
         """
-        Refines a module by running it up to N times with different rollout IDs at `temperature=1.0`
-        and returns the best prediction.
-
-        This module runs the provided module multiple times with varying rollout identifiers and selects
-        either the first prediction that exceeds the specified threshold or the one with the highest reward.
-        If no prediction meets the threshold, it automatically generates feedback to improve future predictions.
-
-
         Args:
-            module (Module): The module to refine.
-            N (int): The number of times to run the module.
+            ...
             reward_fn (Callable): The reward function. Can return:
                 - A simple float score
-                - A tuple (score, feedback) for detailed feedback
                 - A Prediction with `score` and optional `feedback` attributes
-            threshold (float): The threshold for the reward function.
-            fail_count (Optional[int], optional): The number of times the module can fail before raising an error
+            ...
 
         Example:
-            ```python
+        ```python
             import dspy
 
             dspy.settings.configure(lm=dspy.LM("openai/gpt-4o-mini"))
@@ -83,14 +72,7 @@ class Refine(Module):
             def simple_reward(args, pred):
                 return 1.0 if len(pred.answer.split()) == 1 else 0.0
 
-            # Option 2: Reward function returning (score, feedback) tuple
-            def tuple_reward(args, pred):
-                if len(pred.answer.split()) == 1:
-                    return 1.0, "Answer is correctly one word"
-                else:
-                    return 0.0, f"Answer has {len(pred.answer.split())} words, expected 1"
-
-            # Option 3: Reward function returning a Prediction
+            # Option 2: Reward function returning a Prediction with feedback
             def prediction_reward(args, pred):
                 if len(pred.answer.split()) == 1:
                     return dspy.Prediction(score=1.0, feedback="Answer is correctly one word")
@@ -106,7 +88,7 @@ class Refine(Module):
             # Use the refined module
             result = best_of_3(question="What is the capital of Belgium?").answer
             # Returns: Brussels
-            ```
+        ```
         """
         self.module = module
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
@@ -125,7 +107,6 @@ class Refine(Module):
 
         Supports:
             - float: Simple score, generates default feedback
-            - tuple[float, str]: Score and feedback
             - Prediction: Object with `score` and optional `feedback` attributes
 
         Returns:
@@ -137,8 +118,6 @@ class Refine(Module):
                 result, "feedback",
                 f"Reward {reward} is below threshold {self.threshold}"
             )
-        elif isinstance(result, tuple) and len(result) == 2:
-            reward, reward_feedback = result
         else:
             reward = float(result)
             reward_feedback = f"Reward {reward} is below threshold {self.threshold}"
