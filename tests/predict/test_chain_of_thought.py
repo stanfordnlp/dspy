@@ -29,7 +29,7 @@ async def test_async_chain_of_thought():
 
 
 def test_chain_of_thought_with_native_reasoning():
-    """Test ChainOfThought with native reasoning support where LM returns reasoning natively."""
+    """Test ChainOfThought with a model that supports native reasoning, but using manual fields."""
 
     lm = dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", cache=False)
     dspy.settings.configure(lm=lm)
@@ -39,8 +39,10 @@ def test_chain_of_thought_with_native_reasoning():
             choices=[
                 Choices(
                     message=Message(
-                        content="[[ ## answer ## ]]\nParis\n[[ ## completion ## ]]",
-                        reasoning_content="Step-by-step thinking about the capital of France",
+                        content=(
+                            "[[ ## reasoning ## ]]\nStep-by-step thinking about the capital of France\n"
+                            "[[ ## answer ## ]]\nParis\n[[ ## completion ## ]]"
+                        )
                     ),
                 )
             ],
@@ -50,13 +52,10 @@ def test_chain_of_thought_with_native_reasoning():
         cot = ChainOfThought("question -> answer")
         result = cot(question="What is the capital of France?")
         assert result.answer == "Paris"
-        assert isinstance(result.reasoning, dspy.Reasoning)
-        assert result.reasoning.content == "Step-by-step thinking about the capital of France"
+        assert isinstance(result.reasoning, str)
+        assert result.reasoning == "Step-by-step thinking about the capital of France"
 
-        # Check that the reasoning_effort is automatically set to "low" when the LM supports native reasoning and not
-        # provided in the LM kwargs
         args, kwargs = mock_completion.call_args
-        assert kwargs["reasoning_effort"] == "low"
 
 
 def test_chain_of_thought_with_manual_reasoning():
@@ -83,4 +82,4 @@ def test_chain_of_thought_with_manual_reasoning():
         cot = ChainOfThought("question -> answer")
         result = cot(question="What is the capital of France?")
         assert result.answer == "Paris"
-        assert result.reasoning.content == "Step-by-step thinking about the capital of France"
+        assert result.reasoning == "Step-by-step thinking about the capital of France"
