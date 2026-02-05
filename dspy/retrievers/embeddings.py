@@ -89,15 +89,6 @@ class Embeddings:
         return embeddings / np.maximum(norms, 1e-10)
 
     def save(self, path: str):
-        """
-        Save the embeddings index to disk.
-
-        This saves the corpus, embeddings, FAISS index (if present), and configuration
-        to allow for fast loading without recomputing embeddings.
-
-        Args:
-            path: Directory path where the embeddings will be saved
-        """
         os.makedirs(path, exist_ok=True)
 
         # Save configuration and corpus
@@ -125,20 +116,6 @@ class Embeddings:
                 pass
 
     def load(self, path: str, embedder):
-        """
-        Load the embeddings index from disk into the current instance.
-
-        Args:
-            path: Directory path where the embeddings were saved
-            embedder: The embedder function to use for new queries
-
-        Returns:
-            self: Returns self for method chaining
-
-        Raises:
-            FileNotFoundError: If the save directory or required files don't exist
-            ValueError: If the saved config is invalid or incompatible
-        """
         if not os.path.exists(path):
             raise FileNotFoundError(f"Save directory not found: {path}")
 
@@ -185,29 +162,6 @@ class Embeddings:
 
     @classmethod
     def from_saved(cls, path: str, embedder):
-        """
-        Create an Embeddings instance from a saved index.
-
-        This is the recommended way to load saved embeddings as it creates a new
-        instance without unnecessarily computing embeddings.
-
-        Args:
-            path: Directory path where the embeddings were saved
-            embedder: The embedder function to use for new queries
-
-        Returns:
-            Embeddings instance loaded from disk
-
-        Example:
-            ```python
-            # Save embeddings
-            embeddings = Embeddings(corpus, embedder)
-            embeddings.save("./saved_embeddings")
-
-            # Load embeddings later
-            loaded_embeddings = Embeddings.from_saved("./saved_embeddings", embedder)
-            ```
-        """
         # Create a minimal instance without triggering embedding computation
         instance = cls.__new__(cls)
         # Initialize the search function (required since we bypassed __init__)
