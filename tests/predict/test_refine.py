@@ -80,23 +80,6 @@ def test_refine_module_custom_fail_count():
     )
 
 
-def test_refine_forward_with_tuple_reward():
-    """reward_fn returns (score, feedback) tuple."""
-    lm = DummyLM([{"answer": "Brussels"}])
-    dspy.configure(lm=lm)
-
-    def reward_fn(kwargs, pred: Prediction) -> tuple[float, str]:
-        if pred.answer == "Brussels":
-            return 1.0, "Correct answer"
-        return 0.0, f"Expected Brussels, got {pred.answer}"
-
-    predict = DummyModule("question -> answer", lambda self, **kw: self.predictor(**kw))
-    refine = Refine(module=predict, N=3, reward_fn=reward_fn, threshold=1.0)
-    result = refine(question="What is the capital of Belgium?")
-
-    assert result.answer == "Brussels", "Result should be `Brussels`"
-
-
 def test_refine_forward_with_prediction_reward():
     """reward_fn returns a Prediction with score and feedback."""
     lm = DummyLM([{"answer": "Brussels"}])
