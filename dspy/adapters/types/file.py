@@ -31,6 +31,7 @@ class File(Type):
     file_data: str | None = None
     file_id: str | None = None
     filename: str | None = None
+    mime_type: str | None = None
 
     model_config = pydantic.ConfigDict(
         frozen=True,
@@ -47,6 +48,7 @@ class File(Type):
                 "file_data": values.file_data,
                 "file_id": values.file_id,
                 "filename": values.filename,
+                "mime_type": values.mime_type,
             }
 
         if isinstance(values, dict):
@@ -65,6 +67,8 @@ class File(Type):
                 file_dict["file_id"] = self.file_id
             if self.filename:
                 file_dict["filename"] = self.filename
+            if self.mime_type:
+                file_dict["format"] = self.mime_type
 
             return [{"type": "file", "file": file_dict}]
         except Exception as e:
@@ -88,6 +92,8 @@ class File(Type):
             parts.append(f"file_id='{self.file_id}'")
         if self.filename is not None:
             parts.append(f"filename='{self.filename}'")
+        if self.mime_type is not None:
+            parts.append(f"mime_type='{self.mime_type}'")
         return f"File({', '.join(parts)})"
 
     @classmethod
@@ -134,9 +140,15 @@ class File(Type):
         return cls(file_data=file_data, filename=filename)
 
     @classmethod
-    def from_file_id(cls, file_id: str, filename: str | None = None) -> "File":
-        """Create a File from an uploaded file ID."""
-        return cls(file_id=file_id, filename=filename)
+    def from_file_id(cls, file_id: str, filename: str | None = None, mime_type: str | None = None) -> "File":
+        """Create a File from an uploaded file ID.
+
+        Args:
+            file_id: The uploaded file ID
+            filename: Optional filename
+            mime_type: Optional MIME type (passed as 'format' to the API)
+        """
+        return cls(file_id=file_id, filename=filename, mime_type=mime_type)
 
 
 def encode_file_to_dict(file_input: Any) -> dict:
@@ -157,6 +169,8 @@ def encode_file_to_dict(file_input: Any) -> dict:
             result["file_id"] = file_input.file_id
         if file_input.filename is not None:
             result["filename"] = file_input.filename
+        if file_input.mime_type is not None:
+            result["format"] = file_input.mime_type
         return result
 
     elif isinstance(file_input, str):
