@@ -12,6 +12,7 @@ from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.types.base_type import Type as DspyType
+from dspy.adapters.types.code import Code
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.signatures.utils import get_dspy_field_type
 
@@ -100,8 +101,8 @@ def translate_field_type(field_name, field_info):
             # literal or returning a value of the form 'Literal[<selected_value>]'
             f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
         )
-    elif inspect.isclass(field_type) and issubclass(field_type, DspyType) and field_type.description():
-        # Custom types with description() already provide format guidance via get_field_description_string.
+    elif inspect.isclass(field_type) and issubclass(field_type, Code) and field_type.description():
+        # Code has a rich type description already; avoid duplicating its large schema block.
         desc = ""
     else:
         desc = f"must adhere to the JSON schema: {json.dumps(_get_json_schema(field_type), ensure_ascii=False)}"

@@ -6,6 +6,7 @@ import pytest
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 
 import dspy
+from dspy.experimental import Citations
 
 
 @pytest.mark.parametrize(
@@ -398,8 +399,8 @@ def test_chat_adapter_with_code():
         assert result[0]["code"].code == 'print("Hello, world!")'
 
 
-def test_custom_type_output_fields_no_json_schema_in_prompt():
-    """Regression test for #9251: custom types should use description(), not JSON schema."""
+def test_code_output_field_omits_json_schema_in_prompt():
+    """Regression test for #9251: dspy.Code should avoid duplicating large JSON schema text."""
     class CodeGeneration(dspy.Signature):
         """Generate code to answer the question"""
         question: str = dspy.InputField()
@@ -413,6 +414,21 @@ def test_custom_type_output_fields_no_json_schema_in_prompt():
     assert "JSON schema" not in system_content
     assert '"properties"' not in system_content
     assert "Code type in DSPy" not in system_content
+
+
+def test_citations_output_field_keeps_json_schema_in_prompt():
+    """Non-Code custom types should keep schema guidance for structured output reliability."""
+
+    class CitationGeneration(dspy.Signature):
+        question: str = dspy.InputField()
+        citations: Citations = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(CitationGeneration, [], {"question": "Hello"})
+    system_content = messages[0]["content"]
+
+    assert "must adhere to the JSON schema" in system_content
+    assert "Type description of Citations" in system_content
 
 
 def test_chat_adapter_formats_conversation_history():
