@@ -32,21 +32,19 @@ result = rlm(
 print(result.answer)
 ```
 
-## TODO: Installation
+## Deno Installation
 
-RLM Relies on [Deno](https://deno.land/).
+RLM relies on [Deno](https://deno.land/) and (Pyodide)[tocite] to create a WASM sandbox locally that 
 
-Setting up Deno has proven to be the most challenging part of working with RLMs in DSPy.
+You can install Deno with: `curl -fsSL https://deno.land/install.sh | sh` on macOS and Linux. See the [Deno Installation Docs](https://docs.deno.com/runtime/getting_started/installation/) for more details. Make sure to accept the prompt when it asks to add it to your shell profile. 
 
-You can run `curl -fsSL https://deno.land/install.sh | sh` to install on MacOS/Linux.
-
-Make sure to accept the prompt when it asks to add it to your shell profile. After you have installed Deno, **Make sure to restart your shell**
+After you have installed Deno, **Make sure to restart your shell**
 
 Then you can run dspy.RLM.
 
-User's have reported some issues with the Deno cache not being found by DSPy. We are actively investigating these issues, and your feedback is greatly appreciated.
+User's have reported issues with the Deno cache not being found by DSPy. We are actively investigating these issues, and your feedback is greatly appreciated.
 
-You can also work with an external sandbox provider. See # TUTORIAL TO WRITE
+You can also work with an external sandbox provider. We are still working on creating an example of using external sandbox providers.
 
 
 ## How It Works
