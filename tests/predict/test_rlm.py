@@ -7,6 +7,7 @@ Test organization:
 """
 
 from contextlib import contextmanager
+import shutil
 
 import pytest
 
@@ -17,6 +18,11 @@ from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from tests.mock_interpreter import MockInterpreter
+
+is_deno_available = shutil.which("deno") is not None
+skip_if_deno_not_available = pytest.mark.skipif(
+    not is_deno_available, reason="Deno is not installed or not in PATH"
+)
 
 # ============================================================================
 # Test Helpers and Factories
@@ -549,6 +555,7 @@ class TestRLMDynamicSignature:
 # ============================================================================
 
 
+@skip_if_deno_not_available
 @pytest.mark.integration
 class TestPythonInterpreter:
     """Integration tests for the secure sandbox with tool support."""
@@ -708,6 +715,7 @@ print(f"Count: {info['count']}")
                 interp.execute("undefined_variable")
 
 
+@skip_if_deno_not_available
 @pytest.mark.integration
 class TestSandboxSecurity:
     """Integration tests for sandbox security restrictions."""
@@ -828,6 +836,7 @@ class TestRLMTypeCoercionMock:
 # ============================================================================
 
 
+@skip_if_deno_not_available
 @pytest.mark.integration
 class TestRLMTypeCoercion:
     """Tests for RLM type coercion through full forward pass with PythonInterpreter.
@@ -872,6 +881,7 @@ class TestRLMTypeCoercion:
 # ============================================================================
 
 
+@skip_if_deno_not_available
 @pytest.mark.integration
 class TestRLMMultipleOutputs:
     """Tests for signatures with multiple typed output fields.
@@ -959,6 +969,7 @@ class TestRLMMultipleOutputs:
 # ============================================================================
 
 
+@skip_if_deno_not_available
 @pytest.mark.integration
 class TestRLMWithDummyLM:
     """End-to-end tests using DummyLM with RLM and PythonInterpreter.
