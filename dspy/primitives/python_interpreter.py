@@ -358,7 +358,7 @@ class PythonInterpreter:
                     msg = (
                         f"Deno is installed at {found} but not on your PATH.\n"
                         f"Either:\n"
-                        f"  1. Add to PATH: export PATH=\"{os.path.dirname(found)}:$PATH\"\n"
+                        f'  1. Add to PATH: export PATH="{os.path.dirname(found)}:$PATH"\n'
                         f"  2. Or restart your terminal to pick up the updated PATH.\n\n"
                         f"If you continue to have issues, please open an issue at:\n"
                         f"https://github.com/stanfordnlp/dspy/issues"
