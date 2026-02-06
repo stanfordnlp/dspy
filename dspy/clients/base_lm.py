@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from contextvars import ContextVar
 from typing import Any
 
 from dspy.dsp.utils import settings
@@ -48,6 +49,11 @@ class BaseLM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        # unique per instance
+        self._local_history: ContextVar[list | None] = ContextVar(
+            f"local_history_{uuid.uuid4().hex}",
+            default=None,
+        )
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
@@ -83,10 +89,7 @@ class BaseLM:
 
     @with_callbacks
     def __call__(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
+        self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs
     ) -> list[dict[str, Any] | str]:
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
@@ -95,21 +98,13 @@ class BaseLM:
 
     @with_callbacks
     async def acall(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
+        self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs
     ) -> list[dict[str, Any] | str]:
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
 
-    def forward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
+    def forward(self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs):
         """Forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to either of the following formats:
@@ -119,12 +114,7 @@ class BaseLM:
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-    async def aforward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
+    async def aforward(self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs):
         """Async forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to either of the following formats:
@@ -160,6 +150,14 @@ class BaseLM:
 
         return new_instance
 
+    @property
+    def local_history(self) -> list:
+        lst = self._local_history.get()
+        if lst is None:
+            lst = []
+            self._local_history.set(lst)
+        return lst
+
     def inspect_history(self, n: int = 1):
         return pretty_print_history(self.history, n)
 
@@ -181,6 +179,9 @@ class BaseLM:
             self.history.pop(0)
 
         self.history.append(entry)
+
+        # thread-local/async-local history
+        self.local_history.append(entry)
 
         # Per-module history
         caller_modules = settings.caller_modules or []
