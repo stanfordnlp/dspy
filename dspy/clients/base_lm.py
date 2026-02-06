@@ -89,7 +89,10 @@ class BaseLM:
 
     @with_callbacks
     def __call__(
-        self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
     ) -> list[dict[str, Any] | str]:
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
@@ -98,13 +101,21 @@ class BaseLM:
 
     @with_callbacks
     async def acall(
-        self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
     ) -> list[dict[str, Any] | str]:
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
 
-    def forward(self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs):
+    def forward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         """Forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to either of the following formats:
@@ -114,7 +125,12 @@ class BaseLM:
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-    async def aforward(self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs):
+    async def aforward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         """Async forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to either of the following formats:
