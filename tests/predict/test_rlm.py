@@ -6,8 +6,8 @@ Test organization:
 - Integration tests (@pytest.mark.integration): PythonInterpreter with Deno
 """
 
-from contextlib import contextmanager
 import shutil
+from contextlib import contextmanager
 
 import pytest
 
@@ -20,9 +20,7 @@ from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from tests.mock_interpreter import MockInterpreter
 
 is_deno_available = shutil.which("deno") is not None
-skip_if_deno_not_available = pytest.mark.skipif(
-    not is_deno_available, reason="Deno is not installed or not in PATH"
-)
+skip_if_deno_not_available = pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
 
 # ============================================================================
 # Test Helpers and Factories
@@ -80,6 +78,7 @@ def add_tool(a: int = 0, b: int = 0) -> str:
 def multiply_tool(a: int = 0, b: int = 0) -> str:
     """Multiply two numbers."""
     return str(a * b)
+
 
 # ============================================================================
 # Unit Tests: MockInterpreter
@@ -147,6 +146,7 @@ class TestRLMInitialization:
 
     def test_custom_tools(self):
         """Test RLM with custom tools."""
+
         def custom_tool(x: str = "") -> str:
             return x.upper()
 
@@ -157,6 +157,7 @@ class TestRLMInitialization:
     @pytest.mark.parametrize("tool_name", ["invalid-name", "123start"])
     def test_tool_validation_invalid_identifier(self, tool_name):
         """Test RLM rejects tool names that aren't valid Python identifiers."""
+
         def my_tool() -> str:
             return "result"
 
@@ -167,6 +168,7 @@ class TestRLMInitialization:
     @pytest.mark.parametrize("tool_name", ["llm_query", "SUBMIT", "print"])
     def test_tool_validation_reserved_names(self, tool_name):
         """Test RLM rejects tool names that conflict with built-in functions."""
+
         def my_tool() -> str:
             return "result"
 
@@ -182,6 +184,7 @@ class TestRLMInitialization:
 
     def test_tools_dict_rejected(self):
         """Test RLM rejects dict format for tools with helpful error."""
+
         def my_tool() -> str:
             return "result"
 
@@ -339,10 +342,7 @@ class TestRLMFormatting:
     def test_build_variables_multiple(self):
         """Test building multiple variables."""
         rlm = RLM("context, query -> answer")
-        variables = rlm._build_variables(
-            context="Hello world",
-            query="What is this?"
-        )
+        variables = rlm._build_variables(context="Hello world", query="What is this?")
         assert len(variables) == 2
         formatted = "\n\n".join(v.format() for v in variables)
         assert "Variable: `context`" in formatted
@@ -437,6 +437,7 @@ class TestREPLTypes:
 
         class QASig(dspy.Signature):
             """Answer questions."""
+
             context: str = dspy.InputField(desc="Background information")
             question: str = dspy.InputField(desc="The question to answer")
             answer: str = dspy.OutputField()
@@ -459,9 +460,11 @@ class TestRLMCallMethod:
         """Test that __call__ is an alias for forward()."""
         mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
+            ]
+        )
 
         result = rlm(query="What is the answer?")
         assert result.answer == "42"
@@ -472,21 +475,27 @@ class TestRLMMaxIterationsFallback:
 
     def test_max_iterations_triggers_extract(self):
         """Test that reaching max_iterations uses extract fallback."""
-        mock = MockInterpreter(responses=[
-            "exploring...",
-            "still exploring...",
-            "more exploring...",
-        ])
+        mock = MockInterpreter(
+            responses=[
+                "exploring...",
+                "still exploring...",
+                "more exploring...",
+            ]
+        )
         rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Explore 1", "code": "print('exploring')"},
-            {"reasoning": "Explore 2", "code": "print('exploring')"},
-            {"reasoning": "Explore 3", "code": "print('exploring')"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Explore 1", "code": "print('exploring')"},
+                {"reasoning": "Explore 2", "code": "print('exploring')"},
+                {"reasoning": "Explore 3", "code": "print('exploring')"},
+            ]
+        )
         # Mock the extract predictor to return a value
-        rlm.extract = make_mock_predictor([
-            {"answer": "extracted_answer"},
-        ])
+        rlm.extract = make_mock_predictor(
+            [
+                {"answer": "extracted_answer"},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert result.answer == "extracted_answer"
@@ -498,18 +507,23 @@ class TestRLMToolExceptions:
 
     def test_tool_exception_returns_error_in_output(self):
         """Test that tool exceptions are caught and returned as errors."""
+
         def failing_tool() -> str:
             raise RuntimeError("Tool failed!")
 
-        mock = MockInterpreter(responses=[
-            CodeInterpreterError("RuntimeError: Tool failed!"),
-            FinalOutput({"answer": "recovered"}),
-        ])
+        mock = MockInterpreter(
+            responses=[
+                CodeInterpreterError("RuntimeError: Tool failed!"),
+                FinalOutput({"answer": "recovered"}),
+            ]
+        )
         rlm = RLM("query -> answer", max_iterations=5, interpreter=mock, tools=[failing_tool])
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Call tool", "code": "failing_tool()"},
-            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Call tool", "code": "failing_tool()"},
+                {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert result.answer == "recovered"
@@ -596,38 +610,29 @@ class TestPythonInterpreter:
     def test_variable_injection(self):
         """Test variable injection."""
         with PythonInterpreter(tools={}) as interp:
-            result = interp.execute(
-                "print(x + y)",
-                variables={"x": 10, "y": 5}
-            )
+            result = interp.execute("print(x + y)", variables={"x": 10, "y": 5})
             assert "15" in result
 
     def test_variable_injection_with_none_values(self):
         """Test variable injection with None values in dicts/lists (JSON null -> Python None)."""
         with PythonInterpreter(tools={}) as interp:
             # Test None in dict
-            result = interp.execute(
-                "print(data['key'] is None)",
-                variables={"data": {"key": None, "other": "value"}}
-            )
+            result = interp.execute("print(data['key'] is None)", variables={"data": {"key": None, "other": "value"}})
             assert "True" in result
 
             # Test None in list
-            result = interp.execute(
-                "print(items[1] is None)",
-                variables={"items": [1, None, 3]}
-            )
+            result = interp.execute("print(items[1] is None)", variables={"items": [1, None, 3]})
             assert "True" in result
 
             # Test nested None
             result = interp.execute(
-                "print(nested['inner']['value'] is None)",
-                variables={"nested": {"inner": {"value": None}}}
+                "print(nested['inner']['value'] is None)", variables={"nested": {"inner": {"value": None}}}
             )
             assert "True" in result
 
     def test_tool_call_kwargs(self):
         """Test tool call with keyword arguments."""
+
         def echo(message: str = "") -> str:
             return f"Echo: {message}"
 
@@ -637,6 +642,7 @@ class TestPythonInterpreter:
 
     def test_tool_call_positional(self):
         """Test tool call with positional arguments."""
+
         def greet(name: str) -> str:
             return f"Hello: {name}"
 
@@ -646,6 +652,7 @@ class TestPythonInterpreter:
 
     def test_multiple_tools(self):
         """Test multiple tools."""
+
         def add(a: int = 0, b: int = 0) -> str:
             return str(a + b)
 
@@ -663,6 +670,7 @@ print(f"Sum: {sum_result}, Product: {prod_result}")
 
     def test_tool_returns_list(self):
         """Test tool that returns a list (like llm_query_batched)."""
+
         def batch_process(items: list | None = None) -> list:
             items = items or []
             return [f"processed_{item}" for item in items]
@@ -681,6 +689,7 @@ print(f"All: {results}")
 
     def test_tool_returns_dict(self):
         """Test tool that returns a dict."""
+
         def get_info() -> dict:
             return {"name": "test", "count": 42}
 
@@ -757,9 +766,11 @@ class TestRLMAsyncMock:
         """Test aforward() returns Prediction with expected output (MockInterpreter)."""
         mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
         rlm = RLM("query -> answer", max_iterations=3, interpreter=mock)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
+            ]
+        )
 
         result = await rlm.aforward(query="What is the answer?")
         assert result.answer == "42"
@@ -769,9 +780,11 @@ class TestRLMAsyncMock:
         """Test aforward() returns int when signature expects int (MockInterpreter)."""
         mock = MockInterpreter(responses=[FinalOutput({"count": 42})])
         rlm = RLM("query -> count: int", max_iterations=3, interpreter=mock)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return count", "code": "SUBMIT(42)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return count", "code": "SUBMIT(42)"},
+            ]
+        )
 
         result = await rlm.aforward(query="count items")
         assert result.count == 42
@@ -780,15 +793,19 @@ class TestRLMAsyncMock:
     @pytest.mark.asyncio
     async def test_aforward_multi_iteration_mock(self):
         """Test aforward() handles multiple iterations before SUBMIT (MockInterpreter)."""
-        mock = MockInterpreter(responses=[
-            "explored data",
-            FinalOutput({"answer": "done"}),
-        ])
+        mock = MockInterpreter(
+            responses=[
+                "explored data",
+                FinalOutput({"answer": "done"}),
+            ]
+        )
         rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Explore first", "code": "print('exploring')"},
-            {"reasoning": "Now finish", "code": 'SUBMIT("done")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Explore first", "code": "print('exploring')"},
+                {"reasoning": "Now finish", "code": 'SUBMIT("done")'},
+            ]
+        )
 
         result = await rlm.aforward(query="test")
         assert result.answer == "done"
@@ -797,35 +814,44 @@ class TestRLMAsyncMock:
 class TestRLMTypeCoercionMock:
     """Unit tests for RLM type coercion using MockInterpreter (no Deno required)."""
 
-    @pytest.mark.parametrize("output_field,output_type,final_value,code,expected", [
-        ("count", "int", 42, "SUBMIT(42)", 42),
-        ("score", "float", 3.14, "SUBMIT(3.14)", 3.14),
-        ("valid", "bool", True, "SUBMIT(True)", True),
-        ("numbers", "list[int]", [1, 2, 3], "SUBMIT([1, 2, 3])", [1, 2, 3]),
-        ("answer", "Literal['yes', 'no']", "yes", 'SUBMIT("yes")', "yes"),
-    ])
+    @pytest.mark.parametrize(
+        "output_field,output_type,final_value,code,expected",
+        [
+            ("count", "int", 42, "SUBMIT(42)", 42),
+            ("score", "float", 3.14, "SUBMIT(3.14)", 3.14),
+            ("valid", "bool", True, "SUBMIT(True)", True),
+            ("numbers", "list[int]", [1, 2, 3], "SUBMIT([1, 2, 3])", [1, 2, 3]),
+            ("answer", "Literal['yes', 'no']", "yes", 'SUBMIT("yes")', "yes"),
+        ],
+    )
     def test_type_coercion(self, output_field, output_type, final_value, code, expected):
         """Test RLM type coercion for various types (MockInterpreter)."""
         mock = MockInterpreter(responses=[FinalOutput({output_field: final_value})])
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iterations=3, interpreter=mock)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return value", "code": code},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return value", "code": code},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert getattr(result, output_field) == expected
 
     def test_type_error_retries(self):
         """Test RLM retries when type validation fails (MockInterpreter)."""
-        mock = MockInterpreter(responses=[
-            FinalOutput({"answer": "maybe"}),  # Invalid for Literal
-            FinalOutput({"answer": "yes"}),    # Valid
-        ])
+        mock = MockInterpreter(
+            responses=[
+                FinalOutput({"answer": "maybe"}),  # Invalid for Literal
+                FinalOutput({"answer": "yes"}),  # Valid
+            ]
+        )
         rlm = RLM("query -> answer: Literal['yes', 'no']", max_iterations=5, interpreter=mock)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Try maybe", "code": 'SUBMIT("maybe")'},
-            {"reasoning": "Try yes", "code": 'SUBMIT("yes")'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Try maybe", "code": 'SUBMIT("maybe")'},
+                {"reasoning": "Try yes", "code": 'SUBMIT("yes")'},
+            ]
+        )
 
         result = rlm.forward(query="is it yes?")
         assert result.answer == "yes"
@@ -845,20 +871,25 @@ class TestRLMTypeCoercion:
     typed output_fields for SUBMIT based on the signature.
     """
 
-    @pytest.mark.parametrize("output_field,output_type,code,expected,expected_type", [
-        ("count", "int", "SUBMIT(42)", 42, int),
-        ("score", "float", "SUBMIT(3.14)", 3.14, float),
-        ("valid", "bool", "SUBMIT(True)", True, bool),
-        ("numbers", "list[int]", "SUBMIT([1, 2, 3])", [1, 2, 3], list),
-        ("data", "dict[str, str]", 'SUBMIT({"key": "value"})', {"key": "value"}, dict),
-        ("answer", "Literal['yes', 'no']", 'SUBMIT("yes")', "yes", str),
-    ])
+    @pytest.mark.parametrize(
+        "output_field,output_type,code,expected,expected_type",
+        [
+            ("count", "int", "SUBMIT(42)", 42, int),
+            ("score", "float", "SUBMIT(3.14)", 3.14, float),
+            ("valid", "bool", "SUBMIT(True)", True, bool),
+            ("numbers", "list[int]", "SUBMIT([1, 2, 3])", [1, 2, 3], list),
+            ("data", "dict[str, str]", 'SUBMIT({"key": "value"})', {"key": "value"}, dict),
+            ("answer", "Literal['yes', 'no']", 'SUBMIT("yes")', "yes", str),
+        ],
+    )
     def test_type_coercion(self, output_field, output_type, code, expected, expected_type):
         """Test RLM type coercion for various types with PythonInterpreter."""
         rlm = RLM(f"query -> {output_field}: {output_type}", max_iterations=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return value", "code": code},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return value", "code": code},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert getattr(result, output_field) == expected
@@ -867,9 +898,11 @@ class TestRLMTypeCoercion:
     def test_submit_extracts_typed_value(self):
         """Test RLM SUBMIT correctly extracts typed value."""
         rlm = RLM("query -> count: int", max_iterations=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Compute and return", "code": "result = 42\nSUBMIT(result)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Compute and return", "code": "result = 42\nSUBMIT(result)"},
+            ]
+        )
 
         result = rlm.forward(query="count items")
         assert result.count == 42
@@ -892,9 +925,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_final_kwargs(self):
         """SUBMIT(field1=val1, field2=val2) with keyword args."""
         rlm = RLM("query -> name: str, count: int", max_iterations=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return both outputs", "code": 'SUBMIT(name="alice", count=5)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return both outputs", "code": 'SUBMIT(name="alice", count=5)'},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert result.name == "alice"
@@ -904,9 +939,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_final_positional(self):
         """SUBMIT(val1, val2) with positional args mapped to field order."""
         rlm = RLM("query -> name: str, count: int", max_iterations=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return both outputs positionally", "code": 'SUBMIT("bob", 10)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return both outputs positionally", "code": 'SUBMIT("bob", 10)'},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert result.name == "bob"
@@ -915,9 +952,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_three_fields(self):
         """Signature with 3+ output fields of different types."""
         rlm = RLM("query -> name: str, age: int, active: bool", max_iterations=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return all three", "code": 'SUBMIT(name="carol", age=30, active=True)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return all three", "code": 'SUBMIT(name="carol", age=30, active=True)'},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert result.name == "carol"
@@ -927,10 +966,12 @@ class TestRLMMultipleOutputs:
     def test_multi_output_final_missing_field_errors(self):
         """SUBMIT() with missing field should return error in output."""
         rlm = RLM("query -> name: str, count: int", max_iterations=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Missing count field", "code": 'SUBMIT(name="alice")'},
-            {"reasoning": "Now provide both", "code": 'SUBMIT(name="alice", count=5)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Missing count field", "code": 'SUBMIT(name="alice")'},
+                {"reasoning": "Now provide both", "code": 'SUBMIT(name="alice", count=5)'},
+            ]
+        )
 
         # RLM should retry after getting error for missing field
         result = rlm.forward(query="test")
@@ -940,9 +981,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_submit_vars(self):
         """SUBMIT can pass variables directly for multiple outputs."""
         rlm = RLM("query -> name: str, count: int", max_iterations=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Use SUBMIT", "code": 'n = "dave"\nc = 15\nSUBMIT(n, c)'},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Use SUBMIT", "code": 'n = "dave"\nc = 15\nSUBMIT(n, c)'},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert result.name == "dave"
@@ -951,9 +994,11 @@ class TestRLMMultipleOutputs:
     def test_multi_output_type_coercion(self):
         """Each output field is coerced to its declared type."""
         rlm = RLM("query -> count: int, ratio: float, flag: bool", max_iterations=3)
-        rlm.generate_action = make_mock_predictor([
-            {"reasoning": "Return mixed types", "code": "SUBMIT(count=42, ratio=3.14, flag=True)"},
-        ])
+        rlm.generate_action = make_mock_predictor(
+            [
+                {"reasoning": "Return mixed types", "code": "SUBMIT(count=42, ratio=3.14, flag=True)"},
+            ]
+        )
 
         result = rlm.forward(query="test")
         assert result.count == 42
@@ -980,9 +1025,11 @@ class TestRLMWithDummyLM:
 
     def test_simple_computation_e2e(self):
         """Test full RLM pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
-        with dummy_lm_context([
-            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            ]
+        ):
             rlm = RLM("query -> answer: int", max_iterations=3)
             result = rlm.forward(query="What is 2 + 3?")
 
@@ -991,10 +1038,12 @@ class TestRLMWithDummyLM:
 
     def test_multi_turn_computation_e2e(self):
         """Test RLM with multiple turns before SUBMIT."""
-        with dummy_lm_context([
-            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
             rlm = RLM("query -> answer: int", max_iterations=5)
             result = rlm.forward(query="Double ten")
 
@@ -1003,9 +1052,11 @@ class TestRLMWithDummyLM:
 
     def test_with_input_variables_e2e(self):
         """Test RLM with input variables passed to sandbox."""
-        with dummy_lm_context([
-            {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            ]
+        ):
             rlm = RLM("numbers: list[int] -> total: int", max_iterations=3)
             result = rlm.forward(numbers=[1, 2, 3, 4, 5])
 
@@ -1013,12 +1064,15 @@ class TestRLMWithDummyLM:
 
     def test_with_tool_e2e(self):
         """Test RLM calling a host-side tool through the sandbox."""
+
         def lookup(key: str) -> str:
             return {"apple": "red", "banana": "yellow"}.get(key, "unknown")
 
-        with dummy_lm_context([
-            {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
-        ]):
+        with dummy_lm_context(
+            [
+                {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
+            ]
+        ):
             rlm = RLM("fruit -> color: str", max_iterations=3, tools=[lookup])
             result = rlm.forward(fruit="apple")
 
@@ -1027,9 +1081,11 @@ class TestRLMWithDummyLM:
     @pytest.mark.asyncio
     async def test_aforward_simple_computation_e2e(self):
         """Test aforward() full pipeline: DummyLM -> RLM -> PythonInterpreter -> result."""
-        with dummy_lm_context([
-            {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"reasoning": "I need to compute 2 + 3", "code": "result = 2 + 3\nSUBMIT(result)"},
+            ]
+        ):
             rlm = RLM("query -> answer: int", max_iterations=3)
             result = await rlm.aforward(query="What is 2 + 3?")
 
@@ -1039,10 +1095,12 @@ class TestRLMWithDummyLM:
     @pytest.mark.asyncio
     async def test_aforward_multi_turn_e2e(self):
         """Test aforward() with multiple turns before SUBMIT."""
-        with dummy_lm_context([
-            {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
-            {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"reasoning": "First explore the data", "code": "x = 10\nprint(f'x = {x}')"},
+                {"reasoning": "Now compute and return", "code": "y = x * 2\nSUBMIT(y)"},
+            ]
+        ):
             rlm = RLM("query -> answer: int", max_iterations=5)
             result = await rlm.aforward(query="Double ten")
 
@@ -1052,9 +1110,11 @@ class TestRLMWithDummyLM:
     @pytest.mark.asyncio
     async def test_aforward_with_input_variables_e2e(self):
         """Test aforward() with input variables passed to sandbox."""
-        with dummy_lm_context([
-            {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
-        ]):
+        with dummy_lm_context(
+            [
+                {"reasoning": "Sum the numbers in the list", "code": "SUBMIT(sum(numbers))"},
+            ]
+        ):
             rlm = RLM("numbers: list[int] -> total: int", max_iterations=3)
             result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])
 
@@ -1073,24 +1133,23 @@ class TestRLMIntegration:
     def test_simple_computation(self):
         """Test RLM on simple computation."""
         import dspy
+
         dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
         rlm = RLM("context, query -> answer", max_iterations=5)
-        result = rlm(
-            context={"numbers": [1, 2, 3, 4, 5]},
-            query="What is the sum of the numbers?"
-        )
+        result = rlm(context={"numbers": [1, 2, 3, 4, 5]}, query="What is the sum of the numbers?")
         assert "15" in result.answer
 
     def test_with_llm_query(self):
         """Test RLM using the llm_query tool."""
         import dspy
+
         dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
         rlm = RLM("context, query -> answer", max_iterations=5)
         result = rlm(
             context="The quick brown fox jumps over the lazy dog.",
-            query="Use llm_query to describe what animal is mentioned as lazy."
+            query="Use llm_query to describe what animal is mentioned as lazy.",
         )
         assert "dog" in result.answer.lower()
 
