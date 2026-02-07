@@ -119,6 +119,7 @@ nav:
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
             - Refine: api/modules/Refine.md
+            - RLM: api/modules/RLM.md
         - Optimizers:
             - GEPA:
                 - 1. GEPA Overview: api/optimizers/GEPA/overview.md
