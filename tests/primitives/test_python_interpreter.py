@@ -1,15 +1,12 @@
 import os
 import random
-import shutil
 
 import pytest
 
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.python_interpreter import PythonInterpreter
 
-# This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
-if shutil.which("deno") is None:
-    pytest.skip(reason="Deno is not installed or not in PATH", allow_module_level=True)
+pytestmark = pytest.mark.deno
 
 
 def test_execute_simple_code():
