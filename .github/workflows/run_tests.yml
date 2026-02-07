@@ -83,6 +83,8 @@ jobs:
           args: check --fix-only
       - name: Run tests with pytest
         run: uv run -p .venv pytest -vv tests/
+      - name: Run deno tests
+        run: uv run -p .venv pytest -vv -m deno --deno tests/
       - name: Install optional dependencies
         run: uv sync -p .venv --extra dev --extra test_extras
       - name: Run extra tests
