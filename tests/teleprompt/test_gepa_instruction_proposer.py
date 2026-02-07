@@ -357,7 +357,7 @@ def test_default_proposer(reasoning: bool, caplog):
 
         dspy_logger.propagate = original_propagate
 
-        # Check that no internal GEPA reflection errors occured
+        # Check that no internal GEPA reflection errors occurred
         assert "Exception during reflection/proposal" not in caplog.text
 
     assert len(lm.history) > 0, "LM should have been called"
