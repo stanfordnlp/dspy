@@ -1,4 +1,3 @@
-import shutil
 from unittest.mock import patch
 
 import pytest
@@ -7,16 +6,13 @@ import dspy
 from dspy import ProgramOfThought, Signature
 from dspy.utils import DummyLM
 
-# This test suite requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
-is_deno_available = shutil.which("deno") is not None
-
 
 class BasicQA(Signature):
     question = dspy.InputField()
     answer = dspy.OutputField(desc="often between 1 and 5 words")
 
 
-@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
+@pytest.mark.deno
 def test_pot_code_generation():
     lm = DummyLM(
         [
@@ -35,7 +31,7 @@ def test_pot_code_generation():
 
 
 # This test ensures the old finetuned saved models still work
-@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
+@pytest.mark.deno
 def test_old_style_pot():
     lm = DummyLM(
         [
@@ -56,7 +52,7 @@ class ExtremumFinder(Signature):
     minimum = dspy.OutputField(desc="The minimum of the given numbers")
 
 
-@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
+@pytest.mark.deno
 def test_pot_support_multiple_fields():
     lm = DummyLM(
         [
@@ -75,7 +71,7 @@ def test_pot_support_multiple_fields():
     assert pot.interpreter.deno_process is None
 
 
-@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
+@pytest.mark.deno
 def test_pot_code_generation_with_one_error():
     lm = DummyLM(
         [
@@ -97,7 +93,7 @@ def test_pot_code_generation_with_one_error():
     assert pot.interpreter.deno_process is None
 
 
-@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
+@pytest.mark.deno
 def test_pot_code_generation_persistent_errors():
     max_iters = 3
     lm = DummyLM(
