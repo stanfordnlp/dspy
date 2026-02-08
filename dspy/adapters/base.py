@@ -210,6 +210,18 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        """Asynchronously execute the adapter pipeline: format inputs, call LM, and parse outputs.
+
+        Args:
+            lm: The Language Model instance to use for generation. Must be an instance of `dspy.BaseLM`.
+            lm_kwargs: Additional keyword arguments to pass to the LM call (e.g., temperature, max_tokens).
+            signature: The DSPy signature associated with this LM call.
+            demos: List of few-shot examples to include in the prompt.
+            inputs: The current input values for this call.
+
+        Returns:
+            List of dictionaries representing parsed LM responses.
+        """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
 

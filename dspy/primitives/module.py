@@ -16,7 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 class ProgramMeta(type):
-    """Metaclass ensuring every ``dspy.Module`` instance is properly initialised."""
+    """Metaclass ensuring every ``dspy.Module`` instance is properly initialized.
+
+    This metaclass intercepts instance creation to guarantee that critical attributes
+    (callbacks, history) exist on all Module instances, even if a subclass forgets
+    to call ``super().__init__()``.
+    """
 
     def __call__(cls, *args, **kwargs):
         # Create the instance without invoking ``__init__`` so we can inject
@@ -38,6 +43,22 @@ class ProgramMeta(type):
 
 
 class Module(BaseModule, metaclass=ProgramMeta):
+    """Base class for all DSPy modules.
+
+    A Module is a composable building block that can contain predictors, other modules,
+    and custom logic. Modules support compilation (optimization), callbacks for
+    instrumentation, and automatic history tracking of LM calls.
+
+    Subclasses should implement the `forward()` method to define the module's behavior.
+    Users should call modules directly (e.g., `module(input=value)`) rather than
+    calling `forward()` directly.
+
+    Attributes:
+        _compiled: Whether this module has been compiled/optimized.
+        callbacks: List of callback functions for instrumentation.
+        history: List of LM call history entries for this module.
+    """
+
     def _base_init(self):
         self._compiled = False
         self.callbacks = []
@@ -101,18 +122,41 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return await self.aforward(*args, **kwargs)
 
     def named_predictors(self):
+        """Get all named Predict instances in the module.
+
+        Returns:
+            A list of (name, predictor) tuples for all Predict instances in this module.
+        """
         from dspy.predict.predict import Predict
 
         return [(name, param) for name, param in self.named_parameters() if isinstance(param, Predict)]
 
     def predictors(self):
+        """Get all Predict instances in the module.
+
+        Returns:
+            A list of all Predict instances in this module.
+        """
         return [param for _, param in self.named_predictors()]
 
     def set_lm(self, lm):
+        """Set the language model for all predictors in this module.
+
+        Args:
+            lm: The language model instance to use for all predictors.
+        """
         for _, param in self.named_predictors():
             param.lm = lm
 
     def get_lm(self):
+        """Get the language model used by this module's predictors.
+
+        Returns:
+            The language model instance if all predictors use the same LM.
+
+        Raises:
+            ValueError: If multiple different LMs are used across predictors.
+        """
         all_used_lms = [param.lm for _, param in self.named_predictors()]
 
         if len(set(all_used_lms)) == 1:
@@ -129,12 +173,27 @@ class Module(BaseModule, metaclass=ProgramMeta):
         return "\n".join(s)
 
     def map_named_predictors(self, func):
-        """Applies a function to all named predictors."""
+        """Apply a function to all named predictors in this module.
+
+        Args:
+            func: A callable that takes a predictor and returns a transformed predictor.
+
+        Returns:
+            Self, to allow method chaining.
+        """
         for name, predictor in self.named_predictors():
             set_attribute_by_name(self, name, func(predictor))
         return self
 
     def inspect_history(self, n: int = 1):
+        """Display the most recent LM calls made by this module.
+
+        Args:
+            n: Number of recent calls to display. Defaults to 1.
+
+        Returns:
+            A formatted string representation of the call history.
+        """
         return pretty_print_history(self.history, n)
 
     def batch(

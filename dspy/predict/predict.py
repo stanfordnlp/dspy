@@ -40,12 +40,25 @@ class Predict(Module, Parameter):
         self.reset()
 
     def reset(self):
+        """Reset the predictor to its initial state.
+
+        Clears the language model, traces, training data, and demonstrations.
+        """
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self, json_mode=True):
+        """Serialize the predictor's state to a dictionary.
+
+        Args:
+            json_mode: If True, ensure the output is JSON-serializable. Defaults to True.
+
+        Returns:
+            A dictionary containing the predictor's traces, training data, demos,
+            signature, and LM configuration.
+        """
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -186,6 +199,16 @@ class Predict(Module, Parameter):
         return should_stream
 
     def forward(self, **kwargs):
+        """Execute the prediction with the given inputs.
+
+        Args:
+            **kwargs: Input values matching the signature's input fields. Also accepts
+                special keyword arguments: 'signature' (override signature), 'demos'
+                (override demonstrations), 'config' (override LM config), 'lm' (override LM).
+
+        Returns:
+            A Prediction object containing the output fields defined in the signature.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -200,6 +223,16 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     async def aforward(self, **kwargs):
+        """Asynchronously execute the prediction with the given inputs.
+
+        Args:
+            **kwargs: Input values matching the signature's input fields. Also accepts
+                special keyword arguments: 'signature' (override signature), 'demos'
+                (override demonstrations), 'config' (override LM config), 'lm' (override LM).
+
+        Returns:
+            A Prediction object containing the output fields defined in the signature.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -213,9 +246,19 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     def update_config(self, **kwargs):
+        """Update the predictor's default LM configuration.
+
+        Args:
+            **kwargs: Configuration options to update (e.g., temperature, max_tokens).
+        """
         self.config = {**self.config, **kwargs}
 
     def get_config(self):
+        """Get the predictor's current LM configuration.
+
+        Returns:
+            A dictionary of the current configuration options.
+        """
         return self.config
 
     def __repr__(self):

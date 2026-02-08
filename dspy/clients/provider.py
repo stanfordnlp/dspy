@@ -10,6 +10,20 @@ if TYPE_CHECKING:
 
 
 class TrainingJob(Future):
+    """Represents an asynchronous fine-tuning job for a language model.
+
+    TrainingJob extends `concurrent.futures.Future` to provide a standard interface
+    for tracking and managing LM fine-tuning operations. Subclasses should implement
+    provider-specific logic for job management.
+
+    Attributes:
+        thread: The thread running the training job, if applicable.
+        model: The name/identifier of the model being fine-tuned.
+        train_data: The training data used for fine-tuning.
+        train_data_format: The format of the training data.
+        train_kwargs: Additional keyword arguments for training configuration.
+    """
+
     def __init__(
         self,
         thread: Thread | None = None,
@@ -36,6 +50,19 @@ class TrainingJob(Future):
 
 
 class ReinforceJob:
+    """Represents a reinforcement learning training job for a language model.
+
+    ReinforceJob provides an interface for iterative RL-based training with checkpoint
+    management. Subclasses should implement provider-specific logic for initialization,
+    training steps, and checkpoint operations.
+
+    Attributes:
+        lm: The language model instance being trained.
+        train_kwargs: Additional keyword arguments for training configuration.
+        checkpoints: Dictionary mapping checkpoint names to checkpoint data.
+        last_checkpoint: The name of the most recently saved checkpoint.
+    """
+
     def __init__(self, lm: "LM", train_kwargs: dict[str, Any] | None = None):
         self.lm = lm
         self.train_kwargs = train_kwargs or {}
@@ -67,6 +94,19 @@ class ReinforceJob:
 
 
 class Provider:
+    """Base class for LM provider implementations.
+
+    Provider defines the interface for interacting with different LM backends,
+    including model launching, fine-tuning, and reinforcement learning capabilities.
+    Subclasses should implement provider-specific logic and set capability flags.
+
+    Attributes:
+        finetunable: Whether this provider supports fine-tuning.
+        reinforceable: Whether this provider supports reinforcement learning.
+        TrainingJob: The TrainingJob class to use for fine-tuning jobs.
+        ReinforceJob: The ReinforceJob class to use for RL jobs.
+    """
+
     def __init__(self):
         self.finetunable = False
         self.reinforceable = False
