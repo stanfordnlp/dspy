@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from contextvars import ContextVar
 from typing import Any
 
 from dspy.dsp.utils import settings
@@ -48,6 +49,11 @@ class BaseLM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+        # unique per instance
+        self._local_history: ContextVar[list | None] = ContextVar(
+            f"local_history_{uuid.uuid4().hex}",
+            default=None,
+        )
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
@@ -160,6 +166,14 @@ class BaseLM:
 
         return new_instance
 
+    @property
+    def local_history(self) -> list:
+        lst = self._local_history.get()
+        if lst is None:
+            lst = []
+            self._local_history.set(lst)
+        return lst
+
     def inspect_history(self, n: int = 1):
         return pretty_print_history(self.history, n)
 
@@ -181,6 +195,9 @@ class BaseLM:
             self.history.pop(0)
 
         self.history.append(entry)
+
+        # thread-local/async-local history
+        self.local_history.append(entry)
 
         # Per-module history
         caller_modules = settings.caller_modules or []
