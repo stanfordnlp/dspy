@@ -105,13 +105,22 @@ class BaseModule:
                     add_to_queue(f"{name}[{key}]", sub_item)
 
     def parameters(self):
+        """Get all parameters in the module.
+
+        Returns:
+            A list of all Parameter objects in this module and its sub-modules.
+        """
         return [param for _, param in self.named_parameters()]
 
     def deepcopy(self):
-        """Deep copy the module.
+        """Create a deep copy of the module.
 
-        This is a tweak to the default python deepcopy that only deep copies `self.parameters()`, and for other
-        attributes, we just do the shallow copy.
+        This method creates a copy of the module where parameters are deep copied
+        while other attributes may be shallow copied for efficiency. Falls back to
+        standard deep copy if the instance supports it.
+
+        Returns:
+            A new instance of the module with copied parameters.
         """
         try:
             # If the instance itself is copyable, we can just deep copy it.
@@ -145,7 +154,11 @@ class BaseModule:
         return new_instance
 
     def reset_copy(self):
-        """Deep copy the module and reset all parameters."""
+        """Create a deep copy of the module with all parameters reset.
+
+        Returns:
+            A new instance of the module with all parameters reset to their initial state.
+        """
         new_instance = self.deepcopy()
 
         for param in new_instance.parameters():
@@ -154,9 +167,23 @@ class BaseModule:
         return new_instance
 
     def dump_state(self, json_mode=True):
+        """Serialize the module's state to a dictionary.
+
+        Args:
+            json_mode: If True, ensure the output is JSON-serializable. Defaults to True.
+
+        Returns:
+            A dictionary mapping parameter names to their serialized states.
+        """
         return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
     def load_state(self, state):
+        """Load a previously saved state into the module.
+
+        Args:
+            state: A dictionary mapping parameter names to their serialized states,
+                as returned by `dump_state()`.
+        """
         for name, param in self.named_parameters():
             param.load_state(state[name])
 

@@ -1,3 +1,22 @@
+"""DSPy: A framework for programming with foundation models.
+
+DSPy provides a declarative approach to building AI systems by composing
+language model calls with signatures, modules, and optimizers (teleprompters).
+
+Key components:
+    - Signatures: Define input/output specifications for LM calls
+    - Modules: Composable building blocks (Predict, ChainOfThought, etc.)
+    - Teleprompters: Optimizers that improve module performance
+    - Adapters: Interface layer between DSPy and language models
+    - Retrievers: Components for retrieval-augmented generation
+
+Example:
+    >>> import dspy
+    >>> dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+    >>> predict = dspy.Predict("question -> answer")
+    >>> result = predict(question="What is 2 + 2?")
+"""
+
 from dspy.predict import *
 from dspy.primitives import *
 from dspy.retrievers import *

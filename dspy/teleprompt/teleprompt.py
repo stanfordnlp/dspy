@@ -4,6 +4,14 @@ from dspy.primitives import Example, Module
 
 
 class Teleprompter:
+    """Base class for DSPy optimizers (teleprompters).
+
+    Teleprompters are optimizers that improve DSPy programs by learning from training data.
+    They can optimize prompts, select demonstrations, or tune other aspects of the program.
+
+    Subclasses should implement the `compile()` method to define the optimization strategy.
+    """
+
     def __init__(self):
         pass
 

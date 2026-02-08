@@ -88,6 +88,18 @@ class BaseLM:
         messages: list[dict[str, Any]] | None = None,
         **kwargs
     ) -> list[dict[str, Any] | str]:
+        """Call the language model with the given prompt or messages.
+
+        Args:
+            prompt: A text prompt to send to the LM. Either `prompt` or `messages` must be provided.
+            messages: A list of message dictionaries in OpenAI chat format. Either `prompt` or `messages`
+                must be provided.
+            **kwargs: Additional keyword arguments passed to the underlying LM provider.
+
+        Returns:
+            A list of outputs from the LM. Each output is either a string (text only) or a dictionary
+            containing 'text' and optionally 'reasoning_content', 'logprobs', 'tool_calls', or 'citations'.
+        """
         response = self.forward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
 
@@ -100,6 +112,18 @@ class BaseLM:
         messages: list[dict[str, Any]] | None = None,
         **kwargs
     ) -> list[dict[str, Any] | str]:
+        """Asynchronously call the language model with the given prompt or messages.
+
+        Args:
+            prompt: A text prompt to send to the LM. Either `prompt` or `messages` must be provided.
+            messages: A list of message dictionaries in OpenAI chat format. Either `prompt` or `messages`
+                must be provided.
+            **kwargs: Additional keyword arguments passed to the underlying LM provider.
+
+        Returns:
+            A list of outputs from the LM. Each output is either a string (text only) or a dictionary
+            containing 'text' and optionally 'reasoning_content', 'logprobs', 'tool_calls', or 'citations'.
+        """
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
@@ -161,9 +185,27 @@ class BaseLM:
         return new_instance
 
     def inspect_history(self, n: int = 1):
+        """Display the most recent LM calls made by this instance.
+
+        Args:
+            n: Number of recent calls to display. Defaults to 1.
+
+        Returns:
+            A formatted string representation of the call history.
+        """
         return pretty_print_history(self.history, n)
 
     def update_history(self, entry):
+        """Add an entry to the LM call history.
+
+        Updates three history stores: the global history, this LM instance's history,
+        and the history of any caller modules in the current context.
+
+        Args:
+            entry: A dictionary containing call details including 'prompt', 'messages',
+                'kwargs', 'response', 'outputs', 'usage', 'cost', 'timestamp', 'uuid',
+                'model', 'response_model', and 'model_type'.
+        """
         if settings.disable_history:
             return
 
@@ -284,5 +326,12 @@ class BaseLM:
 
 
 def inspect_history(n: int = 1):
-    """The global history shared across all LMs."""
+    """Display the most recent LM calls from the global history shared across all LMs.
+
+    Args:
+        n: Number of recent calls to display. Defaults to 1.
+
+    Returns:
+        A formatted string representation of the global call history.
+    """
     return pretty_print_history(GLOBAL_HISTORY, n)
