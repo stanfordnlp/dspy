@@ -122,6 +122,9 @@ uv sync --extra dev
 
 Then you are all set!
 
+If you plan to run integration tests that use `PythonInterpreter` (for example in `tests/predict/test_rlm.py`),
+install Deno and ensure it is in your PATH: https://docs.deno.com/runtime/getting_started/installation/
+
 To verify that your environment is set up successfully, run some unit tests:
 
 ```shell
