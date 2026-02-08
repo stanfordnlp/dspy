@@ -6,9 +6,13 @@ Test organization:
 - Integration tests (@pytest.mark.integration): PythonInterpreter with Deno
 """
 
+import shutil
 from contextlib import contextmanager
 
 import pytest
+
+# Check if Deno is available for integration tests
+is_deno_available = shutil.which("deno") is not None
 
 from dspy.adapters.types.tool import Tool
 from dspy.predict.rlm import RLM
@@ -550,6 +554,7 @@ class TestRLMDynamicSignature:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
 class TestPythonInterpreter:
     """Integration tests for the secure sandbox with tool support."""
 
@@ -709,6 +714,7 @@ print(f"Count: {info['count']}")
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
 class TestSandboxSecurity:
     """Integration tests for sandbox security restrictions."""
 
@@ -829,6 +835,7 @@ class TestRLMTypeCoercionMock:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
 class TestRLMTypeCoercion:
     """Tests for RLM type coercion through full forward pass with PythonInterpreter.
 
@@ -873,6 +880,7 @@ class TestRLMTypeCoercion:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
 class TestRLMMultipleOutputs:
     """Tests for signatures with multiple typed output fields.
 
@@ -960,6 +968,7 @@ class TestRLMMultipleOutputs:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not is_deno_available, reason="Deno is not installed or not in PATH")
 class TestRLMWithDummyLM:
     """End-to-end tests using DummyLM with RLM and PythonInterpreter.
 
