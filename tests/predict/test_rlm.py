@@ -3,7 +3,7 @@ Tests for the RLM (Recursive Language Model) module.
 
 Test organization:
 - Unit tests (no Deno required): MockInterpreter, RLM formatting, signatures
-- Integration tests (@pytest.mark.integration): PythonInterpreter with Deno
+- Integration tests (@pytest.mark.deno): PythonInterpreter with Deno
 """
 
 from contextlib import contextmanager
@@ -549,7 +549,7 @@ class TestRLMDynamicSignature:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestPythonInterpreter:
     """Integration tests for the secure sandbox with tool support."""
 
@@ -708,7 +708,7 @@ print(f"Count: {info['count']}")
                 interp.execute("undefined_variable")
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestSandboxSecurity:
     """Integration tests for sandbox security restrictions."""
 
@@ -828,7 +828,7 @@ class TestRLMTypeCoercionMock:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMTypeCoercion:
     """Tests for RLM type coercion through full forward pass with PythonInterpreter.
 
@@ -872,7 +872,7 @@ class TestRLMTypeCoercion:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMMultipleOutputs:
     """Tests for signatures with multiple typed output fields.
 
@@ -959,7 +959,7 @@ class TestRLMMultipleOutputs:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMWithDummyLM:
     """End-to-end tests using DummyLM with RLM and PythonInterpreter.
 
