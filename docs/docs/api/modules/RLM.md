@@ -34,15 +34,15 @@ print(result.answer)
 
 ## Deno Installation
 
-RLM relies on [Deno](https://deno.land/) and (Pyodide)[tocite] to create a WASM sandbox locally that 
+RLM relies on [Deno](https://deno.land/) and [Pyodide](https://pyodide.org/) to create a local WASM sandbox for secure Python execution.
 
 You can install Deno with: `curl -fsSL https://deno.land/install.sh | sh` on macOS and Linux. See the [Deno Installation Docs](https://docs.deno.com/runtime/getting_started/installation/) for more details. Make sure to accept the prompt when it asks to add it to your shell profile. 
 
-After you have installed Deno, **Make sure to restart your shell**
+After you have installed Deno, **Make sure to restart your shell.**
 
-Then you can run dspy.RLM.
+Then you can run `dspy.RLM`.
 
-User's have reported issues with the Deno cache not being found by DSPy. We are actively investigating these issues, and your feedback is greatly appreciated.
+Users have reported issues with the Deno cache not being found by DSPy. We are actively investigating these issues, and your feedback is greatly appreciated.
 
 You can also work with an external sandbox provider. We are still working on creating an example of using external sandbox providers.
 
@@ -84,12 +84,12 @@ _Output shown to the LLM:_
 ##### Step 3: Trigger Sub-LLM Calls
 ```python
 # Step 3: Use sub-LLM for semantic extraction
-result = llm_query(f"Extract the total revenue from: {matches[0]}")
+result = llm_query(f"Extract the total revenue from: {matches[1]}")
 print(result)
 ```
 _Output shown to the LLM:_
 ```
-$5,000,000
+$20,000,000
 ```
 
 ##### Step 4: Submit Final Answer
@@ -99,7 +99,7 @@ SUBMIT(result)
 ```
 _Output shown to the user:_
 ```
-$5,000,000
+$20,000,000
 ```
 
 ## Constructor Parameters
@@ -158,7 +158,7 @@ cheap_lm = dspy.LM("openai/gpt-5-nano")
 
 dspy.configure(lm=main_lm)
 
-# Root LM (gpt-4o) decides strategy; sub-LM (gpt-4o-mini) handles extraction
+# Root LM (gpt-5) decides strategy; sub-LM (gpt-5-nano) handles extraction
 rlm = dspy.RLM("data, query -> summary", sub_lm=cheap_lm)
 ```
 
