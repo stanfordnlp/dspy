@@ -103,7 +103,7 @@ class RLM(Module):
         signature: type[Signature] | str,
         max_iterations: int = 20,
         max_llm_calls: int = 50,
-        max_output_chars: int = 100_000,
+        max_output_chars: int = 10_000,
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
@@ -503,6 +503,8 @@ class RLM(Module):
             output = str(result) if result else ""
 
         output = self._format_output(output)
+        if self.verbose:
+            logger.info(f"Output ({len(output):,} chars):\n{output}")
         return history.append(reasoning=pred.reasoning, code=code, output=output)
 
     def _execute_iteration(

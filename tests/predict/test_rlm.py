@@ -307,12 +307,12 @@ class TestRLMFormatting:
         assert "no output" in formatted.lower()
 
     def test_format_output_truncation(self):
-        """Test that long output shows head and tail."""
+        """Test that long output shows head and tail with omission marker."""
         rlm = RLM("context -> answer", max_output_chars=100)
         formatted = rlm._format_output("a" * 100 + "b" * 100)
-        assert "omitted" in formatted
         assert formatted.startswith("a" * 50)
         assert formatted.endswith("b" * 50)
+        assert "100 characters omitted" in formatted
 
     def test_format_variable_info_string(self):
         """Test variable info formatting for string value using REPLVariable."""
@@ -381,13 +381,12 @@ class TestREPLTypes:
         assert "print(1)" in formatted
         assert "1" in formatted
 
-    def test_repl_entry_format_truncation(self):
-        """Test REPLEntry output shows head and tail."""
-        entry = REPLEntry(code="print('a' + 'b')", output="a" * 500 + "b" * 500)
-        formatted = entry.format(index=0, max_output_chars=50)
-        assert "omitted" in formatted
-        assert "a" * 25 in formatted
-        assert "b" * 25 in formatted
+    def test_repl_entry_format_no_truncation(self):
+        """Test REPLEntry output is passed through without truncation."""
+        output = "a" * 500 + "b" * 500
+        entry = REPLEntry(code="print('a' + 'b')", output=output)
+        formatted = entry.format(index=0)
+        assert output in formatted
 
     def test_repl_variable_from_value(self):
         """Test REPLVariable.from_value() factory."""

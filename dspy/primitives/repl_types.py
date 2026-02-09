@@ -108,15 +108,10 @@ class REPLEntry(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(frozen=True)
 
-    def format(self, index: int, max_output_chars: int = 5000) -> str:
+    def format(self, index: int) -> str:
         """Format this entry for inclusion in prompts."""
-        output = self.output
-        if len(output) > max_output_chars:
-            half = max_output_chars // 2
-            omitted = len(self.output) - max_output_chars
-            output = output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
-        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n```python\n{self.code}\n```\nOutput ({len(self.output):,} chars):\n{output}"
+        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n```python\n{self.code}\n```\nOutput ({len(self.output):,} chars):\n{self.output}"
 
 
 class REPLHistory(pydantic.BaseModel):
@@ -129,10 +124,10 @@ class REPLHistory(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(frozen=True)
 
-    def format(self, max_output_chars: int = 5000) -> str:
+    def format(self) -> str:
         if not self.entries:
             return "You have not interacted with the REPL environment yet."
-        return "\n".join(entry.format(index=i, max_output_chars=max_output_chars) for i, entry in enumerate(self.entries))
+        return "\n".join(entry.format(index=i) for i, entry in enumerate(self.entries))
 
     @pydantic.model_serializer()
     def serialize_model(self) -> str:
