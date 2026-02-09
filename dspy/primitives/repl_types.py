@@ -57,7 +57,11 @@ class REPLVariable(pydantic.BaseModel):
         else:
             value_str = str(jsonable)
         is_truncated = len(value_str) > preview_chars
-        preview = value_str[:preview_chars] + ("..." if is_truncated else "")
+        if is_truncated:
+            half = preview_chars // 2
+            preview = value_str[:half] + "..." + value_str[-half:]
+        else:
+            preview = value_str
 
         # Extract desc and constraints from field_info if provided
         desc = ""
@@ -108,7 +112,9 @@ class REPLEntry(pydantic.BaseModel):
         """Format this entry for inclusion in prompts."""
         output = self.output
         if len(output) > max_output_chars:
-            output = output[:max_output_chars] + f"\n... (truncated to {max_output_chars}/{len(self.output):,} chars)"
+            half = max_output_chars // 2
+            omitted = len(self.output) - max_output_chars
+            output = output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
         return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n```python\n{self.code}\n```\nOutput ({len(self.output):,} chars):\n{output}"
 

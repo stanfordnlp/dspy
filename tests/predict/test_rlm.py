@@ -307,10 +307,12 @@ class TestRLMFormatting:
         assert "no output" in formatted.lower()
 
     def test_format_output_truncation(self):
-        """Test that long output is truncated."""
+        """Test that long output shows head and tail."""
         rlm = RLM("context -> answer", max_output_chars=100)
-        formatted = rlm._format_output("x" * 200)
-        assert "truncated" in formatted.lower()
+        formatted = rlm._format_output("a" * 100 + "b" * 100)
+        assert "omitted" in formatted
+        assert formatted.startswith("a" * 50)
+        assert formatted.endswith("b" * 50)
 
     def test_format_variable_info_string(self):
         """Test variable info formatting for string value using REPLVariable."""
@@ -319,7 +321,8 @@ class TestRLMFormatting:
         assert "Variable: `context`" in formatted
         assert "Type: str" in formatted
         assert "11" in formatted  # length
-        assert "Hello" in formatted
+        assert "He" in formatted  # head
+        assert "ld" in formatted  # tail
         assert "..." in formatted  # truncation indicator
 
     def test_format_variable_info_dict(self):
@@ -379,10 +382,12 @@ class TestREPLTypes:
         assert "1" in formatted
 
     def test_repl_entry_format_truncation(self):
-        """Test REPLEntry output truncation."""
-        entry = REPLEntry(code="print('x' * 1000)", output="x" * 1000)
+        """Test REPLEntry output shows head and tail."""
+        entry = REPLEntry(code="print('a' + 'b')", output="a" * 500 + "b" * 500)
         formatted = entry.format(index=0, max_output_chars=50)
-        assert "truncated" in formatted
+        assert "omitted" in formatted
+        assert "a" * 25 in formatted
+        assert "b" * 25 in formatted
 
     def test_repl_variable_from_value(self):
         """Test REPLVariable.from_value() factory."""
@@ -393,10 +398,11 @@ class TestREPLTypes:
         assert "hello world" in var.preview
 
     def test_repl_variable_truncation(self):
-        """Test REPLVariable preview truncation."""
-        var = REPLVariable.from_value("big", "x" * 1000, preview_chars=50)
-        assert len(var.preview) == 53  # 50 + "..."
-        assert var.preview.endswith("...")
+        """Test REPLVariable preview shows head and tail."""
+        var = REPLVariable.from_value("big", "a" * 500 + "b" * 500, preview_chars=50)
+        assert var.preview.startswith("a" * 25)
+        assert var.preview.endswith("b" * 25)
+        assert "..." in var.preview
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""

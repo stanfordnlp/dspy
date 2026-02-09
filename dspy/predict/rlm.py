@@ -336,11 +336,13 @@ class RLM(Module):
         return variables
 
     def _format_output(self, output: str) -> str:
-        """Format and truncate REPL output."""
+        """Format and truncate REPL output, showing head and tail."""
         if not output:
             return "(no output - did you forget to print?)"
         if len(output) > self.max_output_chars:
-            return output[:self.max_output_chars] + "\n... (truncated)"
+            half = self.max_output_chars // 2
+            omitted = len(output) - self.max_output_chars
+            return output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
         return output
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
