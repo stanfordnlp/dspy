@@ -110,7 +110,6 @@ def test_pot_code_generation_persistent_errors():
     pot = ProgramOfThought(BasicQA, max_iters=max_iters)
     with pytest.raises(RuntimeError, match="Max hops reached. Failed to run ProgramOfThought: ZeroDivisionError:"):
         pot(question="What is 1+1?")
-        assert pot.interpreter.deno_process is None
 
 
 def test_pot_code_parse_error():
