@@ -44,7 +44,7 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     for flag in SKIP_DEFAULT_FLAGS:
         if config.getoption(f"--{flag}"):
-            return
+            continue
 
         skip_mark = pytest.mark.skip(reason=f"need --{flag} option to run")
         for item in items:
