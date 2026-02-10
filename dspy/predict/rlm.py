@@ -498,10 +498,9 @@ class RLM(Module):
             output = str(result) if result else ""
 
         output = self._format_output(output)
-        history = history.append(reasoning=pred.reasoning, code=code, output=output)
         if self.verbose:
-            logger.info(REPLEntry.format_output(output, history.max_output_chars))
-        return history
+            logger.info(REPLEntry.format_output(output, self.max_output_chars))
+        return history.append(reasoning=pred.reasoning, code=code, output=output)
 
     def _execute_iteration(
         self,
