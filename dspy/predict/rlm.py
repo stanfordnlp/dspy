@@ -336,13 +336,8 @@ class RLM(Module):
         return variables
 
     def _format_output(self, output: str) -> str:
-        """Format and truncate REPL output, showing head and tail."""
         if not output:
             return "(no output - did you forget to print?)"
-        if len(output) > self.max_output_chars:
-            half = self.max_output_chars // 2
-            omitted = len(output) - self.max_output_chars
-            return output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
         return output
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
@@ -503,9 +498,10 @@ class RLM(Module):
             output = str(result) if result else ""
 
         output = self._format_output(output)
+        history = history.append(reasoning=pred.reasoning, code=code, output=output)
         if self.verbose:
-            logger.info(f"Output ({len(output):,} chars):\n{output}")
-        return history.append(reasoning=pred.reasoning, code=code, output=output)
+            logger.info(history.entries[-1].format(index=len(history) - 1, max_output_chars=history.max_output_chars))
+        return history
 
     def _execute_iteration(
         self,
@@ -560,7 +556,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
-            history: REPLHistory = REPLHistory()
+            history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
                 result: Prediction | REPLHistory = self._execute_iteration(
@@ -643,7 +639,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
-            history = REPLHistory()
+            history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
                 result = await self._aexecute_iteration(
