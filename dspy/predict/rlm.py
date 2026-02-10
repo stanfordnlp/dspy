@@ -20,10 +20,10 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 import pydantic
 
 import dspy
-from dspy.adapters.types.tool import Tool
-from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.adapters.types.audio import Audio
 from dspy.adapters.types.image import Image
+from dspy.adapters.types.tool import Tool
+from dspy.adapters.utils import parse_value, translate_field_type
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalOutput
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
@@ -187,7 +187,7 @@ class RLM(Module):
 
     def _validate_tools(self, tools: dict[str, Tool]) -> None:
         """Validate user-provided tools have valid names."""
-        for name, tool in tools.items():
+        for name, _tool in tools.items():
             if not name.isidentifier():
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier")
             if name in self._RESERVED_TOOL_NAMES:
@@ -382,7 +382,7 @@ class RLM(Module):
             media_guidelines_str = (
                 f"\n   FOR MEDIA INPUTS (Audio/Image): Variables like {media_var_list} are media objects. "
                 f"In the sandbox they appear as descriptor strings — you CANNOT decode or process them as raw data. "
-                f"Use `llm_query_with_media(prompt, {list(media_fields.keys())[0]!r})` to send media to a sub-LLM that can perceive it."
+                f"Use `llm_query_with_media(prompt, {next(iter(media_fields.keys()))!r})` to send media to a sub-LLM that can perceive it."
             )
         else:
             media_tools_str = ""

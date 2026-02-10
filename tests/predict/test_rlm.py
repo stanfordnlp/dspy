@@ -1110,5 +1110,223 @@ class TestRLMIntegration:
         assert "dog" in result.answer.lower()
 
 
+# ============================================================================
+# Unit Tests: Multimodal Media Support (Audio/Image)
+# ============================================================================
+
+
+class TestMediaDetection:
+    """Unit tests for media field detection and registry building."""
+
+    def test_detect_audio_field(self):
+        """Test _detect_media_fields finds Audio-typed inputs."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        class TranscribeSig(dspy.Signature):
+            """Transcribe audio."""
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            media_fields = rlm._detect_media_fields()
+
+        assert "audio_input" in media_fields
+        assert media_fields["audio_input"] == "Audio"
+
+    def test_detect_image_field(self):
+        """Test _detect_media_fields finds Image-typed inputs."""
+        import dspy
+        from dspy.adapters.types.image import Image
+
+        class DescribeSig(dspy.Signature):
+            """Describe an image."""
+            photo: Image = dspy.InputField()
+            description: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('a cat')"}]):
+            rlm = RLM(DescribeSig, max_iterations=3)
+            media_fields = rlm._detect_media_fields()
+
+        assert "photo" in media_fields
+        assert media_fields["photo"] == "Image"
+
+    def test_detect_mixed_media_fields(self):
+        """Test _detect_media_fields finds both Audio and Image in same signature."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+        from dspy.adapters.types.image import Image
+
+        class MultimodalSig(dspy.Signature):
+            """Process audio and image together."""
+            audio_clip: Audio = dspy.InputField()
+            photo: Image = dspy.InputField()
+            analysis: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('done')"}]):
+            rlm = RLM(MultimodalSig, max_iterations=3)
+            media_fields = rlm._detect_media_fields()
+
+        assert len(media_fields) == 2
+        assert media_fields["audio_clip"] == "Audio"
+        assert media_fields["photo"] == "Image"
+
+    def test_no_media_fields(self):
+        """Test _detect_media_fields returns empty dict for text-only signatures."""
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            media_fields = rlm._detect_media_fields()
+
+        assert media_fields == {}
+
+    def test_build_media_registry_with_audio(self):
+        """Test _build_media_registry extracts Audio objects from inputs."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        class TranscribeSig(dspy.Signature):
+            """Transcribe audio."""
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            registry = rlm._build_media_registry({"audio_input": audio})
+
+        assert "audio_input" in registry
+        assert registry["audio_input"] is audio
+
+    def test_build_media_registry_ignores_text(self):
+        """Test _build_media_registry skips non-media values."""
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            registry = rlm._build_media_registry({"query": "hello world"})
+
+        assert registry == {}
+
+
+class TestLLMQueryWithMedia:
+    """Unit tests for llm_query_with_media tool creation and validation."""
+
+    def test_media_tool_available_when_registry_populated(self):
+        """Test llm_query_with_media is created when media registry is non-empty."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        class TranscribeSig(dspy.Signature):
+            """Transcribe audio."""
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+
+        assert "llm_query_with_media" in tools
+        assert "llm_query" in tools
+        assert "llm_query_batched" in tools
+
+    def test_media_tool_absent_when_no_media(self):
+        """Test llm_query_with_media is NOT created when media registry is empty."""
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools(media_registry={})
+
+        assert "llm_query_with_media" not in tools
+        assert "llm_query" in tools
+
+    def test_media_tool_absent_when_registry_none(self):
+        """Test llm_query_with_media is NOT created when media registry is None."""
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools(media_registry=None)
+
+        assert "llm_query_with_media" not in tools
+
+    def test_media_tool_rejects_empty_prompt(self):
+        """Test llm_query_with_media raises on empty prompt."""
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+
+        with pytest.raises(ValueError, match="prompt cannot be empty"):
+            tools["llm_query_with_media"]("")
+
+    def test_media_tool_rejects_no_media_vars(self):
+        """Test llm_query_with_media raises when no media var names given."""
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+
+        with pytest.raises(ValueError, match="At least one media variable"):
+            tools["llm_query_with_media"]("transcribe this")
+
+    def test_media_tool_rejects_unknown_var(self):
+        """Test llm_query_with_media raises on nonexistent media variable."""
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+
+        with pytest.raises(ValueError, match="not found"):
+            tools["llm_query_with_media"]("transcribe", "nonexistent_var")
+
+    def test_reserved_tool_names_includes_media(self):
+        """Test llm_query_with_media is in the reserved tool names set."""
+        assert "llm_query_with_media" in RLM._RESERVED_TOOL_NAMES
+
+
+class TestMediaInstructions:
+    """Unit tests for media-specific instruction injection in signatures."""
+
+    def test_media_tools_in_action_instructions(self):
+        """Test that media fields cause llm_query_with_media docs to appear."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        class TranscribeSig(dspy.Signature):
+            """Transcribe audio."""
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            action_sig, _extract_sig = rlm._build_signatures()
+
+        instructions = action_sig.instructions
+        assert "llm_query_with_media" in instructions
+        assert "audio_input" in instructions
+
+    def test_no_media_instructions_for_text_only(self):
+        """Test that text-only signatures do NOT include media instructions."""
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            action_sig, _extract_sig = rlm._build_signatures()
+
+        instructions = action_sig.instructions
+        assert "llm_query_with_media" not in instructions
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

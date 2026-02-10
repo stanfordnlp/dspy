@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
 
+
 # Lazy import helpers for multimodal types to avoid circular imports
 def _is_media_type(value: Any) -> bool:
     """Check if value is a DSPy Audio or Image type."""
