@@ -261,12 +261,10 @@ while (true) {
       let cur = '';
       for (const d of dirs) {
         cur += '/' + d;
-        // Check if directory exists before creating
-        try {
-          pyodide.FS.stat(cur);
-          // Directory exists, continue to next
-        } catch {
-          // Directory doesn't exist, create it
+        // Check if directory exists before creating using analyzePath
+        // This is more reliable than catching exceptions across platforms
+        const pathInfo = pyodide.FS.analyzePath(cur);
+        if (!pathInfo.exists) {
           pyodide.FS.mkdir(cur);
         }
       }
@@ -310,8 +308,9 @@ while (true) {
   if (method === "inject_var") {
     const { name, value } = params;
     try {
-      try { pyodide.FS.mkdir('/tmp'); } catch (e) { /* exists */ }
-      try { pyodide.FS.mkdir('/tmp/dspy_vars'); } catch (e) { /* exists */ }
+      // Use analyzePath for reliable cross-platform directory existence check
+      if (!pyodide.FS.analyzePath('/tmp').exists) { pyodide.FS.mkdir('/tmp'); }
+      if (!pyodide.FS.analyzePath('/tmp/dspy_vars').exists) { pyodide.FS.mkdir('/tmp/dspy_vars'); }
       pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
       console.log(jsonrpcResult({ injected: name }, requestId));
     } catch (e) {
