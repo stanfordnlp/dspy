@@ -391,23 +391,37 @@ class RLM(Module):
         max_cost = self.max_cost
 
         def _get_cost_and_tokens() -> tuple[float, int]:
-            """Sum cost and tokens from LM history entries added since tool creation."""
+            """Sum cost and tokens from LM history entries added since tool creation.
+
+            Aggregates both the provider cost (litellm response_cost) and the upstream
+            inference cost (e.g. OpenRouter BYOK → Vertex). For BYOK providers where
+            response_cost is 0, the upstream cost is the actual charge.
+            """
             total_cost = 0.0
             total_tokens = 0
             for lm_inst in _all_lms:
                 offset = _history_offsets.get(id(lm_inst), 0)
                 for entry in lm_inst.history[offset:]:
+                    entry_cost = 0.0
                     cost = entry.get("cost")
-                    if cost is not None:
-                        total_cost += cost
+                    if cost:
+                        entry_cost += cost
                     usage = entry.get("usage", {})
-                    total_tokens += usage.get("total_tokens", 0)
+                    if isinstance(usage, dict):
+                        cost_details = usage.get("cost_details")
+                        if isinstance(cost_details, dict):
+                            upstream = cost_details.get("upstream_inference_cost")
+                            if upstream:
+                                entry_cost += upstream
+                    total_cost += entry_cost
+                    total_tokens += usage.get("total_tokens", 0) if isinstance(usage, dict) else 0
             return total_cost, total_tokens
 
         def budget() -> str:
             """Check remaining execution budget: iterations, LLM calls, time, and cost.
 
             Returns a human-readable summary of remaining resources.
+            Includes warnings when any resource drops below 20% remaining.
             """
             with lock:
                 calls_used = state["call_count"]
@@ -416,16 +430,24 @@ class RLM(Module):
             remaining_iterations = max_iterations - iteration - 1  # -1 for current
             remaining_calls = max_llm_calls - calls_used
 
+            warnings = []
             parts = [
                 f"Iterations: {remaining_iterations}/{max_iterations} remaining",
                 f"LLM calls: {remaining_calls}/{max_llm_calls} remaining",
             ]
+
+            if remaining_iterations <= max(1, max_iterations * 0.2):
+                warnings.append(f"iterations ({remaining_iterations} left)")
+            if remaining_calls <= max(1, max_llm_calls * 0.2):
+                warnings.append(f"LLM calls ({remaining_calls} left)")
 
             start_time = _execution_state.get("start_time")
             if max_time is not None and start_time is not None:
                 elapsed = _time.monotonic() - start_time
                 remaining_time = max(0.0, max_time - elapsed)
                 parts.append(f"Time: {remaining_time:.1f}s/{max_time:.1f}s remaining ({elapsed:.1f}s elapsed)")
+                if remaining_time <= max_time * 0.2:
+                    warnings.append(f"time ({remaining_time:.0f}s left)")
             elif start_time is not None:
                 elapsed = _time.monotonic() - start_time
                 parts.append(f"Time: no limit ({elapsed:.1f}s elapsed)")
@@ -434,10 +456,15 @@ class RLM(Module):
             if max_cost is not None:
                 remaining_cost = max(0.0, max_cost - cost_spent)
                 parts.append(f"Cost: ${remaining_cost:.4f}/${max_cost:.4f} remaining (${cost_spent:.4f} spent, {tokens_used:,} tokens)")
+                if remaining_cost <= max_cost * 0.2:
+                    warnings.append(f"cost (${remaining_cost:.4f} left)")
             elif cost_spent > 0:
                 parts.append(f"Cost: no limit (${cost_spent:.4f} spent, {tokens_used:,} tokens)")
 
-            return " | ".join(parts)
+            result = " | ".join(parts)
+            if warnings:
+                result = f"⚠ LOW: {', '.join(warnings)}. Wrap up soon! | " + result
+            return result
 
         # Expose cost tracker to forward() for budget enforcement
         _execution_state["_get_cost_and_tokens"] = _get_cost_and_tokens

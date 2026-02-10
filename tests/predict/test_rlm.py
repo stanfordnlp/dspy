@@ -1683,5 +1683,95 @@ class TestBudgetTracking:
         assert result.answer == "cost_fallback"
 
 
+    def test_byok_cost_upstream_inference_cost(self):
+        """Test cost tracking includes usage.cost_details.upstream_inference_cost for BYOK."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        # Start with empty history — entries added after tool creation
+        mock_lm.history = []
+
+        rlm = RLM("query -> answer", max_cost=1.0, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+
+        # Simulate BYOK responses arriving after tool creation
+        mock_lm.history.extend([
+            {
+                "cost": 0,
+                "usage": {
+                    "total_tokens": 500,
+                    "is_byok": True,
+                    "cost_details": {"upstream_inference_cost": 0.0025},
+                },
+            },
+            {
+                "cost": None,
+                "usage": {
+                    "total_tokens": 300,
+                    "cost_details": {"upstream_inference_cost": 0.0015},
+                },
+            },
+        ])
+
+        result = tools["budget"]()
+        # Should pick up the upstream_inference_cost values: 0.0025 + 0.0015
+        assert "$0.0040" in result
+        assert "800 tokens" in result  # 500 + 300
+
+    def test_cost_sums_provider_and_upstream(self):
+        """Test cost tracking sums both provider cost and upstream inference cost."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        mock_lm.history = []
+
+        rlm = RLM("query -> answer", max_cost=1.0, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+
+        # Non-BYOK: both provider cost and upstream cost are nonzero
+        mock_lm.history.append({
+            "cost": 0.01,
+            "usage": {
+                "total_tokens": 1000,
+                "cost_details": {"upstream_inference_cost": 0.005},
+            },
+        })
+
+        result = tools["budget"]()
+        # Sum of 0.01 + 0.005 = 0.015
+        assert "$0.0150" in result
+
+    def test_budget_warning_low_iterations(self):
+        """Test that budget() shows warning when iterations are low."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=50)
+        # iteration=4 means 0 remaining (5 - 4 - 1)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 4}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "LOW" in result
+        assert "iterations" in result
+
+    def test_budget_warning_low_time(self):
+        """Test that budget() shows warning when time is running low."""
+        import time
+        rlm = RLM("query -> answer", max_iterations=20, max_llm_calls=50, max_time=10.0)
+        # Start time 9 seconds ago — only 1s remaining (10%)
+        execution_state = {"start_time": time.monotonic() - 9.0, "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "LOW" in result
+        assert "time" in result
+
+    def test_budget_no_warning_when_plenty_remaining(self):
+        """Test that budget() has no warning when resources are plentiful."""
+        rlm = RLM("query -> answer", max_iterations=20, max_llm_calls=50, max_time=60.0)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "LOW" not in result
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
