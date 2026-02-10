@@ -2834,6 +2834,26 @@ class TestSubcallE2E:
             results = tools["llm_query_batched"](["q1", "q2"])
             assert results == ["a1", "a2"]
 
+    @pytest.mark.deno
+    def test_depth_2_python_interpreter_parent(self):
+        """Parent uses PythonInterpreter (Deno), child uses LocalInterpreter.
+
+        llm_query is a host-side tool callback (JSON-RPC from Deno), so _subcall
+        runs on the host and creates the child with its own LocalInterpreter.
+        """
+        with dummy_lm_context([
+            # Parent iter 1: call llm_query (triggers child RLM)
+            {"reasoning": "Delegate", "code": 'result = llm_query("compute 2+2")\nprint(result)'},
+            # Child iter 1 (runs in LocalInterpreter): SUBMIT response
+            {"reasoning": "Easy", "code": 'SUBMIT(response="4")'},
+            # Parent iter 2: SUBMIT the child's result
+            {"reasoning": "Done", "code": 'SUBMIT(result)'},
+        ]):
+            # No interpreter= means default PythonInterpreter (Deno sandbox)
+            rlm = RLM("query -> answer", max_iterations=5, max_depth=2)
+            result = rlm(query="What is 2+2?")
+            assert result.answer == "4"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
