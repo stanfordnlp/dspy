@@ -228,6 +228,7 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
     """Convert the async streaming generator to a sync generator."""
     queue = Queue()  # Queue to hold items from the async generator
     stop_sentinel = object()  # Sentinel to signal the generator is complete
+    exception_sentinel = object()  # Sentinel to signal an exception occurred
 
     # To propagate prediction request ID context to the child thread
     context = contextvars.copy_context()
@@ -239,6 +240,10 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
             try:
                 async for item in async_generator:
                     queue.put(item)
+            except BaseException as e:
+                # Put the exception in the queue to propagate to the caller
+                queue.put((exception_sentinel, e))
+                return
             finally:
                 # Signal completion
                 queue.put(stop_sentinel)
@@ -254,6 +259,8 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
         item = queue.get()  # Block until an item is available
         if item is stop_sentinel:
             break
+        if isinstance(item, tuple) and len(item) == 2 and item[0] is exception_sentinel:
+            raise item[1]
         yield item
 
 
