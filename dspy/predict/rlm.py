@@ -26,7 +26,7 @@ from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, Code
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLHistory, REPLVariable
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
 
@@ -500,7 +500,7 @@ class RLM(Module):
         output = self._format_output(output)
         history = history.append(reasoning=pred.reasoning, code=code, output=output)
         if self.verbose:
-            logger.info(history.entries[-1].format(index=len(history) - 1, max_output_chars=history.max_output_chars))
+            logger.info(REPLEntry.format_output(output, history.max_output_chars))
         return history
 
     def _execute_iteration(

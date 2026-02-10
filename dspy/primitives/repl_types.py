@@ -108,15 +108,20 @@ class REPLEntry(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(frozen=True)
 
+    @staticmethod
+    def format_output(output: str, max_output_chars: int = 10_000) -> str:
+        """Format output with head+tail truncation, preserving true length in header."""
+        raw_len = len(output)
+        if raw_len > max_output_chars:
+            half = max_output_chars // 2
+            omitted = raw_len - max_output_chars
+            output = output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
+        return f"Output ({raw_len:,} chars):\n{output}"
+
     def format(self, index: int, max_output_chars: int = 10_000) -> str:
         """Format this entry for inclusion in prompts."""
-        output = self.output
-        if len(output) > max_output_chars:
-            half = max_output_chars // 2
-            omitted = len(output) - max_output_chars
-            output = output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
-        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n```python\n{self.code}\n```\nOutput ({len(self.output):,} chars):\n{output}"
+        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n```python\n{self.code}\n```\n{self.format_output(self.output, max_output_chars)}"
 
 
 class REPLHistory(pydantic.BaseModel):
