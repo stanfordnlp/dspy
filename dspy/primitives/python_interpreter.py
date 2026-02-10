@@ -19,6 +19,40 @@ from typing import Any, Callable
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
 
+# Lazy import helpers for multimodal types to avoid circular imports
+def _is_media_type(value: Any) -> bool:
+    """Check if value is a DSPy Audio or Image type."""
+    try:
+        from dspy.adapters.types.audio import Audio
+        if isinstance(value, Audio):
+            return True
+    except ImportError:
+        pass
+    try:
+        from dspy.adapters.types.image import Image
+        if isinstance(value, Image):
+            return True
+    except ImportError:
+        pass
+    return False
+
+
+def _media_descriptor(value: Any) -> str:
+    """Return a human-readable descriptor string for a media object."""
+    try:
+        from dspy.adapters.types.audio import Audio
+        if isinstance(value, Audio):
+            return f"<Audio: format={value.audio_format}, {len(value.data)} base64 chars>"
+    except ImportError:
+        pass
+    try:
+        from dspy.adapters.types.image import Image
+        if isinstance(value, Image):
+            return repr(value)
+    except ImportError:
+        pass
+    return repr(value)
+
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
@@ -378,6 +412,8 @@ class PythonInterpreter:
         """Recursively convert Python values to JSON-compatible types."""
         if value is None or isinstance(value, (str, int, float, bool)):
             return value
+        elif _is_media_type(value):
+            return _media_descriptor(value)
         elif isinstance(value, dict):
             return {k: self._to_json_compatible(v) for k, v in value.items()}
         elif isinstance(value, (list, tuple)):
@@ -448,6 +484,10 @@ class PythonInterpreter:
                 sorted_items = list(value)
             items = ", ".join(self._serialize_value(item) for item in sorted_items)
             return f"[{items}]"
+        elif _is_media_type(value):
+            # Media types (Audio, Image) are represented as descriptor strings in the sandbox.
+            # The actual media data is accessed via llm_query_with_media() in the RLM context.
+            return repr(_media_descriptor(value))
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 

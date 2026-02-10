@@ -22,6 +22,8 @@ import pydantic
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.adapters.utils import parse_value, translate_field_type
+from dspy.adapters.types.audio import Audio
+from dspy.adapters.types.image import Image
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalOutput
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
@@ -29,6 +31,20 @@ from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
+
+# Types considered "media" — their data can't be serialized into the sandbox
+# but can be forwarded to sub-LLM calls via llm_query_with_media().
+_MEDIA_TYPES = (Audio, Image)
+
+
+def _is_media(value):
+    """Check if a value is a media type (Audio or Image)."""
+    return isinstance(value, _MEDIA_TYPES)
+
+
+def _format_media_for_lm(value):
+    """Convert a media object to LM message content parts."""
+    return value.format()
 
 if TYPE_CHECKING:
 
@@ -46,7 +62,7 @@ You have access to a Python REPL environment. Write Python code and it will be e
 Available:
 - Variables: {inputs} (your input data)
 - `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
-- `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
+- `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries){media_tools}
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
 - Standard libraries: re, json, collections, math, etc.
@@ -56,7 +72,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 1. EXPLORE FIRST - Look at your data before processing it. Print samples, check types/lengths, understand the structure.
 2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.
 3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
-4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
+4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.{media_guidelines}
 5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
 6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 
@@ -144,7 +160,7 @@ class RLM(Module):
     # =========================================================================
 
     # Reserved tool names that conflict with built-in sandbox functions
-    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "llm_query_with_media", "SUBMIT", "print"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""
@@ -198,11 +214,18 @@ class RLM(Module):
 
         return "\n".join(lines)
 
-    def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
-        """Create llm_query and llm_query_batched tools with a fresh call counter."""
+    def _make_llm_tools(self, media_registry: dict[str, Any] | None = None, max_workers: int = 8) -> dict[str, Callable]:
+        """Create llm_query, llm_query_batched, and llm_query_with_media tools with a fresh call counter.
+
+        Args:
+            media_registry: Dict mapping variable names to media objects (Audio/Image).
+                           Used by llm_query_with_media to attach media to sub-LLM calls.
+            max_workers: Max concurrent workers for batched queries.
+        """
         state = {"call_count": 0}
         lock = threading.Lock()
         lm = self.sub_lm
+        _media_registry = media_registry or {}
 
         def _check_and_increment(n: int = 1) -> None:
             with lock:
@@ -218,6 +241,26 @@ class RLM(Module):
             if target_lm is None:
                 raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
             response = target_lm(prompt)
+            if isinstance(response, list) and response:
+                item = response[0]
+                if isinstance(item, dict) and "text" in item:
+                    return item["text"]
+                return item
+            return str(response)
+
+        def _query_lm_multimodal(prompt: str, media_objects: list) -> str:
+            """Query the LLM with a prompt string and media content parts."""
+            target_lm = lm if lm is not None else dspy.settings.lm
+            if target_lm is None:
+                raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+
+            # Build multimodal content: text prompt + media content parts
+            content_parts = [{"type": "text", "text": prompt}]
+            for media_obj in media_objects:
+                content_parts.extend(_format_media_for_lm(media_obj))
+
+            messages = [{"role": "user", "content": content_parts}]
+            response = target_lm(messages=messages)
             if isinstance(response, list) and response:
                 item = response[0]
                 if isinstance(item, dict) and "text" in item:
@@ -249,7 +292,42 @@ class RLM(Module):
                         results[idx] = f"[ERROR] {e}"
             return [results[i] for i in range(len(prompts))]
 
-        return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
+        def llm_query_with_media(prompt: str, *media_var_names: str) -> str:
+            """Query the LLM with a prompt and media variables (audio/image).
+
+            Args:
+                prompt: The text prompt for the LLM.
+                *media_var_names: Names of media variables to include (e.g., 'audio_input', 'my_image').
+                    These must be names of Audio or Image input variables.
+
+            Returns:
+                The LLM's text response.
+            """
+            if not prompt:
+                raise ValueError("prompt cannot be empty")
+            if not media_var_names:
+                raise ValueError(
+                    "At least one media variable name is required. "
+                    f"Available media variables: {list(_media_registry.keys())}"
+                )
+
+            # Resolve media objects from the registry
+            media_objects = []
+            for var_name in media_var_names:
+                if var_name not in _media_registry:
+                    available = list(_media_registry.keys())
+                    raise ValueError(
+                        f"Media variable '{var_name}' not found. Available media variables: {available}"
+                    )
+                media_objects.append(_media_registry[var_name])
+
+            _check_and_increment(1)
+            return _query_lm_multimodal(prompt, media_objects)
+
+        tools = {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
+        if _media_registry:
+            tools["llm_query_with_media"] = llm_query_with_media
+        return tools
 
     @property
     def tools(self) -> dict[str, Tool]:
@@ -259,6 +337,21 @@ class RLM(Module):
     # =========================================================================
     # Signature Building
     # =========================================================================
+
+    def _detect_media_fields(self) -> dict[str, str]:
+        """Detect input fields that are Audio or Image types.
+
+        Returns:
+            Dict mapping field name to media type name (e.g., {'audio_input': 'Audio', 'photo': 'Image'}).
+        """
+        media_fields = {}
+        for name, field in self.signature.input_fields.items():
+            annotation = getattr(field, "annotation", None)
+            if annotation is Audio:
+                media_fields[name] = "Audio"
+            elif annotation is Image:
+                media_fields[name] = "Image"
+        return media_fields
 
     def _build_signatures(self) -> tuple[Signature, Signature]:
         """Build the action and extract signatures from templates."""
@@ -278,10 +371,28 @@ class RLM(Module):
         # Format tool documentation for user-provided tools
         tool_docs = self._format_tool_docs(self._user_tools)
 
+        # Detect media fields and build media-specific instructions
+        media_fields = self._detect_media_fields()
+        if media_fields:
+            media_var_list = ", ".join(f"'{name}'" for name in media_fields)
+            media_tools_str = (
+                f"\n- `llm_query_with_media(prompt, *media_var_names)` - query sub-LLM with media (audio/image) attached. "
+                f"Media variables: {media_var_list}. The sub-LLM can see/hear the media content."
+            )
+            media_guidelines_str = (
+                f"\n   FOR MEDIA INPUTS (Audio/Image): Variables like {media_var_list} are media objects. "
+                f"In the sandbox they appear as descriptor strings — you CANNOT decode or process them as raw data. "
+                f"Use `llm_query_with_media(prompt, {list(media_fields.keys())[0]!r})` to send media to a sub-LLM that can perceive it."
+            )
+        else:
+            media_tools_str = ""
+            media_guidelines_str = ""
+
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
                 inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
                 max_llm_calls=self.max_llm_calls,
+                media_tools=media_tools_str, media_guidelines=media_guidelines_str,
             ) + tool_docs)
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
@@ -350,9 +461,21 @@ class RLM(Module):
     # CodeInterpreter Lifecycle
     # =========================================================================
 
-    def _prepare_execution_tools(self) -> dict[str, Callable]:
+    def _build_media_registry(self, input_args: dict[str, Any]) -> dict[str, Any]:
+        """Extract media objects (Audio/Image) from inputs into a registry.
+
+        Returns:
+            Dict mapping variable names to their media objects.
+        """
+        registry = {}
+        for name, value in input_args.items():
+            if _is_media(value):
+                registry[name] = value
+        return registry
+
+    def _prepare_execution_tools(self, media_registry: dict[str, Any] | None = None) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
-        execution_tools = self._make_llm_tools()
+        execution_tools = self._make_llm_tools(media_registry=media_registry)
         # Extract underlying functions from Tool objects for the interpreter
         execution_tools.update({name: tool.func for name, tool in self._user_tools.items()})
         return execution_tools
@@ -551,7 +674,8 @@ class RLM(Module):
         self._validate_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
-        execution_tools = self._prepare_execution_tools()
+        media_registry = self._build_media_registry(input_args)
+        execution_tools = self._prepare_execution_tools(media_registry=media_registry)
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
@@ -634,7 +758,8 @@ class RLM(Module):
         self._validate_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
-        execution_tools = self._prepare_execution_tools()
+        media_registry = self._build_media_registry(input_args)
+        execution_tools = self._prepare_execution_tools(media_registry=media_registry)
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
