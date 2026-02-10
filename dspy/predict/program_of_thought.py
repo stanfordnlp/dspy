@@ -136,7 +136,15 @@ class ProgramOfThought(Module):
     def _parse_code(self, code_data):
         code = code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
         code_match = re.search(r"```python[ \n](.*?)[ \n]```?", code, re.DOTALL)
-        code_block = (code_match.group(1) if code_match else code).replace("\\n", "\n")
+        if code_match:
+            # Code was extracted from a markdown code block — real newlines are already
+            # present, so do NOT replace escaped newlines (that would corrupt string
+            # literals containing \n).
+            code_block = code_match.group(1)
+        else:
+            # No markdown code block found — the LLM may have returned a single line
+            # with escaped newlines, so convert them to real newlines.
+            code_block = code.replace("\\n", "\n")
         if not code_block:
             return code, "Error: Empty code after parsing."
         if "\n" not in code_block and code_block.count("=") > 1:
@@ -145,17 +153,6 @@ class ProgramOfThought(Module):
         last_line_match = re.match(r"^(\w+)\s*=", lines[-1].strip())
         if last_line_match and len(lines) > 1:
             code_block += "\n" + last_line_match.group(1)
-        else:
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
-                r"\1\n",
-                code_block,
-            )
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
-                r"\1\n\2",
-                code_block,
-            )
         return code_block, None
 
     def _execute_code(self, code):
