@@ -107,6 +107,13 @@ def bootstrap_trace_data(
                     )
 
                 return failed_pred, trace
+            except Exception as e:
+                # Catch non-parse failures (e.g. RLM timeout, interpreter crash,
+                # cost overrun). Preserve whatever partial trace was captured so
+                # GEPA can still reflect on the calls that happened before failure.
+                trace = dspy.settings.trace.copy()
+                failed_pred = FailedPrediction(completion_text=str(e))
+                return failed_pred, trace
 
     program.forward = MethodType(patched_forward, program)
 

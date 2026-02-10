@@ -343,7 +343,7 @@ class PythonInterpreter:
             if tool_name not in self.tools:
                 raise CodeInterpreterError(f"Unknown tool: {tool_name}")
             result = self.tools[tool_name](*args, **kwargs)
-            is_json = isinstance(result, (list, dict))
+            is_json = isinstance(result, list | dict)
             response = _jsonrpc_result(
                 {"value": json.dumps(result) if is_json else str(result or ""), "type": "json" if is_json else "string"},
                 request_id
@@ -411,13 +411,13 @@ class PythonInterpreter:
 
     def _to_json_compatible(self, value: Any) -> Any:
         """Recursively convert Python values to JSON-compatible types."""
-        if value is None or isinstance(value, (str, int, float, bool)):
+        if value is None or isinstance(value, str | int | float | bool):
             return value
         elif _is_media_type(value):
             return _media_descriptor(value)
         elif isinstance(value, dict):
             return {k: self._to_json_compatible(v) for k, v in value.items()}
-        elif isinstance(value, (list, tuple)):
+        elif isinstance(value, list | tuple):
             return [self._to_json_compatible(v) for v in value]
         elif isinstance(value, set):
             try:
@@ -465,9 +465,9 @@ class PythonInterpreter:
         elif isinstance(value, bool):
             # Must check bool before int since bool is a subclass of int
             return "True" if value else "False"
-        elif isinstance(value, (int, float)):
+        elif isinstance(value, int | float):
             return str(value)
-        elif isinstance(value, (list, tuple)):
+        elif isinstance(value, list | tuple):
             # Tuples become lists for JSON compatibility
             items = ", ".join(self._serialize_value(item) for item in value)
             return f"[{items}]"

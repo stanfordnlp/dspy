@@ -5,7 +5,6 @@ import pytest
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.local_interpreter import LocalInterpreter
 
-
 # =============================================================================
 # Basic Execution
 # =============================================================================

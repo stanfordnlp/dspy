@@ -26,7 +26,7 @@ from typing import Any, Callable
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 
 
-class _SubmitCalled(Exception):
+class _SubmitCalledError(Exception):
     """Internal signal raised when SUBMIT() is called in user code."""
     def __init__(self, output: Any):
         self.output = output
@@ -117,7 +117,7 @@ class LocalInterpreter:
         output_fields = self.output_fields or []
         field_names = [f["name"] for f in output_fields]
 
-        def SUBMIT(*args, **kwargs):
+        def SUBMIT(*args, **kwargs):  # noqa: N802
             if not args and not kwargs:
                 raise ValueError("SUBMIT requires at least one argument")
             if args and kwargs:
@@ -131,12 +131,12 @@ class LocalInterpreter:
                         f"SUBMIT() takes {len(field_names)} positional argument(s) "
                         f"({expected}), but {len(args)} were given"
                     )
-                output = dict(zip(field_names, args))
+                output = dict(zip(field_names, args, strict=False))
             elif len(args) == 1:
                 output = {"output": args[0]}
             else:
                 output = {"output": args}
-            raise _SubmitCalled(output)
+            raise _SubmitCalledError(output)
 
         self._namespace["SUBMIT"] = SUBMIT
 
@@ -147,7 +147,7 @@ class LocalInterpreter:
 
         try:
             exec(code, self._namespace)
-        except _SubmitCalled as e:
+        except _SubmitCalledError as e:
             return FinalOutput(e.output)
         except SyntaxError:
             raise
