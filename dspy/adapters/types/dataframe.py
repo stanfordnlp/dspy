@@ -6,13 +6,6 @@ import pydantic
 
 from dspy.adapters.types.base_type import Type
 
-try:
-    import pandas as pd
-
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-
 
 def _is_dataframe(value: Any) -> bool:
     """Check if value is a pandas DataFrame without requiring pandas import."""
@@ -102,14 +95,6 @@ class DataFrame(Type):
     @pydantic.model_serializer()
     def _serialize(self) -> list:
         """Serialize DataFrame to list of records for JSON serialization."""
-        import warnings
-
-        warnings.warn(
-            "dspy.DataFrame is being serialized to JSON. "
-            "Only dspy.RLM preserves DataFrame data; other modules receive a string representation.",
-            UserWarning,
-            stacklevel=6,
-        )
         return self.data.to_dict(orient="records")
 
     # RLM Sandbox Support
@@ -119,26 +104,12 @@ class DataFrame(Type):
 
     def to_sandbox(self, var_name: str) -> tuple[str, bytes | None]:
         """Serialize DataFrame for sandbox injection using pandas' built-in JSON."""
-        if not PANDAS_AVAILABLE:
-            return None, None
-
         json_bytes = self.data.to_json(orient="records", date_format="iso").encode("utf-8")
         assignment_code = (
             f'{var_name} = pd.DataFrame(json.loads('
             f'open("/tmp/dspy_vars/{var_name}.json").read()))'
         )
         return assignment_code, json_bytes
-
-    @classmethod
-    def from_sandbox(cls, data: Any) -> "DataFrame | None":
-        """Reconstruct DataFrame from sandbox output."""
-        if not PANDAS_AVAILABLE:
-            return None
-        if _is_dataframe(data):
-            return cls(data=data)
-        if isinstance(data, (list, dict)):
-            return cls(data=pd.DataFrame(data))
-        return None
 
     def rlm_preview(self, max_chars: int = 500) -> str:
         """Generate LLM-friendly preview of DataFrame contents."""

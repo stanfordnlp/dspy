@@ -1,5 +1,3 @@
-import warnings
-
 import pytest
 
 pd = pytest.importorskip("pandas")
@@ -59,13 +57,10 @@ def test_format_returns_repr():
     assert "a" in wrapped.format()
 
 
-def test_serialize_emits_warning():
+def test_serialize_to_records():
     df = pd.DataFrame({"a": [1, 2]})
     wrapped = DataFrame(df)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        result = wrapped.model_dump()
-        assert any("serialized to JSON" in str(x.message) for x in w)
+    result = wrapped.model_dump()
     assert isinstance(result, list)
     assert result == [{"a": 1}, {"a": 2}]
 
@@ -115,22 +110,6 @@ def test_to_sandbox_handles_nulls():
     import json
     records = json.loads(payload)
     assert records[1]["a"] is None
-
-
-def test_from_sandbox_list():
-    result = DataFrame.from_sandbox([{"a": 1}, {"a": 2}])
-    assert result is not None
-    assert list(result.data["a"]) == [1, 2]
-
-
-def test_from_sandbox_dataframe():
-    df = pd.DataFrame({"a": [1]})
-    result = DataFrame.from_sandbox(df)
-    assert result.data is df
-
-
-def test_from_sandbox_rejects_unknown():
-    assert DataFrame.from_sandbox("not a dataframe") is None
 
 
 # -- rlm_preview --

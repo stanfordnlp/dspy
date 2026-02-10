@@ -490,6 +490,15 @@ class PythonInterpreter:
         """Inject a large variable via the virtual filesystem."""
         self._send_request("inject_var", {"name": name, "value": value}, f"injecting variable '{name}'")
 
+    def _inject_pending_vars(self) -> None:
+        """Inject all pending large and RLM type variables into the sandbox."""
+        for name, value in self._pending_large_vars.items():
+            self._inject_large_var(name, value)
+        for name, (_, payload) in self._pending_rlm_type_vars.items():
+            if payload is not None:
+                value = payload.decode("utf-8") if isinstance(payload, bytes) else str(payload)
+                self._inject_large_var(name, value)
+
     def execute(
         self,
         code: str,
@@ -502,14 +511,7 @@ class PythonInterpreter:
         self._mount_files()
         self._register_tools()
 
-        for name, value in self._pending_large_vars.items():
-            self._inject_large_var(name, value)
-
-        # Inject RLM type variables via their custom format
-        for name, (_, payload) in getattr(self, '_pending_rlm_type_vars', {}).items():
-            if payload is not None:
-                value = payload.decode("utf-8") if isinstance(payload, bytes) else str(payload)
-                self._inject_large_var(name, value)
+        self._inject_pending_vars()
 
         # Send the code as JSON-RPC request
         self._request_id += 1
@@ -525,12 +527,7 @@ class PythonInterpreter:
             self._ensure_deno_process()
             self._mount_files()
             self._register_tools()
-            for name, value in self._pending_large_vars.items():
-                self._inject_large_var(name, value)
-            for name, (_, payload) in getattr(self, '_pending_rlm_type_vars', {}).items():
-                if payload is not None:
-                    value = payload.decode("utf-8") if isinstance(payload, bytes) else str(payload)
-                    self._inject_large_var(name, value)
+            self._inject_pending_vars()
             self.deno_process.stdin.write(input_data + "\n")
             self.deno_process.stdin.flush()
 
