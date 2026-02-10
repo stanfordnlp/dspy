@@ -327,12 +327,49 @@ class RLM(Module):
             fields.append(field_info)
         return fields
 
+    def _wrap_rlm_inputs(self, input_args: dict[str, Any]) -> dict[str, Any]:
+        """Auto-wrap raw values into their annotated dspy.Type when the type has RLM support.
+
+        For example, if a field is annotated as dspy.DataFrame and the user passes a raw
+        pandas DataFrame, wrap it into dspy.DataFrame so the interpreter can use to_sandbox().
+        """
+        wrapped = {}
+        for name, value in input_args.items():
+            field = self.signature.input_fields.get(name)
+            if field is None:
+                wrapped[name] = value
+                continue
+
+            annotation = getattr(field, "annotation", None)
+            # Check if the annotation is a dspy.Type subclass with RLM support
+            if (
+                annotation is not None
+                and isinstance(annotation, type)
+                and issubclass(annotation, dspy.Type)
+                and hasattr(annotation, "to_sandbox")
+                and not isinstance(value, annotation)
+            ):
+                try:
+                    wrapped[name] = annotation(value)
+                except (TypeError, ValueError):
+                    wrapped[name] = value
+            else:
+                wrapped[name] = value
+        return wrapped
+
     def _build_variables(self, **input_args: Any) -> list[REPLVariable]:
         """Build REPLVariable list from input arguments with field metadata."""
         variables = []
         for name, value in input_args.items():
             field_info = self.signature.input_fields.get(name)
-            variables.append(REPLVariable.from_value(name, value, field_info=field_info))
+            if hasattr(value, 'rlm_preview') and callable(getattr(value, 'rlm_preview', None)):
+                # Use rlm_preview() for types with RLM support (gives better LLM context)
+                preview = value.rlm_preview()
+                var = REPLVariable.from_value(name, value, field_info=field_info)
+                var = var.model_copy(update={"preview": preview, "total_length": len(preview)})
+            else:
+                var = REPLVariable.from_value(name, value, field_info=field_info)
+            variables.append(var)
         return variables
 
     def _format_output(self, output: str) -> str:
@@ -550,6 +587,7 @@ class RLM(Module):
             ValueError: If required input fields are missing
         """
         self._validate_inputs(input_args)
+        input_args = self._wrap_rlm_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
@@ -633,6 +671,7 @@ class RLM(Module):
             ValueError: If required input fields are missing
         """
         self._validate_inputs(input_args)
+        input_args = self._wrap_rlm_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
         execution_tools = self._prepare_execution_tools()
