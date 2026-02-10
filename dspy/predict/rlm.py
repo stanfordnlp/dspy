@@ -61,8 +61,8 @@ You have access to a Python REPL environment. Write Python code and it will be e
 
 Available:
 - Variables: {inputs} (your input data)
-- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
-- `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries){media_tools}
+- `llm_query(prompt, model=None)` - query a sub-LLM (~500K char capacity) for semantic analysis{model_docs}
+- `llm_query_batched(prompts, model=None)` - query multiple prompts concurrently (much faster for multiple queries){media_tools}
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
 - Standard libraries: re, json, collections, math, etc.
@@ -123,6 +123,7 @@ class RLM(Module):
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
+        sub_lms: dict[str, dspy.LM] | None = None,
         interpreter: CodeInterpreter | None = None,
     ):
         """
@@ -135,8 +136,11 @@ class RLM(Module):
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
-            sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
+            sub_lm: Default LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
+            sub_lms: Dict mapping model names to LM instances, enabling sandbox code to select
+                    a specific model via llm_query(prompt, model="name"). When model is None,
+                    falls back to sub_lm, then dspy.settings.lm.
             interpreter: CodeInterpreter implementation to use. Defaults to PythonInterpreter.
         """
         super().__init__()
@@ -146,6 +150,7 @@ class RLM(Module):
         self.max_output_chars = max_output_chars
         self.verbose = verbose
         self.sub_lm = sub_lm
+        self.sub_lms = sub_lms or {}
         self._interpreter = interpreter
         self._user_tools = self._normalize_tools(tools)
         self._validate_tools(self._user_tools)
@@ -224,8 +229,26 @@ class RLM(Module):
         """
         state = {"call_count": 0}
         lock = threading.Lock()
-        lm = self.sub_lm
+        default_lm = self.sub_lm
+        named_lms = self.sub_lms
         _media_registry = media_registry or {}
+
+        def _resolve_lm(model: str | None = None) -> dspy.LM:
+            """Resolve a model name to an LM instance.
+
+            Resolution order: named sub_lms[model] → sub_lm → dspy.settings.lm.
+            """
+            if model is not None:
+                if model in named_lms:
+                    return named_lms[model]
+                available = list(named_lms.keys())
+                raise ValueError(
+                    f"Model '{model}' not found in sub_lms. Available models: {available}"
+                )
+            target_lm = default_lm if default_lm is not None else dspy.settings.lm
+            if target_lm is None:
+                raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+            return target_lm
 
         def _check_and_increment(n: int = 1) -> None:
             with lock:
@@ -236,10 +259,8 @@ class RLM(Module):
                     )
                 state["call_count"] += n
 
-        def _query_lm(prompt: str) -> str:
-            target_lm = lm if lm is not None else dspy.settings.lm
-            if target_lm is None:
-                raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+        def _query_lm(prompt: str, model: str | None = None) -> str:
+            target_lm = _resolve_lm(model)
             response = target_lm(prompt)
             if isinstance(response, list) and response:
                 item = response[0]
@@ -248,11 +269,9 @@ class RLM(Module):
                 return item
             return str(response)
 
-        def _query_lm_multimodal(prompt: str, media_objects: list) -> str:
+        def _query_lm_multimodal(prompt: str, media_objects: list, model: str | None = None) -> str:
             """Query the LLM with a prompt string and media content parts."""
-            target_lm = lm if lm is not None else dspy.settings.lm
-            if target_lm is None:
-                raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+            target_lm = _resolve_lm(model)
 
             # Build multimodal content: text prompt + media content parts
             content_parts = [{"type": "text", "text": prompt}]
@@ -268,22 +287,32 @@ class RLM(Module):
                 return item
             return str(response)
 
-        def llm_query(prompt: str) -> str:
-            """Query the LLM with a prompt string."""
+        def llm_query(prompt: str, model: str | None = None) -> str:
+            """Query the LLM with a prompt string.
+
+            Args:
+                prompt: The text prompt for the LLM.
+                model: Optional model name from sub_lms to use. Defaults to the default sub_lm.
+            """
             if not prompt:
                 raise ValueError("prompt cannot be empty")
             _check_and_increment(1)
-            return _query_lm(prompt)
+            return _query_lm(prompt, model=model)
 
-        def llm_query_batched(prompts: list[str]) -> list[str]:
-            """Query the LLM with multiple prompts concurrently."""
+        def llm_query_batched(prompts: list[str], model: str | None = None) -> list[str]:
+            """Query the LLM with multiple prompts concurrently.
+
+            Args:
+                prompts: List of prompts to send to the LLM.
+                model: Optional model name from sub_lms to use. Defaults to the default sub_lm.
+            """
             if not prompts:
                 return []
             _check_and_increment(len(prompts))
 
             results: dict[int, str] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_idx = {executor.submit(_query_lm, p): i for i, p in enumerate(prompts)}
+                future_to_idx = {executor.submit(_query_lm, p, model): i for i, p in enumerate(prompts)}
                 for future in as_completed(future_to_idx):
                     idx = future_to_idx[future]
                     try:
@@ -292,13 +321,14 @@ class RLM(Module):
                         results[idx] = f"[ERROR] {e}"
             return [results[i] for i in range(len(prompts))]
 
-        def llm_query_with_media(prompt: str, *media_var_names: str) -> str:
+        def llm_query_with_media(prompt: str, *media_var_names: str, model: str | None = None) -> str:
             """Query the LLM with a prompt and media variables (audio/image).
 
             Args:
                 prompt: The text prompt for the LLM.
                 *media_var_names: Names of media variables to include (e.g., 'audio_input', 'my_image').
                     These must be names of Audio or Image input variables.
+                model: Optional model name from sub_lms to use. Defaults to the default sub_lm.
 
             Returns:
                 The LLM's text response.
@@ -322,7 +352,7 @@ class RLM(Module):
                 media_objects.append(_media_registry[var_name])
 
             _check_and_increment(1)
-            return _query_lm_multimodal(prompt, media_objects)
+            return _query_lm_multimodal(prompt, media_objects, model=model)
 
         tools = {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
         if _media_registry:
@@ -388,11 +418,19 @@ class RLM(Module):
             media_tools_str = ""
             media_guidelines_str = ""
 
+        # Document available model names if sub_lms is configured
+        if self.sub_lms:
+            model_names = ", ".join(f"'{name}'" for name in self.sub_lms)
+            model_docs_str = f"\n  Available models: {model_names}. Pass model=<name> to select one."
+        else:
+            model_docs_str = ""
+
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
                 inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
                 max_llm_calls=self.max_llm_calls,
                 media_tools=media_tools_str, media_guidelines=media_guidelines_str,
+                model_docs=model_docs_str,
             ) + tool_docs)
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)

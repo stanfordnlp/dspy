@@ -1328,5 +1328,157 @@ class TestMediaInstructions:
         assert "llm_query_with_media" not in instructions
 
 
+class TestMultiModelSubCalls:
+    """Unit tests for multi-model sub-call routing via sub_lms parameter."""
+
+    def test_sub_lms_stored_on_init(self):
+        """Test sub_lms dict is stored on the RLM instance."""
+        from unittest.mock import MagicMock
+
+        lm1 = MagicMock()
+        lm2 = MagicMock()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3, sub_lms={"flash": lm1, "pro": lm2})
+
+        assert rlm.sub_lms == {"flash": lm1, "pro": lm2}
+
+    def test_sub_lms_defaults_to_empty_dict(self):
+        """Test sub_lms defaults to empty dict when not provided."""
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+        assert rlm.sub_lms == {}
+
+    def test_llm_query_routes_to_named_model(self):
+        """Test llm_query(prompt, model='name') routes to the correct LM."""
+        from unittest.mock import MagicMock
+
+        mock_flash = MagicMock(return_value=["flash response"])
+        mock_pro = MagicMock(return_value=["pro response"])
+        mock_default = MagicMock(return_value=["default response"])
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_default,
+                   sub_lms={"flash": mock_flash, "pro": mock_pro})
+        tools = rlm._make_llm_tools()
+
+        result = tools["llm_query"]("test prompt", model="flash")
+        assert result == "flash response"
+        mock_flash.assert_called_once()
+
+        result = tools["llm_query"]("test prompt", model="pro")
+        assert result == "pro response"
+        mock_pro.assert_called_once()
+
+    def test_llm_query_default_model_uses_sub_lm(self):
+        """Test llm_query without model param falls back to sub_lm."""
+        from unittest.mock import MagicMock
+
+        mock_sub = MagicMock(return_value=["sub_lm response"])
+        mock_flash = MagicMock(return_value=["flash response"])
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_sub, sub_lms={"flash": mock_flash})
+        tools = rlm._make_llm_tools()
+
+        # model=None should use sub_lm, not flash
+        result = tools["llm_query"]("test prompt")
+        assert result == "sub_lm response"
+        mock_sub.assert_called_once()
+        mock_flash.assert_not_called()
+
+    def test_llm_query_raises_on_unknown_model(self):
+        """Test llm_query raises ValueError for unknown model name."""
+        from unittest.mock import MagicMock
+
+        mock_flash = MagicMock(return_value=["flash"])
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lms={"flash": mock_flash})
+        tools = rlm._make_llm_tools()
+
+        with pytest.raises(ValueError, match="Model 'nonexistent' not found"):
+            tools["llm_query"]("test", model="nonexistent")
+
+    def test_llm_query_batched_routes_to_named_model(self):
+        """Test llm_query_batched with model param routes all prompts to named LM."""
+        from unittest.mock import MagicMock
+
+        mock_default = MagicMock(return_value=["default response"])
+        mock_pro = MagicMock(return_value=["pro response"])
+
+        rlm = RLM("query -> answer", max_iterations=3, max_llm_calls=10,
+                   sub_lm=mock_default, sub_lms={"pro": mock_pro})
+        tools = rlm._make_llm_tools()
+
+        results = tools["llm_query_batched"](["prompt1", "prompt2"], model="pro")
+        assert len(results) == 2
+        # Both should come from the pro LM
+        assert all(r == "pro response" for r in results)
+        assert mock_pro.call_count == 2
+        mock_default.assert_not_called()
+
+    def test_llm_query_with_media_routes_to_named_model(self):
+        """Test llm_query_with_media with model kwarg routes to named LM."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.audio import Audio
+
+        mock_default = MagicMock(return_value=["default response"])
+        mock_pro = MagicMock(return_value=["pro media response"])
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_default,
+                   sub_lms={"pro": mock_pro})
+        tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+
+        result = tools["llm_query_with_media"]("transcribe", "audio_input", model="pro")
+        assert result == "pro media response"
+        mock_pro.assert_called_once()
+        mock_default.assert_not_called()
+
+    def test_model_docs_in_instructions_when_sub_lms(self):
+        """Test that model names appear in action instructions when sub_lms is set."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3, sub_lms={"flash": mock_lm, "pro": mock_lm})
+            action_sig, _ = rlm._build_signatures()
+
+        instructions = action_sig.instructions
+        assert "flash" in instructions
+        assert "pro" in instructions
+        assert "model=" in instructions
+
+    def test_no_model_docs_when_no_sub_lms(self):
+        """Test that model docs are absent when sub_lms is not set."""
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            action_sig, _ = rlm._build_signatures()
+
+        instructions = action_sig.instructions
+        assert "Available models:" not in instructions
+
+    def test_call_count_shared_across_models(self):
+        """Test that the call counter is shared across all model choices."""
+        from unittest.mock import MagicMock
+
+        mock_default = MagicMock(return_value=["default"])
+        mock_flash = MagicMock(return_value=["flash"])
+        mock_pro = MagicMock(return_value=["pro"])
+
+        rlm = RLM("query -> answer", max_iterations=3, max_llm_calls=3,
+                   sub_lm=mock_default, sub_lms={"flash": mock_flash, "pro": mock_pro})
+        tools = rlm._make_llm_tools()
+
+        tools["llm_query"]("p1", model="flash")
+        tools["llm_query"]("p2", model="pro")
+        tools["llm_query"]("p3")  # default
+
+        # 4th call should exceed the limit of 3
+        with pytest.raises(RuntimeError, match="LLM call limit exceeded"):
+            tools["llm_query"]("p4", model="flash")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
