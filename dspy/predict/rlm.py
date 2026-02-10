@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Iterator
@@ -65,6 +66,7 @@ Available:
 - `llm_query_batched(prompts, model=None)` - query multiple prompts concurrently (much faster for multiple queries){media_tools}
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
+- `budget()` - check remaining iterations, LLM calls, and time
 - Standard libraries: re, json, collections, math, etc.
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
@@ -76,7 +78,7 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
 6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 
-You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
+You have max {max_llm_calls} sub-LLM calls. Call budget() to check remaining resources. When done, call SUBMIT() with your output."""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
 _CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*)\n```\s*$", re.DOTALL)
@@ -120,6 +122,7 @@ class RLM(Module):
         max_iterations: int = 20,
         max_llm_calls: int = 50,
         max_output_chars: int = 10_000,
+        max_time: float | None = None,
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
@@ -133,6 +136,8 @@ class RLM(Module):
             max_iterations: Maximum REPL interaction iterations.
             max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched) per execution.
             max_output_chars: Maximum characters to include from REPL output.
+            max_time: Maximum wall-clock seconds per forward() call. None means no limit.
+                     The agent can check remaining time via budget().
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
@@ -148,6 +153,7 @@ class RLM(Module):
         self.max_iterations = max_iterations
         self.max_llm_calls = max_llm_calls
         self.max_output_chars = max_output_chars
+        self.max_time = max_time
         self.verbose = verbose
         self.sub_lm = sub_lm
         self.sub_lms = sub_lms or {}
@@ -165,7 +171,7 @@ class RLM(Module):
     # =========================================================================
 
     # Reserved tool names that conflict with built-in sandbox functions
-    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "llm_query_with_media", "SUBMIT", "print"})
+    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "llm_query_with_media", "SUBMIT", "print", "budget"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""
@@ -219,16 +225,24 @@ class RLM(Module):
 
         return "\n".join(lines)
 
-    def _make_llm_tools(self, media_registry: dict[str, Any] | None = None, max_workers: int = 8) -> dict[str, Callable]:
-        """Create llm_query, llm_query_batched, and llm_query_with_media tools with a fresh call counter.
+    def _make_llm_tools(
+        self,
+        media_registry: dict[str, Any] | None = None,
+        max_workers: int = 8,
+        execution_state: dict[str, Any] | None = None,
+    ) -> dict[str, Callable]:
+        """Create llm_query, llm_query_batched, llm_query_with_media, and budget tools with a fresh call counter.
 
         Args:
             media_registry: Dict mapping variable names to media objects (Audio/Image).
                            Used by llm_query_with_media to attach media to sub-LLM calls.
             max_workers: Max concurrent workers for batched queries.
+            execution_state: Mutable dict tracking iteration/time state. Keys:
+                            'start_time' (float), 'iteration' (int). Updated by forward().
         """
         state = {"call_count": 0}
         lock = threading.Lock()
+        _execution_state = execution_state or {}
         default_lm = self.sub_lm
         named_lms = self.sub_lms
         _media_registry = media_registry or {}
@@ -354,7 +368,39 @@ class RLM(Module):
             _check_and_increment(1)
             return _query_lm_multimodal(prompt, media_objects, model=model)
 
-        tools = {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
+        max_iterations = self.max_iterations
+        max_llm_calls = self.max_llm_calls
+        max_time = self.max_time
+
+        def budget() -> str:
+            """Check remaining execution budget: iterations, LLM calls, and time.
+
+            Returns a human-readable summary of remaining resources.
+            """
+            with lock:
+                calls_used = state["call_count"]
+
+            iteration = _execution_state.get("iteration", 0)
+            remaining_iterations = max_iterations - iteration - 1  # -1 for current
+            remaining_calls = max_llm_calls - calls_used
+
+            parts = [
+                f"Iterations: {remaining_iterations}/{max_iterations} remaining",
+                f"LLM calls: {remaining_calls}/{max_llm_calls} remaining",
+            ]
+
+            start_time = _execution_state.get("start_time")
+            if max_time is not None and start_time is not None:
+                elapsed = _time.monotonic() - start_time
+                remaining_time = max(0.0, max_time - elapsed)
+                parts.append(f"Time: {remaining_time:.1f}s/{max_time:.1f}s remaining ({elapsed:.1f}s elapsed)")
+            elif start_time is not None:
+                elapsed = _time.monotonic() - start_time
+                parts.append(f"Time: no limit ({elapsed:.1f}s elapsed)")
+
+            return " | ".join(parts)
+
+        tools = {"llm_query": llm_query, "llm_query_batched": llm_query_batched, "budget": budget}
         if _media_registry:
             tools["llm_query_with_media"] = llm_query_with_media
         return tools
@@ -511,9 +557,16 @@ class RLM(Module):
                 registry[name] = value
         return registry
 
-    def _prepare_execution_tools(self, media_registry: dict[str, Any] | None = None) -> dict[str, Callable]:
+    def _prepare_execution_tools(
+        self,
+        media_registry: dict[str, Any] | None = None,
+        execution_state: dict[str, Any] | None = None,
+    ) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
-        execution_tools = self._make_llm_tools(media_registry=media_registry)
+        execution_tools = self._make_llm_tools(
+            media_registry=media_registry,
+            execution_state=execution_state,
+        )
         # Extract underlying functions from Tool objects for the interpreter
         execution_tools.update({name: tool.func for name, tool in self._user_tools.items()})
         return execution_tools
@@ -708,18 +761,38 @@ class RLM(Module):
 
         Raises:
             ValueError: If required input fields are missing
+            RuntimeError: If max_time budget is exceeded
         """
         self._validate_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
         media_registry = self._build_media_registry(input_args)
-        execution_tools = self._prepare_execution_tools(media_registry=media_registry)
+
+        # Mutable execution state — shared with budget() tool via closure
+        execution_state = {"start_time": _time.monotonic(), "iteration": 0}
+
+        execution_tools = self._prepare_execution_tools(
+            media_registry=media_registry,
+            execution_state=execution_state,
+        )
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
+                execution_state["iteration"] = iteration
+
+                # Check time budget before starting iteration
+                if self.max_time is not None:
+                    elapsed = _time.monotonic() - execution_state["start_time"]
+                    if elapsed > self.max_time:
+                        logger.warning(
+                            f"RLM time budget exceeded ({elapsed:.1f}s > {self.max_time:.1f}s) "
+                            f"at iteration {iteration + 1}, using extract fallback"
+                        )
+                        return self._extract_fallback(variables, history, output_field_names)
+
                 result: Prediction | REPLHistory = self._execute_iteration(
                     repl, variables, history, iteration, input_args, output_field_names
                 )
@@ -792,18 +865,38 @@ class RLM(Module):
 
         Raises:
             ValueError: If required input fields are missing
+            RuntimeError: If max_time budget is exceeded
         """
         self._validate_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
         media_registry = self._build_media_registry(input_args)
-        execution_tools = self._prepare_execution_tools(media_registry=media_registry)
+
+        # Mutable execution state — shared with budget() tool via closure
+        execution_state = {"start_time": _time.monotonic(), "iteration": 0}
+
+        execution_tools = self._prepare_execution_tools(
+            media_registry=media_registry,
+            execution_state=execution_state,
+        )
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
+                execution_state["iteration"] = iteration
+
+                # Check time budget before starting iteration
+                if self.max_time is not None:
+                    elapsed = _time.monotonic() - execution_state["start_time"]
+                    if elapsed > self.max_time:
+                        logger.warning(
+                            f"RLM time budget exceeded ({elapsed:.1f}s > {self.max_time:.1f}s) "
+                            f"at iteration {iteration + 1}, using extract fallback"
+                        )
+                        return await self._aextract_fallback(variables, history, output_field_names)
+
                 result = await self._aexecute_iteration(
                     repl, variables, history, iteration, input_args, output_field_names
                 )

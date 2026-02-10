@@ -1480,5 +1480,159 @@ class TestMultiModelSubCalls:
             tools["llm_query"]("p4", model="flash")
 
 
+class TestBudgetTracking:
+    """Tests for budget() tool and max_time enforcement."""
+
+    def test_max_time_initialization(self):
+        """Test that max_time is stored on the RLM instance."""
+        rlm = RLM("query -> answer", max_time=60.0)
+        assert rlm.max_time == 60.0
+
+    def test_max_time_default_none(self):
+        """Test that max_time defaults to None (no limit)."""
+        rlm = RLM("query -> answer")
+        assert rlm.max_time is None
+
+    def test_budget_tool_created(self):
+        """Test that the budget tool is included in execution tools."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10)
+        tools = rlm._make_llm_tools()
+        assert "budget" in tools
+        assert callable(tools["budget"])
+
+    def test_budget_returns_string(self):
+        """Test that budget() returns a human-readable string."""
+        rlm = RLM("query -> answer", max_iterations=10, max_llm_calls=20)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 3}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert isinstance(result, str)
+        assert "Iterations:" in result
+        assert "LLM calls:" in result
+
+    def test_budget_reflects_iteration(self):
+        """Test that budget() shows correct remaining iterations."""
+        rlm = RLM("query -> answer", max_iterations=10, max_llm_calls=20)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 7}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        # iteration=7, max=10, remaining = 10 - 7 - 1 = 2
+        assert "2/10 remaining" in result
+
+    def test_budget_reflects_llm_calls(self):
+        """Test that budget() shows correct remaining LLM calls after usage."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+
+        from unittest.mock import MagicMock
+        mock_lm = MagicMock(return_value=["response"])
+        rlm_with_lm = RLM("query -> answer", max_iterations=5, max_llm_calls=10, sub_lm=mock_lm)
+        tools = rlm_with_lm._make_llm_tools(execution_state=execution_state)
+
+        # Use 3 LLM calls
+        tools["llm_query"]("prompt1")
+        tools["llm_query"]("prompt2")
+        tools["llm_query"]("prompt3")
+
+        result = tools["budget"]()
+        assert "7/10 remaining" in result
+
+    def test_budget_shows_time_when_max_time_set(self):
+        """Test that budget() includes time info when max_time is configured."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10, max_time=120.0)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "Time:" in result
+        assert "/120.0s remaining" in result
+
+    def test_budget_no_time_when_max_time_none(self):
+        """Test that budget() shows 'no limit' when max_time is None."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "no limit" in result
+
+    def test_budget_reserved_name(self):
+        """Test that 'budget' is a reserved tool name."""
+        def budget() -> str:
+            return "custom"
+
+        from dspy.adapters.types.tool import Tool
+        tool = Tool(budget, name="budget")
+        with pytest.raises(ValueError, match="conflicts with built-in"):
+            RLM("query -> answer", tools=[tool])
+
+    def test_budget_in_action_instructions(self):
+        """Test that the action instructions mention budget()."""
+        rlm = RLM("query -> answer", max_iterations=5)
+        action_sig = rlm.generate_action.signature
+        assert "budget()" in action_sig.instructions
+
+    def test_max_time_triggers_extract_fallback(self):
+        """Test that exceeding max_time triggers extract fallback (not exception)."""
+        import time
+
+        mock = MockInterpreter(responses=[
+            "exploring...",
+            "still exploring...",
+        ])
+        # Set max_time to 0 so it's already exceeded on first check
+        rlm = RLM("query -> answer", max_iterations=5, max_time=0.0, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ])
+        rlm.extract = make_mock_predictor([
+            {"answer": "timeout_fallback"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "timeout_fallback"
+        assert result.final_reasoning == "Extract forced final output"
+
+    def test_max_time_none_no_timeout(self):
+        """Test that max_time=None means no time checking."""
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iterations=5, max_time=None, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "42"
+
+    def test_budget_iteration_updates_via_tool(self):
+        """Test that budget() reports decreasing iterations across a forward() run."""
+        budget_reports = []
+
+        class BudgetCapturingInterpreter(MockInterpreter):
+            def __init__(self):
+                super().__init__(responses=["output1", "output2", FinalOutput({"answer": "done"})])
+
+            def execute(self, code, variables=None):
+                # Call the budget tool if available
+                if "budget" in self.tools:
+                    budget_reports.append(self.tools["budget"]())
+                return super().execute(code, variables)
+
+        mock_interp = BudgetCapturingInterpreter()
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock_interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Step 1", "code": "print('a')"},
+            {"reasoning": "Step 2", "code": "print('b')"},
+            {"reasoning": "Step 3", "code": 'SUBMIT("done")'},
+        ])
+
+        result = rlm(query="test")
+        assert result.answer == "done"
+        # We got 3 iterations (0, 1, 2), should have 3 budget reports
+        assert len(budget_reports) == 3
+        # Each report should show decreasing remaining iterations
+        for report in budget_reports:
+            assert "Iterations:" in report
+            assert "LLM calls:" in report
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
