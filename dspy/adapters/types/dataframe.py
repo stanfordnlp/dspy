@@ -102,14 +102,18 @@ class DataFrame(Type):
     def sandbox_setup(self) -> str:
         return "import pandas as pd\nimport json"
 
-    def to_sandbox(self, var_name: str) -> tuple[str, bytes | None]:
-        """Serialize DataFrame for sandbox injection using pandas' built-in JSON."""
-        json_bytes = self.data.to_json(orient="records", date_format="iso").encode("utf-8")
-        assignment_code = (
-            f'{var_name} = pd.DataFrame(json.loads('
-            f'open("/tmp/dspy_vars/{var_name}.json").read()))'
-        )
-        return assignment_code, json_bytes
+    def to_sandbox(self) -> bytes:
+        """Serialize DataFrame for sandbox injection."""
+        return self.data.to_json(orient="records", date_format="iso").encode("utf-8")
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        """Return code that reconstructs this type from a data expression.
+
+        Args:
+            var_name: Variable name in the sandbox
+            data_expr: Expression that evaluates to the raw data (e.g. file read)
+        """
+        return f"{var_name} = pd.DataFrame(json.loads({data_expr}))"
 
     def rlm_preview(self, max_chars: int = 500) -> str:
         """Generate LLM-friendly preview of DataFrame contents."""

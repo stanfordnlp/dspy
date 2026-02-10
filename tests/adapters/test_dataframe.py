@@ -79,11 +79,9 @@ def test_sandbox_setup():
 def test_to_sandbox_returns_json():
     df = pd.DataFrame({"x": [1, 2], "y": [3.0, 4.0]})
     wrapped = DataFrame(df)
-    code, payload = wrapped.to_sandbox("my_df")
+    payload = wrapped.to_sandbox()
 
     assert isinstance(payload, bytes)
-    assert "my_df" in code
-    assert "pd.DataFrame" in code
 
     import json
     records = json.loads(payload)
@@ -92,10 +90,19 @@ def test_to_sandbox_returns_json():
     assert records[1]["y"] == 4.0
 
 
+def test_sandbox_assignment():
+    df = pd.DataFrame({"x": [1]})
+    wrapped = DataFrame(df)
+    code = wrapped.sandbox_assignment("my_df", "open('/tmp/data.json').read()")
+    assert "my_df" in code
+    assert "pd.DataFrame" in code
+    assert "/tmp/data.json" in code
+
+
 def test_to_sandbox_handles_timestamps():
     df = pd.DataFrame({"ts": pd.to_datetime(["2024-01-01", "2024-06-15"])})
     wrapped = DataFrame(df)
-    _, payload = wrapped.to_sandbox("df")
+    payload = wrapped.to_sandbox()
 
     import json
     records = json.loads(payload)
@@ -105,7 +112,7 @@ def test_to_sandbox_handles_timestamps():
 def test_to_sandbox_handles_nulls():
     df = pd.DataFrame({"a": [1.0, None, 3.0]})
     wrapped = DataFrame(df)
-    _, payload = wrapped.to_sandbox("df")
+    payload = wrapped.to_sandbox()
 
     import json
     records = json.loads(payload)

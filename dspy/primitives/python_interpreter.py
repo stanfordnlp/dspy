@@ -406,21 +406,23 @@ class PythonInterpreter:
                 raise CodeInterpreterError(f"Invalid variable name: '{key}'")
 
         # Variables with custom RLM serialization (via to_sandbox interface)
-        rlm_type_vars: dict[str, tuple[str, bytes]] = {}  # name -> (code, payload)
+        rlm_type_vars: dict[str, bytes] = {}  # name -> payload
         large_vars = {}
         small_assignments = []
         setup_imports = set()
+        rlm_assignments = []
 
         for k, v in variables.items():
             if _has_rlm_support(v):
-                assignment_code, payload = v.to_sandbox(k)
-                if assignment_code is not None:
-                    rlm_type_vars[k] = (assignment_code, payload)
-                    if hasattr(v, 'sandbox_setup'):
-                        setup = v.sandbox_setup()
-                        if setup:
-                            setup_imports.add(setup)
-                    continue
+                payload = v.to_sandbox()
+                rlm_type_vars[k] = payload
+                data_expr = f"open('/tmp/dspy_vars/{k}.json').read()"
+                rlm_assignments.append(v.sandbox_assignment(k, data_expr))
+                if hasattr(v, 'sandbox_setup'):
+                    setup = v.sandbox_setup()
+                    if setup:
+                        setup_imports.add(setup)
+                continue
 
             # Standard serialization for other types
             serialized = self._serialize_value(v)
@@ -442,9 +444,6 @@ class PythonInterpreter:
             f"{k} = json.loads(open('/tmp/dspy_vars/{k}.json').read())"
             for k in large_vars
         ]
-
-        # Build assignments for RLM type vars (code is already complete)
-        rlm_assignments = [code for code, _ in rlm_type_vars.values()]
 
         assignments = imports + small_assignments + large_assignments + rlm_assignments
 
@@ -494,7 +493,7 @@ class PythonInterpreter:
         """Inject all pending large and RLM type variables into the sandbox."""
         for name, value in self._pending_large_vars.items():
             self._inject_large_var(name, value)
-        for name, (_, payload) in self._pending_rlm_type_vars.items():
+        for name, payload in self._pending_rlm_type_vars.items():
             if payload is not None:
                 value = payload.decode("utf-8") if isinstance(payload, bytes) else str(payload)
                 self._inject_large_var(name, value)
