@@ -1771,5 +1771,584 @@ class TestBudgetTracking:
         assert "LOW" not in result
 
 
+# ============================================================================
+# Integration Tests: RLM + LocalInterpreter
+# ============================================================================
+
+
+class TestRLMWithLocalInterpreter:
+    """Integration tests proving RLM and LocalInterpreter work together end-to-end."""
+
+    def test_basic_forward(self):
+        """Test RLM forward() with LocalInterpreter produces a result."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("hello")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "hello"
+
+    def test_state_persists_across_iterations(self):
+        """Test that variables set in one iteration survive to the next."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Set a variable", "code": "x = 42\nprint(x)"},
+            {"reasoning": "Use it", "code": "SUBMIT(str(x * 2))"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "84"
+
+    def test_tools_accessible_in_code(self):
+        """Test that llm_query and budget tools are callable from LocalInterpreter code."""
+        from unittest.mock import MagicMock
+
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        mock_lm = MagicMock(return_value=["mocked response"])
+        mock_lm.history = []
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=5, sub_lm=mock_lm, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Use tools", "code": 'b = budget()\nresult = llm_query("hi")\nprint(result)'},
+            {"reasoning": "Submit", "code": "SUBMIT(result)"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "mocked response"
+
+    def test_stdlib_imports_work(self):
+        """Test that LocalInterpreter allows stdlib imports inside RLM."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Use stdlib", "code": 'import json\nSUBMIT(json.dumps({"a": 1}))'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == '{"a": 1}'
+
+    def test_error_recovery(self):
+        """Test that a runtime error in one iteration doesn't kill the session."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "This will error", "code": "1 / 0"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+
+    def test_max_time_with_local_interpreter(self):
+        """Test that max_time budget enforcement works with LocalInterpreter."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=10, max_time=0.0, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ])
+        rlm.extract = make_mock_predictor([
+            {"answer": "timeout_fallback"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "timeout_fallback"
+
+    @pytest.mark.asyncio
+    async def test_aforward_with_local_interpreter(self):
+        """Test RLM aforward() works with LocalInterpreter."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("async_hello")'},
+        ])
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "async_hello"
+
+
+# ============================================================================
+# Tests: llm_query_with_media content construction
+# ============================================================================
+
+
+class TestMediaContentConstruction:
+    """Test that llm_query_with_media builds correct multimodal content for the LM."""
+
+    def test_media_content_parts_sent_to_lm(self):
+        """Test that llm_query_with_media sends multimodal content parts to the LM."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.audio import Audio
+
+        mock_lm = MagicMock(return_value=["transcription result"])
+        mock_lm.history = []
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(
+            media_registry={"my_audio": audio},
+            execution_state=execution_state,
+        )
+
+        result = tools["llm_query_with_media"]("describe this audio", "my_audio")
+        assert result == "transcription result"
+
+        # Verify the LM was called with messages containing multimodal content
+        mock_lm.assert_called_once()
+        call_kwargs = mock_lm.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+        assert messages is not None
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        content = messages[0]["content"]
+        assert isinstance(content, list)
+        # First part should be text
+        assert content[0]["type"] == "text"
+        assert content[0]["text"] == "describe this audio"
+        # Remaining parts should be from audio.format()
+        assert len(content) > 1
+
+    def test_image_content_parts_sent_to_lm(self):
+        """Test that llm_query_with_media sends image content parts to the LM."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.image import Image
+
+        mock_lm = MagicMock(return_value=["a cat sitting on a mat"])
+        mock_lm.history = []
+
+        image = Image(url="https://example.com/cat.jpg")
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(
+            media_registry={"my_image": image},
+            execution_state=execution_state,
+        )
+
+        result = tools["llm_query_with_media"]("what is in this image?", "my_image")
+        assert result == "a cat sitting on a mat"
+
+        # Verify multimodal message structure
+        mock_lm.assert_called_once()
+        call_kwargs = mock_lm.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+        content = messages[0]["content"]
+        assert content[0]["type"] == "text"
+        assert len(content) > 1
+
+    def test_multiple_media_objects_in_one_call(self):
+        """Test llm_query_with_media with multiple media variables."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.audio import Audio
+        from dspy.adapters.types.image import Image
+
+        mock_lm = MagicMock(return_value=["combined analysis"])
+        mock_lm.history = []
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+        image = Image(url="https://example.com/photo.jpg")
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(
+            media_registry={"audio_in": audio, "image_in": image},
+            execution_state=execution_state,
+        )
+
+        result = tools["llm_query_with_media"]("analyze both", "audio_in", "image_in")
+        assert result == "combined analysis"
+
+        # Verify both media objects were included
+        call_kwargs = mock_lm.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+        content = messages[0]["content"]
+        # text + audio parts + image parts
+        assert len(content) >= 3
+
+    def test_media_with_model_routing(self):
+        """Test llm_query_with_media routes to named model when specified."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.audio import Audio
+
+        mock_default = MagicMock(return_value=["default"])
+        mock_default.history = []
+        mock_pro = MagicMock(return_value=["pro result"])
+        mock_pro.history = []
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        rlm = RLM("query -> answer", max_iterations=3,
+                   sub_lm=mock_default, sub_lms={"pro": mock_pro})
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(
+            media_registry={"audio": audio},
+            execution_state=execution_state,
+        )
+
+        result = tools["llm_query_with_media"]("transcribe", "audio", model="pro")
+        assert result == "pro result"
+        mock_pro.assert_called_once()
+        mock_default.assert_not_called()
+
+
+# ============================================================================
+# Tests: max_cost mid-run fallback
+# ============================================================================
+
+
+class TestMaxCostMidRunFallback:
+    """Test that max_cost triggers extract fallback during a multi-iteration run."""
+
+    def test_cost_exceeded_mid_run_triggers_fallback(self):
+        """Test that exceeding max_cost mid-run triggers extract fallback, not crash."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        mock_lm.history = []
+
+        mock = MockInterpreter(responses=[
+            "first iteration output",
+            "second iteration output",  # cost exceeded before this
+        ])
+        rlm = RLM("query -> answer", max_iterations=10, max_cost=0.05,
+                   sub_lm=mock_lm, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+            {"reasoning": "More", "code": "print('more')"},
+        ])
+        rlm.extract = make_mock_predictor([
+            {"answer": "cost_fallback"},
+        ])
+
+        # Simulate cost appearing after first iteration
+        # The forward loop checks cost at the start of each iteration
+        # After iteration 0, we inject cost into LM history
+        original_execute = mock.execute
+
+        def execute_with_cost_injection(code, variables=None):
+            result = original_execute(code, variables)
+            # After first execute, inject cost exceeding budget
+            if mock.call_count == 1:
+                mock_lm.history.append({
+                    "cost": 0.10,  # exceeds max_cost=0.05
+                    "usage": {"total_tokens": 5000},
+                })
+            return result
+
+        mock.execute = execute_with_cost_injection
+
+        result = rlm.forward(query="test")
+        assert result.answer == "cost_fallback"
+        assert result.final_reasoning == "Extract forced final output"
+
+
+# ============================================================================
+# Tests: Async budget/time/cost
+# ============================================================================
+
+
+class TestAsyncBudgetTimeCost:
+    """Test that budget, max_time, and max_cost work correctly in aforward()."""
+
+    @pytest.mark.asyncio
+    async def test_aforward_max_time_triggers_fallback(self):
+        """Test that aforward() respects max_time and triggers extract fallback."""
+        mock = MockInterpreter(responses=["exploring..."])
+        rlm = RLM("query -> answer", max_iterations=5, max_time=0.0, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ], async_mode=True)
+        rlm.extract = make_mock_predictor([
+            {"answer": "async_timeout_fallback"},
+        ], async_mode=True)
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "async_timeout_fallback"
+
+    @pytest.mark.asyncio
+    async def test_aforward_max_cost_triggers_fallback(self):
+        """Test that aforward() respects max_cost and triggers extract fallback."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        mock_lm.history = [{"cost": 1.0, "usage": {"total_tokens": 50000}}]
+
+        mock = MockInterpreter(responses=["exploring..."])
+        rlm = RLM("query -> answer", max_iterations=5, max_cost=0.0,
+                   sub_lm=mock_lm, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ], async_mode=True)
+        rlm.extract = make_mock_predictor([
+            {"answer": "async_cost_fallback"},
+        ], async_mode=True)
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "async_cost_fallback"
+
+    @pytest.mark.asyncio
+    async def test_aforward_budget_tool_works(self):
+        """Test that budget() tool is accessible in aforward() via MockInterpreter."""
+        budget_reports = []
+
+        class BudgetCapturingInterpreter(MockInterpreter):
+            def __init__(self):
+                super().__init__(responses=["output", FinalOutput({"answer": "done"})])
+
+            def execute(self, code, variables=None):
+                if "budget" in self.tools:
+                    budget_reports.append(self.tools["budget"]())
+                return super().execute(code, variables)
+
+        mock_interp = BudgetCapturingInterpreter()
+        rlm = RLM("query -> answer", max_iterations=10, max_llm_calls=30,
+                   max_time=60.0, interpreter=mock_interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Step 1", "code": "print('a')"},
+            {"reasoning": "Done", "code": 'SUBMIT("done")'},
+        ], async_mode=True)
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "done"
+        assert len(budget_reports) >= 1
+        assert "Iterations:" in budget_reports[0]
+        assert "Time:" in budget_reports[0]
+
+
+# ============================================================================
+# Tests: bootstrap_trace resilience for non-parse exceptions
+# ============================================================================
+
+
+class TestBootstrapTraceResilience:
+    """Test that bootstrap_trace_data handles non-parse exceptions gracefully."""
+
+    def test_runtime_error_captured_as_failed_prediction(self):
+        """Test that a RuntimeError from forward() is captured, not propagated."""
+        from unittest.mock import patch
+
+        import dspy
+        from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
+
+        class CrashingModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.predictor = dspy.Predict("query -> answer")
+
+            def forward(self, **kwargs):
+                raise RuntimeError("RLM timeout exceeded")
+
+        program = CrashingModule()
+        dataset = [
+            dspy.Example(query="test1").with_inputs("query"),
+            dspy.Example(query="test2").with_inputs("query"),
+        ]
+
+        def metric(example, prediction, trace=None):
+            if isinstance(prediction, FailedPrediction):
+                return 0.0
+            return 1.0
+
+        # Mock the Evaluate class to directly call the program
+        class DirectEvaluate:
+            def __init__(self, **kwargs):
+                self.devset = kwargs.get("devset", [])
+                self.failure_score = kwargs.get("failure_score", 0)
+
+            def __call__(self, program, metric=None, **kwargs):
+                results = []
+                for example in self.devset:
+                    inputs = {k: example[k] for k in example.inputs()}
+                    prediction = program(**inputs)
+                    score = metric(example, prediction) if metric else None
+                    results.append((example, prediction, score))
+
+                class Result:
+                    pass
+                r = Result()
+                r.results = results
+                return r
+
+        with patch("dspy.teleprompt.bootstrap_trace.Evaluate", DirectEvaluate):
+            import dspy as _dspy
+            with _dspy.context(lm=_dspy.LM(model="openai/gpt-4o-mini"), trace=[]):
+                results = bootstrap_trace_data(
+                    program=program,
+                    dataset=dataset,
+                    metric=metric,
+                    raise_on_error=False,
+                )
+
+        assert len(results) == 2
+        for result in results:
+            pred = result["prediction"]
+            assert isinstance(pred, FailedPrediction)
+            assert "RLM timeout exceeded" in pred.completion_text
+            # Trace should be preserved (even if empty, it shouldn't be None)
+            assert isinstance(result["trace"], list)
+
+    def test_cost_overrun_captured_as_failed_prediction(self):
+        """Test that a cost overrun exception is captured with partial trace."""
+        from unittest.mock import patch
+
+        import dspy
+        from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
+
+        class CostOverrunModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.predictor = dspy.Predict("query -> answer")
+
+            def forward(self, **kwargs):
+                # Simulate partial work before cost overrun
+                # Add something to the trace before crashing
+                dspy.settings.trace.append(
+                    (self.predictor, kwargs, dspy.Prediction(answer="partial"))
+                )
+                raise RuntimeError("Cost budget exceeded ($0.55 > $0.50)")
+
+        program = CostOverrunModule()
+        dataset = [dspy.Example(query="test").with_inputs("query")]
+
+        def metric(example, prediction, trace=None):
+            return 0.0
+
+        class DirectEvaluate:
+            def __init__(self, **kwargs):
+                self.devset = kwargs.get("devset", [])
+
+            def __call__(self, program, metric=None, **kwargs):
+                results = []
+                for example in self.devset:
+                    inputs = {k: example[k] for k in example.inputs()}
+                    prediction = program(**inputs)
+                    score = metric(example, prediction) if metric else None
+                    results.append((example, prediction, score))
+
+                class Result:
+                    pass
+                r = Result()
+                r.results = results
+                return r
+
+        with patch("dspy.teleprompt.bootstrap_trace.Evaluate", DirectEvaluate):
+            import dspy as _dspy
+            with _dspy.context(lm=_dspy.LM(model="openai/gpt-4o-mini"), trace=[]):
+                results = bootstrap_trace_data(
+                    program=program,
+                    dataset=dataset,
+                    metric=metric,
+                    raise_on_error=False,
+                )
+
+        assert len(results) == 1
+        pred = results[0]["prediction"]
+        assert isinstance(pred, FailedPrediction)
+        assert "Cost budget exceeded" in pred.completion_text
+        # The partial trace from before the crash should be preserved
+        trace = results[0]["trace"]
+        assert isinstance(trace, list)
+        assert len(trace) == 1  # the one entry we appended before crashing
+
+    def test_keyboard_interrupt_not_swallowed(self):
+        """Test that KeyboardInterrupt is NOT caught (it's BaseException, not Exception)."""
+        from unittest.mock import patch
+
+        import dspy
+        from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
+
+        class InterruptingModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.predictor = dspy.Predict("query -> answer")
+
+            def forward(self, **kwargs):
+                raise KeyboardInterrupt()
+
+        program = InterruptingModule()
+        dataset = [dspy.Example(query="test").with_inputs("query")]
+
+        class DirectEvaluate:
+            def __init__(self, **kwargs):
+                self.devset = kwargs.get("devset", [])
+
+            def __call__(self, program, metric=None, **kwargs):
+                results = []
+                for example in self.devset:
+                    inputs = {k: example[k] for k in example.inputs()}
+                    prediction = program(**inputs)
+                    results.append((example, prediction, None))
+
+                class Result:
+                    pass
+                r = Result()
+                r.results = results
+                return r
+
+        with patch("dspy.teleprompt.bootstrap_trace.Evaluate", DirectEvaluate):
+            import dspy as _dspy
+            with _dspy.context(lm=_dspy.LM(model="openai/gpt-4o-mini"), trace=[]):
+                with pytest.raises(KeyboardInterrupt):
+                    bootstrap_trace_data(
+                        program=program,
+                        dataset=dataset,
+                        raise_on_error=False,
+                    )
+
+
+# ============================================================================
+# Tests: LocalInterpreter output_fields via setter
+# ============================================================================
+
+
+class TestLocalInterpreterOutputFieldsSetter:
+    """Test LocalInterpreter output_fields configuration paths."""
+
+    def test_output_fields_set_after_init(self):
+        """Test that output_fields can be set after construction and SUBMIT uses them."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        interp.output_fields = [{"name": "answer"}, {"name": "confidence"}]
+        interp.start()
+
+        result = interp.execute('SUBMIT("hello", "high")')
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "hello", "confidence": "high"}
+
+    def test_output_fields_none_defaults_to_single_output(self):
+        """Test that without output_fields, single-arg SUBMIT wraps in 'output' key."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        interp.start()
+
+        result = interp.execute('SUBMIT("hello")')
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"output": "hello"}
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
