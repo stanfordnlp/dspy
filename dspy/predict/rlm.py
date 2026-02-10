@@ -26,7 +26,7 @@ from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, Code
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLHistory, REPLVariable
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
 
@@ -103,7 +103,7 @@ class RLM(Module):
         signature: type[Signature] | str,
         max_iterations: int = 20,
         max_llm_calls: int = 50,
-        max_output_chars: int = 100_000,
+        max_output_chars: int = 10_000,
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
@@ -336,11 +336,8 @@ class RLM(Module):
         return variables
 
     def _format_output(self, output: str) -> str:
-        """Format and truncate REPL output."""
         if not output:
             return "(no output - did you forget to print?)"
-        if len(output) > self.max_output_chars:
-            return output[:self.max_output_chars] + "\n... (truncated)"
         return output
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
@@ -501,6 +498,8 @@ class RLM(Module):
             output = str(result) if result else ""
 
         output = self._format_output(output)
+        if self.verbose:
+            logger.info(REPLEntry.format_output(output, self.max_output_chars))
         return history.append(reasoning=pred.reasoning, code=code, output=output)
 
     def _execute_iteration(
@@ -556,7 +555,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
-            history: REPLHistory = REPLHistory()
+            history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
                 result: Prediction | REPLHistory = self._execute_iteration(
@@ -639,7 +638,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
-            history = REPLHistory()
+            history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
                 result = await self._aexecute_iteration(
