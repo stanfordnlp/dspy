@@ -2350,5 +2350,490 @@ class TestLocalInterpreterOutputFieldsSetter:
         assert result.output == {"output": "hello"}
 
 
+# ============================================================================
+# Depth > 1 Tests: Recursive RLM with LocalInterpreter
+# ============================================================================
+
+import time as _time
+
+
+class TestSubcallInit:
+    """Tests for depth/max_depth initialization and routing flag."""
+
+    def test_depth_max_depth_defaults(self):
+        """Default depth=0, max_depth=1 means no recursion."""
+        rlm = RLM("query -> answer", max_iterations=3)
+        assert rlm.depth == 0
+        assert rlm.max_depth == 1
+
+    def test_depth_max_depth_stored(self):
+        """Custom depth and max_depth are stored."""
+        rlm = RLM("query -> answer", max_iterations=3, depth=1, max_depth=3)
+        assert rlm.depth == 1
+        assert rlm.max_depth == 3
+
+    def test_max_depth_1_uses_plain_lm(self):
+        """With max_depth=1 (default), llm_query does a plain LM call."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["plain response"])
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=1, sub_lm=mock_lm)
+        tools = rlm._make_llm_tools()
+
+        result = tools["llm_query"]("test prompt")
+        assert result == "plain response"
+        mock_lm.assert_called_once()
+
+    def test_max_depth_2_at_depth_0_is_recursive(self):
+        """With max_depth=2, depth=0: _subcall is called (not plain LM)."""
+        from unittest.mock import MagicMock, patch
+
+        mock_lm = MagicMock(return_value=["should not be called"])
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, sub_lm=mock_lm)
+
+        # Patch _subcall to capture that it's called instead of plain LM
+        with patch.object(rlm, "_subcall", return_value="subcall result") as mock_subcall:
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("test prompt")
+
+            assert result == "subcall result"
+            mock_subcall.assert_called_once()
+            mock_lm.assert_not_called()
+
+    def test_max_depth_2_at_depth_1_is_leaf(self):
+        """With max_depth=2, depth=1: plain LM call (leaf level)."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["leaf response"])
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, depth=1, sub_lm=mock_lm)
+        tools = rlm._make_llm_tools()
+
+        result = tools["llm_query"]("test prompt")
+        assert result == "leaf response"
+        mock_lm.assert_called_once()
+
+
+class TestSubcallTimeBudgetPropagation:
+    """Tests for max_time propagation to child RLM, adapted from vanilla RLM test_subcall.py."""
+
+    def test_child_receives_remaining_timeout(self):
+        """When parent has max_time=60 and 10s elapsed, child should get ~50s."""
+        from unittest.mock import patch
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            # Only capture child inits (signature="prompt -> response")
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_time=60.0)
+        execution_state = {"start_time": _time.monotonic() - 10.0, "iteration": 0}
+
+        with patch.object(RLM, "__init__", capturing_init):
+            # Child will fail (no LM configured) but we capture the kwargs before that
+            rlm._subcall("test", execution_state=execution_state)
+
+        assert "max_time" in captured_child_kwargs
+        remaining = captured_child_kwargs["max_time"]
+        assert 45.0 < remaining < 55.0, f"Expected ~50s remaining, got {remaining}"
+
+    def test_child_receives_none_timeout_when_parent_has_none(self):
+        """When parent has no max_time, child should also have None."""
+        from unittest.mock import patch
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_time=None)
+
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+
+        assert captured_child_kwargs.get("max_time") is None
+
+    def test_subcall_returns_error_when_time_exhausted(self):
+        """When time budget is already exhausted, _subcall returns error string."""
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_time=10.0)
+        execution_state = {"start_time": _time.monotonic() - 15.0, "iteration": 0}
+
+        result = rlm._subcall("test", execution_state=execution_state)
+        assert "Time budget exhausted" in result
+
+
+class TestSubcallCostBudgetPropagation:
+    """Tests for max_cost propagation to child RLM."""
+
+    def test_child_receives_remaining_cost(self):
+        """When parent has max_cost=1.0 and $0.30 spent, child should get ~$0.70."""
+        from unittest.mock import patch
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_cost=1.0)
+        execution_state = {
+            "start_time": _time.monotonic(),
+            "iteration": 0,
+            "_get_cost_and_tokens": lambda: (0.30, 5000),
+        }
+
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test", execution_state=execution_state)
+
+        assert "max_cost" in captured_child_kwargs
+        remaining = captured_child_kwargs["max_cost"]
+        assert 0.69 < remaining < 0.71, f"Expected ~$0.70, got {remaining}"
+
+    def test_subcall_returns_error_when_cost_exhausted(self):
+        """When cost budget is already exhausted, _subcall returns error string."""
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_cost=0.01)
+        execution_state = {
+            "start_time": _time.monotonic(),
+            "iteration": 0,
+            "_get_cost_and_tokens": lambda: (0.02, 1000),
+        }
+
+        result = rlm._subcall("test", execution_state=execution_state)
+        assert "Cost budget exhausted" in result
+
+
+class TestSubcallModelOverride:
+    """Tests for model= parameter override in _subcall."""
+
+    def test_model_override_sets_child_sub_lm(self):
+        """When model='flash', child's sub_lm should be the flash LM instance."""
+        from unittest.mock import MagicMock, patch
+
+        mock_flash = MagicMock(return_value=["flash"])
+        mock_pro = MagicMock(return_value=["pro"])
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2,
+                   sub_lms={"flash": mock_flash, "pro": mock_pro})
+
+        def resolve_lm(model=None):
+            if model == "flash":
+                return mock_flash
+            if model == "pro":
+                return mock_pro
+            return None
+
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test", model="flash", resolve_lm=resolve_lm)
+
+        assert captured_child_kwargs.get("sub_lm") is mock_flash
+
+    def test_no_model_override_uses_parent_sub_lm(self):
+        """Without model override, child inherits parent's sub_lm."""
+        from unittest.mock import MagicMock, patch
+
+        mock_parent_sub = MagicMock(return_value=["parent sub"])
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, sub_lm=mock_parent_sub)
+
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+
+        assert captured_child_kwargs.get("sub_lm") is mock_parent_sub
+
+
+class TestSubcallParameterPropagation:
+    """Tests for combined parameter propagation to child RLM."""
+
+    def test_child_inherits_max_iterations(self):
+        """Child should receive parent's max_iterations."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=15, max_depth=2)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("max_iterations") == 15
+
+    def test_child_inherits_max_llm_calls(self):
+        """Child should receive parent's max_llm_calls."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_llm_calls=25, max_depth=2)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("max_llm_calls") == 25
+
+    def test_child_inherits_user_tools(self):
+        """Child should receive parent's user-provided tools."""
+        from unittest.mock import patch
+
+        def my_tool(x: str) -> str:
+            return x
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=2, tools=[my_tool])
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("tools") is not None
+        assert len(captured["tools"]) == 1
+
+    def test_child_depth_incremented(self):
+        """Child should have depth = parent.depth + 1."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=3, depth=0)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("depth") == 1
+
+    def test_child_inherits_max_depth(self):
+        """Child should receive same max_depth as parent."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=3)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("max_depth") == 3
+
+    def test_child_inherits_sub_lms(self):
+        """Child should receive parent's sub_lms dict."""
+        from unittest.mock import MagicMock, patch
+
+        mock_flash = MagicMock()
+        mock_pro = MagicMock()
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=2, sub_lms={"flash": mock_flash, "pro": mock_pro})
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("sub_lms") == {"flash": mock_flash, "pro": mock_pro}
+
+
+class TestSubcallInterpreterIsolation:
+    """Tests that child RLM gets an isolated LocalInterpreter."""
+
+    def test_child_gets_local_interpreter(self):
+        """Child should receive a LocalInterpreter instance."""
+        from unittest.mock import patch
+
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=2)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert isinstance(captured.get("interpreter"), LocalInterpreter)
+
+    def test_interpreter_shutdown_on_success(self):
+        """LocalInterpreter.shutdown() is called after successful child completion."""
+        from unittest.mock import MagicMock, patch
+
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        shutdown_called = []
+        _original_shutdown = LocalInterpreter.shutdown
+
+        def tracking_shutdown(self_inner):
+            shutdown_called.append(True)
+            _original_shutdown(self_inner)
+
+        with dummy_lm_context([
+            {"reasoning": "Done", "code": 'SUBMIT(response="ok")'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2)
+            with patch.object(LocalInterpreter, "shutdown", tracking_shutdown):
+                rlm._subcall("test")
+
+        assert len(shutdown_called) >= 1
+
+    def test_interpreter_shutdown_on_error(self):
+        """LocalInterpreter.shutdown() is called even when child fails."""
+        from unittest.mock import MagicMock, patch
+
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        shutdown_called = []
+        _original_shutdown = LocalInterpreter.shutdown
+
+        def tracking_shutdown(self_inner):
+            shutdown_called.append(True)
+            _original_shutdown(self_inner)
+
+        with dummy_lm_context([
+            {"reasoning": "Bad", "code": 'raise Exception("boom")'},
+            {"response": "fallback"},  # extract fallback
+        ]):
+            rlm = RLM("query -> answer", max_iterations=1, max_depth=2)
+            with patch.object(LocalInterpreter, "shutdown", tracking_shutdown):
+                rlm._subcall("test")
+
+        assert len(shutdown_called) >= 1
+
+
+class TestSubcallE2E:
+    """End-to-end tests for depth>1 using DummyLM + LocalInterpreter."""
+
+    def test_depth_2_child_submits_response(self):
+        """Parent calls llm_query, child runs in LocalInterpreter and SUBMITs."""
+        with dummy_lm_context([
+            {"reasoning": "Answer directly", "code": 'SUBMIT(response="42")'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2)
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("What is 6*7?")
+            assert result == "42"
+
+    def test_depth_2_child_uses_prompt_variable(self):
+        """Child RLM receives the prompt as a variable it can use in code."""
+        with dummy_lm_context([
+            {"reasoning": "Use the prompt", "code": 'SUBMIT(response=f"Got: {prompt}")'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2)
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("hello world")
+            assert result == "Got: hello world"
+
+    def test_depth_2_child_inherits_tools(self):
+        """Child can call parent's user-provided tools."""
+        call_log = []
+
+        def my_tool(x: str) -> str:
+            call_log.append(x)
+            return f"tool({x})"
+
+        with dummy_lm_context([
+            {"reasoning": "Use tool", "code": 'val = my_tool(x="hi")\nSUBMIT(response=val)'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2, tools=[my_tool])
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("use tool")
+            assert result == "tool(hi)"
+            assert call_log == ["hi"]
+
+    def test_depth_2_child_multi_iteration(self):
+        """Child RLM can take multiple iterations before SUBMITting."""
+        with dummy_lm_context([
+            {"reasoning": "Explore first", "code": 'x = len(prompt)\nprint(f"length={x}")'},
+            {"reasoning": "Now submit", "code": 'SUBMIT(response=str(x))'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=5, max_depth=2)
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("hello")
+            assert result == "5"
+
+    def test_depth_2_child_error_returns_string(self):
+        """Child failure returns error string, doesn't crash parent."""
+        with dummy_lm_context([
+            {"reasoning": "Crash", "code": 'raise RuntimeError("boom")'},
+            {"response": "recovered"},  # extract fallback
+        ]):
+            rlm = RLM("query -> answer", max_iterations=1, max_depth=2)
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("test")
+            # Should get a string back (either "recovered" from extract or error message)
+            assert isinstance(result, str)
+
+    def test_depth_2_batched_sequential(self):
+        """llm_query_batched with max_depth=2 runs children sequentially."""
+        with dummy_lm_context([
+            # Child 1
+            {"reasoning": "First", "code": 'SUBMIT(response="a1")'},
+            # Child 2
+            {"reasoning": "Second", "code": 'SUBMIT(response="a2")'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_llm_calls=20)
+            tools = rlm._make_llm_tools()
+            results = tools["llm_query_batched"](["q1", "q2"])
+            assert results == ["a1", "a2"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

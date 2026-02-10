@@ -129,6 +129,8 @@ class RLM(Module):
         sub_lm: dspy.LM | None = None,
         sub_lms: dict[str, dspy.LM] | None = None,
         interpreter: CodeInterpreter | None = None,
+        depth: int = 0,
+        max_depth: int = 1,
     ):
         """
         Args:
@@ -151,6 +153,10 @@ class RLM(Module):
                     a specific model via llm_query(prompt, model="name"). When model is None,
                     falls back to sub_lm, then dspy.settings.lm.
             interpreter: CodeInterpreter implementation to use. Defaults to PythonInterpreter.
+            depth: Current recursion depth (0-indexed). Used internally when spawning child RLMs.
+            max_depth: Maximum recursion depth. When depth < max_depth - 1, llm_query spawns
+                      a child RLM with its own REPL (LocalInterpreter). At leaf depth, falls
+                      back to plain LM completion. Default 1 means no recursion (current behavior).
         """
         super().__init__()
         self.signature = ensure_signature(signature)
@@ -163,6 +169,8 @@ class RLM(Module):
         self.sub_lm = sub_lm
         self.sub_lms = sub_lms or {}
         self._interpreter = interpreter
+        self.depth = depth
+        self.max_depth = max_depth
         self._user_tools = self._normalize_tools(tools)
         self._validate_tools(self._user_tools)
 
@@ -318,8 +326,18 @@ class RLM(Module):
                 return item
             return str(response)
 
+        # Determine if llm_query should spawn recursive child RLMs
+        _use_recursive = self.depth < self.max_depth - 1
+
+        def _do_subcall(prompt: str, model: str | None = None) -> str:
+            """Route subcall through the instance method, passing execution state."""
+            return self._subcall(prompt, model=model, execution_state=_execution_state, resolve_lm=_resolve_lm)
+
         def llm_query(prompt: str, model: str | None = None) -> str:
             """Query the LLM with a prompt string.
+
+            At depth < max_depth - 1, spawns a child RLM with its own REPL.
+            At leaf depth, makes a plain LM completion call.
 
             Args:
                 prompt: The text prompt for the LLM.
@@ -328,10 +346,15 @@ class RLM(Module):
             if not prompt:
                 raise ValueError("prompt cannot be empty")
             _check_and_increment(1)
+            if _use_recursive:
+                return _do_subcall(prompt, model=model)
             return _query_lm(prompt, model=model)
 
         def llm_query_batched(prompts: list[str], model: str | None = None) -> list[str]:
             """Query the LLM with multiple prompts concurrently.
+
+            At depth < max_depth - 1, each prompt spawns a child RLM (sequential).
+            At leaf depth, prompts are sent as plain LM calls (parallel).
 
             Args:
                 prompts: List of prompts to send to the LLM.
@@ -340,6 +363,16 @@ class RLM(Module):
             if not prompts:
                 return []
             _check_and_increment(len(prompts))
+
+            if _use_recursive:
+                # Sequential: each child spawns its own LocalInterpreter
+                results = []
+                for p in prompts:
+                    try:
+                        results.append(_do_subcall(p, model=model))
+                    except Exception as e:
+                        results.append(f"[ERROR] {e}")
+                return results
 
             results: dict[int, str] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -653,6 +686,81 @@ class RLM(Module):
         # Reset registration flag to force re-registration with fresh tools
         if hasattr(interpreter, "_tools_registered"):
             interpreter._tools_registered = False
+
+    def _subcall(
+        self,
+        prompt: str,
+        model: str | None = None,
+        execution_state: dict[str, Any] | None = None,
+        resolve_lm: Callable | None = None,
+    ) -> str:
+        """Spawn a child RLM with its own LocalInterpreter REPL.
+
+        Called by llm_query/llm_query_batched when depth < max_depth - 1.
+        The child gets a fresh REPL and can write code, call llm_query (which
+        recurses further or falls back to plain LM at leaf depth), and SUBMIT
+        a response. Mirrors the vanilla RLM's _subcall pattern.
+
+        Args:
+            prompt: The prompt to pass as the child's input.
+            model: Optional model name. Selects child's sub_lm via resolve_lm.
+            execution_state: Parent's mutable execution state (start_time, cost tracker).
+            resolve_lm: Closure from _make_llm_tools that resolves model name to LM instance.
+
+        Returns:
+            The child's response string, or an error string on failure.
+        """
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        _execution_state = execution_state or {}
+
+        # Calculate remaining time budget for child
+        remaining_time = None
+        if self.max_time is not None:
+            start = _execution_state.get("start_time")
+            if start is not None:
+                elapsed = _time.monotonic() - start
+                remaining_time = max(0.0, self.max_time - elapsed)
+                if remaining_time <= 0:
+                    return "Error: Time budget exhausted"
+
+        # Calculate remaining cost budget for child
+        remaining_cost = None
+        if self.max_cost is not None:
+            get_cost = _execution_state.get("_get_cost_and_tokens")
+            if get_cost is not None:
+                cost_spent, _ = get_cost()
+                remaining_cost = max(0.0, self.max_cost - cost_spent)
+                if remaining_cost <= 0:
+                    return "Error: Cost budget exhausted"
+
+        # Resolve child's sub_lm: model param selects which LM the child uses
+        child_sub_lm = resolve_lm(model) if (model and resolve_lm) else self.sub_lm
+
+        interpreter = LocalInterpreter()
+        child = RLM(
+            signature="prompt -> response",
+            max_iterations=self.max_iterations,
+            max_llm_calls=self.max_llm_calls,
+            max_output_chars=self.max_output_chars,
+            max_time=remaining_time,
+            max_cost=remaining_cost,
+            verbose=self.verbose,
+            tools=list(self._user_tools.values()) if self._user_tools else None,
+            sub_lm=child_sub_lm,
+            sub_lms=self.sub_lms,
+            interpreter=interpreter,
+            depth=self.depth + 1,
+            max_depth=self.max_depth,
+        )
+
+        try:
+            result = child(prompt=prompt)
+            return result.response
+        except Exception as e:
+            return f"Error: Child RLM failed - {e}"
+        finally:
+            interpreter.shutdown()
 
     @contextmanager
     def _interpreter_context(self, execution_tools: dict[str, Callable]) -> Iterator[CodeInterpreter]:
