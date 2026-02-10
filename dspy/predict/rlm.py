@@ -123,6 +123,7 @@ class RLM(Module):
         max_llm_calls: int = 50,
         max_output_chars: int = 10_000,
         max_time: float | None = None,
+        max_cost: float | None = None,
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
@@ -138,6 +139,9 @@ class RLM(Module):
             max_output_chars: Maximum characters to include from REPL output.
             max_time: Maximum wall-clock seconds per forward() call. None means no limit.
                      The agent can check remaining time via budget().
+            max_cost: Maximum dollar cost per forward() call. None means no limit.
+                     Tracked via litellm's per-call cost reporting. The agent can
+                     check remaining cost via budget().
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
@@ -154,6 +158,7 @@ class RLM(Module):
         self.max_llm_calls = max_llm_calls
         self.max_output_chars = max_output_chars
         self.max_time = max_time
+        self.max_cost = max_cost
         self.verbose = verbose
         self.sub_lm = sub_lm
         self.sub_lms = sub_lms or {}
@@ -246,6 +251,18 @@ class RLM(Module):
         default_lm = self.sub_lm
         named_lms = self.sub_lms
         _media_registry = media_registry or {}
+
+        # Snapshot LM history lengths for cost tracking.
+        # We'll sum cost from entries added after these offsets.
+        _all_lms: list[dspy.LM] = []
+        if default_lm is not None:
+            _all_lms.append(default_lm)
+        for lm_inst in named_lms.values():
+            if lm_inst not in _all_lms:
+                _all_lms.append(lm_inst)
+        if not _all_lms and dspy.settings.lm is not None:
+            _all_lms.append(dspy.settings.lm)
+        _history_offsets = {id(lm_inst): len(lm_inst.history) for lm_inst in _all_lms}
 
         def _resolve_lm(model: str | None = None) -> dspy.LM:
             """Resolve a model name to an LM instance.
@@ -371,9 +388,24 @@ class RLM(Module):
         max_iterations = self.max_iterations
         max_llm_calls = self.max_llm_calls
         max_time = self.max_time
+        max_cost = self.max_cost
+
+        def _get_cost_and_tokens() -> tuple[float, int]:
+            """Sum cost and tokens from LM history entries added since tool creation."""
+            total_cost = 0.0
+            total_tokens = 0
+            for lm_inst in _all_lms:
+                offset = _history_offsets.get(id(lm_inst), 0)
+                for entry in lm_inst.history[offset:]:
+                    cost = entry.get("cost")
+                    if cost is not None:
+                        total_cost += cost
+                    usage = entry.get("usage", {})
+                    total_tokens += usage.get("total_tokens", 0)
+            return total_cost, total_tokens
 
         def budget() -> str:
-            """Check remaining execution budget: iterations, LLM calls, and time.
+            """Check remaining execution budget: iterations, LLM calls, time, and cost.
 
             Returns a human-readable summary of remaining resources.
             """
@@ -398,7 +430,17 @@ class RLM(Module):
                 elapsed = _time.monotonic() - start_time
                 parts.append(f"Time: no limit ({elapsed:.1f}s elapsed)")
 
+            cost_spent, tokens_used = _get_cost_and_tokens()
+            if max_cost is not None:
+                remaining_cost = max(0.0, max_cost - cost_spent)
+                parts.append(f"Cost: ${remaining_cost:.4f}/${max_cost:.4f} remaining (${cost_spent:.4f} spent, {tokens_used:,} tokens)")
+            elif cost_spent > 0:
+                parts.append(f"Cost: no limit (${cost_spent:.4f} spent, {tokens_used:,} tokens)")
+
             return " | ".join(parts)
+
+        # Expose cost tracker to forward() for budget enforcement
+        _execution_state["_get_cost_and_tokens"] = _get_cost_and_tokens
 
         tools = {"llm_query": llm_query, "llm_query_batched": llm_query_batched, "budget": budget}
         if _media_registry:
@@ -793,6 +835,18 @@ class RLM(Module):
                         )
                         return self._extract_fallback(variables, history, output_field_names)
 
+                # Check cost budget before starting iteration
+                if self.max_cost is not None:
+                    get_cost = execution_state.get("_get_cost_and_tokens")
+                    if get_cost is not None:
+                        cost_spent, _ = get_cost()
+                        if cost_spent > self.max_cost:
+                            logger.warning(
+                                f"RLM cost budget exceeded (${cost_spent:.4f} > ${self.max_cost:.4f}) "
+                                f"at iteration {iteration + 1}, using extract fallback"
+                            )
+                            return self._extract_fallback(variables, history, output_field_names)
+
                 result: Prediction | REPLHistory = self._execute_iteration(
                     repl, variables, history, iteration, input_args, output_field_names
                 )
@@ -896,6 +950,18 @@ class RLM(Module):
                             f"at iteration {iteration + 1}, using extract fallback"
                         )
                         return await self._aextract_fallback(variables, history, output_field_names)
+
+                # Check cost budget before starting iteration
+                if self.max_cost is not None:
+                    get_cost = execution_state.get("_get_cost_and_tokens")
+                    if get_cost is not None:
+                        cost_spent, _ = get_cost()
+                        if cost_spent > self.max_cost:
+                            logger.warning(
+                                f"RLM cost budget exceeded (${cost_spent:.4f} > ${self.max_cost:.4f}) "
+                                f"at iteration {iteration + 1}, using extract fallback"
+                            )
+                            return await self._aextract_fallback(variables, history, output_field_names)
 
                 result = await self._aexecute_iteration(
                     repl, variables, history, iteration, input_args, output_field_names

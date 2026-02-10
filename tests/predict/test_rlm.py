@@ -1634,5 +1634,54 @@ class TestBudgetTracking:
             assert "LLM calls:" in report
 
 
+    def test_max_cost_initialization(self):
+        """Test that max_cost is stored on the RLM instance."""
+        rlm = RLM("query -> answer", max_cost=0.10)
+        assert rlm.max_cost == 0.10
+
+    def test_max_cost_default_none(self):
+        """Test that max_cost defaults to None (no limit)."""
+        rlm = RLM("query -> answer")
+        assert rlm.max_cost is None
+
+    def test_budget_shows_cost_when_max_cost_set(self):
+        """Test that budget() includes cost info when max_cost is configured."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10, max_cost=0.50)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "Cost:" in result
+        assert "$0.50" in result
+
+    def test_budget_no_cost_when_max_cost_none_and_no_spending(self):
+        """Test that budget() omits cost when max_cost is None and nothing spent."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        # No cost tracking when max_cost is None and no LM history entries with cost
+        assert "Cost:" not in result or "no limit" in result
+
+    def test_max_cost_zero_triggers_immediate_fallback(self):
+        """Test that max_cost=0 triggers extract fallback immediately."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        # Give the mock LM a history with a cost entry
+        mock_lm.history = [{"cost": 0.001, "usage": {"total_tokens": 100}}]
+
+        mock = MockInterpreter(responses=["exploring..."])
+        rlm = RLM("query -> answer", max_iterations=5, max_cost=0.0, sub_lm=mock_lm, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ])
+        rlm.extract = make_mock_predictor([
+            {"answer": "cost_fallback"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "cost_fallback"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
