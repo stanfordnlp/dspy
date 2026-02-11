@@ -363,6 +363,46 @@ def test_reasoning_model_requirements(model_name):
     assert lm.kwargs["max_completion_tokens"] is None
 
 
+@pytest.mark.parametrize("max_tokens", [16_000, None])
+def test_predict_load_normalizes_serialized_openai_reasoning_tokens(tmp_path, max_tokens):
+    """Regression for OpenAI reasoning token-key normalization during load.
+
+    OpenAI reasoning LMs are constructed with `max_tokens`, but serialized LM
+    state stores token limits under `max_completion_tokens`.
+
+    This test verifies the persisted token key and confirms that
+    `Predict.load()` preserves equivalent OpenAI reasoning-model kwargs after
+    a save/load round-trip.
+    """
+    # Construct with the shared constructor token key.
+    lm = dspy.LM(
+        model="openai/gpt-5-nano-2025-08-07",
+        temperature=1.0,
+        max_tokens=max_tokens,
+    )
+
+    predict = dspy.Predict("question -> answer")
+    predict.lm = lm
+
+    save_path = tmp_path / "predict.json"
+    predict.save(save_path)
+
+    # Saved state for OpenAI reasoning models should use `max_completion_tokens`.
+    serialized_state = json.loads(save_path.read_text())
+    assert serialized_state["lm"]["max_completion_tokens"] == max_tokens
+    assert "max_tokens" not in serialized_state["lm"]
+
+    reloaded_predict = dspy.Predict("question -> answer")
+
+    # Reload from disk; load-time normalization handles serialized token keys.
+    reloaded_predict.load(save_path)
+    assert reloaded_predict.lm is not None
+
+    # Runtime kwargs should continue to use the OpenAI reasoning token key.
+    assert reloaded_predict.lm.kwargs["max_completion_tokens"] == max_tokens
+    assert "max_tokens" not in reloaded_predict.lm.kwargs
+
+
 def test_gpt_5_chat_not_reasoning_model():
     """Test that gpt-5-chat is NOT treated as a reasoning model."""
     # Should NOT raise validation error - gpt-5-chat is not a reasoning model
