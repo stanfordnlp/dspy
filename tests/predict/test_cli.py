@@ -24,7 +24,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dspy.predict.cli import CLI, CLIError, PROMPT_PLACEHOLDER
+from dspy.predict.cli import CLI, CLIError, PROMPT_PLACEHOLDER, AGENT_PRESETS, _build_agent_command
 from dspy.primitives.cli_types import CLIEvent, CLITrajectory, parse_jsonl_events
 from dspy.primitives.prediction import Prediction
 
@@ -912,3 +912,171 @@ class TestCLIEdgeCases:
         result = cli.forward(question="test")
         assert "line1" in result.answer
         assert "line3" in result.answer
+
+
+# ============================================================================
+# Agent Preset Tests
+# ============================================================================
+
+
+class TestAgentPresets:
+    """Tests for agent preset registry and _build_agent_command."""
+
+    def test_all_presets_have_required_keys(self):
+        required_keys = {"command", "print_flags", "yolo_flags", "output_flags",
+                         "model_flag", "session_flags", "parse_jsonl", "stdin"}
+        for name, preset in AGENT_PRESETS.items():
+            missing = required_keys - set(preset.keys())
+            assert not missing, f"Preset {name!r} missing keys: {missing}"
+
+    def test_unknown_agent_raises(self):
+        with pytest.raises(ValueError, match="Unknown agent"):
+            _build_agent_command("nonexistent_agent")
+
+    def test_error_lists_available_agents(self):
+        with pytest.raises(ValueError, match="claude") as exc_info:
+            _build_agent_command("bad")
+        # Should list all available agents
+        for name in AGENT_PRESETS:
+            assert name in str(exc_info.value)
+
+    # --- Claude ---
+
+    def test_claude_preset(self):
+        cmd, parse_jsonl = _build_agent_command("claude")
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
+        assert "--dangerously-skip-permissions" in cmd
+        assert "--no-session-persistence" in cmd
+        assert "--output-format" in cmd
+        assert "text" in cmd
+        assert parse_jsonl is False
+
+    def test_claude_json_preset(self):
+        cmd, parse_jsonl = _build_agent_command("claude-json")
+        assert "--output-format" in cmd
+        assert "stream-json" in cmd
+        assert "--verbose" in cmd
+        assert parse_jsonl is True
+
+    def test_claude_with_model(self):
+        cmd, _ = _build_agent_command("claude", model="sonnet")
+        assert "--model" in cmd
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "sonnet"
+
+    def test_claude_no_yolo(self):
+        cmd, _ = _build_agent_command("claude", yolo=False)
+        assert "--dangerously-skip-permissions" not in cmd
+
+    # --- Codex ---
+
+    def test_codex_preset(self):
+        cmd, parse_jsonl = _build_agent_command("codex")
+        assert cmd[:2] == ["codex", "exec"]
+        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        assert parse_jsonl is False
+
+    def test_codex_json_preset(self):
+        cmd, parse_jsonl = _build_agent_command("codex-json")
+        assert "--json" in cmd
+        assert parse_jsonl is True
+
+    def test_codex_with_model(self):
+        cmd, _ = _build_agent_command("codex", model="o3")
+        assert "--model" in cmd
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "o3"
+
+    # --- Gemini ---
+
+    def test_gemini_preset(self):
+        cmd, parse_jsonl = _build_agent_command("gemini")
+        assert cmd[0] == "gemini"
+        assert "--yolo" in cmd
+        assert "-o" in cmd
+        assert "text" in cmd
+        assert parse_jsonl is False
+
+    def test_gemini_json_preset(self):
+        cmd, parse_jsonl = _build_agent_command("gemini-json")
+        assert "json" in cmd
+        assert parse_jsonl is True
+
+    # --- Pi ---
+
+    def test_pi_preset(self):
+        cmd, parse_jsonl = _build_agent_command("pi")
+        assert cmd[0] == "pi"
+        assert "-p" in cmd
+        assert "--no-session" in cmd
+        assert parse_jsonl is False
+
+    def test_pi_with_model(self):
+        cmd, _ = _build_agent_command("pi", model="gemini-2.5-flash")
+        assert "--model" in cmd
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "gemini-2.5-flash"
+
+    # --- Extra flags ---
+
+    def test_extra_flags_appended(self):
+        cmd, _ = _build_agent_command("claude", extra_flags=["--max-budget-usd", "5"])
+        assert "--max-budget-usd" in cmd
+        assert "5" in cmd
+
+    # --- No model ---
+
+    def test_no_model_flag_when_none(self):
+        cmd, _ = _build_agent_command("claude")
+        assert "--model" not in cmd
+
+
+class TestFromAgent:
+    """Tests for CLI.from_agent() classmethod."""
+
+    def test_from_agent_creates_cli(self):
+        cli = CLI.from_agent("pi", "question -> answer")
+        assert isinstance(cli, CLI)
+        assert "question" in cli.signature.input_fields
+        assert cli.cli_command[0] == "pi"
+
+    def test_from_agent_with_model(self):
+        cli = CLI.from_agent("claude", "task -> result", model="sonnet")
+        assert "--model" in cli.cli_command
+        assert "sonnet" in cli.cli_command
+
+    def test_from_agent_passes_kwargs(self):
+        cli = CLI.from_agent("codex", "task -> result", max_time=120, max_retries=3)
+        assert cli.max_time == 120
+        assert cli.max_retries == 3
+
+    def test_from_agent_json_sets_parse_jsonl(self):
+        cli = CLI.from_agent("codex-json", "task -> result")
+        assert cli.parse_jsonl is True
+
+    def test_from_agent_text_sets_no_parse_jsonl(self):
+        cli = CLI.from_agent("codex", "task -> result")
+        assert cli.parse_jsonl is False
+
+    def test_from_agent_parse_jsonl_override(self):
+        cli = CLI.from_agent("codex-json", "task -> result", parse_jsonl=False)
+        assert cli.parse_jsonl is False
+
+    def test_from_agent_unknown_raises(self):
+        with pytest.raises(ValueError, match="Unknown agent"):
+            CLI.from_agent("not_real", "q -> a")
+
+    def test_from_agent_has_named_predictors(self):
+        cli = CLI.from_agent("pi", "question -> answer")
+        names = [n for n, _ in cli.named_predictors()]
+        assert "prepare_prompt" in names
+        assert "extract" in names
+
+    def test_from_agent_with_cwd(self):
+        cli = CLI.from_agent("claude", "task -> result", cwd="/tmp")
+        assert cli.cwd == "/tmp"
+
+    def test_from_agent_with_env(self):
+        cli = CLI.from_agent("pi", "q -> a", env={"MY_VAR": "val"})
+        assert cli.env["MY_VAR"] == "val"
