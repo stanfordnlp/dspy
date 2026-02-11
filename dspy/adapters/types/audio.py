@@ -122,6 +122,27 @@ class Audio(Type):
         length = len(self.data)
         return f"Audio(data=<AUDIO_BASE_64_ENCODED({length})>, audio_format='{self.audio_format}')"
 
+    # RLM Sandbox Support
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        """Generate LLM-friendly preview of Audio contents."""
+        return f"<Audio: format={self.audio_format}, {len(self.data)} base64 chars>"
+
+    def to_sandbox(self) -> bytes:
+        """Serialize Audio for sandbox injection (descriptor string, not raw data).
+
+        Audio data cannot be meaningfully processed as code in the sandbox.
+        The agent should use llm_query() with multimodal content to perceive audio.
+        """
+        return self.rlm_preview().encode("utf-8")
+
+    def sandbox_setup(self) -> str:
+        return ""
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        """Return code that assigns the audio descriptor string in the sandbox."""
+        return f"{var_name} = {data_expr}"
+
 def encode_audio(audio: Union[str, bytes, dict, "Audio", Any], sampling_rate: int = 16000, format: str = "wav") -> dict:
     """
     Encode audio to a dict with 'data' and 'audio_format'.

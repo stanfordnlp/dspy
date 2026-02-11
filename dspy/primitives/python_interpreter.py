@@ -20,39 +20,9 @@ from typing import Any, Callable
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
 
 
-# Lazy import helpers for multimodal types to avoid circular imports
-def _is_media_type(value: Any) -> bool:
-    """Check if value is a DSPy Audio or Image type."""
-    try:
-        from dspy.adapters.types.audio import Audio
-        if isinstance(value, Audio):
-            return True
-    except ImportError:
-        pass
-    try:
-        from dspy.adapters.types.image import Image
-        if isinstance(value, Image):
-            return True
-    except ImportError:
-        pass
-    return False
-
-
-def _media_descriptor(value: Any) -> str:
-    """Return a human-readable descriptor string for a media object."""
-    try:
-        from dspy.adapters.types.audio import Audio
-        if isinstance(value, Audio):
-            return f"<Audio: format={value.audio_format}, {len(value.data)} base64 chars>"
-    except ImportError:
-        pass
-    try:
-        from dspy.adapters.types.image import Image
-        if isinstance(value, Image):
-            return repr(value)
-    except ImportError:
-        pass
-    return repr(value)
+def _has_rlm_support(value: Any) -> bool:
+    """Check if a value is a dspy.Type with RLM sandbox support (to_sandbox protocol)."""
+    return hasattr(value, "to_sandbox") and callable(getattr(value, "to_sandbox", None))
 
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeInterpreterError"]
 
@@ -413,8 +383,8 @@ class PythonInterpreter:
         """Recursively convert Python values to JSON-compatible types."""
         if value is None or isinstance(value, str | int | float | bool):
             return value
-        elif _is_media_type(value):
-            return _media_descriptor(value)
+        elif _has_rlm_support(value):
+            return value.rlm_preview() if hasattr(value, "rlm_preview") else repr(value)
         elif isinstance(value, dict):
             return {k: self._to_json_compatible(v) for k, v in value.items()}
         elif isinstance(value, list | tuple):
@@ -428,14 +398,35 @@ class PythonInterpreter:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
     def _inject_variables(self, code: str, variables: dict[str, Any]) -> str:
-        """Insert Python assignments for each variable at the top of the code."""
+        """Insert Python assignments for each variable at the top of the code.
+
+        Supports dspy.Type instances with RLM sandbox support via to_sandbox(),
+        with fallback to JSON serialization for other types.
+        """
         for key in variables:
             if not key.isidentifier() or keyword.iskeyword(key) or key == "json":
                 raise CodeInterpreterError(f"Invalid variable name: '{key}'")
 
+        # Variables with custom RLM serialization (via to_sandbox interface)
+        rlm_type_vars: dict[str, bytes] = {}  # name -> payload
         large_vars = {}
         small_assignments = []
+        setup_imports = set()
+        rlm_assignments = []
+
         for k, v in variables.items():
+            if _has_rlm_support(v):
+                payload = v.to_sandbox()
+                rlm_type_vars[k] = payload
+                data_expr = f"open('/tmp/dspy_vars/{k}.json').read()"
+                rlm_assignments.append(v.sandbox_assignment(k, data_expr))
+                if hasattr(v, "sandbox_setup"):
+                    setup = v.sandbox_setup()
+                    if setup:
+                        setup_imports.add(setup)
+                continue
+
+            # Standard serialization for other types
             serialized = self._serialize_value(v)
             if len(serialized) > LARGE_VAR_THRESHOLD:
                 large_vars[k] = json.dumps(self._to_json_compatible(v))
@@ -443,12 +434,20 @@ class PythonInterpreter:
                 small_assignments.append(f"{k} = {serialized}")
 
         self._pending_large_vars = large_vars
+        self._pending_rlm_type_vars = rlm_type_vars
 
+        # Build imports
+        imports = list(setup_imports)
         if large_vars:
-            large_assignments = [f"{k} = json.loads(open('/tmp/dspy_vars/{k}.json').read())" for k in large_vars]
-            assignments = ["import json"] + small_assignments + large_assignments
-        else:
-            assignments = small_assignments
+            imports.append("import json")
+
+        # Build assignments for large JSON vars
+        large_assignments = [
+            f"{k} = json.loads(open('/tmp/dspy_vars/{k}.json').read())"
+            for k in large_vars
+        ]
+
+        assignments = imports + small_assignments + large_assignments + rlm_assignments
 
         return "\n".join(assignments) + "\n" + code if assignments else code
 
@@ -485,16 +484,26 @@ class PythonInterpreter:
                 sorted_items = list(value)
             items = ", ".join(self._serialize_value(item) for item in sorted_items)
             return f"[{items}]"
-        elif _is_media_type(value):
-            # Media types (Audio, Image) are represented as descriptor strings in the sandbox.
-            # The actual media data is accessed via llm_query_with_media() in the RLM context.
-            return repr(_media_descriptor(value))
+        elif _has_rlm_support(value):
+            # Types with RLM sandbox support are represented as preview strings in the sandbox.
+            # The actual data is accessed via the type's sandbox protocol methods.
+            preview = value.rlm_preview() if hasattr(value, "rlm_preview") else repr(value)
+            return repr(preview)
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
     def _inject_large_var(self, name: str, value: str) -> None:
         """Inject a large variable via the virtual filesystem."""
         self._send_request("inject_var", {"name": name, "value": value}, f"injecting variable '{name}'")
+
+    def _inject_pending_vars(self) -> None:
+        """Inject all pending large and RLM type variables into the sandbox."""
+        for name, value in self._pending_large_vars.items():
+            self._inject_large_var(name, value)
+        for name, payload in getattr(self, "_pending_rlm_type_vars", {}).items():
+            if payload is not None:
+                value = payload.decode("utf-8") if isinstance(payload, bytes) else str(payload)
+                self._inject_large_var(name, value)
 
     def execute(
         self,
@@ -508,8 +517,7 @@ class PythonInterpreter:
         self._mount_files()
         self._register_tools()
 
-        for name, value in self._pending_large_vars.items():
-            self._inject_large_var(name, value)
+        self._inject_pending_vars()
 
         # Send the code as JSON-RPC request
         self._request_id += 1
@@ -525,8 +533,7 @@ class PythonInterpreter:
             self._ensure_deno_process()
             self._mount_files()
             self._register_tools()
-            for name, value in self._pending_large_vars.items():
-                self._inject_large_var(name, value)
+            self._inject_pending_vars()
             self.deno_process.stdin.write(input_data + "\n")
             self.deno_process.stdin.flush()
 

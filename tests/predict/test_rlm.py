@@ -1115,11 +1115,11 @@ class TestRLMIntegration:
 # ============================================================================
 
 
-class TestMediaDetection:
-    """Unit tests for media field detection and registry building."""
+class TestMultimodalDetection:
+    """Unit tests for multimodal field detection and registry building (types protocol)."""
 
     def test_detect_audio_field(self):
-        """Test _detect_media_fields finds Audio-typed inputs."""
+        """Test _detect_multimodal_fields finds Audio-typed inputs."""
         import dspy
         from dspy.adapters.types.audio import Audio
 
@@ -1130,13 +1130,13 @@ class TestMediaDetection:
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
             rlm = RLM(TranscribeSig, max_iterations=3)
-            media_fields = rlm._detect_media_fields()
+            fields = rlm._detect_multimodal_fields()
 
-        assert "audio_input" in media_fields
-        assert media_fields["audio_input"] == "Audio"
+        assert "audio_input" in fields
+        assert fields["audio_input"] == "Audio"
 
     def test_detect_image_field(self):
-        """Test _detect_media_fields finds Image-typed inputs."""
+        """Test _detect_multimodal_fields finds Image-typed inputs."""
         import dspy
         from dspy.adapters.types.image import Image
 
@@ -1147,13 +1147,13 @@ class TestMediaDetection:
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('a cat')"}]):
             rlm = RLM(DescribeSig, max_iterations=3)
-            media_fields = rlm._detect_media_fields()
+            fields = rlm._detect_multimodal_fields()
 
-        assert "photo" in media_fields
-        assert media_fields["photo"] == "Image"
+        assert "photo" in fields
+        assert fields["photo"] == "Image"
 
-    def test_detect_mixed_media_fields(self):
-        """Test _detect_media_fields finds both Audio and Image in same signature."""
+    def test_detect_mixed_multimodal_fields(self):
+        """Test _detect_multimodal_fields finds both Audio and Image in same signature."""
         import dspy
         from dspy.adapters.types.audio import Audio
         from dspy.adapters.types.image import Image
@@ -1166,23 +1166,23 @@ class TestMediaDetection:
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('done')"}]):
             rlm = RLM(MultimodalSig, max_iterations=3)
-            media_fields = rlm._detect_media_fields()
+            fields = rlm._detect_multimodal_fields()
 
-        assert len(media_fields) == 2
-        assert media_fields["audio_clip"] == "Audio"
-        assert media_fields["photo"] == "Image"
+        assert len(fields) == 2
+        assert fields["audio_clip"] == "Audio"
+        assert fields["photo"] == "Image"
 
-    def test_no_media_fields(self):
-        """Test _detect_media_fields returns empty dict for text-only signatures."""
+    def test_no_multimodal_fields(self):
+        """Test _detect_multimodal_fields returns empty dict for text-only signatures."""
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
             rlm = RLM("query -> answer", max_iterations=3)
-            media_fields = rlm._detect_media_fields()
+            fields = rlm._detect_multimodal_fields()
 
-        assert media_fields == {}
+        assert fields == {}
 
-    def test_build_media_registry_with_audio(self):
-        """Test _build_media_registry extracts Audio objects from inputs."""
+    def test_build_multimodal_registry_with_audio(self):
+        """Test _build_multimodal_registry extracts Audio objects from inputs."""
         import dspy
         from dspy.adapters.types.audio import Audio
 
@@ -1195,62 +1195,58 @@ class TestMediaDetection:
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
             rlm = RLM(TranscribeSig, max_iterations=3)
-            registry = rlm._build_media_registry({"audio_input": audio})
+            registry = rlm._build_multimodal_registry({"audio_input": audio})
 
         assert "audio_input" in registry
         assert registry["audio_input"] is audio
 
-    def test_build_media_registry_ignores_text(self):
-        """Test _build_media_registry skips non-media values."""
+    def test_build_multimodal_registry_ignores_text(self):
+        """Test _build_multimodal_registry skips non-multimodal values."""
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
             rlm = RLM("query -> answer", max_iterations=3)
-            registry = rlm._build_media_registry({"query": "hello world"})
+            registry = rlm._build_multimodal_registry({"query": "hello world"})
 
         assert registry == {}
+
+    def test_wrap_rlm_inputs_passthrough_already_wrapped(self):
+        """Test _wrap_rlm_inputs passes through already-wrapped dspy types."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        class TranscribeSig(dspy.Signature):
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            wrapped = rlm._wrap_rlm_inputs({"audio_input": audio})
+
+        assert wrapped["audio_input"] is audio
+
+    def test_wrap_rlm_inputs_passthrough_plain_types(self):
+        """Test _wrap_rlm_inputs passes through plain types like str."""
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            wrapped = rlm._wrap_rlm_inputs({"query": "hello"})
+
+        assert wrapped["query"] == "hello"
 
 
 class TestLLMQueryWithMedia:
     """Unit tests for llm_query_with_media tool creation and validation."""
 
-    def test_media_tool_available_when_registry_populated(self):
-        """Test llm_query_with_media is created when media registry is non-empty."""
-        import dspy
-        from dspy.adapters.types.audio import Audio
-
-        audio = Audio(data="dGVzdA==", audio_format="wav")
-
-        class TranscribeSig(dspy.Signature):
-            """Transcribe audio."""
-            audio_input: Audio = dspy.InputField()
-            transcription: str = dspy.OutputField()
-
+    def test_media_tool_always_available(self):
+        """Test llm_query_with_media is always created as a tool."""
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
-            rlm = RLM(TranscribeSig, max_iterations=3)
-            tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools()
 
         assert "llm_query_with_media" in tools
         assert "llm_query" in tools
         assert "llm_query_batched" in tools
-
-    def test_media_tool_absent_when_no_media(self):
-        """Test llm_query_with_media is NOT created when media registry is empty."""
-
-        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
-            rlm = RLM("query -> answer", max_iterations=3)
-            tools = rlm._make_llm_tools(media_registry={})
-
-        assert "llm_query_with_media" not in tools
-        assert "llm_query" in tools
-
-    def test_media_tool_absent_when_registry_none(self):
-        """Test llm_query_with_media is NOT created when media registry is None."""
-
-        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
-            rlm = RLM("query -> answer", max_iterations=3)
-            tools = rlm._make_llm_tools(media_registry=None)
-
-        assert "llm_query_with_media" not in tools
+        assert "budget" in tools
 
     def test_media_tool_rejects_empty_prompt(self):
         """Test llm_query_with_media raises on empty prompt."""
@@ -1260,7 +1256,7 @@ class TestLLMQueryWithMedia:
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
             rlm = RLM("query -> answer", max_iterations=3)
-            tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+            tools = rlm._make_llm_tools(multimodal_registry={"audio_input": audio})
 
         with pytest.raises(ValueError, match="prompt cannot be empty"):
             tools["llm_query_with_media"]("")
@@ -1273,7 +1269,7 @@ class TestLLMQueryWithMedia:
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
             rlm = RLM("query -> answer", max_iterations=3)
-            tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+            tools = rlm._make_llm_tools(multimodal_registry={"audio_input": audio})
 
         with pytest.raises(ValueError, match="At least one media variable"):
             tools["llm_query_with_media"]("transcribe this")
@@ -1286,7 +1282,7 @@ class TestLLMQueryWithMedia:
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
             rlm = RLM("query -> answer", max_iterations=3)
-            tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+            tools = rlm._make_llm_tools(multimodal_registry={"audio_input": audio})
 
         with pytest.raises(ValueError, match="not found"):
             tools["llm_query_with_media"]("transcribe", "nonexistent_var")
@@ -1297,10 +1293,10 @@ class TestLLMQueryWithMedia:
 
 
 class TestMediaInstructions:
-    """Unit tests for media-specific instruction injection in signatures."""
+    """Unit tests for multimodal-specific instruction injection in signatures."""
 
-    def test_media_tools_in_action_instructions(self):
-        """Test that media fields cause llm_query_with_media docs to appear."""
+    def test_media_docs_in_action_instructions(self):
+        """Test that multimodal fields cause media docs to appear in instructions."""
         import dspy
         from dspy.adapters.types.audio import Audio
 
@@ -1314,18 +1310,20 @@ class TestMediaInstructions:
             action_sig, _extract_sig = rlm._build_signatures()
 
         instructions = action_sig.instructions
-        assert "llm_query_with_media" in instructions
         assert "audio_input" in instructions
+        assert "media" in instructions.lower()
 
-    def test_no_media_instructions_for_text_only(self):
-        """Test that text-only signatures do NOT include media instructions."""
+    def test_no_media_guidelines_for_text_only(self):
+        """Test that text-only signatures do NOT include media-specific guidelines."""
 
         with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
             rlm = RLM("query -> answer", max_iterations=3)
             action_sig, _extract_sig = rlm._build_signatures()
 
         instructions = action_sig.instructions
-        assert "llm_query_with_media" not in instructions
+        # The generic llm_query_with_media tool is always documented,
+        # but media-specific guidelines should NOT appear
+        assert "FOR MEDIA INPUTS" not in instructions
 
 
 class TestMultiModelSubCalls:
@@ -1428,7 +1426,7 @@ class TestMultiModelSubCalls:
 
         rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_default,
                    sub_lms={"pro": mock_pro})
-        tools = rlm._make_llm_tools(media_registry={"audio_input": audio})
+        tools = rlm._make_llm_tools(multimodal_registry={"audio_input": audio})
 
         result = tools["llm_query_with_media"]("transcribe", "audio_input", model="pro")
         assert result == "pro media response"
@@ -1905,7 +1903,7 @@ class TestMediaContentConstruction:
         rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
         execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
         tools = rlm._make_llm_tools(
-            media_registry={"my_audio": audio},
+            multimodal_registry={"my_audio": audio},
             execution_state=execution_state,
         )
 
@@ -1941,7 +1939,7 @@ class TestMediaContentConstruction:
         rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
         execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
         tools = rlm._make_llm_tools(
-            media_registry={"my_image": image},
+            multimodal_registry={"my_image": image},
             execution_state=execution_state,
         )
 
@@ -1972,7 +1970,7 @@ class TestMediaContentConstruction:
         rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
         execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
         tools = rlm._make_llm_tools(
-            media_registry={"audio_in": audio, "image_in": image},
+            multimodal_registry={"audio_in": audio, "image_in": image},
             execution_state=execution_state,
         )
 
@@ -2003,7 +2001,7 @@ class TestMediaContentConstruction:
                    sub_lm=mock_default, sub_lms={"pro": mock_pro})
         execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
         tools = rlm._make_llm_tools(
-            media_registry={"audio": audio},
+            multimodal_registry={"audio": audio},
             execution_state=execution_state,
         )
 
@@ -2743,7 +2741,7 @@ class TestSubcallInterpreterIsolation:
 
     def test_interpreter_shutdown_on_success(self):
         """Child interpreter shutdown() is called after successful completion."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from dspy.primitives.local_interpreter import LocalInterpreter
 
@@ -2767,7 +2765,7 @@ class TestSubcallInterpreterIsolation:
 
     def test_interpreter_shutdown_on_error(self):
         """Child interpreter shutdown() is called even when child fails."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from dspy.primitives.local_interpreter import LocalInterpreter
 
@@ -2834,7 +2832,7 @@ class TestSubcallE2E:
         """Child RLM can take multiple iterations before SUBMITting."""
         with dummy_lm_context([
             {"reasoning": "Explore first", "code": 'x = len(prompt)\nprint(f"length={x}")'},
-            {"reasoning": "Now submit", "code": 'SUBMIT(response=str(x))'},
+            {"reasoning": "Now submit", "code": "SUBMIT(response=str(x))"},
         ]):
             rlm = RLM("query -> answer", max_iterations=5, max_depth=2)
             tools = rlm._make_llm_tools()
@@ -2875,7 +2873,7 @@ class TestSubcallE2E:
             # Child iter 1: SUBMIT
             {"reasoning": "Done", "code": 'SUBMIT(response="async_ok")'},
             # Parent iter 2: SUBMIT
-            {"reasoning": "Got it", "code": 'SUBMIT(result)'},
+            {"reasoning": "Got it", "code": "SUBMIT(result)"},
         ]):
             from dspy.primitives.local_interpreter import LocalInterpreter
             rlm = RLM("query -> answer", max_iterations=5, max_depth=2,
@@ -2896,7 +2894,7 @@ class TestSubcallE2E:
             # Child iter 1 (runs in LocalInterpreter): SUBMIT response
             {"reasoning": "Easy", "code": 'SUBMIT(response="4")'},
             # Parent iter 2: SUBMIT the child's result
-            {"reasoning": "Done", "code": 'SUBMIT(result)'},
+            {"reasoning": "Done", "code": "SUBMIT(result)"},
         ]):
             # No interpreter= means default PythonInterpreter (Deno sandbox)
             rlm = RLM("query -> answer", max_iterations=5, max_depth=2)
