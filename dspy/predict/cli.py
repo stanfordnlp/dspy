@@ -76,152 +76,7 @@ If the output doesn't contain enough information, do your best to extract what's
 # =============================================================================
 
 
-PROMPT_PLACEHOLDER = "{prompt}"
-
-
-# =============================================================================
-# Agent Presets
-# =============================================================================
-
-# Each preset defines the CLI flags for non-interactive, auto-approve ("yolo")
-# and print-mode operation. This is the CLI equivalent of what litellm does
-# for API providers — you just name the agent and the module knows the flags.
-#
-# Keys:
-#   command:      Base command tokens
-#   print_flags:  Flags for non-interactive one-shot mode (print & exit)
-#   yolo_flags:   Flags to auto-approve all tool use (no human in the loop)
-#   output_flags: Flags to control output format
-#   model_flag:   Flag to select model (e.g., --model)
-#   session_flags: Flags to disable session persistence
-#   parse_jsonl:  Whether the output format produces JSONL events
-
-AGENT_PRESETS: dict[str, dict[str, Any]] = {
-    "claude": {
-        "command": ["claude"],
-        "print_flags": ["-p"],
-        "yolo_flags": ["--dangerously-skip-permissions"],
-        "output_flags": ["--output-format", "text"],
-        "model_flag": "--model",
-        "session_flags": ["--no-session-persistence"],
-        "parse_jsonl": False,
-
-    },
-    "claude-json": {
-        "command": ["claude"],
-        "print_flags": ["-p", "--verbose"],
-        "yolo_flags": ["--dangerously-skip-permissions"],
-        "output_flags": ["--output-format", "stream-json"],
-        "model_flag": "--model",
-        "session_flags": ["--no-session-persistence"],
-        "parse_jsonl": True,
-
-    },
-    "codex": {
-        "command": ["codex", "exec"],
-        "print_flags": [],  # exec is already non-interactive
-        "yolo_flags": ["--dangerously-bypass-approvals-and-sandbox"],
-        "output_flags": [],
-        "model_flag": "--model",
-        "session_flags": [],
-        "parse_jsonl": False,
-
-    },
-    "codex-json": {
-        "command": ["codex", "exec"],
-        "print_flags": [],
-        "yolo_flags": ["--dangerously-bypass-approvals-and-sandbox"],
-        "output_flags": ["--json"],
-        "model_flag": "--model",
-        "session_flags": [],
-        "parse_jsonl": True,
-
-    },
-    "gemini": {
-        "command": ["gemini"],
-        "print_flags": [],  # uses -p flag for prompt, not "print mode"
-        "yolo_flags": ["--yolo"],
-        "output_flags": ["-o", "text"],
-        "model_flag": "--model",
-        "session_flags": [],
-        "parse_jsonl": False,
-        "stdin": True,  # stdin works, -p is for inline prompt
-    },
-    "gemini-json": {
-        "command": ["gemini"],
-        "print_flags": [],
-        "yolo_flags": ["--yolo"],
-        "output_flags": ["-o", "json"],
-        "model_flag": "--model",
-        "session_flags": [],
-        "parse_jsonl": True,
-
-    },
-    "pi": {
-        "command": ["pi"],
-        "print_flags": ["-p"],
-        "yolo_flags": [],  # pi doesn't need approval bypass
-        "output_flags": [],
-        "model_flag": "--model",
-        "session_flags": ["--no-session"],
-        "parse_jsonl": False,
-
-    },
-    "pi-json": {
-        "command": ["pi"],
-        "print_flags": ["-p"],
-        "yolo_flags": [],
-        "output_flags": ["--mode", "json"],
-        "model_flag": "--model",
-        "session_flags": ["--no-session"],
-        "parse_jsonl": True,
-
-    },
-}
-
-
-def _build_agent_command(
-    agent: str,
-    *,
-    model: str | None = None,
-    yolo: bool = False,
-    extra_flags: list[str] | None = None,
-) -> tuple[list[str], bool]:
-    """Build a CLI command from an agent preset.
-
-    Args:
-        agent: Agent name (e.g., "claude", "codex-json", "pi").
-        model: Model to use (e.g., "sonnet", "o3"). None = agent default.
-        yolo: Whether to auto-approve all tool use.
-        extra_flags: Additional CLI flags to append.
-
-    Returns:
-        Tuple of (command_list, parse_jsonl).
-
-    Raises:
-        ValueError: If agent name is not recognized.
-    """
-    if agent not in AGENT_PRESETS:
-        available = ", ".join(sorted(AGENT_PRESETS.keys()))
-        raise ValueError(f"Unknown agent {agent!r}. Available: {available}")
-
-    preset = AGENT_PRESETS[agent]
-    cmd = list(preset["command"])
-    cmd.extend(preset["print_flags"])
-
-    if yolo:
-        cmd.extend(preset["yolo_flags"])
-
-    cmd.extend(preset["output_flags"])
-    cmd.extend(preset["session_flags"])
-
-    if model is not None:
-        cmd.extend([preset["model_flag"], model])
-
-    if extra_flags:
-        cmd.extend(extra_flags)
-
-    return cmd, preset["parse_jsonl"]
+PROMPT_PLACEHOLDER = "{PROMPT}"
 
 
 @experimental
@@ -236,29 +91,24 @@ class CLI(Module):
     Optimizers discover these via `named_predictors()` and can tune their
     instructions, demos, and few-shot examples.
 
-    Use ``from_agent()`` for built-in presets that handle each CLI's flags
-    for non-interactive, auto-approve ("yolo"), and print mode:
-
     Example:
         ```python
-        # Using agent presets (recommended):
-        cli = dspy.CLI.from_agent("claude", "question -> answer")
-        cli = dspy.CLI.from_agent("codex", "task -> result", model="o3")
-        cli = dspy.CLI.from_agent("gemini", "question -> answer")
-        cli = dspy.CLI.from_agent("pi", "question -> answer", model="gemini-2.5-flash")
-
-        # Or with a raw command:
-        cli = dspy.CLI("question -> answer", cli_command="my-cli --flag")
+        cli = dspy.CLI("question -> answer", command="my-cli --flag {PROMPT}")
+        cli = dspy.CLI("task -> result", command="claude -p {PROMPT} --model sonnet --output-format text")
 
         result = cli(question="What is the capital of France?")
         print(result.answer)
         ```
+
+    Note:
+        If your command uses ``bash -c`` or similar shell wrappers, ensure
+        prompt content is safe for shell evaluation.
     """
 
     def __init__(
         self,
         signature: type[Signature] | str,
-        cli_command: Sequence[str] | str,
+        command: Sequence[str] | str,
         *,
         # Subprocess config
         env: dict[str, str] | None = None,
@@ -277,9 +127,9 @@ class CLI(Module):
         Args:
             signature: Defines inputs and outputs. String like "question -> answer"
                       or a Signature class.
-            cli_command: CLI command to execute. String (shell-split) or list.
-                        Use "{prompt}" placeholder to splice prompt into args,
-                        otherwise prompt is piped via stdin.
+            command: CLI command to execute. String (shell-split) or list.
+                    Use "{PROMPT}" placeholder to splice prompt into args,
+                    otherwise prompt is piped via stdin.
             env: Extra environment variables for the subprocess.
             cwd: Working directory for the subprocess.
             encoding: Text encoding for subprocess I/O.
@@ -293,12 +143,12 @@ class CLI(Module):
         self.signature = ensure_signature(signature)
 
         # Parse CLI command
-        if isinstance(cli_command, str):
-            cli_command = shlex.split(cli_command)
-        if not cli_command:
-            raise ValueError("cli_command cannot be empty")
-        self.cli_command = list(cli_command)
-        self._uses_placeholder = any(PROMPT_PLACEHOLDER in token for token in self.cli_command)
+        if isinstance(command, str):
+            command = shlex.split(command)
+        if not command:
+            raise ValueError("command cannot be empty")
+        self.command = list(command)
+        self._uses_placeholder = any(PROMPT_PLACEHOLDER in token for token in self.command)
 
         # Subprocess config
         self.env = dict(env or {})
@@ -318,75 +168,6 @@ class CLI(Module):
         prepare_sig, extract_sig = self._build_signatures()
         self.prepare_prompt = dspy.Predict(prepare_sig)
         self.extract = dspy.Predict(extract_sig)
-
-    @classmethod
-    def from_agent(
-        cls,
-        agent: str,
-        signature: type[Signature] | str,
-        *,
-        model: str | None = None,
-        yolo: bool = False,
-        extra_flags: list[str] | None = None,
-        **kwargs,
-    ) -> CLI:
-        """Create a CLI module from a named agent preset.
-
-        This is the recommended way to create CLI modules for known coding agents.
-        Each preset knows the right flags for non-interactive, auto-approve, and
-        session-less operation — the CLI equivalent of what litellm does for API
-        providers.
-
-        Available agents: claude, claude-json, codex, codex-json, gemini, gemini-json, pi, pi-json
-
-        Args:
-            agent: Agent name (e.g., "claude", "codex", "pi", "gemini").
-                   Append "-json" for JSONL structured output (e.g., "codex-json").
-            signature: DSPy signature (e.g., "question -> answer").
-            model: Model to use (e.g., "sonnet", "o3"). None = agent default.
-            yolo: Auto-approve all tool use (default False). Set True to skip
-                  human approval for tool use.
-            extra_flags: Additional CLI flags to append to the command.
-            **kwargs: Additional keyword arguments passed to CLI.__init__
-                     (e.g., timeout, max_retries, cwd, env).
-
-        Returns:
-            A configured CLI module.
-
-        Example:
-            ```python
-            # Claude Code with Sonnet
-            cli = dspy.CLI.from_agent("claude", "task -> result", model="sonnet")
-
-            # Codex with JSONL events for rich trajectory
-            cli = dspy.CLI.from_agent("codex-json", "task -> result", model="o3")
-
-            # Gemini CLI
-            cli = dspy.CLI.from_agent("gemini", "question -> answer")
-
-            # Pi with a specific model
-            cli = dspy.CLI.from_agent("pi", "question -> answer", model="gemini-2.5-flash")
-
-            # With budget controls
-            cli = dspy.CLI.from_agent("claude", "task -> result", timeout=120, max_retries=2)
-            ```
-        """
-        command, preset_parse_jsonl = _build_agent_command(
-            agent,
-            model=model,
-            yolo=yolo,
-            extra_flags=extra_flags,
-        )
-
-        # Let preset control parse_jsonl unless user explicitly overrides
-        if "parse_jsonl" not in kwargs:
-            kwargs["parse_jsonl"] = preset_parse_jsonl
-
-        return cls(
-            signature=signature,
-            cli_command=command,
-            **kwargs,
-        )
 
     # =========================================================================
     # Signature Construction
@@ -462,11 +243,8 @@ class CLI(Module):
     def _prepare_cli_command(self, prompt_text: str) -> list[str]:
         """Build the actual command list, splicing in prompt if placeholder is used."""
         if not self._uses_placeholder:
-            return list(self.cli_command)
-        return [
-            prompt_text if token == PROMPT_PLACEHOLDER else token
-            for token in self.cli_command
-        ]
+            return list(self.command)
+        return [token.format(PROMPT=prompt_text) for token in self.command]
 
     def _cli_env(self, generation_index: int = 0, total: int = 1) -> dict[str, str]:
         """Build environment for the subprocess."""
@@ -530,7 +308,7 @@ class CLI(Module):
 
             except FileNotFoundError as exc:
                 raise CLIError(
-                    f"CLI command not found: {shlex.join(self.cli_command)}",
+                    f"CLI command not found: {shlex.join(self.command)}",
                     returncode=-1,
                 ) from exc
             except subprocess.TimeoutExpired as exc:
@@ -605,7 +383,7 @@ class CLI(Module):
 
             except FileNotFoundError as exc:
                 raise CLIError(
-                    f"CLI command not found: {shlex.join(self.cli_command)}",
+                    f"CLI command not found: {shlex.join(self.command)}",
                     returncode=-1,
                 ) from exc
             except asyncio.TimeoutError as exc:
@@ -798,7 +576,7 @@ class CLI(Module):
         """Serialize module state for saving/loading."""
         return {
             "signature": str(self.signature),
-            "cli_command": list(self.cli_command),
+            "command": list(self.command),
             "env": {k: v for k, v in self.env.items() if "key" not in k.lower() and "secret" not in k.lower()},
             "cwd": self.cwd,
             "encoding": self.encoding,
@@ -812,7 +590,7 @@ class CLI(Module):
 
     def load_state(self, state: dict) -> "CLI":
         """Load saved state of a CLI module."""
-        self.cli_command = state.get("cli_command", self.cli_command)
+        self.command = state.get("command", self.command)
         self.env = state.get("env", self.env)
         self.cwd = state.get("cwd", self.cwd)
         self.encoding = state.get("encoding", self.encoding)
@@ -820,7 +598,7 @@ class CLI(Module):
         self.max_retries = state.get("max_retries", self.max_retries)
         self.parse_jsonl = state.get("parse_jsonl", self.parse_jsonl)
         self.max_output_chars = state.get("max_output_chars", self.max_output_chars)
-        self._uses_placeholder = any(PROMPT_PLACEHOLDER in token for token in self.cli_command)
+        self._uses_placeholder = any(PROMPT_PLACEHOLDER in token for token in self.command)
         if "prepare_prompt" in state:
             self.prepare_prompt.load_state(state["prepare_prompt"])
         if "extract" in state:
