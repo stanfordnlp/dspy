@@ -10,7 +10,23 @@ from dspy.utils.callback import BaseCallback
 
 
 class XMLAdapter(ChatAdapter):
+    """An adapter that wraps fields in XML tags for communication with the language model.
+
+    This adapter formats input fields into XML-tagged blocks (e.g., `<field_name>value</field_name>`)
+    and expects the model to respond in the same format. It is particularly useful for models
+    that have been trained to handle XML-structured prompts or when clear field separation
+    is required without using JSON.
+
+    Key features:
+        - Structures inputs and outputs using customizable XML-style tags.
+        - Provides regex-based parsing to extract values from tagged sections.
+    """
+
     def __init__(self, callbacks: list[BaseCallback] | None = None):
+        """
+        Args:
+            callbacks: List of callback functions to execute during adapter methods.
+        """
         super().__init__(callbacks)
         self.field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
 
