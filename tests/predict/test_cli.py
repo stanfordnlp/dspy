@@ -324,12 +324,12 @@ class TestCLIInitialization:
 
     def test_default_budget_controls(self):
         cli = _make_cli()
-        assert cli.max_time is None
+        assert cli.timeout is None
         assert cli.max_retries == 0
 
     def test_custom_budget_controls(self):
-        cli = _make_cli(max_time=60, max_retries=3)
-        assert cli.max_time == 60
+        cli = _make_cli(timeout=60, max_retries=3)
+        assert cli.timeout == 60
         assert cli.max_retries == 3
 
     def test_default_parse_jsonl_true(self):
@@ -547,7 +547,7 @@ class TestCLIErrors:
             cli.forward(question="test")
 
     def test_timeout_raises(self):
-        cli = _make_cli(env={"CLI_MODE": "timeout"}, max_time=0.5)
+        cli = _make_cli(env={"CLI_MODE": "timeout"}, timeout=0.5)
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "will timeout"}])
         with pytest.raises(CLIError, match="timed out"):
             cli.forward(question="test")
@@ -612,15 +612,15 @@ class TestCLITimeout:
     """Tests for timeout budget control."""
 
     def test_timeout_kills_process(self):
-        """max_time kills long-running CLI."""
-        cli = _make_cli(env={"CLI_MODE": "timeout"}, max_time=0.3)
+        """timeout kills long-running CLI."""
+        cli = _make_cli(env={"CLI_MODE": "timeout"}, timeout=0.3)
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "hang forever"}])
         with pytest.raises(CLIError, match="timed out"):
             cli.forward(question="test")
 
     def test_fast_cli_within_timeout(self):
         """CLI that finishes quickly succeeds with timeout set."""
-        cli = _make_cli(max_time=10)
+        cli = _make_cli(timeout=10)
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "fast"}])
         result = cli.forward(question="test")
         assert result.answer == "fast"
@@ -648,9 +648,9 @@ class TestOptimizerCompatibility:
 
     def test_dump_state(self):
         """dump_state returns serializable dict with key fields."""
-        cli = _make_cli(env={"MY_VAR": "val"}, max_time=60, max_retries=2)
+        cli = _make_cli(env={"MY_VAR": "val"}, timeout=60, max_retries=2)
         state = cli.dump_state()
-        assert state["max_time"] == 60
+        assert state["timeout"] == 60
         assert state["max_retries"] == 2
         assert state["env"]["MY_VAR"] == "val"
         assert "prepare_prompt" in state
@@ -667,7 +667,7 @@ class TestOptimizerCompatibility:
         """dump_state -> new CLI -> load_state -> fields match."""
         cli = _make_cli(
             env={"MY_VAR": "val"},
-            max_time=60,
+            timeout=60,
             max_retries=2,
             max_output_chars=5000,
             parse_jsonl=False,
@@ -681,7 +681,7 @@ class TestOptimizerCompatibility:
         assert cli2.env == cli.env
         assert cli2.cwd == cli.cwd
         assert cli2.encoding == cli.encoding
-        assert cli2.max_time == cli.max_time
+        assert cli2.timeout == cli.timeout
         assert cli2.max_retries == cli.max_retries
         assert cli2.parse_jsonl == cli.parse_jsonl
         assert cli2.max_output_chars == cli.max_output_chars
@@ -788,8 +788,8 @@ class TestCLIAsync:
 
     @pytest.mark.asyncio
     async def test_aforward_timeout(self):
-        """aforward() respects max_time."""
-        cli = _make_cli(env={"CLI_MODE": "timeout"}, max_time=0.3)
+        """aforward() respects timeout."""
+        cli = _make_cli(env={"CLI_MODE": "timeout"}, timeout=0.3)
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "hang"}])
         with pytest.raises(CLIError, match="timed out"):
             await cli.aforward(question="test")
@@ -1073,8 +1073,8 @@ class TestFromAgent:
         assert "sonnet" in cli.cli_command
 
     def test_from_agent_passes_kwargs(self):
-        cli = CLI.from_agent("codex", "task -> result", max_time=120, max_retries=3)
-        assert cli.max_time == 120
+        cli = CLI.from_agent("codex", "task -> result", timeout=120, max_retries=3)
+        assert cli.timeout == 120
         assert cli.max_retries == 3
 
     def test_from_agent_json_sets_parse_jsonl(self):

@@ -265,7 +265,7 @@ class CLI(Module):
         cwd: str | None = None,
         encoding: str = "utf-8",
         # Budget controls
-        max_time: float | None = None,
+        timeout: float | None = None,
         max_retries: int = 0,
         # Output parsing
         parse_jsonl: bool = True,
@@ -283,7 +283,7 @@ class CLI(Module):
             env: Extra environment variables for the subprocess.
             cwd: Working directory for the subprocess.
             encoding: Text encoding for subprocess I/O.
-            max_time: Maximum wall-clock seconds per CLI execution. None = no limit.
+            timeout: Maximum wall-clock seconds per CLI execution. None = no limit.
             max_retries: Number of retries on non-zero exit code.
             parse_jsonl: Whether to attempt JSONL event parsing on stdout.
             max_output_chars: Maximum chars to include in trajectory for Predict inputs.
@@ -306,7 +306,7 @@ class CLI(Module):
         self.encoding = encoding
 
         # Budget controls
-        self.max_time = max_time
+        self.timeout = timeout
         self.max_retries = max_retries
 
         # Output parsing
@@ -348,7 +348,7 @@ class CLI(Module):
                   human approval for tool use.
             extra_flags: Additional CLI flags to append to the command.
             **kwargs: Additional keyword arguments passed to CLI.__init__
-                     (e.g., max_time, max_retries, cwd, env).
+                     (e.g., timeout, max_retries, cwd, env).
 
         Returns:
             A configured CLI module.
@@ -368,7 +368,7 @@ class CLI(Module):
             cli = dspy.CLI.from_agent("pi", "question -> answer", model="gemini-2.5-flash")
 
             # With budget controls
-            cli = dspy.CLI.from_agent("claude", "task -> result", max_time=120, max_retries=2)
+            cli = dspy.CLI.from_agent("claude", "task -> result", timeout=120, max_retries=2)
             ```
         """
         command, preset_parse_jsonl = _build_agent_command(
@@ -506,7 +506,7 @@ class CLI(Module):
                     encoding=self.encoding,
                     cwd=self.cwd,
                     env=env,
-                    timeout=self.max_time,
+                    timeout=self.timeout,
                     check=False,
                 )
                 if should_pipe:
@@ -536,7 +536,7 @@ class CLI(Module):
             except subprocess.TimeoutExpired as exc:
                 elapsed = time.monotonic() - start
                 raise CLIError(
-                    f"CLI timed out after {self.max_time}s",
+                    f"CLI timed out after {self.timeout}s",
                     stdout=str(exc.stdout or ""),
                     stderr=str(exc.stderr or ""),
                     returncode=-1,
@@ -581,10 +581,10 @@ class CLI(Module):
 
                 input_bytes = prompt_text.encode(self.encoding) if should_pipe else None
 
-                if self.max_time is not None:
+                if self.timeout is not None:
                     stdout_bytes, stderr_bytes = await asyncio.wait_for(
                         process.communicate(input_bytes),
-                        timeout=self.max_time,
+                        timeout=self.timeout,
                     )
                 else:
                     stdout_bytes, stderr_bytes = await process.communicate(input_bytes)
@@ -610,13 +610,13 @@ class CLI(Module):
                 ) from exc
             except asyncio.TimeoutError as exc:
                 process.kill()
-                cleanup_timeout = min(self.max_time, 5.0) if self.max_time else 5.0
+                cleanup_timeout = min(self.timeout, 5.0) if self.timeout else 5.0
                 try:
                     await asyncio.wait_for(process.communicate(), timeout=cleanup_timeout)
                 except (asyncio.TimeoutError, OSError):
                     pass
                 raise CLIError(
-                    f"CLI timed out after {self.max_time}s",
+                    f"CLI timed out after {self.timeout}s",
                     returncode=-1,
                 ) from exc
 
@@ -802,7 +802,7 @@ class CLI(Module):
             "env": {k: v for k, v in self.env.items() if "key" not in k.lower() and "secret" not in k.lower()},
             "cwd": self.cwd,
             "encoding": self.encoding,
-            "max_time": self.max_time,
+            "timeout": self.timeout,
             "max_retries": self.max_retries,
             "parse_jsonl": self.parse_jsonl,
             "max_output_chars": self.max_output_chars,
@@ -816,7 +816,7 @@ class CLI(Module):
         self.env = state.get("env", self.env)
         self.cwd = state.get("cwd", self.cwd)
         self.encoding = state.get("encoding", self.encoding)
-        self.max_time = state.get("max_time", self.max_time)
+        self.timeout = state.get("timeout", self.timeout)
         self.max_retries = state.get("max_retries", self.max_retries)
         self.parse_jsonl = state.get("parse_jsonl", self.parse_jsonl)
         self.max_output_chars = state.get("max_output_chars", self.max_output_chars)
