@@ -3,6 +3,7 @@ import os
 import re
 import threading
 import warnings
+from enum import Enum
 from typing import Any, Literal, cast
 
 import litellm
@@ -23,6 +24,10 @@ from .base_lm import BaseLM
 logger = logging.getLogger(__name__)
 
 
+class _MaxTokensSentinel(Enum):
+    NOT_PROVIDED = "not_provided"
+
+
 class LM(BaseLM):
     """
     A language model supporting chat or text completion requests for use with DSPy modules.
@@ -33,7 +38,7 @@ class LM(BaseLM):
         model: str,
         model_type: Literal["chat", "text", "responses"] = "chat",
         temperature: float | None = None,
-        max_tokens: int | None = None,
+        max_tokens: int | None | Literal[_MaxTokensSentinel.NOT_PROVIDED] = _MaxTokensSentinel.NOT_PROVIDED,
         cache: bool = True,
         callbacks: list[BaseCallback] | None = None,
         num_retries: int = 3,
@@ -81,6 +86,24 @@ class LM(BaseLM):
         self.train_kwargs = train_kwargs or {}
         self.use_developer_role = use_developer_role
         self._warned_zero_temp_rollout = False
+        kwargs = dict(kwargs)
+
+        max_tokens_was_provided = max_tokens is not _MaxTokensSentinel.NOT_PROVIDED
+        max_completion_tokens = kwargs.pop("max_completion_tokens", _MaxTokensSentinel.NOT_PROVIDED)
+        max_completion_tokens_was_provided = max_completion_tokens is not _MaxTokensSentinel.NOT_PROVIDED
+
+        if max_tokens_was_provided and max_completion_tokens_was_provided and max_tokens != max_completion_tokens:
+            raise ValueError(
+                "`max_tokens` and `max_completion_tokens` were both provided with different values. "
+                "Please provide only one value, or provide matching values for both."
+            )
+
+        if max_tokens_was_provided:
+            effective_max_tokens = cast(int | None, max_tokens)
+        elif max_completion_tokens_was_provided:
+            effective_max_tokens = cast(int | None, max_completion_tokens)
+        else:
+            effective_max_tokens = None
 
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
@@ -95,16 +118,16 @@ class LM(BaseLM):
         )
 
         if model_pattern:
-            if (temperature and temperature != 1.0) or (max_tokens and max_tokens < 16000):
+            if (temperature and temperature != 1.0) or (effective_max_tokens and effective_max_tokens < 16000):
                 raise ValueError(
                     "OpenAI's reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None to "
                     "`dspy.LM(...)`, e.g., dspy.LM('openai/gpt-5', temperature=1.0, max_tokens=16000)"
                 )
-            self.kwargs = dict(temperature=temperature, max_completion_tokens=max_tokens, **kwargs)
+            self.kwargs = dict(temperature=temperature, max_completion_tokens=effective_max_tokens, **kwargs)
             if self.kwargs.get("rollout_id") is None:
                 self.kwargs.pop("rollout_id", None)
         else:
-            self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
+            self.kwargs = dict(temperature=temperature, max_tokens=effective_max_tokens, **kwargs)
             if self.kwargs.get("rollout_id") is None:
                 self.kwargs.pop("rollout_id", None)
 

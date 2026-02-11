@@ -348,6 +348,54 @@ def test_reasoning_model_requirements(model_name):
     assert lm.kwargs["max_completion_tokens"] is None
 
 
+@pytest.mark.parametrize("max_tokens", [16_000, None])
+def test_reasoning_model_roundtrip_via_predict_save_load(tmp_path, max_tokens):
+    lm = dspy.LM(
+        model="openai/gpt-5-nano-2025-08-07",
+        temperature=1.0,
+        max_tokens=max_tokens,
+    )
+
+    predict = dspy.Predict("question -> answer")
+    predict.lm = lm
+
+    save_path = tmp_path / "predict.json"
+    predict.save(save_path)
+
+    reloaded_predict = dspy.Predict("question -> answer")
+    reloaded_predict.load(save_path)
+
+    assert reloaded_predict.lm is not None
+    assert reloaded_predict.lm.kwargs["max_completion_tokens"] == max_tokens
+    assert "max_tokens" not in reloaded_predict.lm.kwargs
+
+
+def test_conflicting_max_tokens_and_max_completion_tokens_raise_value_error():
+    with pytest.raises(
+        ValueError,
+        match="`max_tokens` and `max_completion_tokens` were both provided with different values",
+    ):
+        dspy.LM(
+            model="openai/gpt-5-nano",
+            temperature=1.0,
+            max_tokens=16_000,
+            max_completion_tokens=32_000,
+        )
+
+
+def test_explicit_none_max_tokens_conflicts_with_max_completion_tokens():
+    with pytest.raises(
+        ValueError,
+        match="`max_tokens` and `max_completion_tokens` were both provided with different values",
+    ):
+        dspy.LM(
+            model="openai/gpt-5-nano",
+            temperature=1.0,
+            max_tokens=None,
+            max_completion_tokens=16_000,
+        )
+
+
 def test_gpt_5_chat_not_reasoning_model():
     """Test that gpt-5-chat is NOT treated as a reasoning model."""
     # Should NOT raise validation error - gpt-5-chat is not a reasoning model
