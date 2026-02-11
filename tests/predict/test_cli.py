@@ -15,7 +15,6 @@ Follows the same patterns as test_rlm.py.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 import sys
@@ -24,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dspy.predict.cli import CLI, CLIError, PROMPT_PLACEHOLDER, AGENT_PRESETS, _build_agent_command
+from dspy.predict.cli import CLI, CLIError
 from dspy.primitives.cli_types import CLIEvent, CLITrajectory, parse_jsonl_events
 from dspy.primitives.prediction import Prediction
 
@@ -36,7 +35,7 @@ def _make_cli(sig="question -> answer", env=None, **kwargs):
     """Factory for CLI module with echo script."""
     return CLI(
         sig,
-        cli_command=[sys.executable, str(SCRIPT)],
+        command=[sys.executable, str(SCRIPT)],
         env=env,
         **kwargs,
     )
@@ -298,24 +297,24 @@ class TestCLIInitialization:
         assert "summary" in cli.signature.output_fields
         assert "answer" in cli.signature.output_fields
 
-    def test_cli_command_string_parsing(self):
-        cli = CLI("q -> a", cli_command="python script.py --flag")
-        assert cli.cli_command == ["python", "script.py", "--flag"]
+    def test_command_string_parsing(self):
+        cli = CLI("q -> a", command="python script.py --flag")
+        assert cli.command == ["python", "script.py", "--flag"]
 
-    def test_cli_command_list(self):
-        cli = CLI("q -> a", cli_command=["python", "script.py"])
-        assert cli.cli_command == ["python", "script.py"]
+    def test_command_list(self):
+        cli = CLI("q -> a", command=["python", "script.py"])
+        assert cli.command == ["python", "script.py"]
 
     def test_empty_command_raises(self):
         with pytest.raises(ValueError, match="cannot be empty"):
-            CLI("q -> a", cli_command="")
+            CLI("q -> a", command="")
 
     def test_empty_list_command_raises(self):
         with pytest.raises(ValueError, match="cannot be empty"):
-            CLI("q -> a", cli_command=[])
+            CLI("q -> a", command=[])
 
     def test_prompt_placeholder_detection(self):
-        cli = CLI("q -> a", cli_command='echo "{prompt}"')
+        cli = CLI("q -> a", command='echo "{PROMPT}"')
         assert cli._uses_placeholder is True
 
     def test_no_placeholder_means_stdin(self):
@@ -324,15 +323,13 @@ class TestCLIInitialization:
 
     def test_default_budget_controls(self):
         cli = _make_cli()
-        assert cli.max_time is None
+        assert cli.timeout is None
         assert cli.max_retries == 0
-        assert cli.max_cost is None
 
     def test_custom_budget_controls(self):
-        cli = _make_cli(max_time=60, max_retries=3, max_cost=1.50)
-        assert cli.max_time == 60
+        cli = _make_cli(timeout=60, max_retries=3)
+        assert cli.timeout == 60
         assert cli.max_retries == 3
-        assert cli.max_cost == 1.50
 
     def test_default_parse_jsonl_true(self):
         cli = _make_cli()
@@ -374,7 +371,7 @@ class TestCLISignatureConstruction:
             doc: str = dspy.InputField()
             summary: str = dspy.OutputField()
 
-        cli = CLI(MySig, cli_command=[sys.executable, str(SCRIPT)])
+        cli = CLI(MySig, command=[sys.executable, str(SCRIPT)])
         prep_instructions = cli.prepare_prompt.signature.instructions
         assert "Summarize the document carefully" in prep_instructions
 
@@ -509,7 +506,7 @@ class TestCLISubprocess:
         """JSON output with matching field names is parsed directly."""
         cli = CLI(
             "question -> name, role",
-            cli_command=[sys.executable, str(SCRIPT)],
+            command=[sys.executable, str(SCRIPT)],
             env={"CLI_MODE": "json_fields"},
         )
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "name=Alice,role=Engineer"}])
@@ -543,13 +540,13 @@ class TestCLIErrors:
             cli.forward(question="test")
 
     def test_command_not_found_raises(self):
-        cli = CLI("question -> answer", cli_command="nonexistent_program_xyz")
+        cli = CLI("question -> answer", command="nonexistent_program_xyz")
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "test"}])
         with pytest.raises(CLIError, match="not found"):
             cli.forward(question="test")
 
     def test_timeout_raises(self):
-        cli = _make_cli(env={"CLI_MODE": "timeout"}, max_time=0.5)
+        cli = _make_cli(env={"CLI_MODE": "timeout"}, timeout=0.5)
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "will timeout"}])
         with pytest.raises(CLIError, match="timed out"):
             cli.forward(question="test")
@@ -614,15 +611,15 @@ class TestCLITimeout:
     """Tests for timeout budget control."""
 
     def test_timeout_kills_process(self):
-        """max_time kills long-running CLI."""
-        cli = _make_cli(env={"CLI_MODE": "timeout"}, max_time=0.3)
+        """timeout kills long-running CLI."""
+        cli = _make_cli(env={"CLI_MODE": "timeout"}, timeout=0.3)
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "hang forever"}])
         with pytest.raises(CLIError, match="timed out"):
             cli.forward(question="test")
 
     def test_fast_cli_within_timeout(self):
         """CLI that finishes quickly succeeds with timeout set."""
-        cli = _make_cli(max_time=10)
+        cli = _make_cli(timeout=10)
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "fast"}])
         result = cli.forward(question="test")
         assert result.answer == "fast"
@@ -650,9 +647,9 @@ class TestOptimizerCompatibility:
 
     def test_dump_state(self):
         """dump_state returns serializable dict with key fields."""
-        cli = _make_cli(env={"MY_VAR": "val"}, max_time=60, max_retries=2)
+        cli = _make_cli(env={"MY_VAR": "val"}, timeout=60, max_retries=2)
         state = cli.dump_state()
-        assert state["max_time"] == 60
+        assert state["timeout"] == 60
         assert state["max_retries"] == 2
         assert state["env"]["MY_VAR"] == "val"
         assert "prepare_prompt" in state
@@ -664,6 +661,29 @@ class TestOptimizerCompatibility:
         state = cli.dump_state()
         assert "API_KEY" not in state["env"]
         assert state["env"]["SAFE_VAR"] == "visible"
+
+    def test_load_state_round_trip(self):
+        """dump_state -> new CLI -> load_state -> fields match."""
+        cli = _make_cli(
+            env={"MY_VAR": "val"},
+            timeout=60,
+            max_retries=2,
+            max_output_chars=5000,
+            parse_jsonl=False,
+        )
+        state = cli.dump_state()
+
+        cli2 = _make_cli()
+        cli2.load_state(state)
+
+        assert cli2.command == cli.command
+        assert cli2.env == cli.env
+        assert cli2.cwd == cli.cwd
+        assert cli2.encoding == cli.encoding
+        assert cli2.timeout == cli.timeout
+        assert cli2.max_retries == cli.max_retries
+        assert cli2.parse_jsonl == cli.parse_jsonl
+        assert cli2.max_output_chars == cli.max_output_chars
 
     def test_set_lm_propagates(self):
         """set_lm() propagates to both Predict nodes."""
@@ -731,7 +751,7 @@ class TestCLIWithDummyLM:
         with dspy.context(lm=lm):
             cli = CLI(
                 "question -> count: int",
-                cli_command=[sys.executable, str(SCRIPT)],
+                command=[sys.executable, str(SCRIPT)],
             )
             result = cli(question="how many?")
 
@@ -767,8 +787,8 @@ class TestCLIAsync:
 
     @pytest.mark.asyncio
     async def test_aforward_timeout(self):
-        """aforward() respects max_time."""
-        cli = _make_cli(env={"CLI_MODE": "timeout"}, max_time=0.3)
+        """aforward() respects timeout."""
+        cli = _make_cli(env={"CLI_MODE": "timeout"}, timeout=0.3)
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "hang"}])
         with pytest.raises(CLIError, match="timed out"):
             await cli.aforward(question="test")
@@ -791,7 +811,7 @@ class TestCLIAsync:
     @pytest.mark.asyncio
     async def test_aforward_command_not_found(self):
         """aforward() raises CLIError for missing command."""
-        cli = CLI("question -> answer", cli_command="nonexistent_xyz_program")
+        cli = CLI("question -> answer", command="nonexistent_xyz_program")
         cli.prepare_prompt = make_mock_predictor([{"cli_prompt": "test"}])
         with pytest.raises(CLIError, match="not found"):
             await cli.aforward(question="test")
@@ -803,22 +823,33 @@ class TestCLIAsync:
 
 
 class TestPromptPlaceholder:
-    """Tests for {prompt} placeholder in CLI command."""
+    """Tests for {PROMPT} placeholder in CLI command."""
 
     def test_placeholder_spliced_into_command(self):
-        cli = CLI("q -> a", cli_command=["echo", "{prompt}"])
+        cli = CLI("q -> a", command=["echo", "{PROMPT}"])
         cmd = cli._prepare_cli_command("hello world")
         assert cmd == ["echo", "hello world"]
 
     def test_no_placeholder_command_unchanged(self):
-        cli = CLI("q -> a", cli_command=["echo", "fixed"])
+        cli = CLI("q -> a", command=["echo", "fixed"])
         cmd = cli._prepare_cli_command("ignored prompt")
         assert cmd == ["echo", "fixed"]
 
     def test_multiple_placeholders(self):
-        cli = CLI("q -> a", cli_command=["cmd", "{prompt}", "--repeat", "{prompt}"])
+        cli = CLI("q -> a", command=["cmd", "{PROMPT}", "--repeat", "{PROMPT}"])
         cmd = cli._prepare_cli_command("text")
         assert cmd == ["cmd", "text", "--repeat", "text"]
+
+    def test_placeholder_not_detected_across_token_boundary(self):
+        """'{PROMPT}' split across two tokens should not trigger placeholder mode."""
+        cli = CLI("q -> a", command=["cmd", "{PROMP", "T}"])
+        assert cli._uses_placeholder is False
+
+    def test_placeholder_embedded_in_token(self):
+        """'{PROMPT}' embedded in a larger token is expanded via str.format."""
+        cli = CLI("q -> a", command=["cmd", "--input={PROMPT}"])
+        cmd = cli._prepare_cli_command("hello")
+        assert cmd == ["cmd", "--input=hello"]
 
 
 # ============================================================================
@@ -878,7 +909,7 @@ class TestCLIEdgeCases:
 
         cli2 = CLI(
             "question -> name, count: int",
-            cli_command=[sys.executable, str(SCRIPT)],
+            command=[sys.executable, str(SCRIPT)],
             max_output_chars=100,
         )
         cli2.prepare_prompt = make_mock_predictor([{"cli_prompt": "test"}])
@@ -914,169 +945,3 @@ class TestCLIEdgeCases:
         assert "line3" in result.answer
 
 
-# ============================================================================
-# Agent Preset Tests
-# ============================================================================
-
-
-class TestAgentPresets:
-    """Tests for agent preset registry and _build_agent_command."""
-
-    def test_all_presets_have_required_keys(self):
-        required_keys = {"command", "print_flags", "yolo_flags", "output_flags",
-                         "model_flag", "session_flags", "parse_jsonl", "stdin"}
-        for name, preset in AGENT_PRESETS.items():
-            missing = required_keys - set(preset.keys())
-            assert not missing, f"Preset {name!r} missing keys: {missing}"
-
-    def test_unknown_agent_raises(self):
-        with pytest.raises(ValueError, match="Unknown agent"):
-            _build_agent_command("nonexistent_agent")
-
-    def test_error_lists_available_agents(self):
-        with pytest.raises(ValueError, match="claude") as exc_info:
-            _build_agent_command("bad")
-        # Should list all available agents
-        for name in AGENT_PRESETS:
-            assert name in str(exc_info.value)
-
-    # --- Claude ---
-
-    def test_claude_preset(self):
-        cmd, parse_jsonl = _build_agent_command("claude")
-        assert cmd[0] == "claude"
-        assert "-p" in cmd
-        assert "--dangerously-skip-permissions" in cmd
-        assert "--no-session-persistence" in cmd
-        assert "--output-format" in cmd
-        assert "text" in cmd
-        assert parse_jsonl is False
-
-    def test_claude_json_preset(self):
-        cmd, parse_jsonl = _build_agent_command("claude-json")
-        assert "--output-format" in cmd
-        assert "stream-json" in cmd
-        assert "--verbose" in cmd
-        assert parse_jsonl is True
-
-    def test_claude_with_model(self):
-        cmd, _ = _build_agent_command("claude", model="sonnet")
-        assert "--model" in cmd
-        idx = cmd.index("--model")
-        assert cmd[idx + 1] == "sonnet"
-
-    def test_claude_no_yolo(self):
-        cmd, _ = _build_agent_command("claude", yolo=False)
-        assert "--dangerously-skip-permissions" not in cmd
-
-    # --- Codex ---
-
-    def test_codex_preset(self):
-        cmd, parse_jsonl = _build_agent_command("codex")
-        assert cmd[:2] == ["codex", "exec"]
-        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
-        assert parse_jsonl is False
-
-    def test_codex_json_preset(self):
-        cmd, parse_jsonl = _build_agent_command("codex-json")
-        assert "--json" in cmd
-        assert parse_jsonl is True
-
-    def test_codex_with_model(self):
-        cmd, _ = _build_agent_command("codex", model="o3")
-        assert "--model" in cmd
-        idx = cmd.index("--model")
-        assert cmd[idx + 1] == "o3"
-
-    # --- Gemini ---
-
-    def test_gemini_preset(self):
-        cmd, parse_jsonl = _build_agent_command("gemini")
-        assert cmd[0] == "gemini"
-        assert "--yolo" in cmd
-        assert "-o" in cmd
-        assert "text" in cmd
-        assert parse_jsonl is False
-
-    def test_gemini_json_preset(self):
-        cmd, parse_jsonl = _build_agent_command("gemini-json")
-        assert "json" in cmd
-        assert parse_jsonl is True
-
-    # --- Pi ---
-
-    def test_pi_preset(self):
-        cmd, parse_jsonl = _build_agent_command("pi")
-        assert cmd[0] == "pi"
-        assert "-p" in cmd
-        assert "--no-session" in cmd
-        assert parse_jsonl is False
-
-    def test_pi_with_model(self):
-        cmd, _ = _build_agent_command("pi", model="gemini-2.5-flash")
-        assert "--model" in cmd
-        idx = cmd.index("--model")
-        assert cmd[idx + 1] == "gemini-2.5-flash"
-
-    # --- Extra flags ---
-
-    def test_extra_flags_appended(self):
-        cmd, _ = _build_agent_command("claude", extra_flags=["--max-budget-usd", "5"])
-        assert "--max-budget-usd" in cmd
-        assert "5" in cmd
-
-    # --- No model ---
-
-    def test_no_model_flag_when_none(self):
-        cmd, _ = _build_agent_command("claude")
-        assert "--model" not in cmd
-
-
-class TestFromAgent:
-    """Tests for CLI.from_agent() classmethod."""
-
-    def test_from_agent_creates_cli(self):
-        cli = CLI.from_agent("pi", "question -> answer")
-        assert isinstance(cli, CLI)
-        assert "question" in cli.signature.input_fields
-        assert cli.cli_command[0] == "pi"
-
-    def test_from_agent_with_model(self):
-        cli = CLI.from_agent("claude", "task -> result", model="sonnet")
-        assert "--model" in cli.cli_command
-        assert "sonnet" in cli.cli_command
-
-    def test_from_agent_passes_kwargs(self):
-        cli = CLI.from_agent("codex", "task -> result", max_time=120, max_retries=3)
-        assert cli.max_time == 120
-        assert cli.max_retries == 3
-
-    def test_from_agent_json_sets_parse_jsonl(self):
-        cli = CLI.from_agent("codex-json", "task -> result")
-        assert cli.parse_jsonl is True
-
-    def test_from_agent_text_sets_no_parse_jsonl(self):
-        cli = CLI.from_agent("codex", "task -> result")
-        assert cli.parse_jsonl is False
-
-    def test_from_agent_parse_jsonl_override(self):
-        cli = CLI.from_agent("codex-json", "task -> result", parse_jsonl=False)
-        assert cli.parse_jsonl is False
-
-    def test_from_agent_unknown_raises(self):
-        with pytest.raises(ValueError, match="Unknown agent"):
-            CLI.from_agent("not_real", "q -> a")
-
-    def test_from_agent_has_named_predictors(self):
-        cli = CLI.from_agent("pi", "question -> answer")
-        names = [n for n, _ in cli.named_predictors()]
-        assert "prepare_prompt" in names
-        assert "extract" in names
-
-    def test_from_agent_with_cwd(self):
-        cli = CLI.from_agent("claude", "task -> result", cwd="/tmp")
-        assert cli.cwd == "/tmp"
-
-    def test_from_agent_with_env(self):
-        cli = CLI.from_agent("pi", "q -> a", env={"MY_VAR": "val"})
-        assert cli.env["MY_VAR"] == "val"
