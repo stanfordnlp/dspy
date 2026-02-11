@@ -41,7 +41,7 @@ class REPLVariable(pydantic.BaseModel):
         name: str,
         value: Any,
         field_info: FieldInfo | None = None,
-        preview_chars: int = 500,
+        preview_chars: int = 1000,
     ) -> REPLVariable:
         """Create REPLVariable from an actual value and optional field info.
 
