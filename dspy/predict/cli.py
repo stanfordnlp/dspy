@@ -10,6 +10,9 @@ Architecture follows dspy.RLM: the module exposes `prepare_prompt` and `extract`
 as named predictors that optimizers (MIPRO, GEPA, BootstrapTrace) can tune.
 
 Reference: https://github.com/stanfordnlp/dspy/issues/9034
+
+TODO: Add sandboxing support similar to dspy.RLM's CodeInterpreter
+(Deno/Pyodide/WASM). CLI subprocesses currently run unsandboxed on the host.
 """
 
 from __future__ import annotations
