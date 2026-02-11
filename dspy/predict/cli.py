@@ -392,7 +392,7 @@ class CLI(Module):
     # Signature Construction
     # =========================================================================
 
-    def _build_signatures(self) -> tuple:
+    def _build_signatures(self) -> tuple[dspy.Signature, dspy.Signature]:
         """Build the prepare_prompt and extract signatures.
 
         prepare_prompt: takes signature inputs → produces cli_prompt
