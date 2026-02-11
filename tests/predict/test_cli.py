@@ -841,6 +841,11 @@ class TestPromptPlaceholder:
         cmd = cli._prepare_cli_command("text")
         assert cmd == ["cmd", "text", "--repeat", "text"]
 
+    def test_placeholder_not_detected_across_token_boundary(self):
+        """'{prompt}' split across two tokens should not trigger placeholder mode."""
+        cli = CLI("q -> a", cli_command=["cmd", "{promp", "t}"])
+        assert cli._uses_placeholder is False
+
 
 # ============================================================================
 # Environment Variable Tests

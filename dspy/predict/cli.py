@@ -298,7 +298,7 @@ class CLI(Module):
         if not cli_command:
             raise ValueError("cli_command cannot be empty")
         self.cli_command = list(cli_command)
-        self._uses_placeholder = PROMPT_PLACEHOLDER in " ".join(self.cli_command)
+        self._uses_placeholder = any(PROMPT_PLACEHOLDER in token for token in self.cli_command)
 
         # Subprocess config
         self.env = dict(env or {})
@@ -820,7 +820,7 @@ class CLI(Module):
         self.max_retries = state.get("max_retries", self.max_retries)
         self.parse_jsonl = state.get("parse_jsonl", self.parse_jsonl)
         self.max_output_chars = state.get("max_output_chars", self.max_output_chars)
-        self._uses_placeholder = PROMPT_PLACEHOLDER in " ".join(self.cli_command)
+        self._uses_placeholder = any(PROMPT_PLACEHOLDER in token for token in self.cli_command)
         if "prepare_prompt" in state:
             self.prepare_prompt.load_state(state["prepare_prompt"])
         if "extract" in state:
