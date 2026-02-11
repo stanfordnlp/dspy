@@ -1,3 +1,33 @@
+import warnings
+
+# openai 1.x imports from pydantic.v1 for typing utilities that still work correctly.
+# Fixed in openai >=2.0.0 (Sep 30, 2025).
+warnings.filterwarnings(
+    "ignore",
+    message="Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.",
+)
+
+# litellm's logging calls model_dump() on response objects with a Choices/StreamingChoices
+# schema mismatch. Fixed in litellm >=1.80.16 (Jan 13, 2026).
+warnings.filterwarnings(
+    "ignore",
+    message="Pydantic serializer warnings:",
+)
+
+# litellm uses asyncio.iscoroutinefunction which is deprecated in Python 3.14+.
+warnings.filterwarnings(
+    "ignore",
+    message="'asyncio.iscoroutinefunction' is deprecated",
+    category=DeprecationWarning,
+)
+
+# litellm uses deprecated Pydantic class-based config.
+warnings.filterwarnings(
+    "ignore",
+    message="Support for class-based `config` is deprecated",
+    category=DeprecationWarning,
+)
+
 from dspy.predict import *
 from dspy.primitives import *
 from dspy.retrievers import *
