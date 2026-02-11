@@ -2702,8 +2702,8 @@ class TestSubcallParameterPropagation:
 class TestSubcallInterpreterIsolation:
     """Tests that child RLM gets an isolated LocalInterpreter."""
 
-    def test_child_gets_local_interpreter(self):
-        """Child should receive a LocalInterpreter instance."""
+    def test_child_gets_local_interpreter_when_parent_uses_local(self):
+        """When parent uses LocalInterpreter, child gets LocalInterpreter."""
         from unittest.mock import patch
 
         from dspy.primitives.local_interpreter import LocalInterpreter
@@ -2717,13 +2717,32 @@ class TestSubcallInterpreterIsolation:
                 captured.update(kwargs)
             _original_init(self_inner, *args, **kwargs)
 
-        rlm = RLM("query -> answer", max_depth=2)
+        rlm = RLM("query -> answer", max_depth=2, interpreter=LocalInterpreter())
         with patch.object(RLM, "__init__", capturing_init):
             rlm._subcall("test")
         assert isinstance(captured.get("interpreter"), LocalInterpreter)
 
+    def test_child_gets_python_interpreter_when_parent_uses_default(self):
+        """When parent uses default (PythonInterpreter), child matches."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        # No interpreter= means parent uses default PythonInterpreter
+        rlm = RLM("query -> answer", max_depth=2)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert isinstance(captured.get("interpreter"), PythonInterpreter)
+
     def test_interpreter_shutdown_on_success(self):
-        """LocalInterpreter.shutdown() is called after successful child completion."""
+        """Child interpreter shutdown() is called after successful completion."""
         from unittest.mock import MagicMock, patch
 
         from dspy.primitives.local_interpreter import LocalInterpreter
@@ -2738,14 +2757,16 @@ class TestSubcallInterpreterIsolation:
         with dummy_lm_context([
             {"reasoning": "Done", "code": 'SUBMIT(response="ok")'},
         ]):
-            rlm = RLM("query -> answer", max_iterations=3, max_depth=2)
+            # Parent uses LocalInterpreter so child matches
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2,
+                       interpreter=LocalInterpreter())
             with patch.object(LocalInterpreter, "shutdown", tracking_shutdown):
                 rlm._subcall("test")
 
         assert len(shutdown_called) >= 1
 
     def test_interpreter_shutdown_on_error(self):
-        """LocalInterpreter.shutdown() is called even when child fails."""
+        """Child interpreter shutdown() is called even when child fails."""
         from unittest.mock import MagicMock, patch
 
         from dspy.primitives.local_interpreter import LocalInterpreter
@@ -2761,7 +2782,8 @@ class TestSubcallInterpreterIsolation:
             {"reasoning": "Bad", "code": 'raise Exception("boom")'},
             {"response": "fallback"},  # extract fallback
         ]):
-            rlm = RLM("query -> answer", max_iterations=1, max_depth=2)
+            rlm = RLM("query -> answer", max_iterations=1, max_depth=2,
+                       interpreter=LocalInterpreter())
             with patch.object(LocalInterpreter, "shutdown", tracking_shutdown):
                 rlm._subcall("test")
 

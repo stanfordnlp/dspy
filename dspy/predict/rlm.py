@@ -741,7 +741,19 @@ class RLM(Module):
         # Resolve child's sub_lm: model param selects which LM the child uses
         child_sub_lm = resolve_lm(model) if (model and resolve_lm) else self.sub_lm
 
-        interpreter = LocalInterpreter()
+        # Match parent's interpreter type: if parent uses LocalInterpreter (or a
+        # custom interpreter), child gets a fresh LocalInterpreter. If parent uses
+        # the default PythonInterpreter (Deno sandbox), child gets its own
+        # PythonInterpreter so sandboxing is preserved.
+        if isinstance(self._interpreter, LocalInterpreter):
+            interpreter = LocalInterpreter()
+        elif self._interpreter is None:
+            # Parent uses default PythonInterpreter — child gets one too
+            interpreter = PythonInterpreter()
+        else:
+            # Custom interpreter — can't clone, fall back to LocalInterpreter
+            interpreter = LocalInterpreter()
+
         child = RLM(
             signature="prompt -> response",
             max_iterations=self.max_iterations,
