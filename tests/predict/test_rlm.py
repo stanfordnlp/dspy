@@ -2412,6 +2412,16 @@ class TestSubcallInit:
         assert result == "leaf response"
         mock_lm.assert_called_once()
 
+    def test_max_depth_0_raises(self):
+        """max_depth < 1 should raise ValueError."""
+        with pytest.raises(ValueError, match="max_depth must be >= 1"):
+            RLM("query -> answer", max_depth=0)
+
+    def test_negative_depth_raises(self):
+        """Negative depth should raise ValueError."""
+        with pytest.raises(ValueError, match="depth must be >= 0"):
+            RLM("query -> answer", depth=-1)
+
 
 class TestSubcallTimeBudgetPropagation:
     """Tests for max_time propagation to child RLM, adapted from vanilla RLM test_subcall.py."""
@@ -2833,6 +2843,23 @@ class TestSubcallE2E:
             tools = rlm._make_llm_tools()
             results = tools["llm_query_batched"](["q1", "q2"])
             assert results == ["a1", "a2"]
+
+    @pytest.mark.asyncio
+    async def test_depth_2_aforward(self):
+        """aforward() works with max_depth=2 (async parent, sync _subcall)."""
+        with dummy_lm_context([
+            # Parent iter 1: call llm_query
+            {"reasoning": "Ask", "code": 'result = llm_query("test")\nprint(result)'},
+            # Child iter 1: SUBMIT
+            {"reasoning": "Done", "code": 'SUBMIT(response="async_ok")'},
+            # Parent iter 2: SUBMIT
+            {"reasoning": "Got it", "code": 'SUBMIT(result)'},
+        ]):
+            from dspy.primitives.local_interpreter import LocalInterpreter
+            rlm = RLM("query -> answer", max_iterations=5, max_depth=2,
+                       interpreter=LocalInterpreter())
+            result = await rlm.aforward(query="async test")
+            assert result.answer == "async_ok"
 
     @pytest.mark.deno
     def test_depth_2_python_interpreter_parent(self):

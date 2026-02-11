@@ -169,6 +169,10 @@ class RLM(Module):
         self.sub_lm = sub_lm
         self.sub_lms = sub_lms or {}
         self._interpreter = interpreter
+        if max_depth < 1:
+            raise ValueError(f"max_depth must be >= 1, got {max_depth}")
+        if depth < 0:
+            raise ValueError(f"depth must be >= 0, got {depth}")
         self.depth = depth
         self.max_depth = max_depth
         self._user_tools = self._normalize_tools(tools)
