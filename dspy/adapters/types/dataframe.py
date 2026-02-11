@@ -1,5 +1,6 @@
 """DataFrame type for DSPy signatures with RLM sandbox support."""
 
+import base64
 from typing import Any
 
 import pydantic
@@ -100,11 +101,11 @@ class DataFrame(Type):
     # RLM Sandbox Support
 
     def sandbox_setup(self) -> str:
-        return "import pandas as pd\nimport json"
+        return "import pandas as pd\nimport pyarrow\nimport base64\nimport io"
 
     def to_sandbox(self) -> bytes:
-        """Serialize DataFrame for sandbox injection."""
-        return self.data.to_json(orient="records", date_format="iso").encode("utf-8")
+        """Serialize DataFrame as parquet, base64-encoded for text transport."""
+        return base64.b64encode(self.data.to_parquet(index=False))
 
     def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
         """Return code that reconstructs this type from a data expression.
@@ -113,7 +114,7 @@ class DataFrame(Type):
             var_name: Variable name in the sandbox
             data_expr: Expression that evaluates to the raw data (e.g. file read)
         """
-        return f"{var_name} = pd.DataFrame(json.loads({data_expr}))"
+        return f"{var_name} = pd.read_parquet(io.BytesIO(base64.b64decode({data_expr})))"
 
     def rlm_preview(self, max_chars: int = 500) -> str:
         """Generate LLM-friendly preview of DataFrame contents."""

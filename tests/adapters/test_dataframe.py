@@ -73,40 +73,54 @@ def test_sandbox_setup():
     wrapped = DataFrame(df)
     setup = wrapped.sandbox_setup()
     assert "import pandas" in setup
-    assert "import json" in setup
+    assert "import pyarrow" in setup
+    assert "import base64" in setup
+    assert "import io" in setup
 
 
-def test_to_sandbox_returns_json():
+def test_to_sandbox_returns_parquet():
     df = pd.DataFrame({"x": [1, 2], "y": [3.0, 4.0]})
     wrapped = DataFrame(df)
     payload = wrapped.to_sandbox()
 
     assert isinstance(payload, bytes)
 
-    import json
-    records = json.loads(payload)
-    assert len(records) == 2
-    assert records[0]["x"] == 1
-    assert records[1]["y"] == 4.0
+    # Payload is base64-encoded parquet
+    import base64
+    import io
+    decoded = base64.b64decode(payload)
+    result = pd.read_parquet(io.BytesIO(decoded))
+    assert len(result) == 2
+    assert list(result["x"]) == [1, 2]
+    assert list(result["y"]) == [3.0, 4.0]
 
 
 def test_sandbox_assignment():
     df = pd.DataFrame({"x": [1]})
     wrapped = DataFrame(df)
-    code = wrapped.sandbox_assignment("my_df", "open('/tmp/data.json').read()")
+    code = wrapped.sandbox_assignment("my_df", "open('/tmp/data').read()")
     assert "my_df" in code
-    assert "pd.DataFrame" in code
-    assert "/tmp/data.json" in code
+    assert "pd.read_parquet" in code
+    assert "base64.b64decode" in code
 
 
-def test_to_sandbox_handles_timestamps():
-    df = pd.DataFrame({"ts": pd.to_datetime(["2024-01-01", "2024-06-15"])})
+def test_to_sandbox_preserves_dtypes():
+    df = pd.DataFrame({
+        "ts": pd.to_datetime(["2024-01-01", "2024-06-15"]),
+        "cat": pd.Categorical(["a", "b"]),
+        "num": [1, 2],
+        "flag": [True, False],
+    })
     wrapped = DataFrame(df)
     payload = wrapped.to_sandbox()
 
-    import json
-    records = json.loads(payload)
-    assert "2024-01-01" in records[0]["ts"]
+    import base64
+    import io
+    result = pd.read_parquet(io.BytesIO(base64.b64decode(payload)))
+    assert result["ts"].dtype == "datetime64[us]"
+    assert result["cat"].dtype.name == "category"
+    assert result["num"].dtype == "int64"
+    assert result["flag"].dtype == "bool"
 
 
 def test_to_sandbox_handles_nulls():
@@ -114,9 +128,12 @@ def test_to_sandbox_handles_nulls():
     wrapped = DataFrame(df)
     payload = wrapped.to_sandbox()
 
-    import json
-    records = json.loads(payload)
-    assert records[1]["a"] is None
+    import base64
+    import io
+    result = pd.read_parquet(io.BytesIO(base64.b64decode(payload)))
+    assert pd.isna(result["a"].iloc[1])
+    assert result["a"].iloc[0] == 1.0
+    assert result["a"].iloc[2] == 3.0
 
 
 # -- rlm_preview --
