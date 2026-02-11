@@ -150,11 +150,19 @@ class PythonInterpreter:
 
             # Allow reading runner.js and explicitly enabled paths
             allowed_read_paths = [self._get_runner_path()]
+            allowed_write_paths = []
 
-            # Also allow reading Deno's cache directory so Pyodide can load its files
+            # Allow reading/writing Deno's cache directory so Pyodide can load/cache files
             deno_dir = self._get_deno_dir()
             if deno_dir:
                 allowed_read_paths.append(deno_dir)
+                allowed_write_paths.append(deno_dir)
+
+            # Allow reading node_modules if it exists (Pyodide may be installed there
+            # when using deno.json with "nodeModulesDir": "auto")
+            cwd_node_modules = os.path.join(os.getcwd(), "node_modules")
+            if os.path.isdir(cwd_node_modules):
+                allowed_read_paths.append(cwd_node_modules)
 
             if self.enable_read_paths:
                 allowed_read_paths.extend(str(p) for p in self.enable_read_paths)
@@ -169,8 +177,11 @@ class PythonInterpreter:
                 self._env_arg = ",".join(user_vars)
             if self.enable_network_access:
                 args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
-            if self.enable_write_paths:
-                args.append(f"--allow-write={','.join(str(x) for x in self.enable_write_paths)}")
+
+            # Combine user write paths with internal write paths (deno cache)
+            all_write_paths = allowed_write_paths + [str(p) for p in (self.enable_write_paths or [])]
+            if all_write_paths:
+                args.append(f"--allow-write={','.join(all_write_paths)}")
 
             args.append(self._get_runner_path())
 
@@ -334,16 +345,37 @@ class PythonInterpreter:
                     env=os.environ.copy()
                 )
             except FileNotFoundError as e:
-                install_instructions = (
-                    "Deno executable not found. Please install Deno to proceed.\n"
-                    "Installation instructions:\n"
-                    "> curl -fsSL https://deno.land/install.sh | sh\n"
-                    "*or*, on macOS with Homebrew:\n"
-                    "> brew install deno\n"
-                    "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
-                )
-                raise CodeInterpreterError(install_instructions) from e
-            self._health_check()
+                # Check if Deno is installed but not on PATH
+                home = os.path.expanduser("~")
+                common_paths = [
+                    os.path.join(home, ".deno", "bin", "deno"),
+                    "/usr/local/bin/deno",
+                    "/opt/homebrew/bin/deno",
+                ]
+                found = next((p for p in common_paths if os.path.isfile(p)), None)
+
+                if found:
+                    msg = (
+                        f"Deno is installed at {found} but not on your PATH.\n"
+                        f"Either:\n"
+                        f'  1. Add to PATH: export PATH="{os.path.dirname(found)}:$PATH"\n'
+                        f"  2. Or restart your terminal to pick up the updated PATH.\n\n"
+                        f"If you continue to have issues, please open an issue at:\n"
+                        f"https://github.com/stanfordnlp/dspy/issues"
+                    )
+                else:
+                    msg = (
+                        "Deno executable not found. Please install Deno to proceed.\n"
+                        "Installation instructions:\n"
+                        "> curl -fsSL https://deno.land/install.sh | sh\n"
+                        "*or*, on macOS with Homebrew:\n"
+                        "> brew install deno\n"
+                        "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/\n\n"
+                        "If you continue to have issues, please open an issue at:\n"
+                        "https://github.com/stanfordnlp/dspy/issues"
+                    )
+                raise CodeInterpreterError(msg) from e
+            self._verify_sandbox_operational()
 
     def _send_request(self, method: str, params: dict, context: str) -> dict:
         """Send a JSON-RPC request and return the parsed response."""
@@ -368,11 +400,48 @@ class PythonInterpreter:
             raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
         return response
 
-    def _health_check(self) -> None:
-        """Verify the subprocess is alive by executing a simple expression."""
-        response = self._send_request("execute", {"code": "print(1+1)"}, "during health check")
-        if response.get("result", {}).get("output", "").strip() != "2":
-            raise CodeInterpreterError(f"Unexpected ping response: {response}")
+    def _verify_sandbox_operational(self) -> None:
+        """Verify the sandbox can execute Python code by running a simple test.
+
+        This is the authoritative health check that confirms:
+        1. Deno subprocess is running
+        2. Pyodide (Python WASM runtime) loaded successfully
+        3. Code execution and output capture work correctly
+
+        Raises CodeInterpreterError with actionable diagnostics on failure.
+        """
+        try:
+            response = self._send_request("execute", {"code": "print(1+1)"}, "during sandbox verification")
+        except CodeInterpreterError as e:
+            raise CodeInterpreterError(
+                f"Deno sandbox failed to initialize.\n"
+                f"This usually means Pyodide (the Python WASM runtime) could not load.\n\n"
+                f"Common causes:\n"
+                f"  - No internet on first run (Pyodide downloads ~30MB)\n"
+                f"  - Corrupted Deno cache (fix: deno cache --reload)\n"
+                f"  - Deno version too old (need 1.37+)\n"
+                f"  - Permission issues with node_modules or Deno cache\n\n"
+                f"If you're using a deno.json with nodeModulesDir, ensure PythonInterpreter\n"
+                f"has read access to node_modules (it's auto-detected if in current directory).\n\n"
+                f"Original error: {e}\n\n"
+                f"If you continue to have issues, please open an issue at:\n"
+                f"https://github.com/stanfordnlp/dspy/issues"
+            ) from e
+
+        output = response.get("result", {}).get("output", "").strip()
+        if output != "2":
+            raise CodeInterpreterError(
+                f"Deno sandbox started but Python execution test failed.\n"
+                f"Expected output '2' from print(1+1), got: {output!r}\n\n"
+                f"This may indicate:\n"
+                f"  - Pyodide version incompatibility\n"
+                f"  - Corrupted Deno/Pyodide cache (fix: deno cache --reload)\n"
+                f"  - Permission issues reading Pyodide files\n\n"
+                f"If using nodeModulesDir in deno.json, try adding node_modules to\n"
+                f"enable_read_paths or run from the directory containing node_modules.\n\n"
+                f"If you continue to have issues, please open an issue at:\n"
+                f"https://github.com/stanfordnlp/dspy/issues"
+            )
 
     def _to_json_compatible(self, value: Any) -> Any:
         """Recursively convert Python values to JSON-compatible types."""
