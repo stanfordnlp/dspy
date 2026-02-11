@@ -17,7 +17,6 @@ import os
 import sys
 import time
 
-
 MODE = os.environ.get("CLI_MODE", "plain")
 
 
