@@ -610,7 +610,11 @@ class CLI(Module):
                 ) from exc
             except asyncio.TimeoutError as exc:
                 process.kill()
-                await process.communicate()
+                cleanup_timeout = min(self.max_time, 5.0) if self.max_time else 5.0
+                try:
+                    await asyncio.wait_for(process.communicate(), timeout=cleanup_timeout)
+                except (asyncio.TimeoutError, OSError):
+                    pass
                 raise CLIError(
                     f"CLI timed out after {self.max_time}s",
                     returncode=-1,
