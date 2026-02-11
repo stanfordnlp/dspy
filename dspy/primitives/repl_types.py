@@ -57,7 +57,11 @@ class REPLVariable(pydantic.BaseModel):
         else:
             value_str = str(jsonable)
         is_truncated = len(value_str) > preview_chars
-        preview = value_str[:preview_chars] + ("..." if is_truncated else "")
+        if is_truncated:
+            half = preview_chars // 2
+            preview = value_str[:half] + "..." + value_str[-half:]
+        else:
+            preview = value_str
 
         # Extract desc and constraints from field_info if provided
         desc = ""
@@ -104,13 +108,20 @@ class REPLEntry(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(frozen=True)
 
-    def format(self, index: int, max_output_chars: int = 5000) -> str:
+    @staticmethod
+    def format_output(output: str, max_output_chars: int = 10_000) -> str:
+        """Format output with head+tail truncation, preserving true length in header."""
+        raw_len = len(output)
+        if raw_len > max_output_chars:
+            half = max_output_chars // 2
+            omitted = raw_len - max_output_chars
+            output = output[:half] + f"\n\n... ({omitted:,} characters omitted) ...\n\n" + output[-half:]
+        return f"Output ({raw_len:,} chars):\n{output}"
+
+    def format(self, index: int, max_output_chars: int = 10_000) -> str:
         """Format this entry for inclusion in prompts."""
-        output = self.output
-        if len(output) > max_output_chars:
-            output = output[:max_output_chars] + f"\n... (truncated to {max_output_chars}/{len(self.output):,} chars)"
         reasoning_line = f"Reasoning: {self.reasoning}\n" if self.reasoning else ""
-        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n```python\n{self.code}\n```\nOutput ({len(self.output):,} chars):\n{output}"
+        return f"=== Step {index + 1} ===\n{reasoning_line}Code:\n```python\n{self.code}\n```\n{self.format_output(self.output, max_output_chars)}"
 
 
 class REPLHistory(pydantic.BaseModel):
@@ -120,13 +131,14 @@ class REPLHistory(pydantic.BaseModel):
     """
 
     entries: list[REPLEntry] = Field(default_factory=list)
+    max_output_chars: int = 10_000
 
     model_config = pydantic.ConfigDict(frozen=True)
 
-    def format(self, max_output_chars: int = 5000) -> str:
+    def format(self) -> str:
         if not self.entries:
             return "You have not interacted with the REPL environment yet."
-        return "\n".join(entry.format(index=i, max_output_chars=max_output_chars) for i, entry in enumerate(self.entries))
+        return "\n".join(entry.format(index=i, max_output_chars=self.max_output_chars) for i, entry in enumerate(self.entries))
 
     @pydantic.model_serializer()
     def serialize_model(self) -> str:
@@ -135,7 +147,7 @@ class REPLHistory(pydantic.BaseModel):
     def append(self, *, reasoning: str = "", code: str, output: str) -> REPLHistory:
         """Return a new REPLHistory with the entry appended."""
         new_entry = REPLEntry(reasoning=reasoning, code=code, output=output)
-        return REPLHistory(entries=list(self.entries) + [new_entry])
+        return REPLHistory(entries=list(self.entries) + [new_entry], max_output_chars=self.max_output_chars)
 
     def __len__(self) -> int:
         return len(self.entries)

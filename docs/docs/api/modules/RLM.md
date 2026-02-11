@@ -109,7 +109,7 @@ $20,000,000
 | `signature` | `str \| Signature` | required | Defines inputs and outputs (e.g., `"context, query -> answer"`) |
 | `max_iterations` | `int` | `20` | Maximum REPL interaction loops before fallback extraction |
 | `max_llm_calls` | `int` | `50` | Maximum `llm_query`/`llm_query_batched` calls per execution |
-| `max_output_chars` | `int` | `100_000` | Maximum characters to include from REPL output |
+| `max_output_chars` | `int` | `10_000` | Maximum characters to include from REPL output |
 | `verbose` | `bool` | `False` | Log detailed execution info |
 | `tools` | `list[Union[Callable, dspy.Tool]]` | `None` | Additional tool functions callable from interpreter code |
 | `sub_lm` | `dspy.LM` | `None` | LM for sub-queries. Defaults to `dspy.settings.lm`. Use a cheaper model here. |

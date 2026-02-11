@@ -306,11 +306,12 @@ class TestRLMFormatting:
         formatted = rlm._format_output("")
         assert "no output" in formatted.lower()
 
-    def test_format_output_truncation(self):
-        """Test that long output is truncated."""
+    def test_format_output_passthrough(self):
+        """Test that _format_output passes through non-empty output without truncation."""
         rlm = RLM("context -> answer", max_output_chars=100)
-        formatted = rlm._format_output("x" * 200)
-        assert "truncated" in formatted.lower()
+        long_output = "a" * 200
+        formatted = rlm._format_output(long_output)
+        assert formatted == long_output
 
     def test_format_variable_info_string(self):
         """Test variable info formatting for string value using REPLVariable."""
@@ -319,7 +320,8 @@ class TestRLMFormatting:
         assert "Variable: `context`" in formatted
         assert "Type: str" in formatted
         assert "11" in formatted  # length
-        assert "Hello" in formatted
+        assert "He" in formatted  # head
+        assert "ld" in formatted  # tail
         assert "..." in formatted  # truncation indicator
 
     def test_format_variable_info_dict(self):
@@ -379,10 +381,33 @@ class TestREPLTypes:
         assert "1" in formatted
 
     def test_repl_entry_format_truncation(self):
-        """Test REPLEntry output truncation."""
-        entry = REPLEntry(code="print('x' * 1000)", output="x" * 1000)
-        formatted = entry.format(index=0, max_output_chars=50)
-        assert "truncated" in formatted
+        """Test REPLEntry.format() truncates with head+tail and shows true length."""
+        output = "a" * 100 + "b" * 100
+        entry = REPLEntry(code="print('a' + 'b')", output=output)
+        formatted = entry.format(index=0, max_output_chars=100)
+        # Head and tail preserved
+        assert "a" * 50 in formatted
+        assert "b" * 50 in formatted
+        assert "100 characters omitted" in formatted
+        # True original length shown in header
+        assert "200 chars" in formatted
+
+    def test_repl_entry_format_no_truncation(self):
+        """Test REPLEntry.format() passes short output through without truncation."""
+        output = "a" * 50
+        entry = REPLEntry(code="print('a')", output=output)
+        formatted = entry.format(index=0, max_output_chars=100)
+        assert output in formatted
+        assert "omitted" not in formatted
+
+    def test_repl_history_threads_max_output_chars(self):
+        """Test REPLHistory carries max_output_chars through append()."""
+        h = REPLHistory(max_output_chars=50)
+        h2 = h.append(code="print(1)", output="a" * 100)
+        assert h2.max_output_chars == 50
+        # Formatting should truncate at 50 chars
+        formatted = h2.format()
+        assert "50 characters omitted" in formatted
 
     def test_repl_variable_from_value(self):
         """Test REPLVariable.from_value() factory."""
@@ -393,10 +418,11 @@ class TestREPLTypes:
         assert "hello world" in var.preview
 
     def test_repl_variable_truncation(self):
-        """Test REPLVariable preview truncation."""
-        var = REPLVariable.from_value("big", "x" * 1000, preview_chars=50)
-        assert len(var.preview) == 53  # 50 + "..."
-        assert var.preview.endswith("...")
+        """Test REPLVariable preview shows head and tail."""
+        var = REPLVariable.from_value("big", "a" * 500 + "b" * 500, preview_chars=50)
+        assert var.preview.startswith("a" * 25)
+        assert var.preview.endswith("b" * 25)
+        assert "..." in var.preview
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""
