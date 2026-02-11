@@ -156,6 +156,7 @@ class ParallelExecutor:
                             index, outcome = f.result()
                         except Exception:
                             pass
+                            
                         else:
                             if outcome != job_cancelled and results[index] is None:
                                 # Check if this is an exception
