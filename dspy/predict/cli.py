@@ -679,6 +679,25 @@ class CLI(Module):
     # Forward Pass
     # =========================================================================
 
+    def _post_invoke(
+        self, prompt_text: str, stdout: str, stderr: str, returncode: int, elapsed: float
+    ) -> Prediction | tuple[CLITrajectory, str]:
+        """Shared post-invocation logic.
+
+        Returns a Prediction if direct parse succeeds, or (trajectory, cli_output_text)
+        if extract is needed.
+        """
+        trajectory = self._build_trajectory(prompt_text, stdout, stderr, returncode, elapsed)
+
+        parsed = self._try_direct_parse(stdout, trajectory)
+        if parsed is not None:
+            return Prediction(trajectory=trajectory, **parsed)
+
+        cli_output_text = stdout.strip()
+        if len(cli_output_text) > self.max_output_chars:
+            cli_output_text = cli_output_text[:self.max_output_chars] + "\n... (truncated)"
+        return trajectory, cli_output_text
+
     def forward(self, **input_args) -> Prediction:
         """Execute CLI module to produce outputs from the given inputs.
 
@@ -699,37 +718,24 @@ class CLI(Module):
             CLIError: If CLI fails after all retries.
         """
         self._validate_inputs(input_args)
-        output_names = list(self.signature.output_fields.keys())
 
-        # Step 1: Prepare prompt (optimizable)
         prep = self.prepare_prompt(**input_args)
         prompt_text = prep.cli_prompt
 
         if self.verbose:
             logger.info(f"CLI prompt:\n{prompt_text}")
 
-        # Step 2: Invoke CLI
         stdout, stderr, returncode, elapsed = self._invoke_cli(prompt_text)
 
         if self.verbose:
             logger.info(f"CLI completed in {elapsed:.1f}s (exit={returncode})")
 
-        # Step 3: Build trajectory
-        trajectory = self._build_trajectory(prompt_text, stdout, stderr, returncode, elapsed)
+        result = self._post_invoke(prompt_text, stdout, stderr, returncode, elapsed)
+        if isinstance(result, Prediction):
+            return result
+        trajectory, cli_output_text = result
 
-        # Step 4: Try direct parse (cheap path)
-        parsed = self._try_direct_parse(stdout, trajectory)
-        if parsed is not None:
-            return Prediction(
-                trajectory=trajectory,
-                **parsed,
-            )
-
-        # Step 5: Extract via LM (optimizable fallback)
-        cli_output_text = stdout.strip()
-        if len(cli_output_text) > self.max_output_chars:
-            cli_output_text = cli_output_text[:self.max_output_chars] + "\n... (truncated)"
-
+        output_names = list(self.signature.output_fields.keys())
         extract_pred = self.extract(cli_output=cli_output_text)
         return Prediction(
             trajectory=trajectory,
@@ -746,34 +752,24 @@ class CLI(Module):
             Prediction with output fields from the signature, plus 'trajectory'.
         """
         self._validate_inputs(input_args)
-        output_names = list(self.signature.output_fields.keys())
 
-        # Step 1: Prepare prompt (optimizable)
         prep = await self.prepare_prompt.acall(**input_args)
         prompt_text = prep.cli_prompt
 
         if self.verbose:
             logger.info(f"CLI prompt:\n{prompt_text}")
 
-        # Step 2: Invoke CLI
         stdout, stderr, returncode, elapsed = await self._invoke_cli_async(prompt_text)
 
         if self.verbose:
             logger.info(f"CLI completed in {elapsed:.1f}s (exit={returncode})")
 
-        # Step 3: Build trajectory
-        trajectory = self._build_trajectory(prompt_text, stdout, stderr, returncode, elapsed)
+        result = self._post_invoke(prompt_text, stdout, stderr, returncode, elapsed)
+        if isinstance(result, Prediction):
+            return result
+        trajectory, cli_output_text = result
 
-        # Step 4: Try direct parse
-        parsed = self._try_direct_parse(stdout, trajectory)
-        if parsed is not None:
-            return Prediction(trajectory=trajectory, **parsed)
-
-        # Step 5: Extract fallback
-        cli_output_text = stdout.strip()
-        if len(cli_output_text) > self.max_output_chars:
-            cli_output_text = cli_output_text[:self.max_output_chars] + "\n... (truncated)"
-
+        output_names = list(self.signature.output_fields.keys())
         extract_pred = await self.extract.acall(cli_output=cli_output_text)
         return Prediction(
             trajectory=trajectory,
