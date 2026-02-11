@@ -752,8 +752,14 @@ class CLI(Module):
         prep = await self.prepare_prompt.acall(**input_args)
         prompt_text = prep.cli_prompt
 
+        if self.verbose:
+            logger.info(f"CLI prompt:\n{prompt_text}")
+
         # Step 2: Invoke CLI
         stdout, stderr, returncode, elapsed = await self._invoke_cli_async(prompt_text)
+
+        if self.verbose:
+            logger.info(f"CLI completed in {elapsed:.1f}s (exit={returncode})")
 
         # Step 3: Build trajectory
         trajectory = self._build_trajectory(prompt_text, stdout, stderr, returncode, elapsed)
