@@ -289,3 +289,54 @@ def _quoted_string_for_literal_type_annotation(s: str) -> str:
     else:
         # Neither => enclose in single quotes
         return f"'{s}'"
+
+def _extract_first_json_object(text: str) -> str | None:
+    """Return the first balanced JSON object found in text or None if absent."""
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape = False
+
+    for i in range(start, len(text)):
+        char = text[i]
+        if escape:
+            escape = False
+        elif char == "\\" and in_string:
+            escape = True
+        elif char == '"':
+            in_string = not in_string
+        elif not in_string:
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+
+    return None
+
+
+def _extract_braces_raw(text: str) -> str | None:
+    """Fallback: balance braces ignoring string contents.
+
+    This is intentionally simpler than _extract_first_json_object - it doesn't
+    track strings, so it can extract JSON even when string delimiters are malformed.
+    The result can then be passed to json_repair to fix string issues.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+
+    return None
