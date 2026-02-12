@@ -24,6 +24,7 @@ DEFAULT_CONFIG = dotdict(
     disable_history=False,
     track_usage=False,
     usage_tracker=None,
+    cost_tracker=None,
     caller_predict=None,
     caller_modules=None,
     stream_listeners=[],
