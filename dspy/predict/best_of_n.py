@@ -1,7 +1,10 @@
+import logging
 from typing import Callable
 
 import dspy
 from dspy.predict.predict import Module, Prediction
+
+logger = logging.getLogger(__name__)
 
 
 class BestOfN(Module):
@@ -57,6 +60,8 @@ class BestOfN(Module):
         start = lm.kwargs.get("rollout_id", 0)
         rollout_ids = [start + i for i in range(self.N)]
         best_pred, best_trace, best_reward = None, None, -float("inf")
+        error_count = 0
+        last_exception = None
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -78,10 +83,16 @@ class BestOfN(Module):
                     break
 
             except Exception as e:
-                print(f"BestOfN: Attempt {idx + 1} failed with rollout id {rid}: {e}")
-                if idx > self.fail_count:
+                error_count += 1
+                last_exception = e
+                logger.warning(f"BestOfN: Attempt {idx + 1}/{self.N} failed with rollout id {rid}: {e}")
+                if error_count > self.fail_count:
                     raise e
-                self.fail_count -= 1
+
+        if best_pred is None:
+            if last_exception is not None:
+                raise last_exception
+            raise RuntimeError(f"BestOfN: All {self.N} attempts failed. No successful prediction was obtained.")
 
         if best_trace:
             dspy.settings.trace.extend(best_trace)
