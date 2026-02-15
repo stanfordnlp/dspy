@@ -1,5 +1,3 @@
-"""Tests for auto_evaluation metrics (SemanticF1, CompleteAndGrounded)."""
-
 import dspy
 from dspy.evaluate.auto_evaluation import SemanticF1, CompleteAndGrounded
 from dspy.primitives.prediction import Prediction
@@ -7,7 +5,6 @@ from dspy.utils.dummies import DummyLM
 
 
 def test_semantic_f1_returns_prediction_without_trace():
-    """Test that SemanticF1 returns a dspy.Prediction object without trace."""
     # Configure with a dummy LM that returns precision and recall values
     # ChainOfThought adds a "reasoning" field to the output
     dspy.configure(
@@ -37,7 +34,6 @@ def test_semantic_f1_returns_prediction_without_trace():
 
 
 def test_semantic_f1_returns_prediction_with_trace():
-    """Test that SemanticF1 returns a dspy.Prediction object with trace (boolean score)."""
     # Configure with a dummy LM
     dspy.configure(
         lm=DummyLM(
@@ -66,7 +62,6 @@ def test_semantic_f1_returns_prediction_with_trace():
 
 
 def test_semantic_f1_score_value():
-    """Test that SemanticF1 computes correct F1 score."""
     # Configure with a dummy LM that returns specific precision and recall
     dspy.configure(
         lm=DummyLM(
@@ -95,7 +90,6 @@ def test_semantic_f1_score_value():
 
 
 def test_complete_and_grounded_returns_prediction_without_trace():
-    """Test that CompleteAndGrounded returns a dspy.Prediction object without trace."""
     # Configure with a dummy LM
     dspy.configure(
         lm=DummyLM(
@@ -132,7 +126,6 @@ def test_complete_and_grounded_returns_prediction_without_trace():
 
 
 def test_complete_and_grounded_returns_prediction_with_trace():
-    """Test that CompleteAndGrounded returns a dspy.Prediction object with trace (boolean score)."""
     # Configure with a dummy LM
     dspy.configure(
         lm=DummyLM(
@@ -169,7 +162,6 @@ def test_complete_and_grounded_returns_prediction_with_trace():
 
 
 def test_semantic_f1_prediction_can_be_compared():
-    """Test that Prediction objects from SemanticF1 support comparison operations."""
     # Configure with a dummy LM
     dspy.configure(
         lm=DummyLM(
