@@ -110,9 +110,28 @@ class ReAct(Module):
 
             trajectory[f"thought_{idx}"] = pred.next_thought
 
-            # Parse tool calls - handle both list format and backward compatibility
+            # Parse tool calls - get list of ToolCall objects
             tool_calls = self._parse_tool_calls(pred.next_tool_calls)
-            trajectory[f"tool_calls_{idx}"] = tool_calls
+
+            # Store tool calls as dicts for trajectory (for serialization/logging)
+            trajectory[f"tool_calls_{idx}"] = [{"name": tc.name, "args": tc.args} for tc in tool_calls]
+
+            # Check if "finish" is in the tool calls (should be the only tool call)
+            finish_calls = [tc for tc in tool_calls if tc.name == "finish"]
+            if finish_calls:
+                if len(tool_calls) > 1:
+                    logger.warning("finish tool called alongside other tools - only finish will be executed")
+                    tool_calls = finish_calls
+                # Execute only finish and break
+                observations = self._execute_tools_parallel(tool_calls)
+                formatted_observations = []
+                for tool_call, observation in zip(tool_calls, observations, strict=True):
+                    formatted_observations.append({
+                        "tool": tool_call.name,
+                        "result": observation
+                    })
+                trajectory[f"observations_{idx}"] = formatted_observations
+                break
 
             # Execute tools in parallel
             observations = self._execute_tools_parallel(tool_calls)
@@ -122,14 +141,10 @@ class ReAct(Module):
             formatted_observations = []
             for tool_call, observation in zip(tool_calls, observations, strict=True):
                 formatted_observations.append({
-                    "tool": tool_call["name"],
+                    "tool": tool_call.name,
                     "result": observation
                 })
             trajectory[f"observations_{idx}"] = formatted_observations
-
-            # Check if any tool call is "finish"
-            if any(tc["name"] == "finish" for tc in tool_calls):
-                break
 
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
@@ -146,9 +161,28 @@ class ReAct(Module):
 
             trajectory[f"thought_{idx}"] = pred.next_thought
 
-            # Parse tool calls - handle both list format and backward compatibility
+            # Parse tool calls - get list of ToolCall objects
             tool_calls = self._parse_tool_calls(pred.next_tool_calls)
-            trajectory[f"tool_calls_{idx}"] = tool_calls
+
+            # Store tool calls as dicts for trajectory (for serialization/logging)
+            trajectory[f"tool_calls_{idx}"] = [{"name": tc.name, "args": tc.args} for tc in tool_calls]
+
+            # Check if "finish" is in the tool calls (should be the only tool call)
+            finish_calls = [tc for tc in tool_calls if tc.name == "finish"]
+            if finish_calls:
+                if len(tool_calls) > 1:
+                    logger.warning("finish tool called alongside other tools - only finish will be executed")
+                    tool_calls = finish_calls
+                # Execute only finish and break
+                observations = await self._execute_tools_parallel_async(tool_calls)
+                formatted_observations = []
+                for tool_call, observation in zip(tool_calls, observations, strict=True):
+                    formatted_observations.append({
+                        "tool": tool_call.name,
+                        "result": observation
+                    })
+                trajectory[f"observations_{idx}"] = formatted_observations
+                break
 
             # Execute tools in parallel
             observations = await self._execute_tools_parallel_async(tool_calls)
@@ -158,14 +192,10 @@ class ReAct(Module):
             formatted_observations = []
             for tool_call, observation in zip(tool_calls, observations, strict=True):
                 formatted_observations.append({
-                    "tool": tool_call["name"],
+                    "tool": tool_call.name,
                     "result": observation
                 })
             trajectory[f"observations_{idx}"] = formatted_observations
-
-            # Check if any tool call is "finish"
-            if any(tc["name"] == "finish" for tc in tool_calls):
-                break
 
         extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
@@ -173,39 +203,55 @@ class ReAct(Module):
     def _parse_tool_calls(self, tool_calls_data):
         """Parse tool calls from the prediction output.
 
-        Handles both ToolCalls objects and list formats for backward compatibility.
+        Args:
+            tool_calls_data: ToolCalls object from the adapter
+
+        Returns:
+            List of ToolCall objects
         """
-        # If it's a ToolCalls object, extract the list of tool calls
-        if isinstance(tool_calls_data, ToolCalls):
-            return [{"name": tc.name, "args": tc.args} for tc in tool_calls_data.tool_calls]
+        # The adapter should always return a ToolCalls object
+        if not isinstance(tool_calls_data, ToolCalls):
+            raise ValueError(
+                f"Expected ToolCalls object from adapter, got {type(tool_calls_data)}. "
+                "This indicates an issue with the adapter output."
+            )
 
-        # If it's already a list of dicts with 'name' and 'args', use it directly
-        if isinstance(tool_calls_data, list):
-            return tool_calls_data
+        return tool_calls_data.tool_calls
 
-        # Handle single dict case (shouldn't normally happen but for robustness)
-        if isinstance(tool_calls_data, dict) and "name" in tool_calls_data and "args" in tool_calls_data:
-            return [tool_calls_data]
-
-        # If we got something unexpected, raise an error
-        raise ValueError(f"Invalid tool_calls format: {tool_calls_data}")
-
-    def _execute_tools_parallel(self, tool_calls: list[dict[str, Any]]) -> list[Any]:
+    def _execute_tools_parallel(self, tool_calls: list) -> list[Any]:
         """Execute multiple tools in parallel using ThreadPoolExecutor.
 
         Args:
-            tool_calls: List of tool call dicts, each with 'name' and 'args' keys
+            tool_calls: List of ToolCall objects
 
         Returns:
             List of observations in the same order as tool_calls
         """
-        def execute_single_tool(tool_call: dict[str, Any]) -> Any:
-            tool_name = tool_call["name"]
-            tool_args = tool_call.get("args", {})
+        from dspy.dsp.utils.settings import thread_local_overrides
+
+        # If there's only one tool call, execute directly without thread pool overhead
+        if len(tool_calls) == 1:
             try:
-                return self.tools[tool_name](**tool_args)
+                return [self.tools[tool_calls[0].name](**tool_calls[0].args)]
             except Exception as err:
-                return f"Execution error in {tool_name}: {_fmt_exc(err)}"
+                return [f"Execution error in {tool_calls[0].name}: {_fmt_exc(err)}"]
+
+        # Get parent thread's context overrides to propagate to worker threads
+        parent_overrides = thread_local_overrides.get().copy()
+
+        def execute_single_tool(tool_call) -> Any:
+            # Propagate DSPy context overrides to worker threads
+            original = thread_local_overrides.get()
+            token = thread_local_overrides.set({**original, **parent_overrides})
+            try:
+                tool_name = tool_call.name
+                tool_args = tool_call.args
+                try:
+                    return self.tools[tool_name](**tool_args)
+                except Exception as err:
+                    return f"Execution error in {tool_name}: {_fmt_exc(err)}"
+            finally:
+                thread_local_overrides.reset(token)
 
         # Execute tools in parallel using ThreadPoolExecutor
         with ThreadPoolExecutor() as executor:
@@ -213,18 +259,25 @@ class ReAct(Module):
 
         return observations
 
-    async def _execute_tools_parallel_async(self, tool_calls: list[dict[str, Any]]) -> list[Any]:
+    async def _execute_tools_parallel_async(self, tool_calls: list) -> list[Any]:
         """Execute multiple tools in parallel using asyncio.gather.
 
         Args:
-            tool_calls: List of tool call dicts, each with 'name' and 'args' keys
+            tool_calls: List of ToolCall objects
 
         Returns:
             List of observations in the same order as tool_calls
         """
-        async def execute_single_tool(tool_call: dict[str, Any]) -> Any:
-            tool_name = tool_call["name"]
-            tool_args = tool_call.get("args", {})
+        # If there's only one tool call, execute directly without gather overhead
+        if len(tool_calls) == 1:
+            try:
+                return [await self.tools[tool_calls[0].name].acall(**tool_calls[0].args)]
+            except Exception as err:
+                return [f"Execution error in {tool_calls[0].name}: {_fmt_exc(err)}"]
+
+        async def execute_single_tool(tool_call) -> Any:
+            tool_name = tool_call.name
+            tool_args = tool_call.args
             try:
                 return await self.tools[tool_name].acall(**tool_args)
             except Exception as err:

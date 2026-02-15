@@ -188,16 +188,18 @@ def test_trajectory_truncation():
 
         if call_count < 3:
             # First 2 calls use the echo tool
+            from dspy.adapters.types.tool import ToolCalls
             return dspy.Prediction(
                 next_thought=f"Thought {call_count}",
-                next_tool_calls=[{"name": "echo", "args": {"text": f"Text {call_count}"}}],
+                next_tool_calls=ToolCalls.from_dict_list([{"name": "echo", "args": {"text": f"Text {call_count}"}}]),
             )
         elif call_count == 3:
             # The 3rd call raises context window exceeded error
             raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
         else:
             # The 4th call finishes
-            return dspy.Prediction(next_thought="Final thought", next_tool_calls=[{"name": "finish", "args": {}}])
+            from dspy.adapters.types.tool import ToolCalls
+            return dspy.Prediction(next_thought="Final thought", next_tool_calls=ToolCalls.from_dict_list([{"name": "finish", "args": {}}]))
 
     react.react = mock_react
     react.extract = lambda **kwargs: dspy.Prediction(output_text="Final output")
