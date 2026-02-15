@@ -27,9 +27,9 @@ def test_semantic_f1_returns_prediction_without_trace():
     metric = SemanticF1()
     result = metric(example, pred)
 
-    assert isinstance(result, Prediction), f"Expected Prediction, got {type(result)}"
-    assert hasattr(result, "score"), "Result should have a 'score' attribute"
-    assert isinstance(result.score, (int, float, bool)), f"Score should be numeric or boolean, got {type(result.score)}"
+    assert isinstance(result, Prediction)
+    assert hasattr(result, "score")
+    assert isinstance(result.score, (int, float, bool))
 
 
 def test_semantic_f1_returns_prediction_with_trace():
@@ -54,9 +54,9 @@ def test_semantic_f1_returns_prediction_with_trace():
     metric = SemanticF1(threshold=0.5)
     result = metric(example, pred, trace=True)
 
-    assert isinstance(result, Prediction), f"Expected Prediction, got {type(result)}"
-    assert hasattr(result, "score"), "Result should have a 'score' attribute"
-    assert isinstance(result.score, bool), f"Score with trace should be boolean, got {type(result.score)}"
+    assert isinstance(result, Prediction)
+    assert hasattr(result, "score")
+    assert isinstance(result.score, bool)
 
 
 def test_semantic_f1_score_value():
@@ -83,7 +83,7 @@ def test_semantic_f1_score_value():
 
     expected_f1 = 2 * (0.8 * 0.6) / (0.8 + 0.6)
     assert isinstance(result, Prediction)
-    assert abs(result.score - expected_f1) < 0.001, f"Expected F1 score ~{expected_f1}, got {result.score}"
+    assert abs(result.score - expected_f1) < 0.001
 
 
 def test_complete_and_grounded_returns_prediction_without_trace():
@@ -116,9 +116,9 @@ def test_complete_and_grounded_returns_prediction_without_trace():
     metric = CompleteAndGrounded()
     result = metric(example, pred)
 
-    assert isinstance(result, Prediction), f"Expected Prediction, got {type(result)}"
-    assert hasattr(result, "score"), "Result should have a 'score' attribute"
-    assert isinstance(result.score, (int, float, bool)), f"Score should be numeric or boolean, got {type(result.score)}"
+    assert isinstance(result, Prediction)
+    assert hasattr(result, "score")
+    assert isinstance(result.score, (int, float, bool))
 
 
 def test_complete_and_grounded_returns_prediction_with_trace():
@@ -151,9 +151,9 @@ def test_complete_and_grounded_returns_prediction_with_trace():
     metric = CompleteAndGrounded(threshold=0.7)
     result = metric(example, pred, trace=True)
 
-    assert isinstance(result, Prediction), f"Expected Prediction, got {type(result)}"
-    assert hasattr(result, "score"), "Result should have a 'score' attribute"
-    assert isinstance(result.score, bool), f"Score with trace should be boolean, got {type(result.score)}"
+    assert isinstance(result, Prediction)
+    assert hasattr(result, "score")
+    assert isinstance(result.score, bool)
 
 
 def test_semantic_f1_prediction_can_be_compared():
@@ -188,4 +188,4 @@ def test_semantic_f1_prediction_can_be_compared():
 
     assert isinstance(result1, Prediction)
     assert isinstance(result2, Prediction)
-    assert result2.score > result1.score, f"Expected result2.score ({result2.score}) > result1.score ({result1.score})"
+    assert result2.score > result1.score
