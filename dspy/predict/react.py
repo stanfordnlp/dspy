@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable
 
 from litellm import ContextWindowExceededError
@@ -9,6 +8,7 @@ import dspy
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
+from dspy.utils.parallelizer import ParallelExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +219,7 @@ class ReAct(Module):
         return tool_calls_data.tool_calls
 
     def _execute_tools_parallel(self, tool_calls: list) -> list[Any]:
-        """Execute multiple tools in parallel using ThreadPoolExecutor.
+        """Execute multiple tools in parallel using ParallelExecutor.
 
         Args:
             tool_calls: List of ToolCall objects
@@ -227,35 +227,26 @@ class ReAct(Module):
         Returns:
             List of observations in the same order as tool_calls
         """
-        from dspy.dsp.utils.settings import thread_local_overrides
-
-        # If there's only one tool call, execute directly without thread pool overhead
+        # If there's only one tool call, execute directly without parallel overhead
         if len(tool_calls) == 1:
             try:
                 return [self.tools[tool_calls[0].name](**tool_calls[0].args)]
             except Exception as err:
                 return [f"Execution error in {tool_calls[0].name}: {_fmt_exc(err)}"]
 
-        # Get parent thread's context overrides to propagate to worker threads
-        parent_overrides = thread_local_overrides.get().copy()
+        # Use ParallelExecutor which handles context propagation automatically
+        executor = ParallelExecutor(num_threads=len(tool_calls), disable_progress_bar=True)
 
         def execute_single_tool(tool_call) -> Any:
-            # Propagate DSPy context overrides to worker threads
-            original = thread_local_overrides.get()
-            token = thread_local_overrides.set({**original, **parent_overrides})
+            tool_name = tool_call.name
+            tool_args = tool_call.args
             try:
-                tool_name = tool_call.name
-                tool_args = tool_call.args
-                try:
-                    return self.tools[tool_name](**tool_args)
-                except Exception as err:
-                    return f"Execution error in {tool_name}: {_fmt_exc(err)}"
-            finally:
-                thread_local_overrides.reset(token)
+                return self.tools[tool_name](**tool_args)
+            except Exception as err:
+                return f"Execution error in {tool_name}: {_fmt_exc(err)}"
 
-        # Execute tools in parallel using ThreadPoolExecutor
-        with ThreadPoolExecutor() as executor:
-            observations = list(executor.map(execute_single_tool, tool_calls))
+        # Execute tools in parallel - ParallelExecutor handles context propagation
+        observations = executor.execute(execute_single_tool, tool_calls)
 
         return observations
 
