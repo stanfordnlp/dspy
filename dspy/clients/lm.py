@@ -6,6 +6,7 @@ import warnings
 from typing import Any, Literal, cast
 
 import litellm
+import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 
@@ -305,6 +306,7 @@ def _get_stream_completion_fn(
     request: dict[str, Any],
     cache_kwargs: dict[str, Any],
     sync=True,
+    headers: dict[str, Any] | None = None,
 ):
     stream = dspy.settings.send_stream
     caller_predict = dspy.settings.caller_predict
@@ -320,11 +322,10 @@ def _get_stream_completion_fn(
         request["stream_options"] = {"include_usage": True}
 
     async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
-        headers = request.pop("headers", None)
         response = await litellm.acompletion(
             cache=cache_kwargs,
             stream=True,
-            headers=_get_headers(headers),
+            headers=headers,
             **request,
         )
         chunks = []
@@ -353,14 +354,14 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    stream_completion = _get_stream_completion_fn(request, cache, sync=True)
+    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
+    stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers)
     if stream_completion is None:
         return litellm.completion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
-            headers=_get_headers(headers),
+            headers=headers,
             **request,
         )
 
@@ -392,7 +393,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
         prompt=prompt,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_get_headers(headers),
+        headers=_add_dspy_identifier_to_headers(headers),
         **request,
     )
 
@@ -408,7 +409,7 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
-            headers=_get_headers(headers),
+            headers=_add_dspy_identifier_to_headers(headers),
             **request,
         )
 
@@ -438,7 +439,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
         prompt=prompt,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_get_headers(headers),
+        headers=_add_dspy_identifier_to_headers(headers),
         **request,
     )
 
@@ -454,7 +455,7 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_get_headers(headers),
+        headers=_add_dspy_identifier_to_headers(headers),
         **request,
     )
 
@@ -470,7 +471,7 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
-        headers=_get_headers(headers),
+        headers=_add_dspy_identifier_to_headers(headers),
         **request,
     )
 
@@ -501,6 +502,12 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     # Convert `response_format` to `text.format` for Responses API
     if "response_format" in request:
         response_format = request.pop("response_format")
+        if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
+            response_format = {
+                "name": response_format.__name__,
+                "type": "json_schema",
+                "schema": response_format.model_json_schema(),
+            }
         text = request.pop("text", {})
         request["text"] = {**text, "format": response_format}
 
@@ -547,7 +554,7 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
     return item
 
 
-def _get_headers(headers: dict[str, Any] | None = None):
+def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
     headers = headers or {}
     return {
         "User-Agent": f"DSPy/{dspy.__version__}",

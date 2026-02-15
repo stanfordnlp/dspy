@@ -82,6 +82,7 @@ nav:
     - Community:
         - Community Resources: community/community-resources.md
         - Use Cases: community/use-cases.md
+        - Community Ports: community/community-ports.md
         - Contributing: community/how-to-contribute.md
     - FAQ:
         - FAQ: faqs.md
@@ -118,6 +119,7 @@ nav:
             - ProgramOfThought: api/modules/ProgramOfThought.md
             - ReAct: api/modules/ReAct.md
             - Refine: api/modules/Refine.md
+            - RLM: api/modules/RLM.md
         - Optimizers:
             - GEPA:
                 - 1. GEPA Overview: api/optimizers/GEPA/overview.md

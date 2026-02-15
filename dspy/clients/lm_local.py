@@ -55,11 +55,21 @@ class LocalProvider(Provider):
         logger.info(f"We see that CUDA_VISIBLE_DEVICES is {os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')}")
         port = get_free_port()
         timeout = launch_kwargs.get("timeout", 1800)
-        command = f"python -m sglang.launch_server --model-path {model} --port {port} --host 0.0.0.0"
+        command = [
+            "python",
+            "-m",
+            "sglang.launch_server",
+            "--model-path",
+            model,
+            "--port",
+            str(port),
+            "--host",
+            "0.0.0.0",
+        ]
 
         # We will manually stream & capture logs.
         process = subprocess.Popen(
-            command.replace("\\\n", " ").replace("\\", " ").split(),
+            command,
             text=True,
             stdout=subprocess.PIPE,  # We'll read from pipe
             stderr=subprocess.STDOUT,  # Merge stderr into stdout

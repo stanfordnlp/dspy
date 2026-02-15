@@ -6,6 +6,8 @@ import dspy
 from dspy.primitives.module import Module
 from dspy.signatures.signature import Signature, ensure_signature
 
+# NOTE: This restores the legacy rationale_field behavior after PR #8822.
+
 
 class ChainOfThought(Module):
     def __init__(

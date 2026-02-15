@@ -8,6 +8,7 @@
             - __call__
             - execute
             - shutdown
+            - start
         show_source: true
         show_root_heading: true
         heading_level: 2

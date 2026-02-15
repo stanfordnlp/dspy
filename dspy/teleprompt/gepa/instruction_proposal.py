@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from gepa.core.adapter import ProposalFn
@@ -5,6 +6,8 @@ from gepa.core.adapter import ProposalFn
 import dspy
 from dspy.adapters.types.base_type import Type
 from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
+
+logger = logging.getLogger(__name__)
 
 
 class GenerateEnhancedMultimodalInstructionFromFeedback(dspy.Signature):

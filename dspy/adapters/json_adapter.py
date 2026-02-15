@@ -151,11 +151,14 @@ class JSONAdapter(ChatAdapter):
         return self.format_field_with_value(fields_with_values, role="assistant")
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
-        pattern = r"\{(?:[^{}]|(?R))*\}"
-        match = regex.search(pattern, completion, regex.DOTALL)
-        if match:
-            completion = match.group(0)
         fields = json_repair.loads(completion)
+
+        if not isinstance(fields, dict):
+            pattern = r"\{(?:[^{}]|(?R))*\}"
+            match = regex.search(pattern, completion, regex.DOTALL)
+            if match:
+                completion = match.group(0)
+                fields = json_repair.loads(completion)
 
         if not isinstance(fields, dict):
             raise AdapterParseError(

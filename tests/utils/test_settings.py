@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
@@ -191,3 +192,73 @@ async def test_dspy_configure_allowance_async():
     await asyncio.gather(foo1(), foo2(), foo3())
 
     foo4()
+
+
+def test_dspy_settings_save_load(tmp_path):
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
+
+    dspy.settings.save(tmp_path / "settings.pkl")
+    dspy.configure(lm=None, adapter=None, callbacks=None)
+
+    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl")
+    dspy.configure(**loaded_settings)
+    assert dspy.settings.lm.model == "openai/gpt-4o"
+    assert isinstance(dspy.settings.adapter, dspy.JSONAdapter)
+    assert len(dspy.settings.callbacks) == 1
+
+
+def test_dspy_settings_save_exclude_keys(tmp_path):
+    dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), track_usage=True)
+
+    dspy.settings.save(tmp_path / "settings.pkl", exclude_keys=["adapter", "track_usage"])
+    dspy.configure(lm=None, adapter=None, track_usage=False)
+
+    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl")
+    dspy.configure(**loaded_settings)
+    assert dspy.settings.lm.model == "openai/gpt-4o"
+    assert dspy.settings.adapter is None
+    assert not dspy.settings.track_usage
+
+
+
+def test_settings_save_with_extra_modules(tmp_path):
+    # Create a temporary Python file with our custom module
+    custom_module_path = tmp_path / "custom_module.py"
+    with open(custom_module_path, "w") as f:
+        f.write(
+            """
+def callback(x):
+    return x + 1
+"""
+        )
+
+    # Add the tmp_path to Python path so we can import the module
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import custom_module
+
+        dspy.configure(callbacks=[custom_module.callback])
+
+        settings_path = tmp_path / "settings.pkl"
+        sys.path.insert(0, str(tmp_path))
+
+        dspy.configure(callbacks=[custom_module.callback])
+        dspy.settings.save(settings_path, modules_to_serialize=[custom_module])
+
+        # Remove the custom module again to simulate it not being available at load time
+        sys.modules.pop("custom_module", None)
+        sys.path.remove(str(tmp_path))
+        del custom_module
+
+        dspy.configure(callbacks=None)
+
+        # Loading should now succeed and preserve the adapter instance
+        loaded_settings = dspy.load_settings(settings_path)
+        dspy.settings.configure(**loaded_settings)
+
+        assert dspy.settings.callbacks[0](3) == 4
+
+    finally:
+        # Only need to clean up sys.path
+        if str(tmp_path) in sys.path:
+            sys.path.remove(str(tmp_path))

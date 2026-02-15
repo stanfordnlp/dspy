@@ -5,6 +5,7 @@
     handler: python
     options:
         members:
+            - finalize
             - flush
             - receive
         show_source: true

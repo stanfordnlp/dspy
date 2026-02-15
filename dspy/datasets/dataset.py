@@ -1,12 +1,24 @@
+from __future__ import annotations
+
 import random
 import uuid
+from collections.abc import Iterable
+from typing import Any
 
 from dspy import Example
 from dspy.dsp.utils import dotdict
 
 
 class Dataset:
-    def __init__(self, train_seed=0, train_size=None, eval_seed=0, dev_size=None, test_size=None, input_keys=None):
+    def __init__(
+        self,
+        train_seed: int = 0,
+        train_size: int | None = None,
+        eval_seed: int = 0,
+        dev_size: int | None = None,
+        test_size: int | None = None,
+        input_keys: list[str] | None = None,
+    ) -> None:
         self.train_size = train_size
         self.train_seed = train_seed
         self.dev_size = dev_size
@@ -19,7 +31,14 @@ class Dataset:
 
         self.name = self.__class__.__name__
 
-    def reset_seeds(self, train_seed=None, train_size=None, eval_seed=None, dev_size=None, test_size=None):
+    def reset_seeds(
+        self,
+        train_seed: int | None = None,
+        train_size: int | None = None,
+        eval_seed: int | None = None,
+        dev_size: int | None = None,
+        test_size: int | None = None,
+    ) -> None:
         self.train_size = train_size or self.train_size
         self.train_seed = train_seed or self.train_seed
         self.dev_size = dev_size or self.dev_size
@@ -37,39 +56,41 @@ class Dataset:
             del self._test_
 
     @property
-    def train(self):
+    def train(self) -> list[Example]:
         if not hasattr(self, "_train_"):
             self._train_ = self._shuffle_and_sample("train", self._train, self.train_size, self.train_seed)
 
         return self._train_
 
     @property
-    def dev(self):
+    def dev(self) -> list[Example]:
         if not hasattr(self, "_dev_"):
             self._dev_ = self._shuffle_and_sample("dev", self._dev, self.dev_size, self.dev_seed)
 
         return self._dev_
 
     @property
-    def test(self):
+    def test(self) -> list[Example]:
         if not hasattr(self, "_test_"):
             self._test_ = self._shuffle_and_sample("test", self._test, self.test_size, self.test_seed)
 
         return self._test_
 
-    def _shuffle_and_sample(self, split, data, size, seed=0):
-        data = list(data)
+    def _shuffle_and_sample(
+        self, split: str, data: Iterable[dict[str, Any]], size: int | None, seed: int = 0
+    ) -> list[Example]:
+        data_list = list(data)
 
         # Shuffle the data irrespective of the requested size.
         base_rng = random.Random(seed)
 
         if self.do_shuffle:
-            base_rng.shuffle(data)
+            base_rng.shuffle(data_list)
 
-        data = data[:size]
-        output = []
+        data_list = data_list[:size]
+        output: list[Example] = []
 
-        for example in data:
+        for example in data_list:
             example_obj = Example(**example, dspy_uuid=str(uuid.uuid4()), dspy_split=split)
             if self.input_keys:
                 example_obj = example_obj.with_inputs(*self.input_keys)
@@ -84,19 +105,20 @@ class Dataset:
     @classmethod
     def prepare_by_seed(
         cls,
-        train_seeds=None,
-        train_size=16,
-        dev_size=1000,
-        divide_eval_per_seed=True,
-        eval_seed=2023,
-        **kwargs,
-    ):
+        train_seeds: list[int] | None = None,
+        train_size: int = 16,
+        dev_size: int = 1000,
+        divide_eval_per_seed: bool = True,
+        eval_seed: int = 2023,
+        **kwargs: Any,
+    ) -> Any:
         train_seeds = train_seeds or [1, 2, 3, 4, 5]
         data_args = dotdict(train_size=train_size, eval_seed=eval_seed, dev_size=dev_size, test_size=0, **kwargs)
         dataset = cls(**data_args)
 
         eval_set = dataset.dev
-        eval_sets, train_sets = [], []
+        eval_sets: list[list[Example]] = []
+        train_sets: list[list[Example]] = []
 
         examples_per_seed = dev_size // len(train_seeds) if divide_eval_per_seed else dev_size
         eval_offset = 0

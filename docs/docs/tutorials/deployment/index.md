@@ -83,7 +83,7 @@ You can configure the async capacity using the new `async_max_workers` setting.
                     data = {"prediction": value.labels().toDict()}
                 elif isinstance(value, litellm.ModelResponse):
                     data = {"chunk": value.json()}
-                yield f"data: {ujson.dumps(data)}\n\n"
+                yield f"data: {orjson.dumps(data).decode()}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(generate(), media_type="text/event-stream")

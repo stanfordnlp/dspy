@@ -5,7 +5,7 @@ import pytest
 
 from tests.test_utils.server import litellm_test_server, read_litellm_test_server_request_logs  # noqa: F401
 
-SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call"]
+SKIP_DEFAULT_FLAGS = ["reliability", "extra", "llm_call", "deno"]
 
 
 @pytest.fixture(autouse=True)
@@ -44,7 +44,7 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     for flag in SKIP_DEFAULT_FLAGS:
         if config.getoption(f"--{flag}"):
-            return
+            continue
 
         skip_mark = pytest.mark.skip(reason=f"need --{flag} option to run")
         for item in items:

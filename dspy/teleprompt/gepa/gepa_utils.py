@@ -4,6 +4,7 @@ from typing import Any, Callable, Protocol, TypedDict
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
+from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
@@ -11,9 +12,10 @@ from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
-from dspy.teleprompt.bootstrap_trace import TraceData
+from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 logger = logging.getLogger(__name__)
+
 
 class LoggerAdapter:
     def __init__(self, logger: logging.Logger):
@@ -22,26 +24,33 @@ class LoggerAdapter:
     def log(self, x: str):
         self.logger.info(x)
 
+
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
 
+ReflectiveExample = TypedDict(
+    "ReflectiveExample",
+    {
+        "Inputs": dict[str, Any],
+        "Generated Outputs": dict[str, Any] | str,
+        "Feedback": str,
+    },
+)
 
-class ReflectiveExample(TypedDict):
-    """
-    Structure of individual examples in the reflective dataset.
+ReflectiveExample.__doc__ = """
+Structure of individual examples in the reflective dataset.
 
-    Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
-    """
-    Inputs: dict[str, Any]                              # Predictor inputs (may include str, dspy.Image, etc.)
-    Generated_Outputs: dict[str, Any] | str             # Success: dict with output fields, Failure: error message string
-    Feedback: str                                       # Always a string - from metric function or parsing error message
+Each example contains the predictor inputs, generated outputs, and feedback from evaluation.
+"""
 
 
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str
 
+
 class PredictorFeedbackFn(Protocol):
     def __call__(
+        self,
         predictor_output: dict[str, Any],
         predictor_inputs: dict[str, Any],
         module_inputs: Example,
@@ -63,6 +72,7 @@ class PredictorFeedbackFn(Protocol):
         The feedback is a string that is used to guide the evolution of the predictor.
         """
         ...
+
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def __init__(
@@ -91,46 +101,54 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
 
-        if self.custom_instruction_proposer is not None:
-            # We are only overriding the propose_new_texts method when a custom
-            # instruction proposer is provided. Otherwise, we use the GEPA
-            # default propose_new_texts.
+    def propose_new_texts(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[dict[str, Any]]],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        reflection_lm = self.reflection_lm or dspy.settings.lm
+        # If custom proposer provided, override everything with custom proposer
+        if self.custom_instruction_proposer:
+            with dspy.context(lm=reflection_lm):
+                return self.custom_instruction_proposer(
+                    candidate=candidate,
+                    reflective_dataset=reflective_dataset,
+                    components_to_update=components_to_update,
+                )
 
-            def custom_propose_new_texts(
-                candidate: dict[str, str],
-                reflective_dataset: dict[str, list[dict[str, Any]]],
-                components_to_update: list[str]
-            ) -> dict[str, str]:
-                if self.reflection_lm is not None:
-                    with dspy.context(lm=self.reflection_lm):
-                        return self.custom_instruction_proposer(
-                            candidate=candidate,
-                            reflective_dataset=reflective_dataset,
-                            components_to_update=components_to_update
-                        )
-                else:
-                    return self.custom_instruction_proposer(
-                        candidate=candidate,
-                        reflective_dataset=reflective_dataset,
-                        components_to_update=components_to_update
-                    )
+        results: dict[str, str] = {}
 
-            self.propose_new_texts = custom_propose_new_texts
+        with dspy.context(lm=reflection_lm):
+            for name in components_to_update:
+                base_instruction = candidate[name]
+                dataset_with_feedback = reflective_dataset[name]
+                results[name] = InstructionProposalSignature.run(
+                    lm=(lambda x: self.stripped_lm_call(x)[0]),
+                    input_dict={
+                        "current_instruction_doc": base_instruction,
+                        "dataset_with_feedback": dataset_with_feedback,
+                    },
+                )["new_instruction"]
 
-        # Cache predictor names/signatures
-        self.named_predictors = list(self.student.named_predictors())
-
+        return results
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
+
         for name, pred in new_prog.named_predictors():
             if name in candidate:
                 pred.signature = pred.signature.with_instructions(candidate[name])
+
         return new_prog
 
     def evaluate(self, batch, candidate, capture_traces=False):
         program = self.build_program(candidate)
-        callback_metadata = {"metric_key": "eval_full"} if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size else {"disable_logging": True}
+        callback_metadata = (
+            {"metric_key": "eval_full"}
+            if self.reflection_minibatch_size is None or len(batch) > self.reflection_minibatch_size
+            else {"disable_logging": True}
+        )
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
@@ -158,6 +176,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     if hasattr(score, "score"):
                         score = score["score"]
                     scores.append(score)
+
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
         else:
             evaluator = Evaluate(
@@ -176,19 +195,23 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             scores = [s["score"] if hasattr(s, "score") else s for s in scores]
             return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
 
-    def make_reflective_dataset(self, candidate, eval_batch, components_to_update) -> dict[str, list[ReflectiveExample]]:
-        from dspy.teleprompt.bootstrap_trace import FailedPrediction
+    def make_reflective_dataset(
+        self, candidate, eval_batch, components_to_update
+    ) -> dict[str, list[ReflectiveExample]]:
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
+
         for pred_name in components_to_update:
+            # Find the predictor object
             module = None
             for name, m in program.named_predictors():
                 if name == pred_name:
                     module = m
                     break
-            assert module is not None
+            assert module is not None, f"Predictor not found: {pred_name}"
 
+            # Create reflective examples from traces
             items: list[ReflectiveExample] = []
             for data in eval_batch.trajectories or []:
                 trace = data["trace"]
@@ -276,15 +299,18 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = fb["feedback"]
                     if fb["score"] != module_score:
                         if self.warn_on_score_mismatch:
-                            logger.warning("The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score. You can safely ignore this warning if using a semantic metric, however, if this mismatch is caused due to predictor scoring, please return module-level scores. To disable this warning, set warn_on_score_mismatch=False.")
+                            logger.warning(
+                                "The score returned by the metric with pred_name is different from the overall metric score. This can indicate 2 things: Either the metric is non-deterministic (e.g., LLM-as-judge, Semantic score, etc.) or the metric returned a score specific to pred_name that differs from the module level score. Currently, GEPA does not support predictor level scoring (support coming soon), and only requires a feedback text to be provided, which can be specific to the predictor or program level. GEPA will ignore the differing score returned, and instead use module level score. You can safely ignore this warning if using a semantic metric, however, if this mismatch is caused due to predictor scoring, please return module-level scores. To disable this warning, set warn_on_score_mismatch=False."
+                            )
                             self.warn_on_score_mismatch = False
                         fb["score"] = module_score
 
                 items.append(d)
 
             if len(items) == 0:
-                # raise Exception(f"No valid predictions found for module {module.signature}.")
+                logger.warning(f"  No valid reflective examples found for {pred_name}")
                 continue
+
             ret_d[pred_name] = items
 
         if len(ret_d) == 0:
@@ -292,28 +318,20 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         return ret_d
 
-    # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.
-    # We can potentially override this, to use the instruction proposal similar to MIPROv2.
+    # Always return strings from the LM outputs
+    # Even when it returns a dict with e.g., "text" and "reasoning" fields
+    def stripped_lm_call(self, x: str) -> list[str]:
+        raw_outputs = self.reflection_lm(x)
+        outputs = []
+        for raw_output in raw_outputs:
+            if type(raw_output) == str:
+                outputs.append(raw_output)
+            elif type(raw_output) == dict:
+                if "text" not in raw_output:
+                    raise KeyError("Missing 'text' field in the output from the base LM!")
+                outputs.append(raw_output["text"])
+            else:
+                raise TypeError("Unexpected output type from the base LM! Expected str or dict")
 
-    # def propose_new_texts(
-    #     self,
-    #     candidate: Dict[str, str],
-    #     reflective_dataset: Dict[str, List[Dict[str, Any]]],
-    #     components_to_update: List[str]
-    # ) -> Dict[str, str]:
-    #     if self.adapter.propose_new_texts is not None:
-    #         return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
+        return outputs
 
-    #     from .instruction_proposal import InstructionProposalSignature
-    #     new_texts: Dict[str, str] = {}
-    #     for name in components_to_update:
-    #         base_instruction = candidate[name]
-    #         dataset_with_feedback = reflective_dataset[name]
-    #         new_texts[name] = InstructionProposalSignature.run(
-    #             lm=self.reflection_lm,
-    #             input_dict={
-    #                 "current_instruction_doc": base_instruction,
-    #                 "dataset_with_feedback": dataset_with_feedback
-    #             }
-    #         )['new_instruction']
-    #     return new_texts

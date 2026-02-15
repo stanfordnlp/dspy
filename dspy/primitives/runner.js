@@ -1,9 +1,204 @@
-// Adapted from "Simon Willison’s TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
+// Adapted from "Simon Willison's TILs" (https://til.simonwillison.net/deno/pyodide-sandbox)
 
 import pyodideModule from "npm:pyodide/pyodide.js";
 import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 
+// =============================================================================
+// Python Code Templates
+// =============================================================================
+
+// Setup code run before each user code execution.
+// Captures stdout, defines SUBMIT for early termination, and
+// provides a helper to extract exception args across the JS/Python boundary.
+const PYTHON_SETUP_CODE = `
+import sys, io, json
+old_stdout, old_stderr = sys.stdout, sys.stderr
+buf_stdout, buf_stderr = io.StringIO(), io.StringIO()
+sys.stdout, sys.stderr = buf_stdout, buf_stderr
+
+def last_exception_args():
+    return json.dumps(sys.last_exc.args) if sys.last_exc else None
+
+class FinalOutput(BaseException):
+    # Control-flow exception to signal completion (like StopIteration)
+    pass
+
+# Default SUBMIT for single-output signatures (e.g., Program of Thought).
+# Only define if not already registered with typed signatures.
+if 'SUBMIT' not in dir():
+    def SUBMIT(output):
+        raise FinalOutput({"output": output})
+`;
+
+// Generate a tool wrapper function with typed signature.
+// Parameters is an array of {name, type?, default?} objects.
+// Convert a JavaScript/JSON value to Python literal syntax
+const toPythonLiteral = (value) => {
+  if (value === null) return 'None';
+  if (value === true) return 'True';
+  if (value === false) return 'False';
+  return JSON.stringify(value);  // Works for strings, numbers, arrays, objects
+};
+
+const makeToolWrapper = (toolName, parameters = []) => {
+  // Build signature parts: "query: str, limit: int = 10"
+  const sigParts = parameters.map(p => {
+    let part = p.name;
+    if (p.type) part += `: ${p.type}`;
+    if (p.default !== undefined) part += ` = ${toPythonLiteral(p.default)}`;
+    return part;
+  });
+  const signature = sigParts.join(', ');
+  const argNames = parameters.map(p => p.name);
+
+  // If no parameters, fall back to *args, **kwargs for flexibility
+  if (parameters.length === 0) {
+    return `
+import json
+from pyodide.ffi import run_sync, JsProxy
+def ${toolName}(*args, **kwargs):
+    result = run_sync(_js_tool_call("${toolName}", json.dumps({"args": args, "kwargs": kwargs})))
+    return result.to_py() if isinstance(result, JsProxy) else result
+`;
+  }
+
+  return `
+import json
+from pyodide.ffi import run_sync, JsProxy
+def ${toolName}(${signature}):
+    _args = [${argNames.join(', ')}]
+    result = run_sync(_js_tool_call("${toolName}", json.dumps({"args": _args, "kwargs": {}})))
+    return result.to_py() if isinstance(result, JsProxy) else result
+`;
+};
+
+// Generate SUBMIT function with output field signature.
+// Outputs is an array of {name, type?} objects.
+const makeSubmitWrapper = (outputs) => {
+  if (!outputs || outputs.length === 0) {
+    // Fallback to single-arg SUBMIT if no outputs defined
+    return `
+def SUBMIT(output):
+    raise FinalOutput({"output": output})
+`;
+  }
+
+  const sigParts = outputs.map(o => {
+    let part = o.name;
+    if (o.type) part += `: ${o.type}`;
+    return part;
+  });
+  const dictParts = outputs.map(o => `"${o.name}": ${o.name}`);
+
+  return `
+def SUBMIT(${sigParts.join(', ')}):
+    raise FinalOutput({${dictParts.join(', ')}})
+`;
+};
+
+// =============================================================================
+// JSON-RPC 2.0 Helpers
+// =============================================================================
+
+// JSON-RPC 2.0 protocol errors (reserved range: -32700 to -32600)
+const JSONRPC_PROTOCOL_ERRORS = {
+  ParseError: -32700,
+  InvalidRequest: -32600,
+  MethodNotFound: -32601,
+};
+
+// Application errors (range: -32000 to -32099)
+const JSONRPC_APP_ERRORS = {
+  SyntaxError: -32000,
+  NameError: -32001,
+  TypeError: -32002,
+  ValueError: -32003,
+  AttributeError: -32004,
+  IndexError: -32005,
+  KeyError: -32006,
+  RuntimeError: -32007,
+  CodeInterpreterError: -32008,
+  Unknown: -32099,
+};
+
+const jsonrpcRequest = (method, params, id) =>
+  JSON.stringify({ jsonrpc: "2.0", method, params, id });
+
+const jsonrpcNotification = (method, params = null) => {
+  const msg = { jsonrpc: "2.0", method };
+  if (params) msg.params = params;
+  return JSON.stringify(msg);
+};
+
+const jsonrpcResult = (result, id) =>
+  JSON.stringify({ jsonrpc: "2.0", result, id });
+
+const jsonrpcError = (code, message, id, data = null) => {
+  const err = { code, message };
+  if (data) err.data = data;
+  return JSON.stringify({ jsonrpc: "2.0", error: err, id });
+};
+
+// Global handler to prevent uncaught promise rejections from crashing Deno
+// These can occur during async Python <-> JS interop
+globalThis.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Unhandled async error: ${event.reason?.message || event.reason}`, null));
+});
+
 const pyodide = await pyodideModule.loadPyodide();
+
+// Tool call support: allows Python code to call host-side functions
+// The stdin reader is shared so tool_call can read responses during execution
+const stdinReader = readLines(Deno.stdin);
+let requestIdCounter = 0;
+
+// This function is called from Python to invoke a host-side tool
+async function toolCallBridge(name, argsJson) {
+  const requestId = `tc_${Date.now()}_${++requestIdCounter}`;
+
+  try {
+    // Parse args to extract positional and keyword args
+    const parsedArgs = JSON.parse(argsJson);
+
+    // Send tool call request to host using JSON-RPC
+    console.log(jsonrpcRequest("tool_call", {
+      name: name,
+      args: parsedArgs.args || [],
+      kwargs: parsedArgs.kwargs || {}
+    }, requestId));
+
+    // Wait for response from host
+    const { value: responseLine, done } = await stdinReader.next();
+    if (done) {
+      throw new Error("stdin closed while waiting for tool response");
+    }
+
+    const response = JSON.parse(responseLine);
+
+    // Expect JSON-RPC result or error with matching id
+    if (response.id !== requestId) {
+      throw new Error(`Unexpected response: expected id ${requestId}, got ${response.id}`);
+    }
+
+    if (response.error) {
+      throw new Error(response.error.message || "Tool call failed");
+    }
+
+    // Deserialize result based on type
+    const result = response.result;
+    if (result.type === "json") {
+      return JSON.parse(result.value);
+    }
+    return result.value;
+  } catch (error) {
+    // Re-throw with context so Python can catch it properly
+    throw new Error(`Tool bridge error for '${name}': ${error.message}`);
+  }
+}
+
+// Expose the bridge to Python
+pyodide.globals.set("_js_tool_call", toolCallBridge);
 
 try {
   const env_vars = (Deno.args[0] ?? "").split(",").filter(Boolean);
@@ -20,165 +215,171 @@ os.environ[${JSON.stringify(key)}] = ${JSON.stringify(val)}
   console.error("Error setting environment variables in Pyodide:", e);
 }
 
-for await (const line of readLines(Deno.stdin)) {
+// Main loop using shared stdin reader
+while (true) {
+  const { value: line, done } = await stdinReader.next();
+  if (done) break;
+
   let input;
   try {
     input = JSON.parse(line);
   } catch (error) {
-    console.log(JSON.stringify({
-      error: "Invalid JSON input: " + error.message,
-      errorType: "ValueError"
-    }));
+    // JSON-RPC parse error
+    console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.ParseError, "Invalid JSON input: " + error.message, null));
     continue;
   }
 
-  if (input.mount_file) {
-      const hostPath = input.mount_file;
-      const virtualPath = input.virtual_path || hostPath;
-      try {
-          const contents = await Deno.readFile(hostPath);
-          const dirs = virtualPath.split('/').slice(1, -1);
-          let cur = '';
-          for (const d of dirs) {
-              cur += '/' + d;
-              try {
-                  const pathInfo = pyodide.FS.analyzePath(cur);
-                  if (!pathInfo.exists) {
-                      pyodide.FS.mkdir(cur);
-                  }
-              } catch (e) {
-                  console.log("[DEBUG] Error creating directory in Pyodide file system:", cur, "|", e.message);
-              }
-          }
-          pyodide.FS.writeFile(virtualPath, contents);
-      } catch (e) {
-          console.log(JSON.stringify({error: "Failed to mount file: " + e.message}));
-      }
-      continue;      
-  }
-
-  if (input.sync_file) {
-      const virtualPath = input.sync_file;
-      const hostPath = input.host_file || virtualPath;
-      try {
-          const contents = pyodide.FS.readFile(virtualPath);
-          await Deno.writeFile(hostPath, contents);
-      } catch (e) {
-          console.log("[DEBUG] Failed to sync file:", hostPath, "|", e.message);
-      }
-      continue;
-  }
-
-
-  // Expecting an object like { "code": "...", ... }
-  if (typeof input !== 'object' || input === null) {
-    console.log(JSON.stringify({
-      error: "Input is not a JSON object",
-      errorType: "ValueError"
-    }));
+  // Validate JSON-RPC format
+  if (typeof input !== 'object' || input === null || input.jsonrpc !== "2.0") {
+    console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.InvalidRequest, "Invalid Request: not a JSON-RPC 2.0 message", null));
     continue;
   }
 
-  // Check for shutdown
-  if (input.shutdown) {
-    break;
+  const method = input.method;
+  const params = input.params || {};
+  const requestId = input.id; // May be undefined for notifications
+
+  // Handle notifications (no response expected)
+  if (method === "sync_file") {
+    try {
+      const virtualPath = params.virtual_path;
+      const hostPath = params.host_path || virtualPath;
+      await Deno.writeFile(hostPath, pyodide.FS.readFile(virtualPath));
+    } catch (e) { /* ignore sync errors */ }
+    continue;
   }
 
-  const code = input.code || "";
+  if (method === "shutdown") break;
 
-  // Wrap execution in a try/catch so we can handle syntax errors, etc.
-  try {
-    await pyodide.loadPackagesFromImports(code);
-    // 1. Temporarily override stdout/stderr so we can capture prints.
-    pyodide.runPython(`
-import sys
-import io
+  // Handle requests (expect response)
+  if (method === "mount_file") {
+    const hostPath = params.host_path;
+    const virtualPath = params.virtual_path || hostPath;
+    try {
+      const contents = await Deno.readFile(hostPath);
+      const dirs = virtualPath.split('/').slice(1, -1);
+      let cur = '';
+      for (const d of dirs) {
+        cur += '/' + d;
+        // Check if directory exists before creating
+        try {
+          pyodide.FS.stat(cur);
+          // Directory exists, continue to next
+        } catch {
+          // Directory doesn't exist, create it
+          pyodide.FS.mkdir(cur);
+        }
+      }
+      pyodide.FS.writeFile(virtualPath, contents);
+      console.log(jsonrpcResult({ mounted: virtualPath }, requestId));
+    } catch (e) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to mount file: ${e.message}`, requestId));
+    }
+    continue;
+  }
 
-# Keep references to the old stdout/stderr so we can restore them later
-old_stdout = sys.stdout
-old_stderr = sys.stderr
+  if (method === "register") {
+    const toolNames = [];
 
-# New "file-like" buffers
-buf_stdout = io.StringIO()
-buf_stderr = io.StringIO()
-
-sys.stdout = buf_stdout
-sys.stderr = buf_stderr
-    `);
-
-    // 2. Setup proper exception arguments extractor and FinalAnswer bridge
-    // The idea is borrowed from `smolagents` that uses the exception to simulate non-local exit
-    pyodide.runPython(`
-import json
-
-def last_exception_args():
-    return json.dumps(sys.last_exc.args) if sys.last_exc else None 
-
-class FinalAnswer(Exception):
-    pass
-
-def final_answer(*args):
-    raise FinalAnswer(*args)
-      `);
-
-    // 3. Run the user's code asynchronously
-    const result = await pyodide.runPythonAsync(code);
-
-    // 4. Retrieve captured stdout/stderr
-    const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
-    const capturedStderr = pyodide.runPython("buf_stderr.getvalue()");
-
-    // 5. Restore original stdout/stderr
-    pyodide.runPython(`
-sys.stdout = old_stdout
-sys.stderr = old_stderr
-    `);
-
-    // 6. Build our output object according to the rules:
-    //    - If result is None (or Python "None" => JS null), output all prints
-    //    - Else output the result only
-    // Note: `None` in Python becomes `null` in JS.
-    let output;
-    if (result === null || result === undefined) {
-      // The final statement was None or no return => deliver printed output
-      // If you want to combine capturedStderr as well, you can append it
-      // But here we'll just do stdout for clarity
-      output = capturedStdout;
-      // If there's something in stderr, you might want to include that or log it
-      // output += capturedStderr;
-    } else {
-      // If the code returned a real value, just return that
-      try {
-        output = result.toJs();
-      } catch (e) {
-        output = result;
+    // Register tools with typed signatures
+    if (params.tools) {
+      for (const tool of params.tools) {
+        // Support both old format (string) and new format (object with parameters)
+        if (typeof tool === 'string') {
+          pyodide.runPython(makeToolWrapper(tool, []));
+          toolNames.push(tool);
+        } else {
+          pyodide.runPython(makeToolWrapper(tool.name, tool.parameters || []));
+          toolNames.push(tool.name);
+        }
       }
     }
 
-    console.log(JSON.stringify({ output }));
-  } catch (error) {
-    // We have an error => check if it's a SyntaxError or something else
-    // The Python error class name is stored in error.type: https://pyodide.org/en/stable/usage/api/js-api.html#pyodide.ffi.PythonError
-    const errorType = error.type || "Error";
-    // error.message is mostly blank.
-    const errorMessage = (error.message || "").trim();
-    // The arguments of the exception are stored in sys.last_exc.args,
-    // which is always helpful but pyodide don't extract them for us.
-    // Use a bridge function to get them.
-    let errorArgs = [];
-    if (errorType !== "SyntaxError") {
-      // Only python exceptions have args.
-      const last_exception_args = pyodide.globals.get("last_exception_args");
-      // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
-      // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
-      errorArgs = JSON.parse(last_exception_args()) || [];
+    // Register SUBMIT with output signature
+    if (params.outputs) {
+      pyodide.runPython(makeSubmitWrapper(params.outputs));
     }
 
-
-    console.log(JSON.stringify({
-      error: errorMessage,
-      errorArgs: errorArgs,
-      errorType: errorType
-    }));
+    console.log(jsonrpcResult({
+      tools: toolNames,
+      outputs: params.outputs ? params.outputs.map(o => o.name) : []
+    }, requestId));
+    continue;
   }
+
+  if (method === "inject_var") {
+    const { name, value } = params;
+    try {
+      try { pyodide.FS.mkdir('/tmp'); } catch (e) { /* exists */ }
+      try { pyodide.FS.mkdir('/tmp/dspy_vars'); } catch (e) { /* exists */ }
+      pyodide.FS.writeFile(`/tmp/dspy_vars/${name}.json`, new TextEncoder().encode(value));
+      console.log(jsonrpcResult({ injected: name }, requestId));
+    } catch (e) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to inject var: ${e.message}`, requestId));
+    }
+    continue;
+  }
+
+  if (method === "execute") {
+    const code = params.code || "";
+    let setupCompleted = false;  // Track if PYTHON_SETUP_CODE ran successfully
+
+    try {
+      await pyodide.loadPackagesFromImports(code);
+      pyodide.runPython(PYTHON_SETUP_CODE);
+      setupCompleted = true;  // Mark setup as complete - old_stdout/old_stderr now exist
+
+      // Run the user's code
+      const result = await pyodide.runPythonAsync(code);
+      const capturedStdout = pyodide.runPython("buf_stdout.getvalue()");
+
+      // If result is None, output prints; otherwise output the result
+      let output = (result === null || result === undefined) ? capturedStdout : (result.toJs?.() ?? result);
+      console.log(jsonrpcResult({ output }, requestId));
+    } catch (error) {
+      // We have an error => check if it's a SyntaxError or something else
+      // The Python error class name is stored in error.type: https://pyodide.org/en/stable/usage/api/js-api.html#pyodide.ffi.PythonError
+      const errorType = error.type || "Error";
+      // error.message is mostly blank.
+      const errorMessage = (error.message || "").trim();
+
+      // Handle FinalOutput as a success result, not an error
+      if (errorType === "FinalOutput") {
+        const last_exception_args = pyodide.globals.get("last_exception_args");
+        const errorArgs = JSON.parse(last_exception_args()) || [];
+        const answer = errorArgs[0] || null;
+        console.log(jsonrpcResult({ final: answer }, requestId));
+        continue;
+      }
+
+      // Get error args for other exception types
+      let errorArgs = [];
+      if (errorType !== "SyntaxError") {
+        // Only python exceptions have args.
+        const last_exception_args = pyodide.globals.get("last_exception_args");
+        // Regarding https://pyodide.org/en/stable/usage/type-conversions.html#type-translations-errors,
+        // we do a additional `json.dumps` and `JSON.parse` on the values, to avoid the possible memory leak.
+        errorArgs = JSON.parse(last_exception_args()) || [];
+      }
+
+      // Map error type to JSON-RPC error code
+      const errorCode = JSONRPC_APP_ERRORS[errorType] || JSONRPC_APP_ERRORS.Unknown;
+      console.log(jsonrpcError(errorCode, errorMessage, requestId, { type: errorType, args: errorArgs }));
+    } finally {
+      // Always restore stdout/stderr if setup completed, even after errors.
+      // This prevents stream corruption where subsequent executions capture
+      // StringIO buffers as old_stdout/old_stderr instead of real streams.
+      if (setupCompleted) {
+        try {
+          pyodide.runPython("sys.stdout, sys.stderr = old_stdout, old_stderr");
+        } catch (e) {
+          // Ignore restoration errors to avoid masking the original error
+        }
+      }
+    }
+    continue;
+  }
+
+  // Unknown method
+  console.log(jsonrpcError(JSONRPC_PROTOCOL_ERRORS.MethodNotFound, `Method not found: ${method}`, requestId));
 }
