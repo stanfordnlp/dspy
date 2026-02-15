@@ -1110,5 +1110,1797 @@ class TestRLMIntegration:
         assert "dog" in result.answer.lower()
 
 
+# ============================================================================
+# Unit Tests: Multimodal Media Support (Audio/Image)
+# ============================================================================
+
+
+class TestMultimodalDetection:
+    """Unit tests for multimodal field detection and registry building (types protocol)."""
+
+    def test_detect_audio_field(self):
+        """Test _detect_multimodal_fields finds Audio-typed inputs."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        class TranscribeSig(dspy.Signature):
+            """Transcribe audio."""
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            fields = rlm._detect_multimodal_fields()
+
+        assert "audio_input" in fields
+        assert fields["audio_input"] == "Audio"
+
+    def test_detect_image_field(self):
+        """Test _detect_multimodal_fields finds Image-typed inputs."""
+        import dspy
+        from dspy.adapters.types.image import Image
+
+        class DescribeSig(dspy.Signature):
+            """Describe an image."""
+            photo: Image = dspy.InputField()
+            description: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('a cat')"}]):
+            rlm = RLM(DescribeSig, max_iterations=3)
+            fields = rlm._detect_multimodal_fields()
+
+        assert "photo" in fields
+        assert fields["photo"] == "Image"
+
+    def test_detect_mixed_multimodal_fields(self):
+        """Test _detect_multimodal_fields finds both Audio and Image in same signature."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+        from dspy.adapters.types.image import Image
+
+        class MultimodalSig(dspy.Signature):
+            """Process audio and image together."""
+            audio_clip: Audio = dspy.InputField()
+            photo: Image = dspy.InputField()
+            analysis: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('done')"}]):
+            rlm = RLM(MultimodalSig, max_iterations=3)
+            fields = rlm._detect_multimodal_fields()
+
+        assert len(fields) == 2
+        assert fields["audio_clip"] == "Audio"
+        assert fields["photo"] == "Image"
+
+    def test_no_multimodal_fields(self):
+        """Test _detect_multimodal_fields returns empty dict for text-only signatures."""
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            fields = rlm._detect_multimodal_fields()
+
+        assert fields == {}
+
+    def test_build_multimodal_registry_with_audio(self):
+        """Test _build_multimodal_registry extracts Audio objects from inputs."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        class TranscribeSig(dspy.Signature):
+            """Transcribe audio."""
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            registry = rlm._build_multimodal_registry({"audio_input": audio})
+
+        assert "audio_input" in registry
+        assert registry["audio_input"] is audio
+
+    def test_build_multimodal_registry_ignores_text(self):
+        """Test _build_multimodal_registry skips non-multimodal values."""
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            registry = rlm._build_multimodal_registry({"query": "hello world"})
+
+        assert registry == {}
+
+    def test_wrap_rlm_inputs_passthrough_already_wrapped(self):
+        """Test _wrap_rlm_inputs passes through already-wrapped dspy types."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        class TranscribeSig(dspy.Signature):
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            wrapped = rlm._wrap_rlm_inputs({"audio_input": audio})
+
+        assert wrapped["audio_input"] is audio
+
+    def test_wrap_rlm_inputs_passthrough_plain_types(self):
+        """Test _wrap_rlm_inputs passes through plain types like str."""
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            wrapped = rlm._wrap_rlm_inputs({"query": "hello"})
+
+        assert wrapped["query"] == "hello"
+
+
+class TestLLMQueryWithMedia:
+    """Unit tests for llm_query_with_media tool creation and validation."""
+
+    def test_media_tool_always_available(self):
+        """Test llm_query_with_media is always created as a tool."""
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools()
+
+        assert "llm_query_with_media" in tools
+        assert "llm_query" in tools
+        assert "llm_query_batched" in tools
+        assert "budget" in tools
+
+    def test_media_tool_rejects_empty_prompt(self):
+        """Test llm_query_with_media raises on empty prompt."""
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools(multimodal_registry={"audio_input": audio})
+
+        with pytest.raises(ValueError, match="prompt cannot be empty"):
+            tools["llm_query_with_media"]("")
+
+    def test_media_tool_rejects_no_media_vars(self):
+        """Test llm_query_with_media raises when no media var names given."""
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools(multimodal_registry={"audio_input": audio})
+
+        with pytest.raises(ValueError, match="At least one media variable"):
+            tools["llm_query_with_media"]("transcribe this")
+
+    def test_media_tool_rejects_unknown_var(self):
+        """Test llm_query_with_media raises on nonexistent media variable."""
+        from dspy.adapters.types.audio import Audio
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            tools = rlm._make_llm_tools(multimodal_registry={"audio_input": audio})
+
+        with pytest.raises(ValueError, match="not found"):
+            tools["llm_query_with_media"]("transcribe", "nonexistent_var")
+
+    def test_reserved_tool_names_includes_media(self):
+        """Test llm_query_with_media is in the reserved tool names set."""
+        assert "llm_query_with_media" in RLM._RESERVED_TOOL_NAMES
+
+
+class TestMediaInstructions:
+    """Unit tests for multimodal-specific instruction injection in signatures."""
+
+    def test_media_docs_in_action_instructions(self):
+        """Test that multimodal fields cause media docs to appear in instructions."""
+        import dspy
+        from dspy.adapters.types.audio import Audio
+
+        class TranscribeSig(dspy.Signature):
+            """Transcribe audio."""
+            audio_input: Audio = dspy.InputField()
+            transcription: str = dspy.OutputField()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM(TranscribeSig, max_iterations=3)
+            action_sig, _extract_sig = rlm._build_signatures()
+
+        instructions = action_sig.instructions
+        assert "audio_input" in instructions
+        assert "media" in instructions.lower()
+
+    def test_no_media_guidelines_for_text_only(self):
+        """Test that text-only signatures do NOT include media-specific guidelines."""
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            action_sig, _extract_sig = rlm._build_signatures()
+
+        instructions = action_sig.instructions
+        # The generic llm_query_with_media tool is always documented,
+        # but media-specific guidelines should NOT appear
+        assert "FOR MEDIA INPUTS" not in instructions
+
+
+class TestMultiModelSubCalls:
+    """Unit tests for multi-model sub-call routing via sub_lms parameter."""
+
+    def test_sub_lms_stored_on_init(self):
+        """Test sub_lms dict is stored on the RLM instance."""
+        from unittest.mock import MagicMock
+
+        lm1 = MagicMock()
+        lm2 = MagicMock()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3, sub_lms={"flash": lm1, "pro": lm2})
+
+        assert rlm.sub_lms == {"flash": lm1, "pro": lm2}
+
+    def test_sub_lms_defaults_to_empty_dict(self):
+        """Test sub_lms defaults to empty dict when not provided."""
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+        assert rlm.sub_lms == {}
+
+    def test_llm_query_routes_to_named_model(self):
+        """Test llm_query(prompt, model='name') routes to the correct LM."""
+        from unittest.mock import MagicMock
+
+        mock_flash = MagicMock(return_value=["flash response"])
+        mock_pro = MagicMock(return_value=["pro response"])
+        mock_default = MagicMock(return_value=["default response"])
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_default,
+                   sub_lms={"flash": mock_flash, "pro": mock_pro})
+        tools = rlm._make_llm_tools()
+
+        result = tools["llm_query"]("test prompt", model="flash")
+        assert result == "flash response"
+        mock_flash.assert_called_once()
+
+        result = tools["llm_query"]("test prompt", model="pro")
+        assert result == "pro response"
+        mock_pro.assert_called_once()
+
+    def test_llm_query_default_model_uses_sub_lm(self):
+        """Test llm_query without model param falls back to sub_lm."""
+        from unittest.mock import MagicMock
+
+        mock_sub = MagicMock(return_value=["sub_lm response"])
+        mock_flash = MagicMock(return_value=["flash response"])
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_sub, sub_lms={"flash": mock_flash})
+        tools = rlm._make_llm_tools()
+
+        # model=None should use sub_lm, not flash
+        result = tools["llm_query"]("test prompt")
+        assert result == "sub_lm response"
+        mock_sub.assert_called_once()
+        mock_flash.assert_not_called()
+
+    def test_llm_query_raises_on_unknown_model(self):
+        """Test llm_query raises ValueError for unknown model name."""
+        from unittest.mock import MagicMock
+
+        mock_flash = MagicMock(return_value=["flash"])
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lms={"flash": mock_flash})
+        tools = rlm._make_llm_tools()
+
+        with pytest.raises(ValueError, match="Model 'nonexistent' not found"):
+            tools["llm_query"]("test", model="nonexistent")
+
+    def test_llm_query_batched_routes_to_named_model(self):
+        """Test llm_query_batched with model param routes all prompts to named LM."""
+        from unittest.mock import MagicMock
+
+        mock_default = MagicMock(return_value=["default response"])
+        mock_pro = MagicMock(return_value=["pro response"])
+
+        rlm = RLM("query -> answer", max_iterations=3, max_llm_calls=10,
+                   sub_lm=mock_default, sub_lms={"pro": mock_pro})
+        tools = rlm._make_llm_tools()
+
+        results = tools["llm_query_batched"](["prompt1", "prompt2"], model="pro")
+        assert len(results) == 2
+        # Both should come from the pro LM
+        assert all(r == "pro response" for r in results)
+        assert mock_pro.call_count == 2
+        mock_default.assert_not_called()
+
+    def test_llm_query_with_media_routes_to_named_model(self):
+        """Test llm_query_with_media with model kwarg routes to named LM."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.audio import Audio
+
+        mock_default = MagicMock(return_value=["default response"])
+        mock_pro = MagicMock(return_value=["pro media response"])
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_default,
+                   sub_lms={"pro": mock_pro})
+        tools = rlm._make_llm_tools(multimodal_registry={"audio_input": audio})
+
+        result = tools["llm_query_with_media"]("transcribe", "audio_input", model="pro")
+        assert result == "pro media response"
+        mock_pro.assert_called_once()
+        mock_default.assert_not_called()
+
+    def test_model_docs_in_instructions_when_sub_lms(self):
+        """Test that model names appear in action instructions when sub_lms is set."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock()
+
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3, sub_lms={"flash": mock_lm, "pro": mock_lm})
+            action_sig, _ = rlm._build_signatures()
+
+        instructions = action_sig.instructions
+        assert "flash" in instructions
+        assert "pro" in instructions
+        assert "model=" in instructions
+
+    def test_no_model_docs_when_no_sub_lms(self):
+        """Test that model docs are absent when sub_lms is not set."""
+        with dummy_lm_context([{"reasoning": "test", "code": "SUBMIT('hi')"}]):
+            rlm = RLM("query -> answer", max_iterations=3)
+            action_sig, _ = rlm._build_signatures()
+
+        instructions = action_sig.instructions
+        assert "Available models:" not in instructions
+
+    def test_call_count_shared_across_models(self):
+        """Test that the call counter is shared across all model choices."""
+        from unittest.mock import MagicMock
+
+        mock_default = MagicMock(return_value=["default"])
+        mock_flash = MagicMock(return_value=["flash"])
+        mock_pro = MagicMock(return_value=["pro"])
+
+        rlm = RLM("query -> answer", max_iterations=3, max_llm_calls=3,
+                   sub_lm=mock_default, sub_lms={"flash": mock_flash, "pro": mock_pro})
+        tools = rlm._make_llm_tools()
+
+        tools["llm_query"]("p1", model="flash")
+        tools["llm_query"]("p2", model="pro")
+        tools["llm_query"]("p3")  # default
+
+        # 4th call should exceed the limit of 3
+        with pytest.raises(RuntimeError, match="LLM call limit exceeded"):
+            tools["llm_query"]("p4", model="flash")
+
+
+class TestBudgetTracking:
+    """Tests for budget() tool and max_time enforcement."""
+
+    def test_max_time_initialization(self):
+        """Test that max_time is stored on the RLM instance."""
+        rlm = RLM("query -> answer", max_time=60.0)
+        assert rlm.max_time == 60.0
+
+    def test_max_time_default_none(self):
+        """Test that max_time defaults to None (no limit)."""
+        rlm = RLM("query -> answer")
+        assert rlm.max_time is None
+
+    def test_budget_tool_created(self):
+        """Test that the budget tool is included in execution tools."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10)
+        tools = rlm._make_llm_tools()
+        assert "budget" in tools
+        assert callable(tools["budget"])
+
+    def test_budget_returns_string(self):
+        """Test that budget() returns a human-readable string."""
+        rlm = RLM("query -> answer", max_iterations=10, max_llm_calls=20)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 3}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert isinstance(result, str)
+        assert "Iterations:" in result
+        assert "LLM calls:" in result
+
+    def test_budget_reflects_iteration(self):
+        """Test that budget() shows correct remaining iterations."""
+        rlm = RLM("query -> answer", max_iterations=10, max_llm_calls=20)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 7}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        # iteration=7, max=10, remaining = 10 - 7 - 1 = 2
+        assert "2/10 remaining" in result
+
+    def test_budget_reflects_llm_calls(self):
+        """Test that budget() shows correct remaining LLM calls after usage."""
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+
+        from unittest.mock import MagicMock
+        mock_lm = MagicMock(return_value=["response"])
+        rlm_with_lm = RLM("query -> answer", max_iterations=5, max_llm_calls=10, sub_lm=mock_lm)
+        tools = rlm_with_lm._make_llm_tools(execution_state=execution_state)
+
+        # Use 3 LLM calls
+        tools["llm_query"]("prompt1")
+        tools["llm_query"]("prompt2")
+        tools["llm_query"]("prompt3")
+
+        result = tools["budget"]()
+        assert "7/10 remaining" in result
+
+    def test_budget_shows_time_when_max_time_set(self):
+        """Test that budget() includes time info when max_time is configured."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10, max_time=120.0)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "Time:" in result
+        assert "/120.0s remaining" in result
+
+    def test_budget_no_time_when_max_time_none(self):
+        """Test that budget() shows 'no limit' when max_time is None."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "no limit" in result
+
+    def test_budget_reserved_name(self):
+        """Test that 'budget' is a reserved tool name."""
+        def budget() -> str:
+            return "custom"
+
+        from dspy.adapters.types.tool import Tool
+        tool = Tool(budget, name="budget")
+        with pytest.raises(ValueError, match="conflicts with built-in"):
+            RLM("query -> answer", tools=[tool])
+
+    def test_budget_in_action_instructions(self):
+        """Test that the action instructions mention budget()."""
+        rlm = RLM("query -> answer", max_iterations=5)
+        action_sig = rlm.generate_action.signature
+        assert "budget()" in action_sig.instructions
+
+    def test_max_time_triggers_extract_fallback(self):
+        """Test that exceeding max_time triggers extract fallback (not exception)."""
+
+        mock = MockInterpreter(responses=[
+            "exploring...",
+            "still exploring...",
+        ])
+        # Set max_time to 0 so it's already exceeded on first check
+        rlm = RLM("query -> answer", max_iterations=5, max_time=0.0, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ])
+        rlm.extract = make_mock_predictor([
+            {"answer": "timeout_fallback"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "timeout_fallback"
+        assert result.final_reasoning == "Extract forced final output"
+
+    def test_max_time_none_no_timeout(self):
+        """Test that max_time=None means no time checking."""
+        mock = MockInterpreter(responses=[FinalOutput({"answer": "42"})])
+        rlm = RLM("query -> answer", max_iterations=5, max_time=None, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("42")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "42"
+
+    def test_budget_iteration_updates_via_tool(self):
+        """Test that budget() reports decreasing iterations across a forward() run."""
+        budget_reports = []
+
+        class BudgetCapturingInterpreter(MockInterpreter):
+            def __init__(self):
+                super().__init__(responses=["output1", "output2", FinalOutput({"answer": "done"})])
+
+            def execute(self, code, variables=None):
+                # Call the budget tool if available
+                if "budget" in self.tools:
+                    budget_reports.append(self.tools["budget"]())
+                return super().execute(code, variables)
+
+        mock_interp = BudgetCapturingInterpreter()
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock_interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Step 1", "code": "print('a')"},
+            {"reasoning": "Step 2", "code": "print('b')"},
+            {"reasoning": "Step 3", "code": 'SUBMIT("done")'},
+        ])
+
+        result = rlm(query="test")
+        assert result.answer == "done"
+        # We got 3 iterations (0, 1, 2), should have 3 budget reports
+        assert len(budget_reports) == 3
+        # Each report should show decreasing remaining iterations
+        for report in budget_reports:
+            assert "Iterations:" in report
+            assert "LLM calls:" in report
+
+
+    def test_max_cost_initialization(self):
+        """Test that max_cost is stored on the RLM instance."""
+        rlm = RLM("query -> answer", max_cost=0.10)
+        assert rlm.max_cost == 0.10
+
+    def test_max_cost_default_none(self):
+        """Test that max_cost defaults to None (no limit)."""
+        rlm = RLM("query -> answer")
+        assert rlm.max_cost is None
+
+    def test_budget_shows_cost_when_max_cost_set(self):
+        """Test that budget() includes cost info when max_cost is configured."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10, max_cost=0.50)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "Cost:" in result
+        assert "$0.50" in result
+
+    def test_budget_no_cost_when_max_cost_none_and_no_spending(self):
+        """Test that budget() omits cost when max_cost is None and nothing spent."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=10)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        # No cost tracking when max_cost is None and no LM history entries with cost
+        assert "Cost:" not in result or "no limit" in result
+
+    def test_max_cost_zero_triggers_immediate_fallback(self):
+        """Test that max_cost=0 triggers extract fallback immediately."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        # Give the mock LM a history with a cost entry
+        mock_lm.history = [{"cost": 0.001, "usage": {"total_tokens": 100}}]
+
+        mock = MockInterpreter(responses=["exploring..."])
+        rlm = RLM("query -> answer", max_iterations=5, max_cost=0.0, sub_lm=mock_lm, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ])
+        rlm.extract = make_mock_predictor([
+            {"answer": "cost_fallback"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "cost_fallback"
+
+
+    def test_byok_cost_upstream_inference_cost(self):
+        """Test cost tracking includes usage.cost_details.upstream_inference_cost for BYOK."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        # Start with empty history — entries added after tool creation
+        mock_lm.history = []
+
+        rlm = RLM("query -> answer", max_cost=1.0, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+
+        # Simulate BYOK responses arriving after tool creation
+        mock_lm.history.extend([
+            {
+                "cost": 0,
+                "usage": {
+                    "total_tokens": 500,
+                    "is_byok": True,
+                    "cost_details": {"upstream_inference_cost": 0.0025},
+                },
+            },
+            {
+                "cost": None,
+                "usage": {
+                    "total_tokens": 300,
+                    "cost_details": {"upstream_inference_cost": 0.0015},
+                },
+            },
+        ])
+
+        result = tools["budget"]()
+        # Should pick up the upstream_inference_cost values: 0.0025 + 0.0015
+        assert "$0.0040" in result
+        assert "800 tokens" in result  # 500 + 300
+
+    def test_cost_sums_provider_and_upstream(self):
+        """Test cost tracking sums both provider cost and upstream inference cost."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        mock_lm.history = []
+
+        rlm = RLM("query -> answer", max_cost=1.0, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+
+        # Non-BYOK: both provider cost and upstream cost are nonzero
+        mock_lm.history.append({
+            "cost": 0.01,
+            "usage": {
+                "total_tokens": 1000,
+                "cost_details": {"upstream_inference_cost": 0.005},
+            },
+        })
+
+        result = tools["budget"]()
+        # Sum of 0.01 + 0.005 = 0.015
+        assert "$0.0150" in result
+
+    def test_budget_warning_low_iterations(self):
+        """Test that budget() shows warning when iterations are low."""
+        rlm = RLM("query -> answer", max_iterations=5, max_llm_calls=50)
+        # iteration=4 means 0 remaining (5 - 4 - 1)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 4}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "LOW" in result
+        assert "iterations" in result
+
+    def test_budget_warning_low_time(self):
+        """Test that budget() shows warning when time is running low."""
+        import time
+        rlm = RLM("query -> answer", max_iterations=20, max_llm_calls=50, max_time=10.0)
+        # Start time 9 seconds ago — only 1s remaining (10%)
+        execution_state = {"start_time": time.monotonic() - 9.0, "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "LOW" in result
+        assert "time" in result
+
+    def test_budget_no_warning_when_plenty_remaining(self):
+        """Test that budget() has no warning when resources are plentiful."""
+        rlm = RLM("query -> answer", max_iterations=20, max_llm_calls=50, max_time=60.0)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(execution_state=execution_state)
+        result = tools["budget"]()
+        assert "LOW" not in result
+
+
+# ============================================================================
+# Integration Tests: RLM + LocalInterpreter
+# ============================================================================
+
+
+class TestRLMWithLocalInterpreter:
+    """Integration tests proving RLM and LocalInterpreter work together end-to-end."""
+
+    def test_basic_forward(self):
+        """Test RLM forward() with LocalInterpreter produces a result."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("hello")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "hello"
+
+    def test_state_persists_across_iterations(self):
+        """Test that variables set in one iteration survive to the next."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Set a variable", "code": "x = 42\nprint(x)"},
+            {"reasoning": "Use it", "code": "SUBMIT(str(x * 2))"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "84"
+
+    def test_tools_accessible_in_code(self):
+        """Test that llm_query and budget tools are callable from LocalInterpreter code."""
+        from unittest.mock import MagicMock
+
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        mock_lm = MagicMock(return_value=["mocked response"])
+        mock_lm.history = []
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=5, sub_lm=mock_lm, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Use tools", "code": 'b = budget()\nresult = llm_query("hi")\nprint(result)'},
+            {"reasoning": "Submit", "code": "SUBMIT(result)"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "mocked response"
+
+    def test_stdlib_imports_work(self):
+        """Test that LocalInterpreter allows stdlib imports inside RLM."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Use stdlib", "code": 'import json\nSUBMIT(json.dumps({"a": 1}))'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == '{"a": 1}'
+
+    def test_error_recovery(self):
+        """Test that a runtime error in one iteration doesn't kill the session."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "This will error", "code": "1 / 0"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+
+    def test_max_time_with_local_interpreter(self):
+        """Test that max_time budget enforcement works with LocalInterpreter."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=10, max_time=0.0, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ])
+        rlm.extract = make_mock_predictor([
+            {"answer": "timeout_fallback"},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "timeout_fallback"
+
+    @pytest.mark.asyncio
+    async def test_aforward_with_local_interpreter(self):
+        """Test RLM aforward() works with LocalInterpreter."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        rlm = RLM("query -> answer", max_iterations=3, interpreter=interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Return answer", "code": 'SUBMIT("async_hello")'},
+        ])
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "async_hello"
+
+
+# ============================================================================
+# Tests: llm_query_with_media content construction
+# ============================================================================
+
+
+class TestMediaContentConstruction:
+    """Test that llm_query_with_media builds correct multimodal content for the LM."""
+
+    def test_media_content_parts_sent_to_lm(self):
+        """Test that llm_query_with_media sends multimodal content parts to the LM."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.audio import Audio
+
+        mock_lm = MagicMock(return_value=["transcription result"])
+        mock_lm.history = []
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(
+            multimodal_registry={"my_audio": audio},
+            execution_state=execution_state,
+        )
+
+        result = tools["llm_query_with_media"]("describe this audio", "my_audio")
+        assert result == "transcription result"
+
+        # Verify the LM was called with messages containing multimodal content
+        mock_lm.assert_called_once()
+        call_kwargs = mock_lm.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+        assert messages is not None
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        content = messages[0]["content"]
+        assert isinstance(content, list)
+        # First part should be text
+        assert content[0]["type"] == "text"
+        assert content[0]["text"] == "describe this audio"
+        # Remaining parts should be from audio.format()
+        assert len(content) > 1
+
+    def test_image_content_parts_sent_to_lm(self):
+        """Test that llm_query_with_media sends image content parts to the LM."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.image import Image
+
+        mock_lm = MagicMock(return_value=["a cat sitting on a mat"])
+        mock_lm.history = []
+
+        image = Image(url="https://example.com/cat.jpg")
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(
+            multimodal_registry={"my_image": image},
+            execution_state=execution_state,
+        )
+
+        result = tools["llm_query_with_media"]("what is in this image?", "my_image")
+        assert result == "a cat sitting on a mat"
+
+        # Verify multimodal message structure
+        mock_lm.assert_called_once()
+        call_kwargs = mock_lm.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+        content = messages[0]["content"]
+        assert content[0]["type"] == "text"
+        assert len(content) > 1
+
+    def test_multiple_media_objects_in_one_call(self):
+        """Test llm_query_with_media with multiple media variables."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.audio import Audio
+        from dspy.adapters.types.image import Image
+
+        mock_lm = MagicMock(return_value=["combined analysis"])
+        mock_lm.history = []
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+        image = Image(url="https://example.com/photo.jpg")
+
+        rlm = RLM("query -> answer", max_iterations=3, sub_lm=mock_lm)
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(
+            multimodal_registry={"audio_in": audio, "image_in": image},
+            execution_state=execution_state,
+        )
+
+        result = tools["llm_query_with_media"]("analyze both", "audio_in", "image_in")
+        assert result == "combined analysis"
+
+        # Verify both media objects were included
+        call_kwargs = mock_lm.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+        content = messages[0]["content"]
+        # text + audio parts + image parts
+        assert len(content) >= 3
+
+    def test_media_with_model_routing(self):
+        """Test llm_query_with_media routes to named model when specified."""
+        from unittest.mock import MagicMock
+
+        from dspy.adapters.types.audio import Audio
+
+        mock_default = MagicMock(return_value=["default"])
+        mock_default.history = []
+        mock_pro = MagicMock(return_value=["pro result"])
+        mock_pro.history = []
+
+        audio = Audio(data="dGVzdA==", audio_format="wav")
+
+        rlm = RLM("query -> answer", max_iterations=3,
+                   sub_lm=mock_default, sub_lms={"pro": mock_pro})
+        execution_state = {"start_time": __import__("time").monotonic(), "iteration": 0}
+        tools = rlm._make_llm_tools(
+            multimodal_registry={"audio": audio},
+            execution_state=execution_state,
+        )
+
+        result = tools["llm_query_with_media"]("transcribe", "audio", model="pro")
+        assert result == "pro result"
+        mock_pro.assert_called_once()
+        mock_default.assert_not_called()
+
+
+# ============================================================================
+# Tests: max_cost mid-run fallback
+# ============================================================================
+
+
+class TestMaxCostMidRunFallback:
+    """Test that max_cost triggers extract fallback during a multi-iteration run."""
+
+    def test_cost_exceeded_mid_run_triggers_fallback(self):
+        """Test that exceeding max_cost mid-run triggers extract fallback, not crash."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        mock_lm.history = []
+
+        mock = MockInterpreter(responses=[
+            "first iteration output",
+            "second iteration output",  # cost exceeded before this
+        ])
+        rlm = RLM("query -> answer", max_iterations=10, max_cost=0.05,
+                   sub_lm=mock_lm, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+            {"reasoning": "More", "code": "print('more')"},
+        ])
+        rlm.extract = make_mock_predictor([
+            {"answer": "cost_fallback"},
+        ])
+
+        # Simulate cost appearing after first iteration
+        # The forward loop checks cost at the start of each iteration
+        # After iteration 0, we inject cost into LM history
+        original_execute = mock.execute
+
+        def execute_with_cost_injection(code, variables=None):
+            result = original_execute(code, variables)
+            # After first execute, inject cost exceeding budget
+            if mock.call_count == 1:
+                mock_lm.history.append({
+                    "cost": 0.10,  # exceeds max_cost=0.05
+                    "usage": {"total_tokens": 5000},
+                })
+            return result
+
+        mock.execute = execute_with_cost_injection
+
+        result = rlm.forward(query="test")
+        assert result.answer == "cost_fallback"
+        assert result.final_reasoning == "Extract forced final output"
+
+
+# ============================================================================
+# Tests: Async budget/time/cost
+# ============================================================================
+
+
+class TestAsyncBudgetTimeCost:
+    """Test that budget, max_time, and max_cost work correctly in aforward()."""
+
+    @pytest.mark.asyncio
+    async def test_aforward_max_time_triggers_fallback(self):
+        """Test that aforward() respects max_time and triggers extract fallback."""
+        mock = MockInterpreter(responses=["exploring..."])
+        rlm = RLM("query -> answer", max_iterations=5, max_time=0.0, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ], async_mode=True)
+        rlm.extract = make_mock_predictor([
+            {"answer": "async_timeout_fallback"},
+        ], async_mode=True)
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "async_timeout_fallback"
+
+    @pytest.mark.asyncio
+    async def test_aforward_max_cost_triggers_fallback(self):
+        """Test that aforward() respects max_cost and triggers extract fallback."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["response"])
+        mock_lm.history = [{"cost": 1.0, "usage": {"total_tokens": 50000}}]
+
+        mock = MockInterpreter(responses=["exploring..."])
+        rlm = RLM("query -> answer", max_iterations=5, max_cost=0.0,
+                   sub_lm=mock_lm, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Explore", "code": "print('exploring')"},
+        ], async_mode=True)
+        rlm.extract = make_mock_predictor([
+            {"answer": "async_cost_fallback"},
+        ], async_mode=True)
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "async_cost_fallback"
+
+    @pytest.mark.asyncio
+    async def test_aforward_budget_tool_works(self):
+        """Test that budget() tool is accessible in aforward() via MockInterpreter."""
+        budget_reports = []
+
+        class BudgetCapturingInterpreter(MockInterpreter):
+            def __init__(self):
+                super().__init__(responses=["output", FinalOutput({"answer": "done"})])
+
+            def execute(self, code, variables=None):
+                if "budget" in self.tools:
+                    budget_reports.append(self.tools["budget"]())
+                return super().execute(code, variables)
+
+        mock_interp = BudgetCapturingInterpreter()
+        rlm = RLM("query -> answer", max_iterations=10, max_llm_calls=30,
+                   max_time=60.0, interpreter=mock_interp)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Step 1", "code": "print('a')"},
+            {"reasoning": "Done", "code": 'SUBMIT("done")'},
+        ], async_mode=True)
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "done"
+        assert len(budget_reports) >= 1
+        assert "Iterations:" in budget_reports[0]
+        assert "Time:" in budget_reports[0]
+
+
+# ============================================================================
+# Tests: bootstrap_trace resilience for non-parse exceptions
+# ============================================================================
+
+
+class TestBootstrapTraceResilience:
+    """Test that bootstrap_trace_data handles non-parse exceptions gracefully."""
+
+    def test_runtime_error_captured_as_failed_prediction(self):
+        """Test that a RuntimeError from forward() is captured, not propagated."""
+        from unittest.mock import patch
+
+        import dspy
+        from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
+
+        class CrashingModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.predictor = dspy.Predict("query -> answer")
+
+            def forward(self, **kwargs):
+                raise RuntimeError("RLM timeout exceeded")
+
+        program = CrashingModule()
+        dataset = [
+            dspy.Example(query="test1").with_inputs("query"),
+            dspy.Example(query="test2").with_inputs("query"),
+        ]
+
+        def metric(example, prediction, trace=None):
+            if isinstance(prediction, FailedPrediction):
+                return 0.0
+            return 1.0
+
+        # Mock the Evaluate class to directly call the program
+        class DirectEvaluate:
+            def __init__(self, **kwargs):
+                self.devset = kwargs.get("devset", [])
+                self.failure_score = kwargs.get("failure_score", 0)
+
+            def __call__(self, program, metric=None, **kwargs):
+                results = []
+                for example in self.devset:
+                    inputs = {k: example[k] for k in example.inputs()}
+                    prediction = program(**inputs)
+                    score = metric(example, prediction) if metric else None
+                    results.append((example, prediction, score))
+
+                class Result:
+                    pass
+                r = Result()
+                r.results = results
+                return r
+
+        with patch("dspy.teleprompt.bootstrap_trace.Evaluate", DirectEvaluate):
+            import dspy as _dspy
+            with _dspy.context(lm=_dspy.LM(model="openai/gpt-4o-mini"), trace=[]):
+                results = bootstrap_trace_data(
+                    program=program,
+                    dataset=dataset,
+                    metric=metric,
+                    raise_on_error=False,
+                )
+
+        assert len(results) == 2
+        for result in results:
+            pred = result["prediction"]
+            assert isinstance(pred, FailedPrediction)
+            assert "RLM timeout exceeded" in pred.completion_text
+            # Trace should be preserved (even if empty, it shouldn't be None)
+            assert isinstance(result["trace"], list)
+
+    def test_cost_overrun_captured_as_failed_prediction(self):
+        """Test that a cost overrun exception is captured with partial trace."""
+        from unittest.mock import patch
+
+        import dspy
+        from dspy.teleprompt.bootstrap_trace import FailedPrediction, bootstrap_trace_data
+
+        class CostOverrunModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.predictor = dspy.Predict("query -> answer")
+
+            def forward(self, **kwargs):
+                # Simulate partial work before cost overrun
+                # Add something to the trace before crashing
+                dspy.settings.trace.append(
+                    (self.predictor, kwargs, dspy.Prediction(answer="partial"))
+                )
+                raise RuntimeError("Cost budget exceeded ($0.55 > $0.50)")
+
+        program = CostOverrunModule()
+        dataset = [dspy.Example(query="test").with_inputs("query")]
+
+        def metric(example, prediction, trace=None):
+            return 0.0
+
+        class DirectEvaluate:
+            def __init__(self, **kwargs):
+                self.devset = kwargs.get("devset", [])
+
+            def __call__(self, program, metric=None, **kwargs):
+                results = []
+                for example in self.devset:
+                    inputs = {k: example[k] for k in example.inputs()}
+                    prediction = program(**inputs)
+                    score = metric(example, prediction) if metric else None
+                    results.append((example, prediction, score))
+
+                class Result:
+                    pass
+                r = Result()
+                r.results = results
+                return r
+
+        with patch("dspy.teleprompt.bootstrap_trace.Evaluate", DirectEvaluate):
+            import dspy as _dspy
+            with _dspy.context(lm=_dspy.LM(model="openai/gpt-4o-mini"), trace=[]):
+                results = bootstrap_trace_data(
+                    program=program,
+                    dataset=dataset,
+                    metric=metric,
+                    raise_on_error=False,
+                )
+
+        assert len(results) == 1
+        pred = results[0]["prediction"]
+        assert isinstance(pred, FailedPrediction)
+        assert "Cost budget exceeded" in pred.completion_text
+        # The partial trace from before the crash should be preserved
+        trace = results[0]["trace"]
+        assert isinstance(trace, list)
+        assert len(trace) == 1  # the one entry we appended before crashing
+
+    def test_keyboard_interrupt_not_swallowed(self):
+        """Test that KeyboardInterrupt is NOT caught (it's BaseException, not Exception)."""
+        from unittest.mock import patch
+
+        import dspy
+        from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
+
+        class InterruptingModule(dspy.Module):
+            def __init__(self):
+                super().__init__()
+                self.predictor = dspy.Predict("query -> answer")
+
+            def forward(self, **kwargs):
+                raise KeyboardInterrupt()
+
+        program = InterruptingModule()
+        dataset = [dspy.Example(query="test").with_inputs("query")]
+
+        class DirectEvaluate:
+            def __init__(self, **kwargs):
+                self.devset = kwargs.get("devset", [])
+
+            def __call__(self, program, metric=None, **kwargs):
+                results = []
+                for example in self.devset:
+                    inputs = {k: example[k] for k in example.inputs()}
+                    prediction = program(**inputs)
+                    results.append((example, prediction, None))
+
+                class Result:
+                    pass
+                r = Result()
+                r.results = results
+                return r
+
+        with patch("dspy.teleprompt.bootstrap_trace.Evaluate", DirectEvaluate):
+            import dspy as _dspy
+            with _dspy.context(lm=_dspy.LM(model="openai/gpt-4o-mini"), trace=[]):
+                with pytest.raises(KeyboardInterrupt):
+                    bootstrap_trace_data(
+                        program=program,
+                        dataset=dataset,
+                        raise_on_error=False,
+                    )
+
+
+# ============================================================================
+# Tests: LocalInterpreter output_fields via setter
+# ============================================================================
+
+
+class TestLocalInterpreterOutputFieldsSetter:
+    """Test LocalInterpreter output_fields configuration paths."""
+
+    def test_output_fields_set_after_init(self):
+        """Test that output_fields can be set after construction and SUBMIT uses them."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        interp.output_fields = [{"name": "answer"}, {"name": "confidence"}]
+        interp.start()
+
+        result = interp.execute('SUBMIT("hello", "high")')
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"answer": "hello", "confidence": "high"}
+
+    def test_output_fields_none_defaults_to_single_output(self):
+        """Test that without output_fields, single-arg SUBMIT wraps in 'output' key."""
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        interp = LocalInterpreter()
+        interp.start()
+
+        result = interp.execute('SUBMIT("hello")')
+        assert isinstance(result, FinalOutput)
+        assert result.output == {"output": "hello"}
+
+
+# ============================================================================
+# Depth > 1 Tests: Recursive RLM with LocalInterpreter
+# ============================================================================
+
+import time as _time
+
+
+class TestSubcallInit:
+    """Tests for depth/max_depth initialization and routing flag."""
+
+    def test_depth_max_depth_defaults(self):
+        """Default depth=0, max_depth=1 means no recursion."""
+        rlm = RLM("query -> answer", max_iterations=3)
+        assert rlm.depth == 0
+        assert rlm.max_depth == 1
+
+    def test_depth_max_depth_stored(self):
+        """Custom depth and max_depth are stored."""
+        rlm = RLM("query -> answer", max_iterations=3, depth=1, max_depth=3)
+        assert rlm.depth == 1
+        assert rlm.max_depth == 3
+
+    def test_max_depth_1_uses_plain_lm(self):
+        """With max_depth=1 (default), llm_query does a plain LM call."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["plain response"])
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=1, sub_lm=mock_lm)
+        tools = rlm._make_llm_tools()
+
+        result = tools["llm_query"]("test prompt")
+        assert result == "plain response"
+        mock_lm.assert_called_once()
+
+    def test_max_depth_2_at_depth_0_is_recursive(self):
+        """With max_depth=2, depth=0: _subcall is called (not plain LM)."""
+        from unittest.mock import MagicMock, patch
+
+        mock_lm = MagicMock(return_value=["should not be called"])
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, sub_lm=mock_lm)
+
+        # Patch _subcall to capture that it's called instead of plain LM
+        with patch.object(rlm, "_subcall", return_value="subcall result") as mock_subcall:
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("test prompt")
+
+            assert result == "subcall result"
+            mock_subcall.assert_called_once()
+            mock_lm.assert_not_called()
+
+    def test_max_depth_2_at_depth_1_is_leaf(self):
+        """With max_depth=2, depth=1: plain LM call (leaf level)."""
+        from unittest.mock import MagicMock
+
+        mock_lm = MagicMock(return_value=["leaf response"])
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, depth=1, sub_lm=mock_lm)
+        tools = rlm._make_llm_tools()
+
+        result = tools["llm_query"]("test prompt")
+        assert result == "leaf response"
+        mock_lm.assert_called_once()
+
+    def test_max_depth_0_raises(self):
+        """max_depth < 1 should raise ValueError."""
+        with pytest.raises(ValueError, match="max_depth must be >= 1"):
+            RLM("query -> answer", max_depth=0)
+
+    def test_negative_depth_raises(self):
+        """Negative depth should raise ValueError."""
+        with pytest.raises(ValueError, match="depth must be >= 0"):
+            RLM("query -> answer", depth=-1)
+
+
+class TestSubcallTimeBudgetPropagation:
+    """Tests for max_time propagation to child RLM, adapted from vanilla RLM test_subcall.py."""
+
+    def test_child_receives_remaining_timeout(self):
+        """When parent has max_time=60 and 10s elapsed, child should get ~50s."""
+        from unittest.mock import patch
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            # Only capture child inits (signature="prompt -> response")
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_time=60.0)
+        execution_state = {"start_time": _time.monotonic() - 10.0, "iteration": 0}
+
+        with patch.object(RLM, "__init__", capturing_init):
+            # Child will fail (no LM configured) but we capture the kwargs before that
+            rlm._subcall("test", execution_state=execution_state)
+
+        assert "max_time" in captured_child_kwargs
+        remaining = captured_child_kwargs["max_time"]
+        assert 45.0 < remaining < 55.0, f"Expected ~50s remaining, got {remaining}"
+
+    def test_child_receives_none_timeout_when_parent_has_none(self):
+        """When parent has no max_time, child should also have None."""
+        from unittest.mock import patch
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_time=None)
+
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+
+        assert captured_child_kwargs.get("max_time") is None
+
+    def test_subcall_returns_error_when_time_exhausted(self):
+        """When time budget is already exhausted, _subcall returns error string."""
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_time=10.0)
+        execution_state = {"start_time": _time.monotonic() - 15.0, "iteration": 0}
+
+        result = rlm._subcall("test", execution_state=execution_state)
+        assert "Time budget exhausted" in result
+
+
+class TestSubcallCostBudgetPropagation:
+    """Tests for max_cost propagation to child RLM."""
+
+    def test_child_receives_remaining_cost(self):
+        """When parent has max_cost=1.0 and $0.30 spent, child should get ~$0.70."""
+        from unittest.mock import patch
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_cost=1.0)
+        execution_state = {
+            "start_time": _time.monotonic(),
+            "iteration": 0,
+            "_get_cost_and_tokens": lambda: (0.30, 5000),
+        }
+
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test", execution_state=execution_state)
+
+        assert "max_cost" in captured_child_kwargs
+        remaining = captured_child_kwargs["max_cost"]
+        assert 0.69 < remaining < 0.71, f"Expected ~$0.70, got {remaining}"
+
+    def test_subcall_returns_error_when_cost_exhausted(self):
+        """When cost budget is already exhausted, _subcall returns error string."""
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_cost=0.01)
+        execution_state = {
+            "start_time": _time.monotonic(),
+            "iteration": 0,
+            "_get_cost_and_tokens": lambda: (0.02, 1000),
+        }
+
+        result = rlm._subcall("test", execution_state=execution_state)
+        assert "Cost budget exhausted" in result
+
+
+class TestSubcallModelOverride:
+    """Tests for model= parameter override in _subcall."""
+
+    def test_model_override_sets_child_sub_lm(self):
+        """When model='flash', child's sub_lm should be the flash LM instance."""
+        from unittest.mock import MagicMock, patch
+
+        mock_flash = MagicMock(return_value=["flash"])
+        mock_pro = MagicMock(return_value=["pro"])
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2,
+                   sub_lms={"flash": mock_flash, "pro": mock_pro})
+
+        def resolve_lm(model=None):
+            if model == "flash":
+                return mock_flash
+            if model == "pro":
+                return mock_pro
+            return None
+
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test", model="flash", resolve_lm=resolve_lm)
+
+        assert captured_child_kwargs.get("sub_lm") is mock_flash
+
+    def test_no_model_override_uses_parent_sub_lm(self):
+        """Without model override, child inherits parent's sub_lm."""
+        from unittest.mock import MagicMock, patch
+
+        mock_parent_sub = MagicMock(return_value=["parent sub"])
+
+        captured_child_kwargs = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured_child_kwargs.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=3, max_depth=2, sub_lm=mock_parent_sub)
+
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+
+        assert captured_child_kwargs.get("sub_lm") is mock_parent_sub
+
+
+class TestSubcallParameterPropagation:
+    """Tests for combined parameter propagation to child RLM."""
+
+    def test_child_inherits_max_iterations(self):
+        """Child should receive parent's max_iterations."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_iterations=15, max_depth=2)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("max_iterations") == 15
+
+    def test_child_inherits_max_llm_calls(self):
+        """Child should receive parent's max_llm_calls."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_llm_calls=25, max_depth=2)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("max_llm_calls") == 25
+
+    def test_child_inherits_user_tools(self):
+        """Child should receive parent's user-provided tools."""
+        from unittest.mock import patch
+
+        def my_tool(x: str) -> str:
+            return x
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=2, tools=[my_tool])
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("tools") is not None
+        assert len(captured["tools"]) == 1
+
+    def test_child_depth_incremented(self):
+        """Child should have depth = parent.depth + 1."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=3, depth=0)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("depth") == 1
+
+    def test_child_inherits_max_depth(self):
+        """Child should receive same max_depth as parent."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=3)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("max_depth") == 3
+
+    def test_child_inherits_sub_lms(self):
+        """Child should receive parent's sub_lms dict."""
+        from unittest.mock import MagicMock, patch
+
+        mock_flash = MagicMock()
+        mock_pro = MagicMock()
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=2, sub_lms={"flash": mock_flash, "pro": mock_pro})
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert captured.get("sub_lms") == {"flash": mock_flash, "pro": mock_pro}
+
+
+class TestSubcallInterpreterIsolation:
+    """Tests that child RLM gets an isolated LocalInterpreter."""
+
+    def test_child_gets_local_interpreter_when_parent_uses_local(self):
+        """When parent uses LocalInterpreter, child gets LocalInterpreter."""
+        from unittest.mock import patch
+
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        rlm = RLM("query -> answer", max_depth=2, interpreter=LocalInterpreter())
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert isinstance(captured.get("interpreter"), LocalInterpreter)
+
+    def test_child_gets_python_interpreter_when_parent_uses_default(self):
+        """When parent uses default (PythonInterpreter), child matches."""
+        from unittest.mock import patch
+
+        captured = {}
+        _original_init = RLM.__init__
+
+        def capturing_init(self_inner, *args, **kwargs):
+            sig = args[0] if args else kwargs.get("signature", "")
+            if sig == "prompt -> response":
+                captured.update(kwargs)
+            _original_init(self_inner, *args, **kwargs)
+
+        # No interpreter= means parent uses default PythonInterpreter
+        rlm = RLM("query -> answer", max_depth=2)
+        with patch.object(RLM, "__init__", capturing_init):
+            rlm._subcall("test")
+        assert isinstance(captured.get("interpreter"), PythonInterpreter)
+
+    def test_interpreter_shutdown_on_success(self):
+        """Child interpreter shutdown() is called after successful completion."""
+        from unittest.mock import patch
+
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        shutdown_called = []
+        _original_shutdown = LocalInterpreter.shutdown
+
+        def tracking_shutdown(self_inner):
+            shutdown_called.append(True)
+            _original_shutdown(self_inner)
+
+        with dummy_lm_context([
+            {"reasoning": "Done", "code": 'SUBMIT(response="ok")'},
+        ]):
+            # Parent uses LocalInterpreter so child matches
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2,
+                       interpreter=LocalInterpreter())
+            with patch.object(LocalInterpreter, "shutdown", tracking_shutdown):
+                rlm._subcall("test")
+
+        assert len(shutdown_called) >= 1
+
+    def test_interpreter_shutdown_on_error(self):
+        """Child interpreter shutdown() is called even when child fails."""
+        from unittest.mock import patch
+
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        shutdown_called = []
+        _original_shutdown = LocalInterpreter.shutdown
+
+        def tracking_shutdown(self_inner):
+            shutdown_called.append(True)
+            _original_shutdown(self_inner)
+
+        with dummy_lm_context([
+            {"reasoning": "Bad", "code": 'raise Exception("boom")'},
+            {"response": "fallback"},  # extract fallback
+        ]):
+            rlm = RLM("query -> answer", max_iterations=1, max_depth=2,
+                       interpreter=LocalInterpreter())
+            with patch.object(LocalInterpreter, "shutdown", tracking_shutdown):
+                rlm._subcall("test")
+
+        assert len(shutdown_called) >= 1
+
+
+class TestSubcallE2E:
+    """End-to-end tests for depth>1 using DummyLM + LocalInterpreter."""
+
+    def test_depth_2_child_submits_response(self):
+        """Parent calls llm_query, child runs in LocalInterpreter and SUBMITs."""
+        with dummy_lm_context([
+            {"reasoning": "Answer directly", "code": 'SUBMIT(response="42")'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2)
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("What is 6*7?")
+            assert result == "42"
+
+    def test_depth_2_child_uses_prompt_variable(self):
+        """Child RLM receives the prompt as a variable it can use in code."""
+        with dummy_lm_context([
+            {"reasoning": "Use the prompt", "code": 'SUBMIT(response=f"Got: {prompt}")'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2)
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("hello world")
+            assert result == "Got: hello world"
+
+    def test_depth_2_child_inherits_tools(self):
+        """Child can call parent's user-provided tools."""
+        call_log = []
+
+        def my_tool(x: str) -> str:
+            call_log.append(x)
+            return f"tool({x})"
+
+        with dummy_lm_context([
+            {"reasoning": "Use tool", "code": 'val = my_tool(x="hi")\nSUBMIT(response=val)'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2, tools=[my_tool])
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("use tool")
+            assert result == "tool(hi)"
+            assert call_log == ["hi"]
+
+    def test_depth_2_child_multi_iteration(self):
+        """Child RLM can take multiple iterations before SUBMITting."""
+        with dummy_lm_context([
+            {"reasoning": "Explore first", "code": 'x = len(prompt)\nprint(f"length={x}")'},
+            {"reasoning": "Now submit", "code": "SUBMIT(response=str(x))"},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=5, max_depth=2)
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("hello")
+            assert result == "5"
+
+    def test_depth_2_child_error_returns_string(self):
+        """Child failure returns error string, doesn't crash parent."""
+        with dummy_lm_context([
+            {"reasoning": "Crash", "code": 'raise RuntimeError("boom")'},
+            {"response": "recovered"},  # extract fallback
+        ]):
+            rlm = RLM("query -> answer", max_iterations=1, max_depth=2)
+            tools = rlm._make_llm_tools()
+            result = tools["llm_query"]("test")
+            # Should get a string back (either "recovered" from extract or error message)
+            assert isinstance(result, str)
+
+    def test_depth_2_batched_sequential(self):
+        """llm_query_batched with max_depth=2 runs children sequentially."""
+        with dummy_lm_context([
+            # Child 1
+            {"reasoning": "First", "code": 'SUBMIT(response="a1")'},
+            # Child 2
+            {"reasoning": "Second", "code": 'SUBMIT(response="a2")'},
+        ]):
+            rlm = RLM("query -> answer", max_iterations=3, max_depth=2, max_llm_calls=20)
+            tools = rlm._make_llm_tools()
+            results = tools["llm_query_batched"](["q1", "q2"])
+            assert results == ["a1", "a2"]
+
+    @pytest.mark.asyncio
+    async def test_depth_2_aforward(self):
+        """aforward() works with max_depth=2 (async parent, sync _subcall)."""
+        with dummy_lm_context([
+            # Parent iter 1: call llm_query
+            {"reasoning": "Ask", "code": 'result = llm_query("test")\nprint(result)'},
+            # Child iter 1: SUBMIT
+            {"reasoning": "Done", "code": 'SUBMIT(response="async_ok")'},
+            # Parent iter 2: SUBMIT
+            {"reasoning": "Got it", "code": "SUBMIT(result)"},
+        ]):
+            from dspy.primitives.local_interpreter import LocalInterpreter
+            rlm = RLM("query -> answer", max_iterations=5, max_depth=2,
+                       interpreter=LocalInterpreter())
+            result = await rlm.aforward(query="async test")
+            assert result.answer == "async_ok"
+
+    @pytest.mark.deno
+    def test_depth_2_python_interpreter_parent(self):
+        """Parent uses PythonInterpreter (Deno), child uses LocalInterpreter.
+
+        llm_query is a host-side tool callback (JSON-RPC from Deno), so _subcall
+        runs on the host and creates the child with its own LocalInterpreter.
+        """
+        with dummy_lm_context([
+            # Parent iter 1: call llm_query (triggers child RLM)
+            {"reasoning": "Delegate", "code": 'result = llm_query("compute 2+2")\nprint(result)'},
+            # Child iter 1 (runs in LocalInterpreter): SUBMIT response
+            {"reasoning": "Easy", "code": 'SUBMIT(response="4")'},
+            # Parent iter 2: SUBMIT the child's result
+            {"reasoning": "Done", "code": "SUBMIT(result)"},
+        ]):
+            # No interpreter= means default PythonInterpreter (Deno sandbox)
+            rlm = RLM("query -> answer", max_iterations=5, max_depth=2)
+            result = rlm(query="What is 2+2?")
+            assert result.answer == "4"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

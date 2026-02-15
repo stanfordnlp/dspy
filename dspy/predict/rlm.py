@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Iterator
@@ -30,6 +31,16 @@ from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
 
+
+def _has_rlm_support(value):
+    """Check if a value is a dspy.Type with RLM sandbox support (to_sandbox protocol)."""
+    return hasattr(value, "to_sandbox") and callable(getattr(value, "to_sandbox", None))
+
+
+def _is_multimodal_type(value):
+    """Check if a value is a multimodal dspy.Type (Audio or Image) that can be sent to an LLM."""
+    return hasattr(value, "format") and callable(getattr(value, "format", None)) and _has_rlm_support(value)
+
 if TYPE_CHECKING:
 
     from dspy.signatures.signature import Signature
@@ -45,10 +56,12 @@ You have access to a Python REPL environment. Write Python code and it will be e
 
 Available:
 - Variables: {inputs} (your input data)
-- `llm_query(prompt)` - query a sub-LLM (~500K char capacity) for semantic analysis
-- `llm_query_batched(prompts)` - query multiple prompts concurrently (much faster for multiple queries)
+- `llm_query(prompt, model=None)` - query a sub-LLM (~500K char capacity) for semantic analysis{model_docs}
+- `llm_query_batched(prompts, model=None)` - query multiple prompts concurrently (much faster for multiple queries)
+- `llm_query_with_media(prompt, *media_var_names, model=None)` - query sub-LLM with media (audio/image) attached{media_docs}
 - `print()` - ALWAYS print to see results
 - `SUBMIT({final_output_names})` - submit final output when done
+- `budget()` - check remaining iterations, LLM calls, and time
 - Standard libraries: re, json, collections, math, etc.
 
 IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see the output, then you decide what to do next. Do NOT try to solve everything in one step.
@@ -56,11 +69,11 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 1. EXPLORE FIRST - Look at your data before processing it. Print samples, check types/lengths, understand the structure.
 2. ITERATE - Write small code snippets, observe outputs, then decide next steps. State persists between iterations.
 3. VERIFY BEFORE SUBMITTING - If results seem wrong (zeros, empty, unexpected), reconsider your approach.
-4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.
+4. USE llm_query FOR SEMANTICS - String matching finds WHERE things are; llm_query understands WHAT things mean.{media_guidelines}
 5. MINIMIZE RETYPING (INPUTS & OUTPUTS) - When values are long, precise, or error-prone (IDs, numbers, code, quotes), re-access them via variables and parse/compute in code instead of retyping. Use small, targeted prints to sanity-check, but avoid manual copying when variables can carry the exact value.
 6. SUBMIT ONLY AFTER SEEING OUTPUTS - SUBMIT ends the current run immediately. If you need to inspect printed output, run it in one step, review the result, then call SUBMIT in a later step.
 
-You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
+You have max {max_llm_calls} sub-LLM calls. Call budget() to check remaining resources. When done, call SUBMIT() with your output."""
 
 # Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
 _CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*)\n```\s*$", re.DOTALL)
@@ -104,10 +117,15 @@ class RLM(Module):
         max_iterations: int = 20,
         max_llm_calls: int = 50,
         max_output_chars: int = 10_000,
+        max_time: float | None = None,
+        max_cost: float | None = None,
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
+        sub_lms: dict[str, dspy.LM] | None = None,
         interpreter: CodeInterpreter | None = None,
+        depth: int = 0,
+        max_depth: int = 1,
     ):
         """
         Args:
@@ -116,21 +134,42 @@ class RLM(Module):
             max_iterations: Maximum REPL interaction iterations.
             max_llm_calls: Maximum sub-LLM calls (llm_query/llm_query_batched) per execution.
             max_output_chars: Maximum characters to include from REPL output.
+            max_time: Maximum wall-clock seconds per forward() call. None means no limit.
+                     The agent can check remaining time via budget().
+            max_cost: Maximum dollar cost per forward() call. None means no limit.
+                     Tracked via litellm's per-call cost reporting. The agent can
+                     check remaining cost via budget().
             verbose: Whether to log detailed execution info.
             tools: List of tool functions or dspy.Tool objects callable from interpreter code.
                   Built-in tools: llm_query(prompt), llm_query_batched(prompts).
-            sub_lm: LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
+            sub_lm: Default LM for llm_query/llm_query_batched. Defaults to dspy.settings.lm.
                    Allows using a different (e.g., cheaper) model for sub-queries.
+            sub_lms: Dict mapping model names to LM instances, enabling sandbox code to select
+                    a specific model via llm_query(prompt, model="name"). When model is None,
+                    falls back to sub_lm, then dspy.settings.lm.
             interpreter: CodeInterpreter implementation to use. Defaults to PythonInterpreter.
+            depth: Current recursion depth (0-indexed). Used internally when spawning child RLMs.
+            max_depth: Maximum recursion depth. When depth < max_depth - 1, llm_query spawns
+                      a child RLM with its own REPL (LocalInterpreter). At leaf depth, falls
+                      back to plain LM completion. Default 1 means no recursion (current behavior).
         """
         super().__init__()
         self.signature = ensure_signature(signature)
         self.max_iterations = max_iterations
         self.max_llm_calls = max_llm_calls
         self.max_output_chars = max_output_chars
+        self.max_time = max_time
+        self.max_cost = max_cost
         self.verbose = verbose
         self.sub_lm = sub_lm
+        self.sub_lms = sub_lms or {}
         self._interpreter = interpreter
+        if max_depth < 1:
+            raise ValueError(f"max_depth must be >= 1, got {max_depth}")
+        if depth < 0:
+            raise ValueError(f"depth must be >= 0, got {depth}")
+        self.depth = depth
+        self.max_depth = max_depth
         self._user_tools = self._normalize_tools(tools)
         self._validate_tools(self._user_tools)
 
@@ -144,7 +183,7 @@ class RLM(Module):
     # =========================================================================
 
     # Reserved tool names that conflict with built-in sandbox functions
-    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "SUBMIT", "print"})
+    _RESERVED_TOOL_NAMES = frozenset({"llm_query", "llm_query_batched", "llm_query_with_media", "SUBMIT", "print", "budget"})
 
     def _normalize_tools(self, tools: list[Callable] | None) -> dict[str, Tool]:
         """Normalize tools list to a dict of Tool objects keyed by name."""
@@ -171,7 +210,7 @@ class RLM(Module):
 
     def _validate_tools(self, tools: dict[str, Tool]) -> None:
         """Validate user-provided tools have valid names."""
-        for name, tool in tools.items():
+        for name, _tool in tools.items():
             if not name.isidentifier():
                 raise ValueError(f"Invalid tool name '{name}': must be a valid Python identifier")
             if name in self._RESERVED_TOOL_NAMES:
@@ -198,11 +237,57 @@ class RLM(Module):
 
         return "\n".join(lines)
 
-    def _make_llm_tools(self, max_workers: int = 8) -> dict[str, Callable]:
-        """Create llm_query and llm_query_batched tools with a fresh call counter."""
+    def _make_llm_tools(
+        self,
+        multimodal_registry: dict[str, Any] | None = None,
+        max_workers: int = 8,
+        execution_state: dict[str, Any] | None = None,
+    ) -> dict[str, Callable]:
+        """Create llm_query, llm_query_batched, llm_query_with_media, and budget tools with a fresh call counter.
+
+        Args:
+            multimodal_registry: Dict mapping variable names to multimodal objects (any dspy.Type
+                           with format() and to_sandbox() methods, e.g. Audio, Image).
+                           Used by llm_query_with_media to attach media to sub-LLM calls.
+            max_workers: Max concurrent workers for batched queries.
+            execution_state: Mutable dict tracking iteration/time state. Keys:
+                            'start_time' (float), 'iteration' (int). Updated by forward().
+        """
         state = {"call_count": 0}
         lock = threading.Lock()
-        lm = self.sub_lm
+        _execution_state = execution_state or {}
+        default_lm = self.sub_lm
+        named_lms = self.sub_lms
+        _multimodal_registry = multimodal_registry or {}
+
+        # Snapshot LM history lengths for cost tracking.
+        # We'll sum cost from entries added after these offsets.
+        _all_lms: list[dspy.LM] = []
+        if default_lm is not None:
+            _all_lms.append(default_lm)
+        for lm_inst in named_lms.values():
+            if lm_inst not in _all_lms:
+                _all_lms.append(lm_inst)
+        if not _all_lms and dspy.settings.lm is not None:
+            _all_lms.append(dspy.settings.lm)
+        _history_offsets = {id(lm_inst): len(lm_inst.history) for lm_inst in _all_lms}
+
+        def _resolve_lm(model: str | None = None) -> dspy.LM:
+            """Resolve a model name to an LM instance.
+
+            Resolution order: named sub_lms[model] → sub_lm → dspy.settings.lm.
+            """
+            if model is not None:
+                if model in named_lms:
+                    return named_lms[model]
+                available = list(named_lms.keys())
+                raise ValueError(
+                    f"Model '{model}' not found in sub_lms. Available models: {available}"
+                )
+            target_lm = default_lm if default_lm is not None else dspy.settings.lm
+            if target_lm is None:
+                raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+            return target_lm
 
         def _check_and_increment(n: int = 1) -> None:
             with lock:
@@ -213,10 +298,8 @@ class RLM(Module):
                     )
                 state["call_count"] += n
 
-        def _query_lm(prompt: str) -> str:
-            target_lm = lm if lm is not None else dspy.settings.lm
-            if target_lm is None:
-                raise RuntimeError("No LM configured. Use dspy.configure(lm=...) or pass sub_lm to RLM.")
+        def _query_lm(prompt: str, model: str | None = None) -> str:
+            target_lm = _resolve_lm(model)
             response = target_lm(prompt)
             if isinstance(response, list) and response:
                 item = response[0]
@@ -225,22 +308,75 @@ class RLM(Module):
                 return item
             return str(response)
 
-        def llm_query(prompt: str) -> str:
-            """Query the LLM with a prompt string."""
+        def _query_lm_multimodal(prompt: str, multimodal_objects: list, model: str | None = None) -> str:
+            """Query the LLM with a prompt string and multimodal content parts."""
+            target_lm = _resolve_lm(model)
+
+            # Build multimodal content: text prompt + media content parts
+            content_parts = [{"type": "text", "text": prompt}]
+            for obj in multimodal_objects:
+                content_parts.extend(obj.format())
+
+            messages = [{"role": "user", "content": content_parts}]
+            response = target_lm(messages=messages)
+            if isinstance(response, list) and response:
+                item = response[0]
+                if isinstance(item, dict) and "text" in item:
+                    return item["text"]
+                return item
+            return str(response)
+
+        # Determine if llm_query should spawn recursive child RLMs
+        _use_recursive = self.depth < self.max_depth - 1
+
+        def _do_subcall(prompt: str, model: str | None = None) -> str:
+            """Route subcall through the instance method, passing execution state."""
+            return self._subcall(prompt, model=model, execution_state=_execution_state, resolve_lm=_resolve_lm)
+
+        def llm_query(prompt: str, model: str | None = None) -> str:
+            """Query the LLM with a prompt string.
+
+            At depth < max_depth - 1, spawns a child RLM with its own REPL.
+            At leaf depth, makes a plain LM completion call.
+
+            Args:
+                prompt: The text prompt for the LLM.
+                model: Optional model name from sub_lms to use. Defaults to the default sub_lm.
+            """
             if not prompt:
                 raise ValueError("prompt cannot be empty")
             _check_and_increment(1)
-            return _query_lm(prompt)
+            if _use_recursive:
+                return _do_subcall(prompt, model=model)
+            return _query_lm(prompt, model=model)
 
-        def llm_query_batched(prompts: list[str]) -> list[str]:
-            """Query the LLM with multiple prompts concurrently."""
+        def llm_query_batched(prompts: list[str], model: str | None = None) -> list[str]:
+            """Query the LLM with multiple prompts concurrently.
+
+            At depth < max_depth - 1, each prompt spawns a child RLM (sequential).
+            At leaf depth, prompts are sent as plain LM calls (parallel).
+
+            Args:
+                prompts: List of prompts to send to the LLM.
+                model: Optional model name from sub_lms to use. Defaults to the default sub_lm.
+            """
             if not prompts:
                 return []
             _check_and_increment(len(prompts))
 
+            if _use_recursive:
+                # Sequential: each child spawns its own LocalInterpreter
+                results = []
+                for p in prompts:
+                    try:
+                        results.append(_do_subcall(p, model=model))
+                    except Exception as e:
+                        results.append(f"[ERROR] {e}")
+                return results
+
             results: dict[int, str] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_idx = {executor.submit(_query_lm, p): i for i, p in enumerate(prompts)}
+                future_to_idx = {executor.submit(_query_lm, p, model): i for i, p in enumerate(prompts)}
                 for future in as_completed(future_to_idx):
                     idx = future_to_idx[future]
                     try:
@@ -249,7 +385,130 @@ class RLM(Module):
                         results[idx] = f"[ERROR] {e}"
             return [results[i] for i in range(len(prompts))]
 
-        return {"llm_query": llm_query, "llm_query_batched": llm_query_batched}
+        def llm_query_with_media(prompt: str, *media_var_names: str, model: str | None = None) -> str:
+            """Query the LLM with a prompt and multimodal variables (audio/image).
+
+            Args:
+                prompt: The text prompt for the LLM.
+                *media_var_names: Names of multimodal variables to include (e.g., 'audio_input', 'my_image').
+                    These must be names of input variables that have multimodal content (Audio, Image, etc.).
+                model: Optional model name from sub_lms to use. Defaults to the default sub_lm.
+
+            Returns:
+                The LLM's text response.
+            """
+            if not prompt:
+                raise ValueError("prompt cannot be empty")
+            if not media_var_names:
+                raise ValueError(
+                    "At least one media variable name is required. "
+                    f"Available media variables: {list(_multimodal_registry.keys())}"
+                )
+
+            # Resolve multimodal objects from the registry
+            multimodal_objects = []
+            for var_name in media_var_names:
+                if var_name not in _multimodal_registry:
+                    available = list(_multimodal_registry.keys())
+                    raise ValueError(
+                        f"Media variable '{var_name}' not found. Available media variables: {available}"
+                    )
+                multimodal_objects.append(_multimodal_registry[var_name])
+
+            _check_and_increment(1)
+            return _query_lm_multimodal(prompt, multimodal_objects, model=model)
+
+        max_iterations = self.max_iterations
+        max_llm_calls = self.max_llm_calls
+        max_time = self.max_time
+        max_cost = self.max_cost
+
+        def _get_cost_and_tokens() -> tuple[float, int]:
+            """Sum cost and tokens from LM history entries added since tool creation.
+
+            Aggregates both the provider cost (litellm response_cost) and the upstream
+            inference cost (e.g. OpenRouter BYOK → Vertex). For BYOK providers where
+            response_cost is 0, the upstream cost is the actual charge.
+            """
+            total_cost = 0.0
+            total_tokens = 0
+            for lm_inst in _all_lms:
+                offset = _history_offsets.get(id(lm_inst), 0)
+                for entry in lm_inst.history[offset:]:
+                    entry_cost = 0.0
+                    cost = entry.get("cost")
+                    if cost:
+                        entry_cost += cost
+                    usage = entry.get("usage", {})
+                    if isinstance(usage, dict):
+                        cost_details = usage.get("cost_details")
+                        if isinstance(cost_details, dict):
+                            upstream = cost_details.get("upstream_inference_cost")
+                            if upstream:
+                                entry_cost += upstream
+                    total_cost += entry_cost
+                    total_tokens += usage.get("total_tokens", 0) if isinstance(usage, dict) else 0
+            return total_cost, total_tokens
+
+        def budget() -> str:
+            """Check remaining execution budget: iterations, LLM calls, time, and cost.
+
+            Returns a human-readable summary of remaining resources.
+            Includes warnings when any resource drops below 20% remaining.
+            """
+            with lock:
+                calls_used = state["call_count"]
+
+            iteration = _execution_state.get("iteration", 0)
+            remaining_iterations = max_iterations - iteration - 1  # -1 for current
+            remaining_calls = max_llm_calls - calls_used
+
+            warnings = []
+            parts = [
+                f"Iterations: {remaining_iterations}/{max_iterations} remaining",
+                f"LLM calls: {remaining_calls}/{max_llm_calls} remaining",
+            ]
+
+            if remaining_iterations <= max(1, max_iterations * 0.2):
+                warnings.append(f"iterations ({remaining_iterations} left)")
+            if remaining_calls <= max(1, max_llm_calls * 0.2):
+                warnings.append(f"LLM calls ({remaining_calls} left)")
+
+            start_time = _execution_state.get("start_time")
+            if max_time is not None and start_time is not None:
+                elapsed = _time.monotonic() - start_time
+                remaining_time = max(0.0, max_time - elapsed)
+                parts.append(f"Time: {remaining_time:.1f}s/{max_time:.1f}s remaining ({elapsed:.1f}s elapsed)")
+                if remaining_time <= max_time * 0.2:
+                    warnings.append(f"time ({remaining_time:.0f}s left)")
+            elif start_time is not None:
+                elapsed = _time.monotonic() - start_time
+                parts.append(f"Time: no limit ({elapsed:.1f}s elapsed)")
+
+            cost_spent, tokens_used = _get_cost_and_tokens()
+            if max_cost is not None:
+                remaining_cost = max(0.0, max_cost - cost_spent)
+                parts.append(f"Cost: ${remaining_cost:.4f}/${max_cost:.4f} remaining (${cost_spent:.4f} spent, {tokens_used:,} tokens)")
+                if remaining_cost <= max_cost * 0.2:
+                    warnings.append(f"cost (${remaining_cost:.4f} left)")
+            elif cost_spent > 0:
+                parts.append(f"Cost: no limit (${cost_spent:.4f} spent, {tokens_used:,} tokens)")
+
+            result = " | ".join(parts)
+            if warnings:
+                result = f"⚠ LOW: {', '.join(warnings)}. Wrap up soon! | " + result
+            return result
+
+        # Expose cost tracker to forward() for budget enforcement
+        _execution_state["_get_cost_and_tokens"] = _get_cost_and_tokens
+
+        tools = {
+            "llm_query": llm_query,
+            "llm_query_batched": llm_query_batched,
+            "llm_query_with_media": llm_query_with_media,
+            "budget": budget,
+        }
+        return tools
 
     @property
     def tools(self) -> dict[str, Tool]:
@@ -259,6 +518,23 @@ class RLM(Module):
     # =========================================================================
     # Signature Building
     # =========================================================================
+
+    def _detect_multimodal_fields(self) -> dict[str, str]:
+        """Detect input fields that are multimodal dspy.Type subclasses (Audio, Image, etc.).
+
+        Uses the generic to_sandbox() protocol — any dspy.Type with to_sandbox() and format()
+        is considered multimodal media that can be sent to an LLM via llm_query_with_media().
+
+        Returns:
+            Dict mapping field name to type name (e.g., {'audio_input': 'Audio', 'photo': 'Image'}).
+        """
+        multimodal_fields = {}
+        for name, field in self.signature.input_fields.items():
+            annotation = getattr(field, "annotation", None)
+            if annotation is not None and isinstance(annotation, type) and issubclass(annotation, dspy.Type):
+                if hasattr(annotation, "to_sandbox") and hasattr(annotation, "format"):
+                    multimodal_fields[name] = annotation.__name__
+        return multimodal_fields
 
     def _build_signatures(self) -> tuple[Signature, Signature]:
         """Build the action and extract signatures from templates."""
@@ -278,10 +554,35 @@ class RLM(Module):
         # Format tool documentation for user-provided tools
         tool_docs = self._format_tool_docs(self._user_tools)
 
+        # Detect multimodal fields and build media-specific instructions
+        multimodal_fields = self._detect_multimodal_fields()
+        if multimodal_fields:
+            media_var_list = ", ".join(f"'{name}'" for name in multimodal_fields)
+            media_docs_str = (
+                f"\n  Media variables: {media_var_list}. The sub-LLM can see/hear the media content."
+            )
+            media_guidelines_str = (
+                f"\n   FOR MEDIA INPUTS: Variables like {media_var_list} are media objects. "
+                f"In the sandbox they appear as descriptor strings — you CANNOT decode or process them as raw data. "
+                f"Use `llm_query_with_media(prompt, {next(iter(multimodal_fields.keys()))!r})` to send media to a sub-LLM that can perceive it."
+            )
+        else:
+            media_docs_str = ""
+            media_guidelines_str = ""
+
+        # Document available model names if sub_lms is configured
+        if self.sub_lms:
+            model_names = ", ".join(f"'{name}'" for name in self.sub_lms)
+            model_docs_str = f"\n  Available models: {model_names}. Pass model=<name> to select one."
+        else:
+            model_docs_str = ""
+
         action_sig = (
             dspy.Signature({}, task_instructions + ACTION_INSTRUCTIONS_TEMPLATE.format(
                 inputs=inputs_str, final_output_names=final_output_names, output_fields=output_fields,
                 max_llm_calls=self.max_llm_calls,
+                media_docs=media_docs_str, media_guidelines=media_guidelines_str,
+                model_docs=model_docs_str,
             ) + tool_docs)
             .append("variables_info", dspy.InputField(desc="Metadata about the variables available in the REPL"), type_=str)
             .append("repl_history", dspy.InputField(desc="Previous REPL code executions and their outputs"), type_=REPLHistory)
@@ -327,12 +628,49 @@ class RLM(Module):
             fields.append(field_info)
         return fields
 
+    def _wrap_rlm_inputs(self, input_args: dict[str, Any]) -> dict[str, Any]:
+        """Auto-wrap raw values into their annotated dspy.Type when the type has RLM support.
+
+        For example, if a field is annotated as dspy.DataFrame and the user passes a raw
+        pandas DataFrame, wrap it into dspy.DataFrame so the interpreter can use to_sandbox().
+        """
+        wrapped = {}
+        for name, value in input_args.items():
+            field = self.signature.input_fields.get(name)
+            if field is None:
+                wrapped[name] = value
+                continue
+
+            annotation = getattr(field, "annotation", None)
+            # Check if the annotation is a dspy.Type subclass with RLM support
+            if (
+                annotation is not None
+                and isinstance(annotation, type)
+                and issubclass(annotation, dspy.Type)
+                and hasattr(annotation, "to_sandbox")
+                and not isinstance(value, annotation)
+            ):
+                try:
+                    wrapped[name] = annotation(value)
+                except (TypeError, ValueError):
+                    wrapped[name] = value
+            else:
+                wrapped[name] = value
+        return wrapped
+
     def _build_variables(self, **input_args: Any) -> list[REPLVariable]:
         """Build REPLVariable list from input arguments with field metadata."""
         variables = []
         for name, value in input_args.items():
             field_info = self.signature.input_fields.get(name)
-            variables.append(REPLVariable.from_value(name, value, field_info=field_info))
+            if hasattr(value, "rlm_preview") and callable(getattr(value, "rlm_preview", None)):
+                # Use rlm_preview() for types with RLM support (gives better LLM context)
+                preview = value.rlm_preview()
+                var = REPLVariable.from_value(name, value, field_info=field_info)
+                var = var.model_copy(update={"preview": preview, "total_length": len(preview)})
+            else:
+                var = REPLVariable.from_value(name, value, field_info=field_info)
+            variables.append(var)
         return variables
 
     def _format_output(self, output: str) -> str:
@@ -350,9 +688,31 @@ class RLM(Module):
     # CodeInterpreter Lifecycle
     # =========================================================================
 
-    def _prepare_execution_tools(self) -> dict[str, Callable]:
+    def _build_multimodal_registry(self, input_args: dict[str, Any]) -> dict[str, Any]:
+        """Extract multimodal objects from inputs into a registry.
+
+        Any dspy.Type with both format() (for LLM content parts) and to_sandbox() (for
+        sandbox injection) is considered multimodal and eligible for llm_query_with_media().
+
+        Returns:
+            Dict mapping variable names to their multimodal objects.
+        """
+        registry = {}
+        for name, value in input_args.items():
+            if _is_multimodal_type(value):
+                registry[name] = value
+        return registry
+
+    def _prepare_execution_tools(
+        self,
+        multimodal_registry: dict[str, Any] | None = None,
+        execution_state: dict[str, Any] | None = None,
+    ) -> dict[str, Callable]:
         """Create fresh LLM tools and merge with user-provided tools."""
-        execution_tools = self._make_llm_tools()
+        execution_tools = self._make_llm_tools(
+            multimodal_registry=multimodal_registry,
+            execution_state=execution_state,
+        )
         # Extract underlying functions from Tool objects for the interpreter
         execution_tools.update({name: tool.func for name, tool in self._user_tools.items()})
         return execution_tools
@@ -370,6 +730,93 @@ class RLM(Module):
         # Reset registration flag to force re-registration with fresh tools
         if hasattr(interpreter, "_tools_registered"):
             interpreter._tools_registered = False
+
+    def _subcall(
+        self,
+        prompt: str,
+        model: str | None = None,
+        execution_state: dict[str, Any] | None = None,
+        resolve_lm: Callable | None = None,
+    ) -> str:
+        """Spawn a child RLM with its own LocalInterpreter REPL.
+
+        Called by llm_query/llm_query_batched when depth < max_depth - 1.
+        The child gets a fresh REPL and can write code, call llm_query (which
+        recurses further or falls back to plain LM at leaf depth), and SUBMIT
+        a response. Mirrors the vanilla RLM's _subcall pattern.
+
+        Args:
+            prompt: The prompt to pass as the child's input.
+            model: Optional model name. Selects child's sub_lm via resolve_lm.
+            execution_state: Parent's mutable execution state (start_time, cost tracker).
+            resolve_lm: Closure from _make_llm_tools that resolves model name to LM instance.
+
+        Returns:
+            The child's response string, or an error string on failure.
+        """
+        from dspy.primitives.local_interpreter import LocalInterpreter
+
+        _execution_state = execution_state or {}
+
+        # Calculate remaining time budget for child
+        remaining_time = None
+        if self.max_time is not None:
+            start = _execution_state.get("start_time")
+            if start is not None:
+                elapsed = _time.monotonic() - start
+                remaining_time = max(0.0, self.max_time - elapsed)
+                if remaining_time <= 0:
+                    return "Error: Time budget exhausted"
+
+        # Calculate remaining cost budget for child
+        remaining_cost = None
+        if self.max_cost is not None:
+            get_cost = _execution_state.get("_get_cost_and_tokens")
+            if get_cost is not None:
+                cost_spent, _ = get_cost()
+                remaining_cost = max(0.0, self.max_cost - cost_spent)
+                if remaining_cost <= 0:
+                    return "Error: Cost budget exhausted"
+
+        # Resolve child's sub_lm: model param selects which LM the child uses
+        child_sub_lm = resolve_lm(model) if (model and resolve_lm) else self.sub_lm
+
+        # Match parent's interpreter type: if parent uses LocalInterpreter (or a
+        # custom interpreter), child gets a fresh LocalInterpreter. If parent uses
+        # the default PythonInterpreter (Deno sandbox), child gets its own
+        # PythonInterpreter so sandboxing is preserved.
+        if isinstance(self._interpreter, LocalInterpreter):
+            interpreter = LocalInterpreter()
+        elif self._interpreter is None:
+            # Parent uses default PythonInterpreter — child gets one too
+            interpreter = PythonInterpreter()
+        else:
+            # Custom interpreter — can't clone, fall back to LocalInterpreter
+            interpreter = LocalInterpreter()
+
+        child = RLM(
+            signature="prompt -> response",
+            max_iterations=self.max_iterations,
+            max_llm_calls=self.max_llm_calls,
+            max_output_chars=self.max_output_chars,
+            max_time=remaining_time,
+            max_cost=remaining_cost,
+            verbose=self.verbose,
+            tools=list(self._user_tools.values()) if self._user_tools else None,
+            sub_lm=child_sub_lm,
+            sub_lms=self.sub_lms,
+            interpreter=interpreter,
+            depth=self.depth + 1,
+            max_depth=self.max_depth,
+        )
+
+        try:
+            result = child(prompt=prompt)
+            return result.response
+        except Exception as e:
+            return f"Error: Child RLM failed - {e}"
+        finally:
+            interpreter.shutdown()
 
     @contextmanager
     def _interpreter_context(self, execution_tools: dict[str, Callable]) -> Iterator[CodeInterpreter]:
@@ -547,17 +994,51 @@ class RLM(Module):
 
         Raises:
             ValueError: If required input fields are missing
+            RuntimeError: If max_time budget is exceeded
         """
         self._validate_inputs(input_args)
+        input_args = self._wrap_rlm_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
-        execution_tools = self._prepare_execution_tools()
+        multimodal_registry = self._build_multimodal_registry(input_args)
+
+        # Mutable execution state — shared with budget() tool via closure
+        execution_state = {"start_time": _time.monotonic(), "iteration": 0}
+
+        execution_tools = self._prepare_execution_tools(
+            multimodal_registry=multimodal_registry,
+            execution_state=execution_state,
+        )
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
+                execution_state["iteration"] = iteration
+
+                # Check time budget before starting iteration
+                if self.max_time is not None:
+                    elapsed = _time.monotonic() - execution_state["start_time"]
+                    if elapsed > self.max_time:
+                        logger.warning(
+                            f"RLM time budget exceeded ({elapsed:.1f}s > {self.max_time:.1f}s) "
+                            f"at iteration {iteration + 1}, using extract fallback"
+                        )
+                        return self._extract_fallback(variables, history, output_field_names)
+
+                # Check cost budget before starting iteration
+                if self.max_cost is not None:
+                    get_cost = execution_state.get("_get_cost_and_tokens")
+                    if get_cost is not None:
+                        cost_spent, _ = get_cost()
+                        if cost_spent > self.max_cost:
+                            logger.warning(
+                                f"RLM cost budget exceeded (${cost_spent:.4f} > ${self.max_cost:.4f}) "
+                                f"at iteration {iteration + 1}, using extract fallback"
+                            )
+                            return self._extract_fallback(variables, history, output_field_names)
+
                 result: Prediction | REPLHistory = self._execute_iteration(
                     repl, variables, history, iteration, input_args, output_field_names
                 )
@@ -630,17 +1111,51 @@ class RLM(Module):
 
         Raises:
             ValueError: If required input fields are missing
+            RuntimeError: If max_time budget is exceeded
         """
         self._validate_inputs(input_args)
+        input_args = self._wrap_rlm_inputs(input_args)
 
         output_field_names = list(self.signature.output_fields.keys())
-        execution_tools = self._prepare_execution_tools()
+        multimodal_registry = self._build_multimodal_registry(input_args)
+
+        # Mutable execution state — shared with budget() tool via closure
+        execution_state = {"start_time": _time.monotonic(), "iteration": 0}
+
+        execution_tools = self._prepare_execution_tools(
+            multimodal_registry=multimodal_registry,
+            execution_state=execution_state,
+        )
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
+                execution_state["iteration"] = iteration
+
+                # Check time budget before starting iteration
+                if self.max_time is not None:
+                    elapsed = _time.monotonic() - execution_state["start_time"]
+                    if elapsed > self.max_time:
+                        logger.warning(
+                            f"RLM time budget exceeded ({elapsed:.1f}s > {self.max_time:.1f}s) "
+                            f"at iteration {iteration + 1}, using extract fallback"
+                        )
+                        return await self._aextract_fallback(variables, history, output_field_names)
+
+                # Check cost budget before starting iteration
+                if self.max_cost is not None:
+                    get_cost = execution_state.get("_get_cost_and_tokens")
+                    if get_cost is not None:
+                        cost_spent, _ = get_cost()
+                        if cost_spent > self.max_cost:
+                            logger.warning(
+                                f"RLM cost budget exceeded (${cost_spent:.4f} > ${self.max_cost:.4f}) "
+                                f"at iteration {iteration + 1}, using extract fallback"
+                            )
+                            return await self._aextract_fallback(variables, history, output_field_names)
+
                 result = await self._aexecute_iteration(
                     repl, variables, history, iteration, input_args, output_field_names
                 )

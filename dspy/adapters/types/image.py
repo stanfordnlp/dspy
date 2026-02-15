@@ -115,6 +115,31 @@ class Image(Type):
             return f"Image(url=data:image/{image_type};base64,<IMAGE_BASE_64_ENCODED({len_base64!s})>)"
         return f"Image(url='{self.url}')"
 
+    # RLM Sandbox Support
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        """Generate LLM-friendly preview of Image contents."""
+        if "base64" in self.url:
+            len_base64 = len(self.url.split("base64,")[1])
+            image_type = self.url.split(";")[0].split("/")[-1]
+            return f"<Image: format={image_type}, {len_base64} base64 chars>"
+        return f"<Image: url={self.url[:max_chars]}>"
+
+    def to_sandbox(self) -> bytes:
+        """Serialize Image for sandbox injection (descriptor string, not raw data).
+
+        Image data cannot be meaningfully processed as code in the sandbox.
+        The agent should use llm_query() with multimodal content to perceive images.
+        """
+        return self.rlm_preview().encode("utf-8")
+
+    def sandbox_setup(self) -> str:
+        return ""
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        """Return code that assigns the image descriptor string in the sandbox."""
+        return f"{var_name} = {data_expr}"
+
 
 def is_url(string: str) -> bool:
     """Check if a string is a valid URL."""
