@@ -2,7 +2,9 @@ import logging
 import os
 import re
 import threading
+import uuid
 import warnings
+from contextvars import ContextVar
 from typing import Any, Literal, cast
 
 import litellm
@@ -81,6 +83,11 @@ class LM(BaseLM):
         self.train_kwargs = train_kwargs or {}
         self.use_developer_role = use_developer_role
         self._warned_zero_temp_rollout = False
+
+        self._local_history: ContextVar[list | None] = ContextVar(
+            f"local_history_{uuid.uuid4().hex}",
+            default=None,
+        )
 
         # Handle model-specific configuration for different model families
         model_family = model.split("/")[-1].lower() if "/" in model else model.lower()
