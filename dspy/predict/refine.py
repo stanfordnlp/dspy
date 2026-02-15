@@ -19,6 +19,8 @@ class OfferFeedback(Signature):
     it were to receive the same or similar inputs. If a module is not to blame, the advice should be N/A.
     The module will not see its own history, so it needs to rely on entirely concrete and actionable advice from you
     to avoid the same mistake on the same or similar inputs.
+
+    IMPORTANT: Focus on fixing the specific error mentioned in reward_feedback. Do not restart from scratch.
     """
 
     program_code: str = InputField(desc="The code of the program that we are analyzing")
@@ -29,23 +31,25 @@ class OfferFeedback(Signature):
     reward_code: str = InputField(desc="The code of the reward function that we are analyzing")
     target_threshold: float = InputField(desc="The target threshold for the reward function")
     reward_value: float = InputField(desc="The reward value assigned to the program's outputs")
+    reward_feedback: str = InputField(desc="Specific feedback explaining what went wrong and needs to be fixed")
     module_names: list[str] = InputField(desc="The names of the modules in the program, for which we seek advice")
     discussion: str = OutputField(desc="Discussing blame of where each module went wrong, if it did")
     advice: dict[str, str] = OutputField(
         desc="For each module, describe very concretely, in this order: the specific scenarios in which it has made "
-        "mistakes in the past and what each mistake was, followed by what it should do differently in that kind of"
-        "scenario in the future. If the module is not to blame, write N/A."
+             "mistakes in the past and what each mistake was, followed by what it should do differently in that kind of "
+             "scenario in the future. If the module is not to blame, write N/A. "
+             "IMPORTANT: Focus on fixing the specific error, do not suggest restarting from scratch."
     )
 
 
 class Refine(Module):
     def __init__(
-        self,
-        module: Module,
-        N: int,  # noqa: N803
-        reward_fn: Callable[[dict, Prediction], float],
-        threshold: float,
-        fail_count: int | None = None,
+            self,
+            module: Module,
+            N: int,  # noqa: N803
+            reward_fn: Callable[[dict, Prediction], float] | Callable[[dict, Prediction], Prediction],
+            threshold: float,
+            fail_count: int | None = None,
     ):
         """
         Refines a module by running it up to N times with different rollout IDs at `temperature=1.0`
@@ -55,16 +59,17 @@ class Refine(Module):
         either the first prediction that exceeds the specified threshold or the one with the highest reward.
         If no prediction meets the threshold, it automatically generates feedback to improve future predictions.
 
-
         Args:
             module (Module): The module to refine.
-            N (int): The number of times to run the module. must
-            reward_fn (Callable): The reward function.
+            N (int): The number of times to run the module.
+            reward_fn (Callable): The reward function. Can return:
+                - A simple float score
+                - A Prediction with `score` and optional `feedback` attributes
             threshold (float): The threshold for the reward function.
             fail_count (Optional[int], optional): The number of times the module can fail before raising an error
 
         Example:
-            ```python
+```python
             import dspy
 
             dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
@@ -72,17 +77,27 @@ class Refine(Module):
             # Define a QA module with chain of thought
             qa = dspy.ChainOfThought("question -> answer")
 
-            # Define a reward function that checks for one-word answers
-            def one_word_answer(args, pred):
+            # Option 1: Simple reward function returning a float
+            def simple_reward(args, pred):
                 return 1.0 if len(pred.answer.split()) == 1 else 0.0
 
+            # Option 2: Reward function returning a Prediction with feedback
+            def prediction_reward(args, pred):
+                if len(pred.answer.split()) == 1:
+                    return dspy.Prediction(score=1.0, feedback="Answer is correctly one word")
+                else:
+                    return dspy.Prediction(
+                        score=0.0,
+                        feedback=f"Answer has {len(pred.answer.split())} words, expected 1"
+                    )
+
             # Create a refined module that tries up to 3 times
-            best_of_3 = dspy.Refine(module=qa, N=3, reward_fn=one_word_answer, threshold=1.0)
+            best_of_3 = dspy.Refine(module=qa, N=3, reward_fn=prediction_reward, threshold=1.0)
 
             # Use the refined module
             result = best_of_3(question="What is the capital of Belgium?").answer
             # Returns: Brussels
-            ```
+```
         """
         self.module = module
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
@@ -95,6 +110,29 @@ class Refine(Module):
         except TypeError:
             self.reward_fn_code = inspect.getsource(reward_fn.__class__)
 
+    def _parse_reward_result(self, result) -> tuple[float, str]:
+        """
+        Parse the reward function result into (score, feedback).
+
+        Supports:
+            - float: Simple score, generates default feedback
+            - Prediction: Object with `score` and optional `feedback` attributes
+
+        Returns:
+            tuple[float, str]: (reward_score, reward_feedback)
+        """
+        if isinstance(result, Prediction):
+            reward = result.score
+            reward_feedback = getattr(
+                result, "feedback",
+                f"Reward {reward} is below threshold {self.threshold}"
+            )
+        else:
+            reward = float(result)
+            reward_feedback = f"Reward {reward} is below threshold {self.threshold}"
+
+        return reward, reward_feedback
+
     def forward(self, **kwargs):
         lm = self.module.get_lm() or dspy.settings.lm
         start = lm.kwargs.get("rollout_id", 0)
@@ -102,6 +140,7 @@ class Refine(Module):
         best_pred, best_trace, best_reward = None, None, -float("inf")
         advice = None
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
+        fail_count = self.fail_count
 
         for idx, rid in enumerate(rollout_ids):
             lm_ = lm.copy(rollout_id=rid, temperature=1.0)
@@ -134,7 +173,8 @@ class Refine(Module):
                     # TODO: Remove the hint from the trace, if it's there.
 
                     # NOTE: Not including the trace of reward_fn.
-                    reward = self.reward_fn(kwargs, outputs)
+                    result = self.reward_fn(kwargs, outputs)
+                    reward, reward_feedback = self._parse_reward_result(result)
 
                 if reward > best_reward:
                     best_reward, best_pred, best_trace = reward, outputs, trace
@@ -152,13 +192,14 @@ class Refine(Module):
                     "program_trajectory": trajectory,
                     "program_outputs": dict(outputs),
                 }
-                reward = {
+                reward_info = {
                     "reward_code": self.reward_fn_code,
                     "target_threshold": self.threshold,
                     "reward_value": reward,
+                    "reward_feedback": reward_feedback,
                 }
 
-                advise_kwargs = dict(**modules, **trajectory, **reward, module_names=module_names)
+                advise_kwargs = dict(**modules, **trajectory, **reward_info, module_names=module_names)
                 # only dumps if it's a list or dict
                 advise_kwargs = {
                     k: v if isinstance(v, str) else orjson.dumps(recursive_mask(v), option=orjson.OPT_INDENT_2).decode()
@@ -169,9 +210,10 @@ class Refine(Module):
 
             except Exception as e:
                 print(f"Refine: Attempt failed with rollout id {rid}: {e}")
-                if idx > self.fail_count:
+                if idx > fail_count:
                     raise e
-                self.fail_count -= 1
+                fail_count -= 1
+
         if best_trace:
             dspy.settings.trace.extend(best_trace)
         return best_pred
