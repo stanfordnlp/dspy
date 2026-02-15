@@ -1,13 +1,23 @@
-from typing import Any
+from typing import Any, TypeVar
 
 from dspy.primitives import Example, Module
+
+M = TypeVar("M", bound=Module)
 
 
 class Teleprompter:
     def __init__(self):
         pass
 
-    def compile(self, student: Module, *, trainset: list[Example], teacher: Module | None = None, valset: list[Example] | None = None, **kwargs) -> Module:
+    def compile(
+        self,
+        student: M,
+        *,
+        trainset: list[Example],
+        teacher: Module | None = None,
+        valset: list[Example] | None = None,
+        **kwargs,
+    ) -> M:
         """
         Optimize the student program.
 

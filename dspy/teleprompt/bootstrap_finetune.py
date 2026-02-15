@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
 import dspy
 from dspy.adapters.base import Adapter
@@ -15,6 +15,8 @@ from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
 from dspy.teleprompt.teleprompt import Teleprompter
 
 logger = logging.getLogger(__name__)
+
+M = TypeVar("M", bound=Module)
 
 
 class FinetuneTeleprompter(Teleprompter):
@@ -57,9 +59,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         self.exclude_demos = exclude_demos
         self.num_threads = num_threads
 
-    def compile(
-        self, student: Module, trainset: list[Example], teacher: Module | list[Module] | None = None
-    ) -> Module:
+    def compile(self, student: M, trainset: list[Example], teacher: Module | list[Module] | None = None) -> M:
         # TODO: Print statements can be converted to logger.info if we ensure
         # that the default DSPy logger logs info level messages in notebook
         # environments.
