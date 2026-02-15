@@ -27,7 +27,6 @@ def test_semantic_f1_returns_prediction_without_trace():
     metric = SemanticF1()
     result = metric(example, pred)
 
-    # Verify the result is a Prediction object with a score field
     assert isinstance(result, Prediction), f"Expected Prediction, got {type(result)}"
     assert hasattr(result, "score"), "Result should have a 'score' attribute"
     assert isinstance(result.score, (int, float, bool)), f"Score should be numeric or boolean, got {type(result.score)}"
@@ -55,7 +54,6 @@ def test_semantic_f1_returns_prediction_with_trace():
     metric = SemanticF1(threshold=0.5)
     result = metric(example, pred, trace=True)
 
-    # Verify the result is a Prediction object with a boolean score
     assert isinstance(result, Prediction), f"Expected Prediction, got {type(result)}"
     assert hasattr(result, "score"), "Result should have a 'score' attribute"
     assert isinstance(result.score, bool), f"Score with trace should be boolean, got {type(result.score)}"
@@ -83,7 +81,6 @@ def test_semantic_f1_score_value():
     metric = SemanticF1()
     result = metric(example, pred)
 
-    # Verify F1 score calculation: 2 * (0.8 * 0.6) / (0.8 + 0.6) = 0.685...
     expected_f1 = 2 * (0.8 * 0.6) / (0.8 + 0.6)
     assert isinstance(result, Prediction)
     assert abs(result.score - expected_f1) < 0.001, f"Expected F1 score ~{expected_f1}, got {result.score}"
@@ -119,7 +116,6 @@ def test_complete_and_grounded_returns_prediction_without_trace():
     metric = CompleteAndGrounded()
     result = metric(example, pred)
 
-    # Verify the result is a Prediction object with a score field
     assert isinstance(result, Prediction), f"Expected Prediction, got {type(result)}"
     assert hasattr(result, "score"), "Result should have a 'score' attribute"
     assert isinstance(result.score, (int, float, bool)), f"Score should be numeric or boolean, got {type(result.score)}"
@@ -155,7 +151,6 @@ def test_complete_and_grounded_returns_prediction_with_trace():
     metric = CompleteAndGrounded(threshold=0.7)
     result = metric(example, pred, trace=True)
 
-    # Verify the result is a Prediction object with a boolean score
     assert isinstance(result, Prediction), f"Expected Prediction, got {type(result)}"
     assert hasattr(result, "score"), "Result should have a 'score' attribute"
     assert isinstance(result.score, bool), f"Score with trace should be boolean, got {type(result.score)}"
@@ -191,9 +186,6 @@ def test_semantic_f1_prediction_can_be_compared():
     pred2 = dspy.Prediction(response="response2")
     result2 = metric(example2, pred2)
 
-    # Verify that comparison operations work
-    # This tests the dspy.Module interface compliance
     assert isinstance(result1, Prediction)
     assert isinstance(result2, Prediction)
-    # Since result2 has higher precision and recall, it should have a higher score
     assert result2.score > result1.score, f"Expected result2.score ({result2.score}) > result1.score ({result1.score})"
