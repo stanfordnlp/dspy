@@ -1,5 +1,5 @@
 import dspy
-from dspy.evaluate.auto_evaluation import SemanticF1, CompleteAndGrounded
+from dspy.evaluate.auto_evaluation import CompleteAndGrounded, SemanticF1
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
 
