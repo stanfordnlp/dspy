@@ -8,6 +8,40 @@ from dspy.utils.unbatchify import Unbatchify
 
 
 class Embeddings:
+    """Embeddings-based retriever using cosine similarity search.
+
+    A retriever that uses embedding vectors for semantic similarity search.
+    Supports both brute-force search for small corpora and FAISS indexing
+    for larger datasets.
+
+    Attributes:
+        embedder: Callable that converts text to embedding vectors.
+        k: Number of top results to return.
+        corpus: List of text passages to search over.
+        normalize: Whether to L2-normalize embeddings for cosine similarity.
+        corpus_embeddings: Precomputed embeddings for the corpus.
+        index: Optional FAISS index for fast approximate search.
+
+    Example:
+        ```python
+        from dspy.retrievers import Embeddings
+
+        # Create embedder (e.g., using sentence-transformers)
+        embedder = lambda texts: model.encode(texts)
+
+        # Initialize retriever
+        retriever = Embeddings(
+            corpus=["passage 1", "passage 2", ...],
+            embedder=embedder,
+            k=5
+        )
+
+        # Search
+        results = retriever("my query")
+        print(results.passages, results.indices)
+        ```
+    """
+
     def __init__(
         self,
         corpus: list[str],
@@ -18,6 +52,26 @@ class Embeddings:
         brute_force_threshold: int = 20_000,
         normalize: bool = True,
     ):
+        """Initialize the embeddings-based retriever.
+
+        Args:
+            corpus: List of text passages to index and search over.
+            embedder: Callable that takes a list of strings and returns
+                a numpy array of shape (n, embedding_dim).
+            k: Number of top results to return per query. Defaults to 5.
+            callbacks: Optional list of callback handlers. Defaults to None.
+            cache: Whether to cache results. Currently not supported.
+                Defaults to False.
+            brute_force_threshold: Corpus size threshold above which FAISS
+                indexing is used instead of brute-force search. Defaults to 20,000.
+            normalize: Whether to L2-normalize embeddings for cosine similarity.
+                Defaults to True.
+
+        Raises:
+            AssertionError: If cache=True, as caching is not yet supported.
+            ImportError: If corpus size >= brute_force_threshold and faiss
+                is not installed.
+        """
         assert cache is False, "Caching is not supported for embeddings-based retrievers"
 
         self.embedder = embedder
@@ -35,6 +89,15 @@ class Embeddings:
         return self.forward(query)
 
     def forward(self, query: str):
+        """Retrieve relevant passages for a query.
+
+        Args:
+            query: The search query string.
+
+        Returns:
+            dspy.Prediction with 'passages' (list of strings) and
+            'indices' (list of corpus indices) attributes.
+        """
         import dspy
 
         passages, indices = self.search_fn(query)
