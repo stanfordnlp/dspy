@@ -136,7 +136,7 @@ class ProgramOfThought(Module):
     def _parse_code(self, code_data):
         code = code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
         code_match = re.search(r"```python[ \n](.*?)[ \n]```?", code, re.DOTALL)
-        code_block = (code_match.group(1) if code_match else code).replace("\\n", "\n")
+        code_block = code_match.group(1) if code_match else code
         if not code_block:
             return code, "Error: Empty code after parsing."
         if "\n" not in code_block and code_block.count("=") > 1:
@@ -145,17 +145,6 @@ class ProgramOfThought(Module):
         last_line_match = re.match(r"^(\w+)\s*=", lines[-1].strip())
         if last_line_match and len(lines) > 1:
             code_block += "\n" + last_line_match.group(1)
-        else:
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
-                r"\1\n",
-                code_block,
-            )
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
-                r"\1\n\2",
-                code_block,
-            )
         return code_block, None
 
     def _execute_code(self, code):
