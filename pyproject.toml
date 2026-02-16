@@ -45,6 +45,7 @@ dependencies = [
 anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 mcp = ["mcp; python_version >= '3.10'"]
+deno = ["deno>=2.0.0"]
 langchain = ["langchain_core"]
 dev = [
     "pytest>=6.2.5",
