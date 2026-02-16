@@ -23,6 +23,17 @@ __all__ = ["PythonInterpreter", "FinalOutput", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
 
+
+# Try to use deno from pypi package if available, otherwise fall back to system deno
+def _get_deno_binary() -> str:
+    """Get the path to the deno binary, preferring the pypi package if installed."""
+    try:
+        import deno
+        return deno.deno_bin()
+    except ImportError:
+        return "deno"
+
+
 # Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
 # injection for strings above 100MB to stay safely below this limit.
 LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
@@ -87,7 +98,8 @@ class PythonInterpreter:
     no access to the host filesystem, network, or environment by default.
 
     Prerequisites:
-        Deno must be installed: https://docs.deno.com/runtime/getting_started/installation/
+        Deno can be installed via pip (pip install dspy[deno]) or manually:
+        https://docs.deno.com/runtime/getting_started/installation/
 
     Example:
         ```python
@@ -146,7 +158,7 @@ class PythonInterpreter:
         if deno_command:
             self.deno_command = list(deno_command)
         else:
-            args = ["deno", "run"]
+            args = [_get_deno_binary(), "run"]
 
             # Allow reading runner.js and explicitly enabled paths
             allowed_read_paths = [self._get_runner_path()]
@@ -204,7 +216,7 @@ class PythonInterpreter:
 
         try:
             result = subprocess.run(
-                ["deno", "info", "--json"],
+                [_get_deno_binary(), "info", "--json"],
                 capture_output=True,
                 text=True,
                 check=False
