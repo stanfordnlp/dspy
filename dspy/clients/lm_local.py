@@ -67,6 +67,14 @@ class LocalProvider(Provider):
             "0.0.0.0",
         ]
 
+        # Allow user to supply extra CLI arguments (e.g., CUDA graph flags, KV cache tuning)
+        extra_args = launch_kwargs.get("extra_args")
+        if extra_args:
+            if isinstance(extra_args, str):
+                command.extend(extra_args.split())
+            elif isinstance(extra_args, list):
+                command.extend(extra_args)
+
         # We will manually stream & capture logs.
         process = subprocess.Popen(
             command,
