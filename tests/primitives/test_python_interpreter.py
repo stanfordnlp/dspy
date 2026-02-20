@@ -553,3 +553,112 @@ def test_enable_read_paths_multiple_files(tmp_path):
         assert contents["test1.txt"] == "Content 1"
         assert contents["test2.txt"] == "Content 2"
         assert contents["test3.txt"] == "Content 3"
+
+
+# =============================================================================
+# Subprocess Restart Resilience Tests
+# =============================================================================
+
+
+def test_tool_works_after_subprocess_kill():
+    """Tool calls succeed after the Deno subprocess is forcefully killed."""
+
+    def greet(name: str = "world") -> str:
+        return f"Hello, {name}!"
+
+    with PythonInterpreter(tools={"greet": greet}) as interp:
+        result = interp.execute('print(greet(name="Alice"))')
+        assert "Hello, Alice!" in result
+
+        # Kill the subprocess to simulate crash
+        interp.deno_process.kill()
+        interp.deno_process.wait()
+
+        # Tools should work after automatic restart and re-registration
+        result = interp.execute('print(greet(name="Bob"))')
+        assert "Hello, Bob!" in result
+
+
+def test_restart_clears_registration_state():
+    """_ensure_deno_process resets _tools_registered when creating a new process."""
+
+    def my_tool(x: str = "") -> str:
+        return f"result: {x}"
+
+    interp = PythonInterpreter(tools={"my_tool": my_tool})
+    interp._ensure_deno_process()
+    interp._register_tools()
+    assert interp._tools_registered is True
+
+    # Kill the process so next _ensure_deno_process creates a new one
+    interp.deno_process.kill()
+    interp.deno_process.wait()
+
+    interp._ensure_deno_process()
+    assert interp._tools_registered is False, "_tools_registered should be cleared after subprocess restart"
+    interp.shutdown()
+
+
+def test_execute_retries_once_on_subprocess_death():
+    """execute() retries exactly once when the subprocess dies."""
+    from unittest.mock import patch
+
+    from dspy.primitives.python_interpreter import _SubprocessDied
+
+    interp = PythonInterpreter()
+    attempts = []
+
+    def mock_inner(code):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise _SubprocessDied("simulated death")
+        return "recovered"
+
+    with patch.object(interp, '_execute_inner', side_effect=mock_inner):
+        with patch.object(interp, '_kill_process'):
+            result = interp.execute("print(1)")
+
+    assert result == "recovered"
+    assert len(attempts) == 2
+
+
+def test_execute_raises_after_second_failure():
+    """execute() raises CodeInterpreterError when both attempts fail."""
+    from unittest.mock import patch
+
+    from dspy.primitives.python_interpreter import _SubprocessDied
+
+    interp = PythonInterpreter()
+
+    def always_fail(code):
+        raise _SubprocessDied("process died again")
+
+    with patch.object(interp, '_execute_inner', side_effect=always_fail):
+        with patch.object(interp, '_kill_process'):
+            with pytest.raises(CodeInterpreterError, match="failed after automatic restart"):
+                interp.execute("print(1)")
+
+
+def test_error_message_includes_exit_code():
+    """Subprocess death errors include exit code, never blank."""
+    from unittest.mock import patch
+
+    from dspy.primitives.python_interpreter import _SubprocessDied
+
+    interp = PythonInterpreter()
+    interp._ensure_deno_process()
+    interp._tools_registered = True
+
+    # Kill the process
+    interp.deno_process.kill()
+    interp.deno_process.wait()
+
+    # Prevent auto-restart to observe the raw _SubprocessDied error
+    with patch.object(interp, '_ensure_deno_process'):
+        with pytest.raises(_SubprocessDied) as exc_info:
+            interp._execute_inner("print(1)")
+
+    error_msg = str(exc_info.value)
+    assert "exit code" in error_msg
+    assert len(error_msg) > 10
+    interp._kill_process()

@@ -1157,6 +1157,43 @@ class TestRLMWithDummyLM:
 
 
 # ============================================================================
+# Integration Tests: RLM Subprocess Restart Resilience
+# ============================================================================
+
+
+@pytest.mark.deno
+class TestRLMSubprocessRestart:
+    """Tests that RLM recovers when the interpreter subprocess dies."""
+
+    def test_tool_works_after_interpreter_restart(self):
+        """RLM with a host tool succeeds after forced interpreter restart between calls."""
+        def lookup(key: str) -> str:
+            return {"color": "red"}.get(key, "unknown")
+
+        interp = PythonInterpreter()
+        rlm = RLM("query -> answer: str", max_iterations=3, tools=[lookup], interpreter=interp)
+
+        with dummy_lm_context([
+            {"reasoning": "Look up color", "code": 'result = lookup(key="color")\nSUBMIT(result)'},
+        ]):
+            result = rlm.forward(query="what color?")
+            assert result.answer == "red"
+
+        # Kill the interpreter subprocess to simulate crash
+        interp.deno_process.kill()
+        interp.deno_process.wait()
+
+        # Second forward should auto-recover: no "Unknown tool" error
+        with dummy_lm_context([
+            {"reasoning": "Look up color again", "code": 'result = lookup(key="color")\nSUBMIT(result)'},
+        ]):
+            result = rlm.forward(query="what color?")
+            assert result.answer == "red"
+
+        interp.shutdown()
+
+
+# ============================================================================
 # Integration Tests: RLM with real LM (require API key and Deno)
 # ============================================================================
 
