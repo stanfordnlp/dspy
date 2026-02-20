@@ -662,3 +662,86 @@ def test_error_message_includes_exit_code():
     assert "exit code" in error_msg
     assert len(error_msg) > 10
     interp._kill_process()
+
+
+def test_tool_call_death_does_not_retry():
+    """Subprocess death during tool response write raises CodeInterpreterError, not _SubprocessDied."""
+    from dspy.primitives.python_interpreter import _SubprocessDied
+
+    call_count = 0
+
+    def side_effectful_tool(x: str = "") -> str:
+        nonlocal call_count
+        call_count += 1
+        return f"result-{call_count}"
+
+    interp = PythonInterpreter(tools={"side_effectful_tool": side_effectful_tool})
+    interp._ensure_deno_process()
+    interp._register_tools()
+
+    # Kill the subprocess so the next write triggers BrokenPipeError
+    interp.deno_process.kill()
+    interp.deno_process.wait()
+
+    # _handle_tool_call should raise CodeInterpreterError (non-retryable),
+    # not _SubprocessDied, because the tool already executed
+    with pytest.raises(CodeInterpreterError, match="tool call response"):
+        interp._handle_tool_call({
+            "id": 1,
+            "params": {"name": "side_effectful_tool", "args": [], "kwargs": {"x": "test"}},
+        })
+
+    assert call_count == 1
+    interp._kill_process()
+
+
+def test_write_msg_retryable_false_raises_code_interpreter_error():
+    """_write_msg with retryable=False raises CodeInterpreterError, not _SubprocessDied."""
+    from dspy.primitives.python_interpreter import _SubprocessDied
+
+    interp = PythonInterpreter()
+    interp._ensure_deno_process()
+
+    interp.deno_process.kill()
+    interp.deno_process.wait()
+
+    # retryable=True (default) raises _SubprocessDied
+    with pytest.raises(_SubprocessDied):
+        interp._write_msg("test", "test context")
+
+    # retryable=False raises CodeInterpreterError
+    with pytest.raises(CodeInterpreterError, match="test context"):
+        interp._write_msg("test", "test context", retryable=False)
+
+    interp._kill_process()
+
+
+def test_read_line_timeout():
+    """_read_line raises _SubprocessDied when subprocess produces no output within timeout."""
+    from unittest.mock import patch
+
+    from dspy.primitives.python_interpreter import SUBPROCESS_READ_TIMEOUT, _SubprocessDied
+
+    interp = PythonInterpreter()
+    interp._ensure_deno_process()
+
+    # Patch select.select to simulate timeout (returns empty ready list)
+    with patch("dspy.primitives.python_interpreter.select.select", return_value=([], [], [])):
+        with pytest.raises(_SubprocessDied, match="timed out"):
+            interp._read_line("test operation")
+
+    interp._kill_process()
+
+
+def test_shutdown_after_process_death():
+    """shutdown() succeeds even when the subprocess has already died."""
+    interp = PythonInterpreter()
+    interp._ensure_deno_process()
+
+    # Kill the process so pipes are broken
+    interp.deno_process.kill()
+    interp.deno_process.wait()
+
+    # shutdown should not raise
+    interp.shutdown()
+    assert interp.deno_process is None

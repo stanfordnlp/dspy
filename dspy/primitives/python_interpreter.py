@@ -12,6 +12,7 @@ import json
 import keyword
 import logging
 import os
+import select
 import subprocess
 import threading
 from os import PathLike
@@ -26,6 +27,10 @@ logger = logging.getLogger(__name__)
 # Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
 # injection for strings above 100MB to stay safely below this limit.
 LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
+
+# Maximum seconds to wait for a line of output from the Deno subprocess
+# before treating it as hung.  5 minutes accommodates slow pip installs.
+SUBPROCESS_READ_TIMEOUT = 300
 
 # =============================================================================
 # JSON-RPC 2.0 Helpers
@@ -213,17 +218,29 @@ class PythonInterpreter:
                 pass
             self.deno_process = None
 
-    def _write_msg(self, msg: str, context: str) -> None:
-        """Write a JSON-RPC message to the subprocess. Raises _SubprocessDied on failure."""
+    def _write_msg(self, msg: str, context: str, *, retryable: bool = True) -> None:
+        """Write a JSON-RPC message to the subprocess.
+
+        Raises _SubprocessDied (retryable=True) or CodeInterpreterError
+        (retryable=False) when the pipe is broken.
+        """
         try:
             self.deno_process.stdin.write(msg + "\n")
             self.deno_process.stdin.flush()
         except BrokenPipeError:
             exit_code = self.deno_process.poll()
-            raise _SubprocessDied(f"Deno subprocess died during {context} (exit code: {exit_code})")
+            desc = f"Deno subprocess died during {context} (exit code: {exit_code})"
+            if retryable:
+                raise _SubprocessDied(desc)
+            raise CodeInterpreterError(desc)
 
     def _read_line(self, context: str) -> str:
-        """Read a line from the subprocess. Raises _SubprocessDied on EOF."""
+        """Read a line from the subprocess. Raises _SubprocessDied on EOF or timeout."""
+        ready, _, _ = select.select([self.deno_process.stdout], [], [], SUBPROCESS_READ_TIMEOUT)
+        if not ready:
+            raise _SubprocessDied(
+                f"Deno subprocess timed out after {SUBPROCESS_READ_TIMEOUT}s during {context}"
+            )
         line = self.deno_process.stdout.readline().strip()
         if not line:
             exit_code = self.deno_process.poll()
@@ -287,8 +304,11 @@ class PythonInterpreter:
         for path in self.enable_write_paths:
             virtual_path = f"/sandbox/{os.path.basename(path)}"
             sync_msg = _jsonrpc_notification("sync_file", {"virtual_path": virtual_path, "host_path": str(path)})
-            self.deno_process.stdin.write(sync_msg + "\n")
-            self.deno_process.stdin.flush()
+            try:
+                self._write_msg(sync_msg, "syncing files")
+            except _SubprocessDied:
+                logger.warning(f"Subprocess died while syncing {path}, file changes may be lost")
+                return
 
     def _extract_parameters(self, fn: Callable) -> list[dict]:
         """Extract parameter info from a callable for sandbox registration."""
@@ -356,7 +376,7 @@ class PythonInterpreter:
             error_code = JSONRPC_APP_ERRORS.get(error_type, JSONRPC_APP_ERRORS["Unknown"])
             response = _jsonrpc_error(error_code, str(e), request_id, {"type": error_type})
 
-        self._write_msg(response, "tool call response")
+        self._write_msg(response, f"tool call response for '{tool_name}'", retryable=False)
 
     def _ensure_deno_process(self) -> None:
         if self.deno_process is None or self.deno_process.poll() is not None:
@@ -597,9 +617,15 @@ class PythonInterpreter:
 
     def shutdown(self) -> None:
         if self.deno_process and self.deno_process.poll() is None:
-            self.deno_process.stdin.write(_jsonrpc_notification("shutdown") + "\n")
-            self.deno_process.stdin.flush()
-            self.deno_process.stdin.close()
+            try:
+                self.deno_process.stdin.write(_jsonrpc_notification("shutdown") + "\n")
+                self.deno_process.stdin.flush()
+            except BrokenPipeError:
+                pass
+            try:
+                self.deno_process.stdin.close()
+            except OSError:
+                pass
             self.deno_process.wait()
         self.deno_process = None
         self._owner_thread = None
