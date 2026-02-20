@@ -614,8 +614,8 @@ def test_execute_retries_once_on_subprocess_death():
             raise _SubprocessDied("simulated death")
         return "recovered"
 
-    with patch.object(interp, '_execute_inner', side_effect=mock_inner):
-        with patch.object(interp, '_kill_process'):
+    with patch.object(interp, "_execute_inner", side_effect=mock_inner):
+        with patch.object(interp, "_kill_process"):
             result = interp.execute("print(1)")
 
     assert result == "recovered"
@@ -633,8 +633,8 @@ def test_execute_raises_after_second_failure():
     def always_fail(code):
         raise _SubprocessDied("process died again")
 
-    with patch.object(interp, '_execute_inner', side_effect=always_fail):
-        with patch.object(interp, '_kill_process'):
+    with patch.object(interp, "_execute_inner", side_effect=always_fail):
+        with patch.object(interp, "_kill_process"):
             with pytest.raises(CodeInterpreterError, match="failed after automatic restart"):
                 interp.execute("print(1)")
 
@@ -654,7 +654,7 @@ def test_error_message_includes_exit_code():
     interp.deno_process.wait()
 
     # Prevent auto-restart to observe the raw _SubprocessDied error
-    with patch.object(interp, '_ensure_deno_process'):
+    with patch.object(interp, "_ensure_deno_process"):
         with pytest.raises(_SubprocessDied) as exc_info:
             interp._execute_inner("print(1)")
 
@@ -666,7 +666,6 @@ def test_error_message_includes_exit_code():
 
 def test_tool_call_death_does_not_retry():
     """Subprocess death during tool response write raises CodeInterpreterError, not _SubprocessDied."""
-    from dspy.primitives.python_interpreter import _SubprocessDied
 
     call_count = 0
 
@@ -720,7 +719,7 @@ def test_read_line_timeout():
     """_read_line raises _SubprocessDied when subprocess produces no output within timeout."""
     from unittest.mock import patch
 
-    from dspy.primitives.python_interpreter import SUBPROCESS_READ_TIMEOUT, _SubprocessDied
+    from dspy.primitives.python_interpreter import _SubprocessDied
 
     interp = PythonInterpreter()
     interp._ensure_deno_process()
