@@ -16,7 +16,6 @@ from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
 from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
-from dspy.utils.dummies import DummyLM
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -122,9 +121,8 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
 
             monkeypatch.setattr(litellm, "completion", fake_completion)
 
-            dummy_lm = DummyLM([{"answer": "ignored"}])
-            # TODO(isaacbmiller): Change from dummy_lm.forward to just dummy_lm.__call__ #8864
-            dummy_lm.forward(messages=[{"role": "user", "content": "Hello"}])
+            lm = dspy.LM("dummy", model_type="chat")
+            lm(messages=[{"role": "user", "content": "Hello"}])
 
             cache_key_spy.assert_not_called()
             cache_get_spy.assert_called_once()
