@@ -716,18 +716,31 @@ def test_write_msg_retryable_false_raises_code_interpreter_error():
 
 
 def test_read_line_timeout():
-    """_read_line raises _SubprocessDied when subprocess produces no output within timeout."""
-    from unittest.mock import patch
+    """_read_line raises _SubprocessDied when the queue produces nothing within the timeout."""
+    import queue as _queue
 
     from dspy.primitives.python_interpreter import _SubprocessDied
 
     interp = PythonInterpreter()
     interp._ensure_deno_process()
 
-    # Patch select.select to simulate timeout (returns empty ready list)
-    with patch("dspy.primitives.python_interpreter.select.select", return_value=([], [], [])):
+    # Drain the health-check response that's already queued, then swap in
+    # an empty queue so the next _read_line hits the timeout.
+    while not interp._line_queue.empty():
+        try:
+            interp._line_queue.get_nowait()
+        except _queue.Empty:
+            break
+    interp._line_queue = _queue.Queue()
+
+    import dspy.primitives.python_interpreter as _mod
+    original = _mod.SUBPROCESS_READ_TIMEOUT
+    _mod.SUBPROCESS_READ_TIMEOUT = 0.1
+    try:
         with pytest.raises(_SubprocessDied, match="timed out"):
             interp._read_line("test operation")
+    finally:
+        _mod.SUBPROCESS_READ_TIMEOUT = original
 
     interp._kill_process()
 

@@ -12,7 +12,7 @@ import json
 import keyword
 import logging
 import os
-import select
+import queue
 import subprocess
 import threading
 from os import PathLike
@@ -193,6 +193,7 @@ class PythonInterpreter:
         self._request_id = 0
         self._owner_thread: int | None = None
         self._pending_large_vars = {}
+        self._line_queue: queue.Queue[str | None] = queue.Queue()
 
     def _check_thread_ownership(self) -> None:
         """Ensure this interpreter is only used from a single thread."""
@@ -234,15 +235,31 @@ class PythonInterpreter:
                 raise _SubprocessDied(desc)
             raise CodeInterpreterError(desc)
 
+    def _start_reader_thread(self) -> None:
+        """Start a daemon thread that feeds stdout lines into ``_line_queue``."""
+        self._line_queue = queue.Queue()
+        stdout = self.deno_process.stdout
+
+        def _reader() -> None:
+            try:
+                for line in iter(stdout.readline, ""):
+                    self._line_queue.put(line.strip())
+            except (ValueError, OSError):
+                pass
+            self._line_queue.put(None)
+
+        t = threading.Thread(target=_reader, daemon=True)
+        t.start()
+
     def _read_line(self, context: str) -> str:
         """Read a line from the subprocess. Raises _SubprocessDied on EOF or timeout."""
-        ready, _, _ = select.select([self.deno_process.stdout], [], [], SUBPROCESS_READ_TIMEOUT)
-        if not ready:
+        try:
+            line = self._line_queue.get(timeout=SUBPROCESS_READ_TIMEOUT)
+        except queue.Empty:
             raise _SubprocessDied(
                 f"Deno subprocess timed out after {SUBPROCESS_READ_TIMEOUT}s during {context}"
             )
-        line = self.deno_process.stdout.readline().strip()
-        if not line:
+        if line is None:
             exit_code = self.deno_process.poll()
             stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
             parts = [f"Deno subprocess produced no output during {context} (exit code: {exit_code})"]
@@ -402,6 +419,7 @@ class PythonInterpreter:
                     "For additional configurations: https://docs.deno.com/runtime/getting_started/installation/"
                 )
                 raise CodeInterpreterError(install_instructions) from e
+            self._start_reader_thread()
             self._health_check()
 
     def _send_request(self, method: str, params: dict, context: str) -> dict:
