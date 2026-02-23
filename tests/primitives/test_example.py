@@ -129,8 +129,10 @@ def test_example_to_dict_with_history():
     """Test that Example.toDict() properly serializes dspy.History objects."""
     history = dspy.History(
         messages=[
-            {"question": "What is the capital of France?", "answer": "Paris"},
-            {"question": "What is the capital of Germany?", "answer": "Berlin"},
+            dspy.HistoryMessage(role="user", fields={"question": "What is the capital of France?"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Paris"}),
+            dspy.HistoryMessage(role="user", fields={"question": "What is the capital of Germany?"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Berlin"}),
         ]
     )
     example = Example(question="Test question", history=history, answer="Test answer")
@@ -145,8 +147,10 @@ def test_example_to_dict_with_history():
     assert isinstance(result["history"], dict)
     assert "messages" in result["history"]
     assert result["history"]["messages"] == [
-        {"question": "What is the capital of France?", "answer": "Paris"},
-        {"question": "What is the capital of Germany?", "answer": "Berlin"},
+        {"role": "user", "fields": {"question": "What is the capital of France?"}},
+        {"role": "assistant", "fields": {"answer": "Paris"}},
+        {"role": "user", "fields": {"question": "What is the capital of Germany?"}},
+        {"role": "assistant", "fields": {"answer": "Berlin"}},
     ]
 
     # Verify JSON serialization works
@@ -154,3 +158,15 @@ def test_example_to_dict_with_history():
     json_str = json.dumps(result)
     restored = json.loads(json_str)
     assert restored["history"]["messages"] == result["history"]["messages"]
+
+
+def test_history_overflow_drop_strategy_oldest_message():
+    history = dspy.History(messages=[], max_chars=10, overflow_drop_strategy="oldest_message")
+    history = history.append(dspy.HistoryMessage(role="user", fields={"text": "this message is too long"}))
+    assert history.messages == []
+
+
+def test_history_overflow_drop_strategy_oldest_pair_requires_pair():
+    history = dspy.History(messages=[], max_chars=10, overflow_drop_strategy="oldest_pair")
+    with pytest.raises(ValueError, match="full assistant/tool pair"):
+        history.append(dspy.HistoryMessage(role="user", fields={"text": "this message is too long"}))

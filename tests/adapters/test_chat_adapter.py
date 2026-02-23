@@ -439,8 +439,10 @@ def test_chat_adapter_formats_conversation_history():
 
     history = dspy.History(
         messages=[
-            {"question": "What is the capital of France?", "answer": "Paris"},
-            {"question": "What is the capital of Germany?", "answer": "Berlin"},
+            dspy.HistoryMessage(role="user", fields={"question": "What is the capital of France?"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Paris"}),
+            dspy.HistoryMessage(role="user", fields={"question": "What is the capital of Germany?"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Berlin"}),
         ]
     )
 
@@ -452,6 +454,30 @@ def test_chat_adapter_formats_conversation_history():
     assert messages[2]["content"] == "[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]\n"
     assert messages[3]["content"] == "[[ ## question ## ]]\nWhat is the capital of Germany?"
     assert messages[4]["content"] == "[[ ## answer ## ]]\nBerlin\n\n[[ ## completed ## ]]\n"
+
+
+def test_chat_adapter_formats_conversation_history_with_tool_message():
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        history: dspy.History = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    history = dspy.History(
+        messages=[
+            dspy.HistoryMessage(role="user", fields={"question": "What is the capital of France?"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Paris"}),
+            dspy.HistoryMessage(role="tool", fields={"tool_name": "search", "observation": "capital=Paris"}),
+        ]
+    )
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(MySignature, [], {"question": "What is the capital of Germany?", "history": history})
+
+    assert len(messages) == 5
+    assert messages[1]["content"] == "[[ ## question ## ]]\nWhat is the capital of France?"
+    assert messages[2]["content"] == "[[ ## answer ## ]]\nParis\n\n[[ ## completed ## ]]\n"
+    assert messages[3]["content"] == "[[ ## tool_name ## ]]\nsearch\n\n[[ ## observation ## ]]\ncapital=Paris"
+    assert messages[4]["content"].startswith("[[ ## question ## ]]\nWhat is the capital of Germany?")
 
 
 def test_chat_adapter_fallback_to_json_adapter_on_exception():

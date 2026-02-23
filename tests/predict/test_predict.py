@@ -481,7 +481,12 @@ def test_call_predict_with_chat_history(adapter_type):
 
     program(
         question="are you sure that's correct?",
-        history=dspy.History(messages=[{"question": "what's the capital of france?", "answer": "paris"}]),
+        history=dspy.History(
+            messages=[
+                dspy.HistoryMessage(role="user", fields={"question": "what's the capital of france?"}),
+                dspy.HistoryMessage(role="assistant", fields={"answer": "paris"}),
+            ]
+        ),
     )
 
     # Verify the LM was called with correct messages

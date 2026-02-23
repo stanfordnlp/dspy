@@ -8,6 +8,37 @@ import dspy
 from dspy.utils.dummies import DummyLM
 
 
+def _history_to_trajectory(history: dspy.History) -> dict[str, object]:
+    trajectory = {}
+    turn_idx = 0
+    messages = history.messages
+    i = 0
+    while i < len(messages):
+        message = messages[i]
+        if message.role != "assistant":
+            i += 1
+            continue
+
+        fields = message.fields
+        if not {"next_thought", "next_tool_name", "next_tool_args"}.issubset(fields):
+            i += 1
+            continue
+
+        trajectory[f"thought_{turn_idx}"] = fields["next_thought"]
+        trajectory[f"tool_name_{turn_idx}"] = fields["next_tool_name"]
+        trajectory[f"tool_args_{turn_idx}"] = fields["next_tool_args"]
+
+        if i + 1 < len(messages) and messages[i + 1].role == "tool":
+            trajectory[f"observation_{turn_idx}"] = messages[i + 1].fields.get("observation")
+            i += 2
+        else:
+            i += 1
+
+        turn_idx += 1
+
+    return trajectory
+
+
 @pytest.mark.extra
 def test_tool_observation_preserves_custom_type():
     pytest.importorskip("PIL.Image")
@@ -46,10 +77,13 @@ def test_tool_observation_preserves_custom_type():
     react = dspy.ReAct("question -> answer", tools=[make_images])
     react(question="Draw me something red")
 
-    sigs_with_obs = [sig for sig, inputs in captured_calls if "observation_0" in inputs]
-    assert sigs_with_obs, "Expected ReAct to format a trajectory containing observation_0"
+    sigs_with_obs = [sig for sig, inputs in captured_calls if "observation" in inputs]
+    assert sigs_with_obs, "Expected ReAct to include `observation` in later turns"
+    assert all("question" not in inputs for _, inputs in captured_calls if "observation" in inputs)
+    assert all("question" not in inputs for _, inputs in captured_calls if "next_thought" in inputs)
 
-    observation_content = lm.history[1]["messages"][1]["content"]
+    second_turn_messages = lm.history[1]["messages"]
+    observation_content = next(msg["content"] for msg in second_turn_messages if isinstance(msg["content"], list))
     assert sum(1 for part in observation_content if isinstance(part, dict) and part.get("type") == "image_url") == 2
 
 
@@ -128,7 +162,7 @@ def test_tool_calling_with_pydantic_args():
         "tool_args_1": {},
         "observation_1": "Completed.",
     }
-    assert outputs.trajectory == expected_trajectory
+    assert _history_to_trajectory(outputs.history) == expected_trajectory
 
 
 def test_tool_calling_without_typehint():
@@ -160,7 +194,7 @@ def test_tool_calling_without_typehint():
         "tool_args_1": {},
         "observation_1": "Completed.",
     }
-    assert outputs.trajectory == expected_trajectory
+    assert _history_to_trajectory(outputs.history) == expected_trajectory
 
 
 def test_trajectory_truncation():
@@ -195,17 +229,12 @@ def test_trajectory_truncation():
     react.react = mock_react
     react.extract = lambda **kwargs: dspy.Prediction(output_text="Final output")
 
-    # Call forward and get the result
-    result = react(input_text="test input")
-
-    # Verify that older entries in the trajectory were truncated
-    assert "thought_0" not in result.trajectory
-    assert "thought_2" in result.trajectory
-    assert result.output_text == "Final output"
+    with pytest.raises(litellm.ContextWindowExceededError):
+        react(input_text="test input")
 
 
 @pytest.mark.asyncio
-async def test_context_window_exceeded_after_retries():
+async def test_context_window_exceeded_propagates():
     def echo(text: str) -> str:
         return f"Echoed: {text}"
 
@@ -214,42 +243,21 @@ async def test_context_window_exceeded_after_retries():
     def mock_react(**kwargs):
         raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
 
-    # Test sync version
-    extract_calls = []
-
-    def mock_extract(**kwargs):
-        extract_calls.append(kwargs)
-        return dspy.Prediction(output_text="Fallback output")
-
     react.react = mock_react
-    react.extract = mock_extract
+    react.extract = lambda **kwargs: dspy.Prediction(output_text="Fallback output")
 
-    result = react(input_text="test input")
-    assert result.trajectory == {}
-    assert result.output_text == "Fallback output"
-    assert len(extract_calls) == 1
-    assert extract_calls[0]["input_text"] == "test input"
-    assert "trajectory" in extract_calls[0]
+    with pytest.raises(litellm.ContextWindowExceededError):
+        react(input_text="test input")
 
     # Test async version
-    async_extract_calls = []
-
     async def mock_react_async(**kwargs):
         raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
 
-    async def mock_extract_async(**kwargs):
-        async_extract_calls.append(kwargs)
-        return dspy.Prediction(output_text="Fallback output")
-
     react.react.acall = mock_react_async
-    react.extract.acall = mock_extract_async
+    react.extract.acall = lambda **kwargs: dspy.Prediction(output_text="Fallback output")
 
-    result = await react.acall(input_text="test input")
-    assert result.trajectory == {}
-    assert result.output_text == "Fallback output"
-    assert len(async_extract_calls) == 1
-    assert async_extract_calls[0]["input_text"] == "test input"
-    assert "trajectory" in async_extract_calls[0]
+    with pytest.raises(litellm.ContextWindowExceededError):
+        await react.acall(input_text="test input")
 
 
 def test_error_retry():
@@ -278,7 +286,7 @@ def test_error_retry():
     dspy.configure(lm=lm)
 
     outputs = react(a=1, b=2, max_iters=2)
-    traj = outputs.trajectory
+    traj = _history_to_trajectory(outputs.history)
 
     # --- exact-match checks (thoughts + tool calls) -------------------------
     control_expected = {
@@ -375,7 +383,7 @@ async def test_async_tool_calling_with_pydantic_args():
         "tool_args_1": {},
         "observation_1": "Completed.",
     }
-    assert outputs.trajectory == expected_trajectory
+    assert _history_to_trajectory(outputs.history) == expected_trajectory
 
 
 @pytest.mark.asyncio
@@ -403,7 +411,7 @@ async def test_async_error_retry():
     )
     with dspy.context(lm=lm):
         outputs = await react.acall(a=1, b=2, max_iters=2)
-    traj = outputs.trajectory
+    traj = _history_to_trajectory(outputs.history)
 
     # Exact-match checks (thoughts + tool calls)
     control_expected = {
@@ -423,3 +431,86 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_resume_strict_from_completed_history():
+    def foo(a, b):
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[foo])
+    history = dspy.History(
+        messages=[
+            dspy.HistoryMessage(role="user", fields={"a": 1, "b": 2}),
+            dspy.HistoryMessage(
+                role="assistant",
+                fields={
+                    "next_thought": "Add the numbers first.",
+                    "next_tool_name": "foo",
+                    "next_tool_args": {"a": 1, "b": 2},
+                },
+            ),
+            dspy.HistoryMessage(role="tool", fields={"tool_name": "foo", "observation": 3}),
+        ]
+    )
+
+    lm = DummyLM(
+        [
+            {"next_thought": "Now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "We already computed the sum", "c": 3},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(a=1, b=2, history=history, resume="strict", max_iters=3)
+    assert outputs.c == 3
+    trajectory = _history_to_trajectory(outputs.history)
+    assert trajectory["thought_0"] == "Add the numbers first."
+    assert trajectory["observation_0"] == 3
+    assert trajectory["tool_name_1"] == "finish"
+    assert trajectory["observation_1"] == "Completed."
+
+
+def test_resume_executes_pending_tool_call():
+    def foo(a, b):
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[foo])
+    history = dspy.History(
+        messages=[
+            dspy.HistoryMessage(role="user", fields={"a": 1, "b": 2}),
+            dspy.HistoryMessage(
+                role="assistant",
+                fields={
+                    "next_thought": "I should add the two inputs.",
+                    "next_tool_name": "foo",
+                    "next_tool_args": {"a": 1, "b": 2},
+                },
+            ),
+        ]
+    )
+
+    lm = DummyLM(
+        [
+            {"next_thought": "Now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "The pending call was completed before continuing", "c": 3},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(a=1, b=2, history=history, resume="strict", max_iters=3)
+    assert outputs.c == 3
+    trajectory = _history_to_trajectory(outputs.history)
+    assert trajectory["tool_name_0"] == "foo"
+    assert trajectory["observation_0"] == 3
+
+
+def test_resume_strict_rejects_input_mismatch():
+    def foo(a, b):
+        return a + b
+
+    react = dspy.ReAct("a, b -> c:int", tools=[foo])
+    history = dspy.History(messages=[dspy.HistoryMessage(role="user", fields={"a": 9, "b": 2})])
+    dspy.configure(lm=DummyLM([]))
+
+    with pytest.raises(ValueError, match="does not match current input"):
+        react(a=1, b=2, history=history, resume="strict")

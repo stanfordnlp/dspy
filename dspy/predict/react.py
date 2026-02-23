@@ -1,8 +1,6 @@
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
-from litellm import ContextWindowExceededError
-
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.primitives.module import Module
@@ -51,10 +49,13 @@ class ReAct(Module):
 
         instr.extend(
             [
-                f"You are an Agent. In each episode, you will be given the fields {inputs} as input. And you can see your past trajectory so far.",
+                (
+                    f"You are an Agent. In each episode, you will be given the fields {inputs} as input. "
+                    "And you can see your prior tool-use turns via `history`."
+                ),
                 f"Your goal is to use one or more of the supplied tools to collect any necessary information for producing {outputs}.\n",
                 "To do this, you will interleave next_thought, next_tool_name, and next_tool_args in each turn, and also when finishing the task.",
-                "After each tool call, you receive a resulting observation, which gets appended to your trajectory.\n",
+                "After each tool call, you receive a resulting observation, which gets appended to history as a tool event.\n",
                 "When writing next_thought, you may reason about the current situation and plan for future steps.",
                 "When selecting the next_tool_name and its next_tool_args, the tool must be one of:\n",
             ]
@@ -73,7 +74,7 @@ class ReAct(Module):
 
         react_signature = (
             dspy.Signature({**signature.input_fields}, "\n".join(instr))
-            .append("trajectory", dspy.InputField(), type_=str)
+            .append("history", dspy.InputField(), type_=dspy.History)
             .append("next_thought", dspy.OutputField(), type_=str)
             .append("next_tool_name", dspy.OutputField(), type_=Literal[tuple(tools.keys())])
             .append("next_tool_args", dspy.OutputField(), type_=dict[str, Any])
@@ -82,108 +83,186 @@ class ReAct(Module):
         fallback_signature = dspy.Signature(
             {**signature.input_fields, **signature.output_fields},
             signature.instructions,
-        ).append("trajectory", dspy.InputField(), type_=str)
+        ).append("history", dspy.InputField(), type_=dspy.History)
 
         self.tools = tools
         self.react = dspy.Predict(react_signature)
         self.extract = dspy.ChainOfThought(fallback_signature)
 
-    def _format_trajectory(self, trajectory: dict[str, Any]):
-        adapter = dspy.settings.adapter or dspy.ChatAdapter()
-        trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
-        return adapter.format_user_message_content(trajectory_signature, trajectory)
+    def _prepare_execution(
+        self, input_args: dict[str, Any]
+    ) -> tuple[dict[str, Any], dspy.History, dspy.HistoryResumeState, int]:
+        run_args = dict(input_args)
+        resume_mode = run_args.pop("resume", "off")
+        if resume_mode not in {"off", "auto", "strict"}:
+            raise ValueError("ReAct `resume` must be one of: 'off', 'auto', 'strict'.")
+
+        history = self._coerce_history(run_args.pop("history", None))
+        resume_state = self._initialize_resume_state(history, run_args, resume_mode)
+        max_iters = run_args.pop("max_iters", self.max_iters)
+        return run_args, history, resume_state, max_iters
+
+    def _coerce_history(self, provided_history: Any) -> dspy.History:
+        if provided_history is None:
+            return dspy.History(messages=[])
+        if isinstance(provided_history, dspy.History):
+            return provided_history.trimmed()
+        raise TypeError("ReAct `history` must be a dspy.History instance.")
+
+    def _initialize_resume_state(
+        self,
+        history: dspy.History,
+        input_args: dict[str, Any],
+        resume_mode: Literal["off", "auto", "strict"],
+    ) -> dspy.HistoryResumeState:
+        return history.parse_resume_state(
+            input_args=input_args,
+            input_keys=set(self.signature.input_fields.keys()),
+            available_tools=set(self.tools.keys()),
+            resume_mode=resume_mode,
+            assistant_required_fields={"next_thought", "next_tool_name", "next_tool_args"},
+            assistant_tool_name_field="next_tool_name",
+            assistant_tool_args_field="next_tool_args",
+            tool_message_tool_name_field="tool_name",
+            tool_message_observation_field="observation",
+        )
+
+    async def _aexecute_tool_call(self, tool_name: str, tool_args: dict[str, Any]) -> Any:
+        try:
+            observation = await self.tools[tool_name].acall(**tool_args)
+        except Exception as err:
+            observation = f"Execution error in {tool_name}: {_fmt_exc(err)}"
+        return observation
+
+    def _execute_tool_call(self, tool_name: str, tool_args: dict[str, Any]) -> Any:
+        try:
+            observation = self.tools[tool_name](**tool_args)
+        except Exception as err:
+            observation = f"Execution error in {tool_name}: {_fmt_exc(err)}"
+        return observation
+
+    def _append_tool_observation(self, history: dspy.History, tool_name: str, observation: Any) -> dspy.History:
+        return history.append(
+            dspy.HistoryMessage(
+                role="tool",
+                fields={"tool_name": tool_name, "observation": observation},
+            )
+        )
+
+    def _apply_pending_tool_call(
+        self, history: dspy.History, resume_state: dspy.HistoryResumeState
+    ) -> tuple[dspy.History, int, str | None]:
+        completed_turns = resume_state.completed_turns
+        last_completed_tool_name = resume_state.last_completed_tool_name
+        pending_tool_call = resume_state.pending_tool_call
+
+        if pending_tool_call is None:
+            return history, completed_turns, last_completed_tool_name
+
+        pending_tool_name, pending_tool_args = pending_tool_call
+        observation = self._execute_tool_call(pending_tool_name, pending_tool_args)
+        history = self._append_tool_observation(history, pending_tool_name, observation)
+        completed_turns += 1
+        last_completed_tool_name = pending_tool_name
+        return history, completed_turns, last_completed_tool_name
+
+    async def _aapply_pending_tool_call(
+        self, history: dspy.History, resume_state: dspy.HistoryResumeState
+    ) -> tuple[dspy.History, int, str | None]:
+        completed_turns = resume_state.completed_turns
+        last_completed_tool_name = resume_state.last_completed_tool_name
+        pending_tool_call = resume_state.pending_tool_call
+
+        if pending_tool_call is None:
+            return history, completed_turns, last_completed_tool_name
+
+        pending_tool_name, pending_tool_args = pending_tool_call
+        observation = await self._aexecute_tool_call(pending_tool_name, pending_tool_args)
+        history = self._append_tool_observation(history, pending_tool_name, observation)
+        completed_turns += 1
+        last_completed_tool_name = pending_tool_name
+        return history, completed_turns, last_completed_tool_name
+
+    def _call_inputs_from_history(self, history: dspy.History, **input_args) -> dict[str, Any]:
+        call_inputs = dict(input_args)
+        if history.messages:
+            call_inputs["history"] = history
+
+        return call_inputs
+
+    def _step_to_history_messages(self, pred: dspy.Prediction, observation: Any) -> list[dspy.HistoryMessage]:
+        return [
+            dspy.HistoryMessage(
+                role="assistant",
+                fields={
+                    "next_thought": pred.next_thought,
+                    "next_tool_name": pred.next_tool_name,
+                    "next_tool_args": pred.next_tool_args,
+                },
+            ),
+            dspy.HistoryMessage(
+                role="tool",
+                fields={
+                    "tool_name": pred.next_tool_name,
+                    "observation": observation,
+                },
+            ),
+        ]
+
+    def _warn_invalid_tool_selection(self, err: ValueError) -> None:
+        logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
 
     def forward(self, **input_args):
-        trajectory = {}
-        max_iters = input_args.pop("max_iters", self.max_iters)
-        for idx in range(max_iters):
-            try:
-                pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
-            except ValueError as err:
-                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
+        input_args, history, resume_state, max_iters = self._prepare_execution(input_args)
+        history, completed_turns, last_completed_tool_name = self._apply_pending_tool_call(history, resume_state)
+
+        for _ in range(completed_turns, max_iters):
+            if last_completed_tool_name == "finish":
                 break
 
-            trajectory[f"thought_{idx}"] = pred.next_thought
-            trajectory[f"tool_name_{idx}"] = pred.next_tool_name
-            trajectory[f"tool_args_{idx}"] = pred.next_tool_args
-
             try:
-                trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
-            except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+                pred = self.react(**self._call_inputs_from_history(history, **input_args))
+            except ValueError as err:
+                self._warn_invalid_tool_selection(err)
+                break
+
+            observation = self._execute_tool_call(pred.next_tool_name, pred.next_tool_args)
+
+            history = history.append_many(self._step_to_history_messages(pred, observation))
+            completed_turns += 1
+            last_completed_tool_name = pred.next_tool_name
 
             if pred.next_tool_name == "finish":
                 break
 
-        extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        return dspy.Prediction(trajectory=trajectory, **extract)
+        extract = self.extract(**self._call_inputs_from_history(history, **input_args))
+        return dspy.Prediction(history=history, **extract)
 
     async def aforward(self, **input_args):
-        trajectory = {}
-        max_iters = input_args.pop("max_iters", self.max_iters)
-        for idx in range(max_iters):
-            try:
-                pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
-            except ValueError as err:
-                logger.warning(f"Ending the trajectory: Agent failed to select a valid tool: {_fmt_exc(err)}")
+        input_args, history, resume_state, max_iters = self._prepare_execution(input_args)
+        history, completed_turns, last_completed_tool_name = await self._aapply_pending_tool_call(history, resume_state)
+
+        for _ in range(completed_turns, max_iters):
+            if last_completed_tool_name == "finish":
                 break
 
-            trajectory[f"thought_{idx}"] = pred.next_thought
-            trajectory[f"tool_name_{idx}"] = pred.next_tool_name
-            trajectory[f"tool_args_{idx}"] = pred.next_tool_args
-
             try:
-                trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
-            except Exception as err:
-                trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
+                pred = await self.react.acall(**self._call_inputs_from_history(history, **input_args))
+            except ValueError as err:
+                self._warn_invalid_tool_selection(err)
+                break
+
+            observation = await self._aexecute_tool_call(pred.next_tool_name, pred.next_tool_args)
+
+            history = history.append_many(self._step_to_history_messages(pred, observation))
+            completed_turns += 1
+            last_completed_tool_name = pred.next_tool_name
 
             if pred.next_tool_name == "finish":
                 break
 
-        extract = await self._async_call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
-        return dspy.Prediction(trajectory=trajectory, **extract)
-
-    def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
-        for _ in range(3):
-            try:
-                return module(
-                    **input_args,
-                    trajectory=self._format_trajectory(trajectory),
-                )
-            except ContextWindowExceededError:
-                logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
-                trajectory = self.truncate_trajectory(trajectory)
-        raise ValueError("The context window was exceeded even after 3 attempts to truncate the trajectory.")
-
-    async def _async_call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
-        for _ in range(3):
-            try:
-                return await module.acall(
-                    **input_args,
-                    trajectory=self._format_trajectory(trajectory),
-                )
-            except ContextWindowExceededError:
-                logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
-                trajectory = self.truncate_trajectory(trajectory)
-        raise ValueError("The context window was exceeded even after 3 attempts to truncate the trajectory.")
-
-    def truncate_trajectory(self, trajectory):
-        """Truncates the trajectory so that it fits in the context window.
-
-        Users can override this method to implement their own truncation logic.
-        """
-        keys = list(trajectory.keys())
-        if len(keys) < 4:
-            # Every tool call has 4 keys: thought, tool_name, tool_args, and observation.
-            raise ValueError(
-                "The trajectory is too long so your prompt exceeded the context window, but the trajectory cannot be "
-                "truncated because it only has one tool call."
-            )
-
-        for key in keys[:4]:
-            trajectory.pop(key)
-
-        return trajectory
+        extract = await self.extract.acall(**self._call_inputs_from_history(history, **input_args))
+        return dspy.Prediction(history=history, **extract)
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:
