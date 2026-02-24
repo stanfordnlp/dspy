@@ -225,7 +225,7 @@ predictor(number="42")  # Warning: Type mismatch for field 'number': expected in
 ```
 **Disabling Type Checking**
 
-If you need to disable type mismatch warnings (for example, during experimentation), you can turn off this feature:
+If you want to disable type mismatch warnings, you can turn off this feature:
 
 ```python
 # Disable type mismatch warnings globally
