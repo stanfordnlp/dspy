@@ -1331,11 +1331,11 @@ def test_union_type_validation_string_signature(caplog):
 
     assert "Type mismatch for field 'mode'" in caplog.text
 
-
-def test_basic_types_string_signature(caplog):
+@pytest.mark.parametrize("enable_type_warnings", [False, True])
+def test_basic_types_string_signature(caplog, enable_type_warnings):
     """Test type validation with basic types using string signatures."""
     log_test_helper()
-
+    dspy.configure(warn_on_type_mismatch=enable_type_warnings)
     # Use string signature with type annotations
     predict_instance = Predict("count:int, name:str -> result")
 
@@ -1355,8 +1355,10 @@ def test_basic_types_string_signature(caplog):
     with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
         predict_instance(count="not an int", name="test")
 
-    assert "Type mismatch for field 'count': expected int" in caplog.text
-
+    if enable_type_warnings:
+        assert "Type mismatch for field 'count': expected int" in caplog.text
+    else:
+        assert "Type mismatch" not in caplog.text
 
 def test_untyped_string_signature(caplog):
     """Test type validation with basic types using string signatures without type."""

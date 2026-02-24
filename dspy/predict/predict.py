@@ -172,22 +172,23 @@ class Predict(Module, Parameter):
             )
 
         # Validate input field types match signature
-        for field_name, field_info in signature.input_fields.items():
-            if field_name in kwargs:
-                value = kwargs[field_name]
-                expected_type: type = field_info.annotation
+        if settings.warn_on_type_mismatch:
+            for field_name, field_info in signature.input_fields.items():
+                if field_name in kwargs:
+                    value = kwargs[field_name]
+                    expected_type: type = field_info.annotation
 
-                if value is None or field_info.json_schema_extra.get(IS_TYPE_UNDEFINED, False):
-                    continue
+                    if value is None or field_info.json_schema_extra.get(IS_TYPE_UNDEFINED, False):
+                        continue
 
-                if not _is_value_compatible_with_type(value, expected_type):
-                    logger.warning(
-                        "Type mismatch for field '%s': expected %s based on given Signature, "
-                        "but the provided value is incompatible: %s.",
-                        field_name,
-                        _get_type_name(expected_type),
-                        value,
-                    )
+                    if not _is_value_compatible_with_type(value, expected_type):
+                        logger.warning(
+                            "Type mismatch for field '%s': expected %s based on given Signature, "
+                            "but the provided value is incompatible: %s.",
+                            field_name,
+                            _get_type_name(expected_type),
+                            value,
+                        )
 
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
