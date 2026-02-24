@@ -1418,10 +1418,11 @@ def test_string_to_list_signature(caplog):
 
     assert "Type mismatch" not in caplog.text
 
-
-def test_custom_signature_types(caplog):
+@pytest.mark.parametrize("enable_type_warnings", [False, True])
+def test_custom_signature_types(caplog, enable_type_warnings):
     """Test type validation with custom signature types."""
     log_test_helper()
+    dspy.configure(warn_on_type_mismatch=enable_type_warnings)
 
     class MyContainer:
         class Query(pydantic.BaseModel):
@@ -1437,3 +1438,15 @@ def test_custom_signature_types(caplog):
         predict_instance(query=query_instance)
 
     assert "Type mismatch" not in caplog.text
+
+    caplog.clear()
+    lm = DummyLM([{"answer": "test output"}])
+    dspy.configure(lm=lm)
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        # Test with an incorrect type
+        predict_instance(query="What is the capital of France?")
+
+    if enable_type_warnings:
+        assert "Type mismatch for field 'query': expected Query" in caplog.text
+    else:
+        assert "Type mismatch" not in caplog.text
