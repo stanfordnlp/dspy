@@ -221,7 +221,7 @@ class MathSignature(dspy.Signature):
 predictor = dspy.Predict(MathSignature)
 
 # This will trigger a warning because we're passing a string instead of an int
-predictor(number="42")  # Warning: Type mismatch for field 'number': expected int, but provided value is incompatible
+predictor(number="test")  # Warning: Type mismatch for field 'number': expected int, but provided value is incompatible
 ```
 **Disabling Type Checking**
 
