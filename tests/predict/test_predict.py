@@ -1417,3 +1417,23 @@ def test_string_to_list_signature(caplog):
         predict_instance(name=["abc", "def", "geh"], count=123)
 
     assert "Type mismatch" not in caplog.text
+
+
+def test_custom_signature_types(caplog):
+    """Test type validation with custom signature types."""
+    log_test_helper()
+
+    class MyContainer:
+        class Query(pydantic.BaseModel):
+            text: str
+
+    signature = dspy.Signature("query: MyContainer.Query -> answer")
+    predict_instance = Predict(signature)
+
+    # Create an instance of the Query model
+    query_instance = MyContainer.Query(text="What is the capital of France?")
+
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(query=query_instance)
+
+    assert "Type mismatch" not in caplog.text
