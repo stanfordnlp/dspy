@@ -91,7 +91,7 @@ class Predict(Module, Parameter):
 
         Args:
             state: The saved state of a `Predict` object.
-            allow_unsafe_lm_state: If True, preserves ``api_base`` and ``base_url`` from
+            allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
                 serialized LM state. Enable only when loading trusted files.
 
         Returns:
