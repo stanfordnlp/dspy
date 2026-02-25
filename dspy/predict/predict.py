@@ -24,12 +24,11 @@ def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
         return lm_state
 
     unsafe_keys = sorted(UNSAFE_LM_STATE_KEYS.intersection(lm_state))
-    sanitized_lm_state = {k: v for k, v in lm_state.items() if k not in UNSAFE_LM_STATE_KEYS}
 
     if not unsafe_keys:
         return lm_state
 
-    unsafe_keys = sorted(unsafe_keys)
+    sanitized_lm_state = {k: v for k, v in lm_state.items() if k not in UNSAFE_LM_STATE_KEYS}
     logger.warning(
         "Ignoring unsafe LM config key(s) during state load: %s. "
         "Pass allow_unsafe_lm_state=True to preserve these keys for trusted files.",
