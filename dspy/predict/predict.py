@@ -64,6 +64,7 @@ class Predict(Module, Parameter):
 
         state["signature"] = self.signature.dump_state()
         state["lm"] = self.lm.dump_state() if self.lm else None
+        state["config"] = self.config
         return state
 
     def load_state(self, state: dict) -> "Predict":
@@ -75,7 +76,7 @@ class Predict(Module, Parameter):
         Returns:
             Self to allow method chaining.
         """
-        excluded_keys = ["signature", "extended_signature", "lm"]
+        excluded_keys = ["signature", "extended_signature", "lm", "config"]
         for name, value in state.items():
             # `excluded_keys` are fields that go through special handling.
             if name not in excluded_keys:
@@ -83,6 +84,9 @@ class Predict(Module, Parameter):
 
         self.signature = self.signature.load_state(state["signature"])
         self.lm = LM(**state["lm"]) if state["lm"] else None
+
+        if "config" in state:
+            self.config = state["config"]
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")

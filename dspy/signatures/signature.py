@@ -141,6 +141,7 @@ class SignatureMeta(type(BaseModel)):
         if sys.version_info >= (3, 14):
             try:
                 import annotationlib
+
                 # Try to get from explicit __annotations__ first (e.g., from __future__ import annotations)
                 raw_annotations = namespace.get("__annotations__")
 
@@ -149,8 +150,7 @@ class SignatureMeta(type(BaseModel)):
                     annotate_func = annotationlib.get_annotate_from_class_namespace(namespace)
                     if annotate_func:
                         raw_annotations = annotationlib.call_annotate_function(
-                            annotate_func,
-                            format=annotationlib.Format.FORWARDREF
+                            annotate_func, format=annotationlib.Format.FORWARDREF
                         )
                     else:
                         raw_annotations = {}
@@ -484,26 +484,90 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     @classmethod
     def dump_state(cls):
         state = {"instructions": cls.instructions, "fields": []}
-        for field in cls.fields:
+        for name, field in cls.fields.items():
             state["fields"].append(
                 {
-                    "prefix": cls.fields[field].json_schema_extra["prefix"],
-                    "description": cls.fields[field].json_schema_extra["desc"],
+                    "name": name,
+                    "field_type": field.json_schema_extra["__dspy_field_type"],
+                    "prefix": field.json_schema_extra["prefix"],
+                    "description": field.json_schema_extra["desc"],
+                    "type": _type_to_str(field.annotation),
                 }
             )
-
         return state
 
     @classmethod
     def load_state(cls, state):
-        signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
+        fields = state.get("fields", [])
 
+        if fields and "name" in fields[0]:
+            saved_names = [f["name"] for f in fields]
+            current_names = list(cls.fields.keys())
+
+            if saved_names == current_names:
+                # Fields match the current signature: update prefix/desc in place
+                # so we preserve the original json_schema_extra key ordering.
+                signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
+                signature_copy.instructions = state["instructions"]
+                for field_info, saved_field in zip(signature_copy.fields.values(), fields, strict=False):
+                    field_info.json_schema_extra["prefix"] = saved_field["prefix"]
+                    field_info.json_schema_extra["desc"] = saved_field["description"]
+                return signature_copy
+
+            # Fields differ (e.g. loading into a placeholder): reconstruct from
+            # scratch using the full structural info.  This is the path taken by
+            # safe (non-pickle) program loading.
+            field_dict = {}
+            for f in fields:
+                type_ = _str_to_type(f["type"]) if "type" in f else str
+                if f["field_type"] == "input":
+                    field_info = InputField()
+                else:
+                    field_info = OutputField()
+                field_info.json_schema_extra["prefix"] = f["prefix"]
+                field_info.json_schema_extra["desc"] = f["description"]
+                field_dict[f["name"]] = (type_, field_info)
+            return make_signature(field_dict, state["instructions"])
+
+        # Legacy format (no "name" key): update fields by position.
+        signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
         signature_copy.instructions = state["instructions"]
-        for field, saved_field in zip(signature_copy.fields.values(), state["fields"], strict=False):
+        for field, saved_field in zip(signature_copy.fields.values(), fields, strict=False):
             field.json_schema_extra["prefix"] = saved_field["prefix"]
             field.json_schema_extra["desc"] = saved_field["description"]
-
         return signature_copy
+
+
+def _type_to_str(type_: type) -> str:
+    """Serialize a Python type annotation to a JSON-safe string."""
+    if type_ is type(None):
+        return "NoneType"
+
+    origin = typing.get_origin(type_)
+    args = typing.get_args(type_)
+
+    if origin is not None:
+        if origin is types.UnionType or origin is typing.Union:
+            args_str = ", ".join(_type_to_str(a) for a in args)
+            return f"Union[{args_str}]"
+        origin_name = getattr(origin, "__name__", str(origin))
+        if args:
+            args_str = ", ".join(_type_to_str(a) for a in args)
+            return f"{origin_name}[{args_str}]"
+        return origin_name
+
+    if hasattr(type_, "__name__"):
+        return type_.__name__
+
+    return str(type_)
+
+
+def _str_to_type(type_str: str) -> type:
+    """Deserialize a type string back to a Python type."""
+    if type_str == "NoneType":
+        return type(None)
+    node = ast.parse(type_str, mode="eval").body
+    return _parse_type_node(node)
 
 
 def ensure_signature(signature: str | type[Signature], instructions=None) -> type[Signature]:
