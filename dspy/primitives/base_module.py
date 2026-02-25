@@ -257,7 +257,7 @@ class BaseModule:
             allow_pickle (bool): If True, allow loading .pkl files, which can run arbitrary code.
                 This is dangerous and should only be used if you are sure about the source of the file and in a trusted environment.
             allow_unsafe_lm_state (bool): If True, preserves unsafe LM endpoint keys (e.g.,
-                ``api_base`` and ``base_url``) from loaded state. Enable only for trusted files.
+                `api_base`, `base_url`, and `model_list`) from loaded state. Enable only for trusted files.
         """
         path = Path(path)
 
