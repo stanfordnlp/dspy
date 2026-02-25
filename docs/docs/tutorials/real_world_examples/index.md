@@ -33,3 +33,8 @@ Build a system that automatically fetches documentation from URLs and generates 
 Create an interactive text-based adventure game with dynamic storytelling, AI-powered NPCs, and adaptive gameplay using DSPy's modular programming approach.
 
 **Key Concepts:** Interactive storytelling, game state management, character progression, AI-driven narratives
+
+### 🔍 [Web Search Agent with Exa](../exa_web_search/index.md)
+Build a research agent that searches the web, extracts page content, and discovers related sources using Exa's search API with DSPy ReAct.
+
+**Key Concepts:** Web search, content extraction, multi-source research, real-time information
