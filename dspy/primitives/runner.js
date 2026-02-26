@@ -7,6 +7,74 @@ import { readLines } from "https://deno.land/std@0.186.0/io/mod.ts";
 // Python Code Templates
 // =============================================================================
 
+// Model reconstruction code: executed in the sandbox when typed models are
+// needed.  Builds lightweight proxy classes (no pydantic dependency) that
+// provide attribute access, dict access, model_dump(), and proper type names.
+const MODEL_RECONSTRUCTION_CODE = `
+if "_REGISTERED_MODELS" not in dir():
+    _REGISTERED_MODELS = {}
+
+def _make_model_class(_name, _field_types):
+    def __init__(self, **kwargs):
+        object.__setattr__(self, '_data', {})
+        for k, v in kwargs.items():
+            ft = self._field_types.get(k)
+            fc = _REGISTERED_MODELS.get(ft) if ft else None
+            if isinstance(v, dict) and fc:
+                v = fc(**v)
+            elif isinstance(v, list) and fc:
+                v = [fc(**i) if isinstance(i, dict) else i for i in v]
+            self._data[k] = v
+    def __getattr__(self, name):
+        try:
+            return object.__getattribute__(self, '_data')[name]
+        except KeyError:
+            raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
+    def __repr__(self):
+        items = ', '.join(f'{k}={v!r}' for k, v in self._data.items())
+        return f'{type(self).__name__}({items})'
+    def __getitem__(self, key):
+        return self._data[key]
+    def keys(self):
+        return self._data.keys()
+    def items(self):
+        return self._data.items()
+    def values(self):
+        return self._data.values()
+    def model_dump(self):
+        out = {}
+        for k, v in self._data.items():
+            if hasattr(v, 'model_dump'):
+                out[k] = v.model_dump()
+            elif isinstance(v, list):
+                out[k] = [i.model_dump() if hasattr(i, 'model_dump') else i for i in v]
+            else:
+                out[k] = v
+        return out
+    return type(_name, (), {
+        '__init__': __init__, '__getattr__': __getattr__,
+        '__repr__': __repr__, '__getitem__': __getitem__,
+        'keys': keys, 'items': items, 'values': values,
+        'model_dump': model_dump, '_field_types': _field_types,
+    })
+
+import json as _json
+_defs = _json.loads(_model_defs_json)
+_order = _json.loads(_model_order_json)
+for _name in _order:
+    _field_types = {}
+    for _fname, _fspec in _defs[_name].items():
+        _ft = _fspec["type"]
+        if _ft in _REGISTERED_MODELS:
+            _field_types[_fname] = _ft
+        elif _ft.startswith("list[") and _ft.endswith("]") and _ft[5:-1] in _REGISTERED_MODELS:
+            _field_types[_fname] = _ft[5:-1]
+    _cls = _make_model_class(_name, _field_types)
+    _REGISTERED_MODELS[_name] = _cls
+    globals()[_name] = _cls
+del _defs, _order, _model_defs_json, _model_order_json
+`;
+
 // Setup code run before each user code execution.
 // Captures stdout, defines SUBMIT for early termination, and
 // provides a helper to extract exception args across the JS/Python boundary.
@@ -53,20 +121,43 @@ const JSON_SCHEMA_TYPE_TO_PYTHON = {
 const TOOL_BRIDGE_ERROR_KEY = "__dspy_tool_bridge_error__";
 
 const makeToolWrapper = (toolName, parameters = []) => {
+  const hasModelParams = parameters.some(p => p.model_type);
+
   // Build signature parts: "query: str, limit: int = 10"
   const sigParts = parameters.map(p => {
     let part = p.name;
-    const inferredType = (!p.type && p.json_schema && typeof p.json_schema.type === "string")
-      ? JSON_SCHEMA_TYPE_TO_PYTHON[p.json_schema.type]
-      : null;
-    const pythonType = p.type || inferredType;
-    if (pythonType) part += `: ${pythonType}`;
+    // Prefer model_type (real pydantic class in sandbox), then simple type, then inferred from schema
+    if (p.model_type) {
+      part += `: ${p.model_type}`;
+    } else {
+      const inferredType = (!p.type && p.json_schema && typeof p.json_schema.type === "string")
+        ? JSON_SCHEMA_TYPE_TO_PYTHON[p.json_schema.type]
+        : null;
+      const pythonType = p.type || inferredType;
+      if (pythonType) part += `: ${pythonType}`;
+    }
     if (p.default !== undefined) part += ` = ${toPythonLiteral(p.default)}`;
     return part;
   });
   const signature = sigParts.join(', ');
   const argNames = parameters.map(p => p.name);
   const kwargParts = argNames.map(n => `"${n}": ${n}`).join(', ');
+
+  // When model-typed params exist, serialize BaseModel instances before the JSON bridge
+  if (hasModelParams) {
+    return `
+import json
+from pyodide.ffi import run_sync, JsProxy
+def ${toolName}(${signature}):
+    _kw = {${kwargParts}}
+    _ser = {_k: _v.model_dump() if hasattr(_v, 'model_dump') else _v for _k, _v in _kw.items()}
+    result = run_sync(_js_tool_call("${toolName}", json.dumps({"kwargs": _ser})))
+    parsed = result.to_py() if isinstance(result, JsProxy) else result
+    if isinstance(parsed, dict) and parsed.get("${TOOL_BRIDGE_ERROR_KEY}"):
+        raise RuntimeError(parsed.get("message", "Tool bridge error"))
+    return parsed
+`;
+  }
 
   return `
 import json
@@ -81,7 +172,7 @@ def ${toolName}(${signature}):
 };
 
 // Generate SUBMIT function with output field signature.
-// Outputs is an array of {name, type?} objects.
+// Outputs is an array of {name, type?, model_type?, json_schema?} objects.
 const makeSubmitWrapper = (outputs) => {
   if (!outputs || outputs.length === 0) {
     // Fallback to single-arg SUBMIT if no outputs defined
@@ -91,6 +182,10 @@ def SUBMIT(output):
 `;
   }
 
+  const hasModelOutputs = outputs.some(o => o.json_schema);
+
+  // SUBMIT type hints use inferred types (not model_type) since output
+  // model classes may not be registered in the sandbox.
   const sigParts = outputs.map(o => {
     let part = o.name;
     const inferredType = (!o.type && o.json_schema && typeof o.json_schema.type === "string")
@@ -102,9 +197,27 @@ def SUBMIT(output):
   });
   const dictParts = outputs.map(o => `"${o.name}": ${o.name}`);
 
+  // Build docstring with schema info for complex output fields
+  const schemaLines = outputs
+    .filter(o => o.json_schema)
+    .map(o => `    ${o.name}: ${JSON.stringify(o.json_schema)}`);
+  const docstring = schemaLines.length > 0
+    ? `    """Expected output schemas:\\n${schemaLines.join('\\n')}\\n    """\n`
+    : '';
+
+  // When model outputs exist, serialize BaseModel instances before raising
+  if (hasModelOutputs) {
+    return `
+def SUBMIT(${sigParts.join(', ')}):
+${docstring}    _out = {${dictParts.join(', ')}}
+    _ser = {_k: _v.model_dump() if hasattr(_v, 'model_dump') else _v for _k, _v in _out.items()}
+    raise FinalOutput(_ser)
+`;
+  }
+
   return `
 def SUBMIT(${sigParts.join(', ')}):
-    raise FinalOutput({${dictParts.join(', ')}})
+${docstring}    raise FinalOutput({${dictParts.join(', ')}})
 `;
 };
 
@@ -176,7 +289,6 @@ async function toolCallBridge(name, argsJson) {
     // Send tool call request to host using JSON-RPC
     console.log(jsonrpcRequest("tool_call", {
       name: name,
-      args: parsedArgs.args || [],
       kwargs: parsedArgs.kwargs || {}
     }, requestId));
 
@@ -328,6 +440,18 @@ while (true) {
       tools: toolNames,
       outputs: params.outputs ? params.outputs.map(o => o.name) : []
     }, requestId));
+    continue;
+  }
+
+  if (method === "register_models") {
+    try {
+      pyodide.globals.set("_model_defs_json", JSON.stringify(params.models));
+      pyodide.globals.set("_model_order_json", JSON.stringify(params.model_order));
+      pyodide.runPython(MODEL_RECONSTRUCTION_CODE);
+      console.log(jsonrpcResult({ models: params.model_order }, requestId));
+    } catch (e) {
+      console.log(jsonrpcError(JSONRPC_APP_ERRORS.RuntimeError, `Failed to register models: ${e.message}`, requestId));
+    }
     continue;
   }
 

@@ -15,15 +15,90 @@ import os
 import subprocess
 import threading
 from os import PathLike
-from typing import Any, Callable, get_type_hints
+from typing import Any, Callable, Union, get_args, get_origin, get_type_hints
 
 import pydantic
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
 
+try:
+    from types import UnionType as _UnionType
+except ImportError:
+    _UnionType = None
+
 __all__ = ["PythonInterpreter", "FinalOutput", "CodeInterpreterError"]
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Pydantic Model Helpers (for sandbox model reconstruction)
+# =============================================================================
+
+
+def _is_pydantic_model(annotation: Any) -> bool:
+    """Return True if annotation is a concrete BaseModel subclass."""
+    return isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel) and annotation is not pydantic.BaseModel
+
+
+def _collect_pydantic_models(annotation: Any, collected: dict[str, type]) -> None:
+    """Recursively collect BaseModel subclasses from an annotation in dependency order.
+
+    Models are added after their dependencies (leaf models first) so the sandbox
+    can reconstruct them in order.
+    """
+    if _is_pydantic_model(annotation):
+        if annotation.__name__ not in collected:
+            for finfo in annotation.model_fields.values():
+                _collect_pydantic_models(finfo.annotation, collected)
+            collected[annotation.__name__] = annotation
+        return
+    for arg in get_args(annotation):
+        _collect_pydantic_models(arg, collected)
+
+
+def _annotation_to_type_spec(annotation: Any) -> str:
+    """Convert a Python type annotation to a string spec for sandbox model reconstruction.
+
+    The returned string is resolved by the sandbox-side ``_resolve_field_type`` helper
+    which maps it back to a Python type via ``pydantic.create_model``.
+    """
+    if annotation is type(None):
+        return "None"
+    if isinstance(annotation, type):
+        if issubclass(annotation, pydantic.BaseModel) and annotation is not pydantic.BaseModel:
+            return annotation.__name__
+        if annotation in (str, int, float, bool):
+            return annotation.__name__
+        if annotation is list:
+            return "list"
+        if annotation is dict:
+            return "dict"
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is list:
+        return f"list[{_annotation_to_type_spec(args[0])}]" if args else "list"
+    if origin is dict:
+        return f"dict[{_annotation_to_type_spec(args[0])}, {_annotation_to_type_spec(args[1])}]" if len(args) >= 2 else "dict"
+    if origin is Union or (_UnionType is not None and origin is _UnionType):
+        return " | ".join(_annotation_to_type_spec(a) for a in args)
+    return "Any"
+
+
+def _build_model_specs(models: dict[str, type]) -> dict[str, dict]:
+    """Build structured field specs for sandbox ``create_model()`` reconstruction."""
+    specs: dict[str, dict] = {}
+    for name, cls in models.items():
+        fields: dict[str, dict] = {}
+        for fname, finfo in cls.model_fields.items():
+            fspec: dict[str, Any] = {"type": _annotation_to_type_spec(finfo.annotation)}
+            if not finfo.is_required():
+                default = finfo.default
+                if isinstance(default, str | int | float | bool | list | dict | type(None)):
+                    fspec["default"] = default
+            fields[fname] = fspec
+        specs[name] = fields
+    return specs
 
 # Pyodide's FFI crashes at exactly 128MB (134,217,728 bytes). Use filesystem
 # injection for strings above 100MB to stay safely below this limit.
@@ -137,6 +212,7 @@ class PythonInterpreter:
         self.output_fields = output_fields
         self._tools_registered = False
         self._tool_adapters: dict[str, dict[str, pydantic.TypeAdapter]] = {}
+        self._registered_model_names: set[str] = set()
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         if deno_command:
@@ -263,19 +339,22 @@ class PythonInterpreter:
                     "use concrete types."
                 )
             return {}
-        except Exception:
+        except AttributeError:
             return {}
 
-    def _build_tool_info(self, fn: Callable) -> tuple[list[dict], dict[str, pydantic.TypeAdapter]]:
-        """Extract parameter info and TypeAdapters for a callable.
+    def _build_tool_info(self, fn: Callable) -> tuple[list[dict], dict[str, pydantic.TypeAdapter], dict[str, type]]:
+        """Extract parameter info, TypeAdapters, and referenced Pydantic models.
 
-        Returns (params, adapters) where params is the registration payload
-        and adapters maps param names to TypeAdapters for call-time coercion.
+        Returns (params, adapters, models) where params is the registration
+        payload, adapters maps param names to TypeAdapters for call-time
+        coercion, and models maps class names to BaseModel subclasses found
+        in the annotations (dependency-ordered).
         """
         sig = inspect.signature(fn)
         hints = self._resolve_type_hints(fn)
         params = []
         adapters = {}
+        models: dict[str, type] = {}
         for name, param in sig.parameters.items():
             if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
                 raise TypeError(
@@ -289,45 +368,84 @@ class PythonInterpreter:
                 if annotation in SIMPLE_TYPES:
                     p["type"] = annotation.__name__
                 else:
+                    if _is_pydantic_model(annotation):
+                        p["model_type"] = annotation.__name__
+                    _collect_pydantic_models(annotation, models)
                     try:
                         adapter = pydantic.TypeAdapter(annotation)
                         p["json_schema"] = adapter.json_schema()
                         adapters[name] = adapter
-                    except Exception:
+                    except pydantic.PydanticSchemaGenerationError:
                         logger.debug(
                             "Skipping JSON schema for tool parameter '%s' with annotation %r",
-                            name,
-                            annotation,
-                            exc_info=True,
+                            name, annotation, exc_info=True,
                         )
             if param.default != inspect.Parameter.empty:
                 p["default"] = param.default
             params.append(p)
-        return params, adapters
+        return params, adapters, models
+
+    def _register_models(self, models: dict[str, type]) -> None:
+        """Register Pydantic model classes in the sandbox via create_model().
+
+        Only sends models that haven't been registered yet.  Pydantic is
+        loaded lazily in the sandbox on the first call.
+        """
+        new_models = {n: c for n, c in models.items() if n not in self._registered_model_names}
+        if not new_models:
+            return
+        specs = _build_model_specs(new_models)
+        order = list(new_models.keys())
+        self._send_request("register_models", {"models": specs, "model_order": order}, "registering models")
+        self._registered_model_names.update(new_models)
+
+    def _collect_variable_models(self, variables: dict[str, Any]) -> dict[str, type]:
+        """Collect Pydantic model classes from variable values."""
+        models: dict[str, type] = {}
+        for v in variables.values():
+            if isinstance(v, pydantic.BaseModel):
+                _collect_pydantic_models(type(v), models)
+            elif isinstance(v, list | tuple):
+                for item in v:
+                    if isinstance(item, pydantic.BaseModel):
+                        _collect_pydantic_models(type(item), models)
+                        break
+            elif isinstance(v, dict):
+                for item in v.values():
+                    if isinstance(item, pydantic.BaseModel):
+                        _collect_pydantic_models(type(item), models)
+                        break
+        return models
 
     def _register_tools(self) -> None:
         """Register tools and output fields with the sandbox."""
         if self._tools_registered:
             return
 
-        # Build registration params with typed tool signatures
         params = {}
+        all_models: dict[str, type] = {}
 
         if self.tools:
+            self._tool_adapters.clear()
             tools_info = []
             for name, fn in self.tools.items():
-                tool_params, adapters = self._build_tool_info(fn)
+                tool_params, adapters, models = self._build_tool_info(fn)
                 tools_info.append({"name": name, "parameters": tool_params})
                 self._tool_adapters[name] = adapters
+                all_models.update(models)
             params["tools"] = tools_info
 
         if self.output_fields:
             params["outputs"] = self.output_fields
 
-        # Skip if nothing to register
         if not params:
             self._tools_registered = True
             return
+
+        # Models must be registered BEFORE tools so that tool wrappers
+        # can reference model class names in their type hints.
+        if all_models:
+            self._register_models(all_models)
 
         self._send_request("register", params, "registering tools/outputs")
         self._tools_registered = True
@@ -386,27 +504,40 @@ class PythonInterpreter:
             self._health_check()
 
     def _send_request(self, method: str, params: dict, context: str) -> dict:
-        """Send a JSON-RPC request and return the parsed response."""
+        """Send a JSON-RPC request and return the parsed response.
+
+        Non-JSON lines (e.g. Pyodide package loading messages) are skipped.
+        """
         self._request_id += 1
         request_id = self._request_id
         msg = _jsonrpc_request(method, params, request_id)
         self.deno_process.stdin.write(msg + "\n")
         self.deno_process.stdin.flush()
 
-        response_line = self.deno_process.stdout.readline().strip()
-        if not response_line:
-            exit_code = self.deno_process.poll()
-            if exit_code is not None:
-                stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
-                raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
-            raise CodeInterpreterError(f"No response {context}")
+        while True:
+            response_line = self.deno_process.stdout.readline().strip()
+            if not response_line:
+                exit_code = self.deno_process.poll()
+                if exit_code is not None:
+                    stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
+                    raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
+                raise CodeInterpreterError(f"No response {context}")
 
-        response = json.loads(response_line)
-        if response.get("id") != request_id:
-            raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
-        if "error" in response:
-            raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
-        return response
+            if not response_line.startswith("{"):
+                logger.debug("Skipping non-JSON output during %s: %s", context, response_line)
+                continue
+
+            try:
+                response = json.loads(response_line)
+            except json.JSONDecodeError:
+                logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
+                continue
+
+            if response.get("id") != request_id:
+                raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
+            if "error" in response:
+                raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
+            return response
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
@@ -450,7 +581,15 @@ class PythonInterpreter:
         self._pending_large_vars = large_vars
 
         if large_vars:
-            large_assignments = [f"{k} = json.loads(open('/tmp/dspy_vars/{k}.json').read())" for k in large_vars]
+            large_assignments = []
+            for k in large_vars:
+                read_expr = f"json.loads(open('/tmp/dspy_vars/{k}.json').read())"
+                v = variables[k]
+                if isinstance(v, pydantic.BaseModel):
+                    model_name = type(v).__name__
+                    if model_name in self._registered_model_names:
+                        read_expr = f"{model_name}(**{read_expr})"
+                large_assignments.append(f"{k} = {read_expr}")
             assignments = ["import json"] + small_assignments + large_assignments
         else:
             assignments = small_assignments
@@ -473,7 +612,11 @@ class PythonInterpreter:
         elif isinstance(value, (int, float)):
             return str(value)
         elif isinstance(value, pydantic.BaseModel):
-            return self._serialize_value(value.model_dump(mode="json"))
+            dict_literal = self._serialize_value(value.model_dump(mode="json"))
+            model_name = type(value).__name__
+            if model_name in self._registered_model_names:
+                return f"{model_name}(**{dict_literal})"
+            return dict_literal
         elif isinstance(value, (list, tuple)):
             # Tuples become lists for JSON compatibility
             items = ", ".join(self._serialize_value(item) for item in value)
@@ -506,10 +649,18 @@ class PythonInterpreter:
     ) -> Any:
         self._check_thread_ownership()
         variables = variables or {}
-        code = self._inject_variables(code, variables)
+
         self._ensure_deno_process()
         self._mount_files()
         self._register_tools()
+
+        # Register models from variables before serialization so that
+        # _serialize_value can emit constructor calls like Person(**{...}).
+        var_models = self._collect_variable_models(variables)
+        if var_models:
+            self._register_models(var_models)
+
+        code = self._inject_variables(code, variables)
 
         for name, value in self._pending_large_vars.items():
             self._inject_large_var(name, value)
@@ -525,9 +676,12 @@ class PythonInterpreter:
             # If the process died, restart and try again once
             self._tools_registered = False
             self._mounted_files = False
+            self._registered_model_names.clear()
             self._ensure_deno_process()
             self._mount_files()
             self._register_tools()
+            if var_models:
+                self._register_models(var_models)
             for name, value in self._pending_large_vars.items():
                 self._inject_large_var(name, value)
             self.deno_process.stdin.write(input_data + "\n")

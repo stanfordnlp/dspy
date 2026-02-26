@@ -439,13 +439,14 @@ def test_build_tool_info():
         pass
 
     sandbox = PythonInterpreter()
-    params, adapters = sandbox._build_tool_info(example_fn)
+    params, adapters, models = sandbox._build_tool_info(example_fn)
 
     assert len(params) == 3
     assert params[0] == {"name": "required", "type": "str"}
     assert params[1] == {"name": "optional", "type": "int", "default": 5}
     assert params[2] == {"name": "untyped", "default": None}
     assert adapters == {}
+    assert models == {}
 
 
 @pytest.mark.parametrize(
@@ -470,7 +471,7 @@ def test_build_tool_info_complex_types():
         pass
 
     sandbox = PythonInterpreter()
-    params, adapters = sandbox._build_tool_info(complex_fn)
+    params, adapters, models = sandbox._build_tool_info(complex_fn)
 
     assert len(params) == 2
     assert params[0]["name"] == "items"
@@ -483,6 +484,7 @@ def test_build_tool_info_complex_types():
 
     assert "items" in adapters
     assert "data" in adapters
+    assert models == {}
 
 
 def test_build_tool_info_includes_json_schema_and_adapter_for_pydantic_types():
@@ -494,10 +496,11 @@ def test_build_tool_info_includes_json_schema_and_adapter_for_pydantic_types():
         return f"hello {profile.name}"
 
     sandbox = PythonInterpreter()
-    params, adapters = sandbox._build_tool_info(greet)
+    params, adapters, models = sandbox._build_tool_info(greet)
 
     assert len(params) == 1
     assert params[0]["name"] == "profile"
+    assert params[0]["model_type"] == "Profile"
     assert params[0]["json_schema"] == {
         "properties": {
             "name": {"title": "Name", "type": "string"},
@@ -514,19 +517,23 @@ def test_build_tool_info_includes_json_schema_and_adapter_for_pydantic_types():
     assert profile.name == "Ada"
     assert profile.age == 36
 
+    assert "Profile" in models
+    assert models["Profile"] is Profile
+
 
 def test_build_tool_info_includes_json_schema_for_forward_ref_annotation():
     def greet(profile: "ForwardRefProfile") -> str:
         return f"hello {profile.name}"
 
     sandbox = PythonInterpreter()
-    params, adapters = sandbox._build_tool_info(greet)
+    params, adapters, models = sandbox._build_tool_info(greet)
 
     assert len(params) == 1
     assert params[0]["name"] == "profile"
     assert "json_schema" in params[0]
     assert params[0]["json_schema"]["type"] == "object"
     assert "profile" in adapters
+    assert "ForwardRefProfile" in models
 
 
 def test_build_tool_info_adapter_raises_on_invalid_pydantic_input():
@@ -538,7 +545,7 @@ def test_build_tool_info_adapter_raises_on_invalid_pydantic_input():
         return f"hello {profile.name}"
 
     sandbox = PythonInterpreter()
-    _, adapters = sandbox._build_tool_info(greet)
+    _, adapters, _ = sandbox._build_tool_info(greet)
 
     with pytest.raises(pydantic.ValidationError):
         adapters["profile"].validate_python({"name": "Ada", "age": "not-an-int"})
@@ -938,3 +945,311 @@ def test_enable_read_paths_multiple_files(tmp_path):
         assert contents["test1.txt"] == "Content 1"
         assert contents["test2.txt"] == "Content 2"
         assert contents["test3.txt"] == "Content 3"
+
+
+# =============================================================================
+# Battle Tests: Pydantic Models in Sandbox (Phase 3)
+# =============================================================================
+
+
+def test_pydantic_variable_attribute_access():
+    """Pydantic model injected as variable supports attribute access in the sandbox."""
+
+    class Person(pydantic.BaseModel):
+        name: str
+        age: int
+
+    person = Person(name="Ada", age=36)
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("person.name", variables={"person": person})
+        assert result == "Ada"
+
+
+def test_pydantic_variable_type_name_preserved():
+    """type(var).__name__ returns the original model class name in the sandbox."""
+
+    class Widget(pydantic.BaseModel):
+        label: str
+
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("type(w).__name__", variables={"w": Widget(label="x")})
+        assert result == "Widget"
+
+
+def test_nested_pydantic_variable_attribute_access():
+    """Nested pydantic model supports chained attribute access."""
+
+    class Address(pydantic.BaseModel):
+        city: str
+        country: str
+
+    class Person(pydantic.BaseModel):
+        name: str
+        address: Address
+
+    person = Person(name="Ada", address=Address(city="London", country="UK"))
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("person.address.city", variables={"person": person})
+        assert result == "London"
+
+
+def test_pydantic_variable_model_dump():
+    """model_dump() works on injected pydantic variable."""
+
+    class Config(pydantic.BaseModel):
+        mode: str
+        level: int
+
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("c.model_dump()", variables={"c": Config(mode="fast", level=3)})
+        assert result == {"mode": "fast", "level": 3}
+
+
+def test_tool_with_pydantic_param_receives_real_model():
+    """Tool receives a real pydantic model instance when called with a model from the sandbox."""
+
+    class Profile(pydantic.BaseModel):
+        name: str
+        age: int
+
+    received = {}
+
+    def greet(profile: Profile) -> str:
+        received["type"] = type(profile).__name__
+        received["isinstance"] = isinstance(profile, Profile)
+        return f"hello {profile.name}"
+
+    with PythonInterpreter(tools={"greet": greet}) as sandbox:
+        result = sandbox.execute('greet(profile=Profile(name="Ada", age=36))')
+        assert result == "hello Ada"
+        assert received["type"] == "Profile"
+        assert received["isinstance"] is True
+
+
+def test_tool_pydantic_param_dict_also_works():
+    """Passing a plain dict to a pydantic-typed tool param still works (host coerces it)."""
+
+    class Profile(pydantic.BaseModel):
+        name: str
+        age: int
+
+    def greet(profile: Profile) -> str:
+        return f"hello {profile.name} ({profile.age})"
+
+    with PythonInterpreter(tools={"greet": greet}) as sandbox:
+        result = sandbox.execute('greet(profile={"name": "Ada", "age": 36})')
+        assert result == "hello Ada (36)"
+
+
+def test_tool_mixed_simple_and_pydantic_params():
+    """Tool with both simple and pydantic params works correctly."""
+
+    class Config(pydantic.BaseModel):
+        mode: str
+
+    def process(name: str, config: Config, count: int = 1) -> str:
+        return f"{name}:{config.mode}:{count}"
+
+    with PythonInterpreter(tools={"process": process}) as sandbox:
+        result = sandbox.execute('process(name="test", config=Config(mode="fast"), count=3)')
+        assert result == "test:fast:3"
+
+
+def test_tool_returning_pydantic_passed_to_another_tool():
+    """Tool return value (dict from model_dump) can be passed to a pydantic-typed tool."""
+
+    class Record(pydantic.BaseModel):
+        id: int
+        label: str
+
+    def create_record(id: int, label: str) -> Record:
+        return Record(id=id, label=label)
+
+    def describe(record: Record) -> str:
+        return f"#{record.id}: {record.label}"
+
+    with PythonInterpreter(tools={"create_record": create_record, "describe": describe}) as sandbox:
+        code = """
+data = create_record(id=42, label="hello")
+describe(record=data)
+"""
+        result = sandbox.execute(code)
+        assert result == "#42: hello"
+
+
+def test_pydantic_model_with_optional_field():
+    """Optional fields on pydantic variables work in sandbox."""
+
+    class Item(pydantic.BaseModel):
+        name: str
+        tag: str | None = None
+
+    with PythonInterpreter() as interpreter:
+        # With tag
+        result = interpreter.execute("item.tag", variables={"item": Item(name="A", tag="v1")})
+        assert result == "v1"
+        # Without tag (default None)
+        result = interpreter.execute("str(item.tag)", variables={"item": Item(name="B")})
+        assert result == "None"
+
+
+def test_pydantic_model_with_default_field():
+    """Default field values are preserved in sandbox model."""
+
+    class Config(pydantic.BaseModel):
+        name: str
+        mode: str = "standard"
+        retries: int = 3
+
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "(c.mode, c.retries)",
+            variables={"c": Config(name="test")},
+        )
+        assert result == ["standard", 3]
+
+
+def test_pydantic_enum_field():
+    """Pydantic model with enum field survives serialization round-trip."""
+    import enum
+
+    class Color(str, enum.Enum):
+        RED = "red"
+        BLUE = "blue"
+
+    class Item(pydantic.BaseModel):
+        name: str
+        color: Color
+
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "item.color",
+            variables={"item": Item(name="ball", color=Color.RED)},
+        )
+        assert result == "red"
+
+
+def test_deeply_nested_pydantic_model_4_levels():
+    """4-level nested pydantic models all support attribute access."""
+
+    class D(pydantic.BaseModel):
+        value: int
+
+    class C(pydantic.BaseModel):
+        d: D
+
+    class B(pydantic.BaseModel):
+        c: C
+
+    class A(pydantic.BaseModel):
+        b: B
+
+    a = A(b=B(c=C(d=D(value=42))))
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute("a.b.c.d.value", variables={"a": a})
+        assert result == 42
+
+
+def test_list_of_pydantic_models_as_variable():
+    """List of pydantic models injected as variable can be iterated with attribute access."""
+
+    class Score(pydantic.BaseModel):
+        student: str
+        value: int
+
+    scores = [Score(student="A", value=80), Score(student="B", value=90)]
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "[s.student for s in scores]",
+            variables={"scores": scores},
+        )
+        assert result == ["A", "B"]
+
+
+def test_dict_of_pydantic_models_as_variable():
+    """Dict[str, Model] injected as variable supports attribute access on values."""
+
+    class Score(pydantic.BaseModel):
+        value: int
+
+    registry = {"alice": Score(value=95), "bob": Score(value=72)}
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "registry['alice'].value + registry['bob'].value",
+            variables={"registry": registry},
+        )
+        assert result == 167
+
+
+def test_pydantic_tool_validation_error_shows_details():
+    """Validation errors from pydantic-typed tool params surface useful messages."""
+
+    class Profile(pydantic.BaseModel):
+        name: str
+        age: int
+
+    def greet(profile: Profile) -> str:
+        return f"hello {profile.name}"
+
+    with PythonInterpreter(tools={"greet": greet}) as sandbox:
+        with pytest.raises(CodeInterpreterError) as exc_info:
+            sandbox.execute('greet(profile={"name": "Ada", "age": "not-a-number"})')
+        assert "validationerror" in str(exc_info.value).lower()
+
+
+def test_model_spec_annotation_to_type_spec():
+    """_annotation_to_type_spec handles common annotation patterns."""
+    from dspy.primitives.python_interpreter import _annotation_to_type_spec
+
+    class Inner(pydantic.BaseModel):
+        x: int
+
+    assert _annotation_to_type_spec(str) == "str"
+    assert _annotation_to_type_spec(int) == "int"
+    assert _annotation_to_type_spec(type(None)) == "None"
+    assert _annotation_to_type_spec(Inner) == "Inner"
+    assert _annotation_to_type_spec(list) == "list"
+    assert _annotation_to_type_spec(dict) == "dict"
+
+
+def test_collect_pydantic_models_dependency_order():
+    """_collect_pydantic_models returns models in dependency order (leaves first)."""
+    from dspy.primitives.python_interpreter import _collect_pydantic_models
+
+    class Leaf(pydantic.BaseModel):
+        x: int
+
+    class Mid(pydantic.BaseModel):
+        leaf: Leaf
+
+    class Root(pydantic.BaseModel):
+        mid: Mid
+
+    collected: dict[str, type] = {}
+    _collect_pydantic_models(Root, collected)
+    names = list(collected.keys())
+    assert names == ["Leaf", "Mid", "Root"]
+
+
+def test_build_model_specs_simple():
+    """_build_model_specs produces the expected field spec dict."""
+    from collections import OrderedDict
+
+    from dspy.primitives.python_interpreter import _build_model_specs
+
+    class Address(pydantic.BaseModel):
+        city: str
+        country: str
+
+    class Person(pydantic.BaseModel):
+        name: str
+        address: Address
+        age: int = 0
+
+    models = OrderedDict([("Address", Address), ("Person", Person)])
+    specs = _build_model_specs(models)
+
+    assert specs["Address"] == {"city": {"type": "str"}, "country": {"type": "str"}}
+    assert specs["Person"]["name"] == {"type": "str"}
+    assert specs["Person"]["address"] == {"type": "Address"}
+    assert specs["Person"]["age"] == {"type": "int", "default": 0}

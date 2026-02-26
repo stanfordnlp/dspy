@@ -283,20 +283,16 @@ class TestRLMInitialization:
         rlm = RLM(PersonSig)
         output_fields = rlm._get_output_fields_info()
 
-        assert output_fields == [
-            {
-                "name": "person",
-                "json_schema": {
-                    "properties": {
-                        "name": {"title": "Name", "type": "string"},
-                        "age": {"title": "Age", "type": "integer"},
-                    },
-                    "required": ["name", "age"],
-                    "title": "Person",
-                    "type": "object",
-                },
-            },
-        ]
+        assert len(output_fields) == 1
+        field = output_fields[0]
+        assert field["name"] == "person"
+        assert field["model_type"] == "Person"
+        schema = field["json_schema"]
+        assert schema["type"] == "object"
+        assert schema["title"] == "Person"
+        assert "name" in schema["properties"]
+        assert "age" in schema["properties"]
+        assert set(schema["required"]) == {"name", "age"}
 
 
 class TestRLMFormatting:
