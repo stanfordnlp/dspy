@@ -20,7 +20,7 @@ import pydantic
 
 import dspy
 from dspy.adapters.types.tool import Tool
-from dspy.adapters.utils import parse_value, translate_field_type
+from dspy.adapters.utils import _get_json_schema, parse_value, translate_field_type
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, CodeInterpreterError, FinalOutput
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
@@ -208,17 +208,27 @@ class RLM(Module):
 
         lines = ["\nAdditional tools available (use these instead of standard library equivalents):"]
         for tool in tools.values():
-            # Build signature string from Tool's args
             params = []
             for arg_name, arg_schema in (tool.args or {}).items():
-                arg_type = arg_schema.get("type", "Any")
+                # Use the pydantic model title when available (e.g. "Profile" not "object")
+                title = arg_schema.get("title")
+                if title and arg_schema.get("type") == "object":
+                    arg_type = title
+                else:
+                    arg_type = arg_schema.get("type", "Any")
                 params.append(f"{arg_name}: {arg_type}")
             params_str = ", ".join(params)
             sig_str = f"{tool.name}({params_str})"
 
-            # Get description with newlines escaped
             desc = (tool.desc or "No description").replace("\n", "  ")
             lines.append(f"- `{sig_str}` - {desc}")
+
+            # Show field details for object-typed params (pydantic models)
+            for arg_name, arg_schema in (tool.args or {}).items():
+                props = arg_schema.get("properties")
+                if props:
+                    brief = ", ".join(f"{n}: {s.get('type', 'any')}" for n, s in props.items())
+                    lines.append(f"  `{arg_name}` fields: {{{brief}}}")
 
         return "\n".join(lines)
 
@@ -344,10 +354,18 @@ class RLM(Module):
         for name, field in self.signature.output_fields.items():
             annotation = getattr(field, "annotation", str)
             field_info = {"name": name}
-            # Only include type for simple types that work in function signatures
-            # Complex types like Literal, Union, etc. are not included
             if annotation in SIMPLE_TYPES:
                 field_info["type"] = annotation.__name__
+            else:
+                if isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel):
+                    field_info["model_type"] = annotation.__name__
+                try:
+                    field_info["json_schema"] = _get_json_schema(annotation)
+                except pydantic.PydanticSchemaGenerationError:
+                    logger.debug(
+                        "Skipping JSON schema for output field '%s' with annotation %r",
+                        name, annotation, exc_info=True,
+                    )
             fields.append(field_info)
         return fields
 

@@ -40,11 +40,25 @@ const toPythonLiteral = (value) => {
   return JSON.stringify(value);  // Works for strings, numbers, arrays, objects
 };
 
+const JSON_SCHEMA_TYPE_TO_PYTHON = {
+  string: "str",
+  integer: "int",
+  number: "float",
+  boolean: "bool",
+  array: "list",
+  object: "dict",
+  null: "None",
+};
+
 const makeToolWrapper = (toolName, parameters = []) => {
   // Build signature parts: "query: str, limit: int = 10"
   const sigParts = parameters.map(p => {
     let part = p.name;
-    if (p.type) part += `: ${p.type}`;
+    const inferredType = (!p.type && p.json_schema && typeof p.json_schema.type === "string")
+      ? JSON_SCHEMA_TYPE_TO_PYTHON[p.json_schema.type]
+      : null;
+    const pythonType = p.type || inferredType;
+    if (pythonType) part += `: ${pythonType}`;
     if (p.default !== undefined) part += ` = ${toPythonLiteral(p.default)}`;
     return part;
   });
@@ -65,7 +79,7 @@ def ${toolName}(${signature}):
 };
 
 // Generate SUBMIT function with output field signature.
-// Outputs is an array of {name, type?} objects.
+// Outputs is an array of {name, type?, json_schema?} objects.
 const makeSubmitWrapper = (outputs) => {
   if (!outputs || outputs.length === 0) {
     // Fallback to single-arg SUBMIT if no outputs defined
@@ -75,16 +89,42 @@ def SUBMIT(output):
 `;
   }
 
+  const hasModelOutputs = outputs.some(o => o.json_schema);
+
+  // SUBMIT type hints use inferred types (not model_type) since output
+  // model classes may not be registered in the sandbox.
   const sigParts = outputs.map(o => {
     let part = o.name;
-    if (o.type) part += `: ${o.type}`;
+    const inferredType = (!o.type && o.json_schema && typeof o.json_schema.type === "string")
+      ? JSON_SCHEMA_TYPE_TO_PYTHON[o.json_schema.type]
+      : null;
+    const pythonType = o.type || inferredType;
+    if (pythonType) part += `: ${pythonType}`;
     return part;
   });
   const dictParts = outputs.map(o => `"${o.name}": ${o.name}`);
 
+  // Build docstring with schema info for complex output fields
+  const schemaLines = outputs
+    .filter(o => o.json_schema)
+    .map(o => `    ${o.name}: ${JSON.stringify(o.json_schema)}`);
+  const docstring = schemaLines.length > 0
+    ? `    """Expected output schemas:\\n${schemaLines.join('\\n')}\\n    """\n`
+    : '';
+
+  // When model outputs exist, serialize BaseModel instances before raising
+  if (hasModelOutputs) {
+    return `
+def SUBMIT(${sigParts.join(', ')}):
+${docstring}    _out = {${dictParts.join(', ')}}
+    _ser = {_k: _v.model_dump() if hasattr(_v, 'model_dump') else _v for _k, _v in _out.items()}
+    raise FinalOutput(_ser)
+`;
+  }
+
   return `
 def SUBMIT(${sigParts.join(', ')}):
-    raise FinalOutput({${dictParts.join(', ')}})
+${docstring}    raise FinalOutput({${dictParts.join(', ')}})
 `;
 };
 

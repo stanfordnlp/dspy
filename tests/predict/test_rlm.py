@@ -8,6 +8,7 @@ Test organization:
 
 from contextlib import contextmanager
 
+import pydantic
 import pytest
 
 from dspy.adapters.types.tool import Tool
@@ -266,6 +267,32 @@ class TestRLMInitialization:
 
         with pytest.raises(RuntimeError, match="LLM call limit exceeded"):
             tools["llm_query"](prompt="one more")
+
+    def test_output_fields_info_includes_json_schema_for_pydantic_type(self):
+        """Test that complex output types retain JSON schema metadata for sandbox registration."""
+        import dspy
+
+        class Person(pydantic.BaseModel):
+            name: str
+            age: int
+
+        class PersonSig(dspy.Signature):
+            query: str = dspy.InputField()
+            person: Person = dspy.OutputField()
+
+        rlm = RLM(PersonSig)
+        output_fields = rlm._get_output_fields_info()
+
+        assert len(output_fields) == 1
+        field = output_fields[0]
+        assert field["name"] == "person"
+        assert field["model_type"] == "Person"
+        schema = field["json_schema"]
+        assert schema["type"] == "object"
+        assert schema["title"] == "Person"
+        assert "name" in schema["properties"]
+        assert "age" in schema["properties"]
+        assert set(schema["required"]) == {"name", "age"}
 
 
 class TestRLMCodeFenceParsing:
@@ -1106,6 +1133,26 @@ class TestRLMWithDummyLM:
 
             assert result.total == 15
 
+    def test_with_pydantic_input_model_e2e(self):
+        """Test RLM with a pydantic input model instance passed to sandbox."""
+        import dspy
+
+        class Person(pydantic.BaseModel):
+            name: str
+            age: int
+
+        class PersonSig(dspy.Signature):
+            person: Person = dspy.InputField()
+            next_age: int = dspy.OutputField()
+
+        with dummy_lm_context([
+            {"reasoning": "Increment person age", "code": "SUBMIT(person['age'] + 1)"},
+        ]):
+            rlm = RLM(PersonSig, max_iterations=3)
+            result = rlm.forward(person=Person(name="Ada", age=36))
+
+            assert result.next_age == 37
+
     def test_with_tool_e2e(self):
         """Test RLM calling a host-side tool through the sandbox."""
         def lookup(key: str) -> str:
@@ -1154,6 +1201,192 @@ class TestRLMWithDummyLM:
             result = await rlm.aforward(numbers=[1, 2, 3, 4, 5])
 
             assert result.total == 15
+
+
+# ============================================================================
+# Integration Tests: RLM Pydantic Stress Tests
+# ============================================================================
+
+
+@pytest.mark.deno
+class TestRLMPydanticStress:
+    """Stress tests for pydantic models flowing through the full RLM pipeline."""
+
+    def test_pydantic_output_model_e2e(self):
+        """SUBMIT returns a dict that gets parsed into a pydantic output field."""
+        import dspy
+
+        class Person(pydantic.BaseModel):
+            name: str
+            age: int
+
+        class ExtractSig(dspy.Signature):
+            text: str = dspy.InputField()
+            person: Person = dspy.OutputField()
+
+        with dummy_lm_context([
+            {"reasoning": "Extract person", "code": 'SUBMIT(person={"name": "Ada", "age": 36})'},
+        ]):
+            rlm = RLM(ExtractSig, max_iterations=3)
+            result = rlm.forward(text="Ada is 36")
+
+            assert isinstance(result.person, Person)
+            assert result.person.name == "Ada"
+            assert result.person.age == 36
+
+    def test_pydantic_output_nested_model_e2e(self):
+        """SUBMIT with a nested pydantic model as output field."""
+        import dspy
+
+        class Address(pydantic.BaseModel):
+            city: str
+            country: str
+
+        class PersonWithAddr(pydantic.BaseModel):
+            name: str
+            address: Address
+
+        class Sig(dspy.Signature):
+            text: str = dspy.InputField()
+            person: PersonWithAddr = dspy.OutputField()
+
+        with dummy_lm_context([
+            {
+                "reasoning": "Extract nested person",
+                "code": 'SUBMIT(person={"name": "Ada", "address": {"city": "London", "country": "UK"}})',
+            },
+        ]):
+            rlm = RLM(Sig, max_iterations=3)
+            result = rlm.forward(text="Ada lives in London, UK")
+
+            assert isinstance(result.person, PersonWithAddr)
+            assert result.person.address.city == "London"
+
+    def test_pydantic_input_and_output_e2e(self):
+        """Pydantic model as both input variable AND output field."""
+        import dspy
+
+        class Item(pydantic.BaseModel):
+            name: str
+            price: float
+
+        class PriceSig(dspy.Signature):
+            item: Item = dspy.InputField()
+            discounted: Item = dspy.OutputField()
+
+        with dummy_lm_context([
+            {
+                "reasoning": "Apply 50% discount",
+                "code": 'SUBMIT(discounted={"name": item["name"], "price": item["price"] * 0.5})',
+            },
+        ]):
+            rlm = RLM(PriceSig, max_iterations=3)
+            result = rlm.forward(item=Item(name="Widget", price=10.0))
+
+            assert isinstance(result.discounted, Item)
+            assert result.discounted.name == "Widget"
+            assert result.discounted.price == 5.0
+
+    def test_pydantic_tool_and_pydantic_output_e2e(self):
+        """Tool with pydantic arg + pydantic output field in same RLM."""
+        import dspy
+
+        class Query(pydantic.BaseModel):
+            text: str
+            limit: int
+
+        class Result(pydantic.BaseModel):
+            matches: list[str]
+            total: int
+
+        def fake_search(query: Query) -> dict:
+            return {"matches": [f"result_{i}" for i in range(query.limit)], "total": query.limit}
+
+        class SearchSig(dspy.Signature):
+            question: str = dspy.InputField()
+            result: Result = dspy.OutputField()
+
+        with dummy_lm_context([
+            {
+                "reasoning": "Search and submit",
+                "code": 'data = fake_search(query={"text": "hello", "limit": 3})\nSUBMIT(result=data)',
+            },
+        ]):
+            rlm = RLM(SearchSig, max_iterations=3, tools=[fake_search])
+            result = rlm.forward(question="find hello")
+
+            assert isinstance(result.result, Result)
+            assert result.result.total == 3
+            assert len(result.result.matches) == 3
+
+    def test_pydantic_output_validation_error_retry_e2e(self):
+        """Invalid pydantic output triggers type error, LLM retries with correct shape."""
+        import dspy
+
+        class Person(pydantic.BaseModel):
+            name: str
+            age: int
+
+        class Sig(dspy.Signature):
+            text: str = dspy.InputField()
+            person: Person = dspy.OutputField()
+
+        with dummy_lm_context([
+            # First attempt: age is not an int-coercible value
+            {"reasoning": "Try wrong shape", "code": 'SUBMIT(person="Ada is 36")'},
+            # Second attempt: correct dict shape
+            {"reasoning": "Fix it", "code": 'SUBMIT(person={"name": "Ada", "age": 36})'},
+        ]):
+            rlm = RLM(Sig, max_iterations=5)
+            result = rlm.forward(text="Ada is 36")
+
+            assert isinstance(result.person, Person)
+            assert result.person.name == "Ada"
+
+    def test_list_of_pydantic_models_as_input_variable_e2e(self):
+        """List of pydantic models injected as variable, processed in sandbox."""
+        import dspy
+
+        class Score(pydantic.BaseModel):
+            student: str
+            value: int
+
+        class AvgSig(dspy.Signature):
+            scores: list[Score] = dspy.InputField()
+            average: float = dspy.OutputField()
+
+        scores = [Score(student="A", value=80), Score(student="B", value=90), Score(student="C", value=70)]
+
+        with dummy_lm_context([
+            {
+                "reasoning": "Compute average",
+                "code": "avg = sum(s['value'] for s in scores) / len(scores)\nSUBMIT(avg)",
+            },
+        ]):
+            rlm = RLM(AvgSig, max_iterations=3)
+            result = rlm.forward(scores=scores)
+
+            assert result.average == 80.0
+
+    def test_multi_turn_with_pydantic_tool_e2e(self):
+        """Multi-turn: explore data, then call pydantic tool, then SUBMIT."""
+
+        class Record(pydantic.BaseModel):
+            id: int
+            label: str
+
+        def lookup(record: Record) -> str:
+            return f"Found: {record.label} (id={record.id})"
+
+        with dummy_lm_context([
+            {"reasoning": "Explore input", "code": "print(type(data))"},
+            {"reasoning": "Call lookup", "code": 'result = lookup(record={"id": 1, "label": "test"})\nSUBMIT(result)'},
+        ]):
+            rlm = RLM("data -> answer: str", max_iterations=5, tools=[lookup])
+            result = rlm.forward(data="some data")
+
+            assert result.answer == "Found: test (id=1)"
+            assert len(result.trajectory) == 2
 
 
 # ============================================================================

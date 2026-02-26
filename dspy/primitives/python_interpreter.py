@@ -15,7 +15,9 @@ import os
 import subprocess
 import threading
 from os import PathLike
-from typing import Any, Callable
+from typing import Any, Callable, get_type_hints
+
+import pydantic
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
 
@@ -134,6 +136,7 @@ class PythonInterpreter:
         self.tools = dict(tools) if tools else {}
         self.output_fields = output_fields
         self._tools_registered = False
+        self._tool_adapters: dict[str, dict[str, pydantic.TypeAdapter]] = {}
         # TODO later on add enable_run (--allow-run) by proxying subprocess.run through Deno.run() to fix 'emscripten does not support processes' error
 
         if deno_command:
@@ -245,43 +248,80 @@ class PythonInterpreter:
             self.deno_process.stdin.write(sync_msg + "\n")
             self.deno_process.stdin.flush()
 
-    def _extract_parameters(self, fn: Callable) -> list[dict]:
-        """Extract parameter info from a callable for sandbox registration."""
+    def _resolve_type_hints(self, fn: Callable) -> dict[str, Any]:
+        """Resolve function annotations, including forward refs when possible."""
+        try:
+            return get_type_hints(fn, include_extras=True)
+        except NameError:
+            annotations = getattr(fn, "__annotations__", {})
+            string_annos = {k: v for k, v in annotations.items() if k != "return" and isinstance(v, str)}
+            if string_annos:
+                formatted = ", ".join(f"{k}={v!r}" for k, v in string_annos.items())
+                raise TypeError(
+                    f"Tool '{getattr(fn, '__name__', repr(fn))}' uses unresolved forward-ref string annotation(s): "
+                    f"{formatted}. Forward-ref strings are not supported for tool parameters; "
+                    "use concrete types."
+                )
+            return {}
+        except AttributeError:
+            return {}
+
+    def _build_tool_info(self, fn: Callable) -> tuple[list[dict], dict[str, pydantic.TypeAdapter]]:
+        """Extract parameter info and TypeAdapters for a callable.
+
+        Returns (params, adapters) where params is the registration payload
+        and adapters maps param names to TypeAdapters for call-time coercion.
+        """
         sig = inspect.signature(fn)
+        hints = self._resolve_type_hints(fn)
         params = []
+        adapters = {}
         for name, param in sig.parameters.items():
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                raise TypeError(
+                    f"Tool '{getattr(fn, '__name__', repr(fn))}' uses variadic parameter '{name}', "
+                    "but variadic tool parameters (*args/**kwargs) are not supported."
+                )
+
             p = {"name": name}
-            # Only include type for simple types that work in function signatures
-            # Complex types like Union, Optional, etc. are not included
-            if param.annotation != inspect.Parameter.empty:
-                if param.annotation in SIMPLE_TYPES:
-                    p["type"] = param.annotation.__name__
+            annotation = hints.get(name, param.annotation)
+            if annotation != inspect.Parameter.empty:
+                if annotation in SIMPLE_TYPES:
+                    p["type"] = annotation.__name__
+                else:
+                    try:
+                        adapter = pydantic.TypeAdapter(annotation)
+                        p["json_schema"] = adapter.json_schema()
+                        adapters[name] = adapter
+                    except pydantic.PydanticSchemaGenerationError:
+                        logger.debug(
+                            "Skipping JSON schema for tool parameter '%s' with annotation %r",
+                            name, annotation, exc_info=True,
+                        )
             if param.default != inspect.Parameter.empty:
                 p["default"] = param.default
             params.append(p)
-        return params
+        return params, adapters
 
     def _register_tools(self) -> None:
         """Register tools and output fields with the sandbox."""
         if self._tools_registered:
             return
 
-        # Build registration params with typed tool signatures
         params = {}
 
         if self.tools:
+            self._tool_adapters.clear()
             tools_info = []
             for name, fn in self.tools.items():
-                tools_info.append({
-                    "name": name,
-                    "parameters": self._extract_parameters(fn)
-                })
+                tool_params, adapters = self._build_tool_info(fn)
+                tools_info.append({"name": name, "parameters": tool_params})
+                self._tool_adapters[name] = adapters
             params["tools"] = tools_info
 
         if self.output_fields:
             params["outputs"] = self.output_fields
 
-        # Skip if nothing to register
         if not params:
             self._tools_registered = True
             return
@@ -294,12 +334,17 @@ class PythonInterpreter:
         request_id = request["id"]
         params = request.get("params", {})
         tool_name = params.get("name")
-        kwargs = params.get("kwargs", {})
+        kwargs = dict(params.get("kwargs", {}))
 
         try:
             if tool_name not in self.tools:
                 raise CodeInterpreterError(f"Unknown tool: {tool_name}")
+            for param_name, adapter in self._tool_adapters.get(tool_name, {}).items():
+                if param_name in kwargs:
+                    kwargs[param_name] = adapter.validate_python(kwargs[param_name])
             result = self.tools[tool_name](**kwargs)
+            if isinstance(result, pydantic.BaseModel):
+                result = result.model_dump(mode="json")
             is_json = isinstance(result, (list, dict))
             response = _jsonrpc_result(
                 {"value": json.dumps(result) if is_json else (str(result) if result is not None else ""), "type": "json" if is_json else "string"},
@@ -410,6 +455,8 @@ class PythonInterpreter:
                 return sorted(self._to_json_compatible(v) for v in value)
             except TypeError:
                 return [self._to_json_compatible(v) for v in value]
+        elif isinstance(value, pydantic.BaseModel):
+            return self._to_json_compatible(value.model_dump(mode="json"))
         else:
             raise CodeInterpreterError(f"Unsupported value type: {type(value).__name__}")
 
@@ -453,6 +500,8 @@ class PythonInterpreter:
             return "True" if value else "False"
         elif isinstance(value, (int, float)):
             return str(value)
+        elif isinstance(value, pydantic.BaseModel):
+            return self._serialize_value(value.model_dump(mode="json"))
         elif isinstance(value, (list, tuple)):
             # Tuples become lists for JSON compatibility
             items = ", ".join(self._serialize_value(item) for item in value)
