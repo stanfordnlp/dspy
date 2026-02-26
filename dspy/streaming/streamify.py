@@ -14,7 +14,7 @@ from litellm import ModelResponseStream
 
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
-from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback
+from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback, _set_consumer_loop
 from dspy.streaming.streaming_listener import StreamListener, find_predictor_for_stream_listeners
 from dspy.utils.asyncify import asyncify
 
@@ -173,6 +173,7 @@ def streamify(
         await stream.send(prediction)
 
     async def async_streamer(*args, **kwargs):
+        _set_consumer_loop(asyncio.get_running_loop())
         send_stream, receive_stream = create_memory_object_stream(16)
         async with create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)

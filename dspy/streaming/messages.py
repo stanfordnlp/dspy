@@ -1,9 +1,7 @@
 import asyncio
-import concurrent.futures
+import threading
 from dataclasses import dataclass
 from typing import Any
-
-from asyncer import syncify
 
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
@@ -24,30 +22,50 @@ class StatusMessage:
     message: str
 
 
+# Module-level cache of the event loop that owns the stream consumer.
+# Set by streamify() so that background threads (e.g. dspy.Parallel) can
+# safely schedule items onto the correct loop.
+_consumer_loop: asyncio.AbstractEventLoop | None = None
+_consumer_loop_lock = threading.Lock()
+
+
+def _set_consumer_loop(loop: asyncio.AbstractEventLoop):
+    global _consumer_loop
+    with _consumer_loop_lock:
+        _consumer_loop = loop
+
+
 def sync_send_to_stream(stream, message):
-    """Send message to stream in a sync context, regardless of event loop state."""
-
-    async def _send():
-        await stream.send(message)
-
+    """Send a message to an anyio MemoryObjectSendStream from any thread."""
     try:
         asyncio.get_running_loop()
-
-        # If we're in an event loop, offload to a new thread with its own event loop
-        def run_in_new_loop():
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            try:
-                return new_loop.run_until_complete(_send())
-            finally:
-                new_loop.close()
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(run_in_new_loop)
-            return future.result()
+        # Inside a running event loop — send_nowait is safe here.
+        stream.send_nowait(message)
     except RuntimeError:
-        # Not in an event loop, safe to use a new event loop in this thread
-        return syncify(_send)()
+        # No running event loop (e.g. dspy.Parallel's ThreadPoolExecutor).
+        # Use call_soon_threadsafe to schedule the send on the consumer's loop.
+        with _consumer_loop_lock:
+            loop = _consumer_loop
+
+        if loop is None:
+            stream.send_nowait(message)
+            return
+
+        done = threading.Event()
+        exc_holder = []
+
+        def _do_send():
+            try:
+                stream.send_nowait(message)
+            except Exception as e:
+                exc_holder.append(e)
+            finally:
+                done.set()
+
+        loop.call_soon_threadsafe(_do_send)
+        done.wait()
+        if exc_holder:
+            raise exc_holder[0]
 
 
 class StatusMessageProvider:

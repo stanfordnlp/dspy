@@ -338,8 +338,28 @@ def _get_stream_completion_fn(
         return litellm.stream_chunk_builder(chunks)
 
     def sync_stream_completion():
-        syncified_stream_completion = syncify(stream_completion)
-        return syncified_stream_completion(request, cache_kwargs)
+        try:
+            syncified_stream_completion = syncify(stream_completion)
+            return syncified_stream_completion(request, cache_kwargs)
+        except RuntimeError:
+            # Not in an AnyIO worker thread (e.g. dspy.Parallel's ThreadPoolExecutor).
+            # Fall back to litellm's synchronous streaming API and forward chunks
+            # via sync_send_to_stream which is safe to call from any thread.
+            from dspy.streaming.messages import sync_send_to_stream
+
+            response = litellm.completion(
+                cache=cache_kwargs,
+                stream=True,
+                headers=headers,
+                **request,
+            )
+            chunks = []
+            for chunk in response:
+                if caller_predict_id:
+                    chunk.predict_id = caller_predict_id
+                chunks.append(chunk)
+                sync_send_to_stream(stream, chunk)
+            return litellm.stream_chunk_builder(chunks)
 
     async def async_stream_completion():
         return await stream_completion(request, cache_kwargs)
