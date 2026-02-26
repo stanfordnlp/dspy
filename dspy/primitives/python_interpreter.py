@@ -514,22 +514,19 @@ class PythonInterpreter:
                 err_output = self.deno_process.stderr.read()
                 raise CodeInterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
 
-            # Skip non-JSON lines (e.g., Pyodide package loading messages)
-            if not output_line.startswith("{"):
-                skipped += 1
-                if skipped > self._MAX_SKIP_LINES:
-                    raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) during execution")
-                logger.debug("Skipping non-JSON output: %s", output_line)
-                continue
+            # Try to parse as JSON; skip non-JSON and malformed lines
+            msg = None
+            if output_line.startswith("{"):
+                try:
+                    msg = json.loads(output_line)
+                except json.JSONDecodeError:
+                    pass
 
-            # Parse that line as JSON
-            try:
-                msg = json.loads(output_line)
-            except json.JSONDecodeError:
+            if msg is None:
                 skipped += 1
                 if skipped > self._MAX_SKIP_LINES:
                     raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) during execution")
-                logger.debug("Skipping malformed JSON: %s", output_line[:100])
+                logger.debug("Skipping non-JSON output: %s", output_line[:100])
                 continue
 
             # Handle incoming requests (tool calls from sandbox)
