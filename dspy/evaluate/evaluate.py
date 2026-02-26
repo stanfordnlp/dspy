@@ -1,7 +1,11 @@
+import asyncio
 import csv
 import importlib
+import inspect
 import json
 import logging
+import sys
+import traceback
 import types
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -146,16 +150,16 @@ class Evaluate:
 
             - results: a list of (example, prediction, score) tuples for each example in devset
         """
-        metric = metric if metric is not None else self.metric
-        devset = devset if devset is not None else self.devset
-        num_threads = num_threads if num_threads is not None else self.num_threads
-        display_progress = display_progress if display_progress is not None else self.display_progress
-        display_table = display_table if display_table is not None else self.display_table
-        save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
-        save_as_json = save_as_json if save_as_json is not None else self.save_as_json
-
-        if callback_metadata:
-            logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
+        metric, devset, num_threads, display_progress, display_table, save_as_csv, save_as_json = self._resolve_runtime_args(
+            metric=metric,
+            devset=devset,
+            num_threads=num_threads,
+            display_progress=display_progress,
+            display_table=display_table,
+            save_as_csv=save_as_csv,
+            save_as_json=save_as_json,
+            callback_metadata=callback_metadata,
+        )
 
         tqdm.tqdm._instances.clear()
 
@@ -172,58 +176,244 @@ class Evaluate:
             score = metric(example, prediction)
             return prediction, score
 
-        results = executor.execute(process_item, devset)
-        assert len(devset) == len(results)
+        raw_results = executor.execute(process_item, devset)
+        return self._finalize_results(
+            raw_results=raw_results,
+            devset=devset,
+            metric=metric,
+            display_table=display_table,
+            save_as_csv=save_as_csv,
+            save_as_json=save_as_json,
+        )
 
-        results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
-        results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
+    @with_callbacks
+    async def acall(
+        self,
+        program: "dspy.Module",
+        metric: Callable | None = None,
+        devset: list["dspy.Example"] | None = None,
+        num_threads: int | None = None,
+        display_progress: bool | None = None,
+        display_table: bool | int | None = None,
+        callback_metadata: dict[str, Any] | None = None,
+        save_as_csv: str | None = None,
+        save_as_json: str | None = None,
+    ) -> EvaluationResult:
+        """Async version of __call__. Runs evaluation with native asyncio concurrency.
+
+        Programs that define ``aforward`` are awaited directly. Sync-only programs are
+        automatically wrapped via ``dspy.asyncify`` to run in a thread pool.
+
+        Args and return value match ``__call__``.
+        """
+        metric, devset, num_threads, display_progress, display_table, save_as_csv, save_as_json = self._resolve_runtime_args(
+            metric=metric,
+            devset=devset,
+            num_threads=num_threads,
+            display_progress=display_progress,
+            display_table=display_table,
+            save_as_csv=save_as_csv,
+            save_as_json=save_as_json,
+            callback_metadata=callback_metadata,
+        )
+
+        tqdm.tqdm._instances.clear()
+        effective_num_threads = num_threads or dspy.settings.num_threads
+        effective_max_errors = self.max_errors if self.max_errors is not None else dspy.settings.max_errors
+
+        with dspy.context(async_max_workers=effective_num_threads):
+            raw_results = await self._execute_async(
+                program=program,
+                metric=metric,
+                data=devset,
+                num_threads=effective_num_threads,
+                disable_progress_bar=not display_progress,
+                max_errors=effective_max_errors,
+                provide_traceback=self.provide_traceback,
+            )
+
+        return self._finalize_results(
+            raw_results=raw_results,
+            devset=devset,
+            metric=metric,
+            display_table=display_table,
+            save_as_csv=save_as_csv,
+            save_as_json=save_as_json,
+        )
+
+    def _resolve_runtime_args(
+        self,
+        *,
+        metric: Callable | None,
+        devset: list["dspy.Example"] | None,
+        num_threads: int | None,
+        display_progress: bool | None,
+        display_table: bool | int | None,
+        save_as_csv: str | None,
+        save_as_json: str | None,
+        callback_metadata: dict[str, Any] | None,
+    ) -> tuple[Callable, list["dspy.Example"], int | None, bool, bool | int, str | None, str | None]:
+        metric = metric if metric is not None else self.metric
+        devset = devset if devset is not None else self.devset
+        num_threads = num_threads if num_threads is not None else self.num_threads
+        display_progress = display_progress if display_progress is not None else self.display_progress
+        display_table = display_table if display_table is not None else self.display_table
+        save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
+        save_as_json = save_as_json if save_as_json is not None else self.save_as_json
+
+        if callback_metadata:
+            logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
+
+        return metric, devset, num_threads, display_progress, display_table, save_as_csv, save_as_json
+
+    @staticmethod
+    def _metric_name(metric: Callable) -> str:
+        return metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
+
+    def _finalize_results(
+        self,
+        *,
+        raw_results: list[Any],
+        devset: list["dspy.Example"],
+        metric: Callable,
+        display_table: bool | int,
+        save_as_csv: str | None,
+        save_as_json: str | None,
+    ) -> EvaluationResult:
+        assert len(devset) == len(raw_results)
+        raw_results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in raw_results]
+        results = [(example, prediction, score) for example, (prediction, score) in zip(devset, raw_results, strict=False)]
         ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
         logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
 
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
-                # Rename the 'correct' column to the name of the metric object
-                metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
-                # Construct a pandas DataFrame from the results
+                metric_name = self._metric_name(metric)
                 result_df = self._construct_result_table(results, metric_name)
-
                 self._display_result_table(result_df, display_table, metric_name)
             else:
                 logger.warning("Skipping table display since `pandas` is not installed.")
 
         if save_as_csv:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
-            )
+            metric_name = self._metric_name(metric)
             data = self._prepare_results_output(results, metric_name)
-
             with open(save_as_csv, "w", newline="") as csvfile:
                 fieldnames = data[0].keys()
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
                 writer.writeheader()
                 for row in data:
                     writer.writerow(row)
         if save_as_json:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
-            )
+            metric_name = self._metric_name(metric)
             data = self._prepare_results_output(results, metric_name)
-            with open(
-                    save_as_json,
-                    "w",
-            ) as f:
+            with open(save_as_json, "w") as f:
                 json.dump(data, f)
 
-        return EvaluationResult(
-            score=round(100 * ncorrect / ntotal, 2),
-            results=results,
+        return EvaluationResult(score=round(100 * ncorrect / ntotal, 2), results=results)
+
+    @staticmethod
+    def _is_async_callable(fn: Any) -> bool:
+        return inspect.iscoroutinefunction(fn) or inspect.iscoroutinefunction(getattr(fn, "__call__", None))
+
+    async def _invoke_program_async(self, program: Any, inputs: dict[str, Any]) -> Any:
+        if hasattr(program, "aforward"):
+            return await program.acall(**inputs)
+
+        if self._is_async_callable(program):
+            return await program(**inputs)
+
+        return await dspy.asyncify(program)(**inputs)
+
+    async def _invoke_metric_async(self, metric: Callable, example: Any, prediction: Any) -> Any:
+        if self._is_async_callable(metric):
+            return await metric(example, prediction)
+
+        return metric(example, prediction)
+
+    @staticmethod
+    def _update_progress_bar(pbar, results):
+        vals = [r[-1] for r in results if r is not None]
+        nresults = sum(vals)
+        metric_denominator = len(vals)
+        pct = round(100 * nresults / metric_denominator, 1) if metric_denominator else 0
+        pbar.set_description(f"Average Metric: {nresults:.2f} / {metric_denominator} ({pct}%)")
+        pbar.update()
+
+    async def _execute_async(
+        self,
+        *,
+        program: Any,
+        metric: Callable,
+        data: list[Any],
+        num_threads: int,
+        disable_progress_bar: bool,
+        max_errors: int,
+        provide_traceback: bool | None,
+    ) -> list[Any]:
+        results: list[Any] = [None] * len(data)
+        error_count = 0
+        cancel_jobs = asyncio.Event()
+        semaphore = asyncio.Semaphore(num_threads)
+
+        pbar = tqdm.tqdm(
+            total=len(data),
+            dynamic_ncols=True,
+            disable=disable_progress_bar,
+            file=sys.stdout,
         )
+
+        async def process_item(index: int, example: Any):
+            nonlocal error_count
+
+            if cancel_jobs.is_set():
+                return index, None
+
+            async with semaphore:
+                if cancel_jobs.is_set():
+                    return index, None
+
+                try:
+                    prediction = await self._invoke_program_async(program, example.inputs())
+                    score = await self._invoke_metric_async(metric, example, prediction)
+                    return index, (prediction, score)
+                except Exception as e:
+                    error_count += 1
+                    if error_count >= max_errors:
+                        cancel_jobs.set()
+                    if provide_traceback:
+                        logger.error(f"Error for {example}: {e}\n{traceback.format_exc()}")
+                    else:
+                        logger.error(f"Error for {example}: {e}. Set `provide_traceback=True` for traceback.")
+                    return index, None
+
+        tasks = [asyncio.create_task(process_item(index, item)) for index, item in enumerate(data)]
+        try:
+            for completed_task in asyncio.as_completed(tasks):
+                try:
+                    index, outcome = await completed_task
+                except asyncio.CancelledError:
+                    continue
+
+                if outcome is not None and results[index] is None:
+                    results[index] = outcome
+
+                self._update_progress_bar(pbar, results)
+
+                if cancel_jobs.is_set():
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+
+            await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            pbar.close()
+
+        if cancel_jobs.is_set():
+            logger.warning("Execution cancelled due to errors or interruption.")
+            raise RuntimeError("Execution cancelled due to errors or interruption.")
+
+        return results
 
     @staticmethod
     def _prepare_results_output(
