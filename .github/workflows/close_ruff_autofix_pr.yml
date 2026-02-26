@@ -6,7 +6,6 @@ on:
 
 jobs:
   close-autofix-pr:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
