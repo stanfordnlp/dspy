@@ -25,7 +25,6 @@ jobs:
               repo,
               state: "open",
               head,
-              base: "main",
               per_page: 100,
             });
 

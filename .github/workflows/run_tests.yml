@@ -43,7 +43,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "fix: ruff auto-fix for #${{ github.event.pull_request.number }}"
           branch: ci/ruff-autofix/pr-${{ github.event.pull_request.number }}
-          base: main
+          base: ${{ github.event.pull_request.head.ref }}
           title: "fix: ruff auto-fix for #${{ github.event.pull_request.number }}"
           body: |
             Auto-generated Ruff fixes for #${{ github.event.pull_request.number }}.
@@ -51,7 +51,8 @@ jobs:
             Source PR: #${{ github.event.pull_request.number }}
             Source SHA: `${{ github.event.pull_request.head.sha }}`
 
-            This PR is kept as a rolling branch and will be auto-closed when the source PR is merged.
+            This PR targets `${{ github.event.pull_request.head.ref }}` and is kept as a rolling branch.
+            It will be auto-closed when the source PR is merged.
           delete-branch: true
       - name: Fail when Ruff fixes are needed
         if: steps.ruff_check.outcome == 'failure'
@@ -60,7 +61,7 @@ jobs:
           echo "❌ Ruff found issues that can be fixed automatically."
           echo ""
           if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-            echo "💡 A rolling Ruff auto-fix PR to main has been created or updated."
+            echo "💡 A rolling Ruff auto-fix PR to this PR branch has been created or updated."
           else
             echo "💡 Auto-fix PR creation was skipped (fork or non-PR event)."
           fi
