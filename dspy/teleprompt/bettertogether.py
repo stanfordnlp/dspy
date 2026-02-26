@@ -348,7 +348,7 @@ class BetterTogether(Teleprompter):
         if not strategy or not strategy.strip():
             raise ValueError("strategy cannot be empty")
 
-        parsed_strategy = strategy.lower().split(self.STRAT_SEP)
+        parsed_strategy = strategy.split(self.STRAT_SEP)
 
         invalid_steps = [s for s in parsed_strategy if s not in self.optimizers]
         if invalid_steps:
