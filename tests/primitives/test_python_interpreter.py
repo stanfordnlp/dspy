@@ -297,6 +297,21 @@ def test_tool_default_args():
         assert result == "Hi, World!"
 
 
+def test_tool_all_positional_args():
+    """Test that tools work when all arguments are passed positionally."""
+
+    def add(a: int, b: int, c: int) -> str:
+        return f"{a + b + c}"
+
+    with PythonInterpreter(tools={"add": add}) as sandbox:
+        result = sandbox.execute("add(1, 2, 3)")
+        assert result == "6"
+
+        # Mixed: some positional, some keyword
+        result = sandbox.execute("add(10, 20, c=30)")
+        assert result == "60"
+
+
 # =============================================================================
 # Multi-Output SUBMIT Tests
 # =============================================================================
