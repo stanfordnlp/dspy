@@ -339,6 +339,30 @@ class PythonInterpreter:
 
     _MAX_SKIP_LINES = 100
 
+    def _read_response_line(self, context: str) -> str:
+        """Read one stdout line from Deno or raise a process-level error."""
+        response_line = self.deno_process.stdout.readline().strip()
+        if response_line:
+            return response_line
+
+        exit_code = self.deno_process.poll()
+        if exit_code is not None:
+            stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
+            raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
+        raise CodeInterpreterError(f"No response {context}")
+
+    def _parse_response_line(self, response_line: str, context: str) -> dict | None:
+        """Parse a JSON-RPC line, returning None for non-JSON or malformed lines."""
+        if not response_line.startswith("{"):
+            logger.debug("Skipping non-JSON output during %s: %s", context, response_line)
+            return None
+
+        try:
+            return json.loads(response_line)
+        except json.JSONDecodeError:
+            logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
+            return None
+
     def _send_request(self, method: str, params: dict, context: str) -> dict:
         """Send a JSON-RPC request and return the parsed response.
 
@@ -352,29 +376,11 @@ class PythonInterpreter:
         self.deno_process.stdin.flush()
 
         skipped = 0
-        while True:
-            response_line = self.deno_process.stdout.readline().strip()
-            if not response_line:
-                exit_code = self.deno_process.poll()
-                if exit_code is not None:
-                    stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
-                    raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
-                raise CodeInterpreterError(f"No response {context}")
-
-            if not response_line.startswith("{"):
+        while skipped <= self._MAX_SKIP_LINES:
+            response_line = self._read_response_line(context)
+            response = self._parse_response_line(response_line, context)
+            if response is None:
                 skipped += 1
-                if skipped > self._MAX_SKIP_LINES:
-                    raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) {context}")
-                logger.debug("Skipping non-JSON output during %s: %s", context, response_line)
-                continue
-
-            try:
-                response = json.loads(response_line)
-            except json.JSONDecodeError:
-                skipped += 1
-                if skipped > self._MAX_SKIP_LINES:
-                    raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) {context}")
-                logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
                 continue
 
             if response.get("id") != request_id:
@@ -382,6 +388,8 @@ class PythonInterpreter:
             if "error" in response:
                 raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
             return response
+
+        raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) {context}")
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
