@@ -312,6 +312,26 @@ def test_tool_all_positional_args():
         assert result == "60"
 
 
+def test_tool_error_surfaces_as_runtime_error():
+    """Test that exceptions raised by a tool surface as RuntimeError in the sandbox."""
+
+    def failing_tool(x: int) -> str:
+        raise ValueError(f"bad value: {x}")
+
+    with PythonInterpreter(tools={"failing_tool": failing_tool}) as sandbox:
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_tool(42)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "bad value: 42" in result
+
+
+
 # =============================================================================
 # Multi-Output SUBMIT Tests
 # =============================================================================
