@@ -13,7 +13,7 @@ def _blue(text: str, end: str = "\n"):
 def pretty_print_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
 
-    for item in history[-n:]:
+    for item in list(history)[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")

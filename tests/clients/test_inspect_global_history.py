@@ -1,5 +1,7 @@
 import pytest
 
+from collections import deque
+
 import dspy
 from dspy.clients.base_lm import GLOBAL_HISTORY
 from dspy.utils.dummies import DummyLM
@@ -25,7 +27,7 @@ def test_inspect_history_basic(capsys):
     history = GLOBAL_HISTORY
     print(capsys)
     assert len(history) > 0
-    assert isinstance(history, list)
+    assert isinstance(history, (list, deque))
     assert all(isinstance(entry, dict) for entry in history)
     assert all("messages" in entry for entry in history)
 
@@ -60,7 +62,7 @@ def test_inspect_empty_history(capsys):
     dspy.inspect_history()
     history = GLOBAL_HISTORY
     assert len(history) == 0
-    assert isinstance(history, list)
+    assert isinstance(history, (list, deque))
 
 
 def test_inspect_history_n_larger_than_history(capsys):
