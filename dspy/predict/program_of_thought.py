@@ -136,7 +136,11 @@ class ProgramOfThought(Module):
     def _parse_code(self, code_data):
         code = code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
         code_match = re.search(r"```python[ \n](.*?)[ \n]```?", code, re.DOTALL)
-        code_block = (code_match.group(1) if code_match else code).replace("\\n", "\n")
+        # Extract the code block without any post-processing transformations.
+        # Previously, a global .replace("\\n", "\n") was applied here, which
+        # corrupted escape sequences inside string literals (e.g. f"\\nTotal: {x}"
+        # became a literal newline mid-string, producing a SyntaxError).
+        code_block = code_match.group(1) if code_match else code
         if not code_block:
             return code, "Error: Empty code after parsing."
         if "\n" not in code_block and code_block.count("=") > 1:
@@ -144,18 +148,14 @@ class ProgramOfThought(Module):
         lines = code_block.split("\n")
         last_line_match = re.match(r"^(\w+)\s*=", lines[-1].strip())
         if last_line_match and len(lines) > 1:
+            # Append the assigned variable as a bare expression so the
+            # interpreter can capture and return its value.
             code_block += "\n" + last_line_match.group(1)
-        else:
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
-                r"\1\n",
-                code_block,
-            )
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
-                r"\1\n\2",
-                code_block,
-            )
+        # NOTE: the previous fallback used context-unaware regex substitutions
+        # (splitting on "=" without regard for string boundaries) that corrupted
+        # valid Python such as `data = "users: Alice=25"`.  LLM-generated code
+        # already contains proper newlines when extracted from a markdown block,
+        # so no further reformatting is needed.
         return code_block, None
 
     def _execute_code(self, code):
