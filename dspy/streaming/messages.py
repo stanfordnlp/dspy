@@ -1,12 +1,13 @@
 import asyncio
 import concurrent.futures
+import logging
 from dataclasses import dataclass
 from typing import Any
 
-from asyncer import syncify
-
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,10 +26,37 @@ class StatusMessage:
 
 
 def sync_send_to_stream(stream, message):
-    """Send message to stream in a sync context, regardless of event loop state."""
+    """Send message to stream in a sync context, regardless of event loop state.
+
+    Handles three cases:
+    1. Called from an AnyIO worker thread (e.g. inside dspy.Parallel) — uses
+       anyio.from_thread.run to cross back into the AnyIO event loop.
+    2. Called from a thread that has a running asyncio event loop — offloads
+       to a new thread with its own event loop.
+    3. Called from a plain thread with no event loop — runs directly via
+       asyncio.run.
+
+    If sending fails (e.g. stream closed or thread context unsupported), the
+    error is logged and silently swallowed so it does not crash the caller.
+    """
 
     async def _send():
         await stream.send(message)
+
+    # First, try anyio.from_thread.run — this works when the current thread
+    # is an AnyIO worker thread (the case when dspy.Parallel spawns work).
+    try:
+        import anyio.from_thread
+
+        anyio.from_thread.run(_send)
+        return
+    except RuntimeError:
+        # Not in an AnyIO worker thread — fall through to other strategies.
+        pass
+    except Exception:
+        # anyio.from_thread.run can also raise ClosedResourceError, etc.
+        logger.debug("sync_send_to_stream: anyio.from_thread.run failed", exc_info=True)
+        return
 
     try:
         asyncio.get_running_loop()
@@ -46,8 +74,13 @@ def sync_send_to_stream(stream, message):
             future = executor.submit(run_in_new_loop)
             return future.result()
     except RuntimeError:
-        # Not in an event loop, safe to use a new event loop in this thread
-        return syncify(_send)()
+        # Not in an event loop, safe to run directly.
+        try:
+            from asyncer import syncify
+
+            return syncify(_send)()
+        except Exception:
+            logger.debug("sync_send_to_stream: syncify fallback failed", exc_info=True)
 
 
 class StatusMessageProvider:
