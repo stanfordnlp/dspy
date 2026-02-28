@@ -130,3 +130,21 @@ def test_pot_code_parse_error():
     ):
         pot(question="What is 1+1?")
     mock_execute_code.assert_not_called()
+
+
+def test_pot_parse_code_preserves_escape_sequences():
+    """Regression test: _parse_code must not corrupt escape sequences in strings."""
+    pot = ProgramOfThought(BasicQA)
+    code_data = {"generated_code": '```python\nresult = f"\\nTotal: {count}"\nSUBMIT({\'answer\': result})\n```'}
+    parsed, error = pot._parse_code(code_data)
+    assert error is None
+    assert '\\n' in parsed, "Escape sequence \\n was corrupted into a real newline"
+
+
+def test_pot_parse_code_preserves_string_with_equals():
+    """Regression test: _parse_code must not break strings containing '=' signs."""
+    pot = ProgramOfThought(BasicQA)
+    code_data = {"generated_code": '```python\ndata = "users: Alice=25, Bob=30"\nSUBMIT({\'answer\': data})\n```'}
+    parsed, error = pot._parse_code(code_data)
+    assert error is None
+    assert 'Alice=25, Bob=30' in parsed, "String contents were corrupted by regex reformatting"
