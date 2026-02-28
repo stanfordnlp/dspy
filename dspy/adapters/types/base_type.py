@@ -129,6 +129,16 @@ class Type(pydantic.BaseModel):
         """
         return None
 
+    # RLM Sandbox Support
+    #
+    # To opt-in to RLM sandbox injection, subclasses should implement:
+    #   sandbox_setup() -> str           (imports needed in sandbox)
+    #   to_sandbox() -> bytes            (serialize for injection)
+    #   sandbox_assignment(var_name, data_expr) -> str  (reconstruction code)
+    #   rlm_preview(max_chars) -> str    (LLM-friendly preview)
+    #
+    # See dspy.DataFrame for a reference implementation.
+
 
 def split_message_content_for_custom_types(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Split user message content into a list of content blocks.
