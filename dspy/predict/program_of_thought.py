@@ -1,3 +1,4 @@
+import ast
 import json
 import logging
 import re
@@ -145,7 +146,37 @@ class ProgramOfThought(Module):
         last_line_match = re.match(r"^(\w+)\s*=", lines[-1].strip())
         if last_line_match and len(lines) > 1:
             code_block += "\n" + last_line_match.group(1)
+        else:
+            code_block = re.sub(
+                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
+                r"\1\n",
+                code_block,
+            )
+            code_block = re.sub(
+                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
+                r"\1\n\2",
+                code_block,
+            )
+        syntax_error = self._validate_syntax(code_block)
+        if syntax_error:
+            return code_block, f"Error: {syntax_error}"
         return code_block, None
+
+    @staticmethod
+    def _validate_syntax(code: str) -> str | None:
+        """Validate Python syntax using ast.parse and return a detailed error or None."""
+        try:
+            ast.parse(code)
+            return None
+        except SyntaxError as e:
+            parts = [f"SyntaxError: {e.msg}"]
+            if e.lineno is not None:
+                parts.append(f"  Line {e.lineno}")
+                if e.offset is not None:
+                    parts.append(f", Column {e.offset}")
+            if e.text is not None:
+                parts.append(f"\n  {e.text.rstrip()}")
+            return "".join(parts)
 
     def _execute_code(self, code):
         """

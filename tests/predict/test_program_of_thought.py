@@ -130,3 +130,36 @@ def test_pot_code_parse_error():
     ):
         pot(question="What is 1+1?")
     mock_execute_code.assert_not_called()
+
+
+def test_validate_syntax_valid():
+    assert ProgramOfThought._validate_syntax("x = 1 + 1\nprint(x)") is None
+
+
+def test_validate_syntax_invalid():
+    error = ProgramOfThought._validate_syntax("if True\n    pass")
+    assert error is not None
+    assert "SyntaxError" in error
+    assert "Line 1" in error
+
+
+def test_parse_code_rejects_syntax_error():
+    """AST validation catches syntax errors before execution, providing line numbers."""
+    lm = DummyLM([{"reasoning": "R", "generated_code": "```python\nfor x in range(10\n    print(x)\n```"}])
+    dspy.configure(lm=lm)
+    pot = ProgramOfThought(BasicQA)
+    code_data = {"generated_code": "```python\nfor x in range(10\n    print(x)\n```"}
+    _, error = pot._parse_code(code_data)
+    assert error is not None
+    assert "SyntaxError" in error
+    assert "Line" in error
+
+
+def test_parse_code_accepts_valid_code():
+    lm = DummyLM([{"reasoning": "R", "generated_code": "x = 1"}])
+    dspy.configure(lm=lm)
+    pot = ProgramOfThought(BasicQA)
+    code_data = {"generated_code": "```python\nresult = 1 + 1\nSUBMIT({'answer': result})\n```"}
+    code, error = pot._parse_code(code_data)
+    assert error is None
+    assert "result" in code
