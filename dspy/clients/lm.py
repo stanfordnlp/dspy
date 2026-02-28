@@ -3,6 +3,7 @@ import os
 import re
 import threading
 import warnings
+from collections import deque
 from typing import Any, Literal, cast
 
 import litellm
@@ -74,7 +75,7 @@ class LM(BaseLM):
         self.cache = cache
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
-        self.history = []
+        self.history: deque = deque()
         self.num_retries = num_retries
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
