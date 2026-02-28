@@ -175,6 +175,14 @@ class LocalProvider(Provider):
             "output_dir": output_dir,
         }
         train_kwargs = {**default_train_kwargs, **(train_kwargs or {})}
+
+        # Normalize max_seq_length / max_length for TRL >= 0.16 compatibility.
+        # TRL 0.16+ renamed max_seq_length to max_length in SFTConfig.
+        if "max_length" in train_kwargs and "max_seq_length" not in (train_kwargs or {}):
+            pass  # User explicitly set max_length — use it as-is
+        elif "max_seq_length" in train_kwargs:
+            train_kwargs.setdefault("max_length", train_kwargs.pop("max_seq_length"))
+
         output_dir = train_kwargs["output_dir"]  # user might have changed the output_dir
 
         logger.info(f"Starting local training, will save to {output_dir}")
@@ -227,10 +235,11 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         tokenizer.add_special_tokens({"pad_token": "[!#PAD#!]"})
 
     logger.info("Creating dataset")
-    if "max_seq_length" not in train_kwargs:
-        train_kwargs["max_seq_length"] = 4096
+    max_seq_length = train_kwargs.get("max_length") or train_kwargs.get("max_seq_length")
+    if max_seq_length is None:
+        max_seq_length = 4096
         logger.info(
-            f"The 'train_kwargs' parameter didn't include a 'max_seq_length', defaulting to {train_kwargs['max_seq_length']}"
+            f"The 'train_kwargs' parameter didn't include a 'max_seq_length' or 'max_length', defaulting to {max_seq_length}"
         )
 
     from datasets import Dataset
@@ -238,7 +247,7 @@ def train_sft_locally(model_name, train_data, train_kwargs):
     hf_dataset = Dataset.from_list(train_data)
 
     def tokenize_function(example):
-        return encode_sft_example(example, tokenizer, train_kwargs["max_seq_length"])  # noqa: F821
+        return encode_sft_example(example, tokenizer, max_seq_length)  # noqa: F821
 
     tokenized_dataset = hf_dataset.map(tokenize_function, batched=False)
     tokenized_dataset.set_format(type="torch")
@@ -263,6 +272,16 @@ def train_sft_locally(model_name, train_data, train_kwargs):
             task_type="CAUSAL_LM",
         )
 
+    # Build SFTConfig with version-aware max sequence length parameter.
+    # TRL >= 0.16 renamed max_seq_length to max_length.
+    import inspect
+
+    sft_config_params = inspect.signature(SFTConfig).parameters
+    if "max_length" in sft_config_params:
+        seq_length_kwarg = {"max_length": max_seq_length}
+    else:
+        seq_length_kwarg = {"max_seq_length": max_seq_length}
+
     sft_config = SFTConfig(
         output_dir=train_kwargs["output_dir"],
         num_train_epochs=train_kwargs["num_train_epochs"],
@@ -275,12 +294,12 @@ def train_sft_locally(model_name, train_data, train_kwargs):
         lr_scheduler_type="constant",
         save_steps=10_000,
         bf16=train_kwargs["bf16"],
-        max_seq_length=train_kwargs["max_seq_length"],
         packing=train_kwargs["packing"],
         dataset_kwargs={  # We need to pass dataset_kwargs because we are processing the dataset ourselves
             "add_special_tokens": False,  # Special tokens handled by template
             "append_concat_token": False,  # No additional separator needed
         },
+        **seq_length_kwarg,
     )
 
     logger.info("Starting training")
