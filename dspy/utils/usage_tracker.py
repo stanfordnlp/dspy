@@ -1,5 +1,6 @@
 """Usage tracking utilities for DSPy."""
 
+import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import Any, Generator
@@ -10,7 +11,11 @@ from dspy.dsp.utils.settings import settings
 
 
 class UsageTracker:
-    """Tracks LM usage data within a context."""
+    """Tracks LM usage data within a context.
+
+    Thread-safe: multiple threads can call add_usage() concurrently,
+    allowing a single tracker to aggregate usage across parallel workers.
+    """
 
     def __init__(self):
         # Map of LM name to list of usage entries. For example:
@@ -21,6 +26,7 @@ class UsageTracker:
         #     ],
         # }
         self.usage_data = defaultdict(list)
+        self._lock = threading.Lock()
 
     def _flatten_usage_entry(self, usage_entry: dict[str, Any]) -> dict[str, Any]:
         result = {}
@@ -50,9 +56,11 @@ class UsageTracker:
         return result
 
     def add_usage(self, lm: str, usage_entry: dict[str, Any]) -> None:
-        """Add a usage entry to the tracker."""
+        """Add a usage entry to the tracker. Thread-safe."""
         if len(usage_entry) > 0:
-            self.usage_data[lm].append(self._flatten_usage_entry(usage_entry))
+            flattened = self._flatten_usage_entry(usage_entry)
+            with self._lock:
+                self.usage_data[lm].append(flattened)
 
     def get_total_tokens(self) -> dict[str, dict[str, Any]]:
         """Calculate total tokens from all tracked usage."""

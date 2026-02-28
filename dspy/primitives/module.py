@@ -326,6 +326,12 @@ class Module(BaseModule, metaclass=ProgramMeta):
             prediction_in_output = output
         elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
             prediction_in_output = output[0]
+        elif isinstance(output, list) and len(output) > 0 and isinstance(output[0], Prediction):
+            # Parallel returns a list of Predictions — attach usage to each
+            for pred in output:
+                if isinstance(pred, Prediction):
+                    pred.set_lm_usage(tokens)
+            return
         if prediction_in_output:
             prediction_in_output.set_lm_usage(tokens)
         else:

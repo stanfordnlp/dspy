@@ -340,7 +340,11 @@ def test_merge_usage_entries_with_pydantic_models():
 
 
 def test_parallel_executor_with_usage_tracker():
-    """Test that usage tracking works correctly with ParallelExecutor and mocked LM calls."""
+    """Test that usage tracking works correctly with ParallelExecutor.
+
+    The parent tracker should aggregate usage from all parallel workers,
+    enabling correct total usage reporting in dspy.Module.__call__.
+    """
 
     parent_tracker = UsageTracker()
 
@@ -362,7 +366,7 @@ def test_parallel_executor_with_usage_tracker():
                 "total_tokens": 60,
             },
         )
-        return dspy.settings.usage_tracker.get_total_tokens()
+        return "task1_done"
 
     def task2():
         # Simulate LM usage tracking for task 2 with different values
@@ -374,21 +378,19 @@ def test_parallel_executor_with_usage_tracker():
                 "total_tokens": 95,
             },
         )
-        return dspy.settings.usage_tracker.get_total_tokens()
+        return "task2_done"
 
     # Execute tasks in parallel
     with dspy.context(track_usage=True, usage_tracker=parent_tracker):
         executor = dspy.Parallel()
         results = executor([(task1, {}), (task2, {})])
-    # Verify that the two workers had different usage
-    usage1 = results[0]
-    usage2 = results[1]
 
-    # Task 1 should have 50 prompt tokens, task 2 should have 80
-    assert usage1["openai/gpt-4o-mini"]["prompt_tokens"] == 50
-    assert usage1["openai/gpt-4o-mini"]["completion_tokens"] == 10
-    assert usage2["openai/gpt-4o-mini"]["prompt_tokens"] == 80
-    assert usage2["openai/gpt-4o-mini"]["completion_tokens"] == 15
+    # All results should complete successfully
+    assert all(r is not None for r in results)
 
-    # Parent tracker should remain unchanged (workers have independent copies)
-    assert len(parent_tracker.usage_data) == 0
+    # Parent tracker should have aggregated usage from both workers
+    total = parent_tracker.get_total_tokens()
+    assert "openai/gpt-4o-mini" in total
+    assert total["openai/gpt-4o-mini"]["prompt_tokens"] == 130  # 50 + 80
+    assert total["openai/gpt-4o-mini"]["completion_tokens"] == 25  # 10 + 15
+    assert total["openai/gpt-4o-mini"]["total_tokens"] == 155  # 60 + 95
