@@ -360,6 +360,9 @@ class PythonInterpreter:
 
     def _ensure_deno_process(self) -> None:
         if self.deno_process is None or self.deno_process.poll() is not None:
+            # Process identity changed (or process missing), so replay setup.
+            self._tools_registered = False
+            self._mounted_files = False
             try:
                 self.deno_process = subprocess.Popen(
                     self.deno_command,

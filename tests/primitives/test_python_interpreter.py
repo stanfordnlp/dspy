@@ -395,6 +395,52 @@ def test_tool_pydantic_invalid_input_surfaces_validation_details():
         assert "validationerror" in message.lower()
         assert "age" in message.lower()
 
+
+def test_tools_re_register_after_process_restart():
+    """Tools should remain callable after Deno subprocess restart."""
+    def echo(message: str = "") -> str:
+        return f"Echo: {message}"
+
+    with PythonInterpreter(tools={"echo": echo}) as interpreter:
+        first = interpreter.execute('print(echo(message="one"))')
+        assert "Echo: one" in first
+
+        first_pid = interpreter.deno_process.pid
+        interpreter.deno_process.kill()
+        interpreter.deno_process.wait()
+
+        second = interpreter.execute('print(echo(message="two"))')
+        assert "Echo: two" in second
+        assert interpreter.deno_process.pid != first_pid
+
+
+def test_mounts_replay_after_process_restart(tmp_path):
+    """Mounted files should still be accessible after subprocess restart."""
+    host_file = tmp_path / "mount_restart.txt"
+    host_file.write_text("restarted-ok")
+    virtual_path = f"/sandbox/{host_file.name}"
+
+    with PythonInterpreter(enable_read_paths=[str(host_file)]) as interpreter:
+        first = interpreter.execute(
+            f"with open({virtual_path!r}, 'r') as f:\n"
+            f"    data = f.read()\n"
+            f"data"
+        )
+        assert first == "restarted-ok"
+
+        first_pid = interpreter.deno_process.pid
+        interpreter.deno_process.kill()
+        interpreter.deno_process.wait()
+
+        second = interpreter.execute(
+            f"with open({virtual_path!r}, 'r') as f:\n"
+            f"    data = f.read()\n"
+            f"data"
+        )
+        assert second == "restarted-ok"
+        assert interpreter.deno_process.pid != first_pid
+
+
 # =============================================================================
 # Multi-Output SUBMIT Tests
 # =============================================================================

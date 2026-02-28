@@ -90,12 +90,13 @@ def test_codeact_code_parse_failure():
     program = CodeAct(BasicQA, tools=[add])
     res = program(question="What is 1+1?")
     assert res.answer == "2"
-    assert res.trajectory == {
-        "generated_code_0": "parse(error",
-        "observation_0": "Failed to execute the generated code: Invalid Python syntax. message: ",
-        "generated_code_1": "result = add(1,1)\nprint(result)",
-        "code_output_1": '"2\\n"',
-    }
+    assert res.trajectory["generated_code_0"] == "parse(error"
+    assert res.trajectory["generated_code_1"] == "result = add(1,1)\nprint(result)"
+    assert res.trajectory["code_output_1"] == '"2\\n"'
+    # Syntax diagnostics now include args/traceback details.
+    assert res.trajectory["observation_0"].startswith(
+        "Failed to execute the generated code: Invalid Python syntax."
+    )
     assert program.interpreter.deno_process is None
 
 
