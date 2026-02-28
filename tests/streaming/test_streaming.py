@@ -2062,3 +2062,32 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+def test_apply_sync_streaming_propagates_exceptions():
+    """apply_sync_streaming must re-raise exceptions from the async generator."""
+
+    async def failing_generator():
+        yield "first"
+        yield "second"
+        raise ValueError("generator exploded")
+
+    sync_gen = dspy.streaming.apply_sync_streaming(failing_generator())
+    collected = []
+    with pytest.raises(ValueError, match="generator exploded"):
+        for item in sync_gen:
+            collected.append(item)
+
+    assert collected == ["first", "second"]
+
+
+def test_apply_sync_streaming_propagates_runtime_error():
+    """apply_sync_streaming must propagate RuntimeError from the async generator."""
+
+    async def failing_generator():
+        raise RuntimeError("immediate failure")
+        yield  # noqa: F841 — makes this an async generator
+
+    sync_gen = dspy.streaming.apply_sync_streaming(failing_generator())
+    with pytest.raises(RuntimeError, match="immediate failure"):
+        list(sync_gen)
