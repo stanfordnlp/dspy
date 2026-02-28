@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from collections import deque
 from typing import Any
 
 from dspy.dsp.utils import settings
@@ -7,7 +8,7 @@ from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
 MAX_HISTORY_SIZE = 10_000
-GLOBAL_HISTORY = []
+GLOBAL_HISTORY = deque(maxlen=MAX_HISTORY_SIZE)
 
 
 class BaseLM:
@@ -47,7 +48,7 @@ class BaseLM:
         self.model_type = model_type
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
-        self.history = []
+        self.history = deque(maxlen=settings.max_history_size or MAX_HISTORY_SIZE)
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
@@ -145,7 +146,7 @@ class BaseLM:
         import copy
 
         new_instance = copy.deepcopy(self)
-        new_instance.history = []
+        new_instance.history = deque(maxlen=self.history.maxlen)
 
         for key, value in kwargs.items():
             if hasattr(self, key):
@@ -167,26 +168,18 @@ class BaseLM:
         if settings.disable_history:
             return
 
-        # Global LM history
-        if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
-            GLOBAL_HISTORY.pop(0)
-
+        # Global LM history (deque with maxlen auto-evicts oldest entries)
         GLOBAL_HISTORY.append(entry)
 
         if settings.max_history_size == 0:
             return
 
-        # dspy.LM.history
-        if len(self.history) >= settings.max_history_size:
-            self.history.pop(0)
-
+        # dspy.LM.history (deque with maxlen auto-evicts oldest entries)
         self.history.append(entry)
 
-        # Per-module history
+        # Per-module history (deque with maxlen auto-evicts oldest entries)
         caller_modules = settings.caller_modules or []
         for module in caller_modules:
-            if len(module.history) >= settings.max_history_size:
-                module.history.pop(0)
             module.history.append(entry)
 
     def _process_completion(self, response, merged_kwargs):

@@ -1,5 +1,6 @@
 import inspect
 import logging
+from collections import deque
 from typing import Any
 
 from dspy.dsp.utils.settings import settings
@@ -33,7 +34,7 @@ class ProgramMeta(type):
             if not hasattr(obj, "callbacks"):
                 obj.callbacks = []
             if not hasattr(obj, "history"):
-                obj.history = []
+                obj.history = deque(maxlen=settings.max_history_size or None)
         return obj
 
 
@@ -69,13 +70,13 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
         self.callbacks = []
-        self.history = []
+        self.history = deque(maxlen=settings.max_history_size or None)
 
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
         self._compiled = False
         # LM calling history of the module.
-        self.history = []
+        self.history = deque(maxlen=settings.max_history_size or None)
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -86,7 +87,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __setstate__(self, state):
         self.__dict__.update(state)
         if not hasattr(self, "history"):
-            self.history = []
+            self.history = deque(maxlen=settings.max_history_size or None)
         if not hasattr(self, "callbacks"):
             self.callbacks = []
 

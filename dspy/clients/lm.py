@@ -3,6 +3,7 @@ import os
 import re
 import threading
 import warnings
+from collections import deque
 from typing import Any, Literal, cast
 
 import litellm
@@ -11,6 +12,7 @@ from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 
 import dspy
+from dspy.clients.base_lm import MAX_HISTORY_SIZE
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
@@ -74,7 +76,7 @@ class LM(BaseLM):
         self.cache = cache
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
-        self.history = []
+        self.history = deque(maxlen=settings.max_history_size or MAX_HISTORY_SIZE)
         self.num_retries = num_retries
         self.finetuning_model = finetuning_model
         self.launch_kwargs = launch_kwargs or {}
