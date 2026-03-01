@@ -241,7 +241,7 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
                 async for item in async_generator:
                     queue.put(item)
             except BaseException as e:
-                queue.put((error_sentinel, e))
+                queue.put((error_sentinel, e, e.__traceback__))
             finally:
                 # Signal completion
                 queue.put(stop_sentinel)
@@ -257,8 +257,8 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
         item = queue.get()  # Block until an item is available
         if item is stop_sentinel:
             break
-        if isinstance(item, tuple) and len(item) == 2 and item[0] is error_sentinel:
-            raise item[1]
+        if isinstance(item, tuple) and len(item) == 3 and item[0] is error_sentinel:
+            raise item[1].with_traceback(item[2])
         yield item
 
 
