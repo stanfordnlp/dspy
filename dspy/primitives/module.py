@@ -28,13 +28,6 @@ class ProgramMeta(type):
             # even when a subclass forgets to call ``super().__init__``.
             Module._base_init(obj)
             cls.__init__(obj, *args, **kwargs)
-
-            # Guarantee existence of critical attributes if ``__init__`` didn't
-            # create them.
-            if not hasattr(obj, "callbacks"):
-                obj.callbacks = []
-            if not hasattr(obj, "history"):
-                obj.history = deque()
         return obj
 
 
