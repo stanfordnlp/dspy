@@ -1,6 +1,7 @@
 import asyncio
 import contextvars
 import logging
+import sys
 import threading
 from asyncio import iscoroutinefunction
 from queue import Queue
@@ -240,8 +241,8 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
             try:
                 async for item in async_generator:
                     queue.put(item)
-            except BaseException as e:
-                queue.put((error_sentinel, e))
+            except BaseException:
+                queue.put((error_sentinel, *sys.exc_info()))
             finally:
                 # Signal completion
                 queue.put(stop_sentinel)
@@ -257,8 +258,9 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
         item = queue.get()  # Block until an item is available
         if item is stop_sentinel:
             break
-        if isinstance(item, tuple) and len(item) == 2 and item[0] is error_sentinel:
-            raise item[1].with_traceback(item[1].__traceback__)
+        if isinstance(item, tuple) and len(item) == 4 and item[0] is error_sentinel:
+            _, _exc_type, exc_value, exc_tb = item
+            raise exc_value.with_traceback(exc_tb)
         yield item
 
 
