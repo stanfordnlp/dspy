@@ -54,7 +54,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
 
     Attributes:
         callbacks: List of registered callback handlers.
-        history: List of LM call history for this module.
+        history: Deque of LM call history for this module.
 
     Example:
         >>> import dspy

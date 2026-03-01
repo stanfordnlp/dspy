@@ -27,12 +27,18 @@ class TestGlobalHistoryDeque:
         assert GLOBAL_HISTORY.maxlen == MAX_HISTORY_SIZE
 
     def test_global_history_auto_evicts(self):
-        """Deque with maxlen automatically evicts oldest entries."""
-        small_deque = deque(maxlen=3)
-        for i in range(5):
-            small_deque.append(i)
-        assert list(small_deque) == [2, 3, 4]
-        assert len(small_deque) == 3
+        """GLOBAL_HISTORY deque with maxlen automatically evicts oldest entries."""
+        maxlen = GLOBAL_HISTORY.maxlen
+
+        # Append more entries than maxlen to trigger auto-eviction on GLOBAL_HISTORY.
+        for i in range(maxlen + 2):
+            GLOBAL_HISTORY.append({"i": i})
+
+        assert len(GLOBAL_HISTORY) == maxlen
+
+        # After overfilling by 2, the first retained value should correspond to i == 2.
+        remaining_indices = [entry["i"] for entry in GLOBAL_HISTORY]
+        assert remaining_indices == list(range(2, maxlen + 2))
 
     def test_global_history_append_and_iterate(self):
         lm = DummyLM([{"response": "a"}, {"response": "b"}])
