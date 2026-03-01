@@ -70,13 +70,13 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
         self.callbacks = []
-        self.history = []
+        self.history = deque()
 
     def __init__(self, callbacks=None):
         self.callbacks = callbacks or []
         self._compiled = False
         # LM calling history of the module.
-        self.history = []
+        self.history = deque()
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -87,7 +87,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
     def __setstate__(self, state):
         self.__dict__.update(state)
         if not hasattr(self, "history"):
-            self.history = []
+            self.history = deque()
         if not hasattr(self, "callbacks"):
             self.callbacks = []
 
