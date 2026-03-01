@@ -1,5 +1,6 @@
 import inspect
 import logging
+from collections import deque
 from typing import Any
 
 from dspy.dsp.utils.settings import settings
@@ -33,7 +34,7 @@ class ProgramMeta(type):
             if not hasattr(obj, "callbacks"):
                 obj.callbacks = []
             if not hasattr(obj, "history"):
-                obj.history = []
+                obj.history = deque()
         return obj
 
 
