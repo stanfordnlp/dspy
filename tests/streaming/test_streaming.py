@@ -415,6 +415,23 @@ def test_sync_status_streaming():
     assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
 
 
+def test_apply_sync_streaming_propagates_exceptions():
+    """Exceptions raised in the async generator must propagate to the sync consumer."""
+
+    async def failing_generator():
+        yield "first"
+        yield "second"
+        raise ValueError("async generator failed")
+
+    gen = dspy.streaming.apply_sync_streaming(failing_generator())
+    items = []
+    with pytest.raises(ValueError, match="async generator failed"):
+        for item in gen:
+            items.append(item)
+
+    assert items == ["first", "second"]
+
+
 @pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_chat_adapter():
     class MyProgram(dspy.Module):
