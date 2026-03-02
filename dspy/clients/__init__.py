@@ -13,27 +13,6 @@ logger = logging.getLogger(__name__)
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
 
-_litellm_configured = False
-
-
-def _configure_litellm():
-    global _litellm_configured
-    if _litellm_configured:
-        return
-    import litellm
-    from litellm._logging import verbose_logger
-
-    litellm.telemetry = False
-    litellm.cache = None
-    litellm.suppress_debug_info = True
-
-    numeric_logging_level = logging.ERROR
-    verbose_logger.setLevel(numeric_logging_level)
-    for h in verbose_logger.handlers:
-        h.setLevel(numeric_logging_level)
-
-    _litellm_configured = True
-
 
 def configure_cache(
     enable_disk_cache: bool | None = True,
@@ -104,7 +83,7 @@ def configure_litellm_logging(level: str = "ERROR"):
     import litellm
     from litellm._logging import verbose_logger
 
-    _configure_litellm()
+    import dspy.clients._litellm_config
 
     numeric_logging_level = getattr(logging, level)
 
@@ -116,7 +95,8 @@ def configure_litellm_logging(level: str = "ERROR"):
 def enable_litellm_logging():
     import litellm
 
-    _configure_litellm()
+    import dspy.clients._litellm_config
+
     litellm.suppress_debug_info = False
     configure_litellm_logging("DEBUG")
 
@@ -124,9 +104,11 @@ def enable_litellm_logging():
 def disable_litellm_logging():
     import litellm
 
-    _configure_litellm()
+    import dspy.clients._litellm_config
+
     litellm.suppress_debug_info = True
     configure_litellm_logging("ERROR")
+
 
 __all__ = [
     "BaseLM",

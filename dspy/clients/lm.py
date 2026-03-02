@@ -67,9 +67,7 @@ class LM(BaseLM):
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
         """
-        from dspy.clients import _configure_litellm
-
-        _configure_litellm()
+        import dspy.clients._litellm_config  # noqa: F401
 
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
@@ -133,12 +131,7 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    def forward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
+    def forward(self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs):
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
