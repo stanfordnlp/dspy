@@ -57,7 +57,6 @@ class ChatAdapter(Adapter):
             max_retries: Maximum number of retries when parsing fails due to parse or validation errors. On each
                 retry the adapter feeds the failed LM response and the parse/validation error back to the LM so it
                 can self-correct. Set to 0 to disable retries. Defaults to 3.
-                Set to 0 to disable retries. Defaults to 3.
         """
         super().__init__(
             callbacks=callbacks,

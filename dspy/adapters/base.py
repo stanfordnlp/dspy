@@ -65,7 +65,7 @@ class Adapter:
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
         if not isinstance(max_retries, int) or max_retries < 0:
-            raise ValueError(f"max_retries must be a non-negative integer, got {max_retries!r}")
+            raise ValueError("max_retries must be a non-negative integer")
         self.max_retries = max_retries
 
     def __init_subclass__(cls, **kwargs) -> None:
@@ -261,6 +261,10 @@ class Adapter:
         failed_text = ""
         if outputs:
             raw = outputs[0]
+            failed_text = raw.get("text", str(raw)) if isinstance(raw, dict) else str(raw)
+        # Truncate the failed LM response to avoid sending the full text back
+        failed_text = failed_text[:500] if len(failed_text) > 500 else failed_text
+
         # Use a sanitized error description to avoid embedding large or sensitive
         # exception details (such as full LM responses or input payloads) back into
         # the prompt.
@@ -274,14 +278,6 @@ class Adapter:
                 "The previous response could not be parsed successfully. "
                 f"Error type: {error_description}.\n\n"
                 "Please try again and ensure your response follows the required output format exactly."
-        messages = list(messages)
-        messages.append({"role": "assistant", "content": failed_text})
-        messages.append({
-            "role": "user",
-            "content": (
-                f"The previous response could not be parsed successfully. "
-                f"Error: {error_summary}\n\n"
-                f"Please try again and ensure your response follows the required output format exactly."
             ),
         })
         return messages
