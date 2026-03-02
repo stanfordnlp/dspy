@@ -261,14 +261,19 @@ class Adapter:
         failed_text = ""
         if outputs:
             raw = outputs[0]
-            failed_text = raw.get("text", str(raw)) if isinstance(raw, dict) else str(raw)
-        # Truncate the failed LM response to avoid sending the full text back
-        failed_text = failed_text[:500] if len(failed_text) > 500 else failed_text
+        # Use a sanitized error description to avoid embedding large or sensitive
+        # exception details (such as full LM responses or input payloads) back into
+        # the prompt.
+        error_description = type(error).__name__
 
-        # Build a short error summary without the full LM response text
-        error_msg = (getattr(error, "message", "") or str(error))[:200]
-        error_summary = f"{type(error).__name__}: {error_msg}"
-
+        messages = list(messages)
+        messages.append({"role": "assistant", "content": failed_text})
+        messages.append({
+            "role": "user",
+            "content": (
+                "The previous response could not be parsed successfully. "
+                f"Error type: {error_description}.\n\n"
+                "Please try again and ensure your response follows the required output format exactly."
         messages = list(messages)
         messages.append({"role": "assistant", "content": failed_text})
         messages.append({
