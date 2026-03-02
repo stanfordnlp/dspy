@@ -10,6 +10,7 @@ import orjson
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
 
+from dspy._litellm import get_litellm
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
 from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback
@@ -171,14 +172,14 @@ def streamify(
         await stream.send(prediction)
 
     async def async_streamer(*args, **kwargs):
-        from litellm import ModelResponseStream
+        litellm = get_litellm()
 
         send_stream, receive_stream = create_memory_object_stream(16)
         async with create_task_group() as tg, send_stream, receive_stream:
             tg.start_soon(generator, args, kwargs, send_stream)
 
             async for value in receive_stream:
-                if isinstance(value, ModelResponseStream):
+                if isinstance(value, litellm.ModelResponseStream):
                     if len(predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
@@ -267,13 +268,13 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
     Returns:
         An async generator that yields OpenAI-compatible streaming response chunks.
     """
-    from litellm import ModelResponseStream
+    litellm = get_litellm()
 
     async for value in streamer:
         if isinstance(value, Prediction):
             data = {"prediction": dict(value.items(include_dspy=False))}
             yield f"data: {orjson.dumps(data).decode()}\n\n"
-        elif isinstance(value, ModelResponseStream):
+        elif isinstance(value, litellm.ModelResponseStream):
             data = {"chunk": value.json()}
             yield f"data: {orjson.dumps(data).decode()}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):

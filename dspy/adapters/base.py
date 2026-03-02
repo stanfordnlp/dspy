@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, get_origin
 
 import json_repair
 
+from dspy._litellm import get_litellm
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
@@ -82,7 +83,7 @@ class Adapter:
                     "input field with type `list[dspy.Tool]`."
                 )
 
-            import litellm
+            litellm = get_litellm()
 
             if tool_call_output_field_name and litellm.supports_function_calling(model=lm.model):
                 tools = inputs[tool_call_input_field_name]

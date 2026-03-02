@@ -2,6 +2,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import dspy
+from dspy._litellm import get_litellm
 from dspy.adapters.types.tool import Tool
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
@@ -142,7 +143,7 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
-        from litellm import ContextWindowExceededError
+        litellm = get_litellm()
 
         for _ in range(3):
             try:
@@ -150,13 +151,13 @@ class ReAct(Module):
                     **input_args,
                     trajectory=self._format_trajectory(trajectory),
                 )
-            except ContextWindowExceededError:
+            except litellm.ContextWindowExceededError:
                 logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
                 trajectory = self.truncate_trajectory(trajectory)
         raise ValueError("The context window was exceeded even after 3 attempts to truncate the trajectory.")
 
     async def _async_call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
-        from litellm import ContextWindowExceededError
+        litellm = get_litellm()
 
         for _ in range(3):
             try:
@@ -164,7 +165,7 @@ class ReAct(Module):
                     **input_args,
                     trajectory=self._format_trajectory(trajectory),
                 )
-            except ContextWindowExceededError:
+            except litellm.ContextWindowExceededError:
                 logger.warning("Trajectory exceeded the context window, truncating the oldest tool call information.")
                 trajectory = self.truncate_trajectory(trajectory)
         raise ValueError("The context window was exceeded even after 3 attempts to truncate the trajectory.")

@@ -10,6 +10,7 @@ from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 
 import dspy
+from dspy._litellm import get_litellm
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
@@ -67,7 +68,7 @@ class LM(BaseLM):
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
         """
-        import dspy.clients._litellm_config  # noqa: F401
+        get_litellm()
 
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
@@ -304,7 +305,7 @@ def _get_stream_completion_fn(
     sync=True,
     headers: dict[str, Any] | None = None,
 ):
-    import litellm
+    litellm = get_litellm()
 
     stream = dspy.settings.send_stream
     caller_predict = dspy.settings.caller_predict
@@ -349,7 +350,7 @@ def _get_stream_completion_fn(
 
 
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    import litellm
+    litellm = get_litellm()
 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
@@ -369,7 +370,7 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
 
 
 def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    import litellm
+    litellm = get_litellm()
 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
@@ -401,7 +402,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
 
 
 async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    import litellm
+    litellm = get_litellm()
 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
@@ -421,7 +422,7 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
 
 
 async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    import litellm
+    litellm = get_litellm()
 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
@@ -451,7 +452,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
 
 
 def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    import litellm
+    litellm = get_litellm()
 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
@@ -469,7 +470,7 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
 
 
 async def alitellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    import litellm
+    litellm = get_litellm()
 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)

@@ -2,6 +2,7 @@ import logging
 import os
 from pathlib import Path
 
+from dspy._litellm import get_litellm
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder
@@ -80,10 +81,8 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
 
 def configure_litellm_logging(level: str = "ERROR"):
     """Configure LiteLLM logging to the specified level."""
-    import litellm
+    get_litellm()
     from litellm._logging import verbose_logger
-
-    import dspy.clients._litellm_config
 
     numeric_logging_level = getattr(logging, level)
 
@@ -93,19 +92,13 @@ def configure_litellm_logging(level: str = "ERROR"):
 
 
 def enable_litellm_logging():
-    import litellm
-
-    import dspy.clients._litellm_config
-
+    litellm = get_litellm()
     litellm.suppress_debug_info = False
     configure_litellm_logging("DEBUG")
 
 
 def disable_litellm_logging():
-    import litellm
-
-    import dspy.clients._litellm_config
-
+    litellm = get_litellm()
     litellm.suppress_debug_info = True
     configure_litellm_logging("ERROR")
 
