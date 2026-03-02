@@ -184,7 +184,14 @@ class BaseLM:
         for module in caller_modules:
             if len(module.history) >= settings.max_history_size:
                 module.history.popleft()
-            module.history.append(entry)
+            history = getattr(module, "history", None)
+            if history is None:
+                continue
+            # Ensure per-module history is a deque with the current max_history_size
+            if not isinstance(history, deque) or history.maxlen != settings.max_history_size:
+                history = deque(history, maxlen=settings.max_history_size)
+                module.history = history
+            history.append(entry)
 
     def _process_completion(self, response, merged_kwargs):
         """Process the response of OpenAI chat completion API and extract outputs.
