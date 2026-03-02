@@ -1,3 +1,4 @@
+import ast
 import json
 import logging
 import re
@@ -146,16 +147,14 @@ class ProgramOfThought(Module):
         if last_line_match and len(lines) > 1:
             code_block += "\n" + last_line_match.group(1)
         else:
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
-                r"\1\n",
-                code_block,
-            )
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
-                r"\1\n\2",
-                code_block,
-            )
+            try:
+                ast.parse(code_block)
+            except SyntaxError:
+                code_block = re.sub(
+                    r"([a-zA-Z_]\w* *=[^=].*?)(?=[a-zA-Z_]\w* *=[^=])",
+                    r"\1\n",
+                    code_block,
+                )
         return code_block, None
 
     def _execute_code(self, code):
