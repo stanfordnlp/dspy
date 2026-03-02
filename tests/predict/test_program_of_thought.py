@@ -136,11 +136,13 @@ def test_validate_syntax_valid():
     assert ProgramOfThought._validate_syntax("x = 1 + 1\nprint(x)") is None
 
 
-def test_validate_syntax_invalid():
+def test_validate_syntax_detailed_error():
     error = ProgramOfThought._validate_syntax("if True\n    pass")
     assert error is not None
     assert "SyntaxError" in error
     assert "Line 1" in error
+    assert "Column" in error
+    assert "if True" in error
 
 
 def test_parse_code_rejects_syntax_error():
@@ -153,6 +155,7 @@ def test_parse_code_rejects_syntax_error():
     assert error is not None
     assert "SyntaxError" in error
     assert "Line" in error
+    assert "Column" in error
 
 
 def test_parse_code_accepts_valid_code():

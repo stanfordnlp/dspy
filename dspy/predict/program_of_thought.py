@@ -147,16 +147,20 @@ class ProgramOfThought(Module):
         if last_line_match and len(lines) > 1:
             code_block += "\n" + last_line_match.group(1)
         else:
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
-                r"\1\n",
-                code_block,
-            )
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
-                r"\1\n\2",
-                code_block,
-            )
+            # Only attempt regex-based rewriting on single-line code that
+            # fails AST validation, to avoid corrupting valid Python
+            # (e.g., strings containing '=' characters).
+            if self._validate_syntax(code_block) is not None:
+                code_block = re.sub(
+                    r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
+                    r"\1\n",
+                    code_block,
+                )
+                code_block = re.sub(
+                    r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
+                    r"\1\n\2",
+                    code_block,
+                )
         syntax_error = self._validate_syntax(code_block)
         if syntax_error:
             return code_block, f"Error: {syntax_error}"
@@ -171,7 +175,7 @@ class ProgramOfThought(Module):
         except SyntaxError as e:
             parts = [f"SyntaxError: {e.msg}"]
             if e.lineno is not None:
-                parts.append(f"  Line {e.lineno}")
+                parts.append(f"\n  Line {e.lineno}")
                 if e.offset is not None:
                     parts.append(f", Column {e.offset}")
             if e.text is not None:
