@@ -147,6 +147,16 @@ class TestAdapterRetry:
         adapter = dspy.ChatAdapter()
         assert adapter.max_retries == 3
 
+    def test_negative_max_retries_raises_valueerror(self):
+        """Negative max_retries should raise ValueError."""
+        with pytest.raises(ValueError, match="non-negative integer"):
+            dspy.ChatAdapter(max_retries=-1)
+
+    def test_non_int_max_retries_raises_valueerror(self):
+        """Non-integer max_retries should raise ValueError."""
+        with pytest.raises(ValueError, match="non-negative integer"):
+            dspy.ChatAdapter(max_retries=1.5)
+
     def test_pydantic_validation_error_triggers_retry(self):
         """Pydantic validation errors (e.g., constraint violations) trigger retry."""
         import pydantic

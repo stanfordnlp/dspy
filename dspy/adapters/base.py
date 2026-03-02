@@ -64,7 +64,9 @@ class Adapter:
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
-        self.max_retries = max(0, int(max_retries))
+        if not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError(f"max_retries must be a non-negative integer, got {max_retries!r}")
+        self.max_retries = max_retries
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -260,9 +262,12 @@ class Adapter:
         if outputs:
             raw = outputs[0]
             failed_text = raw.get("text", str(raw)) if isinstance(raw, dict) else str(raw)
+        # Truncate the failed LM response to avoid sending the full text back
+        failed_text = failed_text[:500] if len(failed_text) > 500 else failed_text
 
         # Build a short error summary without the full LM response text
-        error_summary = f"{type(error).__name__}: {getattr(error, 'message', '') or str(error)[:200]}"
+        error_msg = (getattr(error, "message", "") or str(error))[:200]
+        error_summary = f"{type(error).__name__}: {error_msg}"
 
         messages = list(messages)
         messages.append({"role": "assistant", "content": failed_text})
