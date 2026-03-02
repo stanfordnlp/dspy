@@ -110,3 +110,52 @@ class TestEncodeVideoUnsupported:
     def test_unsupported_type(self):
         with pytest.raises(ValueError, match="Unsupported type"):
             encode_video(12345)
+
+
+class TestVideoFromURL:
+    def test_from_url_with_parameterized_content_type(self):
+        """from_url should strip Content-Type parameters like charset before parsing."""
+        from unittest.mock import MagicMock, patch
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"\x00\x00\x00\x1cftypisom" + b"\x00" * 50
+        mock_response.headers = {"Content-Type": "video/mp4; charset=binary"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("dspy.adapters.types.video.requests.get", return_value=mock_response) as mock_get:
+            video = Video.from_url("https://example.com/video.mp4")
+            mock_get.assert_called_once_with("https://example.com/video.mp4", timeout=30)
+
+        assert video.video_format == "mp4"
+        assert len(video.data) > 0
+        base64.b64decode(video.data)
+
+    def test_from_url_with_plain_content_type(self):
+        """from_url should work with simple Content-Type without parameters."""
+        from unittest.mock import MagicMock, patch
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"fake video data"
+        mock_response.headers = {"Content-Type": "video/webm"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("dspy.adapters.types.video.requests.get", return_value=mock_response):
+            video = Video.from_url("https://example.com/video.webm")
+
+        assert video.video_format == "webm"
+
+    def test_from_url_unsupported_content_type(self):
+        """from_url should raise ValueError for non-video Content-Type."""
+        from unittest.mock import MagicMock, patch
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"not a video"
+        mock_response.headers = {"Content-Type": "application/json; charset=utf-8"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("dspy.adapters.types.video.requests.get", return_value=mock_response):
+            with pytest.raises(ValueError, match="Unsupported MIME type"):
+                Video.from_url("https://example.com/data.json")
