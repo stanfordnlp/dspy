@@ -31,13 +31,6 @@ LARGE_VAR_THRESHOLD = 100 * 1024 * 1024
 # JSON-RPC 2.0 Helpers
 # =============================================================================
 
-# JSON-RPC 2.0 protocol errors (reserved range: -32700 to -32600)
-JSONRPC_PROTOCOL_ERRORS = {
-    "ParseError": -32700,
-    "InvalidRequest": -32600,
-    "MethodNotFound": -32601,
-}
-
 # Application errors (range: -32000 to -32099)
 JSONRPC_APP_ERRORS = {
     "SyntaxError": -32000,
@@ -301,16 +294,15 @@ class PythonInterpreter:
         request_id = request["id"]
         params = request.get("params", {})
         tool_name = params.get("name")
-        args = params.get("args", [])
         kwargs = params.get("kwargs", {})
 
         try:
             if tool_name not in self.tools:
                 raise CodeInterpreterError(f"Unknown tool: {tool_name}")
-            result = self.tools[tool_name](*args, **kwargs)
+            result = self.tools[tool_name](**kwargs)
             is_json = isinstance(result, (list, dict))
             response = _jsonrpc_result(
-                {"value": json.dumps(result) if is_json else str(result or ""), "type": "json" if is_json else "string"},
+                {"value": json.dumps(result) if is_json else (str(result) if result is not None else ""), "type": "json" if is_json else "string"},
                 request_id
             )
         except Exception as e:
@@ -345,28 +337,59 @@ class PythonInterpreter:
                 raise CodeInterpreterError(install_instructions) from e
             self._health_check()
 
+    _MAX_SKIP_LINES = 100
+
+    def _read_response_line(self, context: str) -> str:
+        """Read one stdout line from Deno or raise a process-level error."""
+        response_line = self.deno_process.stdout.readline().strip()
+        if response_line:
+            return response_line
+
+        exit_code = self.deno_process.poll()
+        if exit_code is not None:
+            stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
+            raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
+        raise CodeInterpreterError(f"No response {context}")
+
+    def _parse_response_line(self, response_line: str, context: str) -> dict | None:
+        """Parse a JSON-RPC line, returning None for non-JSON or malformed lines."""
+        if not response_line.startswith("{"):
+            logger.debug("Skipping non-JSON output during %s: %s", context, response_line)
+            return None
+
+        try:
+            return json.loads(response_line)
+        except json.JSONDecodeError:
+            logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
+            return None
+
     def _send_request(self, method: str, params: dict, context: str) -> dict:
-        """Send a JSON-RPC request and return the parsed response."""
+        """Send a JSON-RPC request and return the parsed response.
+
+        Non-JSON lines (e.g. Pyodide package loading messages) are skipped,
+        up to ``_MAX_SKIP_LINES`` to prevent unbounded blocking.
+        """
         self._request_id += 1
         request_id = self._request_id
         msg = _jsonrpc_request(method, params, request_id)
         self.deno_process.stdin.write(msg + "\n")
         self.deno_process.stdin.flush()
 
-        response_line = self.deno_process.stdout.readline().strip()
-        if not response_line:
-            exit_code = self.deno_process.poll()
-            if exit_code is not None:
-                stderr = self.deno_process.stderr.read() if self.deno_process.stderr else ""
-                raise CodeInterpreterError(f"Deno exited (code {exit_code}) {context}: {stderr}")
-            raise CodeInterpreterError(f"No response {context}")
+        skipped = 0
+        while skipped <= self._MAX_SKIP_LINES:
+            response_line = self._read_response_line(context)
+            response = self._parse_response_line(response_line, context)
+            if response is None:
+                skipped += 1
+                continue
 
-        response = json.loads(response_line)
-        if response.get("id") != request_id:
-            raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
-        if "error" in response:
-            raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
-        return response
+            if response.get("id") != request_id:
+                raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
+            if "error" in response:
+                raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
+            return response
+
+        raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) {context}")
 
     def _health_check(self) -> None:
         """Verify the subprocess is alive by executing a simple expression."""
@@ -491,24 +514,12 @@ class PythonInterpreter:
 
         # Read and handle messages until we get the final output.
         # Loop is needed because tool calls require back-and-forth communication.
-        while True:
-            output_line = self.deno_process.stdout.readline().strip()
-            if not output_line:
-                # Possibly the subprocess died or gave no output
-                err_output = self.deno_process.stderr.read()
-                raise CodeInterpreterError(f"No output from Deno subprocess. Stderr: {err_output}")
-
-            # Skip non-JSON lines (e.g., Pyodide package loading messages)
-            if not output_line.startswith("{"):
-                logger.debug(f"Skipping non-JSON output: {output_line}")
-                continue
-
-            # Parse that line as JSON
-            try:
-                msg = json.loads(output_line)
-            except json.JSONDecodeError:
-                # Malformed JSON starting with '{' - log and continue
-                logger.info(f"Skipping malformed JSON: {output_line[:100]}")
+        skipped = 0
+        while skipped <= self._MAX_SKIP_LINES:
+            output_line = self._read_response_line("during execution")
+            msg = self._parse_response_line(output_line, "during execution")
+            if msg is None:
+                skipped += 1
                 continue
 
             # Handle incoming requests (tool calls from sandbox)
@@ -547,6 +558,8 @@ class PythonInterpreter:
 
             # Unexpected message format - neither a recognized method nor a response
             raise CodeInterpreterError(f"Unexpected message format from sandbox: {msg}")
+
+        raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) during execution")
 
     def start(self) -> None:
         """Initialize the Deno/Pyodide sandbox.
