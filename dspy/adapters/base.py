@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, get_origin
 
 import json_repair
 import litellm
+import pydantic
 
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
@@ -11,6 +12,7 @@ from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ class Adapter:
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[Type]] | None = None,
+        max_retries: int = 3,
     ):
         """
         Args:
@@ -53,10 +56,14 @@ class Adapter:
             native_response_types: List of output field types that should be handled by native LM features rather than
                 adapter parsing. For example, `dspy.Citations` can be populated directly by citation APIs
                 (e.g., Anthropic's citation feature). Defaults to `[Citations]`.
+            max_retries: Maximum number of retries when parsing fails due to validation errors. On each retry the
+                adapter feeds the failed LM response and the validation error back to the LM so it can self-correct.
+                Set to 0 to disable retries. Defaults to 3.
         """
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
+        self.max_retries = max_retries
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -197,10 +204,23 @@ class Adapter:
             signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
         """
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        inputs = self.format(processed_signature, demos, inputs)
+        messages = self.format(processed_signature, demos, inputs)
 
-        outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        last_error = None
+        for attempt in range(1 + self.max_retries):
+            outputs = lm(messages=messages, **lm_kwargs)
+            try:
+                return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+            except (AdapterParseError, pydantic.ValidationError) as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    messages = self._append_retry_feedback(messages, outputs, e, attempt)
+                    logger.info(
+                        "Adapter retry %d/%d for %s: %s",
+                        attempt + 1, self.max_retries, type(self).__name__, e,
+                    )
+
+        raise last_error
 
     async def acall(
         self,
@@ -211,10 +231,47 @@ class Adapter:
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        inputs = self.format(processed_signature, demos, inputs)
+        messages = self.format(processed_signature, demos, inputs)
 
-        outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        last_error = None
+        for attempt in range(1 + self.max_retries):
+            outputs = await lm.acall(messages=messages, **lm_kwargs)
+            try:
+                return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+            except (AdapterParseError, pydantic.ValidationError) as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    messages = self._append_retry_feedback(messages, outputs, e, attempt)
+                    logger.info(
+                        "Adapter retry %d/%d for %s: %s",
+                        attempt + 1, self.max_retries, type(self).__name__, e,
+                    )
+
+        raise last_error
+
+    @staticmethod
+    def _append_retry_feedback(
+        messages: list[dict[str, Any]],
+        outputs: list,
+        error: Exception,
+        attempt: int,
+    ) -> list[dict[str, Any]]:
+        failed_text = ""
+        if outputs:
+            raw = outputs[0]
+            failed_text = raw.get("text", str(raw)) if isinstance(raw, dict) else str(raw)
+
+        messages = list(messages)
+        messages.append({"role": "assistant", "content": failed_text})
+        messages.append({
+            "role": "user",
+            "content": (
+                f"The previous response could not be parsed successfully. "
+                f"Error: {error}\n\n"
+                f"Please try again and ensure your response follows the required output format exactly."
+            ),
+        })
+        return messages
 
     def format(
         self,

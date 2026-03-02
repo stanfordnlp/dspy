@@ -44,6 +44,7 @@ class ChatAdapter(Adapter):
         use_native_function_calling: bool = False,
         native_response_types: list[type[type]] | None = None,
         use_json_adapter_fallback: bool = True,
+        max_retries: int = 3,
     ):
         """
         Args:
@@ -53,11 +54,15 @@ class ChatAdapter(Adapter):
             use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
                 If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
                 JSONAdapter. Defaults to True.
+            max_retries: Maximum number of retries when parsing fails due to validation errors. On each retry the
+                adapter feeds the failed LM response and the validation error back to the LM so it can self-correct.
+                Set to 0 to disable retries. Defaults to 3.
         """
         super().__init__(
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
             native_response_types=native_response_types,
+            max_retries=max_retries,
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
 
