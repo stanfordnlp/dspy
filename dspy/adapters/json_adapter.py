@@ -168,6 +168,22 @@ class JSONAdapter(ChatAdapter):
                 message="LM response cannot be serialized to a JSON object.",
             )
 
+        # If the LM wrapped its output in a single extra key (e.g.
+        # {"json_input": {"reasoning": ..., "actors": ..., "details": ...}}),
+        # unwrap the inner dict so the expected output fields can be found.
+        expected_keys = set(signature.output_fields.keys())
+        if not expected_keys & set(fields.keys()) and len(fields) == 1:
+            inner = next(iter(fields.values()))
+            if isinstance(inner, dict) and expected_keys <= set(inner.keys()):
+                fields = inner
+            elif isinstance(inner, str):
+                try:
+                    inner_parsed = json_repair.loads(inner)
+                    if isinstance(inner_parsed, dict) and expected_keys <= set(inner_parsed.keys()):
+                        fields = inner_parsed
+                except Exception:
+                    pass
+
         fields = {k: v for k, v in fields.items() if k in signature.output_fields}
 
         # Attempt to cast each value to type signature.output_fields[k].annotation.
