@@ -182,8 +182,6 @@ class BaseLM:
         # Per-module history
         caller_modules = settings.caller_modules or []
         for module in caller_modules:
-            if len(module.history) >= settings.max_history_size:
-                module.history.popleft()
             history = getattr(module, "history", None)
             if history is None:
                 continue
