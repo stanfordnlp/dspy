@@ -1,3 +1,6 @@
+import itertools
+
+
 def _green(text: str, end: str = "\n"):
     return "\x1b[32m" + str(text).lstrip() + "\x1b[0m" + end
 
@@ -13,7 +16,7 @@ def _blue(text: str, end: str = "\n"):
 def pretty_print_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
 
-    for item in history[-n:]:
+    for item in itertools.islice(history, max(0, len(history) - n), len(history)):
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")
