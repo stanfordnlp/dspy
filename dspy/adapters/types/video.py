@@ -44,10 +44,11 @@ class Video(Type):
         """Download a video file from URL and encode it as base64."""
         response = requests.get(url, timeout=30)
         response.raise_for_status()
-        mime_type = response.headers.get("Content-Type", "video/mp4")
-        # Strip parameters (e.g., "video/mp4; charset=binary" → "video/mp4")
-        mime_type = mime_type.split(";")[0].strip()
+        mime_type_header = response.headers.get("Content-Type", "video/mp4")
+        mime_type = mime_type_header.split(";", 1)[0].strip()
         if not mime_type.startswith("video/"):
+            raise ValueError(f"Unsupported MIME type for video: {mime_type_header}")
+        video_format = mime_type.split("/", 1)[1]
             raise ValueError(f"Unsupported MIME type for video: {mime_type}")
         video_format = mime_type.split("/")[1]
         encoded_data = base64.b64encode(response.content).decode("utf-8")
