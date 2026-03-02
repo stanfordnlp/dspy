@@ -54,7 +54,8 @@ class ChatAdapter(Adapter):
             use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
                 If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
                 JSONAdapter. Defaults to True.
-            max_retries: Maximum number of retries when parsing fails due to validation errors. On each retry the
+            max_retries: Maximum number of retries when parsing fails due to parse errors
+                (AdapterParseError) or validation errors (pydantic.ValidationError). On each retry the
                 adapter feeds the failed LM response and the validation error back to the LM so it can self-correct.
                 Set to 0 to disable retries. Defaults to 3.
         """
@@ -88,7 +89,7 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
-            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+            return JSONAdapter(max_retries=self.max_retries)(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
         self,
@@ -112,7 +113,7 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
-            return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
+            return await JSONAdapter(max_retries=self.max_retries).acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: type[Signature]) -> str:
         return (

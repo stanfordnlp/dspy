@@ -56,14 +56,15 @@ class Adapter:
             native_response_types: List of output field types that should be handled by native LM features rather than
                 adapter parsing. For example, `dspy.Citations` can be populated directly by citation APIs
                 (e.g., Anthropic's citation feature). Defaults to `[Citations]`.
-            max_retries: Maximum number of retries when parsing fails due to validation errors. On each retry the
+            max_retries: Maximum number of retries when parsing fails due to parse errors
+                (AdapterParseError) or validation errors (pydantic.ValidationError). On each retry the
                 adapter feeds the failed LM response and the validation error back to the LM so it can self-correct.
                 Set to 0 to disable retries. Defaults to 3.
         """
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
-        self.max_retries = max_retries
+        self.max_retries = max(0, int(max_retries))
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -214,9 +215,9 @@ class Adapter:
             except (AdapterParseError, pydantic.ValidationError) as e:
                 last_error = e
                 if attempt < self.max_retries:
-                    messages = self._append_retry_feedback(messages, outputs, e, attempt)
+                    messages = self._append_retry_feedback(messages, outputs, e)
                     logger.info(
-                        "Adapter retry %d/%d for %s: %s",
+                        "Adapter retry %d/%d for %s: %.200s",
                         attempt + 1, self.max_retries, type(self).__name__, e,
                     )
 
@@ -241,9 +242,9 @@ class Adapter:
             except (AdapterParseError, pydantic.ValidationError) as e:
                 last_error = e
                 if attempt < self.max_retries:
-                    messages = self._append_retry_feedback(messages, outputs, e, attempt)
+                    messages = self._append_retry_feedback(messages, outputs, e)
                     logger.info(
-                        "Adapter retry %d/%d for %s: %s",
+                        "Adapter retry %d/%d for %s: %.200s",
                         attempt + 1, self.max_retries, type(self).__name__, e,
                     )
 
@@ -254,12 +255,14 @@ class Adapter:
         messages: list[dict[str, Any]],
         outputs: list,
         error: Exception,
-        attempt: int,
     ) -> list[dict[str, Any]]:
         failed_text = ""
         if outputs:
             raw = outputs[0]
             failed_text = raw.get("text", str(raw)) if isinstance(raw, dict) else str(raw)
+
+        # Build a short error summary without the full LM response text
+        error_summary = f"{type(error).__name__}: {getattr(error, 'message', '') or str(error)[:200]}"
 
         messages = list(messages)
         messages.append({"role": "assistant", "content": failed_text})
@@ -267,7 +270,7 @@ class Adapter:
             "role": "user",
             "content": (
                 f"The previous response could not be parsed successfully. "
-                f"Error: {error}\n\n"
+                f"Error: {error_summary}\n\n"
                 f"Please try again and ensure your response follows the required output format exactly."
             ),
         })
