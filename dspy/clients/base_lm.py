@@ -48,7 +48,7 @@ class BaseLM:
         self.model_type = model_type
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
-        self.history = deque(maxlen=settings.max_history_size)
+        self.history: deque = deque()
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
@@ -146,7 +146,7 @@ class BaseLM:
         import copy
 
         new_instance = copy.deepcopy(self)
-        new_instance.history = deque(maxlen=settings.max_history_size)
+        new_instance.history = deque()
 
         for key, value in kwargs.items():
             if hasattr(self, key):
@@ -175,11 +175,15 @@ class BaseLM:
             return
 
         # dspy.LM.history
+        if len(self.history) >= settings.max_history_size:
+            self.history.popleft()
         self.history.append(entry)
 
         # Per-module history
         caller_modules = settings.caller_modules or []
         for module in caller_modules:
+            if len(module.history) >= settings.max_history_size:
+                module.history.popleft()
             module.history.append(entry)
 
     def _process_completion(self, response, merged_kwargs):

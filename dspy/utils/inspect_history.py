@@ -16,7 +16,12 @@ def _blue(text: str, end: str = "\n"):
 def pretty_print_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
 
-    for item in itertools.islice(history, max(0, len(history) - n), len(history)):
+    if n <= 0:
+        items = history
+    else:
+        items = itertools.islice(history, max(0, len(history) - n), len(history))
+
+    for item in items:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")
