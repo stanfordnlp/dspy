@@ -25,14 +25,6 @@ def pretty_print_history(history, n: int = 1):
         iterable = itertools.islice(history, start, len(history))
 
     for item in iterable:
-        # Preserve previous edge-case behavior where n == 0 yielded the full history,
-        # and define a sensible behavior for non-positive n values.
-        iterable = history
-    else:
-        start = max(0, len(history) - n)
-        iterable = itertools.islice(history, start, len(history))
-
-    for item in iterable:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")
