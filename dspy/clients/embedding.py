@@ -1,6 +1,5 @@
 from typing import Any, Callable
 
-import litellm
 import numpy as np
 
 from dspy.clients.cache import request_cache
@@ -148,6 +147,8 @@ class Embedder:
 
 
 def _compute_embeddings(model, batch_inputs, caching=False, **kwargs):
+    import litellm
+
     if isinstance(model, str):
         caching = caching and litellm.cache is not None
         embedding_response = litellm.embedding(model=model, input=batch_inputs, caching=caching, **kwargs)
@@ -164,6 +165,8 @@ def _cached_compute_embeddings(model, batch_inputs, caching=True, **kwargs):
 
 
 async def _acompute_embeddings(model, batch_inputs, caching=False, **kwargs):
+    import litellm
+
     if isinstance(model, str):
         caching = caching and litellm.cache is not None
         embedding_response = await litellm.aembedding(model=model, input=batch_inputs, caching=caching, **kwargs)

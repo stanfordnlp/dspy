@@ -1,8 +1,6 @@
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
-from litellm import ContextWindowExceededError
-
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.primitives.module import Module
@@ -144,6 +142,8 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
+        from litellm import ContextWindowExceededError
+
         for _ in range(3):
             try:
                 return module(
@@ -156,6 +156,8 @@ class ReAct(Module):
         raise ValueError("The context window was exceeded even after 3 attempts to truncate the trajectory.")
 
     async def _async_call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
+        from litellm import ContextWindowExceededError
+
         for _ in range(3):
             try:
                 return await module.acall(

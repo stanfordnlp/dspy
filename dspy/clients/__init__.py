@@ -2,8 +2,6 @@ import logging
 import os
 from pathlib import Path
 
-import litellm
-
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder
@@ -14,6 +12,27 @@ logger = logging.getLogger(__name__)
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
+
+_litellm_configured = False
+
+
+def _configure_litellm():
+    global _litellm_configured
+    if _litellm_configured:
+        return
+    import litellm
+    from litellm._logging import verbose_logger
+
+    litellm.telemetry = False
+    litellm.cache = None
+    litellm.suppress_debug_info = True
+
+    numeric_logging_level = logging.ERROR
+    verbose_logger.setLevel(numeric_logging_level)
+    for h in verbose_logger.handlers:
+        h.setLevel(numeric_logging_level)
+
+    _litellm_configured = True
 
 
 def configure_cache(
@@ -46,10 +65,6 @@ def configure_cache(
 
     # Update the reference to point to the new cache
     dspy.cache = DSPY_CACHE
-
-
-litellm.telemetry = False
-litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
 
 
 def _get_dspy_cache():
@@ -86,8 +101,10 @@ if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
 
 def configure_litellm_logging(level: str = "ERROR"):
     """Configure LiteLLM logging to the specified level."""
-    # Litellm uses a global logger called `verbose_logger` to control all loggings.
+    import litellm
     from litellm._logging import verbose_logger
+
+    _configure_litellm()
 
     numeric_logging_level = getattr(logging, level)
 
@@ -97,17 +114,19 @@ def configure_litellm_logging(level: str = "ERROR"):
 
 
 def enable_litellm_logging():
+    import litellm
+
+    _configure_litellm()
     litellm.suppress_debug_info = False
     configure_litellm_logging("DEBUG")
 
 
 def disable_litellm_logging():
+    import litellm
+
+    _configure_litellm()
     litellm.suppress_debug_info = True
     configure_litellm_logging("ERROR")
-
-
-# By default, we disable LiteLLM logging for clean logging
-disable_litellm_logging()
 
 __all__ = [
     "BaseLM",

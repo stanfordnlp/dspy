@@ -5,7 +5,6 @@ import threading
 import warnings
 from typing import Any, Literal, cast
 
-import litellm
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
@@ -68,6 +67,10 @@ class LM(BaseLM):
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
         """
+        from dspy.clients import _configure_litellm
+
+        _configure_litellm()
+
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
@@ -308,6 +311,8 @@ def _get_stream_completion_fn(
     sync=True,
     headers: dict[str, Any] | None = None,
 ):
+    import litellm
+
     stream = dspy.settings.send_stream
     caller_predict = dspy.settings.caller_predict
 
@@ -351,6 +356,8 @@ def _get_stream_completion_fn(
 
 
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    import litellm
+
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -369,6 +376,8 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
 
 
 def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    import litellm
+
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -399,6 +408,8 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
 
 
 async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    import litellm
+
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -417,6 +428,8 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
 
 
 async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    import litellm
+
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -445,6 +458,8 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
 
 
 def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    import litellm
+
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -461,6 +476,8 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
 
 
 async def alitellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    import litellm
+
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)

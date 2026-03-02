@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import json
 import re
-from typing import TYPE_CHECKING, Any, Optional, get_args, get_origin
+from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 import json_repair
 import pydantic
-from litellm import ModelResponseStream
 
 if TYPE_CHECKING:
+    from litellm import ModelResponseStream
+
     from dspy.clients.lm import LM
     from dspy.signatures.signature import Signature
 
@@ -77,11 +80,11 @@ class Type(pydantic.BaseModel):
     @classmethod
     def adapt_to_native_lm_feature(
         cls,
-        signature: type["Signature"],
+        signature: type[Signature],
         field_name: str,
-        lm: "LM",
+        lm: LM,
         lm_kwargs: dict[str, Any],
-    ) -> type["Signature"]:
+    ) -> type[Signature]:
         """Adapt the custom type to the native LM feature if possible.
 
         When the LM and configuration supports the related native LM feature, e.g., native tool calling, native
@@ -105,7 +108,7 @@ class Type(pydantic.BaseModel):
         return False
 
     @classmethod
-    def parse_stream_chunk(cls, chunk: ModelResponseStream) -> Optional["Type"]:
+    def parse_stream_chunk(cls, chunk: ModelResponseStream) -> Type | None:
         """
         Parse a stream chunk into the custom type.
 
@@ -118,7 +121,7 @@ class Type(pydantic.BaseModel):
         return None
 
     @classmethod
-    def parse_lm_response(cls, response: str | dict[str, Any]) -> Optional["Type"]:
+    def parse_lm_response(cls, response: str | dict[str, Any]) -> Type | None:
         """Parse a LM response into the custom type.
 
         Args:

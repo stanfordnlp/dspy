@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import inspect
 import re
 from collections import defaultdict
@@ -5,7 +7,9 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any
 
 import jiter
-from litellm import ModelResponseStream
+
+if TYPE_CHECKING:
+    from litellm import ModelResponseStream
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.json_adapter import JSONAdapter
@@ -368,7 +372,7 @@ class StreamListener:
 
 
 def find_predictor_for_stream_listeners(
-    program: "Module", stream_listeners: list[StreamListener]
+    program: Module, stream_listeners: list[StreamListener]
 ) -> dict[int, list[StreamListener]]:
     """Find the predictor for each stream listener.
 

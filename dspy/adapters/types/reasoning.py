@@ -1,6 +1,5 @@
 from typing import TYPE_CHECKING, Any, Optional
 
-import litellm
 import pydantic
 
 from dspy.adapters.types.base_type import Type
@@ -60,6 +59,8 @@ class Reasoning(Type):
             # Turn on the native reasoning explicitly if Reasoning field is present in the signature and no explicit
             # reasoning effort is set in `lm_kwargs` or `lm.kwargs`.
             reasoning_effort = "low"
+
+        import litellm
 
         if reasoning_effort is None or not litellm.supports_reasoning(lm.model):
             # If users explicitly set `reasoning_effort` to None or the LM doesn't support reasoning, we don't enable
