@@ -49,8 +49,6 @@ class Video(Type):
         if not mime_type.startswith("video/"):
             raise ValueError(f"Unsupported MIME type for video: {mime_type_header}")
         video_format = mime_type.split("/", 1)[1]
-            raise ValueError(f"Unsupported MIME type for video: {mime_type}")
-        video_format = mime_type.split("/")[1]
         encoded_data = base64.b64encode(response.content).decode("utf-8")
         return cls(data=encoded_data, video_format=video_format)
 
