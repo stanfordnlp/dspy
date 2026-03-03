@@ -5,7 +5,7 @@ from pathlib import Path
 import litellm
 
 from dspy.clients.base_lm import BaseLM, inspect_history
-from dspy.clients.cache import Cache
+from dspy.clients.cache import DISKCACHE_AVAILABLE, Cache
 from dspy.clients.embedding import Embedder
 from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
@@ -17,7 +17,7 @@ DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB defaul
 
 
 def configure_cache(
-    enable_disk_cache: bool | None = True,
+    enable_disk_cache: bool | None = None,
     enable_memory_cache: bool | None = True,
     disk_cache_dir: str | None = DISK_CACHE_DIR,
     disk_size_limit_bytes: int | None = DISK_CACHE_LIMIT,
@@ -26,13 +26,16 @@ def configure_cache(
     """Configure the cache for DSPy.
 
     Args:
-        enable_disk_cache: Whether to enable on-disk cache.
+        enable_disk_cache: Whether to enable on-disk cache. Defaults to True if diskcache is installed, False otherwise.
         enable_memory_cache: Whether to enable in-memory cache.
         disk_cache_dir: The directory to store the on-disk cache.
         disk_size_limit_bytes: The size limit of the on-disk cache.
         memory_max_entries: The maximum number of entries in the in-memory cache. To allow the cache to grow without
                             bounds, set this parameter to `math.inf` or a similar value.
     """
+
+    if enable_disk_cache is None:
+        enable_disk_cache = DISKCACHE_AVAILABLE
 
     DSPY_CACHE = Cache(
         enable_disk_cache,
@@ -58,7 +61,7 @@ def _get_dspy_cache():
 
     try:
         _dspy_cache = Cache(
-            enable_disk_cache=True,
+            enable_disk_cache=DISKCACHE_AVAILABLE,
             enable_memory_cache=True,
             disk_cache_dir=disk_cache_dir,
             disk_size_limit_bytes=disk_cache_limit,
@@ -119,4 +122,5 @@ __all__ = [
     "enable_litellm_logging",
     "disable_litellm_logging",
     "configure_cache",
+    "DISKCACHE_AVAILABLE",
 ]

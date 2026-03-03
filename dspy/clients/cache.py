@@ -10,7 +10,13 @@ import cloudpickle
 import orjson
 import pydantic
 from cachetools import LRUCache
-from diskcache import FanoutCache
+
+try:
+    from diskcache import FanoutCache
+
+    DISKCACHE_AVAILABLE = True
+except ImportError:
+    DISKCACHE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +26,7 @@ class Cache:
 
     `Cache` provides 2 levels of caching (in the given order):
         1. In-memory cache - implemented with cachetools.LRUCache
-        2. On-disk cache - implemented with diskcache.FanoutCache
+        2. On-disk cache - implemented with diskcache.FanoutCache (requires diskcache: pip install dspy[diskcache])
     """
 
     def __init__(
@@ -51,12 +57,18 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            self.disk_cache = FanoutCache(
-                shards=16,
-                timeout=10,
-                directory=disk_cache_dir,
-                size_limit=disk_size_limit_bytes,
-            )
+            if not DISKCACHE_AVAILABLE:
+                raise ImportError(
+                    "Disk caching requires the 'diskcache' package. "
+                    "Install it with: pip install dspy[diskcache]"
+                )
+            else:
+                self.disk_cache = FanoutCache(
+                    shards=16,
+                    timeout=10,
+                    directory=disk_cache_dir,
+                    size_limit=disk_size_limit_bytes,
+                )
         else:
             self.disk_cache = {}
 

@@ -5,9 +5,11 @@ from unittest.mock import patch
 import pydantic
 import pytest
 from cachetools import LRUCache
-from diskcache import FanoutCache
 
-from dspy.clients.cache import Cache
+from dspy.clients.cache import DISKCACHE_AVAILABLE, Cache
+
+if DISKCACHE_AVAILABLE:
+    from diskcache import FanoutCache
 
 
 @dataclass
@@ -369,3 +371,38 @@ def test_cache_fallback_on_restricted_environment():
             os.environ.pop("DSPY_CACHEDIR", None)
         else:
             os.environ["DSPY_CACHEDIR"] = old_env
+
+
+def test_cache_raises_when_disk_requested_without_diskcache():
+    """Explicitly requesting disk cache without diskcache installed should raise ImportError."""
+    from unittest.mock import patch
+
+    with patch("dspy.clients.cache.DISKCACHE_AVAILABLE", False):
+        with pytest.raises(ImportError, match="pip install dspy\\[diskcache\\]"):
+            Cache(
+                enable_disk_cache=True,
+                enable_memory_cache=True,
+                disk_cache_dir="",
+                disk_size_limit_bytes=0,
+                memory_max_entries=100,
+            )
+
+
+def test_cache_memory_only_when_diskcache_unavailable():
+    """Cache works with memory-only when disk cache is not explicitly requested."""
+    from unittest.mock import patch
+
+    with patch("dspy.clients.cache.DISKCACHE_AVAILABLE", False):
+        cache = Cache(
+            enable_disk_cache=False,
+            enable_memory_cache=True,
+            disk_cache_dir="",
+            disk_size_limit_bytes=0,
+            memory_max_entries=100,
+        )
+        assert cache.enable_disk_cache is False
+        assert cache.disk_cache == {}
+
+        request = {"prompt": "Hello"}
+        cache.put(request, "result")
+        assert cache.get(request) == "result"
