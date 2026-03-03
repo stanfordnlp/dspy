@@ -72,9 +72,8 @@ class ChatAdapter(Adapter):
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
             # fallback to JSONAdapter
-            from dspy.clients._litellm import get_litellm
-
             from dspy.adapters.json_adapter import JSONAdapter
+            from dspy.clients._litellm import get_litellm
 
             if (
                 isinstance(e, get_litellm().ContextWindowExceededError)
@@ -98,9 +97,8 @@ class ChatAdapter(Adapter):
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
             # fallback to JSONAdapter
-            from dspy.clients._litellm import get_litellm
-
             from dspy.adapters.json_adapter import JSONAdapter
+            from dspy.clients._litellm import get_litellm
 
             if (
                 isinstance(e, get_litellm().ContextWindowExceededError)
