@@ -1,16 +1,20 @@
-import functools
 import logging
 import os
 
+_litellm = None
 
-@functools.lru_cache(maxsize=1)
+
 def get_litellm():
     """Import and configure litellm.
 
-    Configuration (telemetry, caching, logging) runs once via lru_cache so
-    that user overrides like ``enable_litellm_logging()`` are not clobbered
-    by subsequent calls.
+    Configuration (telemetry, caching, logging) runs once so that user
+    overrides like ``enable_litellm_logging()`` are not clobbered by
+    subsequent calls.
     """
+    global _litellm
+    if _litellm is not None:
+        return _litellm
+
     # Use litellm's bundled model cost map instead of fetching from GitHub
     # on every import (~110ms saved). Must be set before importing litellm.
     if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
@@ -27,4 +31,5 @@ def get_litellm():
     for h in verbose_logger.handlers:
         h.setLevel(logging.ERROR)
 
-    return litellm
+    _litellm = litellm
+    return _litellm
