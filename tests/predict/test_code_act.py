@@ -35,7 +35,6 @@ def test_codeact_code_generation():
         "code_output_0": '"2\\n"',
         "generated_code_0": "result = add(1,1)\nprint(result)",
     }
-    assert program.interpreter.deno_process is None
 
 
 class ExtremumFinder(Signature):
@@ -67,7 +66,6 @@ def test_codeact_support_multiple_fields():
         "code_output_0": '"{\'maximum\': 6.0, \'minimum\': 2.0}\\n"',
         "generated_code_0": "result = extract_maximum_minimum('2, 3, 5, 6')\nprint(result)",
     }
-    assert program.interpreter.deno_process is None
 
 
 def test_codeact_code_parse_failure():
@@ -96,7 +94,6 @@ def test_codeact_code_parse_failure():
         "generated_code_1": "result = add(1,1)\nprint(result)",
         "code_output_1": '"2\\n"',
     }
-    assert program.interpreter.deno_process is None
 
 
 def test_codeact_code_execution_failure():
@@ -125,7 +122,6 @@ def test_codeact_code_execution_failure():
         "generated_code_1": "result = add(1,1)\nprint(result)",
         "code_output_1": '"2\\n"',
     }
-    assert program.interpreter.deno_process is None
 
 
 class CustomTool:

@@ -59,8 +59,7 @@ class ProgramOfThought(Module):
                 self._generate_instruction("answer"),
             ),
         )
-        # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or PythonInterpreter()
+        self._user_interpreter = interpreter
 
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
@@ -147,15 +146,14 @@ class ProgramOfThought(Module):
             code_block += "\n" + last_line_match.group(1)
         return code_block, None
 
-    def _execute_code(self, code):
+    def _execute_code(self, code, interpreter):
         """
         Execute the code using PythonInterpreter and return the output or error.
         """
         if not code:
             return None, "Error: Empty code before execution."
-
         try:
-            result = self.interpreter.execute(code)
+            result = interpreter.execute(code)
             if isinstance(result, FinalOutput):
                 result = result.output
             # Since it's more complex structure now, just blindly use json to represents all.
@@ -165,26 +163,30 @@ class ProgramOfThought(Module):
             return None, str(e)
 
     def forward(self, **kwargs):
-        input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}
-        code_data = self.code_generate(**input_kwargs)
-        output = None
-        code, error = self._parse_code(code_data)
-        if not error:
-            output, error = self._execute_code(code)
-        hop = 1
-        # Retying code generation and execution until no error or reach max_iters
-        while error is not None:
-            logger.error(f"Error in code execution: {error}")
-            if hop == self.max_iters:
-                self.interpreter.shutdown()
-                raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
-            input_kwargs.update({"previous_code": code, "error": error})
-            code_data = self.code_regenerate(**input_kwargs)
+        # Create a thread-local interpreter so concurrent Evaluate calls don't
+        # share (and close) the same subprocess.  See #9082.
+        interpreter = self._user_interpreter or PythonInterpreter()
+        try:
+            input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}
+            code_data = self.code_generate(**input_kwargs)
+            output = None
             code, error = self._parse_code(code_data)
             if not error:
-                output, error = self._execute_code(code)
-            hop += 1
-        input_kwargs.update({"final_generated_code": code, "code_output": output})
-        output_gen_result = self.generate_output(**input_kwargs)
-        self.interpreter.shutdown()
-        return output_gen_result
+                output, error = self._execute_code(code, interpreter)
+            hop = 1
+            # Retying code generation and execution until no error or reach max_iters
+            while error is not None:
+                logger.error(f"Error in code execution: {error}")
+                if hop == self.max_iters:
+                    raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
+                input_kwargs.update({"previous_code": code, "error": error})
+                code_data = self.code_regenerate(**input_kwargs)
+                code, error = self._parse_code(code_data)
+                if not error:
+                    output, error = self._execute_code(code, interpreter)
+                hop += 1
+            input_kwargs.update({"final_generated_code": code, "code_output": output})
+            output_gen_result = self.generate_output(**input_kwargs)
+            return output_gen_result
+        finally:
+            interpreter.shutdown()
