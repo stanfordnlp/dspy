@@ -505,8 +505,6 @@ class PythonInterpreter:
             self.deno_process.stdin.flush()
         except BrokenPipeError:
             # If the process died, restart and try again once
-            self._tools_registered = False
-            self._mounted_files = False
             self._ensure_deno_process()
             self._mount_files()
             self._register_tools()
