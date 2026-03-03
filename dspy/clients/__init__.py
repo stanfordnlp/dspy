@@ -2,7 +2,7 @@ import logging
 import os
 from pathlib import Path
 
-from dspy._litellm import get_litellm
+from dspy.clients._litellm import get_litellm
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder

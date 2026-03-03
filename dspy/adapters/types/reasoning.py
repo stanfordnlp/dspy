@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import pydantic
 
-from dspy._litellm import get_litellm
 from dspy.adapters.types.base_type import Type
 
 if TYPE_CHECKING:
@@ -61,6 +60,7 @@ class Reasoning(Type):
             # reasoning effort is set in `lm_kwargs` or `lm.kwargs`.
             reasoning_effort = "low"
 
+        from dspy.clients._litellm import get_litellm
         litellm = get_litellm()
 
         if reasoning_effort is None or not litellm.supports_reasoning(lm.model):

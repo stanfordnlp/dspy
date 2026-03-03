@@ -2,7 +2,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from dspy._litellm import get_litellm
+from dspy.clients._litellm import get_litellm
 from dspy.clients.cache import request_cache
 
 

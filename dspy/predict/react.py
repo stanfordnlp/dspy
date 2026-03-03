@@ -2,8 +2,8 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import dspy
-from dspy._litellm import get_litellm
 from dspy.adapters.types.tool import Tool
+from dspy.clients._litellm import get_litellm
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
 

@@ -10,7 +10,7 @@ from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
 
 import dspy
-from dspy._litellm import get_litellm
+from dspy.clients._litellm import get_litellm
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob

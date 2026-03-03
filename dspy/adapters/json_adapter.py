@@ -7,7 +7,6 @@ import pydantic
 import regex
 from pydantic.fields import FieldInfo
 
-from dspy._litellm import get_litellm
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
@@ -45,6 +44,7 @@ class JSONAdapter(ChatAdapter):
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
+        from dspy.clients._litellm import get_litellm
         litellm = get_litellm()
 
         provider = lm.model.split("/", 1)[0] or "openai"

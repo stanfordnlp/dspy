@@ -10,7 +10,6 @@ import orjson
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
 
-from dspy._litellm import get_litellm
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
 from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback
@@ -172,6 +171,7 @@ def streamify(
         await stream.send(prediction)
 
     async def async_streamer(*args, **kwargs):
+        from dspy.clients._litellm import get_litellm
         litellm = get_litellm()
 
         send_stream, receive_stream = create_memory_object_stream(16)
@@ -268,6 +268,7 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
     Returns:
         An async generator that yields OpenAI-compatible streaming response chunks.
     """
+    from dspy.clients._litellm import get_litellm
     litellm = get_litellm()
 
     async for value in streamer:
