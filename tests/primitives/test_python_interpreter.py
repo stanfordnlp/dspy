@@ -342,6 +342,40 @@ def test_mounts_replay_after_process_restart(tmp_path):
         assert interpreter.deno_process.pid != first_pid
 
 
+def test_tool_all_positional_args():
+    """Test that tools work when all arguments are passed positionally."""
+
+    def add(a: int, b: int, c: int) -> str:
+        return f"{a + b + c}"
+
+    with PythonInterpreter(tools={"add": add}) as sandbox:
+        result = sandbox.execute("add(1, 2, 3)")
+        assert result == "6"
+
+        # Mixed: some positional, some keyword
+        result = sandbox.execute("add(10, 20, c=30)")
+        assert result == "60"
+
+
+def test_tool_error_surfaces_as_runtime_error():
+    """Test that exceptions raised by a tool surface as RuntimeError in the sandbox."""
+
+    def failing_tool(x: int) -> str:
+        raise ValueError(f"bad value: {x}")
+
+    with PythonInterpreter(tools={"failing_tool": failing_tool}) as sandbox:
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_tool(42)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "bad value: 42" in result
+
+
 
 # =============================================================================
 # Multi-Output SUBMIT Tests
