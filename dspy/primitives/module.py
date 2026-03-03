@@ -1,6 +1,6 @@
 import inspect
 import logging
-from typing import IO, Any
+from typing import Any, TextIO
 
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
@@ -250,7 +250,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             set_attribute_by_name(self, name, func(predictor))
         return self
 
-    def inspect_history(self, n: int = 1, file: "IO[str] | None" = None) -> None:
+    def inspect_history(self, n: int = 1, file: 'TextIO | None' = None) -> None:
         """Display the LM call history for this module.
 
         Prints a formatted view of the most recent language model calls

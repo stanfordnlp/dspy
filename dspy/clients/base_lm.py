@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from typing import IO, Any
+from typing import Any, TextIO
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
@@ -160,7 +160,7 @@ class BaseLM:
 
         return new_instance
 
-    def inspect_history(self, n: int = 1, file: "IO[str] | None" = None) -> None:
+    def inspect_history(self, n: int = 1, file: 'TextIO | None' = None) -> None:
         pretty_print_history(self.history, n, file=file)
 
     def update_history(self, entry):
@@ -283,6 +283,6 @@ class BaseLM:
         return [result]
 
 
-def inspect_history(n: int = 1, file: "IO[str] | None" = None) -> None:
+def inspect_history(n: int = 1, file: 'TextIO | None' = None) -> None:
     """The global history shared across all LMs."""
     pretty_print_history(GLOBAL_HISTORY, n, file=file)
