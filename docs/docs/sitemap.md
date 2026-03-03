@@ -26,6 +26,14 @@ Learn DSPy by building practical examples step by step.
 - [Tools, Development, and Deployment](tutorials/core_development/index.md): production engineering topics (caching, deploy, streaming, async, observability)
 - [Real-World Examples](tutorials/real_world_examples/index.md): end-to-end domain examples you can adapt
 
+
+## API Reference
+Look up exact API contracts for classes, methods, and functions.
+
+- [API Reference](api/index.md)
+- Categories: Adapters, Evaluation, Experimental, Models, Modules, Optimizers, Primitives, Signatures, Tools, Utils
+
+
 ## DSPy in Production
 Use this as a production **hub page**: it curates links to deployment, observability, reproducibility, scalability, guardrails, and real-world use cases across the docs.
 
@@ -44,9 +52,3 @@ Quickly resolve common blockers and questions.
 
 - [FAQ](faqs.md)
 - [Cheatsheet](cheatsheet.md)
-
-## API Reference
-Look up exact API contracts for classes, methods, and functions.
-
-- [API Reference](api/index.md)
-- Categories: Adapters, Evaluation, Experimental, Models, Modules, Optimizers, Primitives, Signatures, Tools, Utils
