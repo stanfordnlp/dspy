@@ -1,12 +1,15 @@
+import functools
 import logging
 import os
 
 
+@functools.lru_cache(maxsize=1)
 def get_litellm():
     """Import and configure litellm.
 
-    All operations here are idempotent: ``import litellm`` is a dict lookup
-    after the first call, and the attribute assignments are trivial.
+    Configuration (telemetry, caching, logging) runs once via lru_cache so
+    that user overrides like ``enable_litellm_logging()`` are not clobbered
+    by subsequent calls.
     """
     # Use litellm's bundled model cost map instead of fetching from GitHub
     # on every import (~110ms saved). Must be set before importing litellm.
