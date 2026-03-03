@@ -48,13 +48,18 @@
                     FAQ
                 </a>
             </li>
+            <li class="md-tabs__item">
+                <a href="/sitemap/" class="md-tabs__link">
+                    Sitemap
+                </a>
+            </li>
         </ul>
 	{% endif %}
 
 	<!-- Original tabbed sections -->
 	<ul class="md-tabs__list">
 	  {% for nav_item in nav %}
-		{% if nav_item.title not in ["FAQ", "Community", "DSPy in Production"] %}
+		{% if nav_item.title not in ["FAQ", "Community", "DSPy in Production", "Sitemap"] %}
             {{ item.render(nav_item) }}
 		{% endif %}
 	  {% endfor %}
