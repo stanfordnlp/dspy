@@ -1,15 +1,12 @@
-import functools
 import logging
 import os
 
 
-@functools.lru_cache(maxsize=1)
 def get_litellm():
     """Import and configure litellm.
 
-    The first call imports litellm and applies DSPy's default configuration
-    (telemetry off, caching off, debug logging silenced). Subsequent calls
-    return the already-configured module instantly via lru_cache.
+    All operations here are idempotent: ``import litellm`` is a dict lookup
+    after the first call, and the attribute assignments are trivial.
     """
     # Use litellm's bundled model cost map instead of fetching from GitHub
     # on every import (~110ms saved). Must be set before importing litellm.
