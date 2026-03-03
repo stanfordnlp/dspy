@@ -87,6 +87,7 @@ nav:
     - FAQ:
         - FAQ: faqs.md
         - Cheatsheet: cheatsheet.md
+    - Sitemap: sitemap.md
 
     - API Reference:
         - API Reference: api/index.md
