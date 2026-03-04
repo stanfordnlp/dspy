@@ -197,9 +197,22 @@ class BaseModule:
         path = Path(path)
 
         if save_program:
-            if path.suffix:
+            # Reject paths that look like files (e.g. "model.json", "model.pkl") but allow
+            # directory names that happen to contain dots (e.g. "dspy.2", "my.project").
+            # We only block well-known file extensions to avoid false positives on dotted
+            # directory names, while still catching the common mistake of passing a file path
+            # when save_program=True (e.g. save("model.json", save_program=True)).
+            _KNOWN_FILE_EXTENSIONS = {
+                ".json", ".pkl", ".pickle", ".txt", ".yaml", ".yml",
+                ".csv", ".tsv", ".pt", ".pth", ".bin", ".safetensors",
+                ".ckpt", ".h5", ".hdf5", ".npz", ".npy", ".zip", ".tar",
+                ".gz", ".bz2", ".xz", ".py", ".pyc",
+            }
+            if path.suffix.lower() in _KNOWN_FILE_EXTENSIONS and not path.is_dir():
                 raise ValueError(
-                    f"`path` must point to a directory without a suffix when `save_program=True`, but received: {path}"
+                    f"`path` must point to a directory when `save_program=True`, but received a path "
+                    f"that looks like a file: {path}. To save with `save_program=True`, provide a "
+                    f"directory path (e.g. '{path.parent / path.stem}')."
                 )
             if path.exists() and not path.is_dir():
                 raise NotADirectoryError(f"The path '{path}' exists but is not a directory.")

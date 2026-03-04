@@ -173,3 +173,26 @@ def test_json_file_loading_works_without_permission(tmp_path):
     new_predict = dspy.Predict("question->answer")
     new_predict.load(json_path)
     assert new_predict.dump_state() == predict.dump_state()
+
+
+def test_save_program_with_dotted_directory_name(tmp_path):
+    """Test that save_program=True works with directory names containing dots (issue #8489)."""
+    predict = dspy.Predict("question->answer")
+
+    # Directory names with dots should be allowed
+    dotted_dir = tmp_path / "dspy.2"
+    predict.save(str(dotted_dir), save_program=True)
+    assert (dotted_dir / "program.pkl").exists()
+    assert (dotted_dir / "metadata.json").exists()
+
+    # Another dotted name
+    project_dir = tmp_path / "my.project"
+    predict.save(str(project_dir), save_program=True)
+    assert (project_dir / "program.pkl").exists()
+
+    # But .json and .pkl suffixes should still be rejected
+    with pytest.raises(ValueError, match="looks like a file"):
+        predict.save(str(tmp_path / "model.json"), save_program=True)
+
+    with pytest.raises(ValueError, match="looks like a file"):
+        predict.save(str(tmp_path / "model.pkl"), save_program=True)
