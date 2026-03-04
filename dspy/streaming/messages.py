@@ -72,11 +72,11 @@ class StatusMessageProvider:
 
     def tool_start_status_message(self, instance: Any, inputs: dict[str, Any]):
         """Status message before a `dspy.Tool` is called."""
-        return f"Calling tool {instance.name}..."
+        pass
 
     def tool_end_status_message(self, outputs: Any):
         """Status message after a `dspy.Tool` is called."""
-        return "Tool calling finished! Querying the LLM with tool calling results..."
+        pass
 
     def module_start_status_message(self, instance: Any, inputs: dict[str, Any]):
         """Status message before a `dspy.Module` or `dspy.Predict` is called."""

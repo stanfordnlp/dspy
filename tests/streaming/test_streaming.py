@@ -92,9 +92,9 @@ async def test_default_status_streaming():
             if isinstance(value, StatusMessage):
                 status_messages.append(value)
 
-    assert len(status_messages) == 2
-    assert status_messages[0].message == "Calling tool generate_question..."
-    assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
+    # The default StatusMessageProvider returns None for all events, so no status messages
+    # are emitted unless the user subclasses and overrides the relevant method.
+    assert len(status_messages) == 0
 
 
 @pytest.mark.anyio
@@ -278,9 +278,9 @@ async def test_default_status_streaming_in_async_program():
             if isinstance(value, StatusMessage):
                 status_messages.append(value)
 
-    assert len(status_messages) == 2
-    assert status_messages[0].message == "Calling tool generate_question..."
-    assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
+    # The default StatusMessageProvider returns None for all events, so no status messages
+    # are emitted unless the user subclasses and overrides the relevant method.
+    assert len(status_messages) == 0
 
 
 @pytest.mark.llm_call
@@ -410,9 +410,9 @@ def test_sync_status_streaming():
             if isinstance(value, StatusMessage):
                 status_messages.append(value)
 
-    assert len(status_messages) == 2
-    assert status_messages[0].message == "Calling tool generate_question..."
-    assert status_messages[1].message == "Tool calling finished! Querying the LLM with tool calling results..."
+    # The default StatusMessageProvider returns None for all events, so no status messages
+    # are emitted unless the user subclasses and overrides the relevant method.
+    assert len(status_messages) == 0
 
 
 @pytest.mark.anyio
@@ -850,7 +850,14 @@ async def test_status_message_non_blocking():
             dspy.Tool(dummy_tool)()
             return dspy.Prediction(answer="dummy_tool_output")
 
-    program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider())
+    class ToolStatusProvider(StatusMessageProvider):
+        def tool_start_status_message(self, instance, inputs):
+            return f"Calling tool {instance.name}..."
+
+        def tool_end_status_message(self, outputs):
+            return "Tool calling finished!"
+
+    program = dspy.streamify(MyProgram(), status_message_provider=ToolStatusProvider())
 
     with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
@@ -878,7 +885,14 @@ async def test_status_message_non_blocking_async_program():
             await dspy.Tool(dummy_tool).acall()
             return dspy.Prediction(answer="dummy_tool_output")
 
-    program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider(), is_async_program=True)
+    class ToolStatusProvider(StatusMessageProvider):
+        def tool_start_status_message(self, instance, inputs):
+            return f"Calling tool {instance.name}..."
+
+        def tool_end_status_message(self, outputs):
+            return "Tool calling finished!"
+
+    program = dspy.streamify(MyProgram(), status_message_provider=ToolStatusProvider(), is_async_program=True)
 
     with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
