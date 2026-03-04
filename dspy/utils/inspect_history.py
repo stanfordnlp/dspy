@@ -13,7 +13,10 @@ def _blue(text: str, end: str = "\n"):
 def pretty_print_history(history, n: int = 1):
     """Prints the last n prompts and their completions."""
 
-    for item in history[-n:]:
+    # `history` may be a deque (which doesn't support negative slicing directly)
+    # or a list.  Converting to a list first is safe and O(k) where k = len(history).
+    history_list = list(history)
+    for item in history_list[-n:]:
         messages = item["messages"] or [{"role": "user", "content": item["prompt"]}]
         outputs = item["outputs"]
         timestamp = item.get("timestamp", "Unknown time")
