@@ -18,6 +18,64 @@ class Parallel:
         timeout: int = 120,
         straggler_limit: int = 3,
     ):
+        """
+        A utility class for parallel, multi-threaded execution of (module, example) pairs. 
+         
+        Supports various example formats (e.g., `Example`, dict, tuple, list), robust error handling,  
+        optional progress tracking, and can optionally return failed examples and exceptions.  
+
+        Args:
+            num_threads (Optional[int]): The number of threads to use. Defaults to `settings.num_threads`.
+            max_errors (Optional[int]): The maximum number of errors allowed before raising an exception. Defaults to `settings.max_errors`.
+            access_examples (bool): Whether to unpack `Example` objects via `.inputs()`. Defaults to True.
+            return_failed_examples (bool): Whether to return failed examples. Defaults to False.
+            provide_traceback (Optional[bool]): Whether to provide traceback. Defaults to None.
+            disable_progress_bar (bool): Whether to disable progress bar. Defaults to False.
+
+        Example:
+            ```python
+            import dspy
+
+            dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+            # define a module to process data
+            class MyModule(dspy.Module):
+                def __init__(self):
+                    super().__init__()
+                
+                def forward(self, question: str) -> str:
+                    return f"Answer to: {question}"
+
+            # create example list
+            examples = [
+                dspy.Example(question="What is the capital of France?").with_inputs("question"),
+                dspy.Example(question="What is 2 + 2?").with_inputs("question"),
+                dspy.Example(question="Who invented electricity?").with_inputs("question"),
+                dspy.Example(question="What is the largest planet?").with_inputs("question"),
+                dspy.Example(question="What is the chemical symbol for water?").with_inputs("question"),
+            ]
+
+            # create module instance
+            module = MyModule()
+
+            # create execution pairs
+            exec_pairs = [(module, example) for example in examples]
+
+            # parallel execution
+            results = parallel(exec_pairs, num_threads=3, disable_progress_bar=False)
+
+            # print results
+            for i, result in enumerate(results):
+                print(f"Result {i+1}: {result}")
+                
+            # Expected Output:
+            # Result 1: Answer to: What is the capital of France?
+            # Result 2: Answer to: What is 2 + 2?
+            # Result 3: Answer to: Who invented electricity?
+            # Result 4: Answer to: What is the largest planet?
+            # Result 5: Answer to: What is the chemical symbol for water?
+            ```
+        """
         super().__init__()
         self.num_threads = num_threads or settings.num_threads
         self.max_errors = settings.max_errors if max_errors is None else max_errors

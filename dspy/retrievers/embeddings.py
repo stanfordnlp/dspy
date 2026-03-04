@@ -18,6 +18,17 @@ class Embeddings:
         brute_force_threshold: int = 20_000,
         normalize: bool = True,
     ):
+        """Initialize the Embedding retriever.
+
+        Args:
+            corpus: List of text passages to be indexed and searched.
+            embedder: Embedding model that converts text to vector representations.
+            k: Number of top relevant passages to retrieve for each query. Defaults to 5.
+            callbacks: Reserved for future use. Currently ignored if provided.
+            cache: MUST be False. Caching is explicitly unsupported and will raise AssertionError if enabled.
+            brute_force_threshold: Threshold size for using brute-force search instead of FAISS. If corpus size is below this threshold, brute-force search is used. Defaults to 20,000.
+            normalize: Whether to normalize embeddings to unit vectors before similarity calculation. Normalization ensures that cosine similarity equals dot product. Defaults to True.
+        """
         assert cache is False, "Caching is not supported for embeddings-based retrievers"
 
         self.embedder = embedder
@@ -32,15 +43,45 @@ class Embeddings:
         self.search_fn = Unbatchify(self._batch_forward)
 
     def __call__(self, query: str):
+        """Retrieve relevant passages for a single query (alias for forward()).
+    
+        Args:
+            query: Text query to search against the corpus.
+        
+        Returns:
+            dspy.Prediction: Object containing 'passages' (list of retrieved texts) 
+            and 'indices' (their positions in the original corpus).
+        """
         return self.forward(query)
 
     def forward(self, query: str):
+        """Retrieve relevant passages for a single query.
+
+        Args:
+            query: Text query to find relevant passages for.
+
+        Returns:
+            dspy.Prediction: Object with 'passages' (list of retrieved passages) and
+            'indices' (list of their indices in the corpus).
+        """
         import dspy
 
         passages, indices = self.search_fn(query)
         return dspy.Prediction(passages=passages, indices=indices)
 
     def _batch_forward(self, queries: list[str]):
+        """
+        Retrieve relevant passages for a batch of queries.
+
+        Args:
+            queries: List of text queries to find relevant passages for.
+
+        Returns:
+            List[Tuple[List[str], List[int]]]:
+                For each query, a tuple containing:
+                - Top-k retrieved passages (list of strings)
+                - Corresponding corpus indices (list of integers)
+        """
         q_embeds = self.embedder(queries)
         q_embeds = self._normalize(q_embeds) if self.normalize else q_embeds
 
@@ -50,6 +91,18 @@ class Embeddings:
         return self._rerank_and_predict(q_embeds, pids)
 
     def _build_faiss(self):
+        """
+        Build a FAISS index for efficient similarity search.
+
+        Returns:
+            faiss.Index: Trained FAISS index object (concrete type depends on configuration).
+
+        Note:
+            Index type is IndexIVFPQ in current implementation, but this may change.
+        
+        Raises:
+            ImportError: If FAISS library is not installed.
+        """
         nbytes = 32
         partitions = int(2 * np.sqrt(len(self.corpus)))
         dim = self.corpus_embeddings.shape[1]
@@ -73,9 +126,31 @@ class Embeddings:
         return index
 
     def _faiss_search(self, query_embeddings: np.ndarray, num_candidates: int):
+        """Perform similarity search using the FAISS index.
+
+        Args:
+            query_embeddings: Numpy array of query embeddings with shape (n_queries, embedding_dim).
+            num_candidates: Number of candidates to retrieve for each query.
+            
+        Returns:
+            np.ndarray: Candidate indices array of shape (n_queries, num_candidates).
+        """
         return self.index.search(query_embeddings, num_candidates)[1]
 
     def _rerank_and_predict(self, q_embeds: np.ndarray, candidate_indices: np.ndarray):
+        """
+        Rerank candidates using dot-product similarity (equivalent to cosine similarity when embeddings are normalized).
+
+        Args:
+            q_embeds: Numpy array of query embeddings with shape (n_queries, embedding_dim).
+            candidate_indices: Numpy array of candidate indices with shape (n_queries, num_candidates).
+
+        Returns:
+            List[Tuple[List[str], List[int]]]:
+                For each query, a tuple containing:
+                - Top-k retrieved passages (list of strings)
+                - Corresponding corpus indices (list of integers)
+        """
         candidate_embeddings = self.corpus_embeddings[candidate_indices]
         scores = np.einsum("qd,qkd->qk", q_embeds, candidate_embeddings)
 
@@ -85,6 +160,15 @@ class Embeddings:
         return [([self.corpus[idx] for idx in indices], [idx for idx in indices]) for indices in top_indices]  # noqa: C416
 
     def _normalize(self, embeddings: np.ndarray):
+        """
+        Normalize embeddings to unit vectors.
+        
+        Args:
+            embeddings: Numpy array of embeddings to normalize.
+            
+        Returns:
+            np.ndarray: Normalized embeddings with unit length.
+        """
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         return embeddings / np.maximum(norms, 1e-10)
 
