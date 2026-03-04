@@ -1,3 +1,5 @@
+import os; os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # noqa: E702
+
 from dspy.predict import *
 from dspy.primitives import *
 from dspy.retrievers import *
