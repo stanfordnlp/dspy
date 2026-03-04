@@ -2,7 +2,7 @@ import re
 from typing import Any, ClassVar
 
 import pydantic
-from pydantic import create_model
+from pydantic import ConfigDict, create_model
 
 from dspy.adapters.types.base_type import Type
 
@@ -62,6 +62,11 @@ class Code(Type):
     print(result.result)
     ```
     """
+
+    # Use a concise JSON schema description to prevent the full class docstring (which contains
+    # lengthy Python examples) from leaking into the LM prompt via the JSON schema `# note:` hint.
+    # The class docstring is preserved for IDE/docs tooling; this override controls what the model sees.
+    model_config = ConfigDict(json_schema_extra={"description": "A code snippet."})
 
     code: str
 
