@@ -133,7 +133,7 @@ class Adapter:
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
 
-            if text:
+            if text is not None:
                 value = self.parse(processed_signature, text)
                 for field_name in original_signature.output_fields.keys():
                     if field_name not in value:

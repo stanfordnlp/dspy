@@ -743,3 +743,27 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_empty_string_response_raises_parse_error_instead_of_returning_none():
+    """Regression test for #9378: empty LM text response should raise AdapterParseError,
+    not silently set all output fields to None."""
+
+    class Translate(dspy.Signature):
+        """Translate a word from English to Spanish."""
+
+        english: str = dspy.InputField()
+        spanish: str = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+
+    with mock.patch("litellm.completion") as mock_completion:
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content=""))],
+            model="openai/gpt-4o-mini",
+        )
+
+        lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+
+        with pytest.raises(dspy.utils.exceptions.AdapterParseError):
+            adapter(lm, {}, Translate, [], {"english": "hello"})
