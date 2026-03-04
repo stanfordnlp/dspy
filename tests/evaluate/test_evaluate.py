@@ -57,12 +57,7 @@ def test_evaluate_call():
 
 
 def test_evaluate_single_thread_runs_in_main_thread():
-    """Evaluate with num_threads=1 should run in the main thread (issue #9150).
-
-    Frameworks like AppWorld use signal.signal() which requires main-thread
-    execution.  Previously, even num_threads=1 dispatched work to a
-    ThreadPoolExecutor, causing 'signal only works in main thread' errors.
-    """
+    """Evaluate with num_threads=1 should run in the main thread."""
     dspy.configure(
         lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}})
     )

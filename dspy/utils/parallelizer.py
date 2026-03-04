@@ -71,12 +71,7 @@ class ParallelExecutor:
         return safe_func
 
     def _execute_sequential(self, function, data):
-        """Execute items sequentially on the main thread.
-
-        This avoids spawning a ThreadPoolExecutor when num_threads == 1,
-        which is necessary for frameworks that require main-thread execution
-        (e.g. those using signal.signal()).
-        """
+        """Execute items sequentially on the main thread."""
         results = [None] * len(data)
 
         pbar = tqdm.tqdm(
@@ -92,22 +87,8 @@ class ParallelExecutor:
                     break
 
                 outcome = function(item)
-
-                if isinstance(outcome, Exception):
-                    self.failed_indices.append(idx)
-                    self.exceptions_map[idx] = outcome
-                else:
-                    results[idx] = outcome
-
-                if self.compare_results:
-                    vals = [r[-1] for r in results if r is not None]
-                    self._update_progress(pbar, sum(vals), len(vals))
-                else:
-                    self._update_progress(
-                        pbar,
-                        len([r for r in results if r is not None]),
-                        len(data),
-                    )
+                self._process_outcome(results, idx, outcome)
+                self._report_progress(pbar, results, len(data))
         except KeyboardInterrupt:
             self.cancel_jobs.set()
             logger.warning("SIGINT received. Cancelling.")
@@ -211,25 +192,9 @@ class ParallelExecutor:
                             pass
                         else:
                             if outcome != job_cancelled and results[index] is None:
-                                # Check if this is an exception
-                                if isinstance(outcome, Exception):
-                                    with self.error_lock:
-                                        self.failed_indices.append(index)
-                                        self.exceptions_map[index] = outcome
-                                    results[index] = None  # Keep None for failed examples
-                                else:
-                                    results[index] = outcome
+                                self._process_outcome(results, index, outcome)
 
-                            # Update progress
-                            if self.compare_results:
-                                vals = [r[-1] for r in results if r is not None]
-                                self._update_progress(pbar, sum(vals), len(vals))
-                            else:
-                                self._update_progress(
-                                    pbar,
-                                    len([r for r in results if r is not None]),
-                                    len(data),
-                                )
+                            self._report_progress(pbar, results, len(data))
 
                     if all_done():
                         break
@@ -266,6 +231,27 @@ class ParallelExecutor:
             raise Exception("Execution cancelled due to errors or interruption.")
 
         return results
+
+    def _process_outcome(self, results, idx, outcome):
+        """Store a single outcome and track errors."""
+        if isinstance(outcome, Exception):
+            with self.error_lock:
+                self.failed_indices.append(idx)
+                self.exceptions_map[idx] = outcome
+        else:
+            results[idx] = outcome
+
+    def _report_progress(self, pbar, results, total):
+        """Compute metrics and update the progress bar."""
+        if self.compare_results:
+            vals = [r[-1] for r in results if r is not None]
+            self._update_progress(pbar, sum(vals), len(vals))
+        else:
+            self._update_progress(
+                pbar,
+                len([r for r in results if r is not None]),
+                total,
+            )
 
     def _update_progress(self, pbar, nresults, ntotal):
         if self.compare_results:
