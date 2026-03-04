@@ -1,5 +1,6 @@
-import pytest
 from collections import deque
+
+import pytest
 
 import dspy
 from dspy.clients.base_lm import GLOBAL_HISTORY
