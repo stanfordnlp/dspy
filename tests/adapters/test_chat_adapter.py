@@ -743,3 +743,33 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_empty_text_raises_adapter_parse_error_for_regular_fields():
+    """When the LM returns empty text, AdapterParseError should be raised for regular output
+    fields rather than silently returning None values.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9378.
+    """
+    import dspy
+    from dspy.utils.exceptions import AdapterParseError
+
+    class Translate(dspy.Signature):
+        """Translate a word from English to Spanish."""
+
+        english: str = dspy.InputField()
+        spanish: str = dspy.OutputField()
+
+    class FakeLM(dspy.BaseLM):
+        def __init__(self):
+            super().__init__(model="fake")
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            # Return a response with empty text and some content only in reasoning_content
+            return [{"text": "", "reasoning_content": "the answer is hola"}]
+
+    lm = FakeLM()
+    adapter = dspy.ChatAdapter()
+    with dspy.context(lm=lm, adapter=adapter):
+        with pytest.raises(AdapterParseError):
+            dspy.Predict(Translate)(english="hello")

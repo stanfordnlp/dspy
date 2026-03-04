@@ -140,9 +140,30 @@ class Adapter:
                         # We need to set the field not present in the processed signature to None for consistency.
                         value[field_name] = None
             else:
+                # Text is empty — parse an empty string so that required output fields
+                # that can only come from text trigger an AdapterParseError rather than
+                # silently returning None.  Custom-type fields (e.g. Reasoning, parsed
+                # from reasoning_content) are handled in the loop below and will override
+                # any values set here.  We only suppress the error if the signature has
+                # NO text-parseable output fields (i.e. all fields are handled by native
+                # response type parsers).
                 value = {}
                 for field_name in original_signature.output_fields.keys():
                     value[field_name] = None
+                # Check whether any output field requires text-based parsing.
+                native_response_types = getattr(self, 'native_response_types', set())
+                has_text_only_field = any(
+                    not (
+                        isinstance(field.annotation, type)
+                        and issubclass(field.annotation, Type)
+                        and field.annotation in native_response_types
+                    )
+                    for field in original_signature.output_fields.values()
+                )
+                if has_text_only_field:
+                    # Re-use parse() to emit the proper AdapterParseError for the
+                    # missing fields rather than propagating None silently.
+                    self.parse(processed_signature, "")
 
             if tool_calls and tool_call_output_field_name:
                 tool_calls = [
