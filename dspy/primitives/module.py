@@ -88,6 +88,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
         self.__dict__.update(state)
         if not hasattr(self, "history"):
             self.history = deque()
+        elif not isinstance(self.history, deque):
+            # Migrate list history from older pickled modules to deque.
+            self.history = deque(self.history)
         if not hasattr(self, "callbacks"):
             self.callbacks = []
 
