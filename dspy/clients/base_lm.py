@@ -284,5 +284,12 @@ class BaseLM:
 
 
 def inspect_history(n: int = 1, file: 'TextIO | None' = None) -> None:
-    """The global history shared across all LMs."""
+    """The global history shared across all LMs.
+
+    Args:
+        n: Number of recent entries to display. Defaults to 1.
+        file: An optional file-like object to write output to. When
+            provided, ANSI color codes are automatically disabled.
+            Defaults to `None` (prints to stdout).
+    """
     pretty_print_history(GLOBAL_HISTORY, n, file=file)

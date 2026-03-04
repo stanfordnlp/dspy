@@ -29,8 +29,8 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
         history: The history list to print from.
         n: Number of recent entries to display. Defaults to 1.
         file: An optional file-like object to write output to (must have a
-            ``.write()`` method). When provided, ANSI color codes are
-            automatically disabled. Defaults to ``None`` (prints to stdout).
+            `.write()` method). When provided, ANSI color codes are
+            automatically disabled. Defaults to `None` (prints to stdout).
     """
     out = file or sys.stdout
     use_colors = file is None

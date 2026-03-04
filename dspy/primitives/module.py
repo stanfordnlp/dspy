@@ -262,7 +262,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 Defaults to 1.
             file: An optional file-like object to write output to. When
                 provided, ANSI color codes are automatically disabled.
-                Defaults to ``None`` (prints to stdout).
+                Defaults to `None` (prints to stdout).
         """
         pretty_print_history(self.history, n, file=file)
 
