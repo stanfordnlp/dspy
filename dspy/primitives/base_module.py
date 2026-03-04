@@ -9,6 +9,15 @@ import orjson
 
 from dspy.utils.saving import get_dependency_versions
 
+# Known file extensions that indicate a file path rather than a directory path.
+# Used by save() to give a clear error when save_program=True is passed a file path.
+_KNOWN_FILE_EXTENSIONS = frozenset({
+    ".json", ".pkl", ".pickle", ".txt", ".yaml", ".yml",
+    ".csv", ".tsv", ".pt", ".pth", ".bin", ".safetensors",
+    ".ckpt", ".h5", ".hdf5", ".npz", ".npy", ".zip", ".tar",
+    ".gz", ".bz2", ".xz", ".py", ".pyc",
+})
+
 # NOTE: Note: It's important (temporary decision) to maintain named_parameters that's different in behavior from
 # named_sub_modules for the time being.
 
@@ -202,12 +211,6 @@ class BaseModule:
             # We only block well-known file extensions to avoid false positives on dotted
             # directory names, while still catching the common mistake of passing a file path
             # when save_program=True (e.g. save("model.json", save_program=True)).
-            _KNOWN_FILE_EXTENSIONS = {
-                ".json", ".pkl", ".pickle", ".txt", ".yaml", ".yml",
-                ".csv", ".tsv", ".pt", ".pth", ".bin", ".safetensors",
-                ".ckpt", ".h5", ".hdf5", ".npz", ".npy", ".zip", ".tar",
-                ".gz", ".bz2", ".xz", ".py", ".pyc",
-            }
             if path.suffix.lower() in _KNOWN_FILE_EXTENSIONS and not path.is_dir():
                 raise ValueError(
                     f"`path` must point to a directory when `save_program=True`, but received a path "
