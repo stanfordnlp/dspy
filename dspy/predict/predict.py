@@ -79,8 +79,9 @@ class Predict(Module, Parameter):
 
         Args:
             json_mode: If True, convert demonstration examples to plain
-                dictionaries for JSON serialization. If False, preserve
-                the original example objects.
+                dictionaries for JSON serialization. If False, keep the
+                original container types (e.g., ``Example``), though
+                individual field values are still serialized.
 
         Returns:
             A dictionary containing the serialized module state with keys
