@@ -50,7 +50,7 @@ class BestOfN(Module):
             ```
         """
         if N <= 0:
-                raise ValueError(f"BestOfN: N must be greater than 0, got {N}")
+            raise ValueError(f"BestOfN: N must be greater than 0, got {N}")
         self.module = module
         self.reward_fn = lambda *args: reward_fn(*args)  # to prevent this from becoming a parameter
         self.threshold = threshold
@@ -93,7 +93,7 @@ class BestOfN(Module):
 
         if best_pred is None:
             if last_exception is not None:
-                raise last_exception.with_traceback(last_exception.__traceback__)
+                raise last_exception
             raise RuntimeError(f"BestOfN: All {self.N} attempts failed. No successful prediction was obtained.")
 
         if best_trace:
