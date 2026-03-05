@@ -54,7 +54,10 @@ response = classify(question=question)
 # 3) Access the output.
 response.answer
 ```
-
+**Possible Output:**
+```text
+'One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.'
+```
 
 Let's discuss the output object here. The `dspy.ChainOfThought` module will generally inject a `reasoning` before the output field(s) of your signature.
 
@@ -69,19 +72,6 @@ print(f"Answer: {response.answer}")
 Reasoning: We can consider the fact that ColBERT has shown to outperform other state-of-the-art retrieval models in terms of efficiency and effectiveness. It uses contextualized embeddings and performs document retrieval in a way that is both accurate and scalable.
 Answer: One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.
 ```
-
-This is accessible whether we request one or many completions.
-
-We can also access completions as a list of `Prediction`s or as several lists, one for each field.
-
-```python
-response.completions[0].reasoning == response.completions.reasoning[0]
-```
-**Output:**
-```text
-True
-```
-
 
 ## What other DSPy modules are there? How can I use them?
 
