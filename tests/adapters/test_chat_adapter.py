@@ -6,6 +6,7 @@ import pytest
 from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse
 
 import dspy
+from dspy.experimental import Citations
 
 
 @pytest.mark.parametrize(
@@ -398,6 +399,38 @@ def test_chat_adapter_with_code():
         assert result[0]["code"].code == 'print("Hello, world!")'
 
 
+def test_code_output_field_omits_json_schema_in_prompt():
+    """Regression test for #9251: dspy.Code should avoid duplicating large JSON schema text."""
+    class CodeGeneration(dspy.Signature):
+        """Generate code to answer the question"""
+        question: str = dspy.InputField()
+        code: dspy.Code = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(CodeGeneration, [], {"question": "Hello"})
+    system_content = messages[0]["content"]
+
+    assert dspy.Code.description() in system_content
+    assert "JSON schema" not in system_content
+    assert '"properties"' not in system_content
+    assert "Code type in DSPy" not in system_content
+
+
+def test_citations_output_field_keeps_json_schema_in_prompt():
+    """Non-Code custom types should keep schema guidance for structured output reliability."""
+
+    class CitationGeneration(dspy.Signature):
+        question: str = dspy.InputField()
+        citations: Citations = dspy.OutputField()
+
+    adapter = dspy.ChatAdapter()
+    messages = adapter.format(CitationGeneration, [], {"question": "Hello"})
+    system_content = messages[0]["content"]
+
+    assert "must adhere to the JSON schema" in system_content
+    assert "Type description of Citations" in system_content
+
+
 def test_chat_adapter_formats_conversation_history():
     class MySignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -710,3 +743,53 @@ All interactions will be structured in the following way, with the appropriate v
 In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_null_content_raises_adapter_parse_error():
+    """When the LM returns content=None with no tool calls (e.g. content filter),
+    the adapter should raise AdapterParseError instead of silently returning None fields."""
+    from dspy.utils.exceptions import AdapterParseError
+
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    response = ModelResponse(
+        choices=[Choices(message=Message(content=None))],
+        model="openai/gpt-4o-mini",
+    )
+
+    with dspy.context(lm=lm):
+        with mock.patch("litellm.completion", return_value=response):
+            cot = dspy.ChainOfThought("question -> answer")
+            with pytest.raises(AdapterParseError):
+                cot(question="test")
+
+
+def test_empty_string_content_raises_adapter_parse_error():
+    """Same as above but with empty string content."""
+    from dspy.utils.exceptions import AdapterParseError
+
+    lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+    response = ModelResponse(
+        choices=[Choices(message=Message(content=""))],
+        model="openai/gpt-4o-mini",
+    )
+
+    with dspy.context(lm=lm):
+        with mock.patch("litellm.completion", return_value=response):
+            cot = dspy.ChainOfThought("question -> answer")
+            with pytest.raises(AdapterParseError):
+                cot(question="test")
+
+
+def test_tool_call_with_null_content_does_not_raise():
+    """Tool-call-only responses legitimately have content=None.
+    _call_postprocess must NOT raise when tool_calls are present."""
+    adapter = dspy.ChatAdapter(use_native_function_calling=True)
+    sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
+
+    outputs = [{"text": None, "tool_calls": [
+        {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
+    ]}]
+
+    result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
+    assert result is not None
+    assert len(result) == 1

@@ -43,8 +43,16 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
 
     payload = {"query": query, "k": k}
     res = requests.get(url, params=payload, timeout=10)
+    res.raise_for_status()
 
-    topk = res.json()["topk"][:k]
+    res_json = res.json()
+    if res_json.get("error"):
+        error_message = res_json.get("message", "Unknown error")
+        raise ValueError(f"ColBERTv2 server returned an error: {error_message}")
+    if "topk" not in res_json:
+        raise ValueError(f"ColBERTv2 server returned an unexpected response: {res_json}")
+
+    topk = res_json["topk"][:k]
     topk = [{**d, "long_text": d["text"]} for d in topk]
     return topk[:k]
 
@@ -62,8 +70,16 @@ def colbertv2_post_request_v2(url: str, query: str, k: int):
     headers = {"Content-Type": "application/json; charset=utf-8"}
     payload = {"query": query, "k": k}
     res = requests.post(url, json=payload, headers=headers, timeout=10)
+    res.raise_for_status()
 
-    return res.json()["topk"][:k]
+    res_json = res.json()
+    if res_json.get("error"):
+        error_message = res_json.get("message", "Unknown error")
+        raise ValueError(f"ColBERTv2 server returned an error: {error_message}")
+    if "topk" not in res_json:
+        raise ValueError(f"ColBERTv2 server returned an unexpected response: {res_json}")
+
+    return res_json["topk"][:k]
 
 
 @request_cache()

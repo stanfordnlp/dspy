@@ -104,10 +104,11 @@ The others are very similar. They mainly change the internal behavior with which
 
 5. **`dspy.MultiChainComparison`**: Can compare multiple outputs from `ChainOfThought` to produce a final prediction.
 
+6. **`dspy.RLM`**: A [Recursive Language Model](../../api/modules/RLM.md) that explores large contexts through a sandboxed Python REPL with recursive sub-LLM calls. Use when context is too large to fit in the prompt effectively.
 
 We also have some function-style modules:
 
-6. **`dspy.majority`**: Can do basic voting to return the most popular response from a set of predictions.
+7. **`dspy.majority`**: Can do basic voting to return the most popular response from a set of predictions.
 
 
 !!! info "A few examples of DSPy modules on simple tasks."

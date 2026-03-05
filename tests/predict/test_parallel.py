@@ -194,3 +194,30 @@ def test_batch_with_failed_examples():
     assert len(exceptions) == 1
     assert isinstance(exceptions[0], ValueError)
     assert str(exceptions[0]) == "test error"
+
+
+def test_parallel_timeout_and_straggler_limit_params():
+    parallel_default = dspy.Parallel()
+    assert parallel_default.timeout == 120
+    assert parallel_default.straggler_limit == 3
+
+    parallel_custom = dspy.Parallel(timeout=0, straggler_limit=5)
+    assert parallel_custom.timeout == 0
+    assert parallel_custom.straggler_limit == 5
+
+
+def test_batch_timeout_and_straggler_limit_params():
+    class SimpleModule(dspy.Module):
+        def forward(self, value: int) -> int:
+            return value * 2
+
+    module = SimpleModule()
+    examples = [
+        dspy.Example(value=1).with_inputs("value"),
+        dspy.Example(value=2).with_inputs("value"),
+        dspy.Example(value=3).with_inputs("value"),
+    ]
+
+    results = module.batch(examples, timeout=0, straggler_limit=5)
+
+    assert results == [2, 4, 6]

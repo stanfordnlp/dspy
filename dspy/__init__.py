@@ -23,6 +23,7 @@ configure_dspy_loggers(__name__)
 
 # Singleton definitions and aliasing
 configure = settings.configure
+load_settings = settings.load
 context = settings.context
 
 BootstrapRS = BootstrapFewShotWithRandomSearch

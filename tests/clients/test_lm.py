@@ -16,7 +16,6 @@ from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
 from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
-from dspy.utils.dummies import DummyLM
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -122,9 +121,8 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
 
             monkeypatch.setattr(litellm, "completion", fake_completion)
 
-            dummy_lm = DummyLM([{"answer": "ignored"}])
-            # TODO(isaacbmiller): Change from dummy_lm.forward to just dummy_lm.__call__ #8864
-            dummy_lm.forward(messages=[{"role": "user", "content": "Hello"}])
+            lm = dspy.LM("dummy", model_type="chat")
+            lm(messages=[{"role": "user", "content": "Hello"}])
 
             cache_key_spy.assert_not_called()
             cache_get_spy.assert_called_once()
@@ -190,12 +188,29 @@ def test_zero_temperature_rollout_warns_once(monkeypatch):
 
     monkeypatch.setattr(litellm, "completion", fake_completion)
 
-    lm = dspy.LM(model="openai/dspy-test-model", model_type="chat")
+    lm = dspy.LM(model="openai/dspy-test-model", model_type="chat", temperature=0)
     with pytest.warns(UserWarning, match="rollout_id has no effect"):
         lm("Query", rollout_id=1)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
         lm("Query", rollout_id=2)
+        assert len(record) == 0
+
+
+def test_rollout_id_with_default_temperature_does_not_warn(monkeypatch):
+    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+        return ModelResponse(
+            choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            model="openai/gpt-5-nano",
+        )
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        lm = dspy.LM(model="openai/gpt-5-nano", model_type="chat", rollout_id=1)
+        lm("Query")
         assert len(record) == 0
 
 
@@ -727,11 +742,11 @@ def test_responses_api_converts_images_correctly():
                         "type": "image_url",
                         "image_url": {
                             "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-                        }
-                    }
-                ]
+                        },
+                    },
+                ],
             }
-        ]
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_base64_image)
@@ -749,24 +764,17 @@ def test_responses_api_converts_images_correctly():
 
     # Second item should be converted to input_image format
     assert content[1]["type"] == "input_image"
-    assert content[1]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    assert (
+        content[1]["image_url"]
+        == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
 
     # Test with URL image
     request_with_url_image = {
         "model": "openai/gpt-5-mini",
         "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": "https://example.com/image.jpg"
-                        }
-                    }
-                ]
-            }
-        ]
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}]}
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_url_image)
@@ -793,11 +801,11 @@ def test_responses_api_converts_files_correctly():
                         "file": {
                             "file_data": "data:text/plain;base64,SGVsbG8gV29ybGQ=",
                             "filename": "test.txt",
-                        }
-                    }
-                ]
+                        },
+                    },
+                ],
             }
-        ]
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_file)
@@ -830,11 +838,11 @@ def test_responses_api_converts_files_correctly():
                         "file": {
                             "file_id": "file-abc123",
                             "filename": "document.pdf",
-                        }
+                        },
                     }
-                ]
+                ],
             }
-        ]
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_file_id)
@@ -858,11 +866,11 @@ def test_responses_api_converts_files_correctly():
                             "file_data": "data:application/pdf;base64,JVBERi0xLjQ=",
                             "file_id": "file-xyz789",
                             "filename": "report.pdf",
-                        }
+                        },
                     }
-                ]
+                ],
             }
-        ]
+        ],
     }
 
     result = _convert_chat_request_to_responses_request(request_with_all_fields)
@@ -910,9 +918,9 @@ def test_responses_api_with_image_input():
                         "type": "image_url",
                         "image_url": {
                             "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-                        }
-                    }
-                ]
+                        },
+                    },
+                ],
             }
         ]
 
@@ -930,7 +938,10 @@ def test_responses_api_with_image_input():
         # Check that image was converted to input_image format
         image_content = [c for c in content if c.get("type") == "input_image"]
         assert len(image_content) == 1
-        assert image_content[0]["image_url"] == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        assert (
+            image_content[0]["image_url"]
+            == "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
 
 
 def test_responses_api_with_pydantic_model_input():
@@ -985,3 +996,40 @@ def test_responses_api_with_pydantic_model_input():
         "type": "json_schema",
         "schema": TestModel.model_json_schema(),
     }
+
+
+@pytest.mark.asyncio
+async def test_streaming_passes_headers_correctly():
+    from dspy.clients.lm import _get_stream_completion_fn
+
+    custom_headers = {"Authorization": "Bearer my-custom-token"}
+    request = {
+        "model": "openai/gpt-4o-mini",
+        "messages": [{"role": "user", "content": "test"}],
+    }
+
+    mock_stream = mock.AsyncMock()
+    mock_stream.send = mock.AsyncMock()
+
+    async def empty_async_generator():
+        return
+        yield  # Make it a generator
+
+    with mock.patch("dspy.settings") as mock_settings:
+        mock_settings.send_stream = mock_stream
+        mock_settings.caller_predict = None
+        mock_settings.track_usage = False
+
+        with mock.patch("litellm.acompletion") as mock_acompletion:
+            mock_acompletion.return_value = empty_async_generator()
+
+            stream_fn = _get_stream_completion_fn(request, {}, sync=False, headers=custom_headers)
+            assert stream_fn is not None
+
+            with mock.patch("litellm.stream_chunk_builder", return_value={}):
+                await stream_fn()
+
+            # Verify headers were passed to litellm.acompletion
+            mock_acompletion.assert_called_once()
+            call_kwargs = mock_acompletion.call_args.kwargs
+            assert call_kwargs["headers"]["Authorization"] == "Bearer my-custom-token"

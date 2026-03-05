@@ -16,6 +16,26 @@ from dspy.utils.callback import BaseCallback
 
 logger = logging.getLogger(__name__)
 
+UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
+
+
+def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
+    if allow_unsafe_lm_state:
+        return lm_state
+
+    unsafe_keys = sorted(UNSAFE_LM_STATE_KEYS.intersection(lm_state))
+
+    if not unsafe_keys:
+        return lm_state
+
+    sanitized_lm_state = {k: v for k, v in lm_state.items() if k not in UNSAFE_LM_STATE_KEYS}
+    logger.warning(
+        "Ignoring unsafe LM config key(s) during state load: %s. "
+        "Pass allow_unsafe_lm_state=True to preserve these keys for trusted files.",
+        unsafe_keys,
+    )
+    return sanitized_lm_state
+
 
 class Predict(Module, Parameter):
     """Basic DSPy module that maps inputs to outputs using a language model.
@@ -66,11 +86,13 @@ class Predict(Module, Parameter):
         state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
-    def load_state(self, state: dict) -> "Predict":
+    def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
         """Load the saved state of a `Predict` object.
 
         Args:
             state: The saved state of a `Predict` object.
+            allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
+                serialized LM state. Enable only when loading trusted files.
 
         Returns:
             Self to allow method chaining.
@@ -82,7 +104,8 @@ class Predict(Module, Parameter):
                 setattr(self, name, value)
 
         self.signature = self.signature.load_state(state["signature"])
-        self.lm = LM(**state["lm"]) if state["lm"] else None
+        sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
+        self.lm = LM(**sanitized_lm_state) if sanitized_lm_state else None
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")

@@ -138,7 +138,7 @@ def test_track_usage_with_multiple_models():
 
 
 def test_track_usage_context_manager(lm_for_test):
-    lm = dspy.LM(lm_for_test, cache=False)
+    lm = dspy.LM(lm_for_test, cache=False, temperature=0.0)
     dspy.configure(lm=lm)
 
     predict = dspy.ChainOfThought("question -> answer")

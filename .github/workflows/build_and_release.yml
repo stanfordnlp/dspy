@@ -31,6 +31,12 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
+      - name: Install Deno
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "${HOME}/.deno/bin" >> $GITHUB_PATH
+      - name: Verify Deno installation
+        run: deno --version
       - name: Get correct version for TestPyPI release
         id: check_version
         run: |
@@ -82,6 +88,12 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build
+      - name: Install Deno
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "${HOME}/.deno/bin" >> $GITHUB_PATH
+      - name: Verify Deno installation
+        run: deno --version
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
       - name: Update version in __metadata__.py
