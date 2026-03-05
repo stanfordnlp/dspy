@@ -190,6 +190,8 @@ class ReAct(Module):
         Returns:
             True if the loop should break (finish tool was called), False otherwise.
         """
+        if pred.next_tool_calls is None:
+            return False
         tool_calls = pred.next_tool_calls.tool_calls
         non_finish, finish_calls = self._split_finish_tools(tool_calls)
 
@@ -209,6 +211,8 @@ class ReAct(Module):
         Returns:
             True if the loop should break (finish tool was called), False otherwise.
         """
+        if pred.next_tool_calls is None:
+            return False
         tool_calls = pred.next_tool_calls.tool_calls
         non_finish, finish_calls = self._split_finish_tools(tool_calls)
 
