@@ -15,8 +15,10 @@ class Parallel:
         return_failed_examples: bool = False,
         provide_traceback: bool | None = None,
         disable_progress_bar: bool = False,
+        timeout: int = 120,
+        straggler_limit: int = 3,
     ):
-        """
+         """
         A utility class for parallel, multi-threaded execution of (module, example) pairs. 
          
         Supports various example formats (e.g., `Example`, dict, tuple, list), robust error handling,  
@@ -56,6 +58,7 @@ class Parallel:
             # Result 3: William Shakespeare
             ```
         """
+        
         super().__init__()
         self.num_threads = num_threads or settings.num_threads
         self.max_errors = settings.max_errors if max_errors is None else max_errors
@@ -63,6 +66,8 @@ class Parallel:
         self.return_failed_examples = return_failed_examples
         self.provide_traceback = provide_traceback
         self.disable_progress_bar = disable_progress_bar
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
 
         self.error_count = 0
         self.error_lock = threading.Lock()
@@ -78,6 +83,8 @@ class Parallel:
             max_errors=self.max_errors,
             provide_traceback=self.provide_traceback,
             disable_progress_bar=self.disable_progress_bar,
+            timeout=self.timeout,
+            straggler_limit=self.straggler_limit,
         )
 
         def process_pair(pair):
