@@ -18,7 +18,7 @@ class Parallel:
         timeout: int = 120,
         straggler_limit: int = 3,
     ):
-         """
+        """
         A utility class for parallel, multi-threaded execution of (module, example) pairs. 
          
         Supports various example formats (e.g., `Example`, dict, tuple, list), robust error handling,  
