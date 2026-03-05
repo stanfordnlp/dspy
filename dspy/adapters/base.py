@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, get_origin
 
 import json_repair
 import litellm
+import pydantic
 
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
@@ -207,8 +208,20 @@ class Adapter:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
 
-        outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        max_retries = getattr(lm, 'num_retries', 3)
+        last_error = None
+        for attempt in range(max_retries + 1):
+            outputs = lm(messages=inputs, **lm_kwargs)
+            try:
+                return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+            except (AdapterParseError, pydantic.ValidationError) as e:
+                last_error = e
+                if attempt < max_retries:
+                    logger.warning(
+                        "Adapter parse error on attempt %d/%d, retrying: %s",
+                        attempt + 1, max_retries + 1, str(e)[:200],
+                    )
+        raise last_error
 
     async def acall(
         self,
@@ -221,8 +234,20 @@ class Adapter:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
 
-        outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        max_retries = getattr(lm, 'num_retries', 3)
+        last_error = None
+        for attempt in range(max_retries + 1):
+            outputs = await lm.acall(messages=inputs, **lm_kwargs)
+            try:
+                return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+            except (AdapterParseError, pydantic.ValidationError) as e:
+                last_error = e
+                if attempt < max_retries:
+                    logger.warning(
+                        "Adapter parse error on attempt %d/%d, retrying: %s",
+                        attempt + 1, max_retries + 1, str(e)[:200],
+                    )
+        raise last_error
 
     def format(
         self,
