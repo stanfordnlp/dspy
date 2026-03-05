@@ -1,5 +1,6 @@
 import asyncio
 import re
+import threading
 
 import litellm
 import pytest
@@ -424,9 +425,6 @@ async def test_async_error_retry():
 
 
 def test_parallel_tool_execution_sync():
-    """Test that multiple tools can be executed in parallel in sync mode."""
-    import threading
-
     # A barrier requires both threads to arrive before either can proceed.
     # If tools run sequentially the second tool never starts so the first tool
     # hangs at barrier.wait() and the test raises threading.BrokenBarrierError.
@@ -485,7 +483,6 @@ def test_parallel_tool_execution_sync():
 
 
 def test_single_tool_execution_backwards_compat():
-    """Test that single tool execution still works (backwards compatibility)."""
     def add(x: int, y: int) -> int:
         return x + y
 
@@ -524,7 +521,6 @@ def test_single_tool_execution_backwards_compat():
 
 
 def test_mode_mismatch_parallel_does_not_produce_sequential_fields():
-    """Verify parallel mode never produces sequential trajectory keys."""
     def tool(x: int) -> int:
         return x * 2
 
@@ -551,7 +547,6 @@ def test_mode_mismatch_parallel_does_not_produce_sequential_fields():
 
 
 def test_parallel_tool_execution_with_error():
-    """Test that errors in parallel tools are handled correctly."""
     def good_tool(x: int) -> int:
         return x * 2
 
@@ -592,7 +587,6 @@ def test_parallel_tool_execution_with_error():
 
 @pytest.mark.asyncio
 async def test_parallel_tool_execution_async():
-    """Test that multiple tools can be executed in parallel in async mode."""
     # Both coroutines must be running simultaneously for either to complete.
     # If executed sequentially the second coroutine never starts so the first
     # awaits the event forever and asyncio.wait_for raises asyncio.TimeoutError.
@@ -657,7 +651,6 @@ async def test_parallel_tool_execution_async():
 
 @pytest.mark.asyncio
 async def test_parallel_async_tool_with_error():
-    """Test error handling in parallel async tool execution."""
     async def good_async_tool(x: int) -> int:
         await asyncio.sleep(0.05)
         return x * 2
@@ -699,7 +692,6 @@ async def test_parallel_async_tool_with_error():
 
 
 def test_multiple_iterations_with_parallel_tools():
-    """Test that parallel tools work across multiple iterations."""
     def tool_a(x: int) -> str:
         return f"a:{x}"
 
@@ -763,7 +755,6 @@ def test_multiple_iterations_with_parallel_tools():
 
 
 def test_empty_tool_args():
-    """Test sequential execution with tools that have no arguments."""
     def get_time() -> str:
         return "12:00"
 
@@ -804,7 +795,6 @@ def test_empty_tool_args():
 
 
 def test_parallel_finish_with_other_tools():
-    """Test that when finish is called alongside other tools, non-finish tools run first."""
     results = []
 
     def tool_a(x: int) -> str:
