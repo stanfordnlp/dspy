@@ -1,9 +1,26 @@
+import warnings
+
 import pydantic
 
 # The following arguments can be used in DSPy InputField and OutputField in addition
 # to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
 # as it would give a name clash.
 DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type"]
+
+_DEPRECATED_FIELD_ARGS = {
+    "prefix": (
+        "The 'prefix' argument in InputField/OutputField is deprecated and has no effect in DSPy. "
+        "It will be removed in a future version."
+    ),
+    "format": (
+        "The 'format' argument in InputField/OutputField is deprecated and has no effect in DSPy. "
+        "It will be removed in a future version."
+    ),
+    "parser": (
+        "The 'parser' argument in InputField/OutputField is deprecated and has no effect in DSPy. "
+        "It will be removed in a future version."
+    ),
+}
 
 PYDANTIC_CONSTRAINT_MAP = {
     "gt": "greater than: ",
@@ -51,11 +68,19 @@ def _translate_pydantic_field_constraints(**kwargs):
     return ", ".join(constraints)
 
 
+def _warn_deprecated_field_args(**kwargs):
+    for arg, message in _DEPRECATED_FIELD_ARGS.items():
+        if arg in kwargs:
+            warnings.warn(message, DeprecationWarning, stacklevel=3)
+
+
 def InputField(**kwargs): # noqa: N802
+    _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
 def OutputField(**kwargs): # noqa: N802
+    _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
 
