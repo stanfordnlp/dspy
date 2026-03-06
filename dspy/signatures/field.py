@@ -52,10 +52,36 @@ def _translate_pydantic_field_constraints(**kwargs):
 
 
 def InputField(**kwargs): # noqa: N802
+    """Create a DSPy input field with DSPy-specific metadata.
+
+    This is a thin wrapper around ``pydantic.Field`` that stores DSPy metadata
+    (for example ``desc`` and ``prefix``) under ``json_schema_extra`` while
+    preserving standard Pydantic field arguments.
+
+    Args:
+        **kwargs: Standard ``pydantic.Field`` keyword arguments plus DSPy
+            extras such as ``desc``, ``prefix``, ``format``, and ``parser``.
+
+    Returns:
+        A configured Pydantic field object marked as an input field for DSPy.
+    """
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
 def OutputField(**kwargs): # noqa: N802
+    """Create a DSPy output field with DSPy-specific metadata.
+
+    This is a thin wrapper around ``pydantic.Field`` that stores DSPy metadata
+    (for example ``desc`` and ``prefix``) under ``json_schema_extra`` while
+    preserving standard Pydantic field arguments.
+
+    Args:
+        **kwargs: Standard ``pydantic.Field`` keyword arguments plus DSPy
+            extras such as ``desc``, ``prefix``, ``format``, and ``parser``.
+
+    Returns:
+        A configured Pydantic field object marked as an output field for DSPy.
+    """
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
 
