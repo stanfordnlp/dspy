@@ -1,8 +1,34 @@
+"""Define DSPy field factories and the kwargs-splitting convention.
+
+This module provides the public `InputField` and `OutputField` factory
+functions that DSPy users call when declaring signature fields. Both
+factories delegate to `pydantic.Field` but first split caller-supplied
+keyword arguments into two groups:
+
+- **DSPy-specific kwargs** (listed in `DSPY_FIELD_ARG_NAMES`) — stored
+  under `json_schema_extra` so DSPy code can inspect them later.
+- **Standard Pydantic kwargs** — forwarded directly to `pydantic.Field`.
+
+The splitting is performed by the internal `move_kwargs` helper. In
+addition, any Pydantic constraint kwargs (`ge`, `le`, `min_length`,
+etc.) are translated into a human-readable `"constraints"` string and
+stored alongside the DSPy metadata in `json_schema_extra`.
+
+Important:
+    In the current codebase, `desc` and translated `constraints` affect how
+    the standard adapters describe fields to the language model. By contrast,
+    field-level `prefix`, `format`, and `parser` **HAVE NO EFFECT** on
+    standard prompt formatting, output parsing, or model I/O. They should be
+    treated as inert metadata. Users should not expect them to do anything
+    in normal DSPy prediction flows.
+
+This module also contains the legacy `OldField` / `OldInputField` /
+`OldOutputField` classes and a `new_to_old_field` bridge function.
+These legacy types are still publicly exported for backward compatibility.
+"""
+
 import pydantic
 
-# The following arguments can be used in DSPy InputField and OutputField in addition
-# to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
-# as it would give a name clash.
 DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type"]
 
 PYDANTIC_CONSTRAINT_MAP = {
@@ -18,11 +44,6 @@ PYDANTIC_CONSTRAINT_MAP = {
 
 
 def move_kwargs(**kwargs):
-    # Pydantic doesn't allow arbitrary arguments to be given to fields,
-    # but asks that
-    # > any extra data you want to add to the JSON schema should be passed
-    # > as a dictionary to the json_schema_extra keyword argument.
-    # See: https://docs.pydantic.dev/2.6/migration/#changes-to-pydanticfield
     pydantic_kwargs = {}
     json_schema_extra = {}
     for k, v in kwargs.items():
@@ -41,8 +62,31 @@ def move_kwargs(**kwargs):
 
 
 def _translate_pydantic_field_constraints(**kwargs):
-    """Extracts Pydantic constraints and translates them into human-readable format."""
+    """Translate Pydantic constraint kwargs into a human-readable string.
 
+    Scans `kwargs` for keys present in `PYDANTIC_CONSTRAINT_MAP` and
+    builds a comma-separated description of all matched constraints. The
+    result is stored by `move_kwargs` under
+    `json_schema_extra["constraints"]`.
+
+    In the current codebase, adapter utilities include this constraints string
+    when describing fields to the language model.
+
+    Args:
+        **kwargs: The full set of keyword arguments originally passed to
+            `InputField` or `OutputField`.  Only keys that appear in
+            `PYDANTIC_CONSTRAINT_MAP` are used; all others are ignored.
+
+    Returns:
+        str: Comma-separated human-readable constraint descriptions, or an
+        empty string if no recognized constraint kwargs are present.
+
+    Examples:
+        >>> _translate_pydantic_field_constraints(ge=5, le=10, desc="score")
+        'greater than or equal to: 5, less than or equal to: 10'
+        >>> _translate_pydantic_field_constraints(desc="name")
+        ''
+    """
     constraints = []
     for key, value in kwargs.items():
         if key in PYDANTIC_CONSTRAINT_MAP:
@@ -51,11 +95,113 @@ def _translate_pydantic_field_constraints(**kwargs):
     return ", ".join(constraints)
 
 
-def InputField(**kwargs): # noqa: N802
+def InputField(**kwargs):  # noqa: N802
+    """Create a DSPy input field backed by `pydantic.Field`.
+
+    This factory is the standard way to declare an input on a DSPy
+    `Signature`. It accepts all `pydantic.Field` keyword arguments
+    **plus** the DSPy-specific kwargs listed in `DSPY_FIELD_ARG_NAMES`:
+
+    - `desc` — description stored in metadata and used by the standard
+      adapters when they describe fields to the language model. Current
+      optimizer flows such as `GEPA` and `MIPROv2` do not optimize this
+      per-field metadata.
+      
+    - `prefix` — **CURRENTLY HAS NO EFFECT.** Intended as a prompt label, but ignored by modern DSPy adapters.
+    - `format` — **CURRENTLY HAS NO EFFECT.** Intended for custom formatting, but never invoked by DSPy.
+    - `parser` — **CURRENTLY HAS NO EFFECT.** Intended for custom parsing, but never invoked by DSPy.
+
+    If `description` (the standard Pydantic kwarg) is provided but `desc`
+    is not, the `description` value is copied to `desc` automatically.
+
+    Pydantic constraint kwargs (`ge`, `le`, `min_length`, `max_length`,
+    etc.) are translated into a human-readable `"constraints"` string stored
+    in `json_schema_extra` and used by current adapter utilities when
+    describing fields.
+
+    Note:
+        Users should not expect `prefix`, `format`, or `parser` to change
+        runtime behavior in ordinary DSPy prediction flows.
+
+    Args:
+        **kwargs: Any `pydantic.Field` argument and/or DSPy-specific
+            metadata kwargs.
+
+    Returns:
+        pydantic.fields.FieldInfo: A Pydantic `FieldInfo` instance with
+        `json_schema_extra["__dspy_field_type"]` set to `"input"`.
+
+    Examples:
+        Use `InputField` in the idiomatic context: a `dspy.Signature`
+        subclass.
+
+        >>> import dspy
+        >>> class ClassifySentiment(dspy.Signature):
+        ...     text: str = dspy.InputField(desc="Text to classify", min_length=1)
+        ...     label: str = dspy.OutputField(desc="Sentiment label")
+        >>> field = ClassifySentiment.input_fields["text"]
+        >>> field.json_schema_extra["__dspy_field_type"]
+        'input'
+        >>> field.json_schema_extra["desc"]
+        'Text to classify'
+        >>> 'minimum length: 1' in field.json_schema_extra["constraints"]
+        True
+    """
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
-def OutputField(**kwargs): # noqa: N802
+def OutputField(**kwargs):  # noqa: N802
+    """Create a DSPy output field backed by `pydantic.Field`.
+
+    This factory is the standard way to declare an output on a DSPy
+    `Signature`. It accepts all `pydantic.Field` keyword arguments
+    **plus** the DSPy-specific kwargs listed in `DSPY_FIELD_ARG_NAMES`:
+
+    - `desc` — description stored in metadata and used by the standard
+      adapters when they describe fields to the language model. Current
+      optimizer flows such as `GEPA` and `MIPROv2` do not optimize this
+      per-field metadata.
+
+    - `prefix` — **CURRENTLY HAS NO EFFECT.** Intended as a prompt label, but ignored by modern DSPy adapters.
+    - `format` — **CURRENTLY HAS NO EFFECT.** Intended for custom formatting, but never invoked by DSPy.
+    - `parser` — **CURRENTLY HAS NO EFFECT.** Intended for custom parsing, but never invoked by DSPy.
+
+    If `description` (the standard Pydantic kwarg) is provided but `desc`
+    is not, the `description` value is copied to `desc` automatically.
+
+    Pydantic constraint kwargs (`ge`, `le`, `min_length`, `max_length`,
+    etc.) are translated into a human-readable `"constraints"` string stored
+    in `json_schema_extra` and used by current adapter utilities when
+    describing fields.
+
+    Note:
+        Users should not expect `prefix`, `format`, or `parser` to change
+        runtime behavior in ordinary DSPy prediction flows.
+
+    Args:
+        **kwargs: Any `pydantic.Field` argument and/or DSPy-specific
+            metadata kwargs.
+
+    Returns:
+        pydantic.fields.FieldInfo: A Pydantic `FieldInfo` instance with
+        `json_schema_extra["__dspy_field_type"]` set to `"output"`.
+
+    Examples:
+        Use `OutputField` in the idiomatic context: a `dspy.Signature`
+        subclass.
+
+        >>> import dspy
+        >>> class ClassifySentiment(dspy.Signature):
+        ...     text: str = dspy.InputField(desc="Text to classify")
+        ...     label: str = dspy.OutputField(desc="Sentiment label", max_length=20)
+        >>> field = ClassifySentiment.output_fields["label"]
+        >>> field.json_schema_extra["__dspy_field_type"]
+        'output'
+        >>> field.json_schema_extra["desc"]
+        'Sentiment label'
+        >>> 'maximum length: 20' in field.json_schema_extra["constraints"]
+        True
+    """
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
 
@@ -68,7 +214,6 @@ def new_to_old_field(field):
 
 
 class OldField:
-    """A more ergonomic datatype that infers prefix and desc if omitted."""
 
     def __init__(self, *, prefix=None, desc=None, input, format=None):
         self.prefix = prefix  # This can be None initially and set later
@@ -76,7 +221,6 @@ class OldField:
         self.format = format
 
     def finalize(self, key, inferred_prefix):
-        """Set the prefix if it's not provided explicitly."""
         if self.prefix is None:
             self.prefix = inferred_prefix + ":"
 
