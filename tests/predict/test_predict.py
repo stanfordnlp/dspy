@@ -1014,3 +1014,39 @@ def test_input_field_default_value():
 
     user_message = lm.calls[0]["messages"][-1]["content"]
     assert "DEFAULT_CONTEXT" in user_message
+
+
+def test_matches_listener_with_chain_of_thought():
+    """StreamListener targeting a ChainOfThought should match its inner Predict."""
+    from dspy.streaming.streaming_listener import StreamListener
+
+    cot = dspy.ChainOfThought("question -> answer")
+    inner_predict = cot.predict
+
+    listener = StreamListener(signature_field_name="answer", predict=cot)
+    assert inner_predict._matches_listener(listener), (
+        "_matches_listener should return True when the listener targets a ChainOfThought wrapper"
+    )
+
+
+def test_matches_listener_with_direct_predict():
+    """StreamListener targeting a Predict directly should match."""
+    from dspy.streaming.streaming_listener import StreamListener
+
+    predict = dspy.Predict("question -> answer")
+    listener = StreamListener(signature_field_name="answer", predict=predict)
+    assert predict._matches_listener(listener), (
+        "_matches_listener should return True when the listener targets the Predict directly"
+    )
+
+
+def test_matches_listener_with_unrelated_predict():
+    """StreamListener targeting a different Predict should not match."""
+    from dspy.streaming.streaming_listener import StreamListener
+
+    predict_a = dspy.Predict("question -> answer")
+    predict_b = dspy.Predict("question -> answer")
+    listener = StreamListener(signature_field_name="answer", predict=predict_b)
+    assert not predict_a._matches_listener(listener), (
+        "_matches_listener should return False when the listener targets a different Predict"
+    )

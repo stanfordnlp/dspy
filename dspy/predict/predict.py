@@ -204,9 +204,25 @@ class Predict(Module, Parameter):
         stream_listeners = settings.stream_listeners or []
         should_stream = settings.send_stream is not None
         if should_stream and len(stream_listeners) > 0:
-            should_stream = any(stream_listener.predict == self for stream_listener in stream_listeners)
+            should_stream = any(self._matches_listener(stream_listener) for stream_listener in stream_listeners)
 
         return should_stream
+
+    def _matches_listener(self, stream_listener):
+        """Check if this Predict instance matches a stream listener's target.
+
+        Handles the case where the listener targets a wrapper module (e.g.
+        ChainOfThought or ReAct) that delegates to this Predict internally.
+        """
+        target = stream_listener.predict
+        if target is self:
+            return True
+        # Check if the listener's target is a wrapper whose inner predictor is self.
+        # ChainOfThought stores its inner Predict in .predict, ReAct uses .react.
+        for attr in ("predict", "react"):
+            if getattr(target, attr, None) is self:
+                return True
+        return False
 
     def forward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
