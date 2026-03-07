@@ -267,7 +267,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     # for any signature that doesn't define its own instructions.
 
     @classmethod
-    def with_instructions(cls, instructions: str) -> "Signature":
+    def with_instructions(cls, instructions: str) -> type["Signature"]:
         """Return a new Signature class with identical fields and new instructions.
 
         This method does not mutate `cls`. It constructs a fresh Signature
@@ -296,7 +296,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(cls.fields, instructions)
 
     @classmethod
-    def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> "Signature":
+    def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
         """Create a new Signature class with the updated field information.
 
         Returns a new Signature class with the field, name, updated
@@ -322,7 +322,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields_copy, cls.instructions)
 
     @classmethod
-    def prepend(cls, name, field, type_=None) -> "Signature":
+    def prepend(cls, name, field, type_=None) -> type["Signature"]:
         """Insert a field at index 0 of the `inputs` or `outputs` section.
 
         Args:
@@ -349,7 +349,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return cls.insert(0, name, field, type_)
 
     @classmethod
-    def append(cls, name, field, type_=None) -> "Signature":
+    def append(cls, name, field, type_=None) -> type["Signature"]:
         """Insert a field at the end of the `inputs` or `outputs` section.
 
         Args:
@@ -376,7 +376,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return cls.insert(-1, name, field, type_)
 
     @classmethod
-    def delete(cls, name) -> "Signature":
+    def delete(cls, name) -> type["Signature"]:
         """Return a new Signature class without the given field.
 
         If `name` is not present, the fields are unchanged (no error raised).
@@ -411,7 +411,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return Signature(fields, cls.instructions)
 
     @classmethod
-    def insert(cls, index: int, name: str, field, type_: type | None = None) -> "Signature":
+    def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
         """Insert a field at a specific position among inputs or outputs.
 
         Negative indices are supported (e.g., `-1` appends). If `type_` is omitted, the field's
@@ -508,7 +508,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return signature_copy
 
 
-def ensure_signature(signature: str | type[Signature], instructions=None) -> None | Signature | type[Signature]:
+def ensure_signature(signature: str | type[Signature], instructions=None) -> type[Signature]:
     if signature is None:
         return None
     if isinstance(signature, str):
