@@ -4,7 +4,7 @@ from typing import Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
-from typeguard import check_type
+from typeguard import TypeCheckError, check_type
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
@@ -281,7 +281,6 @@ def _get_type_name(type_annotation) -> str:
 
 def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     """Return True if the value matches the expected type hint."""
-    from typeguard import TypeCheckError
     try:
         # Special handle list[str] because we allow setting input type to str, however, invoking with a list thereof.
         if expected is str and isinstance(value, list):
