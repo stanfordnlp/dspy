@@ -45,6 +45,26 @@ def test_code_with_language():
     assert "Programming language: cpp" in cpp_code.description()
 
 
+def test_code_no_default_language():
+    """Bare dspy.Code should not default to any language (#9251)."""
+    assert dspy.Code.language == ""
+    desc = dspy.Code.description()
+    assert "Programming language" not in desc
+    assert "```\n{code}\n```" in desc
+
+
+def test_code_json_schema_excludes_docstring():
+    """JSON schema should not contain the full class docstring (#9251)."""
+    schema = pydantic.TypeAdapter(dspy.Code).json_schema()
+    assert "Example 1" not in schema.get("description", "")
+    assert "Example 2" not in schema.get("description", "")
+    assert "code generation and code analysis" not in schema.get("description", "")
+
+    # Parameterized Code should also have a clean schema
+    schema_py = pydantic.TypeAdapter(dspy.Code["python"]).json_schema()
+    assert "Example 1" not in schema_py.get("description", "")
+
+
 def test_code_parses_from_dirty_code():
     dirty_code = "```python\nprint('Hello, world!')```"
     code = dspy.Code(code=dirty_code)
