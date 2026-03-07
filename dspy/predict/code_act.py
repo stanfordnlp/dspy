@@ -1,5 +1,6 @@
 import inspect
 import logging
+from collections import deque
 from typing import Callable
 
 import dspy
@@ -39,7 +40,7 @@ class CodeAct(ReAct, ProgramOfThought):
         """
         self.signature = ensure_signature(signature)
         self.max_iters = max_iters
-        self.history = []
+        self.history = deque()
 
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
         if any(
