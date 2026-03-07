@@ -21,7 +21,7 @@ def _convert_mcp_tool_result(call_tool_result: "mcp.types.CallToolResult") -> st
     if len(text_contents) == 1:
         tool_content = tool_content[0]
 
-    if call_tool_result.isError:
+    if getattr(call_tool_result, "isError", None) or getattr(call_tool_result, "is_error", False):
         raise RuntimeError(f"Failed to call a MCP tool: {tool_content}")
 
     return tool_content or non_text_contents

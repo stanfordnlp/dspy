@@ -3,10 +3,33 @@ import importlib
 
 import pytest
 
-from dspy.utils.mcp import convert_mcp_tool
+from dspy.utils.mcp import convert_mcp_tool, _convert_mcp_tool_result
 
 if importlib.util.find_spec("mcp") is None:
     pytest.skip(reason="mcp is not installed", allow_module_level=True)
+
+
+class _FakeMCPResult:
+    """Minimal stand-in for a CallToolResult that uses ``is_error`` (FastMCP convention)."""
+
+    def __init__(self, text: str, is_error: bool = False):
+        from mcp.types import TextContent
+
+        self.content = [TextContent(type="text", text=text)]
+        self.is_error = is_error
+
+
+def test_convert_mcp_tool_result_with_is_error_attribute():
+    """Ensure _convert_mcp_tool_result raises on ``is_error=True`` (FastMCP)."""
+    result = _FakeMCPResult("some error", is_error=True)
+    with pytest.raises(RuntimeError, match="Failed to call a MCP tool"):
+        _convert_mcp_tool_result(result)
+
+
+def test_convert_mcp_tool_result_success_with_is_error_attribute():
+    """Ensure _convert_mcp_tool_result returns content when ``is_error=False``."""
+    result = _FakeMCPResult("hello world", is_error=False)
+    assert _convert_mcp_tool_result(result) == "hello world"
 
 
 @pytest.mark.asyncio
