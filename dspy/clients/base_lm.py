@@ -160,7 +160,7 @@ class BaseLM:
 
         return new_instance
 
-    def inspect_history(self, n: int = 1, file: 'TextIO | None' = None) -> None:
+    def inspect_history(self, n: int = 1, file: "TextIO | None" = None) -> None:
         pretty_print_history(self.history, n, file=file)
 
     def update_history(self, entry):
@@ -283,7 +283,7 @@ class BaseLM:
         return [result]
 
 
-def inspect_history(n: int = 1, file: 'TextIO | None' = None) -> None:
+def inspect_history(n: int = 1, file: "TextIO | None" = None) -> None:
     """The global history shared across all LMs.
 
     Args:

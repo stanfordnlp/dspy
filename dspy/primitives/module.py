@@ -250,7 +250,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             set_attribute_by_name(self, name, func(predictor))
         return self
 
-    def inspect_history(self, n: int = 1, file: 'TextIO | None' = None) -> None:
+    def inspect_history(self, n: int = 1, file: "TextIO | None" = None) -> None:
         """Display the LM call history for this module.
 
         Prints a formatted view of the most recent language model calls
