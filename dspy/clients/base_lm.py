@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from collections import deque
 from typing import Any
 
 from dspy.dsp.utils import settings
@@ -7,7 +8,7 @@ from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
 MAX_HISTORY_SIZE = 10_000
-GLOBAL_HISTORY = []
+GLOBAL_HISTORY: deque = deque(maxlen=MAX_HISTORY_SIZE)
 
 
 class BaseLM:
@@ -47,7 +48,7 @@ class BaseLM:
         self.model_type = model_type
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
-        self.history = []
+        self.history: deque = deque(maxlen=settings.max_history_size)
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
@@ -168,18 +169,12 @@ class BaseLM:
             return
 
         # Global LM history
-        if len(GLOBAL_HISTORY) >= MAX_HISTORY_SIZE:
-            GLOBAL_HISTORY.pop(0)
-
         GLOBAL_HISTORY.append(entry)
 
         if settings.max_history_size == 0:
             return
 
         # dspy.LM.history
-        if len(self.history) >= settings.max_history_size:
-            self.history.pop(0)
-
         self.history.append(entry)
 
         # Per-module history
