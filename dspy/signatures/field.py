@@ -115,6 +115,15 @@ def InputField(**kwargs):  # noqa: N802
         >>> summarizer(text="DSPy is a framework for...")  # doctest: +SKIP
         Prediction(...)
 
+        You can also append an input field to an existing signature
+        programmatically:
+
+        >>> WithContext = Summarize.append(
+        ...     "context", dspy.InputField(desc="background info"), type_=str
+        ... )
+        >>> list(WithContext.input_fields.keys())
+        ['text', 'context']
+
         See [`dspy.LM`][dspy.LM] for supported providers.
     """
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
@@ -157,6 +166,15 @@ def OutputField(**kwargs):  # noqa: N802
         >>> reviewer.lm = dspy.LM("provider/model-name")  # doctest: +SKIP
         >>> reviewer(text="This product is great!")  # doctest: +SKIP
         Prediction(...)
+
+        You can also append an output field to an existing signature
+        programmatically:
+
+        >>> WithConfidence = Review.append(
+        ...     "confidence", dspy.OutputField(desc="confidence score"), type_=float
+        ... )
+        >>> list(WithConfidence.output_fields.keys())
+        ['summary', 'rating', 'confidence']
 
         See [`dspy.LM`][dspy.LM] for supported providers.
     """
