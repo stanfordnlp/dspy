@@ -1,24 +1,13 @@
-"""Defines DSPy InputField and OutputField.
+"""InputField and OutputField factories for DSPy signatures.
 
-The public `InputField` and `OutputField` factories are the primary
-functions DSPy users call when declaring signature fields. Both
-factories delegate to `pydantic.Field`, but they first split
-caller-supplied keyword arguments into two groups:
+Both are thin wrappers around `pydantic.Field`. They route
+DSPy-specific kwargs (e.g. `desc`) into `json_schema_extra` and
+forward everything else to Pydantic. Output-field constraints
+(`ge`, `le`, `min_length`, …) are also translated into a
+human-readable string that adapters include in prompts.
 
-- **DSPy-specific kwargs** (listed in `DSPY_FIELD_ARG_NAMES`) are stored
-  under `json_schema_extra` so DSPy code can inspect them later.
-- **Standard Pydantic kwargs** are forwarded directly to
-  `pydantic.Field`.
-
-In addition to extracting DSPy-specific kwargs, this module translates
-Pydantic constraint kwargs (`ge`, `le`, `min_length`, etc.) into a
-language-model-readable `"constraints"` string that adapters can render
-into prompts.
-
-This module also contains the legacy `OldField`, `OldInputField`, and
-`OldOutputField` classes, along with a `new_to_old_field` bridge
-function. These legacy types are still publicly exported for backward
-compatibility.
+Legacy `OldField` / `OldInputField` / `OldOutputField` classes are
+kept for backward compatibility but should not be used in new code.
 """
 
 import pydantic
