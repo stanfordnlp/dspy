@@ -51,7 +51,13 @@ class SignatureMeta(type(BaseModel)):
     """
 
     def __call__(cls, *args, **kwargs):
-        """Dispatch: `Signature(str)` creates a subclass; `MySig(...)` creates an instance."""
+        """Dispatch: `Signature(str)` builds a new subclass; `MySig(...)` creates an instance.
+
+        When called on the base `Signature` class with a string,
+        delegates to `make_signature`. User-defined annotation names
+        are auto-resolved from the caller's stack frame when
+        `custom_types` is not provided.
+        """
         if cls is Signature:
             # We don't create an actual Signature instance, instead, we create a new Signature class.
             custom_types = kwargs.pop("custom_types", None)
@@ -144,7 +150,13 @@ class SignatureMeta(type(BaseModel)):
         return found_types or None
 
     def __new__(mcs, signature_name, bases, namespace, **kwargs):
-        """Build a new signature class: fill defaults, validate fields, set instructions."""
+        """Build a new signature class.
+
+        Fills in default annotations (`str`), preserves field order,
+        synthesizes instructions if none given, validates that every
+        field uses `InputField`/`OutputField`, and sets `prefix`/`desc`
+        defaults.
+        """
         # At this point, the orders have been swapped already.
         field_order = [name for name, value in namespace.items() if isinstance(value, FieldInfo)]
         # Set `str` as the default type for all fields
@@ -305,7 +317,17 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def with_instructions(cls, instructions: str) -> type["Signature"]:
-        """Copy this signature with new instruction text.
+        """Return a new signature with different instructions.
+
+        The original signature is unchanged. Fields, types, and
+        metadata are copied as-is.
+
+        Args:
+            instructions: New instruction text for the returned
+                signature.
+
+        Returns:
+            type[Signature]: A new signature class.
 
         Examples:
             >>> import dspy
@@ -320,13 +342,19 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
-        """Copy this signature with updated metadata on one field.
+        """Return a new signature with updated metadata on one field.
+
+        The original signature is unchanged. Only the named field is
+        modified in the copy.
 
         Args:
             name: Field to update.
             type_: Optional new type annotation.
             **kwargs: Metadata entries merged into the field's
                 `json_schema_extra` (e.g. `desc`, `prefix`).
+
+        Returns:
+            type[Signature]: A new signature class.
         """
         fields_copy = deepcopy(cls.fields)
         # Update `fields_copy[name].json_schema_extra` with the new kwargs, on conflicts
@@ -341,7 +369,19 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def prepend(cls, name, field, type_=None) -> type["Signature"]:
-        """Insert a field at the start of its section.
+        """Add a field before all others in its section (inputs or outputs).
+
+        Whether the field is placed among inputs or outputs is
+        determined by the field itself (i.e. `InputField` vs
+        `OutputField`). The original signature is unchanged.
+
+        Args:
+            name: Name for the new field.
+            field: An `InputField()` or `OutputField()` instance.
+            type_: Optional type annotation (defaults to `str`).
+
+        Returns:
+            type[Signature]: A new signature class.
 
         Examples:
             >>> import dspy
@@ -356,7 +396,19 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def append(cls, name, field, type_=None) -> type["Signature"]:
-        """Insert a field at the end of its section.
+        """Add a field after all others in its section (inputs or outputs).
+
+        Whether the field is placed among inputs or outputs is
+        determined by the field itself (i.e. `InputField` vs
+        `OutputField`). The original signature is unchanged.
+
+        Args:
+            name: Name for the new field.
+            field: An `InputField()` or `OutputField()` instance.
+            type_: Optional type annotation (defaults to `str`).
+
+        Returns:
+            type[Signature]: A new signature class.
 
         Examples:
             >>> import dspy
@@ -371,7 +423,16 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def delete(cls, name) -> type["Signature"]:
-        """Copy this signature without the named field. Missing names are ignored.
+        """Return a new signature without the named field.
+
+        If the field doesn't exist, returns an equivalent copy without
+        raising an error. The original signature is unchanged.
+
+        Args:
+            name: Field name to remove.
+
+        Returns:
+            type[Signature]: A new signature class.
 
         Examples:
             >>> import dspy
@@ -395,8 +456,22 @@ class Signature(BaseModel, metaclass=SignatureMeta):
     def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
         """Insert a field at a specific position within its section.
 
-        Negative indices are supported (`-1` appends). Input fields
-        are inserted among inputs, output fields among outputs.
+        Input fields are inserted among inputs, output fields among
+        outputs. Negative indices are supported (`-1` appends).
+        The original signature is unchanged.
+
+        Args:
+            index: Position within the section. Negative values count
+                from the end; `-1` inserts at the end.
+            name: Name for the new field.
+            field: An `InputField()` or `OutputField()` instance.
+            type_: Optional type annotation (defaults to `str`).
+
+        Returns:
+            type[Signature]: A new signature class.
+
+        Raises:
+            ValueError: If `index` is out of range for the section.
 
         Examples:
             >>> import dspy
@@ -437,7 +512,11 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def equals(cls, other) -> bool:
-        """Compare instructions and field metadata (not types or validators)."""
+        """Test whether two signatures have the same instructions and field metadata.
+
+        Compares instructions and `json_schema_extra` for each field.
+        Does not compare type annotations, defaults, or validators.
+        """
         if not isinstance(other, type) or not issubclass(other, BaseModel):
             return False
         if cls.instructions != other.instructions:
@@ -451,7 +530,15 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def dump_state(cls):
-        """Serialize instructions and per-field `prefix`/`desc` metadata."""
+        """Serialize the signature's mutable state to a dict.
+
+        Captures instructions and per-field `prefix`/`desc` metadata.
+        Field names, types, and validators are not included — those
+        are fixed by the class definition.
+
+        Returns:
+            dict: `{"instructions": str, "fields": [{"prefix": ..., "description": ...}, ...]}`.
+        """
         state = {"instructions": cls.instructions, "fields": []}
         for field in cls.fields:
             state["fields"].append(
@@ -465,9 +552,18 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def load_state(cls, state):
-        """Restore state from `dump_state`. Returns a new signature class.
+        """Create a new signature with state restored from `dump_state`.
 
-        Fields are matched positionally, not by name.
+        The original signature is unchanged. Fields in `state` are
+        matched positionally against the current field order, not by
+        name.
+
+        Args:
+            state: Dict previously produced by `dump_state`.
+
+        Returns:
+            type[Signature]: A new signature class with restored
+                instructions and field labels.
         """
         signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
 
@@ -481,6 +577,19 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
 def ensure_signature(signature: str | type[Signature], instructions=None) -> type[Signature]:
     """Coerce a string, signature class, or `None` into a signature class.
+
+    Useful at API boundaries where callers may pass either a string
+    like `"question -> answer"` or an existing signature class.
+    `None` is passed through unchanged.
+
+    Args:
+        signature: A string signature, a `Signature` subclass, or `None`.
+        instructions: Optional instruction text (only valid when
+            `signature` is a string).
+
+    Returns:
+        type[Signature] | None: A signature class, or `None` if `None`
+            was passed.
 
     Raises:
         ValueError: If `instructions` is given with a non-string signature.
@@ -502,6 +611,12 @@ def make_signature(
 ) -> type[Signature]:
     """Create a `Signature` subclass from a string or field mapping.
 
+    This is the constructor behind `Signature("...")`. Most users
+    won't call it directly — use the class syntax or
+    `dspy.Signature("question -> answer")` instead. It's useful when
+    you need to set `signature_name` or supply `custom_types` for
+    annotations the parser can't auto-resolve.
+
     Args:
         signature: `"input1, input2 -> output1"` or a dict of
             `{name: (type, FieldInfo)}` pairs.
@@ -510,6 +625,9 @@ def make_signature(
         signature_name: Class name for the generated subclass.
         custom_types: Name-to-type mapping for resolving annotations
             in string signatures (e.g. `{"Passage": Passage}`).
+
+    Returns:
+        type[Signature]: A new signature subclass.
 
     Examples:
         >>> sig1 = make_signature("question, context -> answer")
@@ -570,7 +688,12 @@ def make_signature(
 
 
 def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Field]]:
-    """Split a `"inputs -> outputs"` string into `{name: (type, FieldInfo)}` pairs."""
+    """Split a `"inputs -> outputs"` string into `{name: (type, FieldInfo)}` pairs.
+
+    The string must contain exactly one `->`. Fields on the left become
+    `InputField` definitions, fields on the right become `OutputField`
+    definitions.
+    """
     if signature.count("->") != 1:
         raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
 
@@ -586,7 +709,11 @@ def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Field]
 
 
 def _parse_field_string(field_string: str, names=None) -> dict[str, str]:
-    """Parse one side of a `->` split into `(field_name, type)` pairs."""
+    """Parse one side of a `->` split into `(field_name, type)` pairs.
+
+    Uses Python's own parser by embedding the string as a function
+    parameter list. Fields without annotations default to `str`.
+    """
 
     args = ast.parse(f"def f({field_string}): pass").body[0].args.args
     field_names = [arg.arg for arg in args]
