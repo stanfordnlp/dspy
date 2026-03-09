@@ -190,6 +190,8 @@ def new_to_old_field(field):
 
 
 class OldField:
+    """Legacy field type. Use `InputField` or `OutputField` instead."""
+
     def __init__(self, *, prefix=None, desc=None, input, format=None):
         self.prefix = prefix  # This can be None initially and set later
         self.desc = desc
@@ -210,10 +212,14 @@ class OldField:
 
 
 class OldInputField(OldField):
+    """Legacy input field. Use `InputField` instead."""
+
     def __init__(self, *, prefix=None, desc=None, format=None):
         super().__init__(prefix=prefix, desc=desc, input=True, format=format)
 
 
 class OldOutputField(OldField):
+    """Legacy output field. Use `OutputField` instead."""
+
     def __init__(self, *, prefix=None, desc=None, format=None):
         super().__init__(prefix=prefix, desc=desc, input=False, format=format)
