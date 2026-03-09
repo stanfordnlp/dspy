@@ -1,6 +1,7 @@
 import copy
 import inspect
 import logging
+import os
 import threading
 from functools import wraps
 from hashlib import sha256
@@ -10,7 +11,8 @@ import cloudpickle
 import orjson
 import pydantic
 from cachetools import LRUCache
-from diskcache import FanoutCache
+
+from dspy.clients.sqlite_cache import SQLiteCache, has_legacy_diskcache, migrate_diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ class Cache:
 
     `Cache` provides 2 levels of caching (in the given order):
         1. In-memory cache - implemented with cachetools.LRUCache
-        2. On-disk cache - implemented with diskcache.FanoutCache
+        2. On-disk cache - implemented with SQLite + orjson
     """
 
     def __init__(
@@ -51,12 +53,31 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            self.disk_cache = FanoutCache(
-                shards=16,
-                timeout=10,
+            self.disk_cache = SQLiteCache(
                 directory=disk_cache_dir,
                 size_limit=disk_size_limit_bytes,
             )
+            if has_legacy_diskcache(disk_cache_dir) and self.disk_cache == {}:
+                if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
+                    logger.info("Migrating legacy diskcache in %s to SQLite + JSON...", disk_cache_dir)
+                    migrated, errors = migrate_diskcache(disk_cache_dir, self.disk_cache)
+                    if errors == 0:
+                        logger.info("Cache migration complete: %d entries migrated.", migrated)
+                    else:
+                        logger.warning(
+                            "Cache migration finished with errors: %d migrated, %d failed. "
+                            "To retry, delete %s/dspy_cache.db and restart.",
+                            migrated,
+                            errors,
+                            disk_cache_dir,
+                        )
+                else:
+                    logger.warning(
+                        "Legacy diskcache format detected in %s but migration is disabled. "
+                        "Set DSPY_MIGRATE_CACHE=1 to migrate. The old cache uses pickle deserialization "
+                        "which is a security risk (CVE-2025-69872).",
+                        disk_cache_dir,
+                    )
         else:
             self.disk_cache = {}
 
@@ -114,8 +135,11 @@ class Cache:
             with self._lock:
                 response = self.memory_cache[key]
         elif self.enable_disk_cache and key in self.disk_cache:
-            # Found on disk but not in memory cache, add to memory cache
-            response = self.disk_cache[key]
+            try:
+                response = self.disk_cache[key]
+            except (ModuleNotFoundError, AttributeError, ImportError, TypeError, KeyError) as e:
+                logger.debug("Failed to deserialize disk cache entry %s: %s", key, e)
+                return None
             if self.enable_memory_cache:
                 with self._lock:
                     self.memory_cache[key] = response

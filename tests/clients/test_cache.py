@@ -5,9 +5,9 @@ from unittest.mock import patch
 import pydantic
 import pytest
 from cachetools import LRUCache
-from diskcache import FanoutCache
 
 from dspy.clients.cache import Cache
+from dspy.clients.sqlite_cache import SQLiteCache
 
 
 @dataclass
@@ -56,7 +56,7 @@ def test_initialization(tmp_path):
         disk_size_limit_bytes=1024,
         memory_max_entries=0,
     )
-    assert isinstance(disk_cache.disk_cache, FanoutCache)
+    assert isinstance(disk_cache.disk_cache, SQLiteCache)
     assert disk_cache.memory_cache == {}
 
     # Test disabled cache
