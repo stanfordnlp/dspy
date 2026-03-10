@@ -10,6 +10,8 @@ Legacy `OldField` / `OldInputField` / `OldOutputField` classes are
 kept for backward compatibility but should not be used in new code.
 """
 
+import warnings
+
 import pydantic
 
 # Only `desc` is used by adapters in current DSPy flows; we are deprecating
@@ -19,6 +21,21 @@ import pydantic
 # TODO: In a future major release, remove `prefix`, `format`, and `parser`
 # from `DSPY_FIELD_ARG_NAMES` and from all related code.
 DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type"]
+
+_DEPRECATED_FIELD_ARGS = {
+    "prefix": (
+        "The 'prefix' argument in InputField/OutputField is deprecated and has no effect in DSPy. "
+        "It will be removed in a future version."
+    ),
+    "format": (
+        "The 'format' argument in InputField/OutputField is deprecated and has no effect in DSPy. "
+        "It will be removed in a future version."
+    ),
+    "parser": (
+        "The 'parser' argument in InputField/OutputField is deprecated and has no effect in DSPy. "
+        "It will be removed in a future version."
+    ),
+}
 
 PYDANTIC_CONSTRAINT_MAP = {
     "gt": "greater than: ",
@@ -86,6 +103,12 @@ def _translate_pydantic_field_constraints(**kwargs):
     return ", ".join(constraints)
 
 
+def _warn_deprecated_field_args(**kwargs):
+    for arg, message in _DEPRECATED_FIELD_ARGS.items():
+        if arg in kwargs:
+            warnings.warn(message, DeprecationWarning, stacklevel=3)
+
+
 def InputField(**kwargs):  # noqa: N802
     """Declare an input field on a `dspy.Signature`.
 
@@ -126,6 +149,7 @@ def InputField(**kwargs):  # noqa: N802
 
         See [`dspy.LM`][dspy.LM] for supported providers.
     """
+    _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
@@ -178,6 +202,7 @@ def OutputField(**kwargs):  # noqa: N802
 
         See [`dspy.LM`][dspy.LM] for supported providers.
     """
+    _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
 
