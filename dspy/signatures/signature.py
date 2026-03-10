@@ -902,8 +902,10 @@ def make_signature(
 
     # Default prompt when no instructions are provided
     if instructions is None:
-        sig = Signature(signature, "")  # Simple way to parse input/output fields
-        instructions = _default_instructions(sig)
+        # Build a temporary signature from the already-parsed fields so we
+        # don't re-enter make_signature (which would lose custom_types).
+        tmp = create_model("_Tmp", __base__=Signature, __doc__="", **fixed_fields)
+        instructions = _default_instructions(tmp)
 
     return create_model(
         signature_name,
