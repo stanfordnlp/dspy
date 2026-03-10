@@ -508,7 +508,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         return signature_copy
 
 
-def ensure_signature(signature: str | type[Signature], instructions=None) -> type[Signature]:
+def ensure_signature(signature: str | type[Signature], instructions=None) -> None | type[Signature]:
     if signature is None:
         return None
     if isinstance(signature, str):
