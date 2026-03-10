@@ -300,6 +300,7 @@ extra:
 extra_javascript:
     - "js/runllm-widget.js"
     - "js/tutorial-nav.js"
+    - "js/copy-as-markdown.js"
 
 markdown_extensions:
     - toc:

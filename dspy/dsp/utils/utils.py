@@ -8,6 +8,17 @@ import tqdm
 
 
 def print_message(*s, condition=True, pad=False, sep=None):
+    """Print a timestamped message to stdout.
+    
+    Args:
+        *s: Values to print.
+        condition: If False, don't print (default: True).
+        pad: If True, add newlines around the message (default: False).
+        sep: Separator between values (default: None, uses space).
+    
+    Returns:
+        The printed message string.
+    """
     s = " ".join([str(x) for x in s])
     msg = "[{}] {}".format(datetime.datetime.now().strftime("%b %d, %H:%M:%S"), s)
 
@@ -19,6 +30,16 @@ def print_message(*s, condition=True, pad=False, sep=None):
 
 
 def timestamp(daydir=False):
+    """Generate a timestamp string for file/directory naming.
+    
+    Args:
+        daydir: If True, use '/' as separator and include date as directory
+               (e.g., "2026/03/03_10.30.00"). If False, use '-' and '_'
+               (e.g., "2026-03-03_10.30.00").
+    
+    Returns:
+        Formatted timestamp string.
+    """
     format_str = f"%Y-%m{'/' if daydir else '-'}%d{'/' if daydir else '_'}%H.%M.%S"
     result = datetime.datetime.now().strftime(format_str)
     return result
@@ -58,6 +79,17 @@ def deduplicate(seq: list[str]) -> list[str]:
     return list(dict.fromkeys(seq))
 
 def batch(group, bsize, provide_offset=False):
+    """Split a list into batches of specified size.
+    
+    Args:
+        group: List to batch.
+        bsize: Maximum size of each batch.
+        provide_offset: If True, yield (offset, batch) tuples. If False,
+                      yield just the batch (default: False).
+    
+    Yields:
+        Batches of the input list, each up to bsize elements.
+    """
     offset = 0
     while offset < len(group):
         batch_data = group[offset : offset + bsize]

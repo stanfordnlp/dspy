@@ -200,7 +200,7 @@ def test_dspy_settings_save_load(tmp_path):
     dspy.settings.save(tmp_path / "settings.pkl")
     dspy.configure(lm=None, adapter=None, callbacks=None)
 
-    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl")
+    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl", allow_pickle=True)
     dspy.configure(**loaded_settings)
     assert dspy.settings.lm.model == "openai/gpt-4o"
     assert isinstance(dspy.settings.adapter, dspy.JSONAdapter)
@@ -213,7 +213,7 @@ def test_dspy_settings_save_exclude_keys(tmp_path):
     dspy.settings.save(tmp_path / "settings.pkl", exclude_keys=["adapter", "track_usage"])
     dspy.configure(lm=None, adapter=None, track_usage=False)
 
-    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl")
+    loaded_settings = dspy.load_settings(tmp_path / "settings.pkl", allow_pickle=True)
     dspy.configure(**loaded_settings)
     assert dspy.settings.lm.model == "openai/gpt-4o"
     assert dspy.settings.adapter is None
@@ -253,7 +253,7 @@ def callback(x):
         dspy.configure(callbacks=None)
 
         # Loading should now succeed and preserve the adapter instance
-        loaded_settings = dspy.load_settings(settings_path)
+        loaded_settings = dspy.load_settings(settings_path, allow_pickle=True)
         dspy.settings.configure(**loaded_settings)
 
         assert dspy.settings.callbacks[0](3) == 4

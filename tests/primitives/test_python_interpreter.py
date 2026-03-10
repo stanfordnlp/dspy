@@ -297,6 +297,86 @@ def test_tool_default_args():
         assert result == "Hi, World!"
 
 
+def test_tools_re_register_after_process_restart():
+    """Tools should remain callable after Deno subprocess restart."""
+    def echo(message: str = "") -> str:
+        return f"Echo: {message}"
+
+    with PythonInterpreter(tools={"echo": echo}) as interpreter:
+        first = interpreter.execute('print(echo(message="one"))')
+        assert "Echo: one" in first
+
+        first_pid = interpreter.deno_process.pid
+        interpreter.deno_process.kill()
+        interpreter.deno_process.wait()
+
+        second = interpreter.execute('print(echo(message="two"))')
+        assert "Echo: two" in second
+        assert interpreter.deno_process.pid != first_pid
+
+
+def test_mounts_replay_after_process_restart(tmp_path):
+    """Mounted files should still be accessible after subprocess restart."""
+    host_file = tmp_path / "mount_restart.txt"
+    host_file.write_text("restarted-ok")
+    virtual_path = f"/sandbox/{host_file.name}"
+
+    with PythonInterpreter(enable_read_paths=[str(host_file)]) as interpreter:
+        first = interpreter.execute(
+            f"with open({virtual_path!r}, 'r') as f:\n"
+            f"    data = f.read()\n"
+            f"data"
+        )
+        assert first == "restarted-ok"
+
+        first_pid = interpreter.deno_process.pid
+        interpreter.deno_process.kill()
+        interpreter.deno_process.wait()
+
+        second = interpreter.execute(
+            f"with open({virtual_path!r}, 'r') as f:\n"
+            f"    data = f.read()\n"
+            f"data"
+        )
+        assert second == "restarted-ok"
+        assert interpreter.deno_process.pid != first_pid
+
+
+def test_tool_all_positional_args():
+    """Test that tools work when all arguments are passed positionally."""
+
+    def add(a: int, b: int, c: int) -> str:
+        return f"{a + b + c}"
+
+    with PythonInterpreter(tools={"add": add}) as sandbox:
+        result = sandbox.execute("add(1, 2, 3)")
+        assert result == "6"
+
+        # Mixed: some positional, some keyword
+        result = sandbox.execute("add(10, 20, c=30)")
+        assert result == "60"
+
+
+def test_tool_error_surfaces_as_runtime_error():
+    """Test that exceptions raised by a tool surface as RuntimeError in the sandbox."""
+
+    def failing_tool(x: int) -> str:
+        raise ValueError(f"bad value: {x}")
+
+    with PythonInterpreter(tools={"failing_tool": failing_tool}) as sandbox:
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_tool(42)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "bad value: 42" in result
+
+
+
 # =============================================================================
 # Multi-Output SUBMIT Tests
 # =============================================================================
