@@ -165,31 +165,79 @@ class BaseModule:
             else:
                 param.load_state(state[name])
 
-    def save(self, path, save_program=False, modules_to_serialize=None):
+    def _collect_module_tree(self):
+        """Walk the module graph and record each sub-module's path and class.
+
+        Returns a list ordered so that parents appear before their children,
+        which is the order needed for reconstruction.
+        """
+        tree = []
+
+        def _walk(obj, prefix):
+            for attr_name, attr_value in obj.__dict__.items():
+                if isinstance(attr_value, BaseModule):
+                    path = f"{prefix}.{attr_name}" if prefix else attr_name
+                    tree.append(
+                        {
+                            "path": path,
+                            "class": f"{attr_value.__class__.__module__}.{attr_value.__class__.__qualname__}",
+                        }
+                    )
+                    _walk(attr_value, path)
+                elif isinstance(attr_value, list):
+                    for i, item in enumerate(attr_value):
+                        if isinstance(item, BaseModule):
+                            path = f"{prefix}.{attr_name}[{i}]" if prefix else f"{attr_name}[{i}]"
+                            tree.append(
+                                {
+                                    "path": path,
+                                    "class": f"{item.__class__.__module__}.{item.__class__.__qualname__}",
+                                }
+                            )
+                            _walk(item, path)
+                elif isinstance(attr_value, dict):
+                    for key, item in attr_value.items():
+                        if isinstance(item, BaseModule):
+                            path = f"{prefix}.{attr_name}['{key}']" if prefix else f"{attr_name}['{key}']"
+                            tree.append(
+                                {
+                                    "path": path,
+                                    "class": f"{item.__class__.__module__}.{item.__class__.__qualname__}",
+                                }
+                            )
+                            _walk(item, path)
+
+        _walk(self, "")
+        return tree
+
+    def save(self, path, save_program=False, modules_to_serialize=None, safe=False):
         """Save the module.
 
         Save the module to a directory or a file. There are two modes:
-        - `save_program=False`: Save only the state of the module to a json or pickle file, based on the value of
+        - ``save_program=False``: Save only the state of the module to a json or pickle file, based on the value of
             the file extension.
-        - `save_program=True`: Save the whole module to a directory via cloudpickle, which contains both the state and
-            architecture of the model.
+        - ``save_program=True``: Save the whole module to a directory.  By default this uses cloudpickle.
+            Pass ``safe=True`` to use a JSON-based format that avoids pickle entirely.
 
-        If `save_program=True` and `modules_to_serialize` are provided, it will register those modules for serialization
-        with cloudpickle's `register_pickle_by_value`. This causes cloudpickle to serialize the module by value rather
-        than by reference, ensuring the module is fully preserved along with the saved program. This is useful
-        when you have custom modules that need to be serialized alongside your program. If None, then no modules
-        will be registered for serialization.
+        If ``save_program=True`` and ``modules_to_serialize`` are provided, it will register those modules for
+        serialization with cloudpickle's ``register_pickle_by_value``. This causes cloudpickle to serialize the
+        module by value rather than by reference, ensuring the module is fully preserved along with the saved
+        program. This is useful when you have custom modules that need to be serialized alongside your program.
+        If None, then no modules will be registered for serialization.
 
         We also save the dependency versions, so that the loaded model can check if there is a version mismatch on
         critical dependencies or DSPy version.
 
         Args:
-            path (str): Path to the saved state file, which should be a .json or .pkl file when `save_program=False`,
-                and a directory when `save_program=True`.
-            save_program (bool): If True, save the whole module to a directory via cloudpickle, otherwise only save
-                the state.
-            modules_to_serialize (list): A list of modules to serialize with cloudpickle's `register_pickle_by_value`.
+            path (str): Path to the saved state file, which should be a .json or .pkl file when ``save_program=False``,
+                and a directory when ``save_program=True``.
+            save_program (bool): If True, save the whole module to a directory via cloudpickle (or JSON when
+                ``safe=True``), otherwise only save the state.
+            modules_to_serialize (list): A list of modules to serialize with cloudpickle's
+                ``register_pickle_by_value``. Only used when ``safe=False``.
                 If None, then no modules will be registered for serialization.
+            safe (bool): If True and ``save_program=True``, save using a JSON-based format that avoids cloudpickle.
+                The module class must be importable at load time (same pattern as PyTorch's ``state_dict``).
 
         """
         metadata = {}
@@ -205,10 +253,25 @@ class BaseModule:
                 raise NotADirectoryError(f"The path '{path}' exists but is not a directory.")
 
             if not path.exists():
-                # Create the directory (and any parent directories)
                 path.mkdir(parents=True)
-            logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
-                          'this, prefer saving using json format using module.save("module.json").')
+
+            if safe:
+                program_state = {
+                    "module_class": f"{self.__class__.__module__}.{self.__class__.__qualname__}",
+                    "module_tree": self._collect_module_tree(),
+                    "state": self.dump_state(),
+                }
+                with open(path / "program.json", "wb") as f:
+                    f.write(orjson.dumps(program_state, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE))
+                metadata["format"] = "safe_v1"
+                with open(path / "metadata.json", "wb") as f:
+                    f.write(orjson.dumps(metadata, option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE))
+                return
+
+            logger.warning(
+                "Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
+                'this, prefer saving using json format using module.save("module.json").'
+            )
             try:
                 modules_to_serialize = modules_to_serialize or []
                 for module in modules_to_serialize:
@@ -239,8 +302,10 @@ class BaseModule:
                     "with `.pkl`, or saving the whole program by setting `save_program=True`."
                 )
         elif path.suffix == ".pkl":
-            logger.warning("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
-                          'this, prefer saving using json format using module.save("module.json").')
+            logger.warning(
+                "Loading untrusted .pkl files can run arbitrary code, which may be dangerous. To avoid "
+                'this, prefer saving using json format using module.save("module.json").'
+            )
             state = self.dump_state(json_mode=False)
             state["metadata"] = metadata
             with open(path, "wb") as f:
@@ -266,9 +331,11 @@ class BaseModule:
                 state = orjson.loads(f.read())
         elif path.suffix == ".pkl":
             if not allow_pickle:
-                raise ValueError("Loading .pkl files can run arbitrary code, which may be dangerous. Prefer "
-                                 "saving with .json files if possible. Set `allow_pickle=True` "
-                                 "if you are sure about the source of the file and in a trusted environment.")
+                raise ValueError(
+                    "Loading .pkl files can run arbitrary code, which may be dangerous. Prefer "
+                    "saving with .json files if possible. Set `allow_pickle=True` "
+                    "if you are sure about the source of the file and in a trusted environment."
+                )
             with open(path, "rb") as f:
                 state = cloudpickle.load(f)
         else:

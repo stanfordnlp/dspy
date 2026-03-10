@@ -214,12 +214,18 @@ def test_dump_and_load_state():
         "instructions": "I am just an instruction.",
         "fields": [
             {
+                "name": "sentence",
+                "field_type": "input",
                 "prefix": "Sentence:",
                 "description": "I am an innocent input!",
+                "type": "str",
             },
             {
+                "name": "sentiment",
+                "field_type": "output",
                 "prefix": "Sentiment:",
                 "description": "${sentiment}",
+                "type": "str",
             },
         ],
     }
