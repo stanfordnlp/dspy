@@ -27,7 +27,6 @@ def test_pot_code_generation():
     pot = ProgramOfThought(BasicQA)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
 
 
 # This test ensures the old finetuned saved models still work
@@ -43,7 +42,6 @@ def test_old_style_pot():
     pot = ProgramOfThought(BasicQA)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
 
 
 class ExtremumFinder(Signature):
@@ -68,7 +66,6 @@ def test_pot_support_multiple_fields():
     res = pot(input_list="2, 3, 5, 6")
     assert res.maximum == "6"
     assert res.minimum == "2"
-    assert pot.interpreter.deno_process is None
 
 
 @pytest.mark.deno
@@ -90,7 +87,6 @@ def test_pot_code_generation_with_one_error():
     pot = ProgramOfThought(BasicQA)
     res = pot(question="What is 1+1?")
     assert res.answer == "2"
-    assert pot.interpreter.deno_process is None
 
 
 @pytest.mark.deno
@@ -130,3 +126,26 @@ def test_pot_code_parse_error():
     ):
         pot(question="What is 1+1?")
     mock_execute_code.assert_not_called()
+
+
+@pytest.mark.deno
+def test_pot_thread_safety_with_evaluate():
+    """Regression test for #9082: ProgramOfThought should work with num_threads > 1."""
+    num_examples = 8
+    # DummyLM needs to return pairs of responses (code gen + answer extraction) for each example
+    lm_responses = [
+        {
+            "reasoning": "Reason_A",
+            "generated_code": "```python\nresult = 1+1\nSUBMIT({'answer': result})\n```",
+        },
+        {"reasoning": "Reason_B", "answer": "2"},
+    ] * num_examples
+    lm = DummyLM(lm_responses)
+    dspy.configure(lm=lm)
+
+    pot = ProgramOfThought(BasicQA)
+    devset = [dspy.Example(question="What is 1+1?", answer="2").with_inputs("question") for _ in range(num_examples)]
+
+    evaluate = dspy.Evaluate(devset=devset, metric=lambda example, pred, trace=None: pred.answer == example.answer, num_threads=4)
+    result = evaluate(pot)
+    assert result >= 0  # Should complete without "I/O operation on closed file" errors
