@@ -84,7 +84,7 @@ def _translate_pydantic_field_constraints(**kwargs):
             `PYDANTIC_CONSTRAINT_MAP` are used; all others are ignored.
 
     Returns:
-        str: Comma-separated human-readable constraint descriptions, or an
+        (str): Comma-separated human-readable constraint descriptions, or an
         empty string if no recognized constraint kwargs are present.
 
     Examples:
@@ -115,9 +115,9 @@ def InputField(**kwargs):  # noqa: N802
     Both the type hint and `desc` are optional. When provided,
     adapters pass them to the language model for additional context.
 
-    >>> class QA(dspy.Signature):  # doctest: +SKIP
-    ...     question: str = dspy.InputField(desc="a factual question")
-    ...     answer: str = dspy.OutputField(desc="a short answer")
+        >>> class QA(dspy.Signature):  # doctest: +SKIP
+        ...     question: str = dspy.InputField(desc="a factual question")
+        ...     answer: str = dspy.OutputField(desc="a short answer")
 
     Args:
         desc (str): Optional plain-language description of the field.
@@ -126,7 +126,7 @@ def InputField(**kwargs):  # noqa: N802
         **kwargs: Any additional `pydantic.Field` keyword argument.
 
     Returns:
-        pydantic.fields.FieldInfo: A field marked as a DSPy input.
+        (pydantic.fields.FieldInfo): A field marked as a DSPy input.
 
     Examples:
         >>> import dspy
@@ -159,17 +159,18 @@ def OutputField(**kwargs):  # noqa: N802
     Both the type hint and `desc` are optional. When provided,
     adapters pass them to the language model for additional context.
     Using type hint is recommended for output fields so the language
-    model knows what type to produce. Adapters also use the type hint
-    to determine how to parse the model's outputs into Python objects.
+    model knows what type to produce, defaults to str. Adapters also
+    use the type hint to determine how to parse the model's outputs
+    into Python objects.
 
-    >>> class QA(dspy.Signature):  # doctest: +SKIP
-    ...     question: str = dspy.InputField(desc="a factual question")
-    ...     answer: str = dspy.OutputField(desc="a short answer")
+        >>> class QA(dspy.Signature):  # doctest: +SKIP
+        ...     question: str = dspy.InputField(desc="a factual question")
+        ...     answer: str = dspy.OutputField(desc="a short answer")
 
     Args:
         desc (str): Optional plain-language description of the field.
             Adapters include this when describing the field to the
-            language model. Recommended for output fields.
+            language model.
         **kwargs: Any additional `pydantic.Field` keyword argument.
             Constraints like `gt`, `ge`, `lt`, `le`, `min_length`,
             `max_length`, and `multiple_of` are both described to the
@@ -178,7 +179,7 @@ def OutputField(**kwargs):  # noqa: N802
             pydantic raises a `ValidationError`.
 
     Returns:
-        pydantic.fields.FieldInfo: A field marked as a DSPy output.
+        (pydantic.fields.FieldInfo): A field marked as a DSPy output.
 
     Examples:
         >>> import dspy

@@ -297,39 +297,8 @@ class SignatureMeta(type(BaseModel)):
 
 class Signature(BaseModel, metaclass=SignatureMeta):
     ""
-    # Design constraint: Signature cannot carry a standard class docstring.
-    #
-    # DSPy stores each concrete signature's instruction text in `cls.__doc__`.
-    # A non-empty docstring here would be inherited by every subclass that does
-    # not define its own, incorrectly overriding the default instructions that
-    # `SignatureMeta.__new__` synthesizes from field names.  See the module
-    # docstring above for the full class-level contract.
-    #
-    # In brief, a `Signature` subclass is a Pydantic `BaseModel` whose
-    # fields are tagged with `InputField` or `OutputField`.  Every signature
-    # class also carries instruction text (the `instructions` property on
-    # `SignatureMeta`) and convenience methods for non-mutating manipulation
-    # of fields and metadata.
-    #
-    # Signatures may be created via class syntax::
-    #
-    #     class QA(dspy.Signature):
-    #         '''Answer the question.'''
-    #         question: str = dspy.InputField()
-    #         answer: str = dspy.OutputField()
-    #
-    # or via string syntax::
-    #
-    #     QA = dspy.Signature("question -> answer")
-    #
-    # All field-manipulation methods (`with_instructions`,
-    # `with_updated_fields`, `prepend`, `append`, `insert`, `delete`)
-    # return a **new** signature class and leave the original unchanged.
-    #
-    # `dump_state` / `load_state` serialize and restore only the mutable
-    # prompt-label metadata (instructions, per-field `prefix` and `desc`).
-    # Field names, types, validators, and other Pydantic schema details are not
-    # included in the serialized state.
+    # Note: Don't put a docstring here, as it will become the default instructions
+    # for any signature that doesn't define it's own instructions.
 
     @classmethod
     def with_instructions(cls, instructions: str) -> type["Signature"]:
@@ -346,7 +315,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             instructions: Task description the language model will see.
 
         Returns:
-            type[Signature]: A new signature class.
+            (type[Signature]): A new signature class.
 
         Examples:
             >>> import dspy
@@ -400,7 +369,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
                 is `desc` (the description the language model sees).
 
         Returns:
-            type[Signature]: A new signature class.
+            (type[Signature]): A new signature class.
 
         Examples:
             >>> import dspy
@@ -454,7 +423,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             type_: Python type annotation (default `str`).
 
         Returns:
-            type[Signature]: A new signature class.
+            (type[Signature]): A new signature class.
 
         Examples:
             Add a `reasoning` field before the existing outputs:
@@ -494,7 +463,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             type_: Python type annotation (default `str`).
 
         Returns:
-            type[Signature]: A new signature class.
+            (type[Signature]): A new signature class.
 
         Examples:
             Add a confidence score after the existing outputs:
@@ -532,7 +501,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             name: Field name to remove.
 
         Returns:
-            type[Signature]: A new signature class.
+            (type[Signature]): A new signature class.
 
         Examples:
             Remove a field that is handled natively by the LM:
@@ -578,7 +547,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             type_: Python type annotation (default `str`).
 
         Returns:
-            type[Signature]: A new signature class.
+            (type[Signature]): A new signature class.
 
         Raises:
             ValueError: If `index` is out of range for the section.
@@ -641,7 +610,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             other: Another signature class to compare against.
 
         Returns:
-            bool: `True` if instructions and field metadata match.
+            (bool): `True` if instructions and field metadata match.
 
         Examples:
             >>> import dspy
@@ -680,7 +649,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         Restore with `load_state`.
 
         Returns:
-            dict: A dict with `"instructions"` and `"fields"` keys.
+            (dict): A dict with `"instructions"` and `"fields"` keys.
 
         Examples:
             >>> import dspy
@@ -719,7 +688,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             state: Dict previously produced by `dump_state`.
 
         Returns:
-            type[Signature]: A new signature class.
+            (type[Signature]): A new signature class.
 
         Examples:
             Round-trip through `dump_state` / `load_state`:
@@ -762,7 +731,7 @@ def ensure_signature(signature: str | type[Signature], instructions=None) -> typ
             `signature` is a string).
 
     Returns:
-        type[Signature] | None: A signature class, or `None` if
+        (type[Signature] | None): A signature class, or `None` if
             `None` was passed.
 
     Raises:
@@ -824,7 +793,7 @@ def make_signature(
             in string signatures (e.g. `{"Passage": Passage}`).
 
     Returns:
-        type[Signature]: A new signature subclass.
+        (type[Signature]): A new signature subclass.
 
     Examples:
         From a string shorthand:
@@ -1081,7 +1050,7 @@ def infer_prefix(attribute_name: str) -> str:
         attribute_name: Python attribute name (e.g. `"camelCaseText"`).
 
     Returns:
-        str: Title-cased label without a trailing colon.
+        (str): Title-cased label without a trailing colon.
 
     Examples:
         >>> infer_prefix("camelCaseText")
