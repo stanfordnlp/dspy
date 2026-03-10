@@ -1,18 +1,33 @@
-"""Signature class for DSPy.
+"""DSPy `Signature` class and string-based signature parsing.
 
-You typically subclass the Signature class, like this:
-    class MySignature(dspy.Signature):
-        input: str = InputField(desc="...")
-        output: int = OutputField(desc="...")
+A signature declares the input/output contract for a DSPy module.
+Two syntaxes:
 
-You can call Signature("input1, input2 -> output1, output2") to create a new signature type.
-You can also include instructions, Signature("input -> output", "This is a test").
-But it's generally better to use the make_signature function.
+    # Class syntax - the docstring becomes the instruction text
+    >>> import dspy
+    >>> class Review(dspy.Signature):
+    ...     \"\"\"
+    ...     Summarize the review and give it a rating.
+    ...     \"\"\"
+    ...     # Inputs
+    ...     text = dspy.InputField(desc="product review text")
+    ...     # Outputs
+    ...     summary = dspy.OutputField(desc="a one-sentence summary")
+    ...     rating: int = dspy.OutputField(desc="rating", ge=0, le=5)
+    >>> reviewer = dspy.Predict(Review)
 
-If you are not sure if your input is a string representation, (like "input1, input2 -> output1, output2"),
-or a signature, you can use the ensure_signature function.
+    # String syntax
+    >>> Review = dspy.Signature(
+    ...     "text -> summary, rating: int",
+    ...     instructions="Summarize the review and give it a rating."
+    ... )
 
-For compatibility with the legacy dsp format, you can use the signature_to_template function.
+All field-manipulation methods (`append`, `prepend`, `insert`, `delete`,
+`with_instructions`, `with_updated_fields`) return a **new** signature
+class; the original is never mutated.
+
+Note: the base `Signature` class cannot carry a class docstring because
+subclasses would inherit it as their default instructions.
 """
 
 import ast
@@ -38,7 +53,21 @@ def _default_instructions(cls) -> str:
 
 
 class SignatureMeta(type(BaseModel)):
+    """Metaclass for DSPy signatures.
+
+    `Signature("x -> y")` returns a new subclass (not an instance).
+    Subclass creation validates fields, fills in defaults, and
+    preserves declaration order.
+    """
+
     def __call__(cls, *args, **kwargs):
+        """Dispatch: `Signature(str)` builds a new subclass; `MySig(...)` creates an instance.
+
+        When called on the base `Signature` class with a string,
+        delegates to `make_signature`. User-defined annotation names
+        are auto-resolved from the caller's stack frame when
+        `custom_types` is not provided.
+        """
         if cls is Signature:
             # We don't create an actual Signature instance, instead, we create a new Signature class.
             custom_types = kwargs.pop("custom_types", None)
@@ -135,6 +164,13 @@ class SignatureMeta(type(BaseModel)):
         return found_types or None
 
     def __new__(mcs, signature_name, bases, namespace, **kwargs):
+        """Build a new signature class.
+
+        Fills in default annotations (`str`), preserves field order,
+        synthesizes instructions if none given, validates that every
+        field uses `InputField`/`OutputField`, and sets `prefix`/`desc`
+        defaults.
+        """
         # At this point, the orders have been swapped already.
         field_order = [name for name, value in namespace.items() if isinstance(value, FieldInfo)]
         # Set `str` as the default type for all fields
@@ -192,6 +228,8 @@ class SignatureMeta(type(BaseModel)):
         cls._validate_fields()
 
         # Ensure all fields have a prefix
+        # TODO: In a future major release, remove the notion of `prefix` from fields
+        # entirely and update this logic accordingly.
         for name, field in cls.model_fields.items():
             if "prefix" not in field.json_schema_extra:
                 field.json_schema_extra["prefix"] = infer_prefix(name) + ":"
@@ -201,6 +239,7 @@ class SignatureMeta(type(BaseModel)):
         return cls
 
     def _validate_fields(cls):
+        """Verify all dspy extra fields are marked with `InputField` or `OutputField`."""
         for name, field in cls.model_fields.items():
             extra = field.json_schema_extra or {}
             field_type = extra.get("__dspy_field_type")
@@ -212,45 +251,43 @@ class SignatureMeta(type(BaseModel)):
 
     @property
     def instructions(cls) -> str:
+        """The signature's instruction text (from the class docstring)."""
         return inspect.cleandoc(getattr(cls, "__doc__", ""))
 
     @instructions.setter
     def instructions(cls, instructions: str) -> None:
+        """Set new instruction text."""
         cls.__doc__ = instructions
 
     @property
     def input_fields(cls) -> dict[str, FieldInfo]:
+        """Input fields in declaration order."""
         return cls._get_fields_with_type("input")
 
     @property
     def output_fields(cls) -> dict[str, FieldInfo]:
+        """Output fields in declaration order."""
         return cls._get_fields_with_type("output")
 
     @property
     def fields(cls) -> dict[str, FieldInfo]:
+        """All fields, inputs first then outputs."""
         # Make sure to give input fields before output fields
         return {**cls.input_fields, **cls.output_fields}
 
     @property
     def signature(cls) -> str:
-        """The string representation of the signature."""
+        """Compact string form: `"input1, input2 -> output1, output2"`."""
         input_fields = ", ".join(cls.input_fields.keys())
         output_fields = ", ".join(cls.output_fields.keys())
         return f"{input_fields} -> {output_fields}"
 
     def _get_fields_with_type(cls, field_type) -> dict[str, FieldInfo]:
+        """Filter fields by DSPy type tag (`"input"` or `"output"`)."""
         return {k: v for k, v in cls.model_fields.items() if v.json_schema_extra["__dspy_field_type"] == field_type}
 
     def __repr__(cls):
-        """Output a representation of the signature.
-
-        Uses the form:
-        Signature(question, context -> answer
-            question: str = InputField(desc="..."),
-            context: list[str] = InputField(desc="..."),
-            answer: int = OutputField(desc="..."),
-        ).
-        """
+        """Debug representation with fields and instructions."""
         field_reprs = []
         for name, field in cls.fields.items():
             field_reprs.append(f"{name} = Field({field})")
@@ -260,53 +297,105 @@ class SignatureMeta(type(BaseModel)):
 
 class Signature(BaseModel, metaclass=SignatureMeta):
     ""
-
     # Note: Don't put a docstring here, as it will become the default instructions
     # for any signature that doesn't define it's own instructions.
 
     @classmethod
     def with_instructions(cls, instructions: str) -> type["Signature"]:
-        """Return a new Signature class with identical fields and new instructions.
+        """Return a new signature with different instructions.
 
-        This method does not mutate `cls`. It constructs a fresh Signature
-        class using the current fields and the provided `instructions`.
+        The original signature is unchanged.  Fields, types, and
+        metadata are copied as-is.  The returned class must be
+        assigned to a predictor (or used to create one) to take effect.
+
+        This is the primary mechanism DSPy optimizers use to swap in
+        candidate instructions during prompt search.
 
         Args:
-            instructions (str): Instruction text to attach to the new signature.
+            instructions: Task description the language model will see.
 
         Returns:
-            A new Signature class whose fields match `cls.fields`
-            and whose instructions equal `instructions`.
+            (type[Signature]): A new signature class.
 
-        Example:
-            ```python
-            import dspy
+        Examples:
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     "Answer the question."
+            ...     question: str = dspy.InputField()
+            ...     answer: str = dspy.OutputField()
 
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input text")
-                output_text: str = dspy.OutputField(desc="Output text")
+            Assign the result to a predictor so the model sees it:
 
-            NewSig = MySig.with_instructions("Translate to French.")
-            assert NewSig is not MySig
-            assert NewSig.instructions == "Translate to French."
-            ```
+            >>> predict = dspy.Predict(QA)
+            >>> predict.signature = predict.signature.with_instructions(
+            ...     "Answer the question in French."
+            ... )
+            >>> predict.signature.instructions
+            'Answer the question in French.'
+
+            Chain with :meth:`with_updated_fields` for deeper edits:
+
+            >>> updated = QA.with_instructions("Be concise.").with_updated_fields(
+            ...     "answer", desc="A single-sentence answer"
+            ... )
+
+            Append to existing instructions instead of replacing:
+
+            >>> enriched = QA.with_instructions(
+            ...     QA.instructions + "\\n\\nAlways cite sources."
+            ... )
+            >>> enriched is not QA
+            True
         """
         return Signature(cls.fields, instructions)
 
     @classmethod
     def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
-        """Create a new Signature class with the updated field information.
+        """Return a new signature with updated metadata on one field.
 
-        Returns a new Signature class with the field, name, updated
-        with fields[name].json_schema_extra[key] = value.
+        The original signature is unchanged.  Only the named field is
+        modified in the copy.  The returned class must be assigned to
+        a predictor (or used to create one) to take effect.
+
+        The two things you will typically update are `desc` (the
+        field description the language model sees) and `type_` (the
+        Python type annotation, e.g. `str`, `int`, `Literal[...]`).
 
         Args:
-            name: The name of the field to update.
-            type_: The new type of the field.
-            kwargs: The new values for the field.
+            name: Name of the field to update.
+            type_: New Python type annotation (e.g. `int`,
+                `list[str]`), or `None` to keep the current type.
+            **kwargs: Field metadata updates.  The most common key
+                is `desc` (the description the language model sees).
 
         Returns:
-            A new Signature class (not an instance) with the updated field information.
+            (type[Signature]): A new signature class.
+
+        Examples:
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     "Answer the question."
+            ...     question: str = dspy.InputField(desc="A factual question")
+            ...     answer: str = dspy.OutputField(desc="Short answer")
+
+            Update a field description and assign back to a predictor:
+
+            >>> predict = dspy.Predict(QA)
+            >>> predict.signature = predict.signature.with_updated_fields(
+            ...     "answer", desc="A single-sentence answer with citation"
+            ... )
+            >>> predict.signature.fields["answer"].json_schema_extra["desc"]
+            'A single-sentence answer with citation'
+
+            Change a field's type annotation:
+
+            >>> from typing import Literal
+            >>> Action = Literal["search", "lookup", "finish"]
+            >>> sig2 = QA.with_updated_fields("answer", Action)
+            >>> sig2.fields["answer"].annotation is Action
+            True
+            >>> sig2 is not QA
+            True
         """
         fields_copy = deepcopy(cls.fields)
         # Update `fields_copy[name].json_schema_extra` with the new kwargs, on conflicts
@@ -321,86 +410,115 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def prepend(cls, name, field, type_=None) -> type["Signature"]:
-        """Insert a field at index 0 of the `inputs` or `outputs` section.
+        """Return a new signature with a field added at the start of its section.
+
+        The field goes into inputs or outputs depending on whether
+        `field` is an `InputField` or `OutputField`.  The original
+        signature is unchanged.  The returned class must be assigned
+        to a predictor (or used to create one) to take effect.
 
         Args:
-            name (str): Field name to add.
-            field: `InputField` or `OutputField` instance to insert.
-            type_ (type | None): Optional explicit type annotation. If `type_` is `None`, the effective type is
-                resolved by `insert`.
+            name: Name for the new field.
+            field: An `InputField()` or `OutputField()` instance.
+            type_: Python type annotation (default `str`).
 
         Returns:
-            A new `Signature` class with the field inserted first.
+            (type[Signature]): A new signature class.
 
-        Example:
-            ```python
-            import dspy
+        Examples:
+            Add a `reasoning` field before the existing outputs:
 
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input sentence")
-                output_text: str = dspy.OutputField(desc="Translated sentence")
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     question: str = dspy.InputField()
+            ...     answer: str = dspy.OutputField()
+            >>> predict = dspy.Predict(
+            ...     QA.prepend("reasoning", dspy.OutputField(desc="Think step by step"))
+            ... )
+            >>> list(predict.signature.output_fields.keys())
+            ['reasoning', 'answer']
 
-            NewSig = MySig.prepend("context", dspy.InputField(desc="Context for translation"))
-            print(list(NewSig.fields.keys()))
-            ```
+            Add `context` before the existing inputs:
+
+            >>> with_context = QA.prepend(
+            ...     "context", dspy.InputField(desc="Supporting passages")
+            ... )
+            >>> list(with_context.input_fields.keys())
+            ['context', 'question']
         """
         return cls.insert(0, name, field, type_)
 
     @classmethod
     def append(cls, name, field, type_=None) -> type["Signature"]:
-        """Insert a field at the end of the `inputs` or `outputs` section.
+        """Return a new signature with a field added at the end of its section.
+
+        The field goes into inputs or outputs depending on whether
+        `field` is an `InputField` or `OutputField`.  The original
+        signature is unchanged.  The returned class must be assigned
+        to a predictor (or used to create one) to take effect.
 
         Args:
-            name (str): Field name to add.
-            field: `InputField` or `OutputField` instance to insert.
-            type_ (type | None): Optional explicit type annotation. If `type_` is `None`, the effective type is
-                resolved by `insert`.
+            name: Name for the new field.
+            field: An `InputField()` or `OutputField()` instance.
+            type_: Python type annotation (default `str`).
 
         Returns:
-            A new Signature class with the field appended.
+            (type[Signature]): A new signature class.
 
-        Example:
-            ```python
-            import dspy
+        Examples:
+            Add a confidence score after the existing outputs:
 
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input sentence")
-                output_text: str = dspy.OutputField(desc="Translated sentence")
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     question: str = dspy.InputField()
+            ...     answer: str = dspy.OutputField()
+            >>> extended = QA.append(
+            ...     "confidence", dspy.OutputField(desc="0.0-1.0"), float
+            ... )
+            >>> list(extended.output_fields.keys())
+            ['answer', 'confidence']
 
-            NewSig = MySig.append("confidence", dspy.OutputField(desc="Translation confidence"))
-            print(list(NewSig.fields.keys()))
-            ```
+            Inject a hint as an extra input (used by refinement loops):
+
+            >>> with_hint = QA.append(
+            ...     "hint", dspy.InputField(desc="Advice from a previous run")
+            ... )
+            >>> list(with_hint.input_fields.keys())
+            ['question', 'hint']
         """
         return cls.insert(-1, name, field, type_)
 
     @classmethod
     def delete(cls, name) -> type["Signature"]:
-        """Return a new Signature class without the given field.
+        """Return a new signature without the named field.
 
-        If `name` is not present, the fields are unchanged (no error raised).
+        The original signature is unchanged.  The returned class must
+        be assigned to a predictor (or used to create one) to take
+        effect.  If the field does not exist the call is a no-op
+        (no error is raised).
 
         Args:
-            name (str): Field name to remove.
+            name: Field name to remove.
 
         Returns:
-            A new Signature class with the field removed (or unchanged if the field was absent).
+            (type[Signature]): A new signature class.
 
-        Example:
-            ```python
-            import dspy
+        Examples:
+            Remove a field that is handled natively by the LM:
 
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input sentence")
-                temp_field: str = dspy.InputField(desc="Temporary debug field")
-                output_text: str = dspy.OutputField(desc="Translated sentence")
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     question: str = dspy.InputField()
+            ...     reasoning: str = dspy.OutputField()
+            ...     answer: str = dspy.OutputField()
+            >>> shorter = QA.delete("reasoning")
+            >>> list(shorter.output_fields.keys())
+            ['answer']
 
-            NewSig = MySig.delete("temp_field")
-            print(list(NewSig.fields.keys()))
+            Missing names are silently ignored:
 
-            # No error is raised if the field is not present
-            Unchanged = NewSig.delete("nonexistent")
-            print(list(Unchanged.fields.keys()))
-            ```
+            >>> shorter.delete("nonexistent") is not shorter
+            True
         """
         fields = dict(cls.fields)
 
@@ -410,37 +528,50 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
-        """Insert a field at a specific position among inputs or outputs.
+        """Return a new signature with a field at a specific position.
 
-        Negative indices are supported (e.g., `-1` appends). If `type_` is omitted, the field's
-        existing `annotation` is used; if that is missing, `str` is used.
+        The field goes into inputs or outputs depending on whether
+        `field` is an `InputField` or `OutputField`.  The original
+        signature is unchanged.  The returned class must be assigned
+        to a predictor (or used to create one) to take effect.
+
+        Most callers should prefer `prepend` (index 0) or `append`
+        (index -1); use `insert` when you need a field between two
+        existing ones.
 
         Args:
-            index (int): Insertion position within the chosen section; negatives append.
-            name (str): Field name to add.
-            field: InputField or OutputField instance to insert.
-            type_ (type | None): Optional explicit type annotation.
+            index: Position within the section.  Use `0` for the
+                start, `-1` for the end.
+            name: Name for the new field.
+            field: An `InputField()` or `OutputField()` instance.
+            type_: Python type annotation (default `str`).
 
         Returns:
-            A new Signature class with the field inserted.
+            (type[Signature]): A new signature class.
 
         Raises:
-            ValueError: If `index` falls outside the valid range for the chosen section.
+            ValueError: If `index` is out of range for the section.
 
-        Example:
-            ```python
-            import dspy
+        Examples:
+            Insert a context field at the start of inputs:
 
-            class MySig(dspy.Signature):
-                input_text: str = dspy.InputField(desc="Input sentence")
-                output_text: str = dspy.OutputField(desc="Translated sentence")
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     question: str = dspy.InputField()
+            ...     answer: str = dspy.OutputField()
+            >>> extended = QA.insert(
+            ...     0, "context", dspy.InputField(desc="Supporting passages")
+            ... )
+            >>> list(extended.input_fields.keys())
+            ['context', 'question']
 
-            NewSig = MySig.insert(0, "context", dspy.InputField(desc="Context for translation"))
-            print(list(NewSig.fields.keys()))
+            Append with `-1`:
 
-            NewSig2 = NewSig.insert(-1, "confidence", dspy.OutputField(desc="Translation confidence"))
-            print(list(NewSig2.fields.keys()))
-            ```
+            >>> extended2 = QA.insert(
+            ...     -1, "confidence", dspy.OutputField(desc="0.0-1.0"), float
+            ... )
+            >>> list(extended2.output_fields.keys())
+            ['answer', 'confidence']
         """
         # It's possible to set the type as annotation=type in pydantic.Field(...)
         # But this may be annoying for users, so we allow them to pass the type
@@ -469,7 +600,34 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def equals(cls, other) -> bool:
-        """Compare the JSON schema of two Signature classes."""
+        """Test whether two signatures have the same instructions and fields.
+
+        Compares instructions and per-field metadata (`desc`,
+        `prefix`, …).  Does not compare type annotations, defaults,
+        or validators.
+
+        Args:
+            other: Another signature class to compare against.
+
+        Returns:
+            (bool): `True` if instructions and field metadata match.
+
+        Examples:
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     question: str = dspy.InputField()
+            ...     answer: str = dspy.OutputField()
+
+            A copy with the same metadata is equal:
+
+            >>> QA.equals(QA.with_instructions(QA.instructions))
+            True
+
+            Different instructions make them unequal:
+
+            >>> QA.equals(QA.with_instructions("Be concise."))
+            False
+        """
         if not isinstance(other, type) or not issubclass(other, BaseModel):
             return False
         if cls.instructions != other.instructions:
@@ -483,10 +641,34 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def dump_state(cls):
+        """Serialize the signature's mutable prompt state to a dict.
+
+        Captures instructions and per-field `desc` — everything an
+        optimizer might change.  Field names, types, and validators
+        are not included; those are fixed by the class definition.
+        Restore with `load_state`.
+
+        Returns:
+            (dict): A dict with `"instructions"` and `"fields"` keys.
+
+        Examples:
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     "Answer the question."
+            ...     question: str = dspy.InputField()
+            ...     answer: str = dspy.OutputField()
+            >>> state = QA.dump_state()
+            >>> state["instructions"]
+            'Answer the question.'
+            >>> state["fields"][0]["description"]
+            '${question}'
+        """
         state = {"instructions": cls.instructions, "fields": []}
         for field in cls.fields:
             state["fields"].append(
                 {
+                    # TODO: In a future major release, stop serializing `prefix`
+                    # (see matching TODO in field.py and load_state below).
                     "prefix": cls.fields[field].json_schema_extra["prefix"],
                     "description": cls.fields[field].json_schema_extra["desc"],
                 }
@@ -496,10 +678,38 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
     @classmethod
     def load_state(cls, state):
+        """Return a new signature with state restored from `dump_state`.
+
+        The original signature is unchanged.  Fields in `state` are
+        matched positionally against the current field order, not by
+        name.
+
+        Args:
+            state: Dict previously produced by `dump_state`.
+
+        Returns:
+            (type[Signature]): A new signature class.
+
+        Examples:
+            Round-trip through `dump_state` / `load_state`:
+
+            >>> import dspy
+            >>> class QA(dspy.Signature):
+            ...     "Answer the question."
+            ...     question: str = dspy.InputField()
+            ...     answer: str = dspy.OutputField()
+            >>> restored = QA.load_state(QA.dump_state())
+            >>> restored.equals(QA)
+            True
+            >>> restored is not QA
+            True
+        """
         signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
 
         signature_copy.instructions = state["instructions"]
         for field, saved_field in zip(signature_copy.fields.values(), state["fields"], strict=False):
+            # TODO: In a future major release, stop restoring `prefix`
+            # (see matching TODO in field.py and dump_state above).
             field.json_schema_extra["prefix"] = saved_field["prefix"]
             field.json_schema_extra["desc"] = saved_field["description"]
 
@@ -507,6 +717,49 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
 
 def ensure_signature(signature: str | type[Signature], instructions=None) -> type[Signature]:
+    """Coerce a string or signature class into a signature class.
+
+    Every built-in DSPy module (`Predict`, `ChainOfThought`, …)
+    calls this in its `__init__` so that users can pass either a
+    shorthand string or a full class.  `None` is passed through
+    unchanged.
+
+    Args:
+        signature: `"question -> answer"`, a `Signature` subclass,
+            or `None`.
+        instructions: Optional instruction text (only allowed when
+            `signature` is a string).
+
+    Returns:
+        (type[Signature] | None): A signature class, or `None` if
+            `None` was passed.
+
+    Raises:
+        ValueError: If `instructions` is given with a class signature.
+
+    Examples:
+        Strings are converted to a signature class:
+
+        >>> from dspy.signatures.signature import ensure_signature
+        >>> import dspy
+        >>> sig = ensure_signature("question -> answer")
+        >>> list(sig.fields.keys())
+        ['question', 'answer']
+
+        Existing classes pass through unchanged:
+
+        >>> class QA(dspy.Signature):
+        ...     question: str = dspy.InputField()
+        ...     answer: str = dspy.OutputField()
+        >>> ensure_signature(QA) is QA
+        True
+
+        Add instructions to a string shorthand:
+
+        >>> sig2 = ensure_signature("query -> result", "Find the best match.")
+        >>> sig2.instructions
+        'Find the best match.'
+    """
     if signature is None:
         return None
     if isinstance(signature, str):
@@ -522,39 +775,66 @@ def make_signature(
     signature_name: str = "StringSignature",
     custom_types: dict[str, type] | None = None,
 ) -> type[Signature]:
-    """Create a new Signature subclass with the specified fields and instructions.
+    """Create a `Signature` subclass from a string or field dict.
+
+    This is the constructor behind `dspy.Signature("...")`.  Most
+    users should prefer the class syntax or the string shorthand;
+    call `make_signature` directly when you need to build signatures
+    programmatically from a dict of fields or when you need to set
+    `signature_name` or `custom_types`.
 
     Args:
-        signature: Either a string in the format "input1, input2 -> output1, output2"
-            or a dictionary mapping field names to tuples of (type, FieldInfo).
-        instructions: Optional string containing instructions/prompt for the signature.
-            If not provided, defaults to a basic description of inputs and outputs.
-        signature_name: Optional string to name the generated Signature subclass.
-            Defaults to "StringSignature".
-        custom_types: Optional dictionary mapping type names to their actual type objects.
-            Useful for resolving custom types that aren't built-ins or in the typing module.
+        signature: `"input1, input2 -> output1"` or a dict of
+            `{name: (type, FieldInfo)}` pairs.
+        instructions: Task description.  If omitted a default is
+            synthesized from the field names.
+        signature_name: Class name for the generated subclass.
+        custom_types: Name-to-type mapping for resolving annotations
+            in string signatures (e.g. `{"Passage": Passage}`).
 
     Returns:
-        A new signature class with the specified fields and instructions.
+        (type[Signature]): A new signature subclass.
 
     Examples:
+        From a string shorthand:
 
-    ```
-    # Using string format
-    sig1 = make_signature("question, context -> answer")
+        >>> sig1 = make_signature("question, context -> answer")
+        >>> sig1.signature
+        'question, context -> answer'
 
-    # Using dictionary format
-    sig2 = make_signature({
-        "question": (str, InputField()),
-        "answer": (str, OutputField())
-    })
+        From a dict (useful when building signatures programmatically):
 
-    # Using custom types
-    class MyType:
-        pass
+        >>> sig2 = make_signature(
+        ...     {"question": (str, InputField(desc="A factual question")),
+        ...      "answer": (str, OutputField(desc="Short answer"))},
+        ...     instructions="Answer the question.",
+        ... )
+        >>> sig2.instructions
+        'Answer the question.'
+        >>> list(sig2.fields.keys())
+        ['question', 'answer']
 
-    sig3 = make_signature("input: MyType -> output", custom_types={"MyType": MyType})
-    ```
+        Use `custom_types` when a string signature references a type
+        the parser cannot auto-resolve:
+
+        >>> from pydantic import BaseModel
+        >>> class Passage(BaseModel):
+        ...     text: str
+        ...     source: str
+        >>> sig3 = make_signature(
+        ...     "question, passages: list[Passage] -> answer",
+        ...     instructions="Answer using the passages.",
+        ...     custom_types={"Passage": Passage},
+        ... )
+        >>> list(sig3.fields.keys())
+        ['question', 'passages', 'answer']
+
+        Without `custom_types` the parser raises a `ValueError`:
+
+        >>> make_signature("q: Passage -> a", instructions="x")
+        Traceback (most recent call last):
+            ...
+        ValueError: Unknown name: Passage
     """
     # Prepare the names dictionary for type resolution
     names = None
@@ -591,8 +871,10 @@ def make_signature(
 
     # Default prompt when no instructions are provided
     if instructions is None:
-        sig = Signature(signature, "")  # Simple way to parse input/output fields
-        instructions = _default_instructions(sig)
+        # Build a temporary signature from the already-parsed fields so we
+        # don't re-enter make_signature (which would lose custom_types).
+        tmp = create_model("_Tmp", __base__=Signature, __doc__="", **fixed_fields)
+        instructions = _default_instructions(tmp)
 
     return create_model(
         signature_name,
@@ -603,6 +885,12 @@ def make_signature(
 
 
 def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Field]]:
+    """Split a `"inputs -> outputs"` string into `{name: (type, FieldInfo)}` pairs.
+
+    The string must contain exactly one `->`. Fields on the left become
+    `InputField` definitions, fields on the right become `OutputField`
+    definitions.
+    """
     if signature.count("->") != 1:
         raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
 
@@ -618,11 +906,10 @@ def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Field]
 
 
 def _parse_field_string(field_string: str, names=None) -> dict[str, str]:
-    """Extract the field name and type from field string in the string-based Signature.
+    """Parse one side of a `->` split into `(field_name, type)` pairs.
 
-    It takes a string like "x: int, y: str" and returns a dictionary mapping field names to their types.
-    For example, "x: int, y: str" -> [("x", int), ("y", str)]. This function utitlizes the Python AST to parse the
-    fields and types.
+    Uses Python's own parser by embedding the string as a function
+    parameter list. Fields without annotations default to `str`.
     """
 
     args = ast.parse(f"def f({field_string}): pass").body[0].args.args
@@ -632,31 +919,11 @@ def _parse_field_string(field_string: str, names=None) -> dict[str, str]:
 
 
 def _parse_type_node(node, names=None) -> Any:
-    """Recursively parse an AST node representing a type annotation.
+    """Resolve an AST type-annotation node into a runtime Python object.
 
-    This function converts Python's Abstract Syntax Tree (AST) nodes into actual Python types.
-    It's used to parse type annotations in signature strings like "x: list[int] -> y: str".
-
-    Examples:
-        - For "x: int", the AST node represents 'int' and returns the int type
-        - For "x: list[str]", it processes a subscript node to return typing.list[str]
-        - For "x: Optional[int]", it handles the Union type to return Optional[int]
-        - For "x: MyModule.CustomType", it processes attribute access to return the actual type
-
-    Args:
-        node: An AST node from Python's ast module, representing a type annotation.
-            Common node types include:
-            - ast.Name: Simple types like 'int', 'str'
-            - ast.Attribute: Nested types like 'typing.List'
-            - ast.Subscript: Generic types like 'list[int]'
-        names: Optional dictionary mapping type names to their actual type objects.
-            Defaults to Python's typing module contents plus NoneType.
-
-    Returns:
-        The actual Python type represented by the AST node.
-
-    Raises:
-        ValueError: If the AST node represents an unknown or invalid type annotation.
+    Handles `int`, `list[str]`, `Optional[int]`, `int | None`,
+    `dspy.Image`, `Field(...)`, etc. Falls back to `names` mapping,
+    built-in types, then `importlib.import_module`.
     """
 
     if names is None:
@@ -768,13 +1035,32 @@ def _parse_type_node(node, names=None) -> Any:
 
 
 def infer_prefix(attribute_name: str) -> str:
-    """Infer a prefix from an attribute name by converting it to a human-readable format.
+    """Infer a human-readable label from a Python attribute name.
+
+    Converts `snake_case`, `camelCase`, and mixed names into
+    title-cased words (e.g. `"snake_case_text"` → `"Snake Case Text"`).
+
+    .. deprecated::
+        No current adapter uses field `prefix` values when building
+        prompts.  This function will be removed in a future major
+        release (see matching TODOs in `field.py`, `dump_state`, and
+        `load_state`).
+
+    Args:
+        attribute_name: Python attribute name (e.g. `"camelCaseText"`).
+
+    Returns:
+        (str): Title-cased label without a trailing colon.
 
     Examples:
-        "camelCaseText" -> "Camel Case Text"
-        "snake_case_text" -> "Snake Case Text"
-        "text2number" -> "Text 2 Number"
-        "HTMLParser" -> "HTML Parser"
+        >>> infer_prefix("camelCaseText")
+        'Camel Case Text'
+        >>> infer_prefix("snake_case_text")
+        'Snake Case Text'
+        >>> infer_prefix("text2number")
+        'Text 2 Number'
+        >>> infer_prefix("HTMLParser")
+        'HTML Parser'
     """
     # Step 1: Convert camelCase to snake_case
     # Example: "camelCase" -> "camel_Case"

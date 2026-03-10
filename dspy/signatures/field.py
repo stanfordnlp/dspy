@@ -1,10 +1,25 @@
+"""InputField and OutputField factories for DSPy signatures.
+
+Both are thin wrappers around `pydantic.Field`. They route
+DSPy-specific kwargs (e.g. `desc`) into `json_schema_extra` and
+forward everything else to Pydantic. Output-field constraints
+(`ge`, `le`, `min_length`, …) are also translated into a
+human-readable string that adapters include in prompts.
+
+Legacy `OldField` / `OldInputField` / `OldOutputField` classes are
+kept for backward compatibility but should not be used in new code.
+"""
+
 import warnings
 
 import pydantic
 
-# The following arguments can be used in DSPy InputField and OutputField in addition
-# to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
-# as it would give a name clash.
+# Only `desc` is used by adapters in current DSPy flows; we are deprecating
+# `prefix`, `format`, and `parser`. So `desc` can be used in addition to
+# the standard `pydantic.Field` arguments. We just hope Pydantic doesn't
+# add these names, as that would create a name clash.
+# TODO: In a future major release, remove `prefix`, `format`, and `parser`
+# from `DSPY_FIELD_ARG_NAMES` and from all related code.
 DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type"]
 
 _DEPRECATED_FIELD_ARGS = {
@@ -56,10 +71,30 @@ def move_kwargs(**kwargs):
     pydantic_kwargs["json_schema_extra"] = json_schema_extra
     return pydantic_kwargs
 
-
 def _translate_pydantic_field_constraints(**kwargs):
-    """Extracts Pydantic constraints and translates them into human-readable format."""
+    """Translate Pydantic constraint kwargs into a human-readable string.
 
+    Keys from `PYDANTIC_CONSTRAINT_MAP` are turned into a string in which
+    the natural language version of the constraint are concatenated together
+    and separated by commas. Adapters render that string into the prompt.
+
+    Args:
+        **kwargs: The full set of keyword arguments originally passed to
+            `InputField` or `OutputField`.  Only keys that appear in
+            `PYDANTIC_CONSTRAINT_MAP` are used; all others are ignored.
+
+    Returns:
+        (str): Comma-separated human-readable constraint descriptions, or an
+        empty string if no recognized constraint kwargs are present.
+
+    Examples:
+        >>> _translate_pydantic_field_constraints(ge=5, le=10, desc="score")
+        'greater than or equal to: 5, less than or equal to: 10'
+
+        # Empty string if no constraint kwargs are present, even if other kwargs are given.
+        >>> _translate_pydantic_field_constraints(desc="name")
+        ''
+    """
     constraints = []
     for key, value in kwargs.items():
         if key in PYDANTIC_CONSTRAINT_MAP:
@@ -74,12 +109,100 @@ def _warn_deprecated_field_args(**kwargs):
             warnings.warn(message, DeprecationWarning, stacklevel=3)
 
 
-def InputField(**kwargs): # noqa: N802
+def InputField(**kwargs):  # noqa: N802
+    """Declare an input field on a `dspy.Signature`.
+
+    Both the type hint and `desc` are optional. When provided,
+    adapters pass them to the language model for additional context.
+
+        >>> class QA(dspy.Signature):  # doctest: +SKIP
+        ...     question: str = dspy.InputField(desc="a factual question")
+        ...     answer: str = dspy.OutputField(desc="a short answer")
+
+    Args:
+        desc (str): Optional plain-language description of the field.
+            Adapters include this when describing the field to the
+            language model.
+        **kwargs: Any additional `pydantic.Field` keyword argument.
+
+    Returns:
+        (pydantic.fields.FieldInfo): A field marked as a DSPy input.
+
+    Examples:
+        >>> import dspy
+        >>> class Summarize(dspy.Signature):
+        ...     text: str = dspy.InputField(desc="text to summarize")
+        ...     summary: str = dspy.OutputField(desc="a one-sentence summary")
+        >>> summarizer = dspy.Predict(Summarize)
+        >>> summarizer.lm = dspy.LM("provider/model-name")  # doctest: +SKIP
+        >>> summarizer(text="DSPy is a framework for...")  # doctest: +SKIP
+        Prediction(...)
+
+        You can also append an input field to an existing signature
+        programmatically:
+
+        >>> WithContext = Summarize.append(
+        ...     "context", dspy.InputField(desc="background info"), type_=str
+        ... )
+        >>> list(WithContext.input_fields.keys())
+        ['text', 'context']
+
+        See [`dspy.LM`][dspy.LM] for supported providers.
+    """
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
-def OutputField(**kwargs): # noqa: N802
+def OutputField(**kwargs):  # noqa: N802
+    """Declare an output field on a `dspy.Signature`.
+
+    Both the type hint and `desc` are optional. When provided,
+    adapters pass them to the language model for additional context.
+    Using type hint is recommended for output fields so the language
+    model knows what type to produce, defaults to str. Adapters also
+    use the type hint to determine how to parse the model's outputs
+    into Python objects.
+
+        >>> class QA(dspy.Signature):  # doctest: +SKIP
+        ...     question: str = dspy.InputField(desc="a factual question")
+        ...     answer: str = dspy.OutputField(desc="a short answer")
+
+    Args:
+        desc (str): Optional plain-language description of the field.
+            Adapters include this when describing the field to the
+            language model.
+        **kwargs: Any additional `pydantic.Field` keyword argument.
+            Constraints like `gt`, `ge`, `lt`, `le`, `min_length`,
+            `max_length`, and `multiple_of` are both described to the
+            language model in the prompt and validated against its
+            response. If the model's output violates a constraint,
+            pydantic raises a `ValidationError`.
+
+    Returns:
+        (pydantic.fields.FieldInfo): A field marked as a DSPy output.
+
+    Examples:
+        >>> import dspy
+        >>> class Review(dspy.Signature):
+        ...     text: str = dspy.InputField(desc="product review text")
+        ...     summary: str = dspy.OutputField(desc="a one-sentence summary")
+        ...     rating: float = dspy.OutputField(desc="rating", ge=0, le=5)
+        >>> reviewer = dspy.Predict(Review)
+        >>> reviewer.lm = dspy.LM("provider/model-name")  # doctest: +SKIP
+        >>> reviewer(text="This product is great!")  # doctest: +SKIP
+        Prediction(...)
+
+        You can also append an output field to an existing signature
+        programmatically:
+
+        >>> WithConfidence = Review.append(
+        ...     "confidence", dspy.OutputField(desc="confidence score"), type_=float
+        ... )
+        >>> list(WithConfidence.output_fields.keys())
+        ['summary', 'rating', 'confidence']
+
+        See [`dspy.LM`][dspy.LM] for supported providers.
+    """
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
@@ -93,7 +216,7 @@ def new_to_old_field(field):
 
 
 class OldField:
-    """A more ergonomic datatype that infers prefix and desc if omitted."""
+    """Legacy field type. Use `InputField` or `OutputField` instead."""
 
     def __init__(self, *, prefix=None, desc=None, input, format=None):
         self.prefix = prefix  # This can be None initially and set later
@@ -101,7 +224,6 @@ class OldField:
         self.format = format
 
     def finalize(self, key, inferred_prefix):
-        """Set the prefix if it's not provided explicitly."""
         if self.prefix is None:
             self.prefix = inferred_prefix + ":"
 
@@ -116,10 +238,14 @@ class OldField:
 
 
 class OldInputField(OldField):
+    """Legacy input field. Use `InputField` instead."""
+
     def __init__(self, *, prefix=None, desc=None, format=None):
         super().__init__(prefix=prefix, desc=desc, input=True, format=format)
 
 
 class OldOutputField(OldField):
+    """Legacy output field. Use `OutputField` instead."""
+
     def __init__(self, *, prefix=None, desc=None, format=None):
         super().__init__(prefix=prefix, desc=desc, input=False, format=format)
