@@ -11,6 +11,7 @@ from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
+from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +140,17 @@ class Adapter:
                     if field_name not in value:
                         # We need to set the field not present in the processed signature to None for consistency.
                         value[field_name] = None
-            else:
+            elif tool_calls and tool_call_output_field_name:
                 value = {}
                 for field_name in original_signature.output_fields.keys():
                     value[field_name] = None
+            else:
+                raise AdapterParseError(
+                    adapter_name=type(self).__name__,
+                    signature=original_signature,
+                    lm_response=str(output),
+                    message="The LM returned an empty or null response.",
+                )
 
             if tool_calls and tool_call_output_field_name:
                 tool_calls = [

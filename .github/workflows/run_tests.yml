@@ -7,10 +7,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   fix:
     name: Check Ruff Fix
@@ -37,43 +33,17 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev -p .venv --extra dev
       - name: Ruff Check
-        id: ruff_check
-        continue-on-error: true
-        run: ruff check --fix-only --exit-non-zero-on-fix
-      - name: Create or update Ruff auto-fix PR
-        if: steps.ruff_check.outcome == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "fix: ruff auto-fix for #${{ github.event.pull_request.number }}"
-          branch: ci/ruff-autofix/pr-${{ github.event.pull_request.number }}
-          base: ${{ github.event.pull_request.head.ref }}
-          title: "fix: ruff auto-fix for #${{ github.event.pull_request.number }}"
-          body: |
-            Auto-generated Ruff fixes for #${{ github.event.pull_request.number }}.
-
-            Source PR: #${{ github.event.pull_request.number }}
-            Source SHA: `${{ github.event.pull_request.head.sha }}`
-
-            This PR targets `${{ github.event.pull_request.head.ref }}` and is kept as a rolling branch.
-            It will be auto-closed when the source PR is merged.
-          delete-branch: true
-      - name: Fail when Ruff fixes are needed
-        if: steps.ruff_check.outcome == 'failure'
         run: |
-          echo ""
-          echo "❌ Ruff found issues that can be fixed automatically."
-          echo ""
-          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-            echo "💡 A rolling Ruff auto-fix PR to this PR branch has been created or updated."
-          else
-            echo "💡 Auto-fix PR creation was skipped (fork or non-PR event)."
-          fi
-          echo ""
-          echo "To fix locally, run:"
-          echo "    pre-commit run --all-files"
-          echo "Then commit and push the changes."
-          exit 1
+          ruff check --fix-only --diff --exit-non-zero-on-fix || (
+            echo ""
+            echo "❌ Ruff found issues that can be fixed automatically."
+            echo "💡 To fix them locally, run:"
+            echo ""
+            echo "    pre-commit run --all-files"
+            echo ""
+            echo "Then commit and push the changes."
+            exit 1
+          )
 
   test:
     name: Run Tests

@@ -28,10 +28,9 @@ class ChainOfThought(Module):
         """
         super().__init__()
         signature = ensure_signature(signature)
-        prefix = "Reasoning: Let's think step by step in order to"
         desc = "${reasoning}"
         rationale_field_type = rationale_field.annotation if rationale_field else rationale_field_type
-        rationale_field = rationale_field if rationale_field else dspy.OutputField(prefix=prefix, desc=desc)
+        rationale_field = rationale_field if rationale_field else dspy.OutputField(desc=desc)
         extended_signature = signature.prepend(name="reasoning", field=rationale_field, type_=rationale_field_type)
         self.predict = dspy.Predict(extended_signature, **config)
 
