@@ -56,15 +56,11 @@ class Avatar(dspy.Module):
     def _get_field(self, field_info: FieldInfo):
         if field_info.json_schema_extra["__dspy_field_type"] == "input":
             return dspy.InputField(
-                prefix=field_info.json_schema_extra["prefix"],
                 desc=field_info.json_schema_extra["desc"],
-                format=field_info.json_schema_extra["format"] if "format" in field_info.json_schema_extra else None,
             )
         elif field_info.json_schema_extra["__dspy_field_type"] == "output":
             return dspy.OutputField(
-                prefix=field_info.json_schema_extra["prefix"],
                 desc=field_info.json_schema_extra["desc"],
-                format=field_info.json_schema_extra["format"] if "format" in field_info.json_schema_extra else None,
             )
         else:
             raise ValueError(f"Unknown field type: {field_info.json_schema_extra['__dspy_field_type']}")

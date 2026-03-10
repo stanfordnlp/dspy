@@ -16,7 +16,6 @@ from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
 from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
-from dspy.utils.dummies import DummyLM
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -122,9 +121,8 @@ def test_disabled_cache_skips_cache_key(monkeypatch):
 
             monkeypatch.setattr(litellm, "completion", fake_completion)
 
-            dummy_lm = DummyLM([{"answer": "ignored"}])
-            # TODO(isaacbmiller): Change from dummy_lm.forward to just dummy_lm.__call__ #8864
-            dummy_lm.forward(messages=[{"role": "user", "content": "Hello"}])
+            lm = dspy.LM("dummy", model_type="chat")
+            lm(messages=[{"role": "user", "content": "Hello"}])
 
             cache_key_spy.assert_not_called()
             cache_get_spy.assert_called_once()
@@ -190,12 +188,29 @@ def test_zero_temperature_rollout_warns_once(monkeypatch):
 
     monkeypatch.setattr(litellm, "completion", fake_completion)
 
-    lm = dspy.LM(model="openai/dspy-test-model", model_type="chat")
+    lm = dspy.LM(model="openai/dspy-test-model", model_type="chat", temperature=0)
     with pytest.warns(UserWarning, match="rollout_id has no effect"):
         lm("Query", rollout_id=1)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
         lm("Query", rollout_id=2)
+        assert len(record) == 0
+
+
+def test_rollout_id_with_default_temperature_does_not_warn(monkeypatch):
+    def fake_completion(*, cache, num_retries, retry_strategy, **request):
+        return ModelResponse(
+            choices=[Choices(message=Message(role="assistant", content="Hi!"))],
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            model="openai/gpt-5-nano",
+        )
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        lm = dspy.LM(model="openai/gpt-5-nano", model_type="chat", rollout_id=1)
+        lm("Query")
         assert len(record) == 0
 
 

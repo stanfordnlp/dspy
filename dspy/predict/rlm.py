@@ -11,7 +11,6 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -62,16 +61,41 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
-# Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
-_CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*)\n```\s*$", re.DOTALL)
+_PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 
 def _strip_code_fences(code: str) -> str:
+    """Extract Python code from markdown fences, or return as-is if no fences."""
     code = code.strip()
-    match = _CODE_FENCE_PATTERN.match(code)
-    if match:
-        return match.group(1)
-    return code
+    if "```" not in code:
+        return code
+
+    # Strip outer decorative fence pairs (e.g. ```\n```python\n...\n```\n```)
+    lines = code.splitlines()
+    while len(lines) >= 2 and lines[0].strip() == "```" and lines[-1].strip() == "```":
+        lines.pop(0)
+        lines.pop()
+    code = "\n".join(lines).strip()
+    if "```" not in code:
+        return code
+
+    # Find the first opening fence (skip any text before it)
+    fence_start = code.find("```")
+    lang_line, separator, remainder = code[fence_start + 3:].partition("\n")
+    if not separator:
+        return code
+
+    # Accept python-labeled fences or bare ``` fences; reject explicit non-Python tags
+    lang = (lang_line.strip().split(maxsplit=1)[0] if lang_line.strip() else "").lower()
+    if lang not in _PYTHON_FENCE_LANGS:
+        raise SyntaxError(f"Expected Python code but got ```{lang} fence. Write Python code, not {lang}.")
+
+    # Find closing fence
+    block_end = remainder.find("```")
+    if block_end == -1:
+        return remainder.strip()
+
+    return remainder[:block_end].strip()
 
 
 @experimental
@@ -450,7 +474,8 @@ class RLM(Module):
 
     def _process_execution_result(
         self,
-        pred: Any,
+        pred: Prediction,
+        code: str,
         result: Any,
         history: REPLHistory,
         output_field_names: list[str],
@@ -461,6 +486,7 @@ class RLM(Module):
 
         Args:
             pred: The prediction containing reasoning and code attributes
+            code: Code to record in history (already stripped when possible)
             result: Result from interpreter.execute() - FinalOutput, list, str, or error string
             history: Current REPL history
             output_field_names: List of expected output field names
@@ -468,8 +494,6 @@ class RLM(Module):
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
         """
-        # Strip markdown fences from code for history (format() will re-add them)
-        code = _strip_code_fences(pred.code)
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
@@ -502,6 +526,18 @@ class RLM(Module):
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
         return history.append(reasoning=pred.reasoning, code=code, output=output)
 
+    def _execute_code(
+        self,
+        repl: CodeInterpreter,
+        code: str,
+        input_args: dict[str, Any],
+    ) -> Any:
+        """Execute code in the interpreter, returning the result or an error string."""
+        try:
+            return repl.execute(code, variables=dict(input_args))
+        except (CodeInterpreterError, SyntaxError) as e:
+            return f"[Error] {e}"
+
     def _execute_iteration(
         self,
         repl: CodeInterpreter,
@@ -526,11 +562,12 @@ class RLM(Module):
 
         try:
             code = _strip_code_fences(action.code)
-            result = repl.execute(code, variables=dict(input_args))
-        except (CodeInterpreterError, SyntaxError) as e:
+        except SyntaxError as e:
+            code = action.code
             result = f"[Error] {e}"
-
-        return self._process_execution_result(action, result, history, output_field_names)
+            return self._process_execution_result(action, code, result, history, output_field_names)
+        result = self._execute_code(repl, code, input_args)
+        return self._process_execution_result(action, code, result, history, output_field_names)
 
     # =========================================================================
     # Public Interface
@@ -613,11 +650,12 @@ class RLM(Module):
 
         try:
             code = _strip_code_fences(pred.code)
-            result = repl.execute(code, variables=dict(input_args))
-        except (CodeInterpreterError, SyntaxError) as e:
+        except SyntaxError as e:
+            code = pred.code
             result = f"[Error] {e}"
-
-        return self._process_execution_result(pred, result, history, output_field_names)
+            return self._process_execution_result(pred, code, result, history, output_field_names)
+        result = self._execute_code(repl, code, input_args)
+        return self._process_execution_result(pred, code, result, history, output_field_names)
 
     async def aforward(self, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.

@@ -248,3 +248,26 @@ h2.doc-heading {
     text-decoration: underline;
 }
 
+/* Copy-page button – matches the native "Edit this page" action style */
+.copy-md-btn {
+    cursor: pointer;
+}
+
+.copy-md-btn svg {
+    fill: currentColor;
+    vertical-align: text-bottom;
+}
+
+.copy-md-btn--loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.copy-md-btn--success {
+    color: #4caf50 !important;
+}
+
+.copy-md-btn--error {
+    color: #f44336 !important;
+}
+

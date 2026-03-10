@@ -266,32 +266,29 @@ plugins:
           It provides a systematic approach to building AI applications through composable modules, 
           optimization techniques, and evaluation frameworks.
         sections:
-          Getting Started:
+          Get Started:
             - index.md: DSPy overview and quick start guide
+          Learn DSPy - Learning DSPy:
+            - learn/index.md: Three stages of building AI systems - programming, evaluation, and optimization
+          Learn DSPy - DSPy Programming:
+            - learn/programming/**.md
+          Learn DSPy - DSPy Evaluation:
+            - learn/evaluation/**.md
+          Learn DSPy - DSPy Optimization:
+            - learn/optimization/**.md
+          # Since we don't have a learn/**.md, future sections within learn/ should be added here
+          # to ensure they show up in the llms.txt navigation
+          Tutorials - Docs:
+            - tutorials/**.md
+          Tutorials - Notebooks:
+            - tutorials/**.ipynb
+          Community:
+            - community/**.md
+          FAQ:
+            - faqs.md: Common questions on DSPy usage, comparisons, optimization, and debugging
             - cheatsheet.md: DSPy cheatsheet for quick reference
-          Core Concepts:
-            - learn/programming/overview.md: Programming paradigm and philosophy
-            - learn/programming/signatures.md: Signatures - declarative input/output specifications
-            - learn/programming/modules.md: Modules - composable AI components
-            - learn/programming/language_models.md: Language model interfaces and configuration
-          Essential Tutorials:
-            - tutorials/rag/index.ipynb: Retrieval-Augmented Generation (RAG) tutorial
-            - tutorials/classification/index.md: Classification with DSPy
-            - tutorials/agents/index.ipynb: Building AI agents with DSPy
-          Optimization:
-            - learn/optimization/overview.md: Optimization techniques overview
-            - tutorials/optimize_ai_program/index.md: Guide to optimizing AI programs
-            - api/optimizers/BootstrapFewShot.md: Bootstrap few-shot optimizer
-          Key Modules API:
-            - api/modules/Predict.md: Basic prediction module
-            - api/modules/ChainOfThought.md: Chain of thought reasoning
-            - api/modules/ReAct.md: ReAct agent module
-          Core API Reference:
-            - api/signatures/Signature.md: Signature system documentation
-            - api/primitives/Example.md: Example primitive for training data
-          Production:
-            - tutorials/deployment/index.md: Production deployment guide
-            - tutorials/observability/index.md: Debugging and observability
+          API Reference:
+            - api/**.md
 
 extra:
     social:
@@ -303,6 +300,7 @@ extra:
 extra_javascript:
     - "js/runllm-widget.js"
     - "js/tutorial-nav.js"
+    - "js/copy-as-markdown.js"
 
 markdown_extensions:
     - toc:

@@ -227,16 +227,24 @@ class Settings:
             )
 
     @classmethod
-    def load(cls, path: str) -> dict[str, Any]:
+    def load(cls, path: str, allow_pickle: bool = False) -> dict[str, Any]:
         """
         Load the settings from a file using cloudpickle.
 
         Args:
             path: The file path to load the settings from.
+            allow_pickle: Whether to allow loading with pickle. Loading untrusted .pkl files
+                can run arbitrary code. Set to True only if you trust the source of the file.
 
         Returns:
             A dict that stores the loaded settings.
         """
+        if not allow_pickle:
+            raise ValueError(
+                "Loading .pkl files can run arbitrary code, which may be dangerous. "
+                "Set `allow_pickle=True` if you trust the source of the file."
+            )
+
         with open(path, "rb") as f:
             configs = cloudpickle.load(f)
 
