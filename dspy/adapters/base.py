@@ -9,6 +9,7 @@ from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.experimental import Citations
+from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
@@ -466,6 +467,12 @@ class Adapter:
                 return name
         return None
 
+    def _format_history_message_content(self, fields: dict[str, Any]) -> str:
+        if not fields:
+            return ""
+        synthetic_signature = Signature({key: InputField() for key in fields}, "")
+        return self.format_user_message_content(synthetic_signature, fields)
+
     def _get_tool_call_input_field_name(self, signature: type[Signature]) -> bool:
         for name, field in signature.input_fields.items():
             # Look for annotation `list[dspy.Tool]` or `dspy.Tool`
@@ -500,23 +507,36 @@ class Adapter:
         Returns:
             A list of multiturn messages.
         """
-        conversation_history = inputs[history_field_name].messages if history_field_name in inputs else None
+        history = inputs[history_field_name] if history_field_name in inputs else None
+        conversation_history = history.messages if history else None
 
         if conversation_history is None:
             return []
 
         messages = []
         for message in conversation_history:
+            if message.role == "assistant":
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": self.format_assistant_message_content(signature, message.fields),
+                    }
+                )
+                continue
+
+            if message.role == "user":
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": self.format_user_message_content(signature, message.fields),
+                    }
+                )
+                continue
+
             messages.append(
                 {
                     "role": "user",
-                    "content": self.format_user_message_content(signature, message),
-                }
-            )
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": self.format_assistant_message_content(signature, message),
+                    "content": self._format_history_message_content(message.fields),
                 }
             )
 

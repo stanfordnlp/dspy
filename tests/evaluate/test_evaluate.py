@@ -307,13 +307,16 @@ def test_evaluate_save_as_json_with_history():
     # Create history objects
     history1 = dspy.History(
         messages=[
-            {"question": "Previous Q1", "answer": "Previous A1"},
+            dspy.HistoryMessage(role="user", fields={"question": "Previous Q1"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Previous A1"}),
         ]
     )
     history2 = dspy.History(
         messages=[
-            {"question": "Previous Q2", "answer": "Previous A2"},
-            {"question": "Previous Q3", "answer": "Previous A3"},
+            dspy.HistoryMessage(role="user", fields={"question": "Previous Q2"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Previous A2"}),
+            dspy.HistoryMessage(role="user", fields={"question": "Previous Q3"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Previous A3"}),
         ]
     )
 
@@ -350,16 +353,19 @@ def test_evaluate_save_as_json_with_history():
         assert "history" in data[0]
         assert isinstance(data[0]["history"], dict)
         assert "messages" in data[0]["history"]
-        assert len(data[0]["history"]["messages"]) == 1
-        assert data[0]["history"]["messages"][0] == {"question": "Previous Q1", "answer": "Previous A1"}
+        assert len(data[0]["history"]["messages"]) == 2
+        assert data[0]["history"]["messages"][0] == {"role": "user", "fields": {"question": "Previous Q1"}}
+        assert data[0]["history"]["messages"][1] == {"role": "assistant", "fields": {"answer": "Previous A1"}}
 
         # Verify history was properly serialized in second record
         assert "history" in data[1]
         assert isinstance(data[1]["history"], dict)
         assert "messages" in data[1]["history"]
-        assert len(data[1]["history"]["messages"]) == 2
-        assert data[1]["history"]["messages"][0] == {"question": "Previous Q2", "answer": "Previous A2"}
-        assert data[1]["history"]["messages"][1] == {"question": "Previous Q3", "answer": "Previous A3"}
+        assert len(data[1]["history"]["messages"]) == 4
+        assert data[1]["history"]["messages"][0] == {"role": "user", "fields": {"question": "Previous Q2"}}
+        assert data[1]["history"]["messages"][1] == {"role": "assistant", "fields": {"answer": "Previous A2"}}
+        assert data[1]["history"]["messages"][2] == {"role": "user", "fields": {"question": "Previous Q3"}}
+        assert data[1]["history"]["messages"][3] == {"role": "assistant", "fields": {"answer": "Previous A3"}}
 
     finally:
         import os
@@ -381,7 +387,8 @@ def test_evaluate_save_as_csv_with_history():
     # Create history object
     history = dspy.History(
         messages=[
-            {"question": "Previous Q", "answer": "Previous A"},
+            dspy.HistoryMessage(role="user", fields={"question": "Previous Q"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Previous A"}),
         ]
     )
 
@@ -422,4 +429,3 @@ def test_evaluate_save_as_csv_with_history():
         import os
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
-

@@ -373,8 +373,10 @@ def test_baml_adapter_with_conversation_history():
 
     history = dspy.History(
         messages=[
-            {"question": "What is the patient's age?", "answer": "45 years old"},
-            {"question": "Any allergies?", "answer": "Penicillin allergy"},
+            dspy.HistoryMessage(role="user", fields={"question": "What is the patient's age?"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "45 years old"}),
+            dspy.HistoryMessage(role="user", fields={"question": "Any allergies?"}),
+            dspy.HistoryMessage(role="assistant", fields={"answer": "Penicillin allergy"}),
         ]
     )
 
