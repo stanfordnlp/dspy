@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Iterator
 import pydantic
 from pydantic import Field
 
-from dspy.adapters.utils import serialize_for_json
+from dspy.adapters.utils import _get_json_schema, serialize_for_json
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
@@ -30,6 +30,7 @@ class REPLVariable(pydantic.BaseModel):
     type_name: str
     desc: str = ""
     constraints: str = ""
+    json_schema: str = ""
     total_length: int
     preview: str
 
@@ -73,11 +74,19 @@ class REPLVariable(pydantic.BaseModel):
                 desc = raw_desc
             constraints = field_info.json_schema_extra.get("constraints", "")
 
+        # Generate JSON schema for pydantic models
+        json_schema_str = ""
+        if isinstance(value, pydantic.BaseModel):
+            json_schema_str = json.dumps(_get_json_schema(type(value)), indent=2)
+        elif isinstance(value, list) and value and isinstance(value[0], pydantic.BaseModel):
+            json_schema_str = json.dumps(_get_json_schema(type(value[0])), indent=2)
+
         return cls(
             name=name,
             type_name=type(value).__name__,
             desc=desc,
             constraints=constraints,
+            json_schema=json_schema_str,
             total_length=len(value_str),
             preview=preview,
         )
@@ -90,6 +99,8 @@ class REPLVariable(pydantic.BaseModel):
             lines.append(f"Description: {self.desc}")
         if self.constraints:
             lines.append(f"Constraints: {self.constraints}")
+        if self.json_schema:
+            lines.append(f"Schema:\n```json\n{self.json_schema}\n```")
         lines.append(f"Total length: {self.total_length:,} characters")
         lines.append(f"Preview:\n```\n{self.preview}\n```")
         return "\n".join(lines)
