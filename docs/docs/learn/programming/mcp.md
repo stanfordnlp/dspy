@@ -22,7 +22,7 @@ MCP enables you to:
 - **Share tools across stacks** - Use the same tools across different frameworks.
 - **Simplify integration** - Convert MCP tools to DSPy tools with one line.
 
-DSPy does not handle MCP server connections directly. You can use client interfaces of the `mcp` library to establish the connection and pass `mcp.ClientSession` to `dspy.Tool.from_mcp_tool` in order to convert mcp tools into DSPy tools.
+DSPy provides `stdio_mcp_tools` and `http_mcp_tools` async context managers that handle the full MCP session lifecycle — connecting, initializing, listing tools, and converting them to `dspy.Tool` objects — so you can focus on building your agent.
 
 ## Using MCP with DSPy
 
@@ -33,36 +33,24 @@ For remote MCP servers over HTTP, use the streamable HTTP transport:
 ```python
 import asyncio
 import dspy
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from dspy.utils.mcp import http_mcp_tools
 
 async def main():
     # Connect to HTTP MCP server
-    async with streamablehttp_client("http://localhost:8000/mcp") as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the session
-            await session.initialize()
+    async with http_mcp_tools("http://localhost:8000/mcp") as tools:
+        # Create and use ReAct agent
+        class TaskSignature(dspy.Signature):
+            task: str = dspy.InputField()
+            result: str = dspy.OutputField()
 
-            # List and convert tools
-            response = await session.list_tools()
-            dspy_tools = [
-                dspy.Tool.from_mcp_tool(session, tool)
-                for tool in response.tools
-            ]
+        react_agent = dspy.ReAct(
+            signature=TaskSignature,
+            tools=tools,
+            max_iters=5,
+        )
 
-            # Create and use ReAct agent
-            class TaskSignature(dspy.Signature):
-                task: str = dspy.InputField()
-                result: str = dspy.OutputField()
-
-            react_agent = dspy.ReAct(
-                signature=TaskSignature,
-                tools=dspy_tools,
-                max_iters=5
-            )
-
-            result = await react_agent.acall(task="Check the weather in Tokyo")
-            print(result.result)
+        result = await react_agent.acall(task="Check the weather in Tokyo")
+        print(result.result)
 
 asyncio.run(main())
 ```
@@ -74,73 +62,59 @@ The most common way to use MCP is with a local server process communicating via 
 ```python
 import asyncio
 import dspy
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import StdioServerParameters
+from dspy.utils.mcp import stdio_mcp_tools
 
 async def main():
     # Configure the stdio server
     server_params = StdioServerParameters(
         command="python",                    # Command to run
         args=["path/to/your/mcp_server.py"], # Server script path
-        env=None,                            # Optional environment variables
     )
 
     # Connect to the server
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the session
-            await session.initialize()
+    async with stdio_mcp_tools(server_params) as tools:
+        # Create a ReAct agent with the tools
+        class QuestionAnswer(dspy.Signature):
+            """Answer questions using available tools."""
+            question: str = dspy.InputField()
+            answer: str = dspy.OutputField()
 
-            # List available tools
-            response = await session.list_tools()
+        react_agent = dspy.ReAct(
+            signature=QuestionAnswer,
+            tools=tools,
+            max_iters=5,
+        )
 
-            # Convert MCP tools to DSPy tools
-            dspy_tools = [
-                dspy.Tool.from_mcp_tool(session, tool)
-                for tool in response.tools
-            ]
-
-            # Create a ReAct agent with the tools
-            class QuestionAnswer(dspy.Signature):
-                """Answer questions using available tools."""
-                question: str = dspy.InputField()
-                answer: str = dspy.OutputField()
-
-            react_agent = dspy.ReAct(
-                signature=QuestionAnswer,
-                tools=dspy_tools,
-                max_iters=5
-            )
-
-            # Use the agent
-            result = await react_agent.acall(
-                question="What is 25 + 17?"
-            )
-            print(result.answer)
+        # Use the agent
+        result = await react_agent.acall(question="What is 25 + 17?")
+        print(result.answer)
 
 # Run the async function
 asyncio.run(main())
 ```
 
-## Tool Conversion
+## Filtering Tools
 
-DSPy automatically handles the conversion from MCP tools to DSPy tools:
+Both adapters support `include_tools` and `exclude_tools` to control which tools are loaded from the server. Unknown tool names raise a `ValueError`.
 
 ```python
-# MCP tool from session
-mcp_tool = response.tools[0]
+# Only load specific tools
+async with stdio_mcp_tools(params, include_tools=["search", "lookup"]) as tools:
+    ...
 
-# Convert to DSPy tool
-dspy_tool = dspy.Tool.from_mcp_tool(session, mcp_tool)
+# Load all tools except specific ones
+async with http_mcp_tools(url, exclude_tools=["dangerous_tool"]) as tools:
+    ...
+```
 
-# The DSPy tool preserves:
-# - Tool name and description
-# - Parameter schemas and types
-# - Argument descriptions
-# - Async execution support
+## Timeout
 
-# Use it like any DSPy tool
-result = await dspy_tool.acall(param1="value", param2=123)
+Pass `timeout` (in seconds) to set a read timeout on the MCP session:
+
+```python
+async with stdio_mcp_tools(params, timeout=30) as tools:
+    ...
 ```
 
 ## Learn More
@@ -149,5 +123,3 @@ result = await dspy_tool.acall(param1="value", param2=123)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [DSPy MCP Tutorial](https://dspy.ai/tutorials/mcp/)
 - [DSPy Tools Documentation](./tools.md)
-
-MCP integration in DSPy makes it easy to use standardized tools from any MCP server, enabling powerful agent capabilities with minimal setup.

@@ -21,7 +21,7 @@ def add(a: int, b: int) -> int:
 
 
 @mcp.tool()
-def hello(names: list[str]) -> str:
+def hello(names: list[str]) -> list[str]:
     """Greet people"""
     return [f"Hello, {name}!" for name in names]
 
@@ -45,4 +45,12 @@ def current_datetime() -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--transport", default="stdio", choices=["stdio", "sse", "streamable-http"])
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args()
+
+    mcp.settings.port = args.port
+    mcp.run(transport=args.transport)
