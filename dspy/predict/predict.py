@@ -1,3 +1,4 @@
+import inspect
 import logging
 import random
 from typing import Any, Literal, get_args, get_origin
@@ -80,6 +81,50 @@ def _bind_input_args(
     return {**bound_inputs, **inputs}
 
 
+def _predict_signature_to_call_signature(signature: type[Signature]) -> inspect.Signature:
+    input_field_names = set(signature.input_fields.keys())
+    params = []
+
+    for name, field in signature.input_fields.items():
+        default = inspect.Parameter.empty
+        if field.default is not PydanticUndefined:
+            default = field.default
+
+        json_schema_extra = field.json_schema_extra or {}
+        annotation = inspect.Parameter.empty
+        if field.annotation is not None and not json_schema_extra.get(IS_TYPE_UNDEFINED, False):
+            annotation = field.annotation
+
+        params.append(
+            inspect.Parameter(
+                name,
+                kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=default,
+                annotation=annotation,
+            )
+        )
+
+    reserved_params = [
+        ("config", dict[str, Any] | None),
+        ("signature_override", str | type[Signature] | None),
+        ("demos", list | None),
+        ("lm", BaseLM | None),
+    ]
+    for name, annotation in reserved_params:
+        if name in input_field_names:
+            continue
+        params.append(
+            inspect.Parameter(
+                name,
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+                annotation=annotation,
+            )
+        )
+
+    return inspect.Signature(parameters=params, return_annotation=Prediction)
+
+
 class Predict(Module, Parameter):
     """Basic DSPy module that maps inputs to outputs using a language model.
 
@@ -95,10 +140,19 @@ class Predict(Module, Parameter):
                 predict(q="What is 1 + 52?", config={"rollout_id": 2, "temperature": 1.0})
     """
 
+    @property
+    def signature(self) -> type[Signature]:
+        return self._signature
+
+    @signature.setter
+    def signature(self, value: str | type[Signature]) -> None:
+        self._signature = ensure_signature(value)
+        self.__signature__ = _predict_signature_to_call_signature(self._signature)
+
     def __init__(self, signature: str | type[Signature], callbacks: list[BaseCallback] | None = None, **config):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
-        self.signature = ensure_signature(signature)
+        self.signature = signature
         self.config = config
         self.reset()
 
