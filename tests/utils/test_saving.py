@@ -20,6 +20,27 @@ def test_save_predict(tmp_path):
     assert predict.signature == loaded_predict.signature
 
 
+def test_save_program_allows_directory_with_suffix(tmp_path):
+    """Saving with save_program=True should allow directory names that contain dots."""
+    predict = dspy.Predict("question->answer")
+    dotted_dir = tmp_path / "model.v1"
+    predict.save(dotted_dir, save_program=True)
+
+    assert (dotted_dir / "metadata.json").exists()
+    assert (dotted_dir / "program.pkl").exists()
+
+
+def test_save_program_rejects_json_and_pkl_files(tmp_path):
+    """Saving with save_program=True should reject .json and .pkl file paths."""
+    predict = dspy.Predict("question->answer")
+
+    with pytest.raises(ValueError, match="must be a directory"):
+        predict.save(tmp_path / "model.json", save_program=True)
+
+    with pytest.raises(ValueError, match="must be a directory"):
+        predict.save(tmp_path / "model.pkl", save_program=True)
+
+
 def test_save_custom_model(tmp_path):
     class CustomModel(dspy.Module):
         def __init__(self):
