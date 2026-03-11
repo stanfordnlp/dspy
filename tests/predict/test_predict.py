@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import enum
+import inspect
 import logging
 import time
 import types
@@ -832,6 +833,53 @@ def test_duplicate_positional_and_keyword_arguments():
 
     with pytest.raises(TypeError, match="Got multiple values"):
         program("What is the capital of France?", question="What is the capital of France?")
+
+
+def test_call_signature_exposes_typed_inputs_and_reserved_kwargs():
+    class TypedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        count: int = dspy.InputField(default=1)
+        answer: str = dspy.OutputField()
+
+    program = Predict(TypedSignature)
+    sig = inspect.signature(program)
+    params = sig.parameters
+
+    assert params["question"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert params["question"].annotation is str
+    assert params["count"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert params["count"].annotation is int
+    assert params["count"].default == 1
+    assert params["config"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["signature_override"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["demos"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["lm"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert sig.return_annotation is dspy.Prediction
+
+
+def test_call_signature_leaves_untyped_string_signature_inputs_unannotated():
+    program = Predict("question -> answer")
+    sig = inspect.signature(program)
+
+    assert sig.parameters["question"].annotation is inspect.Parameter.empty
+
+
+def test_call_signature_updates_when_predictor_signature_changes():
+    program = Predict("question -> answer")
+    program.signature = dspy.Signature("question, context -> answer")
+    sig = inspect.signature(program)
+
+    assert list(sig.parameters)[:2] == ["question", "context"]
+
+
+def test_untyped_string_signature_does_not_warn_on_type_mismatch(caplog):
+    log_test_helper()
+    predict_instance = Predict("question -> answer")
+
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(question=123)
+
+    assert "Type mismatch" not in caplog.text
 
 
 def test_signature_override_for_one_call():
