@@ -1,3 +1,10 @@
+"""Prompt a language model with named inputs and get named outputs back.
+
+`Predict` pairs a DSPy signature with a language model. Call the
+predictor with inputs that match the signature, then read the outputs
+from the returned `Prediction`.
+"""
+
 import inspect
 import logging
 import random
@@ -24,6 +31,7 @@ UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
 
 
 def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
+    """Strip sensitive keys from a serialized LM config unless explicitly allowed."""
     if allow_unsafe_lm_state:
         return lm_state
 
@@ -84,25 +92,34 @@ def _bind_input_args(
 def _predict_signature_to_call_signature(signature: type[Signature]) -> inspect.Signature:
     input_field_names = set(signature.input_fields.keys())
     params = []
+    keyword_only_inputs = False
+    seen_positional_default = False
 
     for name, field in signature.input_fields.items():
         default = inspect.Parameter.empty
         if field.default is not PydanticUndefined:
             default = field.default
 
+        if not keyword_only_inputs and default is inspect.Parameter.empty and seen_positional_default:
+            keyword_only_inputs = True
+
         json_schema_extra = field.json_schema_extra or {}
         annotation = inspect.Parameter.empty
         if field.annotation is not None and not json_schema_extra.get(IS_TYPE_UNDEFINED, False):
             annotation = field.annotation
 
+        kind = inspect.Parameter.KEYWORD_ONLY if keyword_only_inputs else inspect.Parameter.POSITIONAL_OR_KEYWORD
         params.append(
             inspect.Parameter(
                 name,
-                kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                kind=kind,
                 default=default,
                 annotation=annotation,
             )
         )
+
+        if not keyword_only_inputs and default is not inspect.Parameter.empty:
+            seen_positional_default = True
 
     reserved_params = [
         ("config", dict[str, Any] | None),
@@ -126,18 +143,66 @@ def _predict_signature_to_call_signature(signature: type[Signature]) -> inspect.
 
 
 class Predict(Module, Parameter):
-    """Basic DSPy module that maps inputs to outputs using a language model.
+    """Prompt a language model with named inputs and get named outputs back.
+
+    Supply a signature — either a string like `"question -> answer"`
+    or a `dspy.Signature` class — then call the predictor with inputs
+    that match the signature. Inputs can be passed by position or by
+    keyword. Returns a `Prediction` whose attributes are the output
+    fields declared in the signature.
 
     Args:
-        signature: The input/output signature describing the task.
-        callbacks: Optional list of callbacks for instrumentation.
-        **config: Default keyword arguments forwarded to the underlying
-            language model. These values can be overridden for a single
-            invocation by passing a ``config`` dictionary when calling the
-            module. For example::
+        signature: A string (for example, `"question -> answer"`) or a
+            `dspy.Signature` subclass that declares input and output
+            fields.
+        callbacks: Optional callback handlers for instrumentation.
+        **config: LM parameters such as `temperature` or `max_tokens`,
+            applied to every call. Override them for one call by
+            passing `config={...}`.
 
-                predict = dspy.Predict("q -> a", rollout_id=1, temperature=1.0)
-                predict(q="What is 1 + 52?", config={"rollout_id": 2, "temperature": 1.0})
+    Returns:
+        (Prediction): Attributes correspond to the signature's output
+            fields. If the signature declares an `answer` output field,
+            access it with `result.answer`.
+
+    Examples:
+        String signature:
+
+        >>> import dspy
+        >>> dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))  # doctest: +SKIP
+        >>> predict = dspy.Predict("question -> answer")
+        >>> result = predict("What is the capital of France?")  # doctest: +SKIP
+        >>> result.answer  # doctest: +SKIP
+        'Paris'
+
+        Class-based signature:
+
+        >>> class Translate(dspy.Signature):
+        ...     '''Translate the text to the target language.'''
+        ...     text: str = dspy.InputField()
+        ...     language: str = dspy.InputField()
+        ...     translation: str = dspy.OutputField()
+        >>> translate = dspy.Predict(Translate)
+        >>> translate(text="Hello", language="French")  # doctest: +SKIP
+        Prediction(translation='Bonjour')
+
+        Call-time overrides:
+
+        >>> concise = predict.signature.with_instructions("Answer in one short sentence.")  # doctest: +SKIP
+        >>> predict(
+        ...     question="Why is the sky blue?",
+        ...     signature_override=concise,
+        ...     config={"temperature": 0.2},
+        ... )  # doctest: +SKIP
+        Prediction(...)
+
+    See Also:
+        [`dspy.ChainOfThought`][dspy.ChainOfThought]: Add a reasoning
+            step before the output.
+        [`dspy.ReAct`][dspy.ReAct]: Interleave reasoning with tool use.
+        [`dspy.Signature`][dspy.Signature]: Declare input and output
+            fields.
+        [`dspy.LM`][dspy.LM]: Configure the language model.
     """
 
     @property
@@ -157,12 +222,25 @@ class Predict(Module, Parameter):
         self.reset()
 
     def reset(self):
+        """Clear demos, traces, train data, and the per-instance LM."""
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self, json_mode=True):
+        """Serialize this module's learnable state to a dict.
+
+        Captures demos, traces, train data, the signature state, and
+        the LM configuration. Restore later with `load_state`.
+
+        Args:
+            json_mode: If `True`, convert demo `Example` objects to
+                plain dicts for JSON serialization.
+
+        Returns:
+            (dict): A JSON-serializable snapshot of the module.
+        """
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -184,15 +262,19 @@ class Predict(Module, Parameter):
         return state
 
     def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
-        """Load the saved state of a `Predict` object.
+        """Restore state from a dict produced by `dump_state`.
+
+        By default, sensitive LM keys (`api_base`, `base_url`,
+        `model_list`) are stripped for safety. Pass
+        `allow_unsafe_lm_state=True` only when loading trusted files.
 
         Args:
-            state: The saved state of a `Predict` object.
-            allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
-                serialized LM state. Enable only when loading trusted files.
+            state: Dict previously returned by `dump_state`.
+            allow_unsafe_lm_state: If `True`, preserve sensitive LM
+                config keys. Only use with trusted data.
 
         Returns:
-            Self to allow method chaining.
+            (Predict): `self`, for method chaining.
         """
         excluded_keys = ["signature", "extended_signature", "lm"]
         for name, value in state.items():
@@ -218,6 +300,12 @@ class Predict(Module, Parameter):
         lm: BaseLM | None = None,
         **inputs,
     ):
+        """Call the predictor with inputs that match the signature.
+
+        Pass input fields either by position or by keyword. Use
+        `config`, `signature_override`, `demos`, or `lm` to override
+        this predictor for one call.
+        """
         inputs = _bind_input_args(self.signature, args, inputs)
 
         signature_override = _resolve_signature_override(
@@ -247,6 +335,7 @@ class Predict(Module, Parameter):
         lm: BaseLM | None = None,
         **inputs,
     ):
+        """Async version of `__call__`. Same arguments and return type."""
         inputs = _bind_input_args(self.signature, args, inputs)
 
         signature_override = _resolve_signature_override(
@@ -396,6 +485,18 @@ class Predict(Module, Parameter):
         lm: BaseLM | None = None,
         **inputs,
     ):
+        """Execute the LM call. Override this in subclasses.
+
+        Most callers should use `predict(...)` rather than calling
+        `forward` directly.
+
+        Reserved keyword arguments:
+            - `config`: Override LM settings such as `temperature`.
+            - `signature_override`: Use a different signature for one
+              call.
+            - `demos`: Replace the few-shot demos for one call.
+            - `lm`: Use a different language model for one call.
+        """
         lm, config, effective_signature, demos, inputs = self._forward_preprocess(
             config=config,
             signature_override=signature_override,
@@ -424,6 +525,7 @@ class Predict(Module, Parameter):
         lm: BaseLM | None = None,
         **inputs,
     ):
+        """Async version of `forward`. Same arguments and return type."""
         lm, config, effective_signature, demos, inputs = self._forward_preprocess(
             config=config,
             signature_override=signature_override,
@@ -455,13 +557,16 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, effective_signature, **inputs)
 
     def update_config(self, **kwargs):
+        """Merge keyword arguments into the default LM config."""
         self.config = {**self.config, **kwargs}
 
     def get_config(self):
+        """Return the current default LM config dict."""
         return self.config
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
+
 
 def _get_type_name(type_annotation) -> str:
     """Helper method to get the name for a type annotation."""
@@ -489,6 +594,7 @@ def _get_type_name(type_annotation) -> str:
 
     return getattr(origin, "__name__", str(origin))
 
+
 def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     """Return True if the value matches the expected type hint."""
     try:
@@ -502,10 +608,13 @@ def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     except TypeCheckError:
         return False
 
+
 def serialize_object(obj):
-    """
-    Recursively serialize a given object into a JSON-compatible format.
-    Supports Pydantic models, lists, dicts, and primitive types.
+    """Recursively convert an object to a JSON-serializable form.
+
+    Pydantic models are dumped with `model_dump(mode="json")`.
+    Lists, tuples, and dicts are traversed recursively. Primitives pass
+    through unchanged.
     """
     if isinstance(obj, BaseModel):
         # Use model_dump with mode="json" to ensure all fields (including HttpUrl, datetime, etc.)
