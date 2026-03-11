@@ -198,7 +198,7 @@ class Embeddings:
         Returns:
             Embeddings instance loaded from disk
 
-        Example:
+        Examples:
             ```python
             # Save embeddings
             embeddings = Embeddings(corpus, embedder)

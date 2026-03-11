@@ -113,7 +113,7 @@ class RLM(Module):
     Create separate RLM instances for concurrent use, or use the default
     PythonInterpreter which creates a fresh instance per forward() call.
 
-    Example:
+    Examples:
         ```python
         # Basic usage
         rlm = dspy.RLM("context, query -> output", max_iterations=10)

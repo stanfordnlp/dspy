@@ -82,7 +82,7 @@ class PythonInterpreter:
     Prerequisites:
         Deno must be installed: https://docs.deno.com/runtime/getting_started/installation/
 
-    Example:
+    Examples:
         ```python
         # Basic execution
         with PythonInterpreter() as interp:

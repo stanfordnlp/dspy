@@ -55,7 +55,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         callbacks: List of registered callback handlers.
         history: List of LM call history for this module.
 
-    Example:
+    Examples:
         >>> import dspy
         >>> class MyProgram(dspy.Module):
         ...     def __init__(self):
@@ -139,7 +139,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 where name is the attribute path and predictor is the
                 Predict instance.
 
-        Example:
+        Examples:
             >>> import dspy
             >>> class MyProgram(dspy.Module):
             ...     def __init__(self):
@@ -163,7 +163,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Returns:
             list[Predict]: A list of all Predict instances in this module.
 
-        Example:
+        Examples:
             >>> import dspy
             >>> class MyProgram(dspy.Module):
             ...     def __init__(self):
@@ -185,7 +185,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Args:
             lm: The language model instance to use for all predictors.
 
-        Example:
+        Examples:
             >>> import dspy
             >>> lm = dspy.LM("openai/gpt-4o-mini")
             >>> program = dspy.Predict("question -> answer")
@@ -236,7 +236,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Returns:
             Module: Returns self for method chaining.
 
-        Example:
+        Examples:
             >>> import dspy
             >>> class MyProgram(dspy.Module):
             ...     def __init__(self):

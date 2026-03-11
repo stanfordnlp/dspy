@@ -20,7 +20,7 @@ class Document(Type):
         media_type: MIME type of the document content (defaults to "text/plain")
         context: Optional context information about the document
 
-    Example:
+    Examples:
         ```python
         import dspy
         from dspy.signatures import Signature

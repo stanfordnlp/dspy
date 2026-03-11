@@ -15,7 +15,7 @@ class File(Type):
     The file_data field should be a data URI with the format:
         data:<mime_type>;base64,<base64_encoded_data>
 
-    Example:
+    Examples:
         ```python
         import dspy
 
