@@ -40,6 +40,21 @@ def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
     return sanitized_lm_state
 
 
+def _resolve_signature_override(
+    signature_override: str | type[Signature] | None,
+    inputs: dict[str, Any],
+    input_field_names: set[str],
+) -> str | type[Signature] | None:
+    legacy_signature = None
+    if "signature" in inputs and "signature" not in input_field_names:
+        legacy_signature = inputs.pop("signature")
+
+    if signature_override is not None and legacy_signature is not None:
+        raise TypeError("Pass either `signature_override=` or legacy `signature=`, not both.")
+
+    return signature_override if signature_override is not None else legacy_signature
+
+
 class Predict(Module, Parameter):
     """Basic DSPy module that maps inputs to outputs using a language model.
 
@@ -123,27 +138,89 @@ class Predict(Module, Parameter):
             f"`predict({input_fields[0]}=input_value, ...)`."
         )
 
-    def __call__(self, *args, **kwargs):
+    def __call__(
+        self,
+        *args,
+        config: dict | None = None,
+        signature_override: str | type[Signature] | None = None,
+        demos: list | None = None,
+        lm: BaseLM | None = None,
+        **inputs,
+    ):
         if args:
             raise ValueError(self._get_positional_args_error_message())
 
-        return super().__call__(**kwargs)
+        signature_override = _resolve_signature_override(
+            signature_override=signature_override,
+            inputs=inputs,
+            input_field_names=set(self.signature.input_fields),
+        )
 
-    async def acall(self, *args, **kwargs):
+        call_kwargs = dict(inputs)
+        if config is not None:
+            call_kwargs["config"] = config
+        if signature_override is not None:
+            call_kwargs["signature_override"] = signature_override
+        if demos is not None:
+            call_kwargs["demos"] = demos
+        if lm is not None:
+            call_kwargs["lm"] = lm
+
+        return super().__call__(**call_kwargs)
+
+    async def acall(
+        self,
+        *args,
+        config: dict | None = None,
+        signature_override: str | type[Signature] | None = None,
+        demos: list | None = None,
+        lm: BaseLM | None = None,
+        **inputs,
+    ):
         if args:
             raise ValueError(self._get_positional_args_error_message())
 
-        return await super().acall(**kwargs)
+        signature_override = _resolve_signature_override(
+            signature_override=signature_override,
+            inputs=inputs,
+            input_field_names=set(self.signature.input_fields),
+        )
 
-    def _forward_preprocess(self, **kwargs):
-        # Extract the three privileged keyword arguments.
-        assert "new_signature" not in kwargs, "new_signature is no longer a valid keyword argument."
-        signature = ensure_signature(kwargs.pop("signature", self.signature))
-        demos = kwargs.pop("demos", self.demos)
-        config = {**self.config, **kwargs.pop("config", {})}
+        call_kwargs = dict(inputs)
+        if config is not None:
+            call_kwargs["config"] = config
+        if signature_override is not None:
+            call_kwargs["signature_override"] = signature_override
+        if demos is not None:
+            call_kwargs["demos"] = demos
+        if lm is not None:
+            call_kwargs["lm"] = lm
+
+        return await super().acall(**call_kwargs)
+
+    def _forward_preprocess(
+        self,
+        *,
+        config: dict | None = None,
+        signature_override: str | type[Signature] | None = None,
+        demos: list | None = None,
+        lm: BaseLM | None = None,
+        **inputs,
+    ):
+        # Extract the privileged keyword arguments.
+        assert "new_signature" not in inputs, "new_signature is no longer a valid keyword argument."
+        signature_override = _resolve_signature_override(
+            signature_override=signature_override,
+            inputs=inputs,
+            input_field_names=set(self.signature.input_fields),
+        )
+        effective_signature = ensure_signature(self.signature if signature_override is None else signature_override)
+        demos = self.demos if demos is None else demos
+        config = {**self.config, **({} if config is None else config)}
 
         # Get the right LM to use.
-        lm = kwargs.pop("lm", self.lm) or settings.lm
+        lm = self.lm if lm is None else lm
+        lm = lm or settings.lm
 
         if lm is None:
             raise ValueError(
@@ -168,40 +245,41 @@ class Predict(Module, Parameter):
         if (temperature is None or temperature <= 0.15) and num_generations > 1:
             config["temperature"] = 0.7
 
-        if "prediction" in kwargs:
+        if "prediction" in inputs:
             if (
-                isinstance(kwargs["prediction"], dict)
-                and kwargs["prediction"].get("type") == "content"
-                and "content" in kwargs["prediction"]
+                isinstance(inputs["prediction"], dict)
+                and inputs["prediction"].get("type") == "content"
+                and "content" in inputs["prediction"]
             ):
                 # If the `prediction` is the standard predicted outputs format
                 # (https://platform.openai.com/docs/guides/predicted-outputs), we remove it from input kwargs and add it
                 # to the lm kwargs.
-                config["prediction"] = kwargs.pop("prediction")
+                config["prediction"] = inputs.pop("prediction")
 
         # Populate default values for missing input fields.
-        for k, v in signature.input_fields.items():
-            if k not in kwargs and v.default is not PydanticUndefined:
-                kwargs[k] = v.default
+        for k, v in effective_signature.input_fields.items():
+            if k not in inputs and v.default is not PydanticUndefined:
+                inputs[k] = v.default
 
         # Check and warn for extra fields not in signature
-        extra_fields = [k for k in kwargs if k not in signature.input_fields]
+        extra_fields = [k for k in inputs if k not in effective_signature.input_fields]
         if extra_fields:
             logger.warning(
                 "Input contains fields not in signature. These fields will be ignored: %s. "
                 "Expected fields: %s.",
                 extra_fields,
-                list(signature.input_fields.keys()),
+                list(effective_signature.input_fields.keys()),
             )
 
         # Validate input field types match signature
         if settings.warn_on_type_mismatch:
-            for field_name, field_info in signature.input_fields.items():
-                if field_name in kwargs:
-                    value = kwargs[field_name]
+            for field_name, field_info in effective_signature.input_fields.items():
+                if field_name in inputs:
+                    value = inputs[field_name]
                     expected_type: type = field_info.annotation
+                    json_schema_extra = field_info.json_schema_extra or {}
 
-                    if value is None or field_info.json_schema_extra.get(IS_TYPE_UNDEFINED, False):
+                    if value is None or json_schema_extra.get(IS_TYPE_UNDEFINED, False):
                         continue
 
                     if not _is_value_compatible_with_type(value, expected_type):
@@ -213,15 +291,15 @@ class Predict(Module, Parameter):
                             value,
                         )
 
-        if not all(k in kwargs for k in signature.input_fields):
-            present = [k for k in signature.input_fields if k in kwargs]
-            missing = [k for k in signature.input_fields if k not in kwargs]
+        if not all(k in inputs for k in effective_signature.input_fields):
+            present = [k for k in effective_signature.input_fields if k in inputs]
+            missing = [k for k in effective_signature.input_fields if k not in inputs]
             logger.warning(
                 "Not all input fields were provided to module. Present: %s. Missing: %s.",
                 present,
                 missing,
             )
-        return lm, config, signature, demos, kwargs
+        return lm, config, effective_signature, demos, inputs
 
     def _forward_postprocess(self, completions, signature, **kwargs):
         pred = Prediction.from_completions(completions, signature=signature)
@@ -240,32 +318,72 @@ class Predict(Module, Parameter):
 
         return should_stream
 
-    def forward(self, **kwargs):
-        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
+    def forward(
+        self,
+        *,
+        config: dict | None = None,
+        signature_override: str | type[Signature] | None = None,
+        demos: list | None = None,
+        lm: BaseLM | None = None,
+        **inputs,
+    ):
+        lm, config, effective_signature, demos, inputs = self._forward_preprocess(
+            config=config,
+            signature_override=signature_override,
+            demos=demos,
+            lm=lm,
+            **inputs,
+        )
 
         adapter = settings.adapter or ChatAdapter()
 
         if self._should_stream():
             with settings.context(caller_predict=self):
-                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+                completions = adapter(lm, lm_kwargs=config, signature=effective_signature, demos=demos, inputs=inputs)
         else:
             with settings.context(send_stream=None):
-                completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+                completions = adapter(lm, lm_kwargs=config, signature=effective_signature, demos=demos, inputs=inputs)
 
-        return self._forward_postprocess(completions, signature, **kwargs)
+        return self._forward_postprocess(completions, effective_signature, **inputs)
 
-    async def aforward(self, **kwargs):
-        lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
+    async def aforward(
+        self,
+        *,
+        config: dict | None = None,
+        signature_override: str | type[Signature] | None = None,
+        demos: list | None = None,
+        lm: BaseLM | None = None,
+        **inputs,
+    ):
+        lm, config, effective_signature, demos, inputs = self._forward_preprocess(
+            config=config,
+            signature_override=signature_override,
+            demos=demos,
+            lm=lm,
+            **inputs,
+        )
 
         adapter = settings.adapter or ChatAdapter()
         if self._should_stream():
             with settings.context(caller_predict=self):
-                completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+                completions = await adapter.acall(
+                    lm,
+                    lm_kwargs=config,
+                    signature=effective_signature,
+                    demos=demos,
+                    inputs=inputs,
+                )
         else:
             with settings.context(send_stream=None):
-                completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
+                completions = await adapter.acall(
+                    lm,
+                    lm_kwargs=config,
+                    signature=effective_signature,
+                    demos=demos,
+                    inputs=inputs,
+                )
 
-        return self._forward_postprocess(completions, signature, **kwargs)
+        return self._forward_postprocess(completions, effective_signature, **inputs)
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}
