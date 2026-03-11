@@ -804,12 +804,34 @@ async def test_lm_usage_with_async():
 
 def test_positional_arguments():
     program = Predict("question -> answer")
-    with pytest.raises(ValueError) as e:
-        program("What is the capital of France?")
-    assert str(e.value) == (
-        "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments that match "
-        "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
-    )
+    dspy.configure(lm=DummyLM([{"answer": "Paris"}]))
+
+    result = program("What is the capital of France?")
+
+    assert result.answer == "Paris"
+
+
+def test_mixed_positional_and_keyword_arguments():
+    program = Predict("question, context -> answer")
+    dspy.configure(lm=DummyLM([{"answer": "Paris"}]))
+
+    result = program("What is the capital of France?", context="Use the provided context only.")
+
+    assert result.answer == "Paris"
+
+
+def test_too_many_positional_arguments():
+    program = Predict("question -> answer")
+
+    with pytest.raises(TypeError, match="Too many positional arguments"):
+        program("What is the capital of France?", "extra")
+
+
+def test_duplicate_positional_and_keyword_arguments():
+    program = Predict("question -> answer")
+
+    with pytest.raises(TypeError, match="Got multiple values"):
+        program("What is the capital of France?", question="What is the capital of France?")
 
 
 def test_signature_override_for_one_call():
