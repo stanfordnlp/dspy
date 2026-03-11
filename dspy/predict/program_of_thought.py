@@ -67,35 +67,25 @@ class ProgramOfThought(Module):
         fields_for_mode = {
             "generate": {
                 "generated_code": dspy.OutputField(
-                    prefix="Code:",
                     desc="python code that answers the question",
-                    format=str,
                 ),
             },
             "regenerate": {
                 "previous_code": dspy.InputField(
-                    prefix="Previous Code:",
                     desc="previously-generated python code that errored",
-                    format=str,
                 ),
                 "error": dspy.InputField(
-                    prefix="Error:",
                     desc="error message from previously-generated python code",
                 ),
                 "generated_code": dspy.OutputField(
-                    prefix="Code:",
                     desc="python code that answers the question",
-                    format=str,
                 ),
             },
             "answer": {
                 "final_generated_code": dspy.InputField(
-                    prefix="Code:",
                     desc="python code that answers the question",
-                    format=str,
                 ),
                 "code_output": dspy.InputField(
-                    prefix="Code Output:",
                     desc="output of previously-generated python code",
                 ),
             }
