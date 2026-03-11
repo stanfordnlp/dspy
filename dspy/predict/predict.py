@@ -55,6 +55,31 @@ def _resolve_signature_override(
     return signature_override if signature_override is not None else legacy_signature
 
 
+def _bind_input_args(
+    signature: type[Signature],
+    args: tuple[Any, ...],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    input_field_names = list(signature.input_fields.keys())
+
+    if len(args) > len(input_field_names):
+        raise TypeError(
+            "Too many positional arguments when calling `dspy.Predict`. "
+            f"Expected at most {len(input_field_names)} positional input field(s) matching this signature: "
+            f"'{', '.join(input_field_names)}'."
+        )
+
+    bound_inputs = {name: value for name, value in zip(input_field_names, args, strict=False)}
+    duplicate_fields = sorted(set(bound_inputs).intersection(inputs))
+    if duplicate_fields:
+        raise TypeError(
+            "Got multiple values for input field(s) when calling `dspy.Predict`: "
+            f"'{', '.join(duplicate_fields)}'. Pass each input at most once, either positionally or by keyword."
+        )
+
+    return {**bound_inputs, **inputs}
+
+
 class Predict(Module, Parameter):
     """Basic DSPy module that maps inputs to outputs using a language model.
 
@@ -130,14 +155,6 @@ class Predict(Module, Parameter):
 
         return self
 
-    def _get_positional_args_error_message(self):
-        input_fields = list(self.signature.input_fields.keys())
-        return (
-            "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments "
-            f"that match your signature input fields: '{', '.join(input_fields)}'. For example: "
-            f"`predict({input_fields[0]}=input_value, ...)`."
-        )
-
     def __call__(
         self,
         *args,
@@ -147,8 +164,7 @@ class Predict(Module, Parameter):
         lm: BaseLM | None = None,
         **inputs,
     ):
-        if args:
-            raise ValueError(self._get_positional_args_error_message())
+        inputs = _bind_input_args(self.signature, args, inputs)
 
         signature_override = _resolve_signature_override(
             signature_override=signature_override,
@@ -177,8 +193,7 @@ class Predict(Module, Parameter):
         lm: BaseLM | None = None,
         **inputs,
     ):
-        if args:
-            raise ValueError(self._get_positional_args_error_message())
+        inputs = _bind_input_args(self.signature, args, inputs)
 
         signature_override = _resolve_signature_override(
             signature_override=signature_override,
