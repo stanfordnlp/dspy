@@ -278,7 +278,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
             A new Signature class whose fields match `cls.fields`
             and whose instructions equal `instructions`.
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -332,7 +332,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         Returns:
             A new `Signature` class with the field inserted first.
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -359,7 +359,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         Returns:
             A new Signature class with the field appended.
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -385,7 +385,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         Returns:
             A new Signature class with the field removed (or unchanged if the field was absent).
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -427,7 +427,7 @@ class Signature(BaseModel, metaclass=SignatureMeta):
         Raises:
             ValueError: If `index` falls outside the valid range for the chosen section.
 
-        Example:
+        Examples:
             ```python
             import dspy
 

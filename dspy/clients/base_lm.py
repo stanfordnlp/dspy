@@ -18,7 +18,7 @@ class BaseLM:
     `forward` method and make sure the return format is identical to the
     [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
 
-    Example:
+    Examples:
 
     ```python
     from openai import OpenAI

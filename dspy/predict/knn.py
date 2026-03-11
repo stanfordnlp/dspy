@@ -14,7 +14,7 @@ class KNN:
             trainset: List of training examples to search through
             vectorizer: The `Embedder` to use for vectorization
 
-        Example:
+        Examples:
             ```python
             import dspy
             from sentence_transformers import SentenceTransformer

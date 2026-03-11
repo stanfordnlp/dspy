@@ -27,7 +27,7 @@ class TwoStepAdapter(Adapter):
     This class is particularly useful when interacting with reasoning models as the main LM since reasoning models
     are known to struggle with structured outputs.
 
-    Example:
+    Examples:
     ```
     import dspy
     lm = dspy.LM(model="openai/o3-mini", max_tokens=16000, temperature = 1.0)
