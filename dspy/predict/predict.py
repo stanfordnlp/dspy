@@ -1,8 +1,10 @@
 import logging
 import random
+from typing import Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
+from typeguard import TypeCheckError, check_type
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
@@ -13,6 +15,7 @@ from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.callback import BaseCallback
+from dspy.utils.constants import IS_TYPE_UNDEFINED
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +184,35 @@ class Predict(Module, Parameter):
             if k not in kwargs and v.default is not PydanticUndefined:
                 kwargs[k] = v.default
 
+        # Check and warn for extra fields not in signature
+        extra_fields = [k for k in kwargs if k not in signature.input_fields]
+        if extra_fields:
+            logger.warning(
+                "Input contains fields not in signature. These fields will be ignored: %s. "
+                "Expected fields: %s.",
+                extra_fields,
+                list(signature.input_fields.keys()),
+            )
+
+        # Validate input field types match signature
+        if settings.warn_on_type_mismatch:
+            for field_name, field_info in signature.input_fields.items():
+                if field_name in kwargs:
+                    value = kwargs[field_name]
+                    expected_type: type = field_info.annotation
+
+                    if value is None or field_info.json_schema_extra.get(IS_TYPE_UNDEFINED, False):
+                        continue
+
+                    if not _is_value_compatible_with_type(value, expected_type):
+                        logger.warning(
+                            "Type mismatch for field '%s': expected %s based on given Signature, "
+                            "but the provided value is incompatible: %s.",
+                            field_name,
+                            _get_type_name(expected_type),
+                            value,
+                        )
+
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
             missing = [k for k in signature.input_fields if k not in kwargs]
@@ -244,6 +276,44 @@ class Predict(Module, Parameter):
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
 
+def _get_type_name(type_annotation) -> str:
+    """Helper method to get the name for a type annotation."""
+
+    origin = get_origin(type_annotation)
+    args = get_args(type_annotation)
+
+    if origin is None:
+        # Primitives like str, int, etc.
+        if hasattr(type_annotation, "__name__"):
+            return type_annotation.__name__
+        return str(type_annotation)
+
+    # Handle Literal types
+    if origin is Literal:
+        literal_values = ", ".join(repr(arg) for arg in args)
+        return f"Literal[{literal_values}]"
+
+    # Types like list[str], dict[str, int], generics, etc.
+    if args:
+        # Handle Ellipsis in tuples (e.g., tuple[int, ...])
+        args_str = ", ".join("..." if arg is ... else _get_type_name(arg) for arg in args)
+        origin_name = getattr(origin, "__name__", str(origin))
+        return f"{origin_name}[{args_str}]"
+
+    return getattr(origin, "__name__", str(origin))
+
+def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
+    """Return True if the value matches the expected type hint."""
+    try:
+        # Special handle list[str] because we allow setting input type to str, however, invoking with a list thereof.
+        if expected is str and isinstance(value, list):
+            if all(isinstance(item, str) for item in value):
+                return True
+
+        check_type(value, expected)
+        return True
+    except TypeCheckError:
+        return False
 
 def serialize_object(obj):
     """
