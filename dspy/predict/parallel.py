@@ -19,10 +19,9 @@ class Parallel:
         straggler_limit: int = 3,
     ):
         """
-        A utility class for parallel, multi-threaded execution of (module, example) pairs. 
-         
-        Supports various example formats (e.g., `Example`, dict, tuple, list), robust error handling,  
-        optional progress tracking, and can optionally return failed examples and exceptions.  
+        A utility class for parallel, multi-threaded execution of (module, example) pairs.
+        Supports various example formats (e.g., `Example`, dict, tuple, list), robust error handling,
+        optional progress tracking, and can optionally return failed examples and exceptions.
 
         Args:
             num_threads (Optional[int]): The number of threads to use. Defaults to `settings.num_threads`.
@@ -51,7 +50,7 @@ class Parallel:
             results = parallel(exec_pairs)
             for i, result in enumerate(results):
                 print(f"Result {i+1}: {result.answer}")
-                
+
             # Expected Output:
             # Result 1: Madrid
             # Result 2: 12
