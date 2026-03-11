@@ -811,6 +811,62 @@ def test_positional_arguments():
         "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
     )
 
+
+def test_signature_override_for_one_call():
+    class SpyLM(dspy.LM):
+        def __init__(self):
+            super().__init__("dummy")
+            self.calls = []
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.calls.append({"messages": messages, "kwargs": kwargs})
+            return ["[[ ## answer ## ]]\nParis"]
+
+    program = Predict(dspy.Signature("question -> answer", "Answer normally."))
+    override_signature = program.signature.with_instructions("Answer in exactly one word.")
+    lm = SpyLM()
+    dspy.configure(lm=lm)
+
+    program(question="What is the capital of France?", signature_override=override_signature)
+
+    system_message = lm.calls[0]["messages"][0]["content"]
+    assert "Answer in exactly one word." in system_message
+    assert "Answer normally." not in system_message
+
+
+def test_legacy_signature_kwarg_still_works_when_not_an_input_field():
+    class SpyLM(dspy.LM):
+        def __init__(self):
+            super().__init__("dummy")
+            self.calls = []
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.calls.append({"messages": messages, "kwargs": kwargs})
+            return ["[[ ## answer ## ]]\nParis"]
+
+    program = Predict(dspy.Signature("question -> answer", "Answer normally."))
+    override_signature = program.signature.with_instructions("Answer in exactly one word.")
+    lm = SpyLM()
+    dspy.configure(lm=lm)
+
+    program(question="What is the capital of France?", signature=override_signature)
+
+    system_message = lm.calls[0]["messages"][0]["content"]
+    assert "Answer in exactly one word." in system_message
+
+
+def test_signature_override_conflicts_with_legacy_signature_kwarg():
+    program = Predict("question -> answer")
+    override_signature = program.signature.with_instructions("Answer in exactly one word.")
+
+    with pytest.raises(TypeError, match="signature_override"):
+        program(
+            question="What is the capital of France?",
+            signature=override_signature,
+            signature_override=override_signature,
+        )
+
+
 def test_error_message_on_invalid_lm_setup():
     # No LM is loaded.
     with pytest.raises(ValueError, match="No LM is loaded"):
