@@ -14,9 +14,7 @@ import pytest
 from dspy.clients.sqlite_cache import (
     SQLiteCache,
     _deserialize,
-    _extract_json_data,
     _serialize,
-    _serialize_for_migration,
     has_legacy_diskcache,
     migrate_diskcache,
 )
@@ -113,6 +111,14 @@ def test_serialize_roundtrip_dataclass():
     assert result.x == 10 and result.y == "hello"
 
 
+def test_serialize_roundtrip_nested_dataclass():
+    d = NestedDataclass(label="outer", inner=SimpleDataclass(x=10, y="hello"))
+    result = _deserialize(_serialize(d))
+    assert isinstance(result, NestedDataclass)
+    assert isinstance(result.inner, SimpleDataclass)
+    assert result == d
+
+
 def test_serialize_non_serializable_raises():
     class Custom:
         pass
@@ -202,16 +208,11 @@ class TestSQLiteCacheBasic:
         cache["key"] = "second"
         assert cache["key"] == "second"
 
-    def test_eq_empty_dict(self, tmp_path):
+    def test_is_empty(self, tmp_path):
         cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
-        assert cache == {}
+        assert cache.is_empty()
         cache["key"] = "value"
-        assert cache != {}
-
-    def test_eq_non_dict_returns_not_implemented(self, tmp_path):
-        cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
-        assert cache.__eq__({"a": 1}) is NotImplemented
-        assert cache.__eq__("string") is NotImplemented
+        assert not cache.is_empty()
 
     def test_many_keys(self, tmp_path):
         cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
@@ -442,7 +443,16 @@ class TestCacheIntegration:
         request = {"model": "test", "prompt": "broken_entry"}
         key = cache.cache_key(request)
         # Inject a broken envelope that references a non-existent class
-        envelope = orjson.dumps({"_pydantic": "nonexistent.module.FakeClass", "_data": {"x": 1}})
+        envelope = orjson.dumps(
+            {
+                "_data": {
+                    "__dspy_cache_type__": "pydantic",
+                    "__dspy_cache_module__": "nonexistent.module",
+                    "__dspy_cache_qualname__": "FakeClass",
+                    "__dspy_cache_data__": {"x": 1},
+                }
+            }
+        )
         with cache.disk_cache._lock:
             conn = cache.disk_cache._get_conn()
             conn.execute(
@@ -868,13 +878,13 @@ class TestMigration:
             disk_size_limit_bytes=1024 * 1024,
             memory_max_entries=100,
         )
-        assert cache.disk_cache == {}
+        assert cache.disk_cache.is_empty()
 
 
-# ── _extract_json_data tests ─────────────────────────────────────────────────
+# ── Pydantic extra-field handling ────────────────────────────────────────────
 
 
-def test_extract_json_data_pydantic_extra_fields():
+def test_serialize_roundtrip_pydantic_extra_fields():
     from litellm.types.utils import ChatCompletionMessageToolCall
 
     tc = ChatCompletionMessageToolCall(
@@ -882,23 +892,8 @@ def test_extract_json_data_pydantic_extra_fields():
         id="call_123",
         type="function",
     )
-    result = _extract_json_data(tc)
-    assert result["id"] == "call_123"
-    assert result["type"] == "function"
-    assert result["function"]["name"] == "test"
-
-
-# ── _serialize_for_migration tests ───────────────────────────────────────────
-
-
-def test_serialize_for_migration_model_response():
-    from litellm import ModelResponse
-
-    r = ModelResponse(
-        id="test",
-        choices=[{"message": {"content": "hello"}, "index": 0, "finish_reason": "stop"}],
-    )
-    blob = _serialize_for_migration(r)
-    result = _deserialize(blob)
-    assert isinstance(result, ModelResponse)
-    assert result.choices[0].message.content == "hello"
+    result = _deserialize(_serialize(tc))
+    assert isinstance(result, ChatCompletionMessageToolCall)
+    assert result.id == "call_123"
+    assert result.type == "function"
+    assert result.function.name == "test"

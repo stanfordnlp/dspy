@@ -57,7 +57,7 @@ class Cache:
                 directory=disk_cache_dir,
                 size_limit=disk_size_limit_bytes,
             )
-            if has_legacy_diskcache(disk_cache_dir) and self.disk_cache == {}:
+            if has_legacy_diskcache(disk_cache_dir) and self.disk_cache.is_empty():
                 if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
                     logger.info("Migrating legacy diskcache in %s to SQLite + JSON...", disk_cache_dir)
                     migrated, errors = migrate_diskcache(disk_cache_dir, self.disk_cache)

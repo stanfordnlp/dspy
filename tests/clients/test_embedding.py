@@ -92,6 +92,38 @@ def test_callable_embedding(cache):
     np.testing.assert_allclose(result, expected_embeddings)
 
 
+def test_callable_numpy_embedding_persists_to_disk(cache):
+    inputs = ["hello", "world"]
+    expected_embeddings = np.array(
+        [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+        ],
+        dtype=np.float32,
+    )
+
+    class EmbeddingFn:
+        def __init__(self):
+            self.call_count = 0
+
+        def __call__(self, texts):
+            self.call_count += 1
+            return expected_embeddings
+
+    embedding_fn = EmbeddingFn()
+    embedding = Embedder(embedding_fn)
+
+    result = embedding(inputs)
+    assert embedding_fn.call_count == 1
+    np.testing.assert_allclose(result, expected_embeddings)
+
+    dspy.cache.reset_memory_cache()
+
+    result = embedding(inputs)
+    assert embedding_fn.call_count == 1
+    np.testing.assert_allclose(result, expected_embeddings)
+
+
 def test_invalid_model_type():
     # Test that invalid model type raises ValueError
     with pytest.raises(ValueError):

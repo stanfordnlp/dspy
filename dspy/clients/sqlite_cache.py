@@ -8,6 +8,7 @@ import threading
 import time
 from typing import Any
 
+import numpy as np
 import orjson
 import pydantic
 
@@ -18,56 +19,87 @@ _DC_MODE_RAW = 1
 _DC_MODE_BINARY = 2
 _DC_MODE_TEXT = 3
 _DC_MODE_PICKLE = 4
-
-
-
+_ENCODED_TYPE_KEY = "__dspy_cache_type__"
+_ENCODED_MODULE_KEY = "__dspy_cache_module__"
+_ENCODED_QUALNAME_KEY = "__dspy_cache_qualname__"
+_ENCODED_DATA_KEY = "__dspy_cache_data__"
+_ENCODED_DTYPE_KEY = "__dspy_cache_dtype__"
+_PYDANTIC_TYPE = "pydantic"
+_DATACLASS_TYPE = "dataclass"
+_NDARRAY_TYPE = "ndarray"
 
 def _serialize(value: Any) -> bytes:
+    return orjson.dumps({"_data": _encode_value(value)})
+
+
+def _encode_value(value: Any) -> Any:
     if isinstance(value, pydantic.BaseModel):
-        envelope = {
-            "_pydantic": f"{type(value).__module__}.{type(value).__qualname__}",
-            "_data": value.model_dump(mode="json"),
+        return {
+            _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
+            _ENCODED_MODULE_KEY: type(value).__module__,
+            _ENCODED_QUALNAME_KEY: type(value).__qualname__,
+            _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in _iter_pydantic_items(value).items()},
         }
-    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
-        envelope = {
-            "_dataclass": f"{type(value).__module__}.{type(value).__qualname__}",
-            "_data": dataclasses.asdict(value),
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {
+            _ENCODED_TYPE_KEY: _DATACLASS_TYPE,
+            _ENCODED_MODULE_KEY: type(value).__module__,
+            _ENCODED_QUALNAME_KEY: type(value).__qualname__,
+            _ENCODED_DATA_KEY: {
+                field.name: _encode_value(getattr(value, field.name))
+                for field in dataclasses.fields(value)
+            },
         }
-    else:
-        envelope = {"_data": value}
-    return orjson.dumps(envelope)
+    if isinstance(value, np.ndarray):
+        return {
+            _ENCODED_TYPE_KEY: _NDARRAY_TYPE,
+            _ENCODED_DTYPE_KEY: str(value.dtype),
+            _ENCODED_DATA_KEY: value.tolist(),
+        }
+    if isinstance(value, dict):
+        return {k: _encode_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_encode_value(item) for item in value]
+    return value
 
 
-def _resolve_class(qualname: str) -> type:
-    parts = qualname.rsplit(".", 1)
-    module_name, attr_path = parts[0], parts[1]
-    # Try importing progressively shorter module paths to handle nested classes
-    # e.g. "mymod.Outer.Inner" -> try "mymod.Outer" (fails), then "mymod" + getattr "Outer.Inner"
-    while True:
-        try:
-            module = importlib.import_module(module_name)
-            break
-        except ModuleNotFoundError:
-            dot = module_name.rfind(".")
-            if dot == -1:
-                raise
-            attr_path = module_name[dot + 1 :] + "." + attr_path
-            module_name = module_name[:dot]
+def _resolve_class(module_name: str, qualname: str) -> type:
+    module = importlib.import_module(module_name)
     obj = module
-    for attr in attr_path.split("."):
+    for attr in qualname.split("."):
         obj = getattr(obj, attr)
     return obj
 
 
 def _deserialize(blob: bytes) -> Any:
     envelope = orjson.loads(blob)
-    if "_pydantic" in envelope:
-        cls = _resolve_class(envelope["_pydantic"])
-        return cls(**envelope["_data"])
-    if "_dataclass" in envelope:
-        cls = _resolve_class(envelope["_dataclass"])
-        return cls(**envelope["_data"])
-    return envelope["_data"]
+    return _decode_value(envelope["_data"])
+
+
+def _decode_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        encoded_type = value.get(_ENCODED_TYPE_KEY)
+        if encoded_type == _PYDANTIC_TYPE:
+            cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
+            return cls(**_decode_value(value[_ENCODED_DATA_KEY]))
+        if encoded_type == _DATACLASS_TYPE:
+            cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
+            return cls(**_decode_value(value[_ENCODED_DATA_KEY]))
+        if encoded_type == _NDARRAY_TYPE:
+            return np.asarray(_decode_value(value[_ENCODED_DATA_KEY]), dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
+        return {k: _decode_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_decode_value(item) for item in value]
+    return value
+
+
+def _iter_pydantic_items(value: pydantic.BaseModel) -> dict[str, Any]:
+    data = {key: item for key, item in value.__dict__.items() if not key.startswith("_")}
+    extra = getattr(value, "__pydantic_extra__", None)
+    if extra:
+        for key, item in extra.items():
+            data.setdefault(key, item)
+    return data
 
 
 class SQLiteCache:
@@ -141,12 +173,10 @@ class SQLiteCache:
             conn.commit()
             self._maybe_evict(conn)
 
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, dict) and len(other) == 0:
-            with self._lock:
-                conn = self._get_conn()
-                return conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0] == 0
-        return NotImplemented
+    def is_empty(self) -> bool:
+        with self._lock:
+            conn = self._get_conn()
+            return conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0] == 0
 
     def _maybe_evict(self, conn: sqlite3.Connection) -> None:
         """Evict least-recently-accessed entries until total size is within the limit.
@@ -190,64 +220,6 @@ class SQLiteCache:
 
     def close(self) -> None:
         self._conn.close()
-
-
-def _extract_json_data(obj: Any) -> Any:
-    """Recursively extract JSON-safe data from an object.
-
-    Pydantic models unpickled from older versions may have broken serializers
-    (``model_dump`` raises ``TypeError: 'MockValSer' ...``).  This helper
-    walks the object tree via ``__dict__`` and ``__pydantic_extra__`` instead,
-    producing a plain dict / list / scalar structure that ``orjson`` can handle.
-    """
-    if isinstance(obj, pydantic.BaseModel):
-        data = {}
-        for k, v in obj.__dict__.items():
-            if not k.startswith("_"):
-                data[k] = _extract_json_data(v)
-        # Some pydantic models (e.g. litellm's OpenAIObject subclasses) store
-        # all data in __pydantic_extra__ rather than __dict__
-        extra = getattr(obj, "__pydantic_extra__", None)
-        if extra:
-            for k, v in extra.items():
-                if k not in data:
-                    data[k] = _extract_json_data(v)
-        return data
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return {
-            f.name: _extract_json_data(getattr(obj, f.name))
-            for f in dataclasses.fields(obj)
-        }
-    if isinstance(obj, dict):
-        return {k: _extract_json_data(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_extract_json_data(item) for item in obj]
-    return obj
-
-
-def _serialize_for_migration(value: Any) -> bytes:
-    """Serialize a value for migration from legacy pickle caches.
-
-    Unlike ``_serialize``, this does not call ``model_dump`` (which can fail on
-    pydantic objects that were unpickled across pydantic versions).  Instead it
-    recursively extracts data via ``__dict__`` and produces the same envelope
-    format that ``_deserialize`` expects.
-    """
-    if isinstance(value, pydantic.BaseModel):
-        envelope = {
-            "_pydantic": f"{type(value).__module__}.{type(value).__qualname__}",
-            "_data": _extract_json_data(value),
-        }
-    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
-        envelope = {
-            "_dataclass": f"{type(value).__module__}.{type(value).__qualname__}",
-            "_data": _extract_json_data(value),
-        }
-    else:
-        envelope = {"_data": _extract_json_data(value)}
-    return orjson.dumps(envelope)
-
-
 def has_legacy_diskcache(directory: str) -> bool:
     """Check if directory contains an old diskcache FanoutCache (16-shard) layout."""
     return os.path.isfile(os.path.join(directory, "000", "cache.db"))
@@ -309,7 +281,7 @@ def migrate_diskcache(directory: str, target: SQLiteCache) -> tuple[int, int]:
                     errors += 1
                     continue
 
-                blob = _serialize_for_migration(obj)
+                blob = _serialize(obj)
                 entries.append((key, blob, len(blob), access_time if access_time is not None else time.time()))
             except (
                 pickle.UnpicklingError,
