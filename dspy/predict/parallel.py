@@ -57,7 +57,7 @@ class Parallel:
             # Result 3: William Shakespeare
             ```
         """
-        
+
         super().__init__()
         self.num_threads = num_threads or settings.num_threads
         self.max_errors = settings.max_errors if max_errors is None else max_errors
