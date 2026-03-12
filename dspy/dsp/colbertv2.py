@@ -9,7 +9,26 @@ from dspy.dsp.utils import dotdict
 
 
 class ColBERTv2:
-    """Wrapper for the ColBERTv2 Retrieval."""
+    """Query a hosted ColBERTv2 retrieval server over HTTP.
+
+    This wrapper talks to a ColBERTv2 endpoint that returns top-k retrieval results
+    for a text query. Responses can be returned either as raw passage strings or as
+    ``dotdict`` objects that preserve the metadata returned by the server.
+
+    Args:
+        url: Base URL for the retrieval service.
+        port: Optional port appended to ``url``.
+        post_requests: Whether to use POST requests instead of GET requests.
+
+    Examples:
+        ```python
+        import dspy
+
+        retriever = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")
+        results = retriever("Who wrote Pride and Prejudice?", k=3)
+        print(results[0].long_text)
+        ```
+    """
 
     def __init__(
         self,
@@ -17,6 +36,13 @@ class ColBERTv2:
         port: str | int | None = None,
         post_requests: bool = False,
     ):
+        """Initialize a ColBERTv2 HTTP client.
+
+        Args:
+            url: Base URL for the retrieval server.
+            port: Optional port appended to ``url``.
+            post_requests: Whether retrieval requests should use POST instead of GET.
+        """
         self.post_requests = post_requests
         self.url = f"{url}:{port}" if port else url
 
@@ -26,6 +52,18 @@ class ColBERTv2:
         k: int = 10,
         simplify: bool = False,
     ) -> list[str] | list[dotdict]:
+        """Retrieve top-k passages for a query.
+
+        Args:
+            query: Query string sent to the retrieval server.
+            k: Maximum number of results to request.
+            simplify: Whether to return only passage text instead of structured
+                result objects.
+
+        Returns:
+            list[str] | list[dotdict]: Retrieved passages, either as strings or as
+                ``dotdict`` objects containing the server response fields.
+        """
         if self.post_requests:
             topk: list[dict[str, Any]] = colbertv2_post_request(self.url, query, k)
         else:
@@ -39,6 +77,27 @@ class ColBERTv2:
 
 @request_cache()
 def colbertv2_get_request_v2(url: str, query: str, k: int):
+    """Send a GET request to a hosted ColBERTv2 server.
+
+    The response is expected to contain a ``topk`` field whose items include a
+    ``text`` value. Each returned item is normalized to also expose that text under
+    ``long_text`` for compatibility with DSPy retrievers.
+
+    Args:
+        url: Retrieval endpoint URL.
+        query: Query string to search for.
+        k: Maximum number of results to return. Hosted ColBERTv2 currently supports
+            ``k <= 100``.
+
+    Returns:
+        list[dict[str, Any]]: Top-k retrieval results with ``long_text`` populated.
+
+    Raises:
+        AssertionError: If ``k`` is greater than 100.
+        requests.HTTPError: If the server responds with a non-success status.
+        ValueError: If the server reports an error or omits the expected ``topk``
+            field.
+    """
     assert k <= 100, "Only k <= 100 is supported for the hosted ColBERTv2 server at the moment."
 
     payload = {"query": query, "k": k}
@@ -59,6 +118,7 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
 
 @request_cache()
 def colbertv2_get_request_v2_wrapped(*args, **kwargs):
+    """Call :func:`colbertv2_get_request_v2` through the cached compatibility alias."""
     return colbertv2_get_request_v2(*args, **kwargs)
 
 
@@ -67,6 +127,21 @@ colbertv2_get_request = colbertv2_get_request_v2_wrapped
 
 @request_cache()
 def colbertv2_post_request_v2(url: str, query: str, k: int):
+    """Send a POST request to a hosted ColBERTv2 server.
+
+    Args:
+        url: Retrieval endpoint URL.
+        query: Query string to search for.
+        k: Maximum number of results to return.
+
+    Returns:
+        list[dict[str, Any]]: Top-k retrieval results returned by the server.
+
+    Raises:
+        requests.HTTPError: If the server responds with a non-success status.
+        ValueError: If the server reports an error or omits the expected ``topk``
+            field.
+    """
     headers = {"Content-Type": "application/json; charset=utf-8"}
     payload = {"query": query, "k": k}
     res = requests.post(url, json=payload, headers=headers, timeout=10)
@@ -84,6 +159,7 @@ def colbertv2_post_request_v2(url: str, query: str, k: int):
 
 @request_cache()
 def colbertv2_post_request_v2_wrapped(*args, **kwargs):
+    """Call :func:`colbertv2_post_request_v2` through the cached compatibility alias."""
     return colbertv2_post_request_v2(*args, **kwargs)
 
 
@@ -91,13 +167,20 @@ colbertv2_post_request = colbertv2_post_request_v2_wrapped
 
 
 class ColBERTv2RetrieverLocal:
+    """Build or load a local ColBERT index for passage retrieval.
+
+    This helper wraps the optional ``colbert-ai`` package to build a local index from
+    in-memory passages, load an existing index, and run retrieval queries against it.
+    """
+
     def __init__(self, passages: list[str], colbert_config=None, load_only: bool = False):
-        """Colbertv2 retriever module
+        """Initialize a local ColBERTv2 retriever.
 
         Args:
-            passages (list[str]): list of passages
-            colbert_config (ColBERTConfig, optional): colbert config for building and searching. Defaults to None.
-            load_only (bool, optional): whether to load the index or build and then load. Defaults to False.
+            passages: Corpus passages used to build or load the index.
+            colbert_config: ColBERT configuration object used for indexing and search.
+            load_only: Whether to skip index construction and only load an existing
+                index.
         """
         assert (
             colbert_config is not None
@@ -128,6 +211,7 @@ class ColBERTv2RetrieverLocal:
         self.searcher = self.get_index()
 
     def build_index(self):
+        """Build a local ColBERT index from ``self.passages``."""
         try:
             import colbert  # noqa: F401
         except ImportError:
@@ -144,6 +228,7 @@ class ColBERTv2RetrieverLocal:
             indexer.index(name=self.colbert_config.index_name, collection=self.passages, overwrite=True)
 
     def get_index(self):
+        """Load and return the configured local ColBERT search index."""
         try:
             import colbert  # noqa: F401
         except ImportError:
@@ -160,9 +245,26 @@ class ColBERTv2RetrieverLocal:
         return searcher
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Run retrieval by forwarding arguments to :meth:`forward`."""
         return self.forward(*args, **kwargs)
 
     def forward(self, query: str, k: int = 7, **kwargs):
+        """Retrieve passages from the local ColBERT index.
+
+        Args:
+            query: Query string to search for.
+            k: Maximum number of passages to return.
+            **kwargs: Optional retrieval kwargs. ``filtered_pids`` can be provided to
+                restrict results to a subset of passage ids.
+
+        Returns:
+            list[dotdict]: Retrieved passages with ``long_text``, ``score``, and
+                ``pid`` fields.
+
+        Raises:
+            AssertionError: If ``filtered_pids`` is provided but is not a list of
+                integers.
+        """
         import torch
 
         if kwargs.get("filtered_pids"):
@@ -187,7 +289,16 @@ class ColBERTv2RetrieverLocal:
 
 
 class ColBERTv2RerankerLocal:
+    """Score candidate passages for a query using a local ColBERT model."""
+
     def __init__(self, colbert_config=None, checkpoint: str = "bert-base-uncased"):
+        """Initialize a local ColBERT reranker.
+
+        Args:
+            colbert_config: ColBERT configuration object used to tokenize and score
+                passages.
+            checkpoint: Model checkpoint used to instantiate the ColBERT model.
+        """
         try:
             import colbert  # noqa: F401
         except ImportError:
@@ -195,20 +306,27 @@ class ColBERTv2RerankerLocal:
                 "Colbert not found. Please check your installation or install the module using pip install "
                 "colbert-ai[faiss-gpu,torch]."
             )
-        """_summary_
-
-        Args:
-            colbert_config (ColBERTConfig, optional): Colbert config. Defaults to None.
-            checkpoint_name (str, optional): checkpoint for embeddings. Defaults to 'bert-base-uncased'.
-        """
         self.colbert_config = colbert_config
         self.checkpoint = checkpoint
         self.colbert_config.checkpoint = checkpoint
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Run reranking by forwarding arguments to :meth:`forward`."""
         return self.forward(*args, **kwargs)
 
     def forward(self, query: str, passages: list[str] | None = None):
+        """Compute ColBERT relevance scores for candidate passages.
+
+        Args:
+            query: Query string used to score passages.
+            passages: Candidate passages to rerank.
+
+        Returns:
+            numpy.ndarray: One score per passage, in the same order as ``passages``.
+
+        Raises:
+            AssertionError: If ``passages`` is empty.
+        """
         assert len(passages) > 0, "Passages should not be empty"
 
         import numpy as np
