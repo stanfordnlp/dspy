@@ -5,7 +5,7 @@ import pickle
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import orjson
 import pydantic
@@ -42,6 +42,11 @@ class NestedPydanticModel(pydantic.BaseModel):
     count: int
 
 
+class AliasPydanticModel(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(populate_by_name=False)
+    actual_name: int = pydantic.Field(alias="wire_name")
+
+
 @dataclass
 class SimpleDataclass:
     x: int
@@ -52,6 +57,15 @@ class SimpleDataclass:
 class NestedDataclass:
     label: str
     inner: SimpleDataclass
+
+
+@dataclass
+class InitFalseDataclass:
+    x: int
+    y: int = field(init=False)
+
+    def __post_init__(self):
+        self.y = self.x + 1
 
 
 # ── Serialization ────────────────────────────────────────────────────────────
@@ -67,6 +81,7 @@ class NestedDataclass:
         False,
         None,
         [1, "two", 3.0, None, True],
+        (1, "two", 3.0, None, True),
         {"a": 1, "b": [2, 3], "c": {"nested": True}},
         {},
         [],
@@ -95,6 +110,13 @@ def test_serialize_roundtrip_nested_pydantic():
     assert result.inner.name == "inner"
 
 
+def test_serialize_roundtrip_pydantic_with_aliases():
+    m = AliasPydanticModel(wire_name=3)
+    result = _deserialize(_serialize(m))
+    assert isinstance(result, AliasPydanticModel)
+    assert result == m
+
+
 def test_serialize_roundtrip_nested_class():
     m = Outer(inner=Outer.Inner(value=42), label="test")
     result = _deserialize(_serialize(m))
@@ -116,6 +138,13 @@ def test_serialize_roundtrip_nested_dataclass():
     result = _deserialize(_serialize(d))
     assert isinstance(result, NestedDataclass)
     assert isinstance(result.inner, SimpleDataclass)
+    assert result == d
+
+
+def test_serialize_roundtrip_dataclass_with_init_false():
+    d = InitFalseDataclass(x=10)
+    result = _deserialize(_serialize(d))
+    assert isinstance(result, InitFalseDataclass)
     assert result == d
 
 

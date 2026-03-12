@@ -27,6 +27,7 @@ _ENCODED_DTYPE_KEY = "__dspy_cache_dtype__"
 _PYDANTIC_TYPE = "pydantic"
 _DATACLASS_TYPE = "dataclass"
 _NDARRAY_TYPE = "ndarray"
+_TUPLE_TYPE = "tuple"
 
 def _serialize(value: Any) -> bytes:
     return orjson.dumps({"_data": _encode_value(value)})
@@ -38,7 +39,7 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
             _ENCODED_MODULE_KEY: type(value).__module__,
             _ENCODED_QUALNAME_KEY: type(value).__qualname__,
-            _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in _iter_pydantic_items(value).items()},
+            _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in value.model_dump(mode="python", round_trip=True, by_alias=True).items()},
         }
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {
@@ -56,9 +57,14 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_DTYPE_KEY: str(value.dtype),
             _ENCODED_DATA_KEY: value.tolist(),
         }
+    if isinstance(value, tuple):
+        return {
+            _ENCODED_TYPE_KEY: _TUPLE_TYPE,
+            _ENCODED_DATA_KEY: [_encode_value(item) for item in value],
+        }
     if isinstance(value, dict):
         return {k: _encode_value(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         return [_encode_value(item) for item in value]
     return value
 
@@ -81,25 +87,28 @@ def _decode_value(value: Any) -> Any:
         encoded_type = value.get(_ENCODED_TYPE_KEY)
         if encoded_type == _PYDANTIC_TYPE:
             cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
-            return cls(**_decode_value(value[_ENCODED_DATA_KEY]))
+            return cls.model_validate(_decode_value(value[_ENCODED_DATA_KEY]))
         if encoded_type == _DATACLASS_TYPE:
             cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
-            return cls(**_decode_value(value[_ENCODED_DATA_KEY]))
+            decoded_data = _decode_value(value[_ENCODED_DATA_KEY])
+            init_kwargs = {
+                field.name: decoded_data[field.name]
+                for field in dataclasses.fields(cls)
+                if field.init and field.name in decoded_data
+            }
+            instance = cls(**init_kwargs)
+            for field in dataclasses.fields(cls):
+                if not field.init and field.name in decoded_data:
+                    object.__setattr__(instance, field.name, decoded_data[field.name])
+            return instance
         if encoded_type == _NDARRAY_TYPE:
             return np.asarray(_decode_value(value[_ENCODED_DATA_KEY]), dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
+        if encoded_type == _TUPLE_TYPE:
+            return tuple(_decode_value(value[_ENCODED_DATA_KEY]))
         return {k: _decode_value(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_decode_value(item) for item in value]
     return value
-
-
-def _iter_pydantic_items(value: pydantic.BaseModel) -> dict[str, Any]:
-    data = {key: item for key, item in value.__dict__.items() if not key.startswith("_")}
-    extra = getattr(value, "__pydantic_extra__", None)
-    if extra:
-        for key, item in extra.items():
-            data.setdefault(key, item)
-    return data
 
 
 class SQLiteCache:
