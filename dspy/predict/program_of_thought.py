@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from contextlib import contextmanager
 
 import dspy
 from dspy.primitives.code_interpreter import FinalOutput
@@ -28,11 +29,15 @@ class ProgramOfThought(Module):
     """
 
     def __init__(self, signature: str | type[Signature], max_iters: int = 3, interpreter: PythonInterpreter | None = None):
-        """
+        """Initialize a ProgramOfThought module.
+
         Args:
             signature: The signature of the module.
             max_iters: The maximum number of iterations to retry code generation and execution.
-            interpreter: PythonInterpreter instance to use. If None, a new one is instantiated.
+            interpreter: Optional PythonInterpreter instance to use.
+                If provided, it will be reused across calls (not thread-safe).
+                If None, a fresh interpreter is created for each forward() call,
+                which is safe to use with num_threads > 1.
         """
         super().__init__()
         self.signature = signature = ensure_signature(signature)
@@ -59,8 +64,41 @@ class ProgramOfThought(Module):
                 self._generate_instruction("answer"),
             ),
         )
-        # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or PythonInterpreter()
+        # Interpreter prototype. Execution should always go through
+        # `_interpreter_context`, which will create a fresh interpreter per
+        # forward() call when no custom interpreter is provided.
+        #
+        # `self.interpreter` is kept for backwards compatibility (e.g., tests
+        # that access this attribute directly) but should not be used for
+        # executing code.
+        self._interpreter = interpreter
+        if interpreter is None:
+            # Create a placeholder interpreter for attribute access and shut it
+            # down immediately so that no external process is kept alive.
+            self.interpreter = PythonInterpreter()
+            self.interpreter.shutdown()
+        else:
+            self.interpreter = interpreter
+
+    @contextmanager
+    def _interpreter_context(self) -> PythonInterpreter:
+        """Yield a PythonInterpreter instance for a single forward() call.
+
+        When no custom interpreter is provided at initialization time, this
+        will create a fresh interpreter per call and shut it down afterwards.
+        This makes ProgramOfThought safe to use with Evaluate(num_threads>1).
+
+        If a custom interpreter is provided, it is reused as-is and the caller
+        is responsible for ensuring thread-safety.
+        """
+        if self._interpreter is not None:
+            yield self._interpreter
+        else:
+            interpreter = PythonInterpreter()
+            try:
+                yield interpreter
+            finally:
+                interpreter.shutdown()
 
     def _generate_signature(self, mode):
         signature_dict = dict(self.input_fields)
@@ -137,15 +175,13 @@ class ProgramOfThought(Module):
             code_block += "\n" + last_line_match.group(1)
         return code_block, None
 
-    def _execute_code(self, code):
-        """
-        Execute the code using PythonInterpreter and return the output or error.
-        """
+    def _execute_code(self, code, interpreter: PythonInterpreter):
+        """Execute the code using PythonInterpreter and return the output or error."""
         if not code:
             return None, "Error: Empty code before execution."
 
         try:
-            result = self.interpreter.execute(code)
+            result = interpreter.execute(code)
             if isinstance(result, FinalOutput):
                 result = result.output
             # Since it's more complex structure now, just blindly use json to represents all.
@@ -156,25 +192,24 @@ class ProgramOfThought(Module):
 
     def forward(self, **kwargs):
         input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}
-        code_data = self.code_generate(**input_kwargs)
-        output = None
-        code, error = self._parse_code(code_data)
-        if not error:
-            output, error = self._execute_code(code)
-        hop = 1
-        # Retying code generation and execution until no error or reach max_iters
-        while error is not None:
-            logger.error(f"Error in code execution: {error}")
-            if hop == self.max_iters:
-                self.interpreter.shutdown()
-                raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
-            input_kwargs.update({"previous_code": code, "error": error})
-            code_data = self.code_regenerate(**input_kwargs)
+        with self._interpreter_context() as interpreter:
+            code_data = self.code_generate(**input_kwargs)
+            output = None
             code, error = self._parse_code(code_data)
             if not error:
-                output, error = self._execute_code(code)
-            hop += 1
-        input_kwargs.update({"final_generated_code": code, "code_output": output})
-        output_gen_result = self.generate_output(**input_kwargs)
-        self.interpreter.shutdown()
+                output, error = self._execute_code(code, interpreter)
+            hop = 1
+            # Retrying code generation and execution until no error or reach max_iters
+            while error is not None:
+                logger.error(f"Error in code execution: {error}")
+                if hop == self.max_iters:
+                    raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
+                input_kwargs.update({"previous_code": code, "error": error})
+                code_data = self.code_regenerate(**input_kwargs)
+                code, error = self._parse_code(code_data)
+                if not error:
+                    output, error = self._execute_code(code, interpreter)
+                hop += 1
+            input_kwargs.update({"final_generated_code": code, "code_output": output})
+            output_gen_result = self.generate_output(**input_kwargs)
         return output_gen_result
