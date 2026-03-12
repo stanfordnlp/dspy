@@ -137,7 +137,14 @@ class Cache:
         elif self.enable_disk_cache and key in self.disk_cache:
             try:
                 response = self.disk_cache[key]
-            except (ModuleNotFoundError, AttributeError, ImportError, TypeError, KeyError) as e:
+            except (
+                orjson.JSONDecodeError,  # corrupt or truncated cache blob
+                ImportError,  # referenced class module no longer importable
+                AttributeError,  # referenced class or nested attribute path no longer exists
+                pydantic.ValidationError,  # payload no longer matches the current pydantic schema
+                TypeError,  # constructor / encoded payload shape mismatch during reconstruction
+                KeyError,  # cache envelope is missing required metadata such as class or payload fields
+            ) as e:
                 logger.debug("Failed to deserialize disk cache entry %s: %s", key, e)
                 return None
             if self.enable_memory_cache:

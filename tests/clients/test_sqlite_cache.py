@@ -463,6 +463,64 @@ class TestCacheIntegration:
         cache.reset_memory_cache()
         assert cache.get(request) is None
 
+    def test_disk_corrupt_json_returns_none(self, tmp_path):
+        from dspy.clients.cache import Cache
+
+        cache = Cache(
+            enable_disk_cache=True,
+            enable_memory_cache=True,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=1024 * 1024,
+            memory_max_entries=100,
+        )
+        request = {"model": "test", "prompt": "corrupt_json"}
+        key = cache.cache_key(request)
+
+        with cache.disk_cache._lock:
+            conn = cache.disk_cache._get_conn()
+            conn.execute(
+                "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
+                (key, b"{not valid json", len(b"{not valid json"), time.time()),
+            )
+            conn.commit()
+
+        cache.reset_memory_cache()
+        assert cache.get(request) is None
+
+    def test_disk_pydantic_validation_error_returns_none(self, tmp_path):
+        from dspy.clients.cache import Cache
+
+        cache = Cache(
+            enable_disk_cache=True,
+            enable_memory_cache=True,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=1024 * 1024,
+            memory_max_entries=100,
+        )
+        request = {"model": "test", "prompt": "invalid_pydantic"}
+        key = cache.cache_key(request)
+        envelope = orjson.dumps(
+            {
+                "_data": {
+                    "__dspy_cache_type__": "pydantic",
+                    "__dspy_cache_module__": PydanticModel.__module__,
+                    "__dspy_cache_qualname__": PydanticModel.__qualname__,
+                    "__dspy_cache_data__": {"name": "missing_required_value"},
+                }
+            }
+        )
+
+        with cache.disk_cache._lock:
+            conn = cache.disk_cache._get_conn()
+            conn.execute(
+                "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
+                (key, envelope, len(envelope), time.time()),
+            )
+            conn.commit()
+
+        cache.reset_memory_cache()
+        assert cache.get(request) is None
+
 
 # ── Edge cases ───────────────────────────────────────────────────────────────
 
