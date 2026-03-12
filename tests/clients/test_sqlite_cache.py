@@ -370,6 +370,32 @@ class TestEdgeCases:
         with pytest.raises(sqlite3.ProgrammingError):
             cache["key"]
 
+    @pytest.mark.skipif(not hasattr(os, "fork"), reason="requires os.fork")
+    def test_get_conn_resets_lock_after_fork(self, tmp_path):
+        cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        cache["key"] = "value"
+        cache._lock.acquire()
+        read_fd, write_fd = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(read_fd)
+            try:
+                cache._get_conn()
+                acquired = cache._lock.acquire(timeout=0.2)
+                if acquired:
+                    cache._lock.release()
+                os.write(write_fd, b"1" if acquired else b"0")
+            finally:
+                os.close(write_fd)
+                os._exit(0)
+
+        os.close(write_fd)
+        os.waitpid(pid, 0)
+        result = os.read(read_fd, 1)
+        os.close(read_fd)
+        cache._lock.release()
+        assert result == b"1"
+
     def test_multiple_caches_same_directory(self, tmp_path):
         cache1 = SQLiteCache(directory=str(tmp_path), size_limit=None)
         cache2 = SQLiteCache(directory=str(tmp_path), size_limit=None)

@@ -1,4 +1,5 @@
 import os
+import threading
 from dataclasses import dataclass
 from unittest.mock import patch
 
@@ -300,6 +301,63 @@ def test_reset_memory_cache(cache):
     for req in requests:
         result = cache.get(req)
         assert result is not None
+
+
+def test_get_returns_value_when_memory_cache_is_reset_concurrently(tmp_path):
+    contains_started = threading.Event()
+    allow_contains_return = threading.Event()
+    result = {}
+
+    class PausingMemoryCache:
+        def __init__(self):
+            self._data = {}
+
+        def __contains__(self, key):
+            present = key in self._data
+            contains_started.set()
+            assert allow_contains_return.wait(timeout=2)
+            return present
+
+        def __getitem__(self, key):
+            return self._data[key]
+
+        def __setitem__(self, key, value):
+            self._data[key] = value
+
+        def clear(self):
+            self._data.clear()
+
+    cache = Cache(
+        enable_memory_cache=True,
+        enable_disk_cache=False,
+        disk_cache_dir=str(tmp_path),
+        disk_size_limit_bytes=0,
+        memory_max_entries=10,
+    )
+    cache.memory_cache = PausingMemoryCache()
+    request = {"prompt": "race", "model": "openai/gpt-5-nano"}
+    cache.put(request, "value")
+
+    def reader():
+        try:
+            result["value"] = cache.get(request)
+        except Exception as e:
+            result["error"] = f"{type(e).__name__}: {e}"
+
+    read_thread = threading.Thread(target=reader)
+    reset_thread = threading.Thread(target=cache.reset_memory_cache)
+
+    read_thread.start()
+    assert contains_started.wait(timeout=2)
+    reset_thread.start()
+    allow_contains_return.set()
+
+    read_thread.join(timeout=2)
+    reset_thread.join(timeout=2)
+
+    assert not read_thread.is_alive()
+    assert not reset_thread.is_alive()
+    assert result == {"value": "value"}
 
 
 def test_save_and_load_memory_cache(cache, tmp_path):

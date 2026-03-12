@@ -136,21 +136,30 @@ class SQLiteCache:
         conn.commit()
         return conn
 
-    def _get_conn(self) -> sqlite3.Connection:
-        """Return the SQLite connection, creating a new one after fork."""
+    def _reset_after_fork(self) -> None:
         pid = os.getpid()
-        if pid != self._pid:
-            self._pid = pid
-            self._conn = self._connect()
+        if pid == self._pid:
+            return
+        # Locks and SQLite connections are process-local. Recreate both in the child.
+        self._lock = threading.Lock()
+        new_conn = self._connect()
+        self._pid = pid
+        self._conn = new_conn
+
+    def _get_conn(self) -> sqlite3.Connection:
+        """Return the SQLite connection, recreating process-local state after fork."""
+        self._reset_after_fork()
         return self._conn
 
     def __contains__(self, key: str) -> bool:
+        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             row = conn.execute("SELECT 1 FROM cache WHERE key = ?", (key,)).fetchone()
         return row is not None
 
     def __getitem__(self, key: str) -> Any:
+        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             row = conn.execute("SELECT value FROM cache WHERE key = ?", (key,)).fetchone()
@@ -164,6 +173,7 @@ class SQLiteCache:
         blob = _serialize(value)
         size = len(blob)
         now = time.time()
+        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             conn.execute(
@@ -174,6 +184,7 @@ class SQLiteCache:
             self._maybe_evict(conn)
 
     def is_empty(self) -> bool:
+        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             return conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0] == 0
@@ -209,6 +220,7 @@ class SQLiteCache:
         """
         if not entries:
             return
+        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             conn.executemany(
@@ -219,6 +231,7 @@ class SQLiteCache:
             self._maybe_evict(conn)
 
     def close(self) -> None:
+        self._reset_after_fork()
         self._conn.close()
 def has_legacy_diskcache(directory: str) -> bool:
     """Check if directory contains an old diskcache FanoutCache (16-shard) layout."""

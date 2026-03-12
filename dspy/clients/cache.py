@@ -85,7 +85,11 @@ class Cache:
 
     def __contains__(self, key: str) -> bool:
         """Check if a key is in the cache."""
-        return key in self.memory_cache or key in self.disk_cache
+        if self.enable_memory_cache:
+            with self._lock:
+                if key in self.memory_cache:
+                    return True
+        return key in self.disk_cache
 
     def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> str:
         """
@@ -121,7 +125,6 @@ class Cache:
         return sha256(orjson.dumps(params, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
     def get(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
-
         if not self.enable_memory_cache and not self.enable_disk_cache:
             return None
 
@@ -131,10 +134,15 @@ class Cache:
             logger.debug(f"Failed to generate cache key for request: {request}")
             return None
 
-        if self.enable_memory_cache and key in self.memory_cache:
+        response = None
+        memory_hit = False
+        if self.enable_memory_cache:
             with self._lock:
-                response = self.memory_cache[key]
-        elif self.enable_disk_cache and key in self.disk_cache:
+                if key in self.memory_cache:
+                    response = self.memory_cache[key]
+                    memory_hit = True
+
+        if not memory_hit and self.enable_disk_cache and key in self.disk_cache:
             try:
                 response = self.disk_cache[key]
             except (
@@ -150,7 +158,7 @@ class Cache:
             if self.enable_memory_cache:
                 with self._lock:
                     self.memory_cache[key] = response
-        else:
+        elif not memory_hit:
             return None
 
         response = copy.deepcopy(response)
