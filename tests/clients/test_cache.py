@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 from unittest.mock import patch
 
+import orjson
 import pydantic
 import pytest
 from cachetools import LRUCache
@@ -14,6 +15,11 @@ from dspy.clients.sqlite_cache import SQLiteCache
 class DummyResponse:
     message: str
     usage: dict
+
+
+class CacheValidationModel(pydantic.BaseModel):
+    name: str
+    value: int
 
 
 @pytest.fixture
@@ -164,6 +170,112 @@ def test_cache_key_error_handling(cache):
 
     # Should not raise an exception
     cache.put(request, "value")
+
+
+def test_full_cache_put_get_cycle_with_model_response(cache):
+    from litellm import ModelResponse
+
+    response = ModelResponse(
+        id="test-123",
+        choices=[{"message": {"content": "cached response"}, "index": 0, "finish_reason": "stop"}],
+        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    )
+    request = {"model": "openai/gpt-5-nano", "prompt": "test"}
+    cache.put(request, response)
+    cache.reset_memory_cache()
+
+    result = cache.get(request)
+    assert isinstance(result, ModelResponse)
+    assert result.choices[0].message.content == "cached response"
+    assert result.usage == {}
+    assert result.cache_hit is True
+
+
+def test_disk_cache_write_failure_doesnt_crash(cache):
+    class NotSerializable:
+        pass
+
+    request = {"model": "test", "prompt": "test_unserializable_value"}
+    cache.put(request, NotSerializable())
+
+
+def test_cache_contains_checks_disk(cache):
+    request = {"prompt": "test"}
+    key = cache.cache_key(request)
+
+    assert key not in cache
+    cache.put(request, "value")
+    assert key in cache
+    cache.reset_memory_cache()
+    assert key in cache
+
+
+def test_disk_deserialization_error_returns_none(cache):
+    """If a disk cache entry can't be deserialized (e.g. class was removed),
+    Cache.get() should return None, not crash."""
+    request = {"model": "test", "prompt": "broken_entry"}
+    key = cache.cache_key(request)
+    envelope = orjson.dumps(
+        {
+            "_data": {
+                "__dspy_cache_type__": "pydantic",
+                "__dspy_cache_module__": "nonexistent.module",
+                "__dspy_cache_qualname__": "FakeClass",
+                "__dspy_cache_data__": {"x": 1},
+            }
+        }
+    )
+    with cache.disk_cache._lock:
+        conn = cache.disk_cache._get_conn()
+        conn.execute(
+            "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
+            (key, envelope, len(envelope), 0.0),
+        )
+        conn.commit()
+    cache.reset_memory_cache()
+    assert cache.get(request) is None
+
+
+def test_disk_corrupt_json_returns_none(cache):
+    request = {"model": "test", "prompt": "corrupt_json"}
+    key = cache.cache_key(request)
+
+    with cache.disk_cache._lock:
+        conn = cache.disk_cache._get_conn()
+        conn.execute(
+            "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
+            (key, b"{not valid json", len(b"{not valid json"), 0.0),
+        )
+        conn.commit()
+
+    cache.reset_memory_cache()
+    assert cache.get(request) is None
+
+
+def test_disk_pydantic_validation_error_returns_none(cache):
+    request = {"model": "test", "prompt": "invalid_pydantic"}
+    key = cache.cache_key(request)
+    envelope = orjson.dumps(
+        {
+            "_data": {
+                "__dspy_cache_type__": "pydantic",
+                "__dspy_cache_module__": CacheValidationModel.__module__,
+                "__dspy_cache_qualname__": CacheValidationModel.__qualname__,
+                "__dspy_cache_data__": {"name": "missing_required_value"},
+            }
+        }
+    )
+
+    with cache.disk_cache._lock:
+        conn = cache.disk_cache._get_conn()
+        conn.execute(
+            "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
+            (key, envelope, len(envelope), 0.0),
+        )
+        conn.commit()
+
+    cache.reset_memory_cache()
+    assert cache.get(request) is None
 
 
 def test_reset_memory_cache(cache):
