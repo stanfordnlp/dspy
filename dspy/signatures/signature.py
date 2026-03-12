@@ -610,10 +610,21 @@ def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Any]]:
 
     inputs_str, outputs_str = signature.split("->")
 
+    input_fields = list(_parse_field_string(inputs_str, names))
+    output_fields = list(_parse_field_string(outputs_str, names))
+    duplicate_field_names = sorted({field_name for field_name, *_ in input_fields}.intersection(
+        field_name for field_name, *_ in output_fields
+    ))
+    if duplicate_field_names:
+        raise ValueError(
+            "Input and output fields must have distinct names, but found duplicates: "
+            f"'{', '.join(duplicate_field_names)}'."
+        )
+
     fields = {}
-    for field_name, field_type, is_type_undefined in _parse_field_string(inputs_str, names):
+    for field_name, field_type, is_type_undefined in input_fields:
         fields[field_name] = (field_type, InputField(IS_TYPE_UNDEFINED= is_type_undefined))
-    for field_name, field_type, _ in _parse_field_string(outputs_str, names):
+    for field_name, field_type, _ in output_fields:
         fields[field_name] = (field_type, OutputField())
 
     return fields
