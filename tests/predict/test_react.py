@@ -423,3 +423,41 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_react_finish_with_extra_args_no_error():
+    """When the model provides structured output fields as finish args, no execution error should be logged.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9424
+    """
+    def dummy_tool(x: int) -> str:
+        """A dummy tool."""
+        return f"result_{x}"
+
+    react = dspy.ReAct("question -> answer: str, confidence: float", tools=[dummy_tool])
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should call the tool first.",
+                "next_tool_name": "dummy_tool",
+                "next_tool_args": {"x": 42},
+            },
+            {
+                "next_thought": "I have the answer now.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"answer": "result_42", "confidence": 0.95},
+            },
+            {"reasoning": "Based on the tool result.", "answer": "result_42", "confidence": 0.95},
+        ]
+    )
+
+    with dspy.context(lm=lm):
+        result = react(question="What is the answer?")
+
+    trajectory = result.trajectory
+    # The finish observation should NOT contain "Execution error"
+    finish_obs = trajectory.get("observation_1", "")
+    assert "Execution error" not in finish_obs, f"Unexpected execution error in finish: {finish_obs}"
+    assert finish_obs == "Completed."
+    assert result.answer == "result_42"
