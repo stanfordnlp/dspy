@@ -103,11 +103,18 @@ class Adapter:
 
         # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
         for name, field in signature.output_fields.items():
-            if (
-                isinstance(field.annotation, type)
-                and issubclass(field.annotation, Type)
-                and field.annotation in self.native_response_types
-            ):
+            try:
+                is_native_type = (
+                    isinstance(field.annotation, type)
+                    and issubclass(field.annotation, Type)
+                    and field.annotation in self.native_response_types
+                )
+            except TypeError:
+                # Nested generics (e.g. list[dict[str, X]]) may pass isinstance(…, type)
+                # on some Python/Pydantic versions but still cause issubclass() to raise
+                # TypeError inside ABCMeta.__subclasscheck__.  See #9425.
+                is_native_type = False
+            if is_native_type:
                 signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
         return signature
@@ -164,11 +171,15 @@ class Adapter:
 
             # Parse custom types that does not rely on the `Adapter.parse()` method
             for name, field in original_signature.output_fields.items():
-                if (
-                    isinstance(field.annotation, type)
-                    and issubclass(field.annotation, Type)
-                    and field.annotation in self.native_response_types
-                ):
+                try:
+                    is_native_type = (
+                        isinstance(field.annotation, type)
+                        and issubclass(field.annotation, Type)
+                        and field.annotation in self.native_response_types
+                    )
+                except TypeError:
+                    is_native_type = False
+                if is_native_type:
                     parsed_value = field.annotation.parse_lm_response(output)
                     if parsed_value is not None:
                         value[name] = parsed_value

@@ -793,3 +793,30 @@ def test_tool_call_with_null_content_does_not_raise():
     result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
     assert result is not None
     assert len(result) == 1
+
+
+def test_preprocess_does_not_crash_on_generic_annotations():
+    """Regression test for #9425: issubclass() TypeError on generic annotations.
+
+    When a signature has output fields annotated with generics like dict[str, Any],
+    the isinstance(annotation, type) guard may pass on some Python/Pydantic versions
+    while issubclass() still raises TypeError inside ABCMeta.__subclasscheck__.
+    _call_preprocess must handle this gracefully.
+    """
+    from typing import Any
+    from unittest.mock import MagicMock
+
+    sig = dspy.Signature(
+        "user_request -> process_result, tool_args",
+    )
+    # Manually add a generic-typed output field (dict[str, Any]) that can
+    # trigger the issubclass TypeError on certain Python/Pydantic combos.
+    sig = sig.append("tool_args_extra", dspy.OutputField(), type_=dict[str, Any])
+
+    adapter = dspy.ChatAdapter()
+    mock_lm = MagicMock()
+    mock_lm.model = "openai/gpt-4"
+
+    # This should not raise TypeError
+    processed = adapter._call_preprocess(mock_lm, {}, sig, {})
+    assert processed is not None
