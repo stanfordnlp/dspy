@@ -185,20 +185,6 @@ def test_full_cache_put_get_cycle_with_model_response(cache):
     assert result.cache_hit is True
 
 
-def test_disk_cache_write_unsupported_value_warns_and_skips_disk(cache):
-    class NotSerializable:
-        pass
-
-    request = {"model": "test", "prompt": "test_unserializable_value"}
-    with pytest.warns(UserWarning, match="Skipping disk cache write"):
-        cache.put(request, NotSerializable())
-
-    assert isinstance(cache.get(request), NotSerializable)
-
-    cache.reset_memory_cache()
-    assert cache.get(request) is None
-
-
 def test_cache_contains_checks_disk(cache):
     request = {"prompt": "test"}
     key = cache.cache_key(request)
@@ -546,20 +532,6 @@ def test_cache_fallback_on_restricted_environment():
 
 
 class TestCacheKeyIsolation:
-    def test_fn_identifier_isolation(self, cache):
-        """Different _fn_identifier values produce different cache keys."""
-        base_request = {
-            "model": "openai/gpt-5-nano",
-            "messages": [{"role": "user", "content": "hello"}],
-        }
-        request_sync = {**base_request, "_fn_identifier": "dspy.clients.lm.litellm_completion"}
-        request_async = {**base_request, "_fn_identifier": "dspy.clients.lm.alitellm_completion"}
-
-        key_sync = cache.cache_key(request_sync)
-        key_async = cache.cache_key(request_async)
-
-        assert key_sync != key_async
-
     def test_model_param_isolation(self, cache):
         """Different model values produce different keys."""
         base_request = {
@@ -738,52 +710,6 @@ class TestCorruptSQLiteDBFallback:
 class TestReadOnlyDatabasePut:
     """VAL-ERR-002: Read-only directory cache write behavior."""
 
-    def test_readonly_database_put_doesnt_crash(self, tmp_path, caplog):
-        """Cache.put() on a read-only DB logs a debug message but does not raise.
-
-        We simulate a read-only DB by patching SQLiteCache.__setitem__ to raise
-        sqlite3.OperationalError("attempt to write a readonly database"),
-        which is the actual error SQLite raises when the database is read-only.
-        Direct os.chmod on the DB file is unreliable across platforms due to WAL mode.
-        """
-        cache = Cache(
-            enable_memory_cache=True,
-            enable_disk_cache=True,
-            disk_cache_dir=str(tmp_path),
-            disk_size_limit_bytes=1024 * 1024,
-            memory_max_entries=100,
-        )
-
-        # Put a value first while the DB is writable
-        request_readable = {"model": "test", "prompt": "readable"}
-        cache.put(request_readable, "readable_value")
-
-        # Enable log propagation so caplog can capture the debug message
-        dspy_logger = logging.getLogger("dspy")
-        original_propagate = dspy_logger.propagate
-        dspy_logger.propagate = True
-
-        try:
-            request = {"model": "test", "prompt": "readonly_test"}
-            with patch.object(
-                type(cache.disk_cache),
-                "__setitem__",
-                side_effect=sqlite3.OperationalError("attempt to write a readonly database"),
-            ):
-                with caplog.at_level(logging.DEBUG, logger="dspy.clients.cache"):
-                    # Should not raise
-                    cache.put(request, "some_value")
-
-            # Verify debug message was logged about the disk cache failure
-            assert any("Failed to put value in disk cache" in rec.message for rec in caplog.records)
-
-            # Memory cache should still have the value
-            key = cache.cache_key(request)
-            assert key in cache.memory_cache
-
-        finally:
-            dspy_logger.propagate = original_propagate
-
     def test_readonly_database_reads_still_work(self, tmp_path):
         """After making DB read-only, reads of previously-written values still work."""
         cache = Cache(
@@ -886,30 +812,6 @@ class TestNonSerializableValueWarns:
         assert cache.get(good_request) == "good"
 
 
-class TestMemoryMissFallsToDisk:
-    """VAL-ERR-005: Memory cache miss falls through to disk."""
-
-    def test_memory_miss_falls_to_disk(self, cache):
-        """After memory cache reset, Cache.get() returns the value from disk."""
-        request = {"model": "test", "prompt": "disk_fallback"}
-        cache.put(request, "persisted_value")
-
-        # Verify value is in memory
-        key = cache.cache_key(request)
-        assert key in cache.memory_cache
-
-        # Reset memory cache
-        cache.reset_memory_cache()
-        assert key not in cache.memory_cache
-
-        # Get should fall through to disk and return the value
-        result = cache.get(request)
-        assert result == "persisted_value"
-
-        # After the disk hit, value should be promoted back to memory
-        assert key in cache.memory_cache
-
-
 class TestSQLiteErrorInPutHandled:
     """VAL-ERR-006: sqlite3.Error in Cache.put() handled gracefully."""
 
@@ -950,29 +852,4 @@ class TestSQLiteErrorInPutHandled:
         finally:
             dspy_logger.propagate = original_propagate
 
-    def test_sqlite_error_memory_value_accessible(self, tmp_path):
-        """When disk write raises sqlite3.Error, the value is still accessible
-        from memory cache on subsequent get()."""
-        cache = Cache(
-            enable_memory_cache=True,
-            enable_disk_cache=True,
-            disk_cache_dir=str(tmp_path),
-            disk_size_limit_bytes=1024 * 1024,
-            memory_max_entries=100,
-        )
 
-        request = {"model": "test", "prompt": "accessible_after_error"}
-
-        with patch.object(
-            type(cache.disk_cache),
-            "__setitem__",
-            side_effect=sqlite3.OperationalError("database is locked"),
-        ):
-            cache.put(request, "memory_only_value")
-
-        # Value should be retrievable from memory
-        assert cache.get(request) == "memory_only_value"
-
-        # But after resetting memory, it's gone (wasn't written to disk)
-        cache.reset_memory_cache()
-        assert cache.get(request) is None

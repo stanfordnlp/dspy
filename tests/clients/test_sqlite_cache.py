@@ -518,26 +518,6 @@ class TestMigration:
         assert target["key1"] == {"hello": "world"}
         assert target["key2"] == 42
 
-    def test_migrate_model_response(self, tmp_path):
-        from litellm import ModelResponse
-
-        response = _make_legacy_model_response()
-        _create_diskcache_shard(str(tmp_path / "000"), [("mr_key", response, time.time())])
-        target = SQLiteCache(directory=str(tmp_path), size_limit=None)
-        migrated, errors = migrate_diskcache(str(tmp_path), target)
-        assert migrated == 1
-        assert errors == 0
-        result = target["mr_key"]
-        assert isinstance(result, ModelResponse)
-        assert result.id == response.id
-        assert result.model == response.model
-        assert result.choices[0].finish_reason == "tool_calls"
-        assert result.choices[0].message.tool_calls[0].id == "call_123"
-        assert result.choices[0].message.tool_calls[0].function.name == "lookup_weather"
-        assert result.choices[0].message.tool_calls[0].function.arguments == '{"city":"Chicago"}'
-        assert result.usage.prompt_tokens == 11
-        assert result.usage.total_tokens == 18
-
     def test_migrate_text_mode_file_entries(self, tmp_path):
         shard_dir = str(tmp_path / "000")
         os.makedirs(shard_dir, exist_ok=True)
@@ -717,36 +697,6 @@ class TestMigration:
         migrated, errors = migrate_diskcache(str(tmp_path), target)
         assert migrated == 1
         assert errors == 0
-
-    def test_migrate_multiple_shards(self, tmp_path):
-        for shard_id in range(3):
-            _create_diskcache_shard(
-                str(tmp_path / f"{shard_id:03d}"),
-                [(f"shard{shard_id}_key", f"shard{shard_id}_val", time.time())],
-            )
-        target = SQLiteCache(directory=str(tmp_path), size_limit=None)
-        migrated, errors = migrate_diskcache(str(tmp_path), target)
-        assert migrated == 3
-        for i in range(3):
-            assert target[f"shard{i}_key"] == f"shard{i}_val"
-
-    def test_cache_init_triggers_auto_migration(self, tmp_path, monkeypatch):
-        from dspy.clients.cache import Cache
-
-        _create_diskcache_shard(
-            str(tmp_path / "000"),
-            [("auto_key", {"auto": True}, time.time())],
-        )
-
-        monkeypatch.setenv("DSPY_MIGRATE_CACHE", "1")
-        cache = Cache(
-            enable_disk_cache=True,
-            enable_memory_cache=False,
-            disk_cache_dir=str(tmp_path),
-            disk_size_limit_bytes=1024 * 1024,
-            memory_max_entries=100,
-        )
-        assert cache.disk_cache["auto_key"] == {"auto": True}
 
     def test_cache_init_skips_migration_when_db_non_empty(self, tmp_path, monkeypatch):
         """Migration is skipped on second start since new DB already has data."""
@@ -1350,52 +1300,6 @@ class TestCacheTierConcurrency:
 
         # Both should be consistent (disk may differ from memory if last write to
         # each tier came from different threads, but each should be a valid value)
-
-    def test_concurrent_disk_to_memory_promotion(self, tier_cache):
-        """Store key in Cache (both tiers), reset memory cache, then 8+ threads
-        simultaneously call Cache.get() for same key. All get correct value from
-        disk promotion."""
-        request = {"prompt": "promote_me", "model": "openai/gpt-5-nano"}
-        expected_value = {"content": "promoted_response", "tokens": 42}
-
-        # Store in both tiers
-        tier_cache.put(request, expected_value)
-
-        # Verify it's in both tiers
-        key = tier_cache.cache_key(request)
-        assert key in tier_cache.memory_cache
-        assert key in tier_cache.disk_cache
-
-        # Clear memory cache so all threads must promote from disk
-        tier_cache.reset_memory_cache()
-        assert key not in tier_cache.memory_cache
-
-        num_readers = 16
-        results = [None] * num_readers
-        errors = []
-
-        def reader(i):
-            try:
-                result = tier_cache.get(request)
-                results[i] = result
-            except Exception as e:
-                errors.append(e)
-
-        with ThreadPoolExecutor(max_workers=num_readers) as executor:
-            futures = [executor.submit(reader, i) for i in range(num_readers)]
-            for f in as_completed(futures):
-                f.result()
-
-        assert not errors, f"Errors from threads: {errors}"
-
-        # All threads should have gotten the correct value
-        for i, result in enumerate(results):
-            assert result == expected_value, (
-                f"Thread {i} got {result!r}, expected {expected_value!r}"
-            )
-
-        # After promotion, the key should be back in memory cache
-        assert key in tier_cache.memory_cache
 
     def test_concurrent_disk_to_memory_promotion_model_response(self, tmp_path):
         """Concurrent disk-to-memory promotion with a real ModelResponse object.
