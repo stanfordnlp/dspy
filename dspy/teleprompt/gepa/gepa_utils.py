@@ -142,7 +142,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         return new_prog
 
-    def evaluate(self, batch, candidate, capture_traces=False):
+    def evaluate(self, batch, candidate, capture_traces=True):
         program = self.build_program(candidate)
         callback_metadata = (
             {"metric_key": "eval_full"}
