@@ -155,6 +155,8 @@ nav:
             - Embeddings: api/tools/Embeddings.md
             - PythonInterpreter: api/tools/PythonInterpreter.md
         - Utils:
+            - configure: api/utils/configure.md
+            - context: api/utils/context.md
             - StatusMessage: api/utils/StatusMessage.md
             - StatusMessageProvider: api/utils/StatusMessageProvider.md
             - StreamListener: api/utils/StreamListener.md
