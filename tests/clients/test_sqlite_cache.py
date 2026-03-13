@@ -226,6 +226,10 @@ class TestSQLiteCacheBasic:
         assert "key1" in cache
         assert cache["key1"] == "value1"
 
+    def test_get_returns_default_on_missing(self, tmp_path):
+        cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        assert cache.get("missing", "default") == "default"
+
     def test_key_error_on_missing(self, tmp_path):
         cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
         with pytest.raises(KeyError):
@@ -487,6 +491,32 @@ def _create_diskcache_shard_with_file(shard_dir: str, key: str, value: object, a
     conn.close()
 
 
+def _make_legacy_model_response():
+    from litellm import ModelResponse
+
+    return ModelResponse(
+        id="chatcmpl-legacy-rich",
+        model="openai/gpt-4o-mini",
+        choices=[{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup_weather",
+                        "arguments": '{"city":"Chicago"}',
+                    },
+                }],
+            },
+        }],
+        usage={"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
+    )
+
+
 # ── Migration tests ──────────────────────────────────────────────────────────
 
 
@@ -511,18 +541,22 @@ class TestMigration:
     def test_migrate_model_response(self, tmp_path):
         from litellm import ModelResponse
 
-        response = ModelResponse(
-            id="chatcmpl-test",
-            choices=[{"message": {"content": "hello"}, "index": 0, "finish_reason": "stop"}],
-            usage={"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
-        )
+        response = _make_legacy_model_response()
         _create_diskcache_shard(str(tmp_path / "000"), [("mr_key", response, time.time())])
         target = SQLiteCache(directory=str(tmp_path), size_limit=None)
         migrated, errors = migrate_diskcache(str(tmp_path), target)
         assert migrated == 1
+        assert errors == 0
         result = target["mr_key"]
         assert isinstance(result, ModelResponse)
-        assert result.choices[0].message.content == "hello"
+        assert result.id == response.id
+        assert result.model == response.model
+        assert result.choices[0].finish_reason == "tool_calls"
+        assert result.choices[0].message.tool_calls[0].id == "call_123"
+        assert result.choices[0].message.tool_calls[0].function.name == "lookup_weather"
+        assert result.choices[0].message.tool_calls[0].function.arguments == '{"city":"Chicago"}'
+        assert result.usage.prompt_tokens == 11
+        assert result.usage.total_tokens == 18
 
     def test_migrate_text_mode_file_entries(self, tmp_path):
         shard_dir = str(tmp_path / "000")
@@ -770,11 +804,7 @@ class TestMigration:
 
         from dspy.clients.cache import Cache
 
-        response = ModelResponse(
-            id="chatcmpl-old",
-            choices=[{"message": {"content": "old cached"}, "index": 0, "finish_reason": "stop"}],
-            usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        )
+        response = _make_legacy_model_response()
         request = {"model": "openai/gpt-5-nano", "prompt": "what is 2+2"}
         from hashlib import sha256
 
@@ -805,10 +835,26 @@ class TestMigration:
             disk_size_limit_bytes=1024 * 1024,
             memory_max_entries=100,
         )
+        migrated = cache.disk_cache[key]
+        assert isinstance(migrated, ModelResponse)
+        assert migrated.id == response.id
+        assert migrated.model == response.model
+        assert migrated.choices[0].finish_reason == "tool_calls"
+        assert migrated.choices[0].message.tool_calls[0].id == "call_123"
+        assert migrated.choices[0].message.tool_calls[0].function.name == "lookup_weather"
+        assert migrated.choices[0].message.tool_calls[0].function.arguments == '{"city":"Chicago"}'
+        assert migrated.usage.prompt_tokens == 11
+        assert migrated.usage.total_tokens == 18
+
         result = cache.get(request)
         assert result is not None
         assert isinstance(result, ModelResponse)
-        assert result.choices[0].message.content == "old cached"
+        assert result.id == response.id
+        assert result.model == response.model
+        assert result.choices[0].finish_reason == "tool_calls"
+        assert result.choices[0].message.tool_calls[0].id == "call_123"
+        assert result.choices[0].message.tool_calls[0].function.name == "lookup_weather"
+        assert result.choices[0].message.tool_calls[0].function.arguments == '{"city":"Chicago"}'
         assert result.cache_hit is True
         assert result.usage == {}
 

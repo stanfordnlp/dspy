@@ -39,7 +39,7 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
             _ENCODED_MODULE_KEY: type(value).__module__,
             _ENCODED_QUALNAME_KEY: type(value).__qualname__,
-            _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in value.model_dump(mode="python", round_trip=True, by_alias=True).items()},
+            _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in _iter_pydantic_items(value).items()},
         }
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {
@@ -111,6 +111,21 @@ def _decode_value(value: Any) -> Any:
     return value
 
 
+def _iter_pydantic_items(value: pydantic.BaseModel) -> dict[str, Any]:
+    data = {}
+    for name, field in type(value).model_fields.items():
+        if name not in value.__dict__:
+            continue
+        key = field.serialization_alias or field.alias or name
+        data[key] = value.__dict__[name]
+
+    extra = getattr(value, "__pydantic_extra__", None)
+    if extra:
+        for key, item in extra.items():
+            data.setdefault(key, item)
+    return data
+
+
 class SQLiteCache:
     """Dict-like SQLite-backed cache using orjson serialization.
 
@@ -174,6 +189,17 @@ class SQLiteCache:
             row = conn.execute("SELECT value FROM cache WHERE key = ?", (key,)).fetchone()
             if row is None:
                 raise KeyError(key)
+            conn.execute("UPDATE cache SET last_access = ? WHERE key = ?", (time.time(), key))
+            conn.commit()
+        return _deserialize(row[0])
+
+    def get(self, key: str, default: Any = None) -> Any:
+        self._reset_after_fork()
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute("SELECT value FROM cache WHERE key = ?", (key,)).fetchone()
+            if row is None:
+                return default
             conn.execute("UPDATE cache SET last_access = ? WHERE key = ?", (time.time(), key))
             conn.commit()
         return _deserialize(row[0])

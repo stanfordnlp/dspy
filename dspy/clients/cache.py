@@ -15,6 +15,7 @@ from cachetools import LRUCache
 from dspy.clients.sqlite_cache import SQLiteCache, has_legacy_diskcache, migrate_diskcache
 
 logger = logging.getLogger(__name__)
+_MISSING = object()
 
 
 class Cache:
@@ -85,11 +86,7 @@ class Cache:
 
     def __contains__(self, key: str) -> bool:
         """Check if a key is in the cache."""
-        if self.enable_memory_cache:
-            with self._lock:
-                if key in self.memory_cache:
-                    return True
-        return key in self.disk_cache
+        return key in self.memory_cache or key in self.disk_cache
 
     def cache_key(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> str:
         """
@@ -142,9 +139,9 @@ class Cache:
                     response = self.memory_cache[key]
                     memory_hit = True
 
-        if not memory_hit and self.enable_disk_cache and key in self.disk_cache:
+        if not memory_hit and self.enable_disk_cache:
             try:
-                response = self.disk_cache[key]
+                response = self.disk_cache.get(key, _MISSING)
             except (
                 orjson.JSONDecodeError,  # corrupt or truncated cache blob
                 ImportError,  # referenced class module no longer importable
@@ -154,6 +151,8 @@ class Cache:
                 KeyError,  # cache envelope is missing required metadata such as class or payload fields
             ) as e:
                 logger.debug("Failed to deserialize disk cache entry %s: %s", key, e)
+                return None
+            if response is _MISSING:
                 return None
             if self.enable_memory_cache:
                 with self._lock:
