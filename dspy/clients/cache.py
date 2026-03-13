@@ -2,7 +2,9 @@ import copy
 import inspect
 import logging
 import os
+import sqlite3
 import threading
+import warnings
 from functools import wraps
 from hashlib import sha256
 from typing import Any
@@ -193,9 +195,14 @@ class Cache:
         if self.enable_disk_cache:
             try:
                 self.disk_cache[key] = value
-            except Exception as e:
-                # Disk cache writing can fail for different reasons, e.g. disk full or the `value` is not picklable.
-                logger.debug(f"Failed to put value in disk cache: {value}, {e}")
+            except TypeError as e:
+                warnings.warn(
+                    f"Skipping disk cache write: {e}",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            except sqlite3.Error as e:
+                logger.debug("Failed to put value in disk cache for key %s: %s", key, e)
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:

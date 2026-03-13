@@ -5,7 +5,7 @@ import pickle
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import orjson
 import pydantic
@@ -46,28 +46,6 @@ class AliasPydanticModel(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(populate_by_name=False)
     actual_name: int = pydantic.Field(alias="wire_name")
 
-
-@dataclass
-class SimpleDataclass:
-    x: int
-    y: str
-
-
-@dataclass
-class NestedDataclass:
-    label: str
-    inner: SimpleDataclass
-
-
-@dataclass
-class InitFalseDataclass:
-    x: int
-    y: int = field(init=False)
-
-    def __post_init__(self):
-        self.y = self.x + 1
-
-
 # ── Serialization ────────────────────────────────────────────────────────────
 
 
@@ -81,7 +59,6 @@ class InitFalseDataclass:
         False,
         None,
         [1, "two", 3.0, None, True],
-        (1, "two", 3.0, None, True),
         {"a": 1, "b": [2, 3], "c": {"nested": True}},
         {},
         [],
@@ -126,29 +103,11 @@ def test_serialize_roundtrip_nested_class():
     assert result.label == "test"
 
 
-def test_serialize_roundtrip_dataclass():
-    d = SimpleDataclass(x=10, y="hello")
-    result = _deserialize(_serialize(d))
-    assert isinstance(result, SimpleDataclass)
-    assert result.x == 10 and result.y == "hello"
-
-
-def test_serialize_roundtrip_nested_dataclass():
-    d = NestedDataclass(label="outer", inner=SimpleDataclass(x=10, y="hello"))
-    result = _deserialize(_serialize(d))
-    assert isinstance(result, NestedDataclass)
-    assert isinstance(result.inner, SimpleDataclass)
-    assert result == d
-
-
-def test_serialize_roundtrip_dataclass_with_init_false():
-    d = InitFalseDataclass(x=10)
-    result = _deserialize(_serialize(d))
-    assert isinstance(result, InitFalseDataclass)
-    assert result == d
-
-
 def test_serialize_non_serializable_raises():
+    @dataclass
+    class DataclassValue:
+        x: int
+
     class Custom:
         pass
 
@@ -157,6 +116,12 @@ def test_serialize_non_serializable_raises():
 
     with pytest.raises(TypeError):
         _serialize({"obj": Custom()})
+
+    with pytest.raises(TypeError):
+        _serialize((1, 2, 3))
+
+    with pytest.raises(TypeError):
+        _serialize(DataclassValue(x=1))
 
 
 # ── Litellm ModelResponse ────────────────────────────────────────────────────
@@ -265,11 +230,21 @@ class TestSQLiteCacheBasic:
     def test_non_serializable_value_raises_on_set(self, tmp_path):
         cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
 
+        @dataclass
+        class DataclassValue:
+            x: int
+
         class Custom:
             pass
 
         with pytest.raises(TypeError):
             cache["bad"] = Custom()
+
+        with pytest.raises(TypeError):
+            cache["tuple"] = (1, 2, 3)
+
+        with pytest.raises(TypeError):
+            cache["dataclass"] = DataclassValue(x=1)
 
 
 # ── Persistence ──────────────────────────────────────────────────────────────

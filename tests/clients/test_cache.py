@@ -1,6 +1,5 @@
 import os
 import threading
-from dataclasses import dataclass
 from unittest.mock import patch
 
 import orjson
@@ -10,12 +9,6 @@ from cachetools import LRUCache
 
 from dspy.clients.cache import Cache
 from dspy.clients.sqlite_cache import SQLiteCache
-
-
-@dataclass
-class DummyResponse:
-    message: str
-    usage: dict
 
 
 class CacheValidationModel(pydantic.BaseModel):
@@ -127,14 +120,12 @@ def test_put_and_get(cache):
     """Test putting and getting from cache."""
     # Test putting and getting from memory cache
     request = {"prompt": "Hello", "model": "openai/gpt-4o-mini", "temperature": 0.7}
-
-    value = DummyResponse(message="This is a test response", usage={"prompt_tokens": 10, "completion_tokens": 20})
+    value = {"message": "This is a test response", "usage": {"prompt_tokens": 10, "completion_tokens": 20}}
 
     cache.put(request, value)
     result = cache.get(request)
 
-    assert result.message == value.message
-    assert result.usage == {}
+    assert result == value
 
     # Test with disk cache
     # First, clear memory cache to ensure we're using disk cache
@@ -142,8 +133,7 @@ def test_put_and_get(cache):
 
     # Get from disk cache
     result_from_disk = cache.get(request)
-    assert result_from_disk.message == value.message
-    assert result_from_disk.usage == {}
+    assert result_from_disk == value
 
     # Verify it was also added back to memory cache
     assert cache.cache_key(request) in cache.memory_cache
@@ -192,12 +182,18 @@ def test_full_cache_put_get_cycle_with_model_response(cache):
     assert result.cache_hit is True
 
 
-def test_disk_cache_write_failure_doesnt_crash(cache):
+def test_disk_cache_write_unsupported_value_warns_and_skips_disk(cache):
     class NotSerializable:
         pass
 
     request = {"model": "test", "prompt": "test_unserializable_value"}
-    cache.put(request, NotSerializable())
+    with pytest.warns(UserWarning, match="Skipping disk cache write"):
+        cache.put(request, NotSerializable())
+
+    assert isinstance(cache.get(request), NotSerializable)
+
+    cache.reset_memory_cache()
+    assert cache.get(request) is None
 
 
 def test_cache_contains_checks_disk(cache):

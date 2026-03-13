@@ -1,4 +1,3 @@
-import dataclasses
 import importlib
 import logging
 import os
@@ -25,9 +24,15 @@ _ENCODED_QUALNAME_KEY = "__dspy_cache_qualname__"
 _ENCODED_DATA_KEY = "__dspy_cache_data__"
 _ENCODED_DTYPE_KEY = "__dspy_cache_dtype__"
 _PYDANTIC_TYPE = "pydantic"
-_DATACLASS_TYPE = "dataclass"
 _NDARRAY_TYPE = "ndarray"
-_TUPLE_TYPE = "tuple"
+
+
+def _unsupported_value_error(value: Any) -> TypeError:
+    value_type = type(value)
+    return TypeError(
+        "SQLite disk cache only supports JSON values, pydantic models, and numpy arrays; "
+        f"got {value_type.__module__}.{value_type.__qualname__}"
+    )
 
 def _serialize(value: Any) -> bytes:
     return orjson.dumps({"_data": _encode_value(value)})
@@ -41,16 +46,6 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_QUALNAME_KEY: type(value).__qualname__,
             _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in _iter_pydantic_items(value).items()},
         }
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return {
-            _ENCODED_TYPE_KEY: _DATACLASS_TYPE,
-            _ENCODED_MODULE_KEY: type(value).__module__,
-            _ENCODED_QUALNAME_KEY: type(value).__qualname__,
-            _ENCODED_DATA_KEY: {
-                field.name: _encode_value(getattr(value, field.name))
-                for field in dataclasses.fields(value)
-            },
-        }
     if isinstance(value, np.ndarray):
         return {
             _ENCODED_TYPE_KEY: _NDARRAY_TYPE,
@@ -58,15 +53,14 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_DATA_KEY: value.tolist(),
         }
     if isinstance(value, tuple):
-        return {
-            _ENCODED_TYPE_KEY: _TUPLE_TYPE,
-            _ENCODED_DATA_KEY: [_encode_value(item) for item in value],
-        }
+        raise _unsupported_value_error(value)
     if isinstance(value, dict):
         return {k: _encode_value(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_encode_value(item) for item in value]
-    return value
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    raise _unsupported_value_error(value)
 
 
 def _resolve_class(module_name: str, qualname: str) -> type:
@@ -88,23 +82,8 @@ def _decode_value(value: Any) -> Any:
         if encoded_type == _PYDANTIC_TYPE:
             cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
             return cls.model_validate(_decode_value(value[_ENCODED_DATA_KEY]))
-        if encoded_type == _DATACLASS_TYPE:
-            cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
-            decoded_data = _decode_value(value[_ENCODED_DATA_KEY])
-            init_kwargs = {
-                field.name: decoded_data[field.name]
-                for field in dataclasses.fields(cls)
-                if field.init and field.name in decoded_data
-            }
-            instance = cls(**init_kwargs)
-            for field in dataclasses.fields(cls):
-                if not field.init and field.name in decoded_data:
-                    object.__setattr__(instance, field.name, decoded_data[field.name])
-            return instance
         if encoded_type == _NDARRAY_TYPE:
             return np.asarray(_decode_value(value[_ENCODED_DATA_KEY]), dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
-        if encoded_type == _TUPLE_TYPE:
-            return tuple(_decode_value(value[_ENCODED_DATA_KEY]))
         return {k: _decode_value(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_decode_value(item) for item in value]
