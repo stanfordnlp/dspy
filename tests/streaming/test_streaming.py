@@ -2062,3 +2062,44 @@ async def test_streaming_reasoning_fallback():
                 assert final_prediction.reasoning.content == "Let's think step by step about this question."
                 # Verify Reasoning object is str-like
                 assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+
+
+def test_apply_sync_streaming_propagates_exception():
+    """Exceptions raised in the async generator should propagate to the sync consumer."""
+
+    async def failing_generator():
+        yield "first"
+        yield "second"
+        raise ValueError("something went wrong")
+
+    sync_output = dspy.streaming.apply_sync_streaming(failing_generator())
+    items = []
+    with pytest.raises(ValueError, match="something went wrong"):
+        for item in sync_output:
+            items.append(item)
+
+    assert items == ["first", "second"]
+
+
+def test_apply_sync_streaming_propagates_runtime_error():
+    """RuntimeError raised in the async generator should propagate to the sync consumer."""
+
+    async def failing_generator():
+        raise RuntimeError("runtime failure")
+        yield  # make it a generator  # noqa: E501
+
+    sync_output = dspy.streaming.apply_sync_streaming(failing_generator())
+    with pytest.raises(RuntimeError, match="runtime failure"):
+        list(sync_output)
+
+
+def test_apply_sync_streaming_normal_completion():
+    """Normal async generator completion should still work correctly."""
+
+    async def normal_generator():
+        yield "a"
+        yield "b"
+        yield "c"
+
+    sync_output = dspy.streaming.apply_sync_streaming(normal_generator())
+    assert list(sync_output) == ["a", "b", "c"]
