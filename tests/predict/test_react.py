@@ -5,6 +5,8 @@ import pytest
 from pydantic import BaseModel
 
 import dspy
+import dspy.adapters.base as adapter_base
+import dspy.adapters.utils as adapter_utils
 from dspy.utils.dummies import DummyLM
 
 
@@ -129,6 +131,52 @@ def test_tool_calling_with_pydantic_args():
         "observation_1": "Completed.",
     }
     assert outputs.trajectory == expected_trajectory
+
+
+def test_react_with_tools_skips_native_response_issubclass_for_generic_alias(monkeypatch):
+    def get_user_info(name: str):
+        return {"name": name}
+
+    class CustomerService(dspy.Signature):
+        user_request: str = dspy.InputField()
+        process_result: str = dspy.OutputField()
+
+    react = dspy.ReAct(CustomerService, tools=[get_user_info])
+    problem_annotation = react.react.signature.output_fields["next_tool_args"].annotation
+
+    def guarded_issubclass(cls, class_or_tuple):
+        if cls == problem_annotation:
+            raise TypeError("issubclass() arg 1 must be a class")
+        return issubclass(cls, class_or_tuple)
+
+    monkeypatch.setattr(adapter_base, "issubclass", guarded_issubclass, raising=False)
+    monkeypatch.setattr(adapter_utils, "issubclass", guarded_issubclass, raising=False)
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should look up the user first.",
+                "next_tool_name": "get_user_info",
+                "next_tool_args": {"name": "Adam"},
+            },
+            {
+                "next_thought": "I have the information I need, so I can finish now.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {
+                "reasoning": "I fetched the user profile and can answer the request.",
+                "process_result": "Resolved Adam's request.",
+            },
+        ]
+    )
+
+    with dspy.context(lm=lm):
+        result = react(user_request="Help me, my name is Adam")
+
+    assert result.process_result == "Resolved Adam's request."
+    assert result.trajectory["tool_name_0"] == "get_user_info"
+    assert result.trajectory["tool_args_0"] == {"name": "Adam"}
 
 
 def test_tool_calling_without_typehint():

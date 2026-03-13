@@ -105,8 +105,8 @@ class Adapter:
         for name, field in signature.output_fields.items():
             if (
                 isinstance(field.annotation, type)
-                and issubclass(field.annotation, Type)
                 and field.annotation in self.native_response_types
+                and issubclass(field.annotation, Type)
             ):
                 signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
@@ -166,8 +166,8 @@ class Adapter:
             for name, field in original_signature.output_fields.items():
                 if (
                     isinstance(field.annotation, type)
-                    and issubclass(field.annotation, Type)
                     and field.annotation in self.native_response_types
+                    and issubclass(field.annotation, Type)
                 ):
                     parsed_value = field.annotation.parse_lm_response(output)
                     if parsed_value is not None:
