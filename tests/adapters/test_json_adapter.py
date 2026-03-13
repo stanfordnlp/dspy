@@ -239,6 +239,41 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
     )
 
 
+def test_json_adapter_parse_handles_braces_inside_string_values():
+    class CodeIssue(pydantic.BaseModel):
+        issue_type: str
+        severity_level: str
+        problem_code_snippet: str
+
+    class CodeReview(dspy.Signature):
+        reasoning: str = dspy.OutputField(desc="Short chain-of-thought analysis")
+        issue_list: list[CodeIssue] = dspy.OutputField(desc="Detected issues")
+
+    adapter = dspy.JSONAdapter()
+    completion = (
+        "Here is the review output you asked for:\n\n"
+        "{\n"
+        '  "reasoning": "Inspecting the conditional reveals an unmatched brace.",\n'
+        '  "issue_list": [\n'
+        "    {\n"
+        '      "issue_type": "style",\n'
+        '      "severity_level": "fatal",\n'
+        '      "problem_code_snippet": "if (user) {"\n'
+        "    }\n"
+        "  ]\n"
+        "}\n"
+    )
+
+    result = adapter.parse(CodeReview, completion)
+
+    assert result["reasoning"] == "Inspecting the conditional reveals an unmatched brace."
+    assert len(result["issue_list"]) == 1
+    issue = result["issue_list"][0]
+    assert issue.issue_type == "style"
+    assert issue.severity_level == "fatal"
+    assert issue.problem_code_snippet == "if (user) {"
+
+
 def test_json_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")
