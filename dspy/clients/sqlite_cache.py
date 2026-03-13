@@ -1,3 +1,5 @@
+"""SQLite-backed disk cache with orjson serialization and legacy diskcache migration."""
+
 import importlib
 import logging
 import os
@@ -13,11 +15,7 @@ import pydantic
 
 logger = logging.getLogger(__name__)
 
-# diskcache mode constants
-_DC_MODE_RAW = 1
-_DC_MODE_BINARY = 2
-_DC_MODE_TEXT = 3
-_DC_MODE_PICKLE = 4
+# Serialization envelope constants — keys used inside the orjson-encoded wrapper
 _ENCODED_TYPE_KEY = "__dspy_cache_type__"
 _ENCODED_MODULE_KEY = "__dspy_cache_module__"
 _ENCODED_QUALNAME_KEY = "__dspy_cache_qualname__"
@@ -25,6 +23,12 @@ _ENCODED_DATA_KEY = "__dspy_cache_data__"
 _ENCODED_DTYPE_KEY = "__dspy_cache_dtype__"
 _PYDANTIC_TYPE = "pydantic"
 _NDARRAY_TYPE = "ndarray"
+
+# Legacy diskcache mode constants (used during migration from FanoutCache shards)
+_DC_MODE_RAW = 1
+_DC_MODE_BINARY = 2
+_DC_MODE_TEXT = 3
+_DC_MODE_PICKLE = 4
 
 
 def _unsupported_value_error(value: Any) -> TypeError:
@@ -35,6 +39,8 @@ def _unsupported_value_error(value: Any) -> TypeError:
     )
 
 def _serialize(value: Any) -> bytes:
+    # Wrap in {"_data": ...} envelope so top-level lists/primitives are always stored
+    # as a JSON object, making the format self-describing and forward-compatible.
     return orjson.dumps({"_data": _encode_value(value)})
 
 
@@ -44,7 +50,7 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
             _ENCODED_MODULE_KEY: type(value).__module__,
             _ENCODED_QUALNAME_KEY: type(value).__qualname__,
-            _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in _iter_pydantic_items(value).items()},
+            _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in _pydantic_to_dict(value).items()},
         }
     if isinstance(value, np.ndarray):
         return {
@@ -90,7 +96,7 @@ def _decode_value(value: Any) -> Any:
     return value
 
 
-def _iter_pydantic_items(value: pydantic.BaseModel) -> dict[str, Any]:
+def _pydantic_to_dict(value: pydantic.BaseModel) -> dict[str, Any]:
     data = {}
     for name, field in type(value).model_fields.items():
         if name not in value.__dict__:
@@ -124,8 +130,8 @@ class SQLiteCache:
         conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=10)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA mmap_size=67108864")
-        conn.execute("PRAGMA cache_size=8192")
+        conn.execute("PRAGMA mmap_size=67108864")  # 64 MiB mmap
+        conn.execute("PRAGMA cache_size=8192")  # ~32 MiB page cache
         conn.execute("PRAGMA auto_vacuum=FULL")
         conn.execute(
             "CREATE TABLE IF NOT EXISTS cache ("
@@ -155,14 +161,12 @@ class SQLiteCache:
         return self._conn
 
     def __contains__(self, key: str) -> bool:
-        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             row = conn.execute("SELECT 1 FROM cache WHERE key = ?", (key,)).fetchone()
         return row is not None
 
     def __getitem__(self, key: str) -> Any:
-        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             row = conn.execute("SELECT value FROM cache WHERE key = ?", (key,)).fetchone()
@@ -173,7 +177,6 @@ class SQLiteCache:
         return _deserialize(row[0])
 
     def get(self, key: str, default: Any = None) -> Any:
-        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             row = conn.execute("SELECT value FROM cache WHERE key = ?", (key,)).fetchone()
@@ -187,7 +190,6 @@ class SQLiteCache:
         blob = _serialize(value)
         size = len(blob)
         now = time.time()
-        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             conn.execute(
@@ -198,7 +200,6 @@ class SQLiteCache:
             self._maybe_evict(conn)
 
     def is_empty(self) -> bool:
-        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             return conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0] == 0
@@ -234,7 +235,6 @@ class SQLiteCache:
         """
         if not entries:
             return
-        self._reset_after_fork()
         with self._lock:
             conn = self._get_conn()
             conn.executemany(
@@ -245,11 +245,39 @@ class SQLiteCache:
             self._maybe_evict(conn)
 
     def close(self) -> None:
+        # Called directly on self._conn instead of going through _get_conn()/_lock
+        # because close() is a teardown path; we just need a valid connection handle
+        # for the current process before closing it.
         self._reset_after_fork()
         self._conn.close()
 def has_legacy_diskcache(directory: str) -> bool:
     """Check if directory contains an old diskcache FanoutCache (16-shard) layout."""
     return os.path.isfile(os.path.join(directory, "000", "cache.db"))
+
+
+def _deserialize_legacy_entry(mode: int, value_blob: bytes | None, shard_dir: str, filename: str | None) -> Any:
+    """Deserialize a single legacy diskcache entry based on its storage mode.
+
+    Returns the deserialized Python object, or raises on failure.
+    """
+    if mode == _DC_MODE_PICKLE:
+        if value_blob is not None:
+            return pickle.loads(value_blob)
+        # Large pickle values stored as .val files in the shard directory
+        filepath = os.path.join(shard_dir, filename)
+        with open(filepath, "rb") as f:
+            return pickle.loads(f.read())
+    if mode == _DC_MODE_TEXT:
+        filepath = os.path.join(shard_dir, filename)
+        with open(filepath, encoding="UTF-8") as f:
+            return f.read()
+    if mode == _DC_MODE_RAW:
+        return bytes(value_blob) if value_blob is not None else b""
+    if mode == _DC_MODE_BINARY:
+        filepath = os.path.join(shard_dir, filename)
+        with open(filepath, "rb") as f:
+            return f.read()
+    raise ValueError(f"Unknown diskcache mode {mode}")
 
 
 def migrate_diskcache(directory: str, target: SQLiteCache) -> tuple[int, int]:
@@ -285,31 +313,12 @@ def migrate_diskcache(directory: str, target: SQLiteCache) -> tuple[int, int]:
         entries: list[tuple[str, bytes, int, float]] = []
         for key, value_blob, mode, access_time, filename in rows:
             try:
-                if mode == _DC_MODE_PICKLE:
-                    if value_blob is not None:
-                        obj = pickle.loads(value_blob)
-                    else:
-                        # Large pickle values stored as .val files in the shard directory
-                        filepath = os.path.join(shard_dir, filename)
-                        with open(filepath, "rb") as f:
-                            obj = pickle.loads(f.read())
-                elif mode == _DC_MODE_TEXT:
-                    filepath = os.path.join(shard_dir, filename)
-                    with open(filepath, encoding="UTF-8") as f:
-                        obj = f.read()
-                elif mode == _DC_MODE_RAW:
-                    obj = bytes(value_blob) if value_blob is not None else b""
-                elif mode == _DC_MODE_BINARY:
-                    filepath = os.path.join(shard_dir, filename)
-                    with open(filepath, "rb") as f:
-                        obj = f.read()
-                else:
-                    logger.debug("Skipping entry with unknown diskcache mode %d", mode)
-                    errors += 1
-                    continue
-
+                obj = _deserialize_legacy_entry(mode, value_blob, shard_dir, filename)
                 blob = _serialize(obj)
                 entries.append((key, blob, len(blob), access_time if access_time is not None else time.time()))
+            except ValueError:
+                logger.debug("Skipping entry with unknown diskcache mode %d", mode)
+                errors += 1
             except (
                 pickle.UnpicklingError,
                 ModuleNotFoundError,

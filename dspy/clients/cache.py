@@ -17,7 +17,29 @@ from cachetools import LRUCache
 from dspy.clients.sqlite_cache import SQLiteCache, has_legacy_diskcache, migrate_diskcache
 
 logger = logging.getLogger(__name__)
+# Sentinel to distinguish a cache miss from a cached None value.
 _MISSING = object()
+
+
+def _transform_value(value):
+    """Convert a request field value to a JSON-serializable format for cache key hashing."""
+    if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
+        return value.model_json_schema()
+    elif isinstance(value, pydantic.BaseModel):
+        return value.model_dump(mode="json")
+    elif callable(value):
+        # Try to get the source code of the callable if available
+        try:
+            # For regular functions, we can get the source code
+            return f"<callable_source:{inspect.getsource(value)}>"
+        except (TypeError, OSError):
+            # For lambda functions or other callables where source isn't available,
+            # use a string representation
+            return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
+    elif isinstance(value, dict):
+        return {k: _transform_value(v) for k, v in value.items()}
+    else:
+        return value
 
 
 class Cache:
@@ -60,31 +82,35 @@ class Cache:
                 directory=disk_cache_dir,
                 size_limit=disk_size_limit_bytes,
             )
-            if has_legacy_diskcache(disk_cache_dir) and self.disk_cache.is_empty():
-                if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
-                    logger.info("Migrating legacy diskcache in %s to SQLite + JSON...", disk_cache_dir)
-                    migrated, errors = migrate_diskcache(disk_cache_dir, self.disk_cache)
-                    if errors == 0:
-                        logger.info("Cache migration complete: %d entries migrated.", migrated)
-                    else:
-                        logger.warning(
-                            "Cache migration finished with errors: %d migrated, %d failed. "
-                            "To retry, delete %s/dspy_cache.db and restart.",
-                            migrated,
-                            errors,
-                            disk_cache_dir,
-                        )
-                else:
-                    logger.warning(
-                        "Legacy diskcache format detected in %s but migration is disabled. "
-                        "Set DSPY_MIGRATE_CACHE=1 to migrate. The old cache uses pickle deserialization "
-                        "which is a security risk (CVE-2025-69872).",
-                        disk_cache_dir,
-                    )
+            self._maybe_migrate_legacy_cache(disk_cache_dir)
         else:
             self.disk_cache = {}
 
         self._lock = threading.RLock()
+
+    def _maybe_migrate_legacy_cache(self, disk_cache_dir: str) -> None:
+        """Migrate legacy diskcache entries to the new SQLite format if applicable."""
+        if has_legacy_diskcache(disk_cache_dir) and self.disk_cache.is_empty():
+            if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
+                logger.info("Migrating legacy diskcache in %s to SQLite + JSON...", disk_cache_dir)
+                migrated, errors = migrate_diskcache(disk_cache_dir, self.disk_cache)
+                if errors == 0:
+                    logger.info("Cache migration complete: %d entries migrated.", migrated)
+                else:
+                    logger.warning(
+                        "Cache migration finished with errors: %d migrated, %d failed. "
+                        "To retry, delete %s/dspy_cache.db and restart.",
+                        migrated,
+                        errors,
+                        disk_cache_dir,
+                    )
+            else:
+                logger.warning(
+                    "Legacy diskcache format detected in %s but migration is disabled. "
+                    "Set DSPY_MIGRATE_CACHE=1 to migrate. The old cache uses pickle deserialization "
+                    "which is a security risk (CVE-2025-69872).",
+                    disk_cache_dir,
+                )
 
     def __contains__(self, key: str) -> bool:
         """Check if a key is in the cache."""
@@ -99,38 +125,18 @@ class Cache:
 
         ignored_args_for_cache_key = ignored_args_for_cache_key or []
 
-        def transform_value(value):
-            if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-                return value.model_json_schema()
-            elif isinstance(value, pydantic.BaseModel):
-                return value.model_dump(mode="json")
-            elif callable(value):
-                # Try to get the source code of the callable if available
-                import inspect
-
-                try:
-                    # For regular functions, we can get the source code
-                    return f"<callable_source:{inspect.getsource(value)}>"
-                except (TypeError, OSError):
-                    # For lambda functions or other callables where source isn't available,
-                    # use a string representation
-                    return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
-            elif isinstance(value, dict):
-                return {k: transform_value(v) for k, v in value.items()}
-            else:
-                return value
-
-        params = {k: transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
+        params = {k: _transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
         return sha256(orjson.dumps(params, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
     def get(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
+        """Look up a cached response for the given request, checking memory then disk."""
         if not self.enable_memory_cache and not self.enable_disk_cache:
             return None
 
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
+            logger.debug("Failed to generate cache key for request: %s", request)
             return None
 
         response = None
@@ -162,9 +168,11 @@ class Cache:
         elif not memory_hit:
             return None
 
+        # --- LM-specific response mutation ---
+        # deepcopy so callers can't mutate the cached object.
+        # For LM responses, clear usage (no real call was made) and mark cache_hit.
         response = copy.deepcopy(response)
         if hasattr(response, "usage"):
-            # Clear the usage data when cache is hit, because no LM call is made
             response.usage = {}
             response.cache_hit = True
         return response
@@ -176,6 +184,7 @@ class Cache:
         ignored_args_for_cache_key: list[str] | None = None,
         enable_memory_cache: bool = True,
     ) -> None:
+        """Store a response in the cache, writing to both memory and disk as configured."""
         enable_memory_cache = self.enable_memory_cache and enable_memory_cache
 
         # Early return to avoid computing cache key if both memory and disk cache are disabled
@@ -185,7 +194,7 @@ class Cache:
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
+            logger.debug("Failed to generate cache key for request: %s", request)
             return
 
         if enable_memory_cache:
@@ -221,8 +230,10 @@ class Cache:
 
     def load_memory_cache(self, filepath: str, allow_pickle: bool = False) -> None:
         if not allow_pickle:
-            raise ValueError("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. \
-            Set `allow_pickle=True` to load if you are running in a trusted environment and the file is from a trusted source.")
+            raise ValueError(
+                "Loading untrusted .pkl files can run arbitrary code, which may be dangerous. "
+                "Set `allow_pickle=True` to load if you are running in a trusted environment and the file is from a trusted source."
+            )
 
         if not self.enable_memory_cache:
             return
@@ -249,6 +260,8 @@ def request_cache(
         enable_memory_cache: Whether to enable in-memory cache at call time. If False, the memory cache will not be
             written to on new data.
     """
+    # Default differs from cache_key() (which defaults to []) because LM calls
+    # should always ignore credentials; callers of cache_key() may not want that.
     ignored_args_for_cache_key = ignored_args_for_cache_key or ["api_key", "api_base", "base_url"]
     # Deprecation notice
     if maxsize is not None:
@@ -259,8 +272,7 @@ def request_cache(
         )
 
     def decorator(fn):
-        @wraps(fn)
-        def process_request(args, kwargs):
+        def build_cache_request(args, kwargs):
             # Use fully qualified function name for uniqueness
             fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
 
@@ -284,7 +296,7 @@ def request_cache(
             import dspy
 
             cache = dspy.cache
-            modified_request = process_request(args, kwargs)
+            modified_request = build_cache_request(args, kwargs)
 
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
@@ -301,12 +313,14 @@ def request_cache(
 
             return result
 
+        # Intentional duplication of sync_wrapper: `await` cannot be conditional,
+        # so we need a separate async function to properly await the wrapped coroutine.
         @wraps(fn)
         async def async_wrapper(*args, **kwargs):
             import dspy
 
             cache = dspy.cache
-            modified_request = process_request(args, kwargs)
+            modified_request = build_cache_request(args, kwargs)
 
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)

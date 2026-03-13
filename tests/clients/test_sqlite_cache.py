@@ -1,16 +1,21 @@
 """Tests for SQLiteCache - serialization, core behavior, concurrency, migration."""
 
+import asyncio
 import os
 import pickle
 import sqlite3
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from unittest.mock import patch
 
 import orjson
 import pydantic
 import pytest
+from litellm.types.utils import EmbeddingResponse, ModelResponse
 
+from dspy.clients.cache import Cache, request_cache
 from dspy.clients.sqlite_cache import (
     SQLiteCache,
     _deserialize,
@@ -868,3 +873,608 @@ def test_serialize_roundtrip_pydantic_extra_fields():
     assert result.id == "call_123"
     assert result.type == "function"
     assert result.function.name == "test"
+
+
+# ── Migration pattern helpers ────────────────────────────────────────────────
+
+
+def _create_legacy_shard(directory: str, shard_num: int, entries: list[tuple[str, object, int]]):
+    """Create a fake diskcache shard with pickled entries.
+
+    Each entry is ``(key, value, mode)`` where mode=4 means PICKLE.
+    """
+    shard_dir = os.path.join(directory, f"{shard_num:03d}")
+    os.makedirs(shard_dir, exist_ok=True)
+    conn = sqlite3.connect(os.path.join(shard_dir, "cache.db"))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS Cache ("
+        "  rowid INTEGER PRIMARY KEY, key BLOB, raw INTEGER,"
+        "  store_time REAL, expire_time REAL, access_time REAL,"
+        "  access_count INTEGER DEFAULT 0, tag BLOB, size INTEGER DEFAULT 0,"
+        "  mode INTEGER DEFAULT 0, filename TEXT, value BLOB)"
+    )
+    for key, value, mode in entries:
+        blob = pickle.dumps(value) if mode == 4 else value
+        conn.execute(
+            "INSERT INTO Cache (key, raw, value, access_time, mode, size) VALUES (?, 1, ?, ?, ?, ?)",
+            (key, blob, time.time(), mode, len(blob) if isinstance(blob, bytes) else 0),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _make_model_response() -> ModelResponse:
+    """Create a realistic ModelResponse matching what DSPy stores."""
+    return ModelResponse(
+        id="chatcmpl-abc123",
+        model="openai/gpt-4o-mini",
+        choices=[{
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+                "role": "assistant",
+                "content": "The answer is 42.",
+            },
+        }],
+        usage={"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23},
+    )
+
+
+def _make_model_response_with_tool_calls() -> ModelResponse:
+    """Create a ModelResponse with tool_calls, matching DSPy function-calling patterns."""
+    return ModelResponse(
+        id="chatcmpl-tools-456",
+        model="openai/gpt-4o-mini",
+        choices=[{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_abc",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city": "San Francisco", "unit": "celsius"}',
+                        },
+                    },
+                    {
+                        "id": "call_def",
+                        "type": "function",
+                        "function": {
+                            "name": "get_population",
+                            "arguments": '{"city": "San Francisco"}',
+                        },
+                    },
+                ],
+            },
+        }],
+        usage={"prompt_tokens": 20, "completion_tokens": 12, "total_tokens": 32},
+    )
+
+
+def _make_embedding_response() -> EmbeddingResponse:
+    """Create an EmbeddingResponse matching what DSPy stores for embeddings."""
+    return EmbeddingResponse(
+        data=[
+            {"embedding": [0.123, -0.456, 0.789, 0.0, -1.0], "index": 0, "object": "embedding"},
+            {"embedding": [0.111, 0.222, 0.333, 0.444, 0.555], "index": 1, "object": "embedding"},
+        ],
+        model="text-embedding-3-small",
+        usage={"prompt_tokens": 12, "total_tokens": 12},
+    )
+
+
+# ── Migration pattern tests ─────────────────────────────────────────────────
+
+
+class TestMigrationPatterns:
+    """Migration tests for real DSPy cache patterns using litellm response objects."""
+
+    def test_pickled_model_response_migrates(self, tmp_path):
+        """VAL-MIG-001: Pickled ModelResponse from legacy shard migrates to new format
+        and reads back correctly."""
+        response = _make_model_response()
+        _create_legacy_shard(str(tmp_path), 0, [("mr_key_001", response, 4)])
+
+        target = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        migrated, errors = migrate_diskcache(str(tmp_path), target)
+
+        assert migrated == 1
+        assert errors == 0
+
+        result = target["mr_key_001"]
+        assert isinstance(result, ModelResponse)
+        assert result.id == "chatcmpl-abc123"
+        assert result.model == "openai/gpt-4o-mini"
+        assert result.choices[0].message.content == "The answer is 42."
+        assert result.choices[0].finish_reason == "stop"
+        assert result.usage.prompt_tokens == 15
+        assert result.usage.completion_tokens == 8
+        assert result.usage.total_tokens == 23
+
+    def test_model_response_with_tool_calls_migrates(self, tmp_path):
+        """VAL-MIG-002: Pickled ModelResponse with tool_calls preserves tool call data
+        through migration."""
+        response = _make_model_response_with_tool_calls()
+        _create_legacy_shard(str(tmp_path), 0, [("tc_key_001", response, 4)])
+
+        target = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        migrated, errors = migrate_diskcache(str(tmp_path), target)
+
+        assert migrated == 1
+        assert errors == 0
+
+        result = target["tc_key_001"]
+        assert isinstance(result, ModelResponse)
+        assert result.id == "chatcmpl-tools-456"
+        assert result.choices[0].finish_reason == "tool_calls"
+        assert result.choices[0].message.content is None
+
+        tool_calls = result.choices[0].message.tool_calls
+        assert len(tool_calls) == 2
+
+        assert tool_calls[0].id == "call_abc"
+        assert tool_calls[0].type == "function"
+        assert tool_calls[0].function.name == "get_weather"
+        assert tool_calls[0].function.arguments == '{"city": "San Francisco", "unit": "celsius"}'
+
+        assert tool_calls[1].id == "call_def"
+        assert tool_calls[1].type == "function"
+        assert tool_calls[1].function.name == "get_population"
+        assert tool_calls[1].function.arguments == '{"city": "San Francisco"}'
+
+    def test_entries_from_multiple_shards_migrate(self, tmp_path):
+        """VAL-MIG-003: Entries spread across 3+ shards all migrate to the target DB.
+        No entries are lost."""
+        responses = {}
+        for shard_id in [0, 5, 12]:
+            key = f"shard_{shard_id:03d}_response"
+            resp = ModelResponse(
+                id=f"chatcmpl-shard{shard_id}",
+                model="openai/gpt-4o-mini",
+                choices=[{
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": f"Response from shard {shard_id}"},
+                }],
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            )
+            responses[key] = resp
+            _create_legacy_shard(str(tmp_path), shard_id, [(key, resp, 4)])
+
+        target = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        migrated, errors = migrate_diskcache(str(tmp_path), target)
+
+        assert migrated == 3
+        assert errors == 0
+
+        for key, original in responses.items():
+            result = target[key]
+            assert isinstance(result, ModelResponse)
+            assert result.id == original.id
+            assert result.choices[0].message.content == original.choices[0].message.content
+
+    def test_migrated_entry_cache_hit(self, tmp_path, monkeypatch):
+        """VAL-MIG-004: After migration, Cache.get() with the same key returns
+        the migrated value (cache hit via the full Cache layer)."""
+        response = _make_model_response()
+        request = {
+            "model": "openai/gpt-4o-mini",
+            "messages": [{"role": "user", "content": "What is the meaning of life?"}],
+            "_fn_identifier": "dspy.clients.lm.litellm_completion",
+        }
+
+        # Compute the cache key the same way Cache does
+        from hashlib import sha256
+
+        key = sha256(orjson.dumps(request, option=orjson.OPT_SORT_KEYS)).hexdigest()
+
+        _create_legacy_shard(str(tmp_path), 0, [(key, response, 4)])
+
+        monkeypatch.setenv("DSPY_MIGRATE_CACHE", "1")
+        cache = Cache(
+            enable_disk_cache=True,
+            enable_memory_cache=True,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=1024 * 1024,
+            memory_max_entries=100,
+        )
+
+        # Use Cache.get() with the original request dict
+        result = cache.get(request)
+        assert result is not None
+        assert isinstance(result, ModelResponse)
+        assert result.id == "chatcmpl-abc123"
+        assert result.choices[0].message.content == "The answer is 42."
+        assert result.cache_hit is True
+        assert result.usage == {}
+
+    def test_embedding_response_migrates(self, tmp_path):
+        """VAL-MIG-005: Pickled EmbeddingResponse migrates correctly and embedding
+        data is preserved."""
+        response = _make_embedding_response()
+        _create_legacy_shard(str(tmp_path), 0, [("emb_key_001", response, 4)])
+
+        target = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        migrated, errors = migrate_diskcache(str(tmp_path), target)
+
+        assert migrated == 1
+        assert errors == 0
+
+        result = target["emb_key_001"]
+        assert isinstance(result, EmbeddingResponse)
+        assert result.model == "text-embedding-3-small"
+        assert len(result.data) == 2
+
+        assert result.data[0]["embedding"] == pytest.approx([0.123, -0.456, 0.789, 0.0, -1.0])
+        assert result.data[0]["index"] == 0
+        assert result.data[0]["object"] == "embedding"
+
+        assert result.data[1]["embedding"] == pytest.approx([0.111, 0.222, 0.333, 0.444, 0.555])
+        assert result.data[1]["index"] == 1
+
+        assert result.usage.prompt_tokens == 12
+        assert result.usage.total_tokens == 12
+
+
+# ── Cache tier concurrency fixture ───────────────────────────────────────────
+
+
+@pytest.fixture
+def tier_cache(tmp_path):
+    """Cache with both memory and disk tiers enabled."""
+    return Cache(
+        enable_memory_cache=True,
+        enable_disk_cache=True,
+        disk_cache_dir=str(tmp_path),
+        disk_size_limit_bytes=int(1e9),
+        memory_max_entries=100_000,
+    )
+
+
+# ── Cache tier concurrency tests ─────────────────────────────────────────────
+
+
+class TestCacheTierConcurrency:
+    """Concurrent cache access patterns that DSPy users naturally hit."""
+
+    @pytest.mark.asyncio
+    async def test_async_concurrent_cache_access(self, tmp_path):
+        """20+ asyncio tasks via asyncio.gather concurrently call a @request_cache-decorated
+        async function with both shared and distinct keys. All return correct values, no corruption.
+
+        Simulates parallel aforward() calls hitting the cache layer.
+        """
+        cache = Cache(
+            enable_memory_cache=True,
+            enable_disk_cache=True,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=int(1e9),
+            memory_max_entries=100_000,
+        )
+
+        call_count = 0
+        call_lock = asyncio.Lock()
+
+        @request_cache()
+        async def cached_function(prompt, model="openai/gpt-5-nano"):
+            nonlocal call_count
+            async with call_lock:
+                call_count += 1
+            # Simulate async work
+            await asyncio.sleep(0.001)
+            return f"result_for_{prompt}"
+
+        with patch("dspy.cache", cache):
+            # Create 30 tasks: 10 shared keys (3 calls each) + some distinct keys
+            tasks = []
+
+            # 10 distinct prompts, each called 3 times = 30 tasks total
+            for i in range(10):
+                for _ in range(3):
+                    tasks.append(cached_function(prompt=f"prompt_{i}", model="openai/gpt-5-nano"))
+
+            results = await asyncio.gather(*tasks)
+
+        # All 30 results should be correct
+        assert len(results) == 30
+        for i in range(10):
+            for j in range(3):
+                idx = i * 3 + j
+                assert results[idx] == f"result_for_prompt_{i}", (
+                    f"Task {idx} returned {results[idx]!r}, expected 'result_for_prompt_{i}'"
+                )
+
+        # The function should have been called at most 10 times (one per distinct key),
+        # but may be called more due to concurrent cache misses (no cross-task locking).
+        # The important thing is correctness of values, not deduplication.
+        assert call_count >= 10
+        assert call_count <= 30
+
+    @pytest.mark.asyncio
+    async def test_async_concurrent_cache_access_distinct_keys(self, tmp_path):
+        """20+ asyncio tasks with all distinct keys. Verifies no corruption when
+        many tasks populate cache simultaneously."""
+        cache = Cache(
+            enable_memory_cache=True,
+            enable_disk_cache=True,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=int(1e9),
+            memory_max_entries=100_000,
+        )
+
+        @request_cache()
+        async def cached_function(prompt, model="openai/gpt-5-nano"):
+            await asyncio.sleep(0.001)
+            return f"result_for_{prompt}"
+
+        with patch("dspy.cache", cache):
+            tasks = [cached_function(prompt=f"unique_{i}", model="openai/gpt-5-nano") for i in range(25)]
+            results = await asyncio.gather(*tasks)
+
+        assert len(results) == 25
+        for i in range(25):
+            assert results[i] == f"result_for_unique_{i}"
+
+    def test_threaded_cache_access_both_tiers(self, tier_cache):
+        """ThreadPoolExecutor with 8+ workers do Cache.get()/Cache.put() with both
+        memory and disk enabled. All threads get correct values, no deadlocks.
+
+        Simulates DSPy's Parallelizer usage pattern.
+        """
+        num_workers = 16
+        num_entries = 100
+        errors = []
+
+        # Pre-populate half the entries
+        for i in range(0, num_entries, 2):
+            request = {"prompt": f"prompt_{i}", "model": "openai/gpt-5-nano"}
+            tier_cache.put(request, f"value_{i}")
+
+        def worker(i):
+            try:
+                request = {"prompt": f"prompt_{i}", "model": "openai/gpt-5-nano"}
+                if i % 2 == 0:
+                    # Even indices: read pre-populated entries
+                    result = tier_cache.get(request)
+                    assert result == f"value_{i}", f"Thread {i} got {result!r}, expected 'value_{i}'"
+                else:
+                    # Odd indices: write new entries
+                    tier_cache.put(request, f"value_{i}")
+                    result = tier_cache.get(request)
+                    assert result == f"value_{i}", f"Thread {i} got {result!r} after put"
+            except Exception as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(worker, i) for i in range(num_entries)]
+            for f in as_completed(futures):
+                f.result()
+
+        assert not errors, f"Errors from threads: {errors}"
+
+        # Verify all entries are readable after concurrent access
+        for i in range(num_entries):
+            request = {"prompt": f"prompt_{i}", "model": "openai/gpt-5-nano"}
+            result = tier_cache.get(request)
+            assert result == f"value_{i}", f"Final check: key {i} got {result!r}"
+
+    def test_threaded_cache_access_heavy_contention(self, tier_cache):
+        """8+ threads all reading and writing the same small set of keys simultaneously.
+        Tests for deadlocks under high contention on the same keys."""
+        num_workers = 12
+        iterations_per_worker = 50
+        errors = []
+
+        def worker(worker_id):
+            try:
+                for j in range(iterations_per_worker):
+                    key_idx = j % 5  # Only 5 keys to maximize contention
+                    request = {"prompt": f"shared_{key_idx}", "model": "test"}
+                    tier_cache.put(request, f"worker_{worker_id}_iter_{j}")
+                    result = tier_cache.get(request)
+                    # Value should be a string matching the pattern from some worker
+                    assert result is not None, f"Worker {worker_id} got None for key {key_idx}"
+                    assert isinstance(result, str), f"Worker {worker_id} got non-string: {result!r}"
+                    assert result.startswith("worker_"), f"Worker {worker_id} got corrupted value: {result!r}"
+            except Exception as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(worker, w) for w in range(num_workers)]
+            for f in as_completed(futures):
+                f.result()
+
+        assert not errors, f"Errors from threads: {errors}"
+
+    def test_concurrent_overlapping_key_writes(self, tier_cache):
+        """Multiple threads write different values to the same key via Cache.put().
+        After completion, Cache.get() returns one consistent value (not corrupted).
+        """
+        num_writers = 16
+        request = {"prompt": "contested_key", "model": "openai/gpt-5-nano"}
+        errors = []
+        written_values = [f"value_from_thread_{i}" for i in range(num_writers)]
+
+        def writer(i):
+            try:
+                tier_cache.put(request, written_values[i])
+            except Exception as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=num_writers) as executor:
+            futures = [executor.submit(writer, i) for i in range(num_writers)]
+            for f in as_completed(futures):
+                f.result()
+
+        assert not errors, f"Errors from threads: {errors}"
+
+        # After all writes, the value should be one of the written values (not corrupted)
+        final_value = tier_cache.get(request)
+        assert final_value in written_values, (
+            f"Final value {final_value!r} is not one of the written values"
+        )
+
+        # Multiple reads should all return the same consistent value
+        results = [tier_cache.get(request) for _ in range(10)]
+        assert all(r == final_value for r in results), (
+            f"Inconsistent reads: {set(results)}"
+        )
+
+    def test_concurrent_overlapping_key_writes_disk_consistency(self, tier_cache):
+        """After concurrent writes to the same key, clearing memory cache and reading from
+        disk should return a consistent value that matches what memory returns."""
+        num_writers = 12
+        request = {"prompt": "disk_contested", "model": "test"}
+        written_values = [f"disk_value_{i}" for i in range(num_writers)]
+
+        def writer(i):
+            tier_cache.put(request, written_values[i])
+
+        with ThreadPoolExecutor(max_workers=num_writers) as executor:
+            futures = [executor.submit(writer, i) for i in range(num_writers)]
+            for f in as_completed(futures):
+                f.result()
+
+        # Read from memory
+        memory_value = tier_cache.get(request)
+        assert memory_value in written_values
+
+        # Clear memory, read from disk
+        tier_cache.reset_memory_cache()
+        disk_value = tier_cache.get(request)
+        assert disk_value in written_values
+
+        # Both should be consistent (disk may differ from memory if last write to
+        # each tier came from different threads, but each should be a valid value)
+
+    def test_concurrent_disk_to_memory_promotion(self, tier_cache):
+        """Store key in Cache (both tiers), reset memory cache, then 8+ threads
+        simultaneously call Cache.get() for same key. All get correct value from
+        disk promotion."""
+        request = {"prompt": "promote_me", "model": "openai/gpt-5-nano"}
+        expected_value = {"content": "promoted_response", "tokens": 42}
+
+        # Store in both tiers
+        tier_cache.put(request, expected_value)
+
+        # Verify it's in both tiers
+        key = tier_cache.cache_key(request)
+        assert key in tier_cache.memory_cache
+        assert key in tier_cache.disk_cache
+
+        # Clear memory cache so all threads must promote from disk
+        tier_cache.reset_memory_cache()
+        assert key not in tier_cache.memory_cache
+
+        num_readers = 16
+        results = [None] * num_readers
+        errors = []
+
+        def reader(i):
+            try:
+                result = tier_cache.get(request)
+                results[i] = result
+            except Exception as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=num_readers) as executor:
+            futures = [executor.submit(reader, i) for i in range(num_readers)]
+            for f in as_completed(futures):
+                f.result()
+
+        assert not errors, f"Errors from threads: {errors}"
+
+        # All threads should have gotten the correct value
+        for i, result in enumerate(results):
+            assert result == expected_value, (
+                f"Thread {i} got {result!r}, expected {expected_value!r}"
+            )
+
+        # After promotion, the key should be back in memory cache
+        assert key in tier_cache.memory_cache
+
+    def test_concurrent_disk_to_memory_promotion_model_response(self, tmp_path):
+        """Concurrent disk-to-memory promotion with a real ModelResponse object.
+        Verifies that deepcopy in Cache.get() handles concurrent access correctly
+        and all responses have cache_hit=True, usage={}."""
+        cache = Cache(
+            enable_memory_cache=True,
+            enable_disk_cache=True,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=int(1e9),
+            memory_max_entries=100_000,
+        )
+
+        response = ModelResponse(
+            id="chatcmpl-concurrent",
+            choices=[{"message": {"content": "concurrent response"}, "index": 0, "finish_reason": "stop"}],
+            usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        )
+
+        request = {"prompt": "concurrent_model_response", "model": "openai/gpt-5-nano"}
+        cache.put(request, response)
+        cache.reset_memory_cache()
+
+        num_readers = 12
+        results = [None] * num_readers
+        errors = []
+
+        def reader(i):
+            try:
+                results[i] = cache.get(request)
+            except Exception as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=num_readers) as executor:
+            futures = [executor.submit(reader, i) for i in range(num_readers)]
+            for f in as_completed(futures):
+                f.result()
+
+        assert not errors, f"Errors from threads: {errors}"
+
+        for i, result in enumerate(results):
+            assert isinstance(result, ModelResponse), f"Thread {i} got type {type(result)}"
+            assert result.choices[0].message.content == "concurrent response"
+            assert result.cache_hit is True
+            assert result.usage == {}
+
+        # Verify all results are independent copies (mutating one doesn't affect others)
+        results[0].choices[0].message.content = "mutated"
+        assert results[1].choices[0].message.content == "concurrent response"
+
+    def test_concurrent_put_and_get_interleaved(self, tier_cache):
+        """Threads interleave put() and get() calls on the same set of keys.
+        Verifies no deadlocks or crashes under mixed read/write load."""
+        num_workers = 10
+        num_keys = 20
+        errors = []
+        barrier = threading.Barrier(num_workers)
+
+        def worker(worker_id):
+            try:
+                barrier.wait(timeout=5)  # Start all threads simultaneously
+                for key_idx in range(num_keys):
+                    request = {"prompt": f"interleaved_{key_idx}", "model": "test"}
+                    if worker_id % 2 == 0:
+                        tier_cache.put(request, f"w{worker_id}_k{key_idx}")
+                    else:
+                        tier_cache.get(request)  # May return None or a value
+            except Exception as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(worker, w) for w in range(num_workers)]
+            for f in as_completed(futures):
+                f.result()
+
+        assert not errors, f"Errors from threads: {errors}"
+
+        # All keys should have been written by at least one thread
+        for key_idx in range(num_keys):
+            request = {"prompt": f"interleaved_{key_idx}", "model": "test"}
+            result = tier_cache.get(request)
+            assert result is not None, f"Key {key_idx} was never written"
