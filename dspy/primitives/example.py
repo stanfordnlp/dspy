@@ -2,21 +2,24 @@ from pydantic import BaseModel
 
 
 class Example:
-    """Hold a single data row with named fields, like one row of a dataset.
+    """Store one DSPy data point with named fields.
 
-    If you've used HuggingFace datasets or pandas DataFrames, think of an
-    `Example` as one row: each field is a column value you access by name.
-    A list of `Example` objects is how you pass a trainset or devset to DSPy
-    optimizers and evaluators.
+    Think of an `Example` as one row from a HuggingFace dataset or pandas
+    DataFrame. Each field is a column value you can access by name, either with
+    `example.question` or `example["question"]`.
 
-    Create one with keyword arguments, a dictionary, or another `Example`.
-    Call `with_inputs` to declare which fields are inputs and which are labels.
-    DSPy modules and optimizers rely on that split: they call
-    `example.inputs()` to feed your program and `example.labels()` to check
-    its output.
+    In DSPy, lists of `Example` objects are your trainset, devset, and testset.
+    Most examples are built from keyword arguments or an existing record, then
+    tagged with `with_inputs(...)` to say which fields should be fed into a
+    module. The remaining fields are labels or metadata.
+
+    When you write evaluation code, custom optimizers, or training loops, use
+    `example.inputs()` for the fields you want to pass to a module, and use
+    `example.labels()` for the fields you want to compare against the module's
+    output.
 
     Examples:
-        Keyword arguments:
+        Build one from keyword arguments:
 
         >>> import dspy
         >>> example = dspy.Example(
@@ -28,21 +31,14 @@ class Example:
         >>> example.answer
         'Paris'
 
-        From a dictionary:
+        Build one from an existing record:
 
-        >>> data = {"question": "What is 2+2?", "answer": "4"}
-        >>> example = dspy.Example(data)
+        >>> record = {"question": "What is 2+2?", "answer": "4"}
+        >>> example = dspy.Example(**record)
         >>> example["question"]
         'What is 2+2?'
 
-        From another `Example`:
-
-        >>> original = dspy.Example(question="Hello", answer="World")
-        >>> copy = dspy.Example(original)
-        >>> copy.question
-        'Hello'
-
-        Input/output separation:
+        Mark which fields are inputs:
 
         >>> example = dspy.Example(
         ...     question="What is the weather?",
@@ -53,7 +49,25 @@ class Example:
         >>> example.labels().answer
         "It's sunny"
 
-        Dictionary-like operations:
+        Use examples in a trainset:
+
+        >>> trainset = [
+        ...     dspy.Example(question="What is 2+2?", answer="4").with_inputs("question"),
+        ...     dspy.Example(question="What is 3+3?", answer="6").with_inputs("question"),
+        ... ]
+        >>> trainset[0].inputs().toDict()
+        {'question': 'What is 2+2?'}
+
+        Use an example in a metric:
+
+        >>> def exact_match_metric(example, pred, trace=None):
+        ...     return example.answer.lower() == pred.answer.lower()
+        >>> gold = dspy.Example(question="What is 1+1?", answer="2").with_inputs("question")
+        >>> pred = dspy.Prediction(answer="2")
+        >>> exact_match_metric(gold, pred)
+        True
+
+        Use it like a dictionary:
 
         >>> example = dspy.Example(name="Alice", age=30)
         >>> "name" in example
@@ -62,18 +76,28 @@ class Example:
         'Unknown'
 
     See Also:
-        [`dspy.Prediction`][dspy.Prediction]: An `Example` subclass returned
-            by DSPy modules, with completions tracking.
+        [`dspy.Evaluate`][dspy.Evaluate]: Evaluate a program on a list of
+            `Example`s.
+        [`Metrics`](../../learn/evaluation/metrics.md): Write metric functions
+            that compare an `Example` with a prediction.
     """
+    # TODO: Add a `dspy.datasets.DataLoader` API link once the datasets API
+    # pages exist.
 
     def __init__(self, base=None, **kwargs):
-        """Create an `Example` from keyword arguments, a dict, or another `Example`.
+        """Create an `Example` from fields or from an existing record.
+
+        In the common case, pass fields as keyword arguments, like
+        `dspy.Example(question="...", answer="...")`. Use `base` when you
+        already have a dictionary or another `Example` and want to copy its
+        fields before adding or overriding a few values.
 
         Args:
-            base: A dictionary or `Example` to copy fields from.
-                When `None`, starts empty.
-            **kwargs: Field names and values. These are merged on top of
-                anything in `base`.
+            base: A dictionary or `Example` to copy fields from before applying
+                `**kwargs`. When `None`, starts with no fields.
+            **kwargs: Field names and values to store on the example. If a field
+                appears in both `base` and `**kwargs`, the value from
+                `**kwargs` wins.
         """
         # Internal storage and other attributes
         self._store = {}
