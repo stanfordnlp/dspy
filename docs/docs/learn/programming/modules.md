@@ -38,7 +38,7 @@ True
 
 When we declare a module, we can pass configuration keys to it.
 
-Below, we'll pass `n=5` to request five completions. We can also pass `temperature` or `max_len`, etc.
+Below, we'll pass a simple config key like `temperature`. You can also pass other generation keys like `max_tokens`.
 
 Let's use `dspy.ChainOfThought`. In many cases, simply swapping `dspy.ChainOfThought` in place of `dspy.Predict` improves quality.
 
@@ -46,21 +46,17 @@ Let's use `dspy.ChainOfThought`. In many cases, simply swapping `dspy.ChainOfTho
 question = "What's something great about the ColBERT retrieval model?"
 
 # 1) Declare with a signature, and pass some config.
-classify = dspy.ChainOfThought('question -> answer', n=5)
+classify = dspy.ChainOfThought('question -> answer', temperature=0.7)
 
 # 2) Call with input argument.
 response = classify(question=question)
 
-# 3) Access the outputs.
-response.completions.answer
+# 3) Access the output.
+response.answer
 ```
 **Possible Output:**
 ```text
-['One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.',
- 'Its ability to efficiently retrieve relevant information from large document collections.',
- 'One great thing about the ColBERT retrieval model is its superior performance compared to other models and its efficient use of pre-trained language models.',
- 'One great thing about the ColBERT retrieval model is its superior efficiency and accuracy compared to other models.',
- 'One great thing about the ColBERT retrieval model is its ability to incorporate user feedback and support complex queries.']
+'One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.'
 ```
 
 Let's discuss the output object here. The `dspy.ChainOfThought` module will generally inject a `reasoning` before the output field(s) of your signature.
@@ -76,19 +72,6 @@ print(f"Answer: {response.answer}")
 Reasoning: We can consider the fact that ColBERT has shown to outperform other state-of-the-art retrieval models in terms of efficiency and effectiveness. It uses contextualized embeddings and performs document retrieval in a way that is both accurate and scalable.
 Answer: One great thing about the ColBERT retrieval model is its superior efficiency and effectiveness compared to other models.
 ```
-
-This is accessible whether we request one or many completions.
-
-We can also access the different completions as a list of `Prediction`s or as several lists, one for each field.
-
-```python
-response.completions[3].reasoning == response.completions.reasoning[3]
-```
-**Output:**
-```text
-True
-```
-
 
 ## What other DSPy modules are there? How can I use them?
 

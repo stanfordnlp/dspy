@@ -157,7 +157,7 @@ class BetterTogether(Teleprompter):
                 defaults to ``p=BootstrapFewShotWithRandomSearch(metric=metric)`` and
                 ``w=BootstrapFinetune(metric=metric)``. Any DSPy Teleprompter can be used.
 
-        Example:
+        Examples:
             >>> # Use custom optimizers
             >>> from dspy.teleprompt import GEPA, BootstrapFinetune
             >>> optimizer = BetterTogether(
@@ -257,7 +257,7 @@ class BetterTogether(Teleprompter):
                 contains invalid optimizer keys, or optimizer_compile_args contains invalid arguments.
             TypeError: If optimizer_compile_args contains a 'student' key (not allowed).
 
-        Example:
+        Examples:
             >>> optimizer = BetterTogether(
             ...     metric=metric,
             ...     p=GEPA(metric=metric),
