@@ -15,22 +15,35 @@ class DSPyLoggingStream:
     """
 
     def __init__(self):
+        """Initialize the stream in an enabled state."""
         self._enabled = True
 
     def write(self, text):
+        """Write text to the current ``sys.stderr`` stream when logging is enabled.
+
+        Args:
+            text: Text emitted by the logging subsystem.
+        """
         if self._enabled:
             sys.stderr.write(text)
 
     def flush(self):
+        """Flush the current ``sys.stderr`` stream when logging is enabled."""
         if self._enabled:
             sys.stderr.flush()
 
     @property
     def enabled(self):
+        """Whether writes and flushes should be forwarded to ``sys.stderr``."""
         return self._enabled
 
     @enabled.setter
     def enabled(self, value):
+        """Enable or disable forwarding to ``sys.stderr``.
+
+        Args:
+            value: ``True`` to emit log output, ``False`` to suppress it.
+        """
         self._enabled = value
 
 
@@ -55,6 +68,15 @@ def enable_logging():
 
 
 def configure_dspy_loggers(root_module_name):
+    """Configure DSPy's root logger to emit through ``DSPY_LOGGING_STREAM``.
+
+    This helper installs a single named stream handler, formats log lines using
+    DSPy's standard timestamped format, and prevents duplicate propagation to
+    ancestor loggers.
+
+    Args:
+        root_module_name: Root logger name to configure, for example ``"dspy"``.
+    """
     formatter = logging.Formatter(fmt=LOGGING_LINE_FORMAT, datefmt=LOGGING_DATETIME_FORMAT)
 
     dspy_handler_name = "dspy_handler"
