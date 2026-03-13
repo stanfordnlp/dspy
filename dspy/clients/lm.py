@@ -138,22 +138,22 @@ class LM(BaseLM):
     ):
         """Send a completion request to the language model via LiteLLM.
 
-        Either ``prompt`` or ``messages`` should be provided. If only ``prompt``
+        Either `prompt` or `messages` should be provided. If only `prompt`
         is given, it is wrapped in a single user message.
 
         Args:
             prompt: A plain-text prompt to send to the model. Ignored when
-                ``messages`` is provided.
+                `messages` is provided.
             messages: A list of message dicts following the OpenAI chat format
-                (each dict has ``"role"`` and ``"content"`` keys).
+                (each dict has `"role"` and `"content"` keys).
             **kwargs: Additional keyword arguments forwarded to the LiteLLM
-                completion call. A ``cache`` key (bool) can be passed to
+                completion call. A `cache` key (bool) can be passed to
                 override the instance-level caching setting for this request.
 
         Returns:
-            The raw response object from LiteLLM (same shape as the OpenAI
-            chat completion, text completion, or responses API depending on
-            ``model_type``).
+            list: The raw response object from LiteLLM (same shape as the
+                OpenAI chat completion, text completion, or responses API
+                depending on `model_type`).
         """
         # Build the request.
         kwargs = dict(kwargs)
@@ -193,21 +193,21 @@ class LM(BaseLM):
         messages: list[dict[str, Any]] | None = None,
         **kwargs,
     ):
-        """Async version of :meth:`forward`.
+        """Async version of `forward`.
 
         Accepts the same arguments and returns the same response format, but
-        uses ``litellm.acompletion`` / ``litellm.atext_completion`` under the
+        uses `litellm.acompletion` / `litellm.atext_completion` under the
         hood so it can be awaited in an async context.
 
         Args:
             prompt: A plain-text prompt to send to the model. Ignored when
-                ``messages`` is provided.
+                `messages` is provided.
             messages: A list of message dicts following the OpenAI chat format.
             **kwargs: Additional keyword arguments forwarded to the LiteLLM
                 async completion call.
 
         Returns:
-            The raw response object from LiteLLM.
+            list: The raw response object from LiteLLM.
         """
         # Build the request.
         kwargs = dict(kwargs)
@@ -250,8 +250,8 @@ class LM(BaseLM):
 
         Args:
             launch_kwargs: Optional keyword arguments forwarded to the
-                provider's launch implementation. When ``None``, the
-                instance's ``launch_kwargs`` (set at init) are used by the
+                provider's launch implementation. When `None`, the
+                instance's `launch_kwargs` (set at init) are used by the
                 provider instead.
         """
         self.provider.launch(self, launch_kwargs)
@@ -259,7 +259,7 @@ class LM(BaseLM):
     def kill(self, launch_kwargs: dict[str, Any] | None = None):
         """Stop a running language model through its provider.
 
-        This is the counterpart to :meth:`launch`. For providers that manage
+        This is the counterpart to `launch`. For providers that manage
         their own model processes, this shuts down the underlying service.
 
         Args:
@@ -277,22 +277,22 @@ class LM(BaseLM):
         """Start an asynchronous fine-tuning job for this language model.
 
         The job runs in a background thread. Use the returned
-        :class:`~dspy.clients.provider.TrainingJob` (a
-        ``concurrent.futures.Future`` subclass) to check progress or retrieve
-        the fine-tuned ``LM`` instance once training completes.
+        `TrainingJob` (a `concurrent.futures.Future` subclass) to check
+        progress or retrieve the fine-tuned `LM` instance once training
+        completes.
 
         Args:
             train_data: A list of training examples, each represented as a
-                dictionary whose schema depends on ``train_data_format``.
+                dictionary whose schema depends on `train_data_format`.
             train_data_format: The format of the training data (e.g.
-                ``TrainDataFormat.CHAT``).
+                `TrainDataFormat.CHAT`).
             train_kwargs: Optional keyword arguments forwarded to the
-                provider's fine-tuning implementation. When ``None``, the
-                instance's ``train_kwargs`` (set at init) are used.
+                provider's fine-tuning implementation. When `None`, the
+                instance's `train_kwargs` (set at init) are used.
 
         Returns:
-            A :class:`~dspy.clients.provider.TrainingJob` future. Call
-            ``.result()`` on it to block until the fine-tuned ``LM`` is ready.
+            TrainingJob: A future that resolves to the fine-tuned `LM`.
+                Call `.result()` on it to block until training is done.
 
         Raises:
             ValueError: If the provider does not support fine-tuning.
@@ -326,7 +326,7 @@ class LM(BaseLM):
     def reinforce(self, train_kwargs) -> ReinforceJob:
         """Start a reinforcement learning fine-tuning job for this language model.
 
-        Unlike :meth:`finetune`, which runs standard supervised fine-tuning,
+        Unlike `finetune`, which runs standard supervised fine-tuning,
         this method uses the provider's reinforcement learning interface
         (e.g. GRPO).
 
@@ -336,8 +336,8 @@ class LM(BaseLM):
                 reward config, etc.).
 
         Returns:
-            A :class:`~dspy.clients.provider.ReinforceJob` that can be
-            stepped through training iterations via its ``step()`` method.
+            ReinforceJob: A job that can be stepped through training
+                iterations via its `step()` method.
 
         Raises:
             AssertionError: If the provider does not support reinforcement
@@ -373,12 +373,11 @@ class LM(BaseLM):
     def infer_provider(self) -> Provider:
         """Infer the provider for this language model based on its model name.
 
-        Returns an :class:`~dspy.clients.openai.OpenAIProvider` when the model
-        string matches an OpenAI model pattern, otherwise falls back to the
-        base :class:`~dspy.clients.provider.Provider`.
+        Returns an `OpenAIProvider` when the model string matches an OpenAI
+        model pattern, otherwise falls back to the base `Provider`.
 
         Returns:
-            The inferred :class:`~dspy.clients.provider.Provider` instance.
+            Provider: The inferred provider instance.
         """
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
@@ -388,13 +387,13 @@ class LM(BaseLM):
         """Serialize the language model's configuration into a plain dict.
 
         The returned dictionary contains enough information to recreate the
-        ``LM`` instance via ``LM(**state)``. API keys are excluded from the
+        `LM` instance via `LM(**state)`. API keys are excluded from the
         output to avoid leaking credentials.
 
         Returns:
-            A dictionary of configuration values including model name, model
-            type, caching preference, retry count, and any extra keyword
-            arguments passed at construction time.
+            dict: Configuration values including model name, model type,
+                caching preference, retry count, and any extra keyword
+                arguments passed at construction time.
         """
         state_keys = [
             "model",
