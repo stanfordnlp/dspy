@@ -63,12 +63,33 @@ class Predict(Module, Parameter):
         self.reset()
 
     def reset(self):
+        """Reset the module to its initial state.
+
+        Clears the language model, traces, training examples, and
+        demonstrations, restoring the module to a freshly initialized state.
+        """
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self, json_mode=True):
+        """Serialize the module's state into a dictionary.
+
+        Captures the current traces, training examples, demonstrations,
+        signature, and language model configuration so they can be saved
+        and later restored with ``load_state``.
+
+        Args:
+            json_mode: If True, convert demonstration examples to plain
+                dictionaries for JSON serialization. If False, keep the
+                original container types (e.g., ``Example``), though
+                individual field values are still serialized.
+
+        Returns:
+            A dictionary containing the serialized module state with keys
+            ``traces``, ``train``, ``demos``, ``signature``, and ``lm``.
+        """
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -124,12 +145,55 @@ class Predict(Module, Parameter):
         )
 
     def __call__(self, *args, **kwargs):
+        """Run the predict module on the given inputs.
+
+        Invokes the module's ``forward`` method with the provided keyword
+        arguments. Positional arguments are not allowed; all inputs must
+        be passed as keyword arguments matching the signature's input fields.
+
+        Args:
+            **kwargs: Keyword arguments corresponding to the input fields
+                defined in the module's signature. Additionally accepts
+                the following optional keys:
+
+                - ``signature``: Override the signature for this call.
+                - ``demos``: Override the demonstrations for this call.
+                - ``config``: A dict of LM configuration overrides.
+                - ``lm``: Override the language model for this call.
+
+        Returns:
+            Prediction: A ``Prediction`` object containing the output fields
+                defined in the module's signature.
+
+        Raises:
+            ValueError: If positional arguments are passed instead of
+                keyword arguments.
+        """
         if args:
             raise ValueError(self._get_positional_args_error_message())
 
         return super().__call__(**kwargs)
 
     async def acall(self, *args, **kwargs):
+        """Asynchronously run the predict module on the given inputs.
+
+        This is the async counterpart of ``__call__``. It invokes the
+        module's ``aforward`` method with the provided keyword arguments.
+
+        Args:
+            **kwargs: Keyword arguments corresponding to the input fields
+                defined in the module's signature. Accepts the same optional
+                keys as ``__call__`` (``signature``, ``demos``, ``config``,
+                ``lm``).
+
+        Returns:
+            Prediction: A ``Prediction`` object containing the output fields
+                defined in the module's signature.
+
+        Raises:
+            ValueError: If positional arguments are passed instead of
+                keyword arguments.
+        """
         if args:
             raise ValueError(self._get_positional_args_error_message())
 
@@ -241,6 +305,25 @@ class Predict(Module, Parameter):
         return should_stream
 
     def forward(self, **kwargs):
+        """Execute the prediction using the configured language model.
+
+        Preprocesses the inputs, selects the appropriate adapter, sends
+        the request to the language model, and returns the parsed
+        prediction. This method is called internally by ``__call__`` and
+        should not normally be invoked directly.
+
+        Args:
+            **kwargs: Keyword arguments corresponding to the input fields
+                defined in the module's signature. Also accepts optional
+                override keys (``signature``, ``demos``, ``config``, ``lm``).
+
+        Returns:
+            Prediction: A ``Prediction`` object containing the output fields
+                defined in the module's signature.
+
+        Raises:
+            ValueError: If no language model is configured.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -255,6 +338,23 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     async def aforward(self, **kwargs):
+        """Asynchronously execute the prediction using the configured language model.
+
+        This is the async counterpart of ``forward``. It is called
+        internally by ``acall`` and should not normally be invoked directly.
+
+        Args:
+            **kwargs: Keyword arguments corresponding to the input fields
+                defined in the module's signature. Also accepts optional
+                override keys (``signature``, ``demos``, ``config``, ``lm``).
+
+        Returns:
+            Prediction: A ``Prediction`` object containing the output fields
+                defined in the module's signature.
+
+        Raises:
+            ValueError: If no language model is configured.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -268,9 +368,24 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     def update_config(self, **kwargs):
+        """Update the default language model configuration.
+
+        Merges the provided keyword arguments into the existing
+        configuration. Existing keys are overwritten by the new values.
+
+        Args:
+            **kwargs: Configuration key-value pairs to merge into the
+                current config (e.g., ``temperature=0.7``, ``n=5``).
+        """
         self.config = {**self.config, **kwargs}
 
     def get_config(self):
+        """Return the current default language model configuration.
+
+        Returns:
+            A dictionary of the configuration key-value pairs that are
+            forwarded to the language model on each call.
+        """
         return self.config
 
     def __repr__(self):
