@@ -161,12 +161,12 @@ def streamify(
     elif not iscoroutinefunction(program):
         program = asyncify(program)
 
-    callbacks = list(settings.callbacks)
-    status_streaming_callback = StatusStreamingCallback(status_message_provider)
-    if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
-        callbacks.append(status_streaming_callback)
-
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
+        callbacks = list(settings.callbacks)
+        status_streaming_callback = StatusStreamingCallback(status_message_provider)
+        if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
+            callbacks.append(status_streaming_callback)
+
         with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
             prediction = await program(*args, **kwargs)
 
