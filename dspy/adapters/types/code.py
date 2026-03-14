@@ -2,7 +2,8 @@ import re
 from typing import Any, ClassVar
 
 import pydantic
-from pydantic import create_model
+from pydantic import GetJsonSchemaHandler, create_model
+from pydantic.json_schema import JsonSchemaValue
 
 from dspy.adapters.types.base_type import Type
 
@@ -66,6 +67,22 @@ class Code(Type):
     code: str
 
     language: ClassVar[str] = "python"
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        source_type: Any,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        """Override to exclude the class docstring from the JSON schema.
+
+        Pydantic uses the class docstring as the schema ``description`` by default.
+        For ``Code``, the docstring contains lengthy usage examples that bloat LLM
+        prompts when the schema is injected (see stanfordnlp/dspy#9251).
+        """
+        schema = handler(source_type)
+        schema.pop("description", None)
+        return schema
 
     def format(self):
         return f"{self.code}"
