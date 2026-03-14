@@ -18,7 +18,7 @@ from dspy.clients.sqlite_cache import SQLiteCache, has_legacy_diskcache, migrate
 
 logger = logging.getLogger(__name__)
 # Sentinel to distinguish a cache miss from a cached None value.
-_MISSING = object()
+_CACHE_MISS = object()
 
 
 def _transform_value(value):
@@ -28,13 +28,9 @@ def _transform_value(value):
     elif isinstance(value, pydantic.BaseModel):
         return value.model_dump(mode="json")
     elif callable(value):
-        # Try to get the source code of the callable if available
         try:
-            # For regular functions, we can get the source code
             return f"<callable_source:{inspect.getsource(value)}>"
         except (TypeError, OSError):
-            # For lambda functions or other callables where source isn't available,
-            # use a string representation
             return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
     elif isinstance(value, dict):
         return {k: _transform_value(v) for k, v in value.items()}
@@ -135,7 +131,7 @@ class Cache:
 
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
-        except Exception:
+        except (TypeError, orjson.JSONEncodeError):
             logger.debug("Failed to generate cache key for request: %s", request)
             return None
 
@@ -149,18 +145,18 @@ class Cache:
 
         if not memory_hit and self.enable_disk_cache:
             try:
-                response = self.disk_cache.get(key, _MISSING)
+                response = self.disk_cache.get(key, _CACHE_MISS)
             except (
                 orjson.JSONDecodeError,  # corrupt or truncated cache blob
                 ImportError,  # referenced class module no longer importable
                 AttributeError,  # referenced class or nested attribute path no longer exists
                 pydantic.ValidationError,  # payload no longer matches the current pydantic schema
                 TypeError,  # constructor / encoded payload shape mismatch during reconstruction
-                KeyError,  # cache envelope is missing required metadata such as class or payload fields
+                KeyError,  # envelope missing required metadata keys (e.g. "_data", "__dspy_cache_module__")
             ) as e:
                 logger.debug("Failed to deserialize disk cache entry %s: %s", key, e)
                 return None
-            if response is _MISSING:
+            if response is _CACHE_MISS:
                 return None
             if self.enable_memory_cache:
                 with self._lock:
@@ -193,7 +189,7 @@ class Cache:
 
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
-        except Exception:
+        except (TypeError, orjson.JSONEncodeError):
             logger.debug("Failed to generate cache key for request: %s", request)
             return
 

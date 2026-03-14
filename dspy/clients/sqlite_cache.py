@@ -174,6 +174,9 @@ class SQLiteCache:
                 raise KeyError(key)
             conn.execute("UPDATE cache SET last_access = ? WHERE key = ?", (time.time(), key))
             conn.commit()
+        # Deserialize outside the lock: the blob is an immutable bytes object,
+        # so decoding it doesn't need synchronization and avoids holding the
+        # lock during the (potentially expensive) orjson + pydantic work.
         return _deserialize(row[0])
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -250,6 +253,8 @@ class SQLiteCache:
         # for the current process before closing it.
         self._reset_after_fork()
         self._conn.close()
+
+
 def has_legacy_diskcache(directory: str) -> bool:
     """Check if directory contains an old diskcache FanoutCache (16-shard) layout."""
     return os.path.isfile(os.path.join(directory, "000", "cache.db"))
