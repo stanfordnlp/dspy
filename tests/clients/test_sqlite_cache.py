@@ -342,6 +342,31 @@ class TestPersistence:
         SQLiteCache(directory=str(nested), size_limit=None)
         assert (nested / "dspy_cache.db").exists()
 
+    def test_directory_copy_produces_functional_cache(self, tmp_path):
+        """Copying the cache directory (e.g. via shutil.copytree, rsync, or backup)
+        produces a fully functional cache with all entries intact."""
+        import shutil
+
+        src = tmp_path / "original"
+        cache1 = SQLiteCache(directory=str(src), size_limit=None)
+        cache1["small"] = "hello"
+        cache1["large"] = "x" * 500_000
+        cache1["nested"] = {"a": [1, 2, 3], "b": {"c": True}}
+        cache1.close()
+
+        dst = tmp_path / "copy"
+        shutil.copytree(str(src), str(dst))
+
+        cache2 = SQLiteCache(directory=str(dst), size_limit=None)
+        assert cache2["small"] == "hello"
+        assert cache2["large"] == "x" * 500_000
+        assert cache2["nested"] == {"a": [1, 2, 3], "b": {"c": True}}
+
+        # Copy is independent: writes to copy don't affect original
+        cache2["new_key"] = "only_in_copy"
+        cache_orig = SQLiteCache(directory=str(src), size_limit=None)
+        assert "new_key" not in cache_orig
+
 
 # ── LRU Eviction ─────────────────────────────────────────────────────────────
 
