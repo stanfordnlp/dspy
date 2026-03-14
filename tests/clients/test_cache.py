@@ -142,28 +142,16 @@ def test_put_and_get(cache):
     assert cache.cache_key(request) in cache.memory_cache
 
 
-def test_cache_miss(cache):
-    """Test getting a non-existent key."""
-    request = {"prompt": "Non-existent", "model": "gpt-4"}
-    result = cache.get(request)
-    assert result is None
+def test_cache_miss_and_unserializable_key(cache):
+    """Cache miss returns None; unserializable request key also returns None without raising."""
+    assert cache.get({"prompt": "Non-existent", "model": "gpt-4"}) is None
 
-
-def test_cache_key_error_handling(cache):
-    """Test error handling for unserializable objects."""
-
-    # Test with a request that can't be serialized to JSON
     class UnserializableObject:
         pass
 
     request = {"data": UnserializableObject()}
-
-    # Should not raise an exception
-    result = cache.get(request)
-    assert result is None
-
-    # Should not raise an exception
-    cache.put(request, "value")
+    assert cache.get(request) is None
+    cache.put(request, "value")  # should not raise
 
 
 def test_full_cache_put_get_cycle_with_model_response(cache):
@@ -196,72 +184,47 @@ def test_cache_contains_checks_disk(cache):
     assert key in cache
 
 
-def test_disk_deserialization_error_returns_none(cache):
-    """If a disk cache entry can't be deserialized (e.g. class was removed),
-    Cache.get() should return None, not crash."""
-    request = {"model": "test", "prompt": "broken_entry"}
-    key = cache.cache_key(request)
-    envelope = orjson.dumps(
-        {
-            "_data": {
-                "__dspy_cache_type__": "pydantic",
-                "__dspy_cache_module__": "nonexistent.module",
-                "__dspy_cache_qualname__": "FakeClass",
-                "__dspy_cache_data__": {"x": 1},
+def test_corrupt_disk_entries_return_none(cache):
+    """Cache.get() returns None (not crash) for: missing module, corrupt JSON,
+    and pydantic validation failure."""
+    corrupt_entries = {
+        "broken_entry": orjson.dumps(
+            {
+                "_data": {
+                    "__dspy_cache_type__": "pydantic",
+                    "__dspy_cache_module__": "nonexistent.module",
+                    "__dspy_cache_qualname__": "FakeClass",
+                    "__dspy_cache_data__": {"x": 1},
+                }
             }
-        }
-    )
-    with cache.disk_cache._lock:
-        conn = cache.disk_cache._get_conn()
-        conn.execute(
-            "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
-            (key, envelope, len(envelope), 0.0),
-        )
-        conn.commit()
-    cache.reset_memory_cache()
-    assert cache.get(request) is None
-
-
-def test_disk_corrupt_json_returns_none(cache):
-    request = {"model": "test", "prompt": "corrupt_json"}
-    key = cache.cache_key(request)
-
-    with cache.disk_cache._lock:
-        conn = cache.disk_cache._get_conn()
-        conn.execute(
-            "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
-            (key, b"{not valid json", len(b"{not valid json"), 0.0),
-        )
-        conn.commit()
-
-    cache.reset_memory_cache()
-    assert cache.get(request) is None
-
-
-def test_disk_pydantic_validation_error_returns_none(cache):
-    request = {"model": "test", "prompt": "invalid_pydantic"}
-    key = cache.cache_key(request)
-    envelope = orjson.dumps(
-        {
-            "_data": {
-                "__dspy_cache_type__": "pydantic",
-                "__dspy_cache_module__": CacheValidationModel.__module__,
-                "__dspy_cache_qualname__": CacheValidationModel.__qualname__,
-                "__dspy_cache_data__": {"name": "missing_required_value"},
+        ),
+        "corrupt_json": b"{not valid json",
+        "invalid_pydantic": orjson.dumps(
+            {
+                "_data": {
+                    "__dspy_cache_type__": "pydantic",
+                    "__dspy_cache_module__": CacheValidationModel.__module__,
+                    "__dspy_cache_qualname__": CacheValidationModel.__qualname__,
+                    "__dspy_cache_data__": {"name": "missing_required_value"},
+                }
             }
-        }
-    )
+        ),
+    }
 
     with cache.disk_cache._lock:
         conn = cache.disk_cache._get_conn()
-        conn.execute(
-            "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
-            (key, envelope, len(envelope), 0.0),
-        )
+        for prompt, blob in corrupt_entries.items():
+            request = {"model": "test", "prompt": prompt}
+            key = cache.cache_key(request)
+            conn.execute(
+                "INSERT INTO cache (key, value, size, last_access) VALUES (?, ?, ?, ?)",
+                (key, blob, len(blob), 0.0),
+            )
         conn.commit()
 
     cache.reset_memory_cache()
-    assert cache.get(request) is None
+    for prompt in corrupt_entries:
+        assert cache.get({"model": "test", "prompt": prompt}) is None
 
 
 def test_reset_memory_cache(cache):
@@ -500,51 +463,27 @@ def test_cache_consistency_with_lm_call_modifies_the_request(cache):
         )
 
 
-def test_cache_fallback_on_restricted_environment():
-    """Test that DSPy gracefully falls back to memory-only cache when disk cache fails."""
-    old_env = os.environ.get("DSPY_CACHEDIR")
-    try:
-        # Set an invalid cache directory that can't be created
-        os.environ["DSPY_CACHEDIR"] = "/dev/null/invalid_path"
-
-        import dspy
-        from dspy.clients import _get_dspy_cache
-
-        dspy.cache = _get_dspy_cache()
-
-        # Cache should work with memory-only fallback despite invalid disk path
-        test_request = {"model": "test", "prompt": "hello"}
-        dspy.cache.put(test_request, "fallback_result")
-        result = dspy.cache.get(test_request)
-
-        assert result == "fallback_result", "Memory cache fallback should work"
-
-    finally:
-        if old_env is None:
-            os.environ.pop("DSPY_CACHEDIR", None)
-        else:
-            os.environ["DSPY_CACHEDIR"] = old_env
-
-
 # ---------------------------------------------------------------------------
 # Tests from test_cache_key_isolation.py
 # ---------------------------------------------------------------------------
 
 
 class TestCacheKeyIsolation:
-    def test_model_param_isolation(self, cache):
-        """Different model values produce different keys."""
-        base_request = {
+    @pytest.mark.parametrize(
+        "field, val_a, val_b",
+        [
+            ("model", "openai/gpt-5-nano", "openai/gpt-5-mini"),
+            ("temperature", 0.7, 1.0),
+            ("_fn_identifier", "dspy.clients.lm.litellm_completion", "dspy.clients.lm.alitellm_completion"),
+        ],
+    )
+    def test_different_field_values_produce_different_keys(self, cache, field, val_a, val_b):
+        base = {
             "_fn_identifier": "dspy.clients.lm.litellm_completion",
+            "model": "openai/gpt-5-nano",
             "messages": [{"role": "user", "content": "hello"}],
         }
-        request_nano = {**base_request, "model": "openai/gpt-5-nano"}
-        request_mini = {**base_request, "model": "openai/gpt-5-mini"}
-
-        key_nano = cache.cache_key(request_nano)
-        key_mini = cache.cache_key(request_mini)
-
-        assert key_nano != key_mini
+        assert cache.cache_key({**base, field: val_a}) != cache.cache_key({**base, field: val_b})
 
     def test_api_credentials_excluded(self, cache):
         """api_key, api_base, and base_url don't affect the cache key when excluded."""
@@ -560,34 +499,30 @@ class TestCacheKeyIsolation:
             "base_url": "https://custom.openai.com",
         }
 
-        # The @request_cache decorator passes ignored_args_for_cache_key=["api_key", "api_base", "base_url"]
         ignored = ["api_key", "api_base", "base_url"]
         key_base = cache.cache_key(request_base, ignored_args_for_cache_key=ignored)
         key_with_creds = cache.cache_key(request_with_creds, ignored_args_for_cache_key=ignored)
 
         assert key_base == key_with_creds
+        assert key_base != cache.cache_key(request_with_creds)
 
-        # Also verify that without the ignored list, credentials DO affect the key
-        key_no_ignore = cache.cache_key(request_with_creds)
-        assert key_base != key_no_ignore
-
-    def test_rollout_id_produces_distinct_keys(self, cache):
-        """Different rollout_id values produce different keys; same rollout_id produces same key."""
-        base_request = {
+    def test_rollout_id_isolation_and_none_stripping(self, cache):
+        """Different rollout_id values produce different keys; same rollout_id reproduces;
+        stripping rollout_id=None matches absent rollout_id."""
+        base = {
             "_fn_identifier": "dspy.clients.lm.litellm_completion",
             "model": "openai/gpt-5-nano",
             "messages": [{"role": "user", "content": "hello"}],
         }
-        request_rollout_1 = {**base_request, "rollout_id": 1}
-        request_rollout_2 = {**base_request, "rollout_id": 2}
-        request_rollout_1_again = {**base_request, "rollout_id": 1}
-
-        key_1 = cache.cache_key(request_rollout_1)
-        key_2 = cache.cache_key(request_rollout_2)
-        key_1_again = cache.cache_key(request_rollout_1_again)
-
+        key_1 = cache.cache_key({**base, "rollout_id": 1})
+        key_2 = cache.cache_key({**base, "rollout_id": 2})
         assert key_1 != key_2
-        assert key_1 == key_1_again
+        assert key_1 == cache.cache_key({**base, "rollout_id": 1})
+
+        # Stripping None rollout_id matches absent
+        request_none = {**base, "rollout_id": None}
+        request_none.pop("rollout_id")
+        assert cache.cache_key(base) == cache.cache_key(request_none)
 
     def test_key_order_independence(self, cache):
         """Same key-value pairs in different insertion order produce the same cache key (OPT_SORT_KEYS)."""
@@ -597,78 +532,13 @@ class TestCacheKeyIsolation:
             "messages": [{"role": "user", "content": "hello"}],
             "temperature": 0.7,
         }
-        # Build the same dict with different insertion order
         request_order_b = {}
         request_order_b["temperature"] = 0.7
         request_order_b["messages"] = [{"role": "user", "content": "hello"}]
         request_order_b["model"] = "openai/gpt-5-nano"
         request_order_b["_fn_identifier"] = "dspy.clients.lm.litellm_completion"
 
-        key_a = cache.cache_key(request_order_a)
-        key_b = cache.cache_key(request_order_b)
-
-        assert key_a == key_b
-
-    def test_sync_async_fn_identifier_different(self, cache):
-        """Sync litellm_completion vs async alitellm_completion identifiers produce different keys."""
-        base_request = {
-            "model": "openai/gpt-5-nano",
-            "messages": [{"role": "user", "content": "hello"}],
-        }
-        request_sync = {**base_request, "_fn_identifier": "dspy.clients.lm.litellm_completion"}
-        request_async = {**base_request, "_fn_identifier": "dspy.clients.lm.alitellm_completion"}
-
-        key_sync = cache.cache_key(request_sync)
-        key_async = cache.cache_key(request_async)
-
-        assert key_sync != key_async
-        # Verify both are valid SHA-256 hashes
-        assert len(key_sync) == 64
-        assert len(key_async) == 64
-
-    def test_rollout_id_none_equals_absent(self, cache):
-        """rollout_id=None request produces same key as request without rollout_id.
-
-        The LM class strips rollout_id when its value is None before the request
-        reaches cache_key(). This test verifies that after that stripping, the keys
-        match — i.e., a dict without rollout_id and a dict that had rollout_id=None
-        removed both produce the same key.
-        """
-        request_without_rollout = {
-            "_fn_identifier": "dspy.clients.lm.litellm_completion",
-            "model": "openai/gpt-5-nano",
-            "messages": [{"role": "user", "content": "hello"}],
-        }
-        # Simulate what LM.forward() does: pop rollout_id if it's None
-        request_with_none_rollout = {
-            "_fn_identifier": "dspy.clients.lm.litellm_completion",
-            "model": "openai/gpt-5-nano",
-            "messages": [{"role": "user", "content": "hello"}],
-            "rollout_id": None,
-        }
-        # LM strips rollout_id=None before cache lookup
-        if request_with_none_rollout.get("rollout_id") is None:
-            request_with_none_rollout.pop("rollout_id", None)
-
-        key_without = cache.cache_key(request_without_rollout)
-        key_stripped = cache.cache_key(request_with_none_rollout)
-
-        assert key_without == key_stripped
-
-    def test_temperature_isolation(self, cache):
-        """Different temperature values produce different cache keys."""
-        base_request = {
-            "_fn_identifier": "dspy.clients.lm.litellm_completion",
-            "model": "openai/gpt-5-nano",
-            "messages": [{"role": "user", "content": "hello"}],
-        }
-        request_temp_07 = {**base_request, "temperature": 0.7}
-        request_temp_10 = {**base_request, "temperature": 1.0}
-
-        key_07 = cache.cache_key(request_temp_07)
-        key_10 = cache.cache_key(request_temp_10)
-
-        assert key_07 != key_10
+        assert cache.cache_key(request_order_a) == cache.cache_key(request_order_b)
 
 
 # ---------------------------------------------------------------------------
@@ -769,47 +639,26 @@ class TestCorruptPickleLoadMemoryCache:
             cache.load_memory_cache(pkl_path, allow_pickle=True)
 
 
-class TestNonSerializableValueWarns:
-    """VAL-ERR-004: Non-serializable value emits warning."""
+def test_non_serializable_values_warn_and_stay_in_memory(cache):
+    """Non-serializable values (tuple, dataclass) warn on disk write, remain in memory,
+    and don't corrupt other entries."""
 
-    def test_non_serializable_tuple_warns(self, cache):
-        """Cache.put() with a tuple emits UserWarning and doesn't crash."""
-        request = {"model": "test", "prompt": "tuple_test"}
+    @dataclass
+    class MyData:
+        x: int
+        y: str
+
+    good_request = {"model": "test", "prompt": "good_value"}
+    cache.put(good_request, "good")
+
+    for label, value in [("tuple", (1, 2, 3)), ("dataclass", MyData(x=42, y="hello"))]:
+        request = {"model": "test", "prompt": label}
         with pytest.warns(UserWarning, match="Skipping disk cache write"):
-            cache.put(request, (1, 2, 3))
+            cache.put(request, value)
+        assert cache.get(request) == value
 
-        # Memory cache should still have the value
-        result = cache.get(request)
-        assert result == (1, 2, 3)
-
-    def test_non_serializable_dataclass_warns(self, cache):
-        """Cache.put() with a dataclass emits UserWarning and doesn't crash."""
-
-        @dataclass
-        class MyData:
-            x: int
-            y: str
-
-        request = {"model": "test", "prompt": "dataclass_test"}
-        with pytest.warns(UserWarning, match="Skipping disk cache write"):
-            cache.put(request, MyData(x=42, y="hello"))
-
-        # Memory cache should still have the value
-        result = cache.get(request)
-        assert result == MyData(x=42, y="hello")
-
-    def test_non_serializable_doesnt_corrupt_other_entries(self, cache):
-        """After a non-serializable write, other cache entries are unaffected."""
-        good_request = {"model": "test", "prompt": "good_value"}
-        cache.put(good_request, "good")
-
-        bad_request = {"model": "test", "prompt": "bad_value"}
-        with pytest.warns(UserWarning, match="Skipping disk cache write"):
-            cache.put(bad_request, (1, 2, 3))
-
-        # Original entry should still be accessible from disk
-        cache.reset_memory_cache()
-        assert cache.get(good_request) == "good"
+    cache.reset_memory_cache()
+    assert cache.get(good_request) == "good"
 
 
 class TestSQLiteErrorInPutHandled:

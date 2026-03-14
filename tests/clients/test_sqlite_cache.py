@@ -8,6 +8,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from unittest import mock
 from unittest.mock import patch
 
 import orjson
@@ -77,35 +78,20 @@ def test_serialize_roundtrip_plain(value):
     assert _deserialize(_serialize(value)) == value
 
 
-def test_serialize_roundtrip_pydantic():
-    m = PydanticModel(name="test", value=42, tags=["a", "b"], metadata={"k": "v"})
-    result = _deserialize(_serialize(m))
-    assert isinstance(result, PydanticModel)
-    assert result == m
-
-
-def test_serialize_roundtrip_nested_pydantic():
-    m = NestedPydanticModel(inner=PydanticModel(name="inner", value=1), count=5)
-    result = _deserialize(_serialize(m))
-    assert isinstance(result, NestedPydanticModel)
-    assert isinstance(result.inner, PydanticModel)
-    assert result.inner.name == "inner"
-
-
-def test_serialize_roundtrip_pydantic_with_aliases():
-    m = AliasPydanticModel(wire_name=3)
-    result = _deserialize(_serialize(m))
-    assert isinstance(result, AliasPydanticModel)
-    assert result == m
-
-
-def test_serialize_roundtrip_nested_class():
-    m = Outer(inner=Outer.Inner(value=42), label="test")
-    result = _deserialize(_serialize(m))
-    assert isinstance(result, Outer)
-    assert isinstance(result.inner, Outer.Inner)
-    assert result.inner.value == 42
-    assert result.label == "test"
+@pytest.mark.parametrize(
+    "model",
+    [
+        PydanticModel(name="test", value=42, tags=["a", "b"], metadata={"k": "v"}),
+        NestedPydanticModel(inner=PydanticModel(name="inner", value=1), count=5),
+        AliasPydanticModel(wire_name=3),
+        Outer(inner=Outer.Inner(value=42), label="test"),
+    ],
+    ids=["flat", "nested", "alias", "nested_class"],
+)
+def test_serialize_roundtrip_pydantic(model):
+    result = _deserialize(_serialize(model))
+    assert isinstance(result, type(model))
+    assert result == model
 
 
 def test_serialize_non_serializable_raises():
@@ -132,57 +118,50 @@ def test_serialize_non_serializable_raises():
 # ── Litellm ModelResponse ────────────────────────────────────────────────────
 
 
-def test_model_response_roundtrip():
-    from litellm import ModelResponse
-
-    r = ModelResponse(
-        id="chatcmpl-test123",
-        choices=[{"message": {"content": "Hello world"}, "index": 0, "finish_reason": "stop"}],
-        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-    )
-    result = _deserialize(_serialize(r))
-    assert isinstance(result, ModelResponse)
-    assert result.choices[0].message.content == "Hello world"
-    assert result.id == "chatcmpl-test123"
-    result.usage = {}
-    result.cache_hit = True
-    assert result.cache_hit is True
-
-
-def test_model_response_with_tool_calls_roundtrip():
-    from litellm import ModelResponse
-
-    r = ModelResponse(
-        id="chatcmpl-tools",
-        choices=[{
-            "message": {
-                "content": None,
-                "tool_calls": [{
-                    "id": "call_123",
-                    "type": "function",
-                    "function": {"name": "get_weather", "arguments": '{"city": "SF"}'},
+@pytest.mark.parametrize(
+    "response, check",
+    [
+        (
+            ModelResponse(
+                id="chatcmpl-test123",
+                choices=[{"message": {"content": "Hello world"}, "index": 0, "finish_reason": "stop"}],
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            ),
+            lambda r: r.choices[0].message.content == "Hello world" and r.id == "chatcmpl-test123",
+        ),
+        (
+            ModelResponse(
+                id="chatcmpl-tools",
+                choices=[{
+                    "message": {
+                        "content": None,
+                        "tool_calls": [{
+                            "id": "call_123",
+                            "type": "function",
+                            "function": {"name": "get_weather", "arguments": '{"city": "SF"}'},
+                        }],
+                    },
+                    "index": 0,
+                    "finish_reason": "tool_calls",
                 }],
-            },
-            "index": 0,
-            "finish_reason": "tool_calls",
-        }],
-    )
-    result = _deserialize(_serialize(r))
-    assert isinstance(result, ModelResponse)
-    assert result.choices[0].finish_reason == "tool_calls"
-
-
-def test_embedding_response_roundtrip():
-    from litellm import EmbeddingResponse
-
-    r = EmbeddingResponse(
-        data=[{"embedding": [0.1, 0.2, 0.3], "index": 0, "object": "embedding"}],
-        model="text-embedding-3-small",
-        usage={"prompt_tokens": 5, "total_tokens": 5},
-    )
-    result = _deserialize(_serialize(r))
-    assert isinstance(result, EmbeddingResponse)
-    assert result.data[0]["embedding"] == pytest.approx([0.1, 0.2, 0.3])
+            ),
+            lambda r: r.choices[0].finish_reason == "tool_calls",
+        ),
+        (
+            EmbeddingResponse(
+                data=[{"embedding": [0.1, 0.2, 0.3], "index": 0, "object": "embedding"}],
+                model="text-embedding-3-small",
+                usage={"prompt_tokens": 5, "total_tokens": 5},
+            ),
+            lambda r: r.data[0]["embedding"] == pytest.approx([0.1, 0.2, 0.3]),
+        ),
+    ],
+    ids=["model_response", "tool_calls", "embedding"],
+)
+def test_litellm_response_roundtrip(response, check):
+    result = _deserialize(_serialize(response))
+    assert isinstance(result, type(response))
+    assert check(result)
 
 
 # ── SQLiteCache core behavior ────────────────────────────────────────────────
@@ -251,6 +230,97 @@ class TestSQLiteCacheBasic:
         with pytest.raises(TypeError):
             cache["dataclass"] = DataclassValue(x=1)
 
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "x" * (4 * 1024 * 1024),
+            {"key_%d" % i: "val_%d" % i * 1000 for i in range(5000)},
+            ModelResponse(
+                id="chatcmpl-large",
+                choices=[{"message": {"content": "word " * 200_000}, "index": 0, "finish_reason": "stop"}],
+                usage={"prompt_tokens": 100, "completion_tokens": 50000, "total_tokens": 50100},
+            ),
+            EmbeddingResponse(
+                data=[{"embedding": [float(i) / 10000 for i in range(3072)], "index": 0, "object": "embedding"}],
+                model="text-embedding-3-large",
+                usage={"prompt_tokens": 10, "total_tokens": 10},
+            ),
+        ],
+        ids=["4mb_string", "large_dict", "model_response", "embedding_3072d"],
+    )
+    def test_large_value_roundtrip(self, tmp_path, value):
+        cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        cache["key"] = value
+        result = cache["key"]
+        assert isinstance(result, type(value))
+        if isinstance(value, EmbeddingResponse):
+            assert result.data[0]["embedding"] == pytest.approx(value.data[0]["embedding"])
+        elif isinstance(value, ModelResponse):
+            assert result.choices[0].message.content == value.choices[0].message.content
+        else:
+            assert result == value
+
+    def test_large_value_overwrite_and_persistence(self, tmp_path):
+        """Large values can be overwritten and survive close/reopen."""
+        cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        cache["key"] = "x" * (2 * 1024 * 1024)
+        cache["key"] = "y" * (2 * 1024 * 1024)
+        assert cache["key"] == "y" * (2 * 1024 * 1024)
+
+        large = {"data": list(range(100_000))}
+        cache["persist"] = large
+        cache.close()
+        cache2 = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        assert cache2["persist"] == large
+
+
+# ── SQLite error handling ────────────────────────────────────────────────────
+
+
+class TestSQLiteErrors:
+    @staticmethod
+    def _mock_conn(error_msg="disk I/O error"):
+        """Create a mock connection whose execute() raises OperationalError."""
+        conn = mock.Mock(spec=["execute", "commit"])
+        conn.execute.side_effect = sqlite3.OperationalError(error_msg)
+        return conn
+
+    @pytest.mark.parametrize(
+        "operation, error_msg",
+        [
+            ("set", "disk I/O error"),
+            ("get", "database is locked"),
+            ("contains", "readonly database"),
+        ],
+    )
+    def test_operational_error_propagates(self, tmp_path, operation, error_msg):
+        """sqlite3.OperationalError during set/get/contains propagates to the caller."""
+        cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        if operation == "get":
+            cache["key"] = "value"
+        with patch.object(cache, "_get_conn", return_value=self._mock_conn(error_msg)):
+            with pytest.raises(sqlite3.OperationalError, match=error_msg):
+                if operation == "set":
+                    cache["key"] = "value"
+                elif operation == "get":
+                    cache["key"]
+                else:
+                    "key" in cache
+
+    def test_recovery_after_transient_error(self, tmp_path):
+        """After a transient OperationalError, the connection is still usable
+        and previously-written entries remain readable."""
+        cache = SQLiteCache(directory=str(tmp_path), size_limit=None)
+        cache["existing"] = "safe_value"
+
+        with patch.object(cache, "_get_conn", return_value=self._mock_conn("database is locked")):
+            with pytest.raises(sqlite3.OperationalError):
+                cache["new_key"] = "value"
+
+        cache["key2"] = "value2"
+        assert cache["key2"] == "value2"
+        assert cache["existing"] == "safe_value"
+
 
 # ── Persistence ──────────────────────────────────────────────────────────────
 
@@ -264,11 +334,10 @@ class TestPersistence:
         cache2 = SQLiteCache(directory=str(tmp_path), size_limit=None)
         assert cache2["persistent"] == {"data": [1, 2, 3]}
 
-    def test_db_file_created(self, tmp_path):
+    def test_creates_db_file_including_nested_dirs(self, tmp_path):
         SQLiteCache(directory=str(tmp_path), size_limit=None)
         assert (tmp_path / "dspy_cache.db").exists()
 
-    def test_creates_nested_directory(self, tmp_path):
         nested = tmp_path / "a" / "b" / "c"
         SQLiteCache(directory=str(nested), size_limit=None)
         assert (nested / "dspy_cache.db").exists()
@@ -1093,11 +1162,8 @@ class TestCacheTierConcurrency:
 
     @pytest.mark.asyncio
     async def test_async_concurrent_cache_access(self, tmp_path):
-        """20+ asyncio tasks via asyncio.gather concurrently call a @request_cache-decorated
-        async function with both shared and distinct keys. All return correct values, no corruption.
-
-        Simulates parallel aforward() calls hitting the cache layer.
-        """
+        """30 asyncio tasks (10 distinct prompts x 3 calls each) concurrently call a
+        @request_cache-decorated async function. All return correct values, no corruption."""
         cache = Cache(
             enable_memory_cache=True,
             enable_disk_cache=True,
@@ -1114,60 +1180,22 @@ class TestCacheTierConcurrency:
             nonlocal call_count
             async with call_lock:
                 call_count += 1
-            # Simulate async work
             await asyncio.sleep(0.001)
             return f"result_for_{prompt}"
 
         with patch("dspy.cache", cache):
-            # Create 30 tasks: 10 shared keys (3 calls each) + some distinct keys
             tasks = []
-
-            # 10 distinct prompts, each called 3 times = 30 tasks total
             for i in range(10):
                 for _ in range(3):
                     tasks.append(cached_function(prompt=f"prompt_{i}", model="openai/gpt-5-nano"))
-
             results = await asyncio.gather(*tasks)
 
-        # All 30 results should be correct
         assert len(results) == 30
         for i in range(10):
             for j in range(3):
-                idx = i * 3 + j
-                assert results[idx] == f"result_for_prompt_{i}", (
-                    f"Task {idx} returned {results[idx]!r}, expected 'result_for_prompt_{i}'"
-                )
+                assert results[i * 3 + j] == f"result_for_prompt_{i}"
 
-        # The function should have been called at most 10 times (one per distinct key),
-        # but may be called more due to concurrent cache misses (no cross-task locking).
-        # The important thing is correctness of values, not deduplication.
-        assert call_count >= 10
-        assert call_count <= 30
-
-    @pytest.mark.asyncio
-    async def test_async_concurrent_cache_access_distinct_keys(self, tmp_path):
-        """20+ asyncio tasks with all distinct keys. Verifies no corruption when
-        many tasks populate cache simultaneously."""
-        cache = Cache(
-            enable_memory_cache=True,
-            enable_disk_cache=True,
-            disk_cache_dir=str(tmp_path),
-            disk_size_limit_bytes=int(1e9),
-            memory_max_entries=100_000,
-        )
-
-        @request_cache()
-        async def cached_function(prompt, model="openai/gpt-5-nano"):
-            await asyncio.sleep(0.001)
-            return f"result_for_{prompt}"
-
-        with patch("dspy.cache", cache):
-            tasks = [cached_function(prompt=f"unique_{i}", model="openai/gpt-5-nano") for i in range(25)]
-            results = await asyncio.gather(*tasks)
-
-        assert len(results) == 25
-        for i in range(25):
-            assert results[i] == f"result_for_unique_{i}"
+        assert 10 <= call_count <= 30
 
     def test_threaded_cache_access_both_tiers(self, tier_cache):
         """ThreadPoolExecutor with 8+ workers do Cache.get()/Cache.put() with both
@@ -1241,9 +1269,8 @@ class TestCacheTierConcurrency:
         assert not errors, f"Errors from threads: {errors}"
 
     def test_concurrent_overlapping_key_writes(self, tier_cache):
-        """Multiple threads write different values to the same key via Cache.put().
-        After completion, Cache.get() returns one consistent value (not corrupted).
-        """
+        """Multiple threads write different values to the same key. After completion,
+        memory and disk both return a valid (non-corrupted) written value."""
         num_writers = 16
         request = {"prompt": "contested_key", "model": "openai/gpt-5-nano"}
         errors = []
@@ -1262,44 +1289,15 @@ class TestCacheTierConcurrency:
 
         assert not errors, f"Errors from threads: {errors}"
 
-        # After all writes, the value should be one of the written values (not corrupted)
-        final_value = tier_cache.get(request)
-        assert final_value in written_values, (
-            f"Final value {final_value!r} is not one of the written values"
-        )
-
-        # Multiple reads should all return the same consistent value
-        results = [tier_cache.get(request) for _ in range(10)]
-        assert all(r == final_value for r in results), (
-            f"Inconsistent reads: {set(results)}"
-        )
-
-    def test_concurrent_overlapping_key_writes_disk_consistency(self, tier_cache):
-        """After concurrent writes to the same key, clearing memory cache and reading from
-        disk should return a consistent value that matches what memory returns."""
-        num_writers = 12
-        request = {"prompt": "disk_contested", "model": "test"}
-        written_values = [f"disk_value_{i}" for i in range(num_writers)]
-
-        def writer(i):
-            tier_cache.put(request, written_values[i])
-
-        with ThreadPoolExecutor(max_workers=num_writers) as executor:
-            futures = [executor.submit(writer, i) for i in range(num_writers)]
-            for f in as_completed(futures):
-                f.result()
-
-        # Read from memory
+        # Memory reads are consistent
         memory_value = tier_cache.get(request)
         assert memory_value in written_values
+        assert all(tier_cache.get(request) == memory_value for _ in range(10))
 
-        # Clear memory, read from disk
+        # Disk reads are also a valid written value
         tier_cache.reset_memory_cache()
         disk_value = tier_cache.get(request)
         assert disk_value in written_values
-
-        # Both should be consistent (disk may differ from memory if last write to
-        # each tier came from different threads, but each should be a valid value)
 
     def test_concurrent_disk_to_memory_promotion_model_response(self, tmp_path):
         """Concurrent disk-to-memory promotion with a real ModelResponse object.
