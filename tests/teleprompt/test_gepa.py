@@ -521,3 +521,48 @@ def test_alternating_half_component_selector():
             # Odd iteration should select second half: ["generator"]
             assert "generator" in selection["selected"], f"Odd iteration {selection['iteration']} should include generator"
             assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"
+
+
+def test_gepa_uses_cloudpickle_by_default(monkeypatch):
+    """GEPA should enable cloudpickle-based checkpointing via gepa_kwargs by default."""
+    import gepa as gepa_module
+
+    captured_kwargs: dict[str, Any] = {}
+
+    class DummyGEPAResult:
+        def __init__(self):
+            # Minimal attributes needed when track_stats=False
+            self.candidates = []
+            self.parents = []
+            self.val_aggregate_scores = [0.0]
+            self.best_outputs_valset = None
+            self.val_subscores = [[0.0]]
+            self.per_val_instance_best_candidates = [set([0])]
+            self.discovery_eval_counts = [0]
+            self.total_metric_calls = 0
+            self.num_full_val_evals = 0
+            self.run_dir = None
+            self.seed = 0
+
+        @property
+        def best_candidate(self):  # pragma: no cover - minimal stub for adapter
+            return {}
+
+    def fake_optimize(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return DummyGEPAResult()
+
+    monkeypatch.setattr(gepa_module, "optimize", fake_optimize)
+
+    student = SimpleModule("input -> output")
+    trainset = [Example(input="What is the color of the sky?", output="blue").with_inputs("input")]
+
+    task_lm = DummyLM([{"output": "blue"}])
+    reflection_lm = DummyLM([{"new_instruction": "Something new."}])
+
+    dspy.configure(lm=task_lm)
+    optimizer = dspy.GEPA(metric=any_metric, reflection_lm=reflection_lm, max_metric_calls=3)
+
+    optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    assert captured_kwargs.get("use_cloudpickle") is True

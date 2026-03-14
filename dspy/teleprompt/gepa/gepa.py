@@ -427,6 +427,11 @@ class GEPA(Teleprompter):
         self.custom_instruction_proposer = instruction_proposer
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
+        # Prefer cloudpickle-based checkpointing by default to better support
+        # saving and resuming DSPy programs, especially when they contain
+        # dynamically generated signatures or modules.
+        if "use_cloudpickle" not in self.gepa_kwargs:
+            self.gepa_kwargs["use_cloudpickle"] = True
 
     def auto_budget(
         self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
