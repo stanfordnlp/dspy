@@ -58,7 +58,7 @@ class Tool(Type):
             arg_desc (Optional[dict[str, str]], optional): Descriptions for each arg, represented as a
                 dictionary from arg name to description string. Defaults to None.
 
-        Example:
+        Examples:
 
         ```python
         def foo(x: int, y: str = "hello"):
@@ -225,7 +225,7 @@ class Tool(Type):
         Returns:
             A Tool object.
 
-        Example:
+        Examples:
 
         ```python
         import asyncio
@@ -330,7 +330,7 @@ class ToolCalls(Type):
         Returns:
             A ToolCalls instance.
 
-        Example:
+        Examples:
 
             ```python
             tool_calls_dict = [

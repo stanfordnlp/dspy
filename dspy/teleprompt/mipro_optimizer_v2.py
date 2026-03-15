@@ -25,6 +25,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _import_optuna():
+    try:
+        import optuna
+    except ModuleNotFoundError as exc:
+        if exc.name == "optuna":
+            raise ImportError(
+                "MIPROv2 requires optional dependency 'optuna'. "
+                "Install it with `pip install dspy[optuna]`."
+            ) from exc
+        raise
+    return optuna
+
+
 # Constants
 BOOTSTRAPPED_FEWSHOT_EXAMPLES_IN_CONTEXT = 3
 LABELED_FEWSHOT_EXAMPLES_IN_CONTEXT = 0
@@ -505,7 +519,7 @@ class MIPROv2(Teleprompter):
         minibatch_full_eval_steps: int,
         seed: int,
     ) -> Any | None:
-        import optuna
+        optuna = _import_optuna()
 
         # Run optimization
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -771,7 +785,8 @@ class MIPROv2(Teleprompter):
         return chosen_params, raw_chosen_params
 
     def _get_param_distributions(self, program, instruction_candidates, demo_candidates):
-        from optuna.distributions import CategoricalDistribution
+        optuna = _import_optuna()
+        CategoricalDistribution = optuna.distributions.CategoricalDistribution
 
         param_distributions = {}
 
@@ -801,7 +816,7 @@ class MIPROv2(Teleprompter):
         instruction_candidates: list,
         demo_candidates: list,
     ):
-        import optuna
+        optuna = _import_optuna()
 
         logger.info(f"===== Trial {trial_num + 1} / {adjusted_num_trials} - Full Evaluation =====")
 

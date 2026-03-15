@@ -57,7 +57,7 @@ class StatusMessageProvider:
     and override its methods to define specific status messages for different stages of program execution,
     each method must return a string.
 
-    Example:
+    Examples:
     ```python
     class MyStatusMessageProvider(StatusMessageProvider):
         def lm_start_status_message(self, instance, inputs):

@@ -3,14 +3,15 @@ Tests for the RLM (Recursive Language Model) module.
 
 Test organization:
 - Unit tests (no Deno required): MockInterpreter, RLM formatting, signatures
-- Integration tests (@pytest.mark.integration): PythonInterpreter with Deno
+- Integration tests (@pytest.mark.deno): PythonInterpreter with Deno
 """
 
 from contextlib import contextmanager
 
 import pytest
 
-from dspy.predict.rlm import RLM
+from dspy.adapters.types.tool import Tool
+from dspy.predict.rlm import RLM, _strip_code_fences
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -143,7 +144,7 @@ class TestRLMInitialization:
         def custom_tool(x: str = "") -> str:
             return x.upper()
 
-        rlm = RLM("context -> answer", max_iterations=5, tools={"custom_tool": custom_tool})
+        rlm = RLM("context -> answer", max_iterations=5, tools=[custom_tool])
         assert "custom_tool" in rlm.tools
         assert len(rlm.tools) == 1  # Only user tools, not internal llm_query/llm_query_batched
 
@@ -153,8 +154,9 @@ class TestRLMInitialization:
         def my_tool() -> str:
             return "result"
 
+        tool = Tool(my_tool, name=tool_name)
         with pytest.raises(ValueError, match="must be a valid Python identifier"):
-            RLM("context -> answer", tools={tool_name: my_tool})
+            RLM("context -> answer", tools=[tool])
 
     @pytest.mark.parametrize("tool_name", ["llm_query", "SUBMIT", "print"])
     def test_tool_validation_reserved_names(self, tool_name):
@@ -162,14 +164,23 @@ class TestRLMInitialization:
         def my_tool() -> str:
             return "result"
 
+        tool = Tool(my_tool, name=tool_name)
         with pytest.raises(ValueError, match="conflicts with built-in"):
-            RLM("context -> answer", tools={tool_name: my_tool})
+            RLM("context -> answer", tools=[tool])
 
     @pytest.mark.parametrize("invalid_value", ["not a function", 123])
     def test_tool_validation_not_callable(self, invalid_value):
         """Test RLM rejects tools that aren't callable."""
         with pytest.raises(TypeError, match="must be callable"):
-            RLM("context -> answer", tools={"my_tool": invalid_value})
+            RLM("context -> answer", tools=[invalid_value])
+
+    def test_tools_dict_rejected(self):
+        """Test RLM rejects dict format for tools with helpful error."""
+        def my_tool() -> str:
+            return "result"
+
+        with pytest.raises(TypeError, match="tools must be a list, not a dict"):
+            RLM("context -> answer", tools={"my_tool": my_tool})
 
     def test_optional_parameters(self):
         """Test RLM optional parameters and their defaults."""
@@ -257,6 +268,38 @@ class TestRLMInitialization:
             tools["llm_query"](prompt="one more")
 
 
+class TestRLMCodeFenceParsing:
+    """Tests for robust fenced-code extraction."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            # Standard python fence
+            ("```python\nprint(1)\n```", "print(1)"),
+            ("```py\nx = 1\nprint(x)\n```", "x = 1\nprint(x)"),
+            # Bare fence (no language tag)
+            ("```\nprint('no lang')\n```", "print('no lang')"),
+            # No fences at all
+            ("not fenced code", "not fenced code"),
+            # Text before fence (preamble is skipped)
+            ("I'll inspect first.\n```python\nprint('hello')\n```\nThen I will submit.", "print('hello')"),
+            # Text after closing fence (ignored)
+            ("```python\nprint(1)\n```\nsome trailing text", "print(1)"),
+            # Unclosed fence (just return the body)
+            ("```python\nprint('oops')", "print('oops')"),
+            # Double fences (outer decorative ```)
+            ("```\n```python\nprint(1)\n```\n```", "print(1)"),
+            ("```\n```\nprint(2)\n```\n```", "print(2)"),
+        ],
+    )
+    def test_strip_code_fences(self, raw, expected):
+        assert _strip_code_fences(raw) == expected
+
+    def test_strip_code_fences_rejects_non_python_lang(self):
+        with pytest.raises(SyntaxError, match="json"):
+            _strip_code_fences('```json\n{"a": 1}\n```')
+
+
 class TestRLMFormatting:
     """Tests for RLM formatting helpers."""
 
@@ -295,11 +338,12 @@ class TestRLMFormatting:
         formatted = rlm._format_output("")
         assert "no output" in formatted.lower()
 
-    def test_format_output_truncation(self):
-        """Test that long output is truncated."""
+    def test_format_output_passthrough(self):
+        """Test that _format_output passes through non-empty output without truncation."""
         rlm = RLM("context -> answer", max_output_chars=100)
-        formatted = rlm._format_output("x" * 200)
-        assert "truncated" in formatted.lower()
+        long_output = "a" * 200
+        formatted = rlm._format_output(long_output)
+        assert formatted == long_output
 
     def test_format_variable_info_string(self):
         """Test variable info formatting for string value using REPLVariable."""
@@ -308,7 +352,8 @@ class TestRLMFormatting:
         assert "Variable: `context`" in formatted
         assert "Type: str" in formatted
         assert "11" in formatted  # length
-        assert "Hello" in formatted
+        assert "He" in formatted  # head
+        assert "ld" in formatted  # tail
         assert "..." in formatted  # truncation indicator
 
     def test_format_variable_info_dict(self):
@@ -368,10 +413,33 @@ class TestREPLTypes:
         assert "1" in formatted
 
     def test_repl_entry_format_truncation(self):
-        """Test REPLEntry output truncation."""
-        entry = REPLEntry(code="print('x' * 1000)", output="x" * 1000)
-        formatted = entry.format(index=0, max_output_chars=50)
-        assert "truncated" in formatted
+        """Test REPLEntry.format() truncates with head+tail and shows true length."""
+        output = "a" * 100 + "b" * 100
+        entry = REPLEntry(code="print('a' + 'b')", output=output)
+        formatted = entry.format(index=0, max_output_chars=100)
+        # Head and tail preserved
+        assert "a" * 50 in formatted
+        assert "b" * 50 in formatted
+        assert "100 characters omitted" in formatted
+        # True original length shown in header
+        assert "200 chars" in formatted
+
+    def test_repl_entry_format_no_truncation(self):
+        """Test REPLEntry.format() passes short output through without truncation."""
+        output = "a" * 50
+        entry = REPLEntry(code="print('a')", output=output)
+        formatted = entry.format(index=0, max_output_chars=100)
+        assert output in formatted
+        assert "omitted" not in formatted
+
+    def test_repl_history_threads_max_output_chars(self):
+        """Test REPLHistory carries max_output_chars through append()."""
+        h = REPLHistory(max_output_chars=50)
+        h2 = h.append(code="print(1)", output="a" * 100)
+        assert h2.max_output_chars == 50
+        # Formatting should truncate at 50 chars
+        formatted = h2.format()
+        assert "50 characters omitted" in formatted
 
     def test_repl_variable_from_value(self):
         """Test REPLVariable.from_value() factory."""
@@ -382,10 +450,11 @@ class TestREPLTypes:
         assert "hello world" in var.preview
 
     def test_repl_variable_truncation(self):
-        """Test REPLVariable preview truncation."""
-        var = REPLVariable.from_value("big", "x" * 1000, preview_chars=50)
-        assert len(var.preview) == 53  # 50 + "..."
-        assert var.preview.endswith("...")
+        """Test REPLVariable preview shows head and tail."""
+        var = REPLVariable.from_value("big", "a" * 500 + "b" * 500, preview_chars=50)
+        assert var.preview.startswith("a" * 25)
+        assert var.preview.endswith("b" * 25)
+        assert "..." in var.preview
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""
@@ -488,7 +557,7 @@ class TestRLMToolExceptions:
             CodeInterpreterError("RuntimeError: Tool failed!"),
             FinalOutput({"answer": "recovered"}),
         ])
-        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock, tools={"failing_tool": failing_tool})
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock, tools=[failing_tool])
         rlm.generate_action = make_mock_predictor([
             {"reasoning": "Call tool", "code": "failing_tool()"},
             {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
@@ -496,6 +565,54 @@ class TestRLMToolExceptions:
 
         result = rlm.forward(query="test")
         assert result.answer == "recovered"
+
+    def test_runtime_error_history_uses_stripped_code(self):
+        """Runtime execution failures should preserve stripped code in history."""
+        mock = MockInterpreter(responses=[
+            CodeInterpreterError("NameError: name 'x' is not defined"),
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Will fail", "code": "```python\nprint(x)\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        first_step = result.trajectory[0]
+        assert first_step["code"] == "print(x)"
+
+    def test_syntax_error_from_execute_is_recoverable(self):
+        """SyntaxError from interpreter.execute should be surfaced as an iteration error."""
+        mock = MockInterpreter(responses=[
+            SyntaxError("invalid syntax"),
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Bad code", "code": "```python\ndef incomplete(\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        assert result.trajectory[0]["output"].startswith("[Error] invalid syntax")
+
+    def test_syntax_error_from_strip_code_fences_is_recoverable(self):
+        """SyntaxError raised by _strip_code_fences (e.g. non-Python fence tag) should be recoverable."""
+        mock = MockInterpreter(responses=[
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Wrong language", "code": "```bash\nls -la\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        assert result.trajectory[0]["output"].startswith("[Error]")
 
 
 class TestRLMDynamicSignature:
@@ -538,7 +655,7 @@ class TestRLMDynamicSignature:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestPythonInterpreter:
     """Integration tests for the secure sandbox with tool support."""
 
@@ -583,6 +700,30 @@ class TestPythonInterpreter:
                 variables={"x": 10, "y": 5}
             )
             assert "15" in result
+
+    def test_variable_injection_with_none_values(self):
+        """Test variable injection with None values in dicts/lists (JSON null -> Python None)."""
+        with PythonInterpreter(tools={}) as interp:
+            # Test None in dict
+            result = interp.execute(
+                "print(data['key'] is None)",
+                variables={"data": {"key": None, "other": "value"}}
+            )
+            assert "True" in result
+
+            # Test None in list
+            result = interp.execute(
+                "print(items[1] is None)",
+                variables={"items": [1, None, 3]}
+            )
+            assert "True" in result
+
+            # Test nested None
+            result = interp.execute(
+                "print(nested['inner']['value'] is None)",
+                variables={"nested": {"inner": {"value": None}}}
+            )
+            assert "True" in result
 
     def test_tool_call_kwargs(self):
         """Test tool call with keyword arguments."""
@@ -673,7 +814,7 @@ print(f"Count: {info['count']}")
                 interp.execute("undefined_variable")
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestSandboxSecurity:
     """Integration tests for sandbox security restrictions."""
 
@@ -793,7 +934,7 @@ class TestRLMTypeCoercionMock:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMTypeCoercion:
     """Tests for RLM type coercion through full forward pass with PythonInterpreter.
 
@@ -837,7 +978,7 @@ class TestRLMTypeCoercion:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMMultipleOutputs:
     """Tests for signatures with multiple typed output fields.
 
@@ -924,7 +1065,7 @@ class TestRLMMultipleOutputs:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMWithDummyLM:
     """End-to-end tests using DummyLM with RLM and PythonInterpreter.
 
@@ -973,7 +1114,7 @@ class TestRLMWithDummyLM:
         with dummy_lm_context([
             {"reasoning": "Look up the color of apple", "code": 'color = lookup(key="apple")\nSUBMIT(color)'},
         ]):
-            rlm = RLM("fruit -> color: str", max_iterations=3, tools={"lookup": lookup})
+            rlm = RLM("fruit -> color: str", max_iterations=3, tools=[lookup])
             result = rlm.forward(fruit="apple")
 
             assert result.color == "red"

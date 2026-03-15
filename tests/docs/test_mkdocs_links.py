@@ -17,7 +17,7 @@ def test_nav_files_exist():
     # Get markdown files
     md_files = []
     for line in lines:
-        if ".md" in line:
+        if ".md" in line and "*.md" not in line:  # Ignore patterns in llmstxt: plugin
             # Extract the markdown filename and clean it up
             md_file = line.strip().split(":")[-1].strip()
             # Remove list markers and quotes

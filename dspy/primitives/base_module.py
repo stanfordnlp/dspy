@@ -156,9 +156,14 @@ class BaseModule:
     def dump_state(self, json_mode=True):
         return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
 
-    def load_state(self, state):
+    def load_state(self, state, *, allow_unsafe_lm_state=False):
+        from dspy.predict.predict import Predict
+
         for name, param in self.named_parameters():
-            param.load_state(state[name])
+            if isinstance(param, Predict):
+                param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
+            else:
+                param.load_state(state[name])
 
     def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
@@ -243,7 +248,7 @@ class BaseModule:
         else:
             raise ValueError(f"`path` must end with `.json` or `.pkl` when `save_program=False`, but received: {path}")
 
-    def load(self, path, allow_pickle=False):
+    def load(self, path, allow_pickle=False, allow_unsafe_lm_state=False):
         """Load the saved module. You may also want to check out dspy.load, if you want to
         load an entire program, not just the state for an existing program.
 
@@ -251,6 +256,8 @@ class BaseModule:
             path (str): Path to the saved state file, which should be a .json or a .pkl file
             allow_pickle (bool): If True, allow loading .pkl files, which can run arbitrary code.
                 This is dangerous and should only be used if you are sure about the source of the file and in a trusted environment.
+            allow_unsafe_lm_state (bool): If True, preserves unsafe LM endpoint keys (e.g.,
+                `api_base`, `base_url`, and `model_list`) from loaded state. Enable only for trusted files.
         """
         path = Path(path)
 
@@ -278,4 +285,4 @@ class BaseModule:
                     "on the loaded model, please consider loading the model in the same environment as the "
                     "saving environment."
                 )
-        self.load_state(state)
+        self.load_state(state, allow_unsafe_lm_state=allow_unsafe_lm_state)

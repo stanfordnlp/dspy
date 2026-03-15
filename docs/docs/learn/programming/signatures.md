@@ -204,6 +204,37 @@ class MyContainer:
 signature = dspy.Signature("query: MyContainer.Query -> score: MyContainer.Score")
 ```
 
+### Type Checking for Input Fields
+
+DSPy automatically validates that the values you pass to input fields match the types specified in your signature. This works for both inline and class-based signatures.
+When there's a type mismatch, DSPy will log a warning.
+
+**Example: Type Mismatch Warning**
+
+```python
+# Define a signature expecting an integer as input
+class MathSignature(dspy.Signature):
+    """Perform a mathematical operation."""
+    number: int = dspy.InputField()
+    result: str = dspy.OutputField()
+
+predictor = dspy.Predict(MathSignature)
+
+# This will trigger a warning because we're passing a string instead of an int
+predictor(number="42")  # Warning: Type mismatch for field 'number': expected int, but provided value is incompatible
+```
+**Disabling Type Checking**
+
+If you want to disable type mismatch warnings, you can turn off this feature:
+
+```python
+# Disable type mismatch warnings globally
+dspy.configure(warn_on_type_mismatch=False)
+
+predictor = dspy.Predict("number: int -> result: str")
+predictor(number="42")  # No warning
+```
+
 ## Using signatures to build modules & compiling them
 
 While signatures are convenient for prototyping with structured inputs/outputs, that's not the only reason to use them!
