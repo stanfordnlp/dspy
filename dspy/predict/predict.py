@@ -63,12 +63,23 @@ class Predict(Module, Parameter):
         self.reset()
 
     def reset(self):
+        """Reset the module's state, clearing the language model, traces, training examples, and demos."""
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self, json_mode=True):
+        """Serialize the module's state into a dictionary.
+
+        Args:
+            json_mode: If ``True``, convert demos to dictionaries for JSON serialization.
+                If ``False``, keep demos as ``Example`` objects.
+
+        Returns:
+            dict: A dictionary containing the module's traces, training examples,
+            demos, signature state, and language model state.
+        """
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -241,6 +252,21 @@ class Predict(Module, Parameter):
         return should_stream
 
     def forward(self, **kwargs):
+        """Execute the predict module synchronously.
+
+        Processes the input fields through the configured language model and adapter,
+        returning a ``Prediction`` with the output fields.
+
+        Args:
+            **kwargs: Keyword arguments matching the signature's input fields. Additionally
+                accepts ``signature``, ``demos``, ``config``, and ``lm`` to override defaults.
+
+        Returns:
+            Prediction: A ``Prediction`` object containing the output fields defined in the signature.
+
+        Raises:
+            ValueError: If no language model is configured or if the LM is not a ``BaseLM`` instance.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -255,6 +281,21 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     async def aforward(self, **kwargs):
+        """Execute the predict module asynchronously.
+
+        Async version of :meth:`forward`. Processes the input fields through the configured
+        language model and adapter, returning a ``Prediction`` with the output fields.
+
+        Args:
+            **kwargs: Keyword arguments matching the signature's input fields. Additionally
+                accepts ``signature``, ``demos``, ``config``, and ``lm`` to override defaults.
+
+        Returns:
+            Prediction: A ``Prediction`` object containing the output fields defined in the signature.
+
+        Raises:
+            ValueError: If no language model is configured or if the LM is not a ``BaseLM`` instance.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -268,9 +309,25 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     def update_config(self, **kwargs):
+        """Update the default language model configuration.
+
+        Args:
+            **kwargs: Configuration key-value pairs to merge into the existing config.
+                These are forwarded to the language model on each call.
+
+        Example::
+
+            predict = dspy.Predict("q -> a")
+            predict.update_config(temperature=0.9, max_tokens=500)
+        """
         self.config = {**self.config, **kwargs}
 
     def get_config(self):
+        """Return the current default language model configuration.
+
+        Returns:
+            dict: The configuration dictionary that is forwarded to the language model.
+        """
         return self.config
 
     def __repr__(self):

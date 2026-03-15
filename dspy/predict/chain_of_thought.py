@@ -10,6 +10,20 @@ from dspy.signatures.signature import Signature, ensure_signature
 
 
 class ChainOfThought(Module):
+    """A module that adds step-by-step reasoning before predicting the output.
+
+    ``ChainOfThought`` extends a given signature with a ``reasoning`` output field,
+    prompting the language model to think step by step before producing its answer.
+    This often improves accuracy on tasks that benefit from intermediate reasoning.
+
+    Example::
+
+        cot = dspy.ChainOfThought("question -> answer")
+        result = cot(question="What is 2 + 2?")
+        print(result.reasoning)
+        print(result.answer)
+    """
+
     def __init__(
         self,
         signature: str | type[Signature],
@@ -35,7 +49,23 @@ class ChainOfThought(Module):
         self.predict = dspy.Predict(extended_signature, **config)
 
     def forward(self, **kwargs):
+        """Execute chain-of-thought reasoning synchronously.
+
+        Args:
+            **kwargs: Keyword arguments matching the signature's input fields.
+
+        Returns:
+            Prediction: A ``Prediction`` containing the ``reasoning`` field and all output fields.
+        """
         return self.predict(**kwargs)
 
     async def aforward(self, **kwargs):
+        """Execute chain-of-thought reasoning asynchronously.
+
+        Args:
+            **kwargs: Keyword arguments matching the signature's input fields.
+
+        Returns:
+            Prediction: A ``Prediction`` containing the ``reasoning`` field and all output fields.
+        """
         return await self.predict.acall(**kwargs)
