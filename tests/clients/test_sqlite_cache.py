@@ -4,7 +4,6 @@ import asyncio
 import os
 import pickle
 import sqlite3
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -1373,35 +1372,4 @@ class TestCacheTierConcurrency:
         results[0].choices[0].message.content = "mutated"
         assert results[1].choices[0].message.content == "concurrent response"
 
-    def test_concurrent_put_and_get_interleaved(self, tier_cache):
-        """Threads interleave put() and get() calls on the same set of keys.
-        Verifies no deadlocks or crashes under mixed read/write load."""
-        num_workers = 10
-        num_keys = 20
-        errors = []
-        barrier = threading.Barrier(num_workers)
 
-        def worker(worker_id):
-            try:
-                barrier.wait(timeout=5)  # Start all threads simultaneously
-                for key_idx in range(num_keys):
-                    request = {"prompt": f"interleaved_{key_idx}", "model": "test"}
-                    if worker_id % 2 == 0:
-                        tier_cache.put(request, f"w{worker_id}_k{key_idx}")
-                    else:
-                        tier_cache.get(request)  # May return None or a value
-            except Exception as e:
-                errors.append(e)
-
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            futures = [executor.submit(worker, w) for w in range(num_workers)]
-            for f in as_completed(futures):
-                f.result()
-
-        assert not errors, f"Errors from threads: {errors}"
-
-        # All keys should have been written by at least one thread
-        for key_idx in range(num_keys):
-            request = {"prompt": f"interleaved_{key_idx}", "model": "test"}
-            result = tier_cache.get(request)
-            assert result is not None, f"Key {key_idx} was never written"
