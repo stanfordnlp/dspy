@@ -489,7 +489,7 @@ class TestCacheKeyIsolation:
 
 
 class TestCorruptSQLiteDBFallback:
-    """VAL-ERR-001: Corrupt SQLite DB file graceful degradation."""
+    """Corrupt SQLite DB file graceful degradation."""
 
     def test_corrupt_sqlite_db_fallback(self, tmp_path, monkeypatch):
         """When the SQLite DB file is corrupted, _get_dspy_cache() falls back to
@@ -520,7 +520,7 @@ class TestCorruptSQLiteDBFallback:
 
 
 class TestReadOnlyDatabasePut:
-    """VAL-ERR-002: Read-only directory cache write behavior."""
+    """Read-only directory cache write behavior."""
 
     def test_readonly_database_reads_still_work(self, tmp_path):
         """After making DB read-only, reads of previously-written values still work."""
@@ -550,7 +550,7 @@ class TestReadOnlyDatabasePut:
 
 
 class TestCorruptPickleLoadMemoryCache:
-    """VAL-ERR-003: Corrupt pickle file for memory cache."""
+    """Corrupt pickle file for memory cache."""
 
     def test_corrupt_pickle_load_memory_cache(self, tmp_path):
         """Corrupt .pkl file passed to load_memory_cache raises
@@ -604,7 +604,7 @@ def test_non_serializable_values_warn_and_stay_in_memory(cache):
 
 
 class TestSQLiteErrorInPutHandled:
-    """VAL-ERR-006: sqlite3.Error in Cache.put() handled gracefully."""
+    """sqlite3.Error in Cache.put() handled gracefully."""
 
     def test_sqlite_error_in_put_handled(self, tmp_path, caplog):
         """Mocked sqlite3.OperationalError in disk write is caught, memory write
