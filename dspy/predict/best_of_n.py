@@ -53,6 +53,28 @@ class BestOfN(Module):
         self.fail_count = fail_count or N  # default to N if fail_count is not provided
 
     def forward(self, **kwargs):
+        """Execute the best-of-N selection loop, running the module up to ``N`` times.
+
+        Each iteration runs the module with a unique rollout ID at ``temperature=1.0`` and scores
+        the result using the reward function. If a prediction meets or exceeds the threshold, it is
+        returned immediately. Otherwise, the prediction with the highest reward across all attempts
+        is returned.
+
+        Unlike :class:`~dspy.Refine`, this method does not generate feedback between attempts —
+        each attempt is independent.
+
+        Args:
+            **kwargs: Keyword arguments passed directly to the underlying module's forward method.
+                These should match the input fields defined in the module's signature.
+
+        Returns:
+            Prediction: The best prediction found across all attempts, determined by the highest
+                reward score. Returns ``None`` if all attempts fail with exceptions.
+
+        Raises:
+            Exception: Re-raises the last encountered exception if the number of consecutive
+                failures exceeds ``fail_count``.
+        """
         lm = self.module.get_lm() or dspy.settings.lm
         start = lm.kwargs.get("rollout_id", 0)
         rollout_ids = [start + i for i in range(self.N)]

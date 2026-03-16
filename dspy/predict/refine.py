@@ -96,6 +96,26 @@ class Refine(Module):
             self.reward_fn_code = inspect.getsource(reward_fn.__class__)
 
     def forward(self, **kwargs):
+        """Execute the refinement loop, running the module up to ``N`` times and selecting the best prediction.
+
+        Each iteration runs the module with a unique rollout ID at ``temperature=1.0``. If a
+        prediction's reward meets or exceeds the threshold, it is returned immediately. Otherwise,
+        an :class:`OfferFeedback` call generates per-module advice that is injected as a hint into
+        the next iteration via a wrapper adapter, enabling the module to improve on subsequent
+        attempts.
+
+        Args:
+            **kwargs: Keyword arguments passed directly to the underlying module's forward method.
+                These should match the input fields defined in the module's signature.
+
+        Returns:
+            Prediction: The best prediction found across all attempts, determined by the highest
+                reward score. Returns ``None`` if all attempts fail with exceptions.
+
+        Raises:
+            Exception: Re-raises the last encountered exception if the number of consecutive
+                failures exceeds ``fail_count``.
+        """
         lm = self.module.get_lm() or dspy.settings.lm
         start = lm.kwargs.get("rollout_id", 0)
         rollout_ids = [start + i for i in range(self.N)]
@@ -178,6 +198,19 @@ class Refine(Module):
 
 
 def inspect_modules(program):
+    """Generate a human-readable summary of all predictor modules in a program.
+
+    Iterates over the program's named predictors and formats each module's input fields,
+    output fields, and original instructions into a structured text block separated by
+    horizontal rules.
+
+    Args:
+        program (Module): A DSPy module whose named predictors will be inspected.
+
+    Returns:
+        str: A formatted string describing each module's name, input/output field definitions,
+            and instructions, separated by dashed lines.
+    """
     separator = "-" * 80
     output = [separator]
 
@@ -198,6 +231,19 @@ def inspect_modules(program):
 
 
 def recursive_mask(o):
+    """Recursively replace non-JSON-serializable objects with placeholder strings.
+
+    Traverses a nested data structure (dicts, lists, tuples) and replaces any values that
+    cannot be serialized by ``orjson`` with a descriptive placeholder string of the form
+    ``<non-serializable: TypeName>``.
+
+    Args:
+        o: Any Python object to make JSON-serializable.
+
+    Returns:
+        The input object with all non-serializable leaf values replaced by placeholder strings.
+        Dicts, lists, and tuples are preserved structurally.
+    """
     # If the object is already serializable, return it.
     try:
         orjson.dumps(o)
