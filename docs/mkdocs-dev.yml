@@ -1,7 +1,0 @@
-INHERIT: mkdocs.yml
-
-nav:
-    - Signatures:
-        - InputField: api/signatures/InputField.md
-        - OutputField: api/signatures/OutputField.md
-        - Signature: api/signatures/Signature.md
