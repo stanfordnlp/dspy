@@ -3,7 +3,11 @@ import os
 import re
 import threading
 import warnings
-from typing import Any, Literal, cast
+from typing import (
+    Any,
+    Literal,
+    cast,
+)
 
 import litellm
 import pydantic
@@ -560,3 +564,90 @@ def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
         "User-Agent": f"DSPy/{dspy.__version__}",
         **headers,
     }
+
+def list_models(
+    provider: str | None = None,
+    supports_function_calling: bool | None = None,
+    supports_vision: bool | None = None,
+    supports_reasoning: bool | None = None,
+    supports_response_schema: bool | None = None,
+    min_context_window: int | None = None,
+    max_input_cost_per_token: float | None = None,
+    enrich: bool = False,
+) -> list:
+    """
+    List models available via litellm, with optional filtering and metadata enrichment.
+
+    Args:
+        provider: Filter by provider name (e.g. "openai", "anthropic", "gemini").
+        supports_function_calling: Filter models that support function/tool calling.
+        supports_vision: Filter models that accept image inputs.
+        supports_reasoning: Filter models with chain-of-thought / reasoning capabilities.
+        supports_response_schema: Filter models that support structured output (JSON schema).
+        min_context_window: Filter models with at least this context window (in tokens).
+        max_input_cost_per_token: Filter models with input cost at or below this value.
+        enrich: If True, returns a list of dicts with full model metadata instead of just names.
+
+    Returns:
+        List of model name strings, or list of metadata dicts if enrich=True.
+    """
+    models_by_provider = litellm.models_by_provider
+
+    if provider:
+        candidates = models_by_provider.get(provider, [])
+    else:
+        candidates = [m for models in models_by_provider.values() for m in models]
+
+    capability_checks = [
+        (supports_function_calling, litellm.supports_function_calling),
+        (supports_vision, litellm.supports_vision),
+        (supports_reasoning, litellm.supports_reasoning),
+        (supports_response_schema, litellm.supports_response_schema),
+    ]
+
+    results = []
+    for model in candidates:
+        skip = False
+        for flag, checker in capability_checks:
+            if flag is not None:
+                try:
+                    if checker(model=model) != flag:
+                        skip = True
+                        break
+                except Exception:
+                    if flag is True:
+                        skip = True
+                        break
+        if skip:
+            continue
+
+        info = {}
+        if min_context_window is not None or max_input_cost_per_token is not None or enrich:
+            try:
+                info = litellm.get_model_info(model)
+            except Exception:
+                pass
+
+        if min_context_window is not None and (info.get("max_input_tokens") or 0) < min_context_window:
+            continue
+
+        if max_input_cost_per_token is not None and (info.get("input_cost_per_token") or float("inf")) > max_input_cost_per_token:
+            continue
+
+        if enrich:
+            results.append({
+                "model": model,
+                "provider": provider or (model.split("/")[0] if "/" in model else None),
+                "context_window": info.get("max_input_tokens"),
+                "max_output_tokens": info.get("max_output_tokens"),
+                "input_cost_per_token": info.get("input_cost_per_token"),
+                "output_cost_per_token": info.get("output_cost_per_token"),
+                "supports_function_calling": info.get("supports_function_calling"),
+                "supports_vision": info.get("supports_vision"),
+                "supports_reasoning": info.get("supports_reasoning"),
+                "supports_response_schema": info.get("supports_response_schema"),
+            })
+        else:
+            results.append(model)
+
+    return results
