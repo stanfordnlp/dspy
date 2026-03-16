@@ -8,8 +8,7 @@ import pytest
 import dspy
 from dspy.adapters.types.video import _encode_video_from_file
 from dspy.utils.dummies import DummyLM
-from tests.signatures.test_adapter_file import count_messages_with_file_pattern
-
+from tests.test_utils.messages import count_messages_with_file_pattern
 
 SAMPLE_VIDEO_BYTES = b"\x00\x00\x00\x1cftypisom" + b"\x00" * 50
 SAMPLE_VIDEO_B64 = base64.b64encode(SAMPLE_VIDEO_BYTES).decode("utf-8")
@@ -105,7 +104,7 @@ def test_dict_with_inline_data():
 
 
 def test_both_url_and_inline_data_raises():
-    with pytest.raises(pydantic.ValidationError, match="Exactly one"):
+    with pytest.raises(pydantic.ValidationError, match="url.*inline_data"):
         dspy.Video(url="https://example.com/video.mp4", inline_data=SAMPLE_VIDEO_B64)
 
 

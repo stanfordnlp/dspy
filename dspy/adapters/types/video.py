@@ -7,6 +7,8 @@ import pydantic
 
 from dspy.adapters.types.base_type import Type
 
+MAX_INLINE_SIZE = 20 * 1024 * 1024  # 20 MB
+
 
 class Video(Type):
     """A video input type for DSPy.
@@ -52,6 +54,8 @@ class Video(Type):
             return {"url": values.url, "inline_data": values.inline_data, "mime_type": values.mime_type}
 
         if isinstance(values, str):
+            if values.startswith(("http://", "https://", "gs://")):
+                return {"url": values}
             if os.path.isfile(values):
                 return _encode_video_from_file(values)
             return {"url": values}
@@ -75,25 +79,17 @@ class Video(Type):
         has_url = self.url is not None
         has_inline_data = self.inline_data is not None
         if has_url == has_inline_data:
-            raise ValueError("Exactly one of 'url' or 'inline_data' must be provided.")
+            raise ValueError("You must provide either 'url' or 'inline_data'.")
         return self
 
     def format(self) -> list[dict[str, Any]]:
+        file_dict = {}
         if self.inline_data is not None:
-            return [{
-                "type": "file",
-                "file": {
-                    "format": self.mime_type,
-                    "file_data": f"data:{self.mime_type};base64,{self.inline_data}",
-                },
-            }]
-        return [{
-            "type": "file",
-            "file": {
-                "format": self.mime_type,
-                "file_id": self.url,
-            },
-        }]
+            file_dict["file_data"] = f"data:{self.mime_type};base64,{self.inline_data}"
+        else:
+            file_dict["file_id"] = self.url
+            file_dict["format"] = self.mime_type
+        return [{"type": "file", "file": file_dict}]
 
     @classmethod
     def from_url(cls, url: str, mime_type: str = "video/mp4") -> "Video":
@@ -133,6 +129,14 @@ def _encode_video_from_file(file_path: str, mime_type: str | None = None) -> dic
         mime_type, _ = mimetypes.guess_type(file_path)
         if mime_type is None:
             mime_type = "video/mp4"
+
+    file_size = os.path.getsize(file_path)
+    if file_size > MAX_INLINE_SIZE:
+        raise ValueError(
+            f"File '{file_path}' is {file_size / (1024 * 1024):.1f} MB, which exceeds the "
+            f"{MAX_INLINE_SIZE / (1024 * 1024):.0f} MB limit for inline video data. "
+            "Consider uploading via Google's Files API and using Video.from_url() instead."
+        )
 
     with open(file_path, "rb") as f:
         file_bytes = f.read()
