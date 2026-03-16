@@ -16,7 +16,7 @@ class ProgramOfThought(Module):
     A DSPy module that runs Python programs to solve a problem.
     This module requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 
-    Example:
+    Examples:
     ```
     import dspy
 

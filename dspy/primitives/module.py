@@ -1,6 +1,6 @@
 import inspect
 import logging
-from typing import Any
+from typing import Any, TextIO
 
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
@@ -55,7 +55,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         callbacks: List of registered callback handlers.
         history: List of LM call history for this module.
 
-    Example:
+    Examples:
         >>> import dspy
         >>> class MyProgram(dspy.Module):
         ...     def __init__(self):
@@ -139,7 +139,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 where name is the attribute path and predictor is the
                 Predict instance.
 
-        Example:
+        Examples:
             >>> import dspy
             >>> class MyProgram(dspy.Module):
             ...     def __init__(self):
@@ -163,7 +163,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Returns:
             list[Predict]: A list of all Predict instances in this module.
 
-        Example:
+        Examples:
             >>> import dspy
             >>> class MyProgram(dspy.Module):
             ...     def __init__(self):
@@ -185,7 +185,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Args:
             lm: The language model instance to use for all predictors.
 
-        Example:
+        Examples:
             >>> import dspy
             >>> lm = dspy.LM("openai/gpt-4o-mini")
             >>> program = dspy.Predict("question -> answer")
@@ -236,7 +236,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Returns:
             Module: Returns self for method chaining.
 
-        Example:
+        Examples:
             >>> import dspy
             >>> class MyProgram(dspy.Module):
             ...     def __init__(self):
@@ -250,7 +250,7 @@ class Module(BaseModule, metaclass=ProgramMeta):
             set_attribute_by_name(self, name, func(predictor))
         return self
 
-    def inspect_history(self, n: int = 1):
+    def inspect_history(self, n: int = 1, file: "TextIO | None" = None) -> None:
         """Display the LM call history for this module.
 
         Prints a formatted view of the most recent language model calls
@@ -260,11 +260,11 @@ class Module(BaseModule, metaclass=ProgramMeta):
         Args:
             n: The number of recent history entries to display.
                 Defaults to 1.
-
-        Returns:
-            The formatted history output.
+            file: An optional file-like object to write output to. When
+                provided, ANSI color codes are automatically disabled.
+                Defaults to `None` (prints to stdout).
         """
-        return pretty_print_history(self.history, n)
+        pretty_print_history(self.history, n, file=file)
 
     def batch(
         self,

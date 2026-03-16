@@ -55,6 +55,11 @@ def test_signature_parsing():
     assert "output" in signature.output_fields
 
 
+def test_duplicate_input_output_field_names_raise():
+    with pytest.raises(ValueError, match="distinct names"):
+        Signature("value -> value")
+
+
 def test_with_signature():
     signature1 = Signature("input1, input2 -> output")
     signature2 = signature1.with_instructions("This is a test")

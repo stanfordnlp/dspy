@@ -25,7 +25,7 @@ class BestOfN(Module):
             threshold (float): The threshold for the reward function.
             fail_count (Optional[int], optional): The number of times the module can fail before raising an error. Defaults to N if not provided.
 
-        Example:
+        Examples:
             ```python
             import dspy
 

@@ -23,7 +23,7 @@ class TrainingJob(Future):
         train_data_format: The format of the training data.
         train_kwargs: Additional keyword arguments for training configuration.
 
-    Example:
+    Examples:
         ```python
         from dspy.clients.provider import TrainingJob
 
@@ -91,7 +91,7 @@ class ReinforceJob:
         checkpoints: Dictionary storing checkpoint data.
         last_checkpoint: The name of the most recent checkpoint.
 
-    Example:
+    Examples:
         ```python
         from dspy.clients.provider import ReinforceJob
 
@@ -190,7 +190,7 @@ class Provider:
         TrainingJob: The class to use for training jobs (subclass of `TrainingJob`).
         ReinforceJob: The class to use for reinforcement learning jobs (subclass of `ReinforceJob`).
 
-    Example:
+    Examples:
         ```python
         from dspy.clients.provider import Provider
 

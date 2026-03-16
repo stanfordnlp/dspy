@@ -20,7 +20,7 @@ class DummyLM(LM):
     If a list of dictionaries is provided, the dummy model will return the next dictionary
     in the list for each request, formatted according to the `format_field_with_value` function.
 
-    Example:
+    Examples:
 
     ```
     lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])

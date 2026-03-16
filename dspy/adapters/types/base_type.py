@@ -20,7 +20,7 @@ class Type(pydantic.BaseModel):
     This is the parent class of DSPy custom types, e.g, dspy.Image. Subclasses must implement the `format` method to
     return a list of dictionaries (same as the Array of content parts in the OpenAI API user message's content field).
 
-    Example:
+    Examples:
 
         ```python
         class Image(Type):
