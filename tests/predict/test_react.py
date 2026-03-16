@@ -1,4 +1,6 @@
+import asyncio
 import re
+import threading
 
 import litellm
 import pytest
@@ -198,10 +200,7 @@ def test_tool_calling_without_typehint():
     expected_trajectory = {
         "thought_0": "I need to add two numbers.",
         "tool_name_0": "foo",
-        "tool_args_0": {
-            "a": 1,
-            "b": 2,
-        },
+        "tool_args_0": {"a": 1, "b": 2},
         "observation_0": 3,
         "thought_1": "I have the sum, now I can finish.",
         "tool_name_1": "finish",
@@ -471,3 +470,416 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_parallel_tool_execution_sync():
+    # A barrier requires both threads to arrive before either can proceed.
+    # If tools run sequentially the second tool never starts so the first tool
+    # hangs at barrier.wait() and the test raises threading.BrokenBarrierError.
+    barrier = threading.Barrier(2, timeout=5)
+
+    def tool1(x: int) -> int:
+        barrier.wait()
+        return x * 2
+
+    def tool2(y: int) -> int:
+        barrier.wait()
+        return y * 3
+
+    react = dspy.ReAct("input -> output", tools=[tool1, tool2], parallel_tool_calls=True)
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should call both tools in parallel.",
+                "next_tool_calls": [
+                    {"name": "tool1", "args": {"x": 5}},
+                    {"name": "tool2", "args": {"y": 10}},
+                ],
+            },
+            {
+                "next_thought": "I have the results, now I can finish.",
+                "next_tool_calls": [{"name": "finish", "args": {}}],
+            },
+            {"reasoning": "Both tools executed successfully", "output": "done"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    outputs = react(input="test")
+
+    # Check that the trajectory contains the right structure
+    assert "thought_0" in outputs.trajectory
+    assert "tool_calls_0" in outputs.trajectory
+    assert "observations_0" in outputs.trajectory
+
+    # Check the tool calls
+    tool_calls = outputs.trajectory["tool_calls_0"]
+    assert len(tool_calls) == 2
+    assert tool_calls[0]["name"] == "tool1"
+    assert tool_calls[0]["args"] == {"x": 5}
+    assert tool_calls[1]["name"] == "tool2"
+    assert tool_calls[1]["args"] == {"y": 10}
+
+    # Check the observations
+    observations = outputs.trajectory["observations_0"]
+    assert len(observations) == 2
+    assert observations[0]["tool"] == "tool1"
+    assert observations[0]["result"] == 10  # 5 * 2
+    assert observations[1]["tool"] == "tool2"
+    assert observations[1]["result"] == 30  # 10 * 3
+
+
+def test_single_tool_execution_backwards_compat():
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    react = dspy.ReAct("a, b -> c", tools=[add])
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should add the numbers.",
+                "next_tool_name": "add",
+                "next_tool_args": {"x": 3, "y": 4},
+            },
+            {
+                "next_thought": "I have the sum, now I can finish.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {"reasoning": "Added successfully", "c": 7},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    outputs = react(a=3, b=4)
+
+    # Check trajectory structure
+    assert "thought_0" in outputs.trajectory
+    assert "tool_name_0" in outputs.trajectory
+    assert "observation_0" in outputs.trajectory
+    # Parallel-mode keys must not appear in sequential mode
+    assert "tool_calls_0" not in outputs.trajectory
+
+    # Check that single tool call works
+    assert outputs.trajectory["tool_name_0"] == "add"
+    assert outputs.trajectory["tool_args_0"] == {"x": 3, "y": 4}
+    assert outputs.trajectory["observation_0"] == 7
+
+
+def test_mode_mismatch_parallel_does_not_produce_sequential_fields():
+    def tool(x: int) -> int:
+        return x * 2
+
+    react = dspy.ReAct("input -> output", tools=[tool], parallel_tool_calls=True)
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "calling tool",
+                "next_tool_calls": [{"name": "tool", "args": {"x": 5}}],
+            },
+            {
+                "next_thought": "done",
+                "next_tool_calls": [{"name": "finish", "args": {}}],
+            },
+            {"reasoning": "done", "output": "result"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+    outputs = react(input="test")
+
+    assert "tool_calls_0" in outputs.trajectory
+    # Sequential-mode keys must not appear in parallel mode
+    assert "tool_name_0" not in outputs.trajectory
+
+
+def test_parallel_tool_execution_with_error():
+    def good_tool(x: int) -> int:
+        return x * 2
+
+    def bad_tool(y: int) -> int:
+        raise ValueError("Tool error")
+
+    react = dspy.ReAct("input -> output", tools=[good_tool, bad_tool], parallel_tool_calls=True)
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should call both tools.",
+                "next_tool_calls": [
+                    {"name": "good_tool", "args": {"x": 5}},
+                    {"name": "bad_tool", "args": {"y": 10}},
+                ],
+            },
+            {
+                "next_thought": "One tool failed but I can still finish.",
+                "next_tool_calls": [{"name": "finish", "args": {}}],
+            },
+            {"reasoning": "Handled errors", "output": "done"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    outputs = react(input="test")
+
+    # Check observations - one should be successful, one should be an error message
+    observations = outputs.trajectory["observations_0"]
+    assert len(observations) == 2
+    assert observations[0]["tool"] == "good_tool"
+    assert observations[0]["result"] == 10  # good_tool result
+    assert observations[1]["tool"] == "bad_tool"
+    assert "Execution error in bad_tool" in observations[1]["result"]
+    assert "Tool error" in observations[1]["result"]
+
+
+@pytest.mark.asyncio
+async def test_parallel_tool_execution_async():
+    # Both coroutines must be running simultaneously for either to complete.
+    # If executed sequentially the second coroutine never starts so the first
+    # awaits the event forever and asyncio.wait_for raises asyncio.TimeoutError.
+    started = 0
+    all_started = asyncio.Event()
+
+    async def async_tool1(x: int) -> int:
+        nonlocal started
+        started += 1
+        if started >= 2:
+            all_started.set()
+        await asyncio.wait_for(all_started.wait(), timeout=5.0)
+        return x * 2
+
+    async def async_tool2(y: int) -> int:
+        nonlocal started
+        started += 1
+        if started >= 2:
+            all_started.set()
+        await asyncio.wait_for(all_started.wait(), timeout=5.0)
+        return y * 3
+
+    react = dspy.ReAct("input -> output", tools=[async_tool1, async_tool2], parallel_tool_calls=True)
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should call both tools in parallel.",
+                "next_tool_calls": [
+                    {"name": "async_tool1", "args": {"x": 5}},
+                    {"name": "async_tool2", "args": {"y": 10}},
+                ],
+            },
+            {
+                "next_thought": "I have the results, now I can finish.",
+                "next_tool_calls": [{"name": "finish", "args": {}}],
+            },
+            {"reasoning": "Both tools executed successfully", "output": "done"},
+        ]
+    )
+
+    with dspy.context(lm=lm):
+        outputs = await react.acall(input="test")
+
+    # Check that the trajectory contains the right structure
+    assert "thought_0" in outputs.trajectory
+    assert "tool_calls_0" in outputs.trajectory
+    assert "observations_0" in outputs.trajectory
+
+    # Check the tool calls
+    tool_calls = outputs.trajectory["tool_calls_0"]
+    assert len(tool_calls) == 2
+
+    # Check the observations
+    observations = outputs.trajectory["observations_0"]
+    assert len(observations) == 2
+    assert observations[0]["tool"] == "async_tool1"
+    assert observations[0]["result"] == 10  # 5 * 2
+    assert observations[1]["tool"] == "async_tool2"
+    assert observations[1]["result"] == 30  # 10 * 3
+
+
+@pytest.mark.asyncio
+async def test_parallel_async_tool_with_error():
+    async def good_async_tool(x: int) -> int:
+        await asyncio.sleep(0.05)
+        return x * 2
+
+    async def bad_async_tool(y: int) -> int:
+        await asyncio.sleep(0.05)
+        raise ValueError("Async tool error")
+
+    react = dspy.ReAct("input -> output", tools=[good_async_tool, bad_async_tool], parallel_tool_calls=True)
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I should call both tools.",
+                "next_tool_calls": [
+                    {"name": "good_async_tool", "args": {"x": 5}},
+                    {"name": "bad_async_tool", "args": {"y": 10}},
+                ],
+            },
+            {
+                "next_thought": "One tool failed but I can still finish.",
+                "next_tool_calls": [{"name": "finish", "args": {}}],
+            },
+            {"reasoning": "Handled errors", "output": "done"},
+        ]
+    )
+
+    with dspy.context(lm=lm):
+        outputs = await react.acall(input="test")
+
+    # Check observations
+    observations = outputs.trajectory["observations_0"]
+    assert len(observations) == 2
+    assert observations[0]["tool"] == "good_async_tool"
+    assert observations[0]["result"] == 10  # good tool result
+    assert observations[1]["tool"] == "bad_async_tool"
+    assert "Execution error in bad_async_tool" in observations[1]["result"]
+    assert "Async tool error" in observations[1]["result"]
+
+
+def test_multiple_iterations_with_parallel_tools():
+    def tool_a(x: int) -> str:
+        return f"a:{x}"
+
+    def tool_b(y: int) -> str:
+        return f"b:{y}"
+
+    react = dspy.ReAct("input -> output", tools=[tool_a, tool_b], parallel_tool_calls=True)
+
+    lm = DummyLM(
+        [
+            # First iteration - call both tools
+            {
+                "next_thought": "First iteration, calling both tools.",
+                "next_tool_calls": [
+                    {"name": "tool_a", "args": {"x": 1}},
+                    {"name": "tool_b", "args": {"y": 2}},
+                ],
+            },
+            # Second iteration - call both tools again
+            {
+                "next_thought": "Second iteration, calling both tools again.",
+                "next_tool_calls": [
+                    {"name": "tool_a", "args": {"x": 3}},
+                    {"name": "tool_b", "args": {"y": 4}},
+                ],
+            },
+            # Finish
+            {
+                "next_thought": "Now I can finish.",
+                "next_tool_calls": [{"name": "finish", "args": {}}],
+            },
+            {"reasoning": "Done", "output": "complete"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    outputs = react(input="test")
+
+    # Check first iteration
+    assert outputs.trajectory["tool_calls_0"] == [
+        {"name": "tool_a", "args": {"x": 1}},
+        {"name": "tool_b", "args": {"y": 2}},
+    ]
+    assert outputs.trajectory["observations_0"] == [
+        {"tool": "tool_a", "result": "a:1"},
+        {"tool": "tool_b", "result": "b:2"}
+    ]
+
+    # Check second iteration
+    assert outputs.trajectory["tool_calls_1"] == [
+        {"name": "tool_a", "args": {"x": 3}},
+        {"name": "tool_b", "args": {"y": 4}},
+    ]
+    assert outputs.trajectory["observations_1"] == [
+        {"tool": "tool_a", "result": "a:3"},
+        {"tool": "tool_b", "result": "b:4"}
+    ]
+
+    # Check finish iteration
+    assert outputs.trajectory["tool_calls_2"] == [{"name": "finish", "args": {}}]
+
+
+def test_empty_tool_args():
+    def get_time() -> str:
+        return "12:00"
+
+    def get_date() -> str:
+        return "2024-01-01"
+
+    react = dspy.ReAct("query -> result", tools=[get_time, get_date])
+
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I'll get the time.",
+                "next_tool_name": "get_time",
+                "next_tool_args": {},
+            },
+            {
+                "next_thought": "Now I'll get the date.",
+                "next_tool_name": "get_date",
+                "next_tool_args": {},
+            },
+            {
+                "next_thought": "Got both, finishing.",
+                "next_tool_name": "finish",
+                "next_tool_args": {},
+            },
+            {"reasoning": "Success", "result": "12:00 on 2024-01-01"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    outputs = react(query="what time is it?")
+
+    observation_0 = outputs.trajectory["observation_0"]
+    assert observation_0 == "12:00"
+
+    observation_1 = outputs.trajectory["observation_1"]
+    assert observation_1 == "2024-01-01"
+
+
+def test_parallel_finish_with_other_tools():
+    results = []
+
+    def tool_a(x: int) -> str:
+        results.append("tool_a")
+        return f"a:{x}"
+
+    react = dspy.ReAct("input -> output", tools=[tool_a], parallel_tool_calls=True)
+
+    lm = DummyLM(
+        [
+            {
+                # LLM requests tool_a and finish in the same turn
+                "next_thought": "Calling tool_a and finishing.",
+                "next_tool_calls": [
+                    {"name": "tool_a", "args": {"x": 1}},
+                    {"name": "finish", "args": {}},
+                ],
+            },
+            {"reasoning": "Done", "output": "complete"},
+        ]
+    )
+    dspy.settings.configure(lm=lm)
+
+    outputs = react(input="test")
+
+    # tool_a should have been executed before finish
+    assert "tool_a" in results
+
+    # Trajectory should contain both tool_a and finish observations
+    tool_calls = outputs.trajectory["tool_calls_0"]
+    assert len(tool_calls) == 2
+    assert tool_calls[0]["name"] == "tool_a"
+    assert tool_calls[1]["name"] == "finish"
+
+    observations = outputs.trajectory["observations_0"]
+    assert len(observations) == 2
+    assert observations[0]["tool"] == "tool_a"
+    assert observations[0]["result"] == "a:1"
+    assert observations[1]["tool"] == "finish"
+    assert observations[1]["result"] == "Completed."
