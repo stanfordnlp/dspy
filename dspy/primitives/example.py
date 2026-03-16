@@ -2,11 +2,11 @@ from pydantic import BaseModel
 
 
 class Example:
-    """Store one DSPy data point with named fields.
+    """A flexible data container for DSPy examples and training data with named fields.
 
-    Think of an `Example` as one row from a HuggingFace dataset or pandas
-    DataFrame. Each field is a column value you can access by name, either with
-    `example.question` or `example["question"]`.
+    An `Example` is roughly one row from a HuggingFace dataset or pandas
+    `DataFrame`. It behaves a lot like a dictionary or dot-access record: you
+    can read fields with `example["question"]` or `example.question`.
 
     In DSPy, lists of `Example` objects are your trainset, devset, and testset.
     Most examples are built from keyword arguments or an existing record, then
@@ -25,18 +25,22 @@ class Example:
         >>> example = dspy.Example(
         ...     question="What is the capital of France?",
         ...     answer="Paris",
-        ... )
+        ... ).with_inputs("question")
         >>> example.question
         'What is the capital of France?'
         >>> example.answer
         'Paris'
+        >>> example.inputs().toDict()
+        {'question': 'What is the capital of France?'}
 
         Build one from an existing record:
 
         >>> record = {"question": "What is 2+2?", "answer": "4"}
-        >>> example = dspy.Example(**record)
+        >>> example = dspy.Example(**record).with_inputs("question")
         >>> example["question"]
         'What is 2+2?'
+        >>> example.labels().answer
+        '4'
 
         Mark which fields are inputs:
 
@@ -69,7 +73,7 @@ class Example:
 
         Use it like a dictionary:
 
-        >>> example = dspy.Example(name="Alice", age=30)
+        >>> example = dspy.Example(name="Alice", age=30).with_inputs("name")
         >>> "name" in example
         True
         >>> example.get("city", "Unknown")
