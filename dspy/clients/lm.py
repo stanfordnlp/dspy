@@ -307,6 +307,7 @@ def _get_stream_completion_fn(
     cache_kwargs: dict[str, Any],
     sync=True,
     headers: dict[str, Any] | None = None,
+    num_retries: int = 0,
 ):
     stream = dspy.settings.send_stream
     caller_predict = dspy.settings.caller_predict
@@ -325,6 +326,8 @@ def _get_stream_completion_fn(
         response = await litellm.acompletion(
             cache=cache_kwargs,
             stream=True,
+            num_retries=num_retries,
+            retry_strategy="exponential_backoff_retry",
             headers=headers,
             **request,
         )
@@ -355,7 +358,7 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     request = dict(request)
     request.pop("rollout_id", None)
     headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
-    stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers)
+    stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers, num_retries=num_retries)
     if stream_completion is None:
         return litellm.completion(
             cache=cache,
@@ -403,7 +406,7 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     request = dict(request)
     request.pop("rollout_id", None)
     headers = request.pop("headers", None)
-    stream_completion = _get_stream_completion_fn(request, cache, sync=False)
+    stream_completion = _get_stream_completion_fn(request, cache, sync=False, headers=_add_dspy_identifier_to_headers(headers), num_retries=num_retries)
     if stream_completion is None:
         return await litellm.acompletion(
             cache=cache,
