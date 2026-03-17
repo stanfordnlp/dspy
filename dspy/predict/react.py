@@ -61,7 +61,7 @@ class ReAct(Module):
         )
 
         tools["finish"] = Tool(
-            func=lambda: "Completed.",
+            func=lambda **kwargs: "Completed.",
             name="finish",
             desc=f"Marks the task as complete. That is, signals that all information for producing the outputs, i.e. {outputs}, are now available to be extracted.",
             args={},

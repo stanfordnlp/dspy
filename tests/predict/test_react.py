@@ -471,3 +471,49 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_finish_with_structured_output_args():
+    """Test that finish tool accepts structured output fields without logging an error.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9424
+    When the model provides final structured outputs in next_tool_args for the
+    finish step, it should not log a spurious execution error.
+    """
+
+    def get_info(query: str) -> str:
+        return f"Info about {query}"
+
+    class MySignature(dspy.Signature):
+        query: str = dspy.InputField()
+        result_type: str = dspy.OutputField()
+        confidence: float = dspy.OutputField()
+
+    react = dspy.ReAct(MySignature, tools=[get_info])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need to get information about the query.",
+                "next_tool_name": "get_info",
+                "next_tool_args": {"query": "test"},
+            },
+            {
+                "next_thought": "I have the info. Now I can finish with my answer.",
+                "next_tool_name": "finish",
+                # Model places structured outputs in next_tool_args for finish
+                "next_tool_args": {"result_type": "answer", "confidence": 0.95},
+            },
+            {"reasoning": "Got the info and structured the answer.", "result_type": "answer", "confidence": 0.95},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(query="What is this?")
+
+    # The finish observation should be "Completed." without any error
+    assert outputs.trajectory["observation_1"] == "Completed."
+    # Should NOT contain "Execution error"
+    assert "Execution error" not in str(outputs.trajectory)
+    # Final outputs should be extracted correctly
+    assert outputs.result_type == "answer"
+    assert outputs.confidence == 0.95
