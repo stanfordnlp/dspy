@@ -58,7 +58,7 @@ class Video(Type):
                 return {"url": values}
             if os.path.isfile(values):
                 return _encode_video_from_file(values)
-            return {"url": values}
+            raise ValueError(f"'{values}' is not a valid URL or existing file path.")
 
         if isinstance(values, dict):
             if "url" in values or "inline_data" in values:
@@ -79,7 +79,7 @@ class Video(Type):
         has_url = self.url is not None
         has_inline_data = self.inline_data is not None
         if has_url == has_inline_data:
-            raise ValueError("You must provide either 'url' or 'inline_data'.")
+            raise ValueError("Exactly one of 'url' or 'inline_data' must be provided")
         return self
 
     def format(self) -> list[dict[str, Any]]:
