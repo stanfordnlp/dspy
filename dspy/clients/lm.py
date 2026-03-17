@@ -151,9 +151,9 @@ class LM(BaseLM):
                 override the instance-level caching setting for this request.
 
         Returns:
-            list: The raw response object from LiteLLM (same shape as the
-                OpenAI chat completion, text completion, or responses API
-                depending on `model_type`).
+            list: A list of completion choices from LiteLLM (same shape
+                as the OpenAI chat completion, text completion, or
+                responses API depending on `model_type`).
         """
         # Build the request.
         kwargs = dict(kwargs)
@@ -261,6 +261,7 @@ class LM(BaseLM):
 
         This is the counterpart to `launch`. For providers that manage
         their own model processes, this shuts down the underlying service.
+        Providers that use external APIs typically treat this as a no-op.
 
         Args:
             launch_kwargs: Optional keyword arguments forwarded to the
