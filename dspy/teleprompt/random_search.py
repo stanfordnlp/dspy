@@ -25,6 +25,34 @@ from .vanilla import LabeledFewShot
 
 
 class BootstrapFewShotWithRandomSearch(Teleprompter):
+    """Randomly searches over bootstrapped few-shot demonstrations to find the best program.
+
+    This optimizer generates multiple candidate programs by running ``BootstrapFewShot``
+    with different random seeds and demo counts, evaluates each on a validation set, and
+    returns the highest-scoring program. It also includes a zero-shot baseline and a
+    labels-only baseline among the candidates.
+
+    Examples:
+        ```python
+        import dspy
+
+        # Define a metric function
+        def exact_match(example, pred, trace=None):
+            return example.answer == pred.answer
+
+        # Create a student program
+        student = dspy.ChainOfThought("question -> answer")
+
+        # Compile with random search
+        optimizer = BootstrapFewShotWithRandomSearch(
+            metric=exact_match,
+            max_bootstrapped_demos=4,
+            num_candidate_programs=8,
+        )
+        compiled = optimizer.compile(student, trainset=trainset)
+        ```
+    """
+
     def __init__(
         self,
         metric,
@@ -38,6 +66,32 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         stop_at_score=None,
         metric_threshold=None,
     ):
+        """Initialize the BootstrapFewShotWithRandomSearch optimizer.
+
+        Args:
+            metric: A function ``(example, prediction, trace?) -> score`` used to evaluate
+                each candidate program.
+            teacher_settings: Optional dictionary of settings passed to the teacher model
+                during bootstrapping (e.g., ``{"lm": teacher_lm}``).
+            max_bootstrapped_demos: Maximum number of bootstrapped (augmented) demonstrations
+                per predictor. Each candidate randomly samples between 1 and this value.
+            max_labeled_demos: Maximum number of labeled demonstrations from the training
+                set to include alongside bootstrapped demos.
+            max_rounds: Maximum number of bootstrap rounds passed to each underlying
+                ``BootstrapFewShot`` call.
+            num_candidate_programs: Number of randomly-seeded candidate programs to
+                generate and evaluate (in addition to the zero-shot and labels-only
+                baselines).
+            num_threads: Number of threads for parallel evaluation. If ``None``, defaults
+                to ``dspy.settings.num_threads``.
+            max_errors: Maximum number of evaluation errors before stopping. If ``None``,
+                inherits from ``dspy.settings.max_errors``.
+            stop_at_score: If set, stop searching once a candidate achieves this score
+                or higher.
+            metric_threshold: Threshold passed to ``BootstrapFewShot`` for accepting
+                a bootstrapped example. If ``None``, the metric's boolean truthiness
+                is used instead.
+        """
         self.metric = metric
         self.teacher_settings = teacher_settings or {}
         self.max_rounds = max_rounds
@@ -55,6 +109,30 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
 
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
+        """Compile the student program by searching over bootstrapped candidate programs.
+
+        Generates ``num_candidate_programs + 3`` candidates: a zero-shot baseline (seed -3),
+        a labels-only baseline via ``LabeledFewShot`` (seed -2), an unshuffled bootstrap
+        (seed -1), and ``num_candidate_programs`` randomly-seeded bootstraps. Each candidate
+        is evaluated on ``valset`` (or ``trainset`` if ``valset`` is not provided), and the
+        best-scoring program is returned.
+
+        Args:
+            student: The uncompiled DSPy program to optimize.
+            teacher: An optional compiled teacher program. If ``None``, the student itself
+                is used as the teacher (via deep copy).
+            trainset: A list of ``dspy.Example`` objects used for bootstrapping demonstrations.
+            valset: A list of ``dspy.Example`` objects for evaluating candidates. Defaults to
+                ``trainset`` when not provided.
+            restrict: An optional collection of seed values to evaluate. When set, only
+                candidates whose seed is in this collection are generated and scored.
+            labeled_sample: If ``True`` (default), randomly sample labeled demos for the
+                labels-only baseline. If ``False``, use the first ``k`` examples in order.
+
+        Returns:
+            The best-scoring compiled program, with a ``candidate_programs`` attribute
+            containing all evaluated candidates sorted by descending score.
+        """
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
