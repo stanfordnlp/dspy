@@ -160,7 +160,12 @@ class LM(BaseLM):
 
         return completion_fn, litellm_cache_args
 
-    def forward(self, prompt: str | None = None, messages: list[dict[str, Any]] | None = None, **kwargs):
+    def forward(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs
+    ):
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -340,7 +345,7 @@ class LM(BaseLM):
 def _get_stream_completion_fn(
     request: dict[str, Any],
     cache_kwargs: dict[str, Any],
-    num_retries: int = 0,
+    num_retries: int,
     sync=True,
     headers: dict[str, Any] | None = None,
 ):
@@ -440,9 +445,7 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     request = dict(request)
     request.pop("rollout_id", None)
     headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
-    stream_completion = _get_stream_completion_fn(
-        request, cache, num_retries=num_retries, sync=False, headers=headers
-    )
+    stream_completion = _get_stream_completion_fn(request, cache, num_retries=num_retries, sync=False, headers=headers)
     if stream_completion is None:
         return await _get_litellm().acompletion(
             cache=cache,
