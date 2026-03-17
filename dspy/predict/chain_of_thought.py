@@ -20,8 +20,8 @@ class ChainOfThought(Module):
 
         cot = dspy.ChainOfThought("question -> answer")
         result = cot(question="What is 2 + 2?")
-        print(result.reasoning)
-        print(result.answer)
+        print(result.reasoning)  # e.g. 'Let me think step by step: 2 + 2 = 4'
+        print(result.answer)     # e.g. '4'
     """
 
     def __init__(
