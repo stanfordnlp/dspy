@@ -7,7 +7,7 @@ import pydantic
 
 from dspy.adapters.types.base_type import Type
 
-MAX_INLINE_SIZE = 20 * 1024 * 1024  # 20 MB
+MAX_INLINE_SIZE = 20 * 1024 * 1024  # 20 MB (raw file size; prevents loading very large files into memory)
 
 
 class Video(Type):
