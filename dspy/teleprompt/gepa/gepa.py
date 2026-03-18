@@ -378,6 +378,7 @@ class GEPA(Teleprompter):
         warn_on_score_mismatch: bool = True,
         enable_tool_optimization: bool = False,
         use_full_trace_reflection: bool = False,
+        use_full_trace_dataset: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -437,7 +438,16 @@ class GEPA(Teleprompter):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.enable_tool_optimization = enable_tool_optimization
         self.use_full_trace_reflection = use_full_trace_reflection
+        self.use_full_trace_dataset = use_full_trace_dataset
         self.use_mlflow = use_mlflow
+
+        if use_full_trace_reflection and use_full_trace_dataset:
+            raise ValueError(
+                "use_full_trace_reflection and use_full_trace_dataset are mutually exclusive. "
+                "use_full_trace_reflection serializes the entire program as a single XML candidate. "
+                "use_full_trace_dataset keeps per-component candidates but provides the full "
+                "execution trace in the reflective dataset."
+            )
 
         if track_best_outputs:
             assert track_stats, "track_stats must be True if track_best_outputs is True."
@@ -660,6 +670,7 @@ class GEPA(Teleprompter):
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             enable_tool_optimization=self.enable_tool_optimization,
             use_full_trace_reflection=self.use_full_trace_reflection,
+            use_full_trace_dataset=self.use_full_trace_dataset,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
