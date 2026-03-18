@@ -14,7 +14,7 @@ class DataLoader(Dataset):
 
     DataLoader provides methods to load data from Hugging Face Hub, CSV, JSON,
     Parquet files, Pandas DataFrames, and retrieval modules, converting each row
-    into a ``dspy.Example`` with the specified input keys.
+    into a `dspy.Example` with the specified input keys.
 
     Example:
         >>> dl = dspy.DataLoader()
@@ -35,29 +35,29 @@ class DataLoader(Dataset):
     ) -> Mapping[str, list[dspy.Example]] | list[dspy.Example]:
         """Load a dataset from Hugging Face Hub.
 
-        Wraps ``datasets.load_dataset`` and converts each row into a
-        ``dspy.Example``. When the dataset has multiple splits the return value
+        Wraps `datasets.load_dataset` and converts each row into a
+        `dspy.Example`. When the dataset has multiple splits the return value
         is a dict mapping split names to lists of examples; when a single split
         is requested a flat list is returned.
 
         Args:
             dataset_name: Name or path of the Hugging Face dataset
-                (e.g. ``"squad"``).
-            *args: Positional arguments forwarded to ``datasets.load_dataset``.
+                (e.g. `"squad"`).
+            *args: Positional arguments forwarded to `datasets.load_dataset`.
             input_keys: Fields to mark as inputs via
-                ``Example.with_inputs()``.
-            fields: Subset of columns to keep. If ``None``, all columns are
+                `Example.with_inputs()`.
+            fields: Subset of columns to keep. If `None`, all columns are
                 included.
-            **kwargs: Keyword arguments forwarded to ``datasets.load_dataset``
-                (e.g. ``split="train"``).
+            **kwargs: Keyword arguments forwarded to `datasets.load_dataset`
+                (e.g. `split="train"`).
 
         Returns:
-            A dict of ``{split_name: [dspy.Example, ...]}`` when multiple
-            splits are loaded, or a flat ``[dspy.Example, ...]`` for a single
+            A dict of `{split_name: [dspy.Example, ...]}` when multiple
+            splits are loaded, or a flat `[dspy.Example, ...]` for a single
             split.
 
         Raises:
-            ValueError: If ``fields`` is not a tuple or ``input_keys`` is not
+            ValueError: If `fields` is not a tuple or `input_keys` is not
                 a tuple.
 
         Example:
@@ -117,12 +117,12 @@ class DataLoader(Dataset):
 
         Args:
             file_path: Path to the CSV file.
-            fields: Columns to include. If ``None``, all columns are included.
+            fields: Columns to include. If `None`, all columns are included.
             input_keys: Fields to mark as inputs via
-                ``Example.with_inputs()``.
+                `Example.with_inputs()`.
 
         Returns:
-            A list of ``dspy.Example`` instances.
+            A list of `dspy.Example` instances.
 
         Example:
             >>> dl = dspy.DataLoader()
@@ -147,12 +147,12 @@ class DataLoader(Dataset):
 
         Args:
             df: The source DataFrame.
-            fields: Columns to include. If ``None``, all columns are included.
+            fields: Columns to include. If `None`, all columns are included.
             input_keys: Fields to mark as inputs via
-                ``Example.with_inputs()``.
+                `Example.with_inputs()`.
 
         Returns:
-            A list of ``dspy.Example`` instances.
+            A list of `dspy.Example` instances.
 
         Example:
             >>> import pandas as pd
@@ -177,12 +177,12 @@ class DataLoader(Dataset):
 
         Args:
             file_path: Path to the JSON or JSONL file.
-            fields: Columns to include. If ``None``, all columns are included.
+            fields: Columns to include. If `None`, all columns are included.
             input_keys: Fields to mark as inputs via
-                ``Example.with_inputs()``.
+                `Example.with_inputs()`.
 
         Returns:
-            A list of ``dspy.Example`` instances.
+            A list of `dspy.Example` instances.
 
         Example:
             >>> dl = dspy.DataLoader()
@@ -207,12 +207,12 @@ class DataLoader(Dataset):
 
         Args:
             file_path: Path to the Parquet file.
-            fields: Columns to include. If ``None``, all columns are included.
+            fields: Columns to include. If `None`, all columns are included.
             input_keys: Fields to mark as inputs via
-                ``Example.with_inputs()``.
+                `Example.with_inputs()`.
 
         Returns:
-            A list of ``dspy.Example`` instances.
+            A list of `dspy.Example` instances.
 
         Example:
             >>> dl = dspy.DataLoader()
@@ -230,21 +230,21 @@ class DataLoader(Dataset):
     def from_rm(self, num_samples: int, fields: list[str], input_keys: list[str]) -> list[dspy.Example]:
         """Load examples from the configured retrieval module.
 
-        Fetches objects from the retrieval module set via ``dspy.configure``
-        and converts them into ``dspy.Example`` instances.
+        Fetches objects from the retrieval module set via `dspy.configure`
+        and converts them into `dspy.Example` instances.
 
         Args:
             num_samples: Number of samples to retrieve.
             fields: Fields to include from each retrieved object.
             input_keys: Fields to mark as inputs via
-                ``Example.with_inputs()``.
+                `Example.with_inputs()`.
 
         Returns:
-            A list of ``dspy.Example`` instances.
+            A list of `dspy.Example` instances.
 
         Raises:
             ValueError: If no retrieval module is configured or it does not
-                support ``get_objects``.
+                support `get_objects`.
         """
         try:
             rm = dspy.settings.rm
@@ -270,17 +270,17 @@ class DataLoader(Dataset):
         """Return a random sample of examples from a dataset.
 
         Args:
-            dataset: A list of ``dspy.Example`` instances to sample from.
+            dataset: A list of `dspy.Example` instances to sample from.
             n: Number of examples to sample.
-            *args: Additional arguments forwarded to ``random.sample``.
+            *args: Additional arguments forwarded to `random.sample`.
             **kwargs: Additional keyword arguments forwarded to
-                ``random.sample``.
+                `random.sample`.
 
         Returns:
-            A list of ``n`` randomly selected ``dspy.Example`` instances.
+            A list of `n` randomly selected `dspy.Example` instances.
 
         Raises:
-            ValueError: If ``dataset`` is not a list.
+            ValueError: If `dataset` is not a list.
 
         Example:
             >>> dl = dspy.DataLoader()
@@ -306,22 +306,22 @@ class DataLoader(Dataset):
         floats (proportions) or ints (absolute counts).
 
         Args:
-            dataset: A list of ``dspy.Example`` instances to split.
+            dataset: A list of `dspy.Example` instances to split.
             train_size: If float, the proportion of the dataset for the train
                 split (between 0 and 1). If int, the absolute number of train
                 samples.
             test_size: If float, the proportion for the test split. If int,
-                the absolute number of test samples. If ``None``, defaults to
+                the absolute number of test samples. If `None`, defaults to
                 the remainder after the train split.
             random_state: Seed for the random number generator used for
-                shuffling. If ``None``, results are non-deterministic.
+                shuffling. If `None`, results are non-deterministic.
 
         Returns:
-            A dict with ``"train"`` and ``"test"`` keys mapping to lists of
-            ``dspy.Example`` instances.
+            A dict with `"train"` and `"test"` keys mapping to lists of
+            `dspy.Example` instances.
 
         Raises:
-            ValueError: If ``train_size`` or ``test_size`` are invalid, or if
+            ValueError: If `train_size` or `test_size` are invalid, or if
                 their sum exceeds the dataset size.
 
         Example:
