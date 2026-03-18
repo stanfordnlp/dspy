@@ -527,11 +527,11 @@ class GEPA(Teleprompter):
             if name not in claimed_predictor_names:
                 seed_candidate[name] = pred.signature.instructions
 
-        # In full trace reflection mode, serialize the entire candidate as a single JSON object
+        # In full trace reflection mode, serialize the entire candidate as XML
         if self.use_full_trace_reflection:
-            from dspy.teleprompt.gepa.gepa_utils import FULL_TRACE_CANDIDATE_KEY
+            from dspy.teleprompt.gepa.gepa_utils import FULL_TRACE_CANDIDATE_KEY, candidate_dict_to_xml
 
-            return {FULL_TRACE_CANDIDATE_KEY: json.dumps(seed_candidate, indent=2)}
+            return {FULL_TRACE_CANDIDATE_KEY: candidate_dict_to_xml(seed_candidate)}
 
         return seed_candidate
 

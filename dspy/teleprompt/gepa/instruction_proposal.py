@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any
 
@@ -5,7 +6,7 @@ from gepa.core.adapter import ProposalFn
 
 import dspy
 from dspy.adapters.types.base_type import Type
-from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample
+from dspy.teleprompt.gepa.gepa_utils import ReflectiveExample, candidate_dict_to_xml, xml_to_candidate_dict
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ class GenerateImprovedConfigFromFullTrace(dspy.Signature):
     The program has multiple components (predictors), each with its own instruction text.
 
     Below you will see:
-    1. The current configuration mapping component names to their instruction text
+    1. The current configuration as XML, mapping component names to their instruction text
     2. Execution examples showing the full program trace - all component calls with their inputs, outputs, and feedback
 
     Your task is to write improved instructions for the components based on analyzing these execution traces.
@@ -37,7 +38,8 @@ class GenerateImprovedConfigFromFullTrace(dspy.Signature):
 
     ## Output Requirements
 
-    - The new configuration MUST have the exact same JSON structure and keys as the current configuration
+    - The new configuration MUST be valid XML with the exact same structure as the current configuration
+    - Use the same <candidate_config> root element with <predictor name="..."> child elements
     - Each component's instruction should be improved based on the observed patterns or retained if it works well
     - Focus on making instructions that help each component perform better in the context of the overall program execution
     - Be specific and actionable - include concrete guidance, domain knowledge, and strategies
@@ -45,7 +47,8 @@ class GenerateImprovedConfigFromFullTrace(dspy.Signature):
     """
 
     current_config: str = dspy.InputField(
-        desc="The current configuration as a JSON string, mapping component names to their instruction text"
+        desc="The current configuration as XML, mapping component names to their instruction text. "
+        "Format: <candidate_config><predictor name=\"...\">instruction</predictor>...</candidate_config>"
     )
     execution_examples: str = dspy.InputField(
         desc="Execution examples showing program inputs, outputs, full traces of all predictor calls, and feedback"
@@ -55,7 +58,8 @@ class GenerateImprovedConfigFromFullTrace(dspy.Signature):
         desc="Step-by-step analysis: (1) What is the task and input format? (2) What patterns in the traces indicate success vs failure? (3) What domain knowledge and strategies should be included in the instructions?"
     )
     new_config: str = dspy.OutputField(
-        desc="The new configuration as valid JSON with the exact same structure and keys as current_config, with improved instruction text for each component"
+        desc="The new configuration as valid XML with the exact same structure and predictor names as current_config. "
+        "Format: <candidate_config><predictor name=\"...\">improved instruction</predictor>...</candidate_config>"
     )
 
 
@@ -67,8 +71,8 @@ class FullTraceInstructionProposer(dspy.Module):
     individual predictor calls, this module receives the entire execution trajectory
     for each example and proposes updates to all component instructions at once.
 
-    The approach is inspired by the full_program_adapter which reflects on entire agent
-    trajectories to propose holistic improvements to the program.
+    The candidate configuration is serialized as XML, which provides clear structural
+    delimiters for LLM parsing and generation.
     """
 
     def __init__(self):
@@ -80,11 +84,11 @@ class FullTraceInstructionProposer(dspy.Module):
         Generate an improved configuration based on full trace examples.
 
         Args:
-            current_config: JSON string of the current component configuration
+            current_config: XML string of the current component configuration
             dataset_with_feedback: List of dicts with full trace examples
 
         Returns:
-            str: New configuration as JSON string
+            str: New configuration as XML string
         """
         # Format the examples for the signature
         formatted_examples = self._format_examples(dataset_with_feedback)
@@ -95,8 +99,8 @@ class FullTraceInstructionProposer(dspy.Module):
             execution_examples=formatted_examples,
         )
 
-        # Extract and validate JSON from the output
-        new_config = self._extract_json(result.new_config, current_config)
+        # Extract and validate XML from the output
+        new_config = self._extract_xml(result.new_config, current_config)
         return new_config
 
     def _format_examples(self, dataset_with_feedback: list[dict[str, Any]]) -> str:
@@ -140,6 +144,9 @@ class FullTraceInstructionProposer(dspy.Module):
                         parts.append("    ```json")
                         parts.append("    " + json.dumps(outputs, indent=2, default=str).replace("\n", "\n    "))
                         parts.append("    ```")
+                    # Per-component feedback (when available)
+                    if "Component Feedback" in trace_item:
+                        parts.append(f"  - Component Feedback: {trace_item['Component Feedback']}")
 
             # Feedback
             if "Feedback" in example:
@@ -150,41 +157,22 @@ class FullTraceInstructionProposer(dspy.Module):
 
         return "\n".join(formatted_parts)
 
-    def _extract_json(self, completion: str, fallback_config: str) -> str:
+    def _extract_xml(self, completion: str, fallback_config: str) -> str:
         """
-        Extract JSON configuration from the completion.
+        Extract XML configuration from the completion.
 
-        Tries to find a valid JSON object in the completion. If parsing fails,
-        returns the fallback configuration.
+        Tries to find a valid XML candidate_config block in the completion.
+        If parsing fails, returns the fallback configuration.
         """
-        import re
-
-        # Try to find JSON block in markdown code fence
-        json_pattern = r"```(?:json)?\s*\n?([\s\S]*?)\n?```"
-        matches = re.findall(json_pattern, completion)
-
-        for match in matches:
-            try:
-                parsed = json.loads(match.strip())
-                if isinstance(parsed, dict):
-                    return json.dumps(parsed, indent=2)
-            except json.JSONDecodeError:
-                continue
-
-        # Try to parse the whole completion as JSON
         try:
-            start_idx = completion.find("{")
-            end_idx = completion.rfind("}")
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                potential_json = completion[start_idx : end_idx + 1]
-                parsed = json.loads(potential_json)
-                if isinstance(parsed, dict):
-                    return json.dumps(parsed, indent=2)
-        except json.JSONDecodeError:
+            parsed = xml_to_candidate_dict(completion)
+            if parsed:
+                return candidate_dict_to_xml(parsed)
+        except Exception:
             pass
 
         # Fallback: return the original config
-        logger.warning("Failed to extract valid JSON from completion, returning original config")
+        logger.warning("Failed to extract valid XML from completion, returning original config")
         return fallback_config
 
 

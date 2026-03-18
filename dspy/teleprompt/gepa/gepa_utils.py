@@ -1,7 +1,9 @@
 import json
 import logging
 import random
+import xml.etree.ElementTree as ET
 from typing import Any, Callable, Protocol, TypedDict
+from xml.sax.saxutils import escape as xml_escape
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
@@ -24,6 +26,68 @@ TOOL_MODULE_PREFIX = "tool_module"
 
 # Constant for full trace reflection mode
 FULL_TRACE_CANDIDATE_KEY = "candidate_config"
+
+
+def candidate_dict_to_xml(d: dict[str, str]) -> str:
+    """Serialize a predictor-name → instruction mapping to XML.
+
+    Produces::
+
+        <candidate_config>
+          <predictor name="summarize1.predict">instruction text</predictor>
+          ...
+        </candidate_config>
+    """
+    parts = ["<candidate_config>"]
+    for name, instruction in d.items():
+        parts.append(f'  <predictor name="{xml_escape(name)}">{xml_escape(instruction)}</predictor>')
+    parts.append("</candidate_config>")
+    return "\n".join(parts)
+
+
+def xml_to_candidate_dict(xml_str: str) -> dict[str, str]:
+    """Deserialize an XML candidate config back to a dict.
+
+    Handles both the structured ``<predictor name="...">`` format produced by
+    :func:`candidate_dict_to_xml` **and** a fallback heuristic for free-form
+    LLM completions that may wrap the XML in markdown fences or include extra
+    text around it.
+    """
+    # Strip markdown code fences if present
+    import re
+    xml_str = xml_str.strip()
+    fence_pattern = re.compile(r"```(?:xml)?\s*\n?([\s\S]*?)\n?```", re.DOTALL)
+    fence_match = fence_pattern.search(xml_str)
+    if fence_match:
+        xml_str = fence_match.group(1).strip()
+
+    # Try to isolate the <candidate_config>...</candidate_config> block
+    start = xml_str.find("<candidate_config")
+    end = xml_str.rfind("</candidate_config>")
+    if start != -1 and end != -1:
+        xml_str = xml_str[start : end + len("</candidate_config>")]
+
+    try:
+        root = ET.fromstring(xml_str)
+    except ET.ParseError:
+        # Last resort: try to find individual <predictor> tags
+        result = {}
+        pred_pattern = re.compile(
+            r'<predictor\s+name="([^"]+)">(.*?)</predictor>', re.DOTALL
+        )
+        for m in pred_pattern.finditer(xml_str):
+            result[m.group(1)] = m.group(2).strip()
+        if result:
+            return result
+        raise
+
+    result = {}
+    for elem in root.findall("predictor"):
+        name = elem.get("name")
+        text = (elem.text or "").strip()
+        if name:
+            result[name] = text
+    return result
 
 
 class LoggerAdapter:
@@ -205,9 +269,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
-        # Handle full trace reflection mode where candidate is serialized as single JSON
+        # Handle full trace reflection mode where candidate is serialized as XML
         if self.use_full_trace_reflection and FULL_TRACE_CANDIDATE_KEY in candidate:
-            deserialized_candidate = json.loads(candidate[FULL_TRACE_CANDIDATE_KEY])
+            deserialized_candidate = xml_to_candidate_dict(candidate[FULL_TRACE_CANDIDATE_KEY])
         else:
             deserialized_candidate = candidate
 
@@ -446,15 +510,36 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 else:
                     new_outputs = {output_key: str(output_val) for output_key, output_val in outputs.items()}
 
-                trace_items.append({
+                # Per-component feedback for this predictor call
+                component_feedback = None
+                if not isinstance(outputs, FailedPrediction) and not isinstance(prediction, FailedPrediction):
+                    feedback_fn = self.feedback_map.get(pred_name)
+                    if feedback_fn is not None:
+                        try:
+                            fb = feedback_fn(
+                                predictor_output=outputs,
+                                predictor_inputs=inputs,
+                                module_inputs=example,
+                                module_outputs=prediction,
+                                captured_trace=trace,
+                            )
+                            component_feedback = fb["feedback"]
+                        except Exception:
+                            pass
+
+                trace_entry = {
                     "Called Module": pred_name,
                     "Inputs": new_inputs,
                     "Generated Outputs": new_outputs,
-                })
+                }
+                if component_feedback is not None:
+                    trace_entry["Component Feedback"] = component_feedback
+
+                trace_items.append(trace_entry)
 
             example_data["Program Trace"] = trace_items
 
-            # Add feedback
+            # Add module-level feedback
             if feedback_text is not None:
                 example_data["Feedback"] = feedback_text
             else:
