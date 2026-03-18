@@ -48,7 +48,7 @@ class GenerateImprovedConfigFromFullTrace(dspy.Signature):
 
     current_config: str = dspy.InputField(
         desc="The current configuration as XML, mapping component names to their instruction text. "
-        "Format: <candidate_config><predictor name=\"...\">instruction</predictor>...</candidate_config>"
+        'Format: <candidate_config><predictor name="...">instruction</predictor>...</candidate_config>'
     )
     execution_examples: str = dspy.InputField(
         desc="Execution examples showing program inputs, outputs, full traces of all predictor calls, and feedback"
@@ -59,7 +59,7 @@ class GenerateImprovedConfigFromFullTrace(dspy.Signature):
     )
     new_config: str = dspy.OutputField(
         desc="The new configuration as valid XML with the exact same structure and predictor names as current_config. "
-        "Format: <candidate_config><predictor name=\"...\">improved instruction</predictor>...</candidate_config>"
+        'Format: <candidate_config><predictor name="...">improved instruction</predictor>...</candidate_config>'
     )
 
 
