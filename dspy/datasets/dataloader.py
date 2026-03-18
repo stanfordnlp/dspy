@@ -16,10 +16,12 @@ class DataLoader(Dataset):
     Parquet files, Pandas DataFrames, and retrieval modules, converting each row
     into a `dspy.Example` with the specified input keys.
 
-    Example:
-        >>> dl = dspy.DataLoader()
-        >>> dataset = dl.from_csv("data.csv", input_keys=("question",))
-        >>> trainset, testset = dl.train_test_split(dataset, train_size=0.8).values()
+    Examples:
+        ```python
+        dl = dspy.DataLoader()
+        dataset = dl.from_csv("data.csv", input_keys=("question",))
+        trainset, testset = dl.train_test_split(dataset, train_size=0.8).values()
+        ```
     """
 
     def __init__(self):
@@ -60,13 +62,15 @@ class DataLoader(Dataset):
             ValueError: If `fields` is not a tuple or `input_keys` is not
                 a tuple.
 
-        Example:
-            >>> dl = dspy.DataLoader()
-            >>> dataset = dl.from_huggingface(
-            ...     "squad",
-            ...     split="train[:100]",
-            ...     input_keys=("question", "context"),
-            ... )
+        Examples:
+            ```python
+            dl = dspy.DataLoader()
+            dataset = dl.from_huggingface(
+                "squad",
+                split="train[:100]",
+                input_keys=("question", "context"),
+            )
+            ```
         """
         if fields and not isinstance(fields, tuple):
             raise ValueError("Invalid fields provided. Please provide a tuple of fields.")
@@ -124,9 +128,11 @@ class DataLoader(Dataset):
         Returns:
             A list of `dspy.Example` instances.
 
-        Example:
-            >>> dl = dspy.DataLoader()
-            >>> dataset = dl.from_csv("data.csv", input_keys=("question",))
+        Examples:
+            ```python
+            dl = dspy.DataLoader()
+            dataset = dl.from_csv("data.csv", input_keys=("question",))
+            ```
         """
         from datasets import load_dataset
 
@@ -154,11 +160,13 @@ class DataLoader(Dataset):
         Returns:
             A list of `dspy.Example` instances.
 
-        Example:
-            >>> import pandas as pd
-            >>> dl = dspy.DataLoader()
-            >>> df = pd.DataFrame({"question": ["What is AI?"], "answer": ["..."]})
-            >>> dataset = dl.from_pandas(df, input_keys=("question",))
+        Examples:
+            ```python
+            import pandas as pd
+            dl = dspy.DataLoader()
+            df = pd.DataFrame({"question": ["What is AI?"], "answer": ["..."]})
+            dataset = dl.from_pandas(df, input_keys=("question",))
+            ```
         """
         if fields is None:
             fields = list(df.columns)
@@ -184,9 +192,11 @@ class DataLoader(Dataset):
         Returns:
             A list of `dspy.Example` instances.
 
-        Example:
-            >>> dl = dspy.DataLoader()
-            >>> dataset = dl.from_json("data.jsonl", input_keys=("question",))
+        Examples:
+            ```python
+            dl = dspy.DataLoader()
+            dataset = dl.from_json("data.jsonl", input_keys=("question",))
+            ```
         """
         from datasets import load_dataset
 
@@ -214,9 +224,11 @@ class DataLoader(Dataset):
         Returns:
             A list of `dspy.Example` instances.
 
-        Example:
-            >>> dl = dspy.DataLoader()
-            >>> dataset = dl.from_parquet("data.parquet", input_keys=("question",))
+        Examples:
+            ```python
+            dl = dspy.DataLoader()
+            dataset = dl.from_parquet("data.parquet", input_keys=("question",))
+            ```
         """
         from datasets import load_dataset
 
@@ -282,9 +294,11 @@ class DataLoader(Dataset):
         Raises:
             ValueError: If `dataset` is not a list.
 
-        Example:
-            >>> dl = dspy.DataLoader()
-            >>> subset = dl.sample(dataset, n=10)
+        Examples:
+            ```python
+            dl = dspy.DataLoader()
+            subset = dl.sample(dataset, n=10)
+            ```
         """
         if not isinstance(dataset, list):
             raise ValueError(
@@ -324,10 +338,12 @@ class DataLoader(Dataset):
             ValueError: If `train_size` or `test_size` are invalid, or if
                 their sum exceeds the dataset size.
 
-        Example:
-            >>> dl = dspy.DataLoader()
-            >>> splits = dl.train_test_split(dataset, train_size=0.8, random_state=42)
-            >>> trainset, testset = splits["train"], splits["test"]
+        Examples:
+            ```python
+            dl = dspy.DataLoader()
+            splits = dl.train_test_split(dataset, train_size=0.8, random_state=42)
+            trainset, testset = splits["train"], splits["test"]
+            ```
         """
         if random_state is not None:
             random.seed(random_state)
