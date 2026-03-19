@@ -60,9 +60,16 @@ _SUPPORTED_BACKENDS = ("mlx", "coreml")
 class _LocalStreamChunk:
     """A single token chunk emitted during AppleLocalLM streaming.
 
-    Yielded by ``dspy.streamify()`` for each token.  Not a ``ModelResponseStream``
-    instance, so DSPy's ``StreamListener`` field-extraction is not available — the
-    caller receives raw token text via ``chunk.text`` and accumulates it manually.
+    Yielded by ``dspy.streamify()`` for each token as the model generates.
+    Not a ``ModelResponseStream`` instance, so DSPy's ``StreamListener``
+    field-extraction is not available — callers receive raw token text via
+    ``chunk.text`` and accumulate it manually.
+
+    Attributes:
+        text: The raw token text for this chunk.
+        model: Model identifier, echoed from the ``AppleLocalLM`` instance.
+        predict_id: ``id()`` of the ``dspy.Predict`` module that initiated the
+            call, or ``None`` if called outside a Predict context.
     """
 
     text: str
@@ -80,6 +87,14 @@ def _apply_chat_template(tokenizer: Any, messages: list[dict[str, Any]]) -> str:
 
     Falls back to simple role-prefixed concatenation if the tokenizer does not
     expose ``apply_chat_template`` or if the call raises.
+
+    Args:
+        tokenizer: A HuggingFace tokenizer object, or any object that optionally
+            exposes an ``apply_chat_template`` method.
+        messages: List of ``{"role": ..., "content": ...}`` dicts.
+
+    Returns:
+        A formatted prompt string ready to pass to ``mlx_lm.generate()``.
     """
     if hasattr(tokenizer, "apply_chat_template"):
         try:
@@ -91,7 +106,7 @@ def _apply_chat_template(tokenizer: Any, messages: list[dict[str, Any]]) -> str:
         except Exception as exc:
             logger.debug("apply_chat_template failed (%s); falling back to concat", exc)
 
-    # Fallback: reuse the same simple flattener as AppleFoundationLM
+    # Fallback: reuse the same simple flattener as AppleFoundationLM.
     from dspy.clients.apple_fm import _flatten_messages  # noqa: PLC0415
 
     return _flatten_messages(messages)
@@ -110,11 +125,13 @@ class AppleLocalLM(BaseLM):
     pipeline, including mixed-LM pipelines where cheap on-device inference
     handles preprocessing and cloud LLMs handle reasoning.
 
+    Streaming is supported via ``dspy.streamify()``: tokens are forwarded to
+    the anyio ``MemoryObjectSendStream`` as ``_LocalStreamChunk`` objects.
+
     Args:
         model: HuggingFace repo ID (e.g. ``"mlx-community/Llama-3.2-3B-Instruct-4bit"``)
             or an absolute path to a local MLX model directory.  Also used as the
-            DSPy cache key, so two instances pointing to the same model share a
-            cache.
+            DSPy cache key, so two instances pointing to the same model share a cache.
         backend: Inference engine.  ``"mlx"`` (default) uses ``mlx-lm``.
             ``"coreml"`` is reserved and raises ``NotImplementedError`` until
             implemented.
@@ -125,6 +142,16 @@ class AppleLocalLM(BaseLM):
         temperature: Sampling temperature passed to ``mlx_lm.generate()``.
         max_tokens: Maximum tokens to generate per call.
         cache: Whether to enable DSPy's request cache (keyed on model + prompt).
+        max_concurrency: Maximum number of simultaneous ``aforward()`` calls
+            when used outside ``streamify()``.  MLX thread-safety on a single
+            model instance is not guaranteed above 1.
+        **kwargs: Additional keyword arguments forwarded to ``BaseLM.__init__``.
+
+    Raises:
+        ValueError: If ``backend`` is not one of the supported values.
+        NotImplementedError: If ``backend="coreml"`` is requested.
+        RuntimeError: If not running on macOS on Apple Silicon.
+        ImportError: If ``mlx-lm`` is not installed.
 
     Example::
 
@@ -151,6 +178,24 @@ class AppleLocalLM(BaseLM):
         max_concurrency: int = 1,
         **kwargs: Any,
     ) -> None:
+        """Initialize the adapter, validate platform and backend, then load the model.
+
+        Args:
+            model: HuggingFace repo ID or local path to an MLX model directory.
+            backend: Inference engine — only ``"mlx"`` is currently supported.
+            bits: Informational quantization hint (4 or 8); does not trigger conversion.
+            temperature: Sampling temperature for generation.
+            max_tokens: Maximum tokens to generate per call.
+            cache: Whether to enable DSPy's request cache.
+            max_concurrency: Semaphore limit for concurrent ``aforward()`` calls.
+            **kwargs: Forwarded to ``BaseLM.__init__``.
+
+        Raises:
+            ValueError: If ``backend`` is not in ``_SUPPORTED_BACKENDS``.
+            NotImplementedError: If ``backend="coreml"`` is requested.
+            RuntimeError: If not running on macOS on Apple Silicon (arm64).
+            ImportError: If ``mlx-lm`` is not installed.
+        """
         if backend not in _SUPPORTED_BACKENDS:
             raise ValueError(
                 f"Unknown backend {backend!r}. Choose from: {_SUPPORTED_BACKENDS}"
@@ -205,9 +250,8 @@ class AppleLocalLM(BaseLM):
             )
 
         self._mlx_model, self._mlx_tokenizer = self._load_mlx(model)
-        # Expose context window so DSPy optimizers know when to stop stuffing the prompt.
-        # HuggingFace tokenizers carry model_max_length in their saved config; fall back to
-        # 4096 for any tokenizer that omits it (conservative but safe for most models).
+        # HuggingFace tokenizers carry model_max_length in their saved config.
+        # Fall back to 4096 for tokenizers that omit it (conservative but safe).
         self.context_window: int = getattr(self._mlx_tokenizer, "model_max_length", 4096)
 
     # ------------------------------------------------------------------
@@ -215,6 +259,17 @@ class AppleLocalLM(BaseLM):
     # ------------------------------------------------------------------
 
     def _load_mlx(self, model_path: str) -> tuple[Any, Any]:
+        """Load an MLX model and tokenizer from a HuggingFace repo or local path.
+
+        Args:
+            model_path: HuggingFace repo ID or absolute path to a local model directory.
+
+        Returns:
+            A ``(model, tokenizer)`` tuple as returned by ``mlx_lm.load()``.
+
+        Raises:
+            ImportError: If ``mlx-lm`` is not installed.
+        """
         try:
             import mlx_lm  # noqa: PLC0415
         except ImportError as exc:
@@ -238,12 +293,21 @@ class AppleLocalLM(BaseLM):
         temperature: float,
         max_tokens: int,
     ) -> tuple[str, str]:
-        """Run synchronous MLX inference.
+        """Run synchronous (non-streaming) MLX inference.
 
-        Returns ``(generated_text, flat_prompt)`` so the caller can compute
-        token counts without applying the chat template a second time.
         Only the semantically meaningful arguments are accepted; DSPy/LiteLLM
         kwargs are stripped before this method is called.
+
+        Args:
+            messages: List of ``{"role": ..., "content": ...}`` dicts to format
+                via the tokenizer's chat template.
+            temperature: Sampling temperature forwarded to ``make_sampler``.
+            max_tokens: Maximum number of tokens to generate.
+
+        Returns:
+            A ``(generated_text, flat_prompt)`` tuple.  ``flat_prompt`` is
+            returned so the caller can compute token counts without applying
+            the chat template a second time.
         """
         import mlx_lm  # noqa: PLC0415
         from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
@@ -262,6 +326,16 @@ class AppleLocalLM(BaseLM):
         return text, flat_prompt
 
     def _build_response(self, text: str, usage: _FMUsage | None = None) -> _FMResponse:
+        """Wrap a raw text string in an OpenAI-compatible ``_FMResponse``.
+
+        Args:
+            text: The model's generated text.
+            usage: Pre-computed token-usage statistics.  Defaults to zeroed
+                counters if not provided.
+
+        Returns:
+            An ``_FMResponse`` with a single choice and ``response_cost=0.0``.
+        """
         return _FMResponse(
             choices=[_FMChoice(message=_FMMessage(content=text))],
             usage=usage or _FMUsage(),
@@ -279,7 +353,26 @@ class AppleLocalLM(BaseLM):
         messages: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> _FMResponse:
-        """Synchronous forward pass — checks DSPy cache, then runs MLX inference."""
+        """Synchronous forward pass — checks DSPy cache, then runs MLX inference.
+
+        When ``dspy.settings.send_stream`` is set (i.e. the call originates from
+        ``dspy.streamify()`` via ``asyncify``), uses ``mlx_lm.stream_generate()``
+        and forwards each token to the anyio stream via ``anyio.from_thread.run()``.
+        Otherwise runs ``mlx_lm.generate()`` in a single blocking call.
+
+        Args:
+            prompt: Plain-text prompt string.  Wrapped in a user message if
+                ``messages`` is not provided.
+            messages: List of ``{"role": ..., "content": ...}`` dicts.
+            **kwargs: Supports ``temperature``, ``max_tokens``, and ``cache``
+                overrides.  Unknown kwargs are warned and discarded.
+
+        Returns:
+            An ``_FMResponse`` compatible with ``BaseLM._process_completion``.
+
+        Raises:
+            NotImplementedError: If ``tools`` or ``stream=True`` is passed.
+        """
         import dspy  # noqa: PLC0415  (lazy to avoid circular-import at module load)
 
         cache = kwargs.pop("cache", self.cache)
@@ -329,6 +422,7 @@ class AppleLocalLM(BaseLM):
 
         send_stream = dspy.settings.send_stream
 
+        # Skip cache lookup during streaming — every call must emit live chunks.
         if cache and send_stream is None:
             cached = dspy.cache.get(cache_request)
             if cached is not None:
@@ -339,10 +433,12 @@ class AppleLocalLM(BaseLM):
             # stream_generate() yields tokens synchronously; each is forwarded to the
             # anyio MemoryObjectSendStream using from_thread.run().
             import mlx_lm  # noqa: PLC0415
-            from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
             from anyio.from_thread import run as _anyio_run  # noqa: PLC0415
+            from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
 
             caller_predict = dspy.settings.caller_predict
+            # id() is stable for the lifetime of the Predict object; used by
+            # StreamListener to route chunks to the correct field extractor.
             predict_id = id(caller_predict) if caller_predict else None
             flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
             sampler = make_sampler(temp=float(temperature))
@@ -359,6 +455,8 @@ class AppleLocalLM(BaseLM):
                 _chunk = _LocalStreamChunk(
                     text=_response.text, model=self.model, predict_id=predict_id
                 )
+                # anyio.from_thread.run() schedules the async send on the event loop
+                # from within the anyio-managed worker thread started by asyncify.
                 _anyio_run(send_stream.send, _chunk)
 
             text = full_text
@@ -396,6 +494,14 @@ class AppleLocalLM(BaseLM):
         Runs the synchronous MLX generator in a thread-pool executor and forwards
         each token text to the caller via an ``asyncio.Queue``, keeping the event
         loop unblocked between tokens.
+
+        Args:
+            flat_prompt: Pre-formatted prompt string from ``_apply_chat_template``.
+            temperature: Sampling temperature forwarded to ``make_sampler``.
+            max_tokens: Maximum number of tokens to generate.
+
+        Yields:
+            Individual token strings as they are produced by the model.
         """
         import mlx_lm  # noqa: PLC0415
         from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
@@ -405,6 +511,7 @@ class AppleLocalLM(BaseLM):
         sampler = make_sampler(temp=float(temperature))
 
         def _run() -> None:
+            """Generate tokens in a thread and enqueue each one for the async consumer."""
             for response in mlx_lm.stream_generate(
                 self._mlx_model,
                 self._mlx_tokenizer,
@@ -412,9 +519,11 @@ class AppleLocalLM(BaseLM):
                 max_tokens=int(max_tokens),
                 sampler=sampler,
             ):
+                # call_soon_threadsafe is required to safely enqueue from a non-async thread.
                 loop.call_soon_threadsafe(queue.put_nowait, response.text)
-            loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
+            loop.call_soon_threadsafe(queue.put_nowait, None)  # None sentinel signals completion
 
+        # Run the blocking generator concurrently; await its completion after draining.
         executor_task = asyncio.ensure_future(asyncio.to_thread(_run))
         while True:
             token = await queue.get()
@@ -429,23 +538,39 @@ class AppleLocalLM(BaseLM):
         messages: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> _FMResponse:
-        """Async forward pass.
+        """Async forward pass for direct callers of ``await lm.aforward()``.
 
-        When ``dspy.streamify()`` is active (``dspy.settings.send_stream`` is set),
-        runs ``mlx_lm.stream_generate()`` and sends each ``_LocalStreamChunk`` to the
+        When ``dspy.settings.send_stream`` is set, runs ``mlx_lm.stream_generate()``
+        via ``_stream_generate_async`` and sends each ``_LocalStreamChunk`` to the
         stream as tokens arrive, then returns the full ``_FMResponse`` at the end.
 
         Without streaming, delegates to ``forward()`` via a thread-pool executor so
         MLX inference does not block the event loop.  Concurrent calls are gated by a
-        semaphore (default: 1) to prevent OOM on Apple Silicon.
+        semaphore (default: 1) to prevent out-of-memory errors on Apple Silicon.
+
+        Note:
+            The primary streaming path for ``dspy.streamify()`` goes through
+            ``forward()`` (via ``asyncify``), not this method.  This method handles
+            streaming only for direct ``await lm.aforward()`` callers.
+
+        Args:
+            prompt: Plain-text prompt string.  Wrapped in a user message if
+                ``messages`` is not provided.
+            messages: List of ``{"role": ..., "content": ...}`` dicts.
+            **kwargs: Supports ``temperature``, ``max_tokens``, and ``cache``
+                overrides.  Unknown kwargs are warned and discarded.
+
+        Returns:
+            An ``_FMResponse`` compatible with ``BaseLM._process_completion``.
         """
         import dspy  # noqa: PLC0415
 
         send_stream = dspy.settings.send_stream
 
         if send_stream is None:
-            # Non-streaming path — existing behaviour.
+            # Non-streaming path: delegate to forward() in a thread-pool executor.
             if self._semaphore is None:
+                # Lazy init avoids binding to the wrong event loop at construction time.
                 self._semaphore = asyncio.Semaphore(self._max_concurrency)
             async with self._semaphore:
                 return await asyncio.to_thread(
@@ -453,13 +578,14 @@ class AppleLocalLM(BaseLM):
                 )
 
         # ------------------------------------------------------------------
-        # Streaming path
+        # Streaming path (direct aforward() callers only)
         # ------------------------------------------------------------------
         cache = kwargs.pop("cache", self.cache)
         if messages is None:
             messages = [{"role": "user", "content": prompt or ""}]
         temperature = float(kwargs.pop("temperature", self._temperature))
         max_tokens = int(kwargs.pop("max_tokens", self._max_tokens))
+        # Strip DSPy-internal keys that mlx-lm doesn't accept.
         for _k in ("response_format", "tools", "num_retries", "stream", "n"):
             kwargs.pop(_k, None)
         if kwargs:
@@ -469,6 +595,7 @@ class AppleLocalLM(BaseLM):
 
         flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
         caller_predict = dspy.settings.caller_predict
+        # id() is stable for the lifetime of the Predict object.
         predict_id = id(caller_predict) if caller_predict else None
 
         full_text = ""
