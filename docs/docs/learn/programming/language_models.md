@@ -123,6 +123,34 @@ dspy.configure(lm=lm)
         dspy.configure(lm=lm)
         ```
 
+    === "Apple Foundation Models (on-device)"
+        Requires macOS 26+ with Apple Intelligence enabled. No API key or network
+        connection needed — inference runs entirely on-device.
+
+        ```bash
+        pip install apple-fm-sdk
+        ```
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.AppleFoundationLM()
+        dspy.configure(lm=lm)
+        ```
+
+    === "Apple Silicon (MLX)"
+        Runs any [mlx-lm-compatible model](https://huggingface.co/mlx-community) on
+        Apple Silicon (M1/M2/M3/M4). Requires macOS 14+ on Apple Silicon.
+
+        ```bash
+        pip install mlx-lm
+        ```
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.AppleLocalLM("mlx-community/Llama-3.2-3B-Instruct-4bit")
+        dspy.configure(lm=lm)
+        ```
+
     === "Other providers"
         In DSPy, you can use any of the dozens of [LLM providers supported by LiteLLM](https://docs.litellm.ai/docs/providers). Simply follow their instructions for which `{PROVIDER}_API_KEY` to set and how to write pass the `{provider_name}/{model_name}` to the constructor. 
 

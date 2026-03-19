@@ -29,6 +29,11 @@ __pycache__/
 .ipynb_checkpoints
 # notebooks/
 
+# venv
+venv
+.venv
+
+
 # mac
 .DS_Store
 

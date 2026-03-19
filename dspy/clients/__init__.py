@@ -115,3 +115,15 @@ __all__ = [
     "disable_litellm_logging",
     "configure_cache",
 ]
+
+try:
+    from dspy.clients.apple_fm import AppleFoundationLM
+    __all__ += ["AppleFoundationLM"]
+except (ImportError, RuntimeError):
+    pass
+
+try:
+    from dspy.clients.apple_local import AppleLocalLM
+    __all__ += ["AppleLocalLM"]
+except (ImportError, RuntimeError, NotImplementedError):
+    pass

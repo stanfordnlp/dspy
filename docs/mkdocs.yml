@@ -106,6 +106,8 @@ nav:
             - Citations: api/experimental/Citations.md
             - Document: api/experimental/Document.md
         - Models:
+            - AppleFoundationLM: api/models/AppleFoundationLM.md
+            - AppleLocalLM: api/models/AppleLocalLM.md
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
         - Modules:
