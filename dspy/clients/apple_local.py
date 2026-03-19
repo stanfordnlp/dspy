@@ -45,7 +45,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import platform
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator
 
 from dspy.clients.apple_fm import _FMChoice, _FMMessage, _FMResponse, _FMUsage
 from dspy.clients.base_lm import BaseLM
@@ -53,6 +54,20 @@ from dspy.clients.base_lm import BaseLM
 logger = logging.getLogger(__name__)
 
 _SUPPORTED_BACKENDS = ("mlx", "coreml")
+
+
+@dataclass
+class _LocalStreamChunk:
+    """A single token chunk emitted during AppleLocalLM streaming.
+
+    Yielded by ``dspy.streamify()`` for each token.  Not a ``ModelResponseStream``
+    instance, so DSPy's ``StreamListener`` field-extraction is not available — the
+    caller receives raw token text via ``chunk.text`` and accumulates it manually.
+    """
+
+    text: str
+    model: str
+    predict_id: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -286,8 +301,8 @@ class AppleLocalLM(BaseLM):
 
         if kwargs.get("stream"):
             raise NotImplementedError(
-                "Streaming is not yet supported for AppleLocalLM. "
-                "Call forward() for a blocking response."
+                "AppleLocalLM does not support stream=True in forward(). "
+                "Use dspy.streamify() to wrap your module for async streaming."
             )
 
         # Discard LiteLLM-only / DSPy-internal kwargs that mlx_lm doesn't accept.
@@ -312,12 +327,44 @@ class AppleLocalLM(BaseLM):
             **kwargs,
         }
 
-        if cache:
+        send_stream = dspy.settings.send_stream
+
+        if cache and send_stream is None:
             cached = dspy.cache.get(cache_request)
             if cached is not None:
                 return cached
 
-        text, flat_prompt = self._generate(messages, temperature, max_tokens)
+        if send_stream is not None:
+            # Streaming path: called from streamify() via asyncify (anyio-managed thread).
+            # stream_generate() yields tokens synchronously; each is forwarded to the
+            # anyio MemoryObjectSendStream using from_thread.run().
+            import mlx_lm  # noqa: PLC0415
+            from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
+            from anyio.from_thread import run as _anyio_run  # noqa: PLC0415
+
+            caller_predict = dspy.settings.caller_predict
+            predict_id = id(caller_predict) if caller_predict else None
+            flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
+            sampler = make_sampler(temp=float(temperature))
+
+            full_text = ""
+            for _response in mlx_lm.stream_generate(
+                self._mlx_model,
+                self._mlx_tokenizer,
+                prompt=flat_prompt,
+                max_tokens=int(max_tokens),
+                sampler=sampler,
+            ):
+                full_text += _response.text
+                _chunk = _LocalStreamChunk(
+                    text=_response.text, model=self.model, predict_id=predict_id
+                )
+                _anyio_run(send_stream.send, _chunk)
+
+            text = full_text
+        else:
+            text, flat_prompt = self._generate(messages, temperature, max_tokens)
+
         prompt_tokens = len(self._mlx_tokenizer.encode(flat_prompt))
         if prompt_tokens > self.context_window - max_tokens:
             logger.warning(
@@ -338,23 +385,114 @@ class AppleLocalLM(BaseLM):
 
         return response
 
+    async def _stream_generate_async(
+        self,
+        flat_prompt: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> AsyncGenerator[str, None]:
+        """Bridge ``mlx_lm.stream_generate()`` (sync generator) to an async generator.
+
+        Runs the synchronous MLX generator in a thread-pool executor and forwards
+        each token text to the caller via an ``asyncio.Queue``, keeping the event
+        loop unblocked between tokens.
+        """
+        import mlx_lm  # noqa: PLC0415
+        from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
+
+        loop = asyncio.get_event_loop()
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+        sampler = make_sampler(temp=float(temperature))
+
+        def _run() -> None:
+            for response in mlx_lm.stream_generate(
+                self._mlx_model,
+                self._mlx_tokenizer,
+                prompt=flat_prompt,
+                max_tokens=int(max_tokens),
+                sampler=sampler,
+            ):
+                loop.call_soon_threadsafe(queue.put_nowait, response.text)
+            loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
+
+        executor_task = asyncio.ensure_future(asyncio.to_thread(_run))
+        while True:
+            token = await queue.get()
+            if token is None:
+                break
+            yield token
+        await executor_task
+
     async def aforward(
         self,
         prompt: str | None = None,
         messages: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> _FMResponse:
-        """Async forward pass — delegates to ``forward`` via a thread-pool executor
-        so MLX inference does not block the event loop.
+        """Async forward pass.
 
-        Concurrent calls are gated by a semaphore (default: 1) to prevent
-        out-of-memory crashes on Apple Silicon when DSPy optimizers issue
-        many parallel requests.  Raise ``max_concurrency`` at init time if
-        you need higher throughput and have headroom in unified memory.
+        When ``dspy.streamify()`` is active (``dspy.settings.send_stream`` is set),
+        runs ``mlx_lm.stream_generate()`` and sends each ``_LocalStreamChunk`` to the
+        stream as tokens arrive, then returns the full ``_FMResponse`` at the end.
+
+        Without streaming, delegates to ``forward()`` via a thread-pool executor so
+        MLX inference does not block the event loop.  Concurrent calls are gated by a
+        semaphore (default: 1) to prevent OOM on Apple Silicon.
         """
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(self._max_concurrency)
-        async with self._semaphore:
-            return await asyncio.to_thread(
-                self.forward, prompt=prompt, messages=messages, **kwargs
+        import dspy  # noqa: PLC0415
+
+        send_stream = dspy.settings.send_stream
+
+        if send_stream is None:
+            # Non-streaming path — existing behaviour.
+            if self._semaphore is None:
+                self._semaphore = asyncio.Semaphore(self._max_concurrency)
+            async with self._semaphore:
+                return await asyncio.to_thread(
+                    self.forward, prompt=prompt, messages=messages, **kwargs
+                )
+
+        # ------------------------------------------------------------------
+        # Streaming path
+        # ------------------------------------------------------------------
+        cache = kwargs.pop("cache", self.cache)
+        if messages is None:
+            messages = [{"role": "user", "content": prompt or ""}]
+        temperature = float(kwargs.pop("temperature", self._temperature))
+        max_tokens = int(kwargs.pop("max_tokens", self._max_tokens))
+        for _k in ("response_format", "tools", "num_retries", "stream", "n"):
+            kwargs.pop(_k, None)
+        if kwargs:
+            logger.warning(
+                "apple_local: ignoring unsupported kwargs %s", sorted(kwargs)
             )
+
+        flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
+        caller_predict = dspy.settings.caller_predict
+        predict_id = id(caller_predict) if caller_predict else None
+
+        full_text = ""
+        async for token_text in self._stream_generate_async(flat_prompt, temperature, max_tokens):
+            full_text += token_text
+            chunk = _LocalStreamChunk(text=token_text, model=self.model, predict_id=predict_id)
+            await send_stream.send(chunk)
+
+        prompt_tokens = len(self._mlx_tokenizer.encode(flat_prompt))
+        completion_tokens = len(self._mlx_tokenizer.encode(full_text))
+        usage = _FMUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
+        response = self._build_response(full_text, usage=usage)
+
+        if cache:
+            cache_request = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            dspy.cache.put(cache_request, response)
+
+        return response

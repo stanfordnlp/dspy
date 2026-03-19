@@ -49,14 +49,23 @@ def _make_fake_mlx_lm():
     class _FakeModel:
         pass
 
+    class _FakeGenerationResponse:
+        def __init__(self, text):
+            self.text = text
+
     def load(model_path):
         return _FakeModel(), _FakeTokenizer()
 
     def generate(model, tokenizer, prompt, max_tokens=100, sampler=None, verbose=False):
         return f"MLX response to: {prompt[:30]}"
 
+    def stream_generate(model, tokenizer, prompt, max_tokens=100, sampler=None):
+        for word in f"MLX response to: {prompt[:30]}".split():
+            yield _FakeGenerationResponse(word + " ")
+
     mlx_lm.load = load
     mlx_lm.generate = generate
+    mlx_lm.stream_generate = stream_generate
     return mlx_lm
 
 
@@ -295,7 +304,7 @@ class TestLocalConcurrencyAndTools:
         )
 
     def test_stream_true_raises_not_implemented(self, lm):
-        with pytest.raises(NotImplementedError, match="Streaming"):
+        with pytest.raises(NotImplementedError, match="streamify"):
             lm.forward(prompt="hi", stream=True)
 
     def test_unknown_kwargs_warns(self, lm):
@@ -385,6 +394,78 @@ class TestMaxConcurrencyWarning:
 # ---------------------------------------------------------------------------
 # Import guard
 # ---------------------------------------------------------------------------
+
+
+class TestStreaming:
+    def test_aforward_sends_chunks_to_send_stream(self, lm):
+        """aforward() sends _LocalStreamChunk objects when send_stream is active."""
+        import dspy
+        from unittest.mock import AsyncMock
+        from dspy.clients.apple_local import _LocalStreamChunk
+
+        sent_chunks = []
+        mock_send_stream = AsyncMock()
+        mock_send_stream.send = AsyncMock(side_effect=lambda c: sent_chunks.append(c))
+
+        async def _run():
+            with dspy.context(send_stream=mock_send_stream):
+                return await lm.aforward(prompt="hello streaming")
+
+        response = asyncio.run(_run())
+        assert any(isinstance(c, _LocalStreamChunk) for c in sent_chunks), \
+            "Expected _LocalStreamChunk objects sent to send_stream"
+        assert response.choices[0].message.content, "Expected non-empty response"
+
+    def test_stream_chunks_carry_text(self, lm):
+        """Each chunk has non-empty .text and .model fields."""
+        import dspy
+        from unittest.mock import AsyncMock
+        from dspy.clients.apple_local import _LocalStreamChunk
+
+        sent_chunks = []
+        mock_send_stream = AsyncMock()
+        mock_send_stream.send = AsyncMock(side_effect=lambda c: sent_chunks.append(c))
+
+        async def _run():
+            with dspy.context(send_stream=mock_send_stream):
+                await lm.aforward(prompt="hi")
+
+        asyncio.run(_run())
+        stream_chunks = [c for c in sent_chunks if isinstance(c, _LocalStreamChunk)]
+        assert all(isinstance(c.text, str) and len(c.text) > 0 for c in stream_chunks)
+        assert all(c.model == lm.model for c in stream_chunks)
+
+    def test_aforward_without_send_stream_uses_blocking_path(self, lm):
+        """aforward() without send_stream still returns a valid response."""
+        async def _run():
+            return await lm.aforward(prompt="hello")
+
+        result = asyncio.run(_run())
+        assert result.choices[0].message.content
+
+    def test_stream_full_text_equals_concatenated_chunks(self, lm):
+        """The response text equals the concatenation of all chunk texts."""
+        import dspy
+        from unittest.mock import AsyncMock
+        from dspy.clients.apple_local import _LocalStreamChunk
+
+        sent_chunks = []
+        mock_send_stream = AsyncMock()
+        mock_send_stream.send = AsyncMock(side_effect=lambda c: sent_chunks.append(c))
+
+        async def _run():
+            with dspy.context(send_stream=mock_send_stream):
+                return await lm.aforward(prompt="concatenation test")
+
+        response = asyncio.run(_run())
+        concatenated = "".join(
+            c.text for c in sent_chunks if isinstance(c, _LocalStreamChunk)
+        )
+        assert response.choices[0].message.content == concatenated
+
+    def test_stream_true_in_forward_still_raises(self, lm):
+        with pytest.raises(NotImplementedError, match="streamify"):
+            lm.forward(prompt="hi", stream=True)
 
 
 class TestImportGuard:
