@@ -122,6 +122,35 @@ def demo_mixed_pipeline():
 
 
 # ---------------------------------------------------------------------------
+# Pattern 4: Chain of Thought with OpenAI gpt-oss-20b via mlx-lm
+# ---------------------------------------------------------------------------
+# Uses InferenceIllusionist/gpt-oss-20b-MLX-4bit, a community 4-bit MLX
+# conversion of OpenAI's gpt-oss-20b (~10 GB unified memory required).
+# dspy.ChainOfThought adds a "reasoning" field before the answer, letting
+# the model work through multi-step problems before committing to an answer.
+
+
+def demo_chain_of_thought():
+    lm = dspy.AppleLocalLM(
+        "InferenceIllusionist/gpt-oss-20b-MLX-4bit",
+        temperature=0.6,
+        max_tokens=1024,
+    )
+    dspy.configure(lm=lm)
+
+    cot = dspy.ChainOfThought("question -> answer")
+    result = cot(
+        question=(
+            "A bat and a ball together cost $1.10. "
+            "The bat costs $1.00 more than the ball. "
+            "How much does the ball cost?"
+        )
+    )
+    print("Reasoning:", result.reasoning)
+    print("Answer:", result.answer)
+
+
+# ---------------------------------------------------------------------------
 # Structured output with AppleFoundationLM
 # ---------------------------------------------------------------------------
 # When response_format is a Pydantic model, AppleFoundationLM uses Apple's
@@ -158,6 +187,7 @@ if __name__ == "__main__":
         "local": demo_apple_local_lm,
         "mixed": demo_mixed_pipeline,
         "structured": demo_structured_output,
+        "cot": demo_chain_of_thought,
     }
 
     choice = sys.argv[1] if len(sys.argv) > 1 else "local"
