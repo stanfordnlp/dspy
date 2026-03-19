@@ -1,9 +1,8 @@
 """DSPy adapter for Apple's on-device Foundation Models.
 
-Requires macOS 26+ with Apple Intelligence enabled and the apple-fm-sdk package::
-
-    pip install apple-fm-sdk
-
+Requires macOS 26+ with Apple Intelligence enabled and the Apple Foundation Models
+SDK (``apple-fm-sdk``), installed via Apple's distribution channel. Refer to
+Apple's documentation for installation instructions.
 Usage::
 
     import dspy
