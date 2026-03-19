@@ -584,12 +584,13 @@ class AppleLocalLM(BaseLM):
         # id() is stable for the lifetime of the Predict object.
         predict_id = id(caller_predict) if caller_predict else None
 
-        full_text = ""
+        full_text_parts = []
         async for token_text in self._stream_generate_async(flat_prompt, temperature, max_tokens):
-            full_text += token_text
+            full_text_parts.append(token_text)
             chunk = _LocalStreamChunk(text=token_text, model=self.model, predict_id=predict_id)
             await send_stream.send(chunk)
 
+        full_text = "".join(full_text_parts)
         prompt_tokens = len(self._mlx_tokenizer.encode(flat_prompt))
         completion_tokens = len(self._mlx_tokenizer.encode(full_text))
         usage = _FMUsage(
