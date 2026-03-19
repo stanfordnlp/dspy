@@ -20,8 +20,9 @@ For pattern 3 (cloud step):
     export ANTHROPIC_API_KEY=your_key
 """
 
-import dspy
+import sys
 
+import dspy
 
 # ---------------------------------------------------------------------------
 # Pattern 1: Apple Intelligence system model
@@ -175,9 +176,7 @@ def demo_chain_of_thought():
     cot = dspy.ChainOfThought("question -> answer")
     result = cot(
         question=(
-            "A bat and a ball together cost $1.10. "
-            "The bat costs $1.00 more than the ball. "
-            "How much does the ball cost?"
+            "A bat and a ball together cost $1.10. The bat costs $1.00 more than the ball. How much does the ball cost?"
         )
     )
     print("Reasoning:", result.reasoning)
@@ -206,16 +205,12 @@ def demo_structured_output():
     dspy.configure(lm=lm)
 
     extract = dspy.Predict("headline -> signal", response_format=StockSignal)
-    result = extract(
-        headline="Apple beats Q4 estimates; analysts raise price targets across the board."
-    )
+    result = extract(headline="Apple beats Q4 estimates; analysts raise price targets across the board.")
     # result.signal is parsed back into a StockSignal-compatible dict
     print("Structured signal:", result.signal)
 
 
 if __name__ == "__main__":
-    import sys
-
     demos = {
         "foundation": demo_apple_foundation_lm,
         "local": demo_apple_local_lm,

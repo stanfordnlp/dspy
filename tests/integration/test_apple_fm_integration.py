@@ -62,10 +62,12 @@ class TestBasicGeneration:
         assert len(text) > 0
 
     def test_messages_roundtrip(self, lm):
-        result = lm.forward(messages=[
-            {"role": "system", "content": "Answer questions clearly and concisely."},
-            {"role": "user", "content": "What is the capital of France?"},
-        ])
+        result = lm.forward(
+            messages=[
+                {"role": "system", "content": "Answer questions clearly and concisely."},
+                {"role": "user", "content": "What is the capital of France?"},
+            ]
+        )
         text = result.choices[0].message.content.strip()
         assert isinstance(text, str)
         assert len(text) > 0

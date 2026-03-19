@@ -107,7 +107,7 @@ def _apply_chat_template(tokenizer: Any, messages: list[dict[str, Any]]) -> str:
             logger.debug("apply_chat_template failed (%s); falling back to concat", exc)
 
     # Fallback: reuse the same simple flattener as AppleFoundationLM.
-    from dspy.clients.apple_fm import _flatten_messages  # noqa: PLC0415
+    from dspy.clients.apple_fm import _flatten_messages
 
     return _flatten_messages(messages)
 
@@ -197,9 +197,7 @@ class AppleLocalLM(BaseLM):
             ImportError: If ``mlx-lm`` is not installed.
         """
         if backend not in _SUPPORTED_BACKENDS:
-            raise ValueError(
-                f"Unknown backend {backend!r}. Choose from: {_SUPPORTED_BACKENDS}"
-            )
+            raise ValueError(f"Unknown backend {backend!r}. Choose from: {_SUPPORTED_BACKENDS}")
 
         if backend == "coreml":
             raise NotImplementedError(
@@ -219,14 +217,10 @@ class AppleLocalLM(BaseLM):
         )
 
         if platform.system() != "Darwin":
-            raise RuntimeError(
-                "AppleLocalLM requires macOS on Apple Silicon. "
-                f"Current platform: {platform.system()!r}"
-            )
+            raise RuntimeError(f"AppleLocalLM requires macOS on Apple Silicon. Current platform: {platform.system()!r}")
         if platform.machine() != "arm64":
             raise RuntimeError(
-                "AppleLocalLM requires Apple Silicon (arm64). "
-                f"Current architecture: {platform.machine()!r}"
+                f"AppleLocalLM requires Apple Silicon (arm64). Current architecture: {platform.machine()!r}"
             )
 
         self._backend = backend
@@ -245,9 +239,7 @@ class AppleLocalLM(BaseLM):
         self._semaphore: asyncio.Semaphore | None = None
 
         if bits is not None:
-            logger.info(
-                "AppleLocalLM: loading %r (expected %d-bit quantization)", model, bits
-            )
+            logger.info("AppleLocalLM: loading %r (expected %d-bit quantization)", model, bits)
 
         self._mlx_model, self._mlx_tokenizer = self._load_mlx(model)
         # HuggingFace tokenizers carry model_max_length in their saved config.
@@ -271,11 +263,10 @@ class AppleLocalLM(BaseLM):
             ImportError: If ``mlx-lm`` is not installed.
         """
         try:
-            import mlx_lm  # noqa: PLC0415
+            import mlx_lm
         except ImportError as exc:
             raise ImportError(
-                "mlx-lm is required for AppleLocalLM(backend='mlx'). Install it:\n"
-                "    pip install mlx-lm"
+                "mlx-lm is required for AppleLocalLM(backend='mlx'). Install it:\n    pip install mlx-lm"
             ) from exc
 
         logger.info("AppleLocalLM: loading model %r via mlx-lm…", model_path)
@@ -309,8 +300,8 @@ class AppleLocalLM(BaseLM):
             returned so the caller can compute token counts without applying
             the chat template a second time.
         """
-        import mlx_lm  # noqa: PLC0415
-        from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
+        import mlx_lm
+        from mlx_lm.sample_utils import make_sampler
 
         flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
 
@@ -373,7 +364,7 @@ class AppleLocalLM(BaseLM):
         Raises:
             NotImplementedError: If ``tools`` or ``stream=True`` is passed.
         """
-        import dspy  # noqa: PLC0415  (lazy to avoid circular-import at module load)
+        import dspy
 
         cache = kwargs.pop("cache", self.cache)
 
@@ -406,8 +397,7 @@ class AppleLocalLM(BaseLM):
         # silently pollute the cache key without affecting generation.
         if kwargs:
             logger.warning(
-                "apple_local: ignoring unsupported kwargs %s "
-                "(mlx-lm does not accept arbitrary generation parameters)",
+                "apple_local: ignoring unsupported kwargs %s (mlx-lm does not accept arbitrary generation parameters)",
                 sorted(kwargs),
             )
             kwargs.clear()
@@ -432,9 +422,9 @@ class AppleLocalLM(BaseLM):
             # Streaming path: called from streamify() via asyncify (anyio-managed thread).
             # stream_generate() yields tokens synchronously; each is forwarded to the
             # anyio MemoryObjectSendStream using from_thread.run().
-            import mlx_lm  # noqa: PLC0415
-            from anyio.from_thread import run as _anyio_run  # noqa: PLC0415
-            from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
+            import mlx_lm
+            from anyio.from_thread import run as _anyio_run
+            from mlx_lm.sample_utils import make_sampler
 
             caller_predict = dspy.settings.caller_predict
             # id() is stable for the lifetime of the Predict object; used by
@@ -452,9 +442,7 @@ class AppleLocalLM(BaseLM):
                 sampler=sampler,
             ):
                 full_text += _response.text
-                _chunk = _LocalStreamChunk(
-                    text=_response.text, model=self.model, predict_id=predict_id
-                )
+                _chunk = _LocalStreamChunk(text=_response.text, model=self.model, predict_id=predict_id)
                 # anyio.from_thread.run() schedules the async send on the event loop
                 # from within the anyio-managed worker thread started by asyncify.
                 _anyio_run(send_stream.send, _chunk)
@@ -468,7 +456,9 @@ class AppleLocalLM(BaseLM):
             logger.warning(
                 "apple_local: prompt (%d tokens) + max_tokens (%d) exceeds context_window (%d); "
                 "generation may be truncated",
-                prompt_tokens, max_tokens, self.context_window,
+                prompt_tokens,
+                max_tokens,
+                self.context_window,
             )
         completion_tokens = len(self._mlx_tokenizer.encode(text))
         usage = _FMUsage(
@@ -503,8 +493,8 @@ class AppleLocalLM(BaseLM):
         Yields:
             Individual token strings as they are produced by the model.
         """
-        import mlx_lm  # noqa: PLC0415
-        from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
+        import mlx_lm
+        from mlx_lm.sample_utils import make_sampler
 
         loop = asyncio.get_event_loop()
         queue: asyncio.Queue[str | None] = asyncio.Queue()
@@ -563,7 +553,7 @@ class AppleLocalLM(BaseLM):
         Returns:
             An ``_FMResponse`` compatible with ``BaseLM._process_completion``.
         """
-        import dspy  # noqa: PLC0415
+        import dspy
 
         send_stream = dspy.settings.send_stream
 
@@ -573,9 +563,7 @@ class AppleLocalLM(BaseLM):
                 # Lazy init avoids binding to the wrong event loop at construction time.
                 self._semaphore = asyncio.Semaphore(self._max_concurrency)
             async with self._semaphore:
-                return await asyncio.to_thread(
-                    self.forward, prompt=prompt, messages=messages, **kwargs
-                )
+                return await asyncio.to_thread(self.forward, prompt=prompt, messages=messages, **kwargs)
 
         # ------------------------------------------------------------------
         # Streaming path (direct aforward() callers only)
@@ -589,9 +577,7 @@ class AppleLocalLM(BaseLM):
         for _k in ("response_format", "tools", "num_retries", "stream", "n"):
             kwargs.pop(_k, None)
         if kwargs:
-            logger.warning(
-                "apple_local: ignoring unsupported kwargs %s", sorted(kwargs)
-            )
+            logger.warning("apple_local: ignoring unsupported kwargs %s", sorted(kwargs))
 
         flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
         caller_predict = dspy.settings.caller_predict

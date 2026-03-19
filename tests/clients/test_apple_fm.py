@@ -14,11 +14,10 @@ import json
 import sys
 import types
 from typing import Literal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Fixtures — synthetic apple_fm_sdk module
@@ -116,39 +115,49 @@ class TestFlattenMessages:
         assert self._flatten([{"role": "user", "content": "hi"}]) == "hi"
 
     def test_system_plus_user(self):
-        result = self._flatten([
-            {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": "Say hello."},
-        ])
+        result = self._flatten(
+            [
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Say hello."},
+            ]
+        )
         assert "You are helpful." in result
         assert "Say hello." in result
 
     def test_assistant_role_prefixed(self):
-        result = self._flatten([
-            {"role": "user", "content": "Q"},
-            {"role": "assistant", "content": "A"},
-            {"role": "user", "content": "Q2"},
-        ])
+        result = self._flatten(
+            [
+                {"role": "user", "content": "Q"},
+                {"role": "assistant", "content": "A"},
+                {"role": "user", "content": "Q2"},
+            ]
+        )
         assert "Assistant: A" in result
 
     def test_multimodal_content_extracts_text(self):
-        result = self._flatten([{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "Describe this"},
-                {"type": "image_url", "image_url": "..."},
-            ],
-        }])
+        result = self._flatten(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this"},
+                        {"type": "image_url", "image_url": "..."},
+                    ],
+                }
+            ]
+        )
         assert result == "Describe this"
 
     def test_empty_messages_returns_empty(self):
         assert self._flatten([]) == ""
 
     def test_filters_blank_parts(self):
-        result = self._flatten([
-            {"role": "system", "content": ""},
-            {"role": "user", "content": "hello"},
-        ])
+        result = self._flatten(
+            [
+                {"role": "system", "content": ""},
+                {"role": "user", "content": "hello"},
+            ]
+        )
         assert result == "hello"
 
 
@@ -349,10 +358,12 @@ class TestForward:
 
         fake_apple_fm_sdk.LanguageModelSession = SpySession
 
-        lm.forward(messages=[
-            {"role": "system", "content": "Be concise."},
-            {"role": "user", "content": "What is 2+2?"},
-        ])
+        lm.forward(
+            messages=[
+                {"role": "system", "content": "Be concise."},
+                {"role": "user", "content": "What is 2+2?"},
+            ]
+        )
 
         assert received_prompts, "respond() was never called"
         assert "Be concise." in received_prompts[0]
@@ -385,7 +396,7 @@ class TestForward:
         class MyOutput(BaseModel):
             label: str
 
-        fake_apple_fm_sdk.generable = lambda cls: (_ for _ in ()).throw(RuntimeError("boom"))  # noqa: E731
+        fake_apple_fm_sdk.generable = lambda cls: (_ for _ in ()).throw(RuntimeError("boom"))
 
         import logging
 
@@ -495,8 +506,10 @@ class TestCaching:
             model=lm.model,
         )
 
-        with patch.object(dspy.cache, "get", return_value=cached_response) as mock_get, \
-             patch.object(dspy.cache, "put") as mock_put:
+        with (
+            patch.object(dspy.cache, "get", return_value=cached_response) as mock_get,
+            patch.object(dspy.cache, "put") as mock_put,
+        ):
             result = lm.forward(prompt="hello cache test")
 
         assert result.choices[0].message.content == "cached response"
@@ -509,8 +522,10 @@ class TestCaching:
 
         import dspy
 
-        with patch.object(dspy.cache, "get", return_value=None) as mock_get, \
-             patch.object(dspy.cache, "put") as mock_put:
+        with (
+            patch.object(dspy.cache, "get", return_value=None) as mock_get,
+            patch.object(dspy.cache, "put") as mock_put,
+        ):
             result = lm.forward(prompt="uncached prompt")
 
         mock_get.assert_called_once()
@@ -523,8 +538,7 @@ class TestCaching:
 
         import dspy
 
-        with patch.object(dspy.cache, "get") as mock_get, \
-             patch.object(dspy.cache, "put") as mock_put:
+        with patch.object(dspy.cache, "get") as mock_get, patch.object(dspy.cache, "put") as mock_put:
             lm.forward(prompt="no cache")
 
         mock_get.assert_not_called()
@@ -541,8 +555,7 @@ class TestCaching:
             captured_requests.append(request)
             return None
 
-        with patch.object(dspy.cache, "get", side_effect=fake_get), \
-             patch.object(dspy.cache, "put"):
+        with patch.object(dspy.cache, "get", side_effect=fake_get), patch.object(dspy.cache, "put"):
             lm.forward(prompt="same prompt", num_retries=3)
 
         assert "num_retries" not in captured_requests[0]
@@ -560,6 +573,7 @@ class TestFMKwargsAndStreaming:
 
     def test_unknown_kwargs_warns(self, lm, fake_apple_fm_sdk):
         import dspy.clients.apple_fm as _apple_fm_mod
+
         with patch.object(_apple_fm_mod.logger, "warning") as mock_warn:
             lm.forward(prompt="hi", top_p=0.9)
         assert any("top_p" in str(call) for call in mock_warn.call_args_list)
@@ -594,6 +608,7 @@ class TestStructuredGenerationFallback:
         fake_apple_fm_sdk.LanguageModelSession = _FailingOnGenerating
 
         import dspy.clients.apple_fm as _apple_fm_mod
+
         with patch.object(_apple_fm_mod.logger, "warning") as mock_warn:
             result = lm.forward(prompt="classify", response_format=MyOutput)
 

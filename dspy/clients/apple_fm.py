@@ -134,9 +134,7 @@ def _flatten_messages(messages: list[dict[str, Any]]) -> str:
         if isinstance(content, list):
             # Multi-modal content blocks — extract text parts only.
             content = " ".join(
-                block.get("text", "")
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
+                block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text"
             )
         if not content:
             continue
@@ -252,7 +250,7 @@ def _run_async(coro: Any) -> Any:
 
     if loop and loop.is_running():
         try:
-            import nest_asyncio  # noqa: PLC0415
+            import nest_asyncio
 
             nest_asyncio.apply(loop)
         except ImportError:
@@ -296,6 +294,7 @@ def _dspy_tool_to_apple_tool(dspy_tool: Any, fm: Any) -> Any:
 
     cache_key = (tool_name, id(func))
     if cache_key not in _tool_class_cache:
+
         class _WrappedTool(fm.Tool):
             def call(self, **kwargs: Any) -> Any:
                 """Delegate the tool call to the underlying DSPy callable."""
@@ -387,11 +386,10 @@ class AppleFoundationLM(BaseLM):
             )
 
         try:
-            import apple_fm_sdk as fm  # noqa: PLC0415
+            import apple_fm_sdk as fm
         except ImportError as exc:
             raise ImportError(
-                "apple-fm-sdk is required to use AppleFoundationLM. Install it with:\n"
-                "    pip install apple-fm-sdk"
+                "apple-fm-sdk is required to use AppleFoundationLM. Install it with:\n    pip install apple-fm-sdk"
             ) from exc
 
         self._fm = fm
@@ -478,14 +476,13 @@ class AppleFoundationLM(BaseLM):
         Raises:
             NotImplementedError: If ``stream=True`` is passed (not yet supported).
         """
-        import dspy  # noqa: PLC0415  (lazy to avoid circular-import at module load)
+        import dspy
 
         cache = kwargs.pop("cache", self.cache)
 
         if kwargs.get("stream"):
             raise NotImplementedError(
-                "Streaming is not yet supported for AppleFoundationLM. "
-                "Call forward() for a blocking response."
+                "Streaming is not yet supported for AppleFoundationLM. Call forward() for a blocking response."
             )
 
         # Normalise to a messages list so the cache key is consistent regardless
@@ -558,8 +555,7 @@ class AppleFoundationLM(BaseLM):
         # Apple's SDK does not accept arbitrary generation parameters (no top_p, stop, etc.).
         if kwargs:
             logger.warning(
-                "apple_fm: ignoring unsupported kwargs %s "
-                "(Apple SDK does not accept arbitrary generation parameters)",
+                "apple_fm: ignoring unsupported kwargs %s (Apple SDK does not accept arbitrary generation parameters)",
                 sorted(kwargs),
             )
             kwargs.clear()
@@ -569,7 +565,7 @@ class AppleFoundationLM(BaseLM):
 
         if response_format is not None:
             try:
-                from pydantic import BaseModel as PydanticBaseModel  # noqa: PLC0415
+                from pydantic import BaseModel as PydanticBaseModel
 
                 if isinstance(response_format, type) and issubclass(response_format, PydanticBaseModel):
                     generable_cls = _pydantic_to_generable(response_format, fm)

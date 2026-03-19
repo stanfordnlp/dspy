@@ -13,7 +13,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fake mlx_lm module
 # ---------------------------------------------------------------------------
@@ -80,9 +79,9 @@ def fake_mlx_lm(monkeypatch):
 
 @pytest.fixture()
 def lm(fake_mlx_lm):
-    with patch("platform.system", return_value="Darwin"), \
-         patch("platform.machine", return_value="arm64"):
+    with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="arm64"):
         from dspy.clients.apple_local import AppleLocalLM
+
         return AppleLocalLM("mlx-community/Llama-3.2-3B-Instruct-4bit", cache=False)
 
 
@@ -93,40 +92,43 @@ def lm(fake_mlx_lm):
 
 class TestInitGuards:
     def test_raises_on_non_macos(self, fake_mlx_lm):
-        with patch("platform.system", return_value="Linux"), \
-             patch("platform.machine", return_value="arm64"):
+        with patch("platform.system", return_value="Linux"), patch("platform.machine", return_value="arm64"):
             from dspy.clients.apple_local import AppleLocalLM
+
             with pytest.raises(RuntimeError, match="macOS"):
                 AppleLocalLM("mlx-community/some-model")
 
     def test_raises_on_intel_mac(self, fake_mlx_lm):
-        with patch("platform.system", return_value="Darwin"), \
-             patch("platform.machine", return_value="x86_64"):
+        with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="x86_64"):
             from dspy.clients.apple_local import AppleLocalLM
+
             with pytest.raises(RuntimeError, match="arm64"):
                 AppleLocalLM("mlx-community/some-model")
 
     def test_raises_on_unknown_backend(self, fake_mlx_lm):
-        with patch("platform.system", return_value="Darwin"), \
-             patch("platform.machine", return_value="arm64"):
+        with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="arm64"):
             from dspy.clients.apple_local import AppleLocalLM
+
             with pytest.raises(ValueError, match="Unknown backend"):
                 AppleLocalLM("mlx-community/some-model", backend="tpu")
 
     def test_coreml_raises_not_implemented(self, fake_mlx_lm):
-        with patch("platform.system", return_value="Darwin"), \
-             patch("platform.machine", return_value="arm64"):
+        with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="arm64"):
             from dspy.clients.apple_local import AppleLocalLM
+
             with pytest.raises(NotImplementedError, match="CoreML"):
                 AppleLocalLM("model.mlpackage", backend="coreml")
 
     def test_raises_when_mlx_missing(self, monkeypatch):
         monkeypatch.delitem(sys.modules, "mlx_lm", raising=False)
         monkeypatch.delitem(sys.modules, "dspy.clients.apple_local", raising=False)
-        with patch("platform.system", return_value="Darwin"), \
-             patch("platform.machine", return_value="arm64"), \
-             patch.dict("sys.modules", {"mlx_lm": None}):
+        with (
+            patch("platform.system", return_value="Darwin"),
+            patch("platform.machine", return_value="arm64"),
+            patch.dict("sys.modules", {"mlx_lm": None}),
+        ):
             from dspy.clients.apple_local import AppleLocalLM
+
             with pytest.raises(ImportError, match="mlx-lm"):
                 AppleLocalLM("mlx-community/some-model")
 
@@ -173,10 +175,12 @@ class TestChatTemplate:
 
         lm._mlx_tokenizer = _BareTokenizer()
 
-        result = lm.forward(messages=[
-            {"role": "system", "content": "Be concise."},
-            {"role": "user", "content": "Hi"},
-        ])
+        result = lm.forward(
+            messages=[
+                {"role": "system", "content": "Be concise."},
+                {"role": "user", "content": "Hi"},
+            ]
+        )
         assert result.choices[0].message.content  # still got a response
 
 
@@ -188,6 +192,7 @@ class TestChatTemplate:
 class TestForward:
     def test_returns_fm_response(self, lm):
         from dspy.clients.apple_fm import _FMResponse
+
         result = lm.forward(prompt="hello")
         assert isinstance(result, _FMResponse)
         assert result.model == "mlx-community/Llama-3.2-3B-Instruct-4bit"
@@ -258,9 +263,7 @@ class TestLocalConcurrencyAndTools:
         result = lm.forward(prompt="count my tokens please")
         assert result.usage.prompt_tokens > 0
         assert result.usage.completion_tokens > 0
-        assert result.usage.total_tokens == (
-            result.usage.prompt_tokens + result.usage.completion_tokens
-        )
+        assert result.usage.total_tokens == (result.usage.prompt_tokens + result.usage.completion_tokens)
 
     def test_hidden_params_response_cost_zero(self, lm):
         result = lm.forward(prompt="cost check")
@@ -299,9 +302,7 @@ class TestLocalConcurrencyAndTools:
                 lm.forward = original_forward
 
         asyncio.run(_run())
-        assert max_concurrent == 1, (
-            f"Expected max 1 concurrent MLX call, got {max_concurrent}"
-        )
+        assert max_concurrent == 1, f"Expected max 1 concurrent MLX call, got {max_concurrent}"
 
     def test_stream_true_raises_not_implemented(self, lm):
         with pytest.raises(NotImplementedError, match="streamify"):
@@ -309,6 +310,7 @@ class TestLocalConcurrencyAndTools:
 
     def test_unknown_kwargs_warns(self, lm):
         import dspy.clients.apple_local as _apple_local_mod
+
         with patch.object(_apple_local_mod.logger, "warning") as mock_warn:
             lm.forward(prompt="hi", top_p=0.9)
         assert any("top_p" in str(call) for call in mock_warn.call_args_list)
@@ -327,6 +329,7 @@ class TestLocalConcurrencyAndTools:
 
         lm._mlx_tokenizer.encode = long_encode
         import dspy.clients.apple_local as _apple_local_mod
+
         try:
             with patch.object(_apple_local_mod.logger, "warning") as mock_warn:
                 lm.forward(prompt="this prompt is very long")
@@ -343,9 +346,9 @@ class TestLocalConcurrencyAndTools:
 
 class TestBitsParameter:
     def test_bits_stored_on_instance(self, fake_mlx_lm):
-        with patch("platform.system", return_value="Darwin"), \
-             patch("platform.machine", return_value="arm64"):
+        with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="arm64"):
             from dspy.clients.apple_local import AppleLocalLM
+
             lm = AppleLocalLM("mlx-community/some-4bit-model", bits=4, cache=False)
         assert lm._bits == 4
 
@@ -362,10 +365,13 @@ class TestMaxConcurrencyWarning:
     def test_max_concurrency_gt_1_warns(self, fake_mlx_lm):
         import dspy.clients.apple_local as _apple_local_mod
 
-        with patch("platform.system", return_value="Darwin"), \
-             patch("platform.machine", return_value="arm64"), \
-             patch.object(_apple_local_mod.logger, "warning") as mock_warn:
+        with (
+            patch("platform.system", return_value="Darwin"),
+            patch("platform.machine", return_value="arm64"),
+            patch.object(_apple_local_mod.logger, "warning") as mock_warn,
+        ):
             from dspy.clients.apple_local import AppleLocalLM
+
             AppleLocalLM(
                 "mlx-community/Llama-3.2-3B-Instruct-4bit",
                 max_concurrency=2,
@@ -377,8 +383,7 @@ class TestMaxConcurrencyWarning:
     def test_max_concurrency_1_no_warning(self, fake_mlx_lm, caplog):
         import logging
 
-        with patch("platform.system", return_value="Darwin"), \
-             patch("platform.machine", return_value="arm64"):
+        with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="arm64"):
             from dspy.clients.apple_local import AppleLocalLM
 
             with caplog.at_level(logging.WARNING, logger="dspy.clients.apple_local"):
@@ -399,8 +404,9 @@ class TestMaxConcurrencyWarning:
 class TestStreaming:
     def test_aforward_sends_chunks_to_send_stream(self, lm):
         """aforward() sends _LocalStreamChunk objects when send_stream is active."""
-        import dspy
         from unittest.mock import AsyncMock
+
+        import dspy
         from dspy.clients.apple_local import _LocalStreamChunk
 
         sent_chunks = []
@@ -412,14 +418,16 @@ class TestStreaming:
                 return await lm.aforward(prompt="hello streaming")
 
         response = asyncio.run(_run())
-        assert any(isinstance(c, _LocalStreamChunk) for c in sent_chunks), \
+        assert any(isinstance(c, _LocalStreamChunk) for c in sent_chunks), (
             "Expected _LocalStreamChunk objects sent to send_stream"
+        )
         assert response.choices[0].message.content, "Expected non-empty response"
 
     def test_stream_chunks_carry_text(self, lm):
         """Each chunk has non-empty .text and .model fields."""
-        import dspy
         from unittest.mock import AsyncMock
+
+        import dspy
         from dspy.clients.apple_local import _LocalStreamChunk
 
         sent_chunks = []
@@ -437,6 +445,7 @@ class TestStreaming:
 
     def test_aforward_without_send_stream_uses_blocking_path(self, lm):
         """aforward() without send_stream still returns a valid response."""
+
         async def _run():
             return await lm.aforward(prompt="hello")
 
@@ -445,8 +454,9 @@ class TestStreaming:
 
     def test_stream_full_text_equals_concatenated_chunks(self, lm):
         """The response text equals the concatenation of all chunk texts."""
-        import dspy
         from unittest.mock import AsyncMock
+
+        import dspy
         from dspy.clients.apple_local import _LocalStreamChunk
 
         sent_chunks = []
@@ -458,9 +468,7 @@ class TestStreaming:
                 return await lm.aforward(prompt="concatenation test")
 
         response = asyncio.run(_run())
-        concatenated = "".join(
-            c.text for c in sent_chunks if isinstance(c, _LocalStreamChunk)
-        )
+        concatenated = "".join(c.text for c in sent_chunks if isinstance(c, _LocalStreamChunk))
         assert response.choices[0].message.content == concatenated
 
     def test_stream_true_in_forward_still_raises(self, lm):
@@ -471,4 +479,5 @@ class TestStreaming:
 class TestImportGuard:
     def test_dspy_importable_without_mlx(self, monkeypatch):
         import dspy
+
         assert dspy is not None

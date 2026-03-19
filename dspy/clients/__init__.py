@@ -34,7 +34,7 @@ def configure_cache(
                             bounds, set this parameter to `math.inf` or a similar value.
     """
 
-    DSPY_CACHE = Cache(
+    dspy_cache = Cache(
         enable_disk_cache,
         enable_memory_cache,
         disk_cache_dir,
@@ -45,7 +45,7 @@ def configure_cache(
     import dspy
 
     # Update the reference to point to the new cache
-    dspy.cache = DSPY_CACHE
+    dspy.cache = dspy_cache
 
 
 litellm.telemetry = False
@@ -78,6 +78,7 @@ def _get_dspy_cache():
 
 
 DSPY_CACHE = _get_dspy_cache()
+
 
 def configure_litellm_logging(level: str = "ERROR"):
     """Configure LiteLLM logging to the specified level."""
@@ -118,12 +119,14 @@ __all__ = [
 
 try:
     from dspy.clients.apple_fm import AppleFoundationLM
+
     __all__ += ["AppleFoundationLM"]
 except (ImportError, RuntimeError):
     pass
 
 try:
     from dspy.clients.apple_local import AppleLocalLM
+
     __all__ += ["AppleLocalLM"]
 except (ImportError, RuntimeError, NotImplementedError):
     pass
