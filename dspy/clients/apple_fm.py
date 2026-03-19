@@ -550,8 +550,14 @@ class AppleFoundationLM(BaseLM):
         kwargs.pop("n", None)
         kwargs.pop("cache", None)
 
+        # Silently discard DSPy sampling params that Apple's SDK doesn't expose.
+        # These are valid at the DSPy level (included in the cache key in forward()) but
+        # the Apple Foundation Models SDK provides no knobs to control them.
+        for _k in ("temperature", "max_tokens"):
+            kwargs.pop(_k, None)
+
         # Anything still in kwargs is unrecognised — warn and clear.
-        # Apple's SDK does not accept arbitrary generation parameters (no top_p, stop, etc.).
+        # Apple's SDK does not accept arbitrary generation parameters (no stop, etc.).
         if kwargs:
             logger.warning(
                 "apple_fm: ignoring unsupported kwargs %s (Apple SDK does not accept arbitrary generation parameters)",

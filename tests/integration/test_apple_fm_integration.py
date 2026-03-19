@@ -44,7 +44,10 @@ def lm():
     """Return a configured AppleFoundationLM for the test session."""
     import dspy
 
-    _lm = dspy.AppleFoundationLM(cache=False)
+    try:
+        _lm = dspy.AppleFoundationLM(cache=False)
+    except RuntimeError as exc:
+        pytest.skip(f"AppleFoundationLM unavailable: {exc}")
     dspy.configure(lm=_lm)
     return _lm
 

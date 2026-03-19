@@ -433,7 +433,7 @@ class AppleLocalLM(BaseLM):
             flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
             sampler = make_sampler(temp=float(temperature))
 
-            full_text = ""
+            _chunks: list[str] = []
             for _response in mlx_lm.stream_generate(
                 self._mlx_model,
                 self._mlx_tokenizer,
@@ -441,13 +441,13 @@ class AppleLocalLM(BaseLM):
                 max_tokens=int(max_tokens),
                 sampler=sampler,
             ):
-                full_text += _response.text
+                _chunks.append(_response.text)
                 _chunk = _LocalStreamChunk(text=_response.text, model=self.model, predict_id=predict_id)
                 # anyio.from_thread.run() schedules the async send on the event loop
                 # from within the anyio-managed worker thread started by asyncify.
                 _anyio_run(send_stream.send, _chunk)
 
-            text = full_text
+            text = "".join(_chunks)
         else:
             text, flat_prompt = self._generate(messages, temperature, max_tokens)
 
@@ -496,7 +496,7 @@ class AppleLocalLM(BaseLM):
         import mlx_lm
         from mlx_lm.sample_utils import make_sampler
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         queue: asyncio.Queue[str | None] = asyncio.Queue()
         sampler = make_sampler(temp=float(temperature))
 
@@ -584,7 +584,7 @@ class AppleLocalLM(BaseLM):
         # id() is stable for the lifetime of the Predict object.
         predict_id = id(caller_predict) if caller_predict else None
 
-        full_text_parts = []
+        full_text_parts: list[str] = []
         async for token_text in self._stream_generate_async(flat_prompt, temperature, max_tokens):
             full_text_parts.append(token_text)
             chunk = _LocalStreamChunk(text=token_text, model=self.model, predict_id=predict_id)
