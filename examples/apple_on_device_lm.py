@@ -122,7 +122,41 @@ def demo_mixed_pipeline():
 
 
 # ---------------------------------------------------------------------------
-# Pattern 4: Chain of Thought with OpenAI gpt-oss-20b via mlx-lm
+# Pattern 4: Streaming with AppleLocalLM
+# ---------------------------------------------------------------------------
+# dspy.streamify() wraps any DSPy module so it yields tokens incrementally.
+# AppleLocalLM sends _LocalStreamChunk objects for each token; the final
+# dspy.Prediction is yielded last with all output fields parsed.
+
+
+def demo_streaming():
+    import asyncio
+
+    from dspy.clients.apple_local import _LocalStreamChunk
+
+    lm = dspy.AppleLocalLM(
+        "mlx-community/Llama-3.2-3B-Instruct-4bit",
+        temperature=0.0,
+        max_tokens=256,
+        cache=False,
+    )
+    dspy.configure(lm=lm)
+
+    prog = dspy.streamify(dspy.Predict("question -> answer"))
+
+    async def run():
+        print("Streaming: ", end="", flush=True)
+        async for chunk in prog(question="Explain what DSPy is in two sentences."):
+            if isinstance(chunk, _LocalStreamChunk):
+                print(chunk.text, end="", flush=True)
+            elif isinstance(chunk, dspy.Prediction):
+                print(f"\n\nParsed answer: {chunk.answer}")
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Pattern 5: Chain of Thought with OpenAI gpt-oss-20b via mlx-lm
 # ---------------------------------------------------------------------------
 # Uses InferenceIllusionist/gpt-oss-20b-MLX-4bit, a community 4-bit MLX
 # conversion of OpenAI's gpt-oss-20b (~10 GB unified memory required).
@@ -187,6 +221,7 @@ if __name__ == "__main__":
         "local": demo_apple_local_lm,
         "mixed": demo_mixed_pipeline,
         "structured": demo_structured_output,
+        "streaming": demo_streaming,
         "cot": demo_chain_of_thought,
     }
 
