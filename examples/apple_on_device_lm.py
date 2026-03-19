@@ -14,7 +14,7 @@ For pattern 1 (AppleFoundationLM):
 
 For pattern 2 & 3 (AppleLocalLM):
     pip install mlx-lm
-    macOS 14+ on Apple Silicon (M1/M2/M3/M4)
+    macOS 26+ on Apple Silicon (M1/M2/M3/M4)
 
 For pattern 3 (cloud step):
     export ANTHROPIC_API_KEY=your_key
