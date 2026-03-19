@@ -37,6 +37,30 @@ To install the very latest from `main`:
 pip install git+https://github.com/stanfordnlp/dspy.git
 ````
 
+### macOS extras for Apple on-device models
+
+Use these only if you plan to run `AppleFoundationLM` or `AppleLocalLM`.
+
+1. Requirements:
+  - Apple Silicon Mac
+  - macOS 26+ for `AppleFoundationLM` (Apple Intelligence enabled)
+2. Install `mlx-lm` for local Apple Silicon model inference:
+
+```bash
+pip install mlx-lm
+```
+
+3. Install `apple_fm_sdk` from Apple's distribution channel.
+  It is not currently available on PyPI.
+
+Quick verification:
+
+```bash
+python -c "import dspy; from dspy.clients import AppleFoundationLM, AppleLocalLM; print('Apple adapters import OK')"
+```
+
+On non-macOS systems or without `apple_fm_sdk`, DSPy still imports normally and Apple integration tests are expected to skip.
+
 
 
 
