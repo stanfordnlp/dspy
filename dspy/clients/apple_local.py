@@ -231,15 +231,17 @@ class AppleLocalLM(BaseLM):
         kwargs are stripped before this method is called.
         """
         import mlx_lm  # noqa: PLC0415
+        from mlx_lm.sample_utils import make_sampler  # noqa: PLC0415
 
         flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
 
+        sampler = make_sampler(temp=float(temperature))
         text = mlx_lm.generate(
             self._mlx_model,
             self._mlx_tokenizer,
             prompt=flat_prompt,
             max_tokens=int(max_tokens),
-            temp=float(temperature),
+            sampler=sampler,
             verbose=False,
         )
         return text, flat_prompt

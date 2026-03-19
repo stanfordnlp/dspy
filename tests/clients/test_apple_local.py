@@ -22,6 +22,15 @@ import pytest
 def _make_fake_mlx_lm():
     mlx_lm = types.ModuleType("mlx_lm")
 
+    # sample_utils submodule with make_sampler
+    sample_utils = types.ModuleType("mlx_lm.sample_utils")
+
+    def make_sampler(temp=0.0):
+        return {"temp": temp}
+
+    sample_utils.make_sampler = make_sampler
+    mlx_lm.sample_utils = sample_utils
+
     class _FakeTokenizer:
         def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
             parts = []
@@ -43,7 +52,7 @@ def _make_fake_mlx_lm():
     def load(model_path):
         return _FakeModel(), _FakeTokenizer()
 
-    def generate(model, tokenizer, prompt, max_tokens=100, temp=0.0, verbose=False):
+    def generate(model, tokenizer, prompt, max_tokens=100, sampler=None, verbose=False):
         return f"MLX response to: {prompt[:30]}"
 
     mlx_lm.load = load
@@ -55,6 +64,7 @@ def _make_fake_mlx_lm():
 def fake_mlx_lm(monkeypatch):
     mlx_lm = _make_fake_mlx_lm()
     monkeypatch.setitem(sys.modules, "mlx_lm", mlx_lm)
+    monkeypatch.setitem(sys.modules, "mlx_lm.sample_utils", mlx_lm.sample_utils)
     monkeypatch.delitem(sys.modules, "dspy.clients.apple_local", raising=False)
     return mlx_lm
 
@@ -195,7 +205,7 @@ class TestForward:
 
         fake_mlx_lm.generate = spy
         lm.forward(prompt="test", temperature=0.9)
-        assert received_kwargs.get("temp") == 0.9
+        assert received_kwargs.get("sampler") is not None
 
     def test_max_tokens_kwarg_forwarded(self, lm, fake_mlx_lm):
         received_kwargs = {}
