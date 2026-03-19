@@ -63,6 +63,47 @@ class GenerateImprovedConfigFromFullTrace(dspy.Signature):
     )
 
 
+class GenerateImprovedConfigFromFullTraceRLM(dspy.Signature):
+    """I provided an LLM-based program with instructions for each of its components to perform a task.
+
+    The program has multiple components (predictors), each with its own instruction text.
+
+    Below you will see:
+    1. The current configuration as XML, mapping component names to their instruction text
+    2. Execution examples showing the full program trace - all component calls with their inputs, outputs, and feedback
+
+    Your task is to write improved instructions for the components based on analyzing these execution traces.
+
+    Think deeply about:
+    - The task the program is solving and what makes executions succeed or fail
+    - How the different components interact — errors in early components cascade to later ones
+    - Domain-specific factual information visible in the traces that should be encoded in instructions
+    - Generalizable strategies vs. example-specific fixes
+
+    ## Output Requirements
+
+    - The new configuration MUST be valid XML with the exact same structure as the current configuration
+    - Use the same <candidate_config> root element with <predictor name="..."> child elements
+    - Each component's instruction should be improved based on the observed patterns or retained if it works well
+    - Focus on making instructions that help each component perform better in the context of the overall program execution
+    - Be specific and actionable - include concrete guidance, domain knowledge, and strategies
+    - If a component's current instruction works well, refine it rather than rewriting entirely
+    """
+
+    current_config: str = dspy.InputField(
+        desc="The current configuration as XML, mapping component names to their instruction text. "
+        'Format: <candidate_config><predictor name="...">instruction</predictor>...</candidate_config>'
+    )
+    execution_examples: str = dspy.InputField(
+        desc="Execution examples showing program inputs, outputs, full traces of all predictor calls, and feedback"
+    )
+
+    new_config: str = dspy.OutputField(
+        desc="The new configuration as valid XML with the exact same structure and predictor names as current_config. "
+        'Format: <candidate_config><predictor name="...">improved instruction</predictor>...</candidate_config>'
+    )
+
+
 class FullTraceInstructionProposer(dspy.Module):
     """
     DSPy Module for proposing improved instructions based on full program traces.
@@ -73,11 +114,16 @@ class FullTraceInstructionProposer(dspy.Module):
 
     The candidate configuration is serialized as XML, which provides clear structural
     delimiters for LLM parsing and generation.
+
+    When `use_reasoning_lm=True`, uses a simplified signature without explicit
+    trace_analysis output, since reasoning models (o1, o3, gpt-5) perform
+    chain-of-thought internally and benefit from a streamlined output format.
     """
 
-    def __init__(self):
+    def __init__(self, use_reasoning_lm: bool = False):
         super().__init__()
-        self.propose_config = dspy.Predict(GenerateImprovedConfigFromFullTrace)
+        sig = GenerateImprovedConfigFromFullTraceRLM if use_reasoning_lm else GenerateImprovedConfigFromFullTrace
+        self.propose_config = dspy.Predict(sig)
 
     def forward(self, current_config: str, dataset_with_feedback: list[dict[str, Any]]) -> str:
         """
