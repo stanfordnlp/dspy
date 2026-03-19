@@ -127,9 +127,9 @@ dspy.configure(lm=lm)
         Requires macOS 26+ with Apple Intelligence enabled. No API key or network
         connection needed — inference runs entirely on-device.
 
-        ```bash
-        pip install apple-fm-sdk
-        ```
+        Install the Apple Foundation Models SDK using Apple's official distribution
+        channel (it is not available on PyPI, so `pip install apple-fm-sdk` will not work).
+        Please follow the instructions in Apple's documentation for setup and installation.
 
         ```python linenums="1"
         import dspy
