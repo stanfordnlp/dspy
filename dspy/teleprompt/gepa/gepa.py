@@ -357,7 +357,7 @@ class GEPA(Teleprompter):
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
-        reasoning_lm: LM | None = None,
+        use_rlm: bool = False,
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
@@ -411,15 +411,15 @@ class GEPA(Teleprompter):
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
 
-        assert reflection_lm is not None or reasoning_lm is not None or instruction_proposer is not None, (
-            "GEPA requires a reflection language model (reflection_lm), a reasoning language model (reasoning_lm), "
-            "or a custom instruction proposer to be provided. "
+        assert reflection_lm is not None or instruction_proposer is not None, (
+            "GEPA requires a reflection language model, or custom instruction proposer to be provided. "
             "Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. "
-            "For long traces, consider using a reasoning model via reasoning_lm for better analysis. "
+            "Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model. "
+            "For long traces, consider setting use_rlm=True to use dspy.RLM for programmatic trace analysis. "
         )
 
         self.reflection_lm = reflection_lm
-        self.reasoning_lm = reasoning_lm
+        self.use_rlm = use_rlm
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
 
@@ -674,7 +674,7 @@ class GEPA(Teleprompter):
             enable_tool_optimization=self.enable_tool_optimization,
             use_full_trace_reflection=self.use_full_trace_reflection,
             use_full_trace_dataset=self.use_full_trace_dataset,
-            reasoning_lm=self.reasoning_lm,
+            use_rlm=self.use_rlm,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 

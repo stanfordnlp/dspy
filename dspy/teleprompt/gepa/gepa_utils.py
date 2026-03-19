@@ -163,7 +163,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         enable_tool_optimization: bool = False,
         use_full_trace_reflection: bool = False,
         use_full_trace_dataset: bool = False,
-        reasoning_lm=None,
+        use_rlm: bool = False,
         reflection_minibatch_size: int | None = None,
     ):
         self.student = student_module
@@ -179,7 +179,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.enable_tool_optimization = enable_tool_optimization
         self.use_full_trace_reflection = use_full_trace_reflection
         self.use_full_trace_dataset = use_full_trace_dataset
-        self.reasoning_lm = reasoning_lm
+        self.use_rlm = use_rlm
         self.reflection_minibatch_size = reflection_minibatch_size
 
     def propose_new_texts(
@@ -255,20 +255,17 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         Propose updates to all components at once based on full trace reflection.
         This method is used when use_full_trace_reflection is enabled.
 
-        When a reasoning_lm is configured, it is used instead of reflection_lm with
-        a streamlined signature (no explicit trace_analysis output field, since
-        reasoning models perform chain-of-thought internally).
+        When use_rlm is enabled, uses dspy.RLM (Recursive Language Model) which
+        lets the LLM programmatically explore long traces via a sandboxed REPL.
         """
         from dspy.teleprompt.gepa.instruction_proposal import FullTraceInstructionProposer
 
         current_config = candidate[FULL_TRACE_CANDIDATE_KEY]
         dataset_with_feedback = reflective_dataset[FULL_TRACE_CANDIDATE_KEY]
 
-        use_rlm = self.reasoning_lm is not None
-        proposer = FullTraceInstructionProposer(use_reasoning_lm=use_rlm)
-        lm_to_use = self.reasoning_lm if use_rlm else reflection_lm
+        proposer = FullTraceInstructionProposer(use_rlm=self.use_rlm)
 
-        with dspy.context(lm=lm_to_use):
+        with dspy.context(lm=reflection_lm):
             new_config = proposer(
                 current_config=current_config,
                 dataset_with_feedback=dataset_with_feedback,
