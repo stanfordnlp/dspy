@@ -100,6 +100,20 @@ class BaseLM:
         messages: list[dict[str, Any]] | None = None,
         **kwargs
     ) -> list[dict[str, Any] | str]:
+        """Asynchronous version of :meth:`__call__`.
+
+        Calls :meth:`aforward` and processes the response. Use this when
+        running inside an async event loop.
+
+        Args:
+            prompt: A raw text prompt. Mutually exclusive with ``messages``.
+            messages: A list of chat messages in OpenAI format.
+            **kwargs: Additional keyword arguments forwarded to the LLM.
+
+        Returns:
+            A list of output strings or dictionaries depending on the
+            response content (e.g., tool calls, reasoning content).
+        """
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
@@ -161,9 +175,34 @@ class BaseLM:
         return new_instance
 
     def inspect_history(self, n: int = 1, file: "TextIO | None" = None) -> None:
+        """Display the most recent LM interactions for this instance.
+
+        Prints a formatted view of the last ``n`` prompt/response pairs
+        from this language model's history. Useful for debugging and
+        understanding model behavior.
+
+        Args:
+            n: Number of recent entries to display. Defaults to 1.
+            file: An optional file-like object to write output to. When
+                provided, ANSI color codes are automatically disabled.
+                Defaults to ``None`` (prints to stdout).
+        """
         pretty_print_history(self.history, n, file=file)
 
     def update_history(self, entry):
+        """Append a completed interaction to the history stores.
+
+        Records the entry in the global history (``GLOBAL_HISTORY``), the
+        per-LM instance history (``self.history``), and any per-module
+        histories registered in the current settings. Each store is capped
+        at its configured maximum size; the oldest entry is evicted when
+        the limit is reached.
+
+        Args:
+            entry: A dictionary containing the prompt, messages, kwargs,
+                response, outputs, usage, cost, timestamp, uuid, and model
+                information for the completed interaction.
+        """
         if settings.disable_history:
             return
 
