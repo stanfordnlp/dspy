@@ -587,6 +587,65 @@ class TestFMKwargsAndStreaming:
 # ---------------------------------------------------------------------------
 
 
+class TestGuardrailViolation:
+    """GuardrailViolationError from the SDK must surface as a clear RuntimeError."""
+
+    def _make_guardrail_error(self):
+        """Construct a minimal exception whose class name contains 'GuardrailViolation'."""
+
+        class GuardrailViolationError(Exception):
+            pass
+
+        return GuardrailViolationError("content rejected")
+
+    def test_plain_text_path_raises_runtime_error(self, lm, fake_apple_fm_sdk):
+        """GuardrailViolationError on the plain text path becomes RuntimeError."""
+        exc = self._make_guardrail_error()
+        original_cls = fake_apple_fm_sdk.LanguageModelSession
+
+        class _Rejecting(original_cls):
+            async def respond(self, prompt, **kwargs):
+                raise exc
+
+        fake_apple_fm_sdk.LanguageModelSession = _Rejecting
+
+        with pytest.raises(RuntimeError, match="guardrail"):
+            lm.forward(prompt="hello")
+
+    def test_generable_path_raises_runtime_error(self, lm, fake_apple_fm_sdk):
+        """GuardrailViolationError on the generable path becomes RuntimeError (no retry)."""
+        from pydantic import BaseModel
+
+        exc = self._make_guardrail_error()
+
+        class MyOutput(BaseModel):
+            value: str
+
+        original_cls = fake_apple_fm_sdk.LanguageModelSession
+
+        class _Rejecting(original_cls):
+            async def respond(self, prompt, generating=None, **kwargs):
+                raise exc
+
+        fake_apple_fm_sdk.LanguageModelSession = _Rejecting
+
+        with pytest.raises(RuntimeError, match="guardrail"):
+            lm.forward(prompt="classify", response_format=MyOutput)
+
+    def test_other_errors_still_propagate(self, lm, fake_apple_fm_sdk):
+        """Non-guardrail exceptions from session.respond() are re-raised unchanged."""
+        original_cls = fake_apple_fm_sdk.LanguageModelSession
+
+        class _Crashing(original_cls):
+            async def respond(self, prompt, **kwargs):
+                raise ValueError("unexpected SDK error")
+
+        fake_apple_fm_sdk.LanguageModelSession = _Crashing
+
+        with pytest.raises(ValueError, match="unexpected SDK error"):
+            lm.forward(prompt="hello")
+
+
 class TestStructuredGenerationFallback:
     def test_generable_runtime_failure_falls_back(self, lm, fake_apple_fm_sdk):
         """If session.respond(generating=...) raises at runtime (e.g. Swift grammar

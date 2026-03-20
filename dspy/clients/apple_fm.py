@@ -616,6 +616,14 @@ class AppleFoundationLM(BaseLM):
                 # output parser receives the same format as the prompt-based path.
                 text = json.dumps(dataclasses.asdict(result))
             except Exception as exc:
+                # GuardrailViolationError means the content filter rejected the prompt.
+                # Retrying without the schema constraint won't help — re-raise immediately.
+                if "GuardrailViolation" in type(exc).__name__:
+                    raise RuntimeError(
+                        "Apple Foundation Model guardrail violation: the prompt was rejected "
+                        "by Apple's on-device content filter. Try rephrasing your input.\n"
+                        f"SDK error: {exc}"
+                    ) from exc
                 logger.warning(
                     "apple_fm: native @generable generation failed (%s); "
                     "recreating session and retrying without schema constraint "
@@ -628,7 +636,16 @@ class AppleFoundationLM(BaseLM):
                 session = fm.LanguageModelSession(**session_kwargs)
                 text = await session.respond(prompt=flat_prompt, **respond_kwargs)
         else:
-            text = await session.respond(prompt=flat_prompt, **respond_kwargs)
+            try:
+                text = await session.respond(prompt=flat_prompt, **respond_kwargs)
+            except Exception as exc:
+                if "GuardrailViolation" in type(exc).__name__:
+                    raise RuntimeError(
+                        "Apple Foundation Model guardrail violation: the prompt was rejected "
+                        "by Apple's on-device content filter. Try rephrasing your input.\n"
+                        f"SDK error: {exc}"
+                    ) from exc
+                raise
 
         # Prompt ARC to release underlying OS objects before returning.
         del session
