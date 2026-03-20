@@ -94,6 +94,24 @@ class ReAct(Module):
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
+        """Run the ReAct reasoning-and-acting loop.
+
+        Iteratively calls the language model to reason about the current
+        situation, select a tool, and execute it. The loop continues until
+        the model selects the ``finish`` tool or ``max_iters`` is reached.
+        After the loop, a final extraction step produces the output fields
+        defined in the module's signature.
+
+        Keyword Args:
+            **input_args: Input fields matching the module's signature. An
+                optional ``max_iters`` keyword can override the default
+                maximum number of iterations for this call.
+
+        Returns:
+            A :class:`dspy.Prediction` containing the signature's output
+            fields and a ``trajectory`` dict recording each thought, tool
+            call, and observation.
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
@@ -119,6 +137,11 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
+        """Asynchronous version of :meth:`forward`.
+
+        Behaves identically to the synchronous variant but awaits tool calls
+        via ``tool.acall()`` and can be used inside an async event loop.
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
