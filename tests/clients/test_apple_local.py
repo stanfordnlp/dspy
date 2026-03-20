@@ -481,3 +481,166 @@ class TestImportGuard:
         import dspy
 
         assert dspy is not None
+
+
+# ---------------------------------------------------------------------------
+# Structured output / response_format
+# ---------------------------------------------------------------------------
+
+
+class TestStructuredOutput:
+    """Tests for response_format handling and _build_schema_processor."""
+
+    def test_response_format_to_schema_pydantic(self, lm):
+        """Pydantic model class returns a JSON schema dict."""
+        from typing import Literal
+
+        from pydantic import BaseModel
+
+        from dspy.clients.apple_local import _response_format_to_schema
+
+        class MyModel(BaseModel):
+            sentiment: Literal["positive", "negative"]
+            score: int
+
+        schema = _response_format_to_schema(MyModel)
+        assert isinstance(schema, dict)
+        assert schema["type"] == "object"
+        assert "sentiment" in schema["properties"]
+        assert "score" in schema["properties"]
+
+    def test_response_format_to_schema_returns_none_for_dict(self):
+        """Plain dicts (e.g. {"type": "json_object"}) return None."""
+        from dspy.clients.apple_local import _response_format_to_schema
+
+        assert _response_format_to_schema({"type": "json_object"}) is None
+
+    def test_response_format_to_schema_returns_none_for_none(self):
+        from dspy.clients.apple_local import _response_format_to_schema
+
+        assert _response_format_to_schema(None) is None
+
+    def test_build_schema_processor_returns_none_without_outlines(self, lm, monkeypatch):
+        """When outlines is not importable, processor is None and a warning is logged."""
+        import sys
+
+        monkeypatch.setitem(sys.modules, "outlines", None)
+        schema = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
+        proc = lm._build_schema_processor(schema)
+        assert proc is None
+
+    def test_build_schema_processor_result_cached(self, lm, monkeypatch):
+        """Second call with the same schema returns the cached value without rebuilding."""
+        import sys
+
+        call_count = 0
+
+        class _FakeOutlines:
+            class MLXLM:
+                def __init__(self, model, tokenizer):
+                    pass
+
+        def _fake_get_json_schema(backend, model, schema_str):
+            nonlocal call_count
+            call_count += 1
+            return object()
+
+        fake_outlines = _FakeOutlines()
+        fake_generator = types.ModuleType("outlines.generator")
+        fake_generator.get_json_schema_logits_processor = _fake_get_json_schema
+
+        monkeypatch.setitem(sys.modules, "outlines", fake_outlines)
+        monkeypatch.setitem(sys.modules, "outlines.generator", fake_generator)
+
+        schema = {"type": "object", "properties": {"x": {"type": "integer"}}, "required": ["x"]}
+        lm._build_schema_processor(schema)
+        lm._build_schema_processor(schema)
+        assert call_count == 1, "processor should be built once and cached"
+
+    def test_response_format_stripped_from_cache_key_when_none(self, fake_mlx_lm):
+        """Cache request must not include response_schema when response_format is absent."""
+        import dspy
+
+        with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="arm64"):
+            from dspy.clients.apple_local import AppleLocalLM
+
+            lm_cached = AppleLocalLM("mlx-community/Llama-3.2-3B-Instruct-4bit", cache=True)
+
+        captured: list[dict] = []
+        original_get = dspy.cache.get
+
+        def _spy_get(req):
+            captured.append(req)
+            return original_get(req)
+
+        with patch.object(dspy.cache, "get", side_effect=_spy_get):
+            lm_cached.forward(messages=[{"role": "user", "content": "hello"}])
+
+        assert captured, "cache.get should have been called"
+        assert "response_schema" not in captured[0]
+
+    def test_response_format_included_in_cache_key_when_set(self, fake_mlx_lm, monkeypatch):
+        """Cache request includes response_schema key when response_format resolves to a schema."""
+        import sys
+
+        import dspy
+        from pydantic import BaseModel
+
+        # Stub outlines so _build_schema_processor returns None (simpler to test)
+        monkeypatch.setitem(sys.modules, "outlines", None)
+
+        with patch("platform.system", return_value="Darwin"), patch("platform.machine", return_value="arm64"):
+            from dspy.clients.apple_local import AppleLocalLM
+
+            lm_cached = AppleLocalLM("mlx-community/Llama-3.2-3B-Instruct-4bit", cache=True)
+
+        class Simple(BaseModel):
+            value: str
+
+        captured: list[dict] = []
+        original_get = dspy.cache.get
+
+        def _spy_get(req):
+            captured.append(req)
+            return original_get(req)
+
+        with patch.object(dspy.cache, "get", side_effect=_spy_get):
+            lm_cached.forward(messages=[{"role": "user", "content": "hello"}], response_format=Simple)
+
+        assert captured, "cache.get should have been called"
+        assert "response_schema" in captured[0]
+
+    def test_logits_processors_passed_to_generate(self, lm, fake_mlx_lm, monkeypatch):
+        """When a processor is built, it is forwarded to mlx_lm.generate via logits_processors."""
+        import sys
+
+        from pydantic import BaseModel
+
+        class Simple(BaseModel):
+            value: str
+
+        sentinel = object()
+
+        class _FakeOutlines:
+            class MLXLM:
+                def __init__(self, model, tokenizer):
+                    pass
+
+        fake_generator = types.ModuleType("outlines.generator")
+        fake_generator.get_json_schema_logits_processor = lambda backend, model, schema: sentinel
+
+        monkeypatch.setitem(sys.modules, "outlines", _FakeOutlines())
+        monkeypatch.setitem(sys.modules, "outlines.generator", fake_generator)
+
+        received_kwargs: list[dict] = []
+
+        def _spy_generate(model, tokenizer, prompt, **kwargs):
+            received_kwargs.append(kwargs)
+            return "result"
+
+        fake_mlx_lm.generate = _spy_generate
+
+        lm.forward(messages=[{"role": "user", "content": "hi"}], response_format=Simple)
+
+        assert received_kwargs, "generate should have been called"
+        assert received_kwargs[0].get("logits_processors") == [sentinel]

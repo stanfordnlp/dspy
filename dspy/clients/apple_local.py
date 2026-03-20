@@ -43,6 +43,7 @@ Requirements (MLX backend):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import platform
 from dataclasses import dataclass
@@ -110,6 +111,36 @@ def _apply_chat_template(tokenizer: Any, messages: list[dict[str, Any]]) -> str:
     from dspy.clients.apple_fm import _flatten_messages
 
     return _flatten_messages(messages)
+
+
+# ---------------------------------------------------------------------------
+# Structured output helpers
+# ---------------------------------------------------------------------------
+
+
+def _response_format_to_schema(response_format: Any) -> dict[str, Any] | None:
+    """Extract a JSON schema dict from a response_format value.
+
+    Returns the Pydantic model's JSON schema if ``response_format`` is a
+    ``pydantic.BaseModel`` subclass.  Returns ``None`` for plain-dict formats
+    (e.g. ``{"type": "json_object"}``), ``None``, or any non-Pydantic value
+    so that callers fall through to prompt-only mode without extra work.
+
+    Args:
+        response_format: Value from ``lm_kwargs["response_format"]``.  May be a
+            Pydantic ``BaseModel`` subclass, a dict, or ``None``.
+
+    Returns:
+        A JSON schema dict, or ``None`` if conversion is not possible.
+    """
+    try:
+        from pydantic import BaseModel as PydanticBaseModel
+
+        if isinstance(response_format, type) and issubclass(response_format, PydanticBaseModel):
+            return response_format.model_json_schema()
+    except ImportError:
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +268,10 @@ class AppleLocalLM(BaseLM):
             )
         # Lazily initialised in aforward() to avoid binding to the wrong event loop.
         self._semaphore: asyncio.Semaphore | None = None
+        # Cache of compiled outlines logits processors, keyed by JSON-serialised schema.
+        # Building an FSM from a schema is expensive; cache per instance so it is paid
+        # at most once per schema per loaded model.
+        self._schema_processor_cache: dict[str, Any] = {}
 
         if bits is not None:
             logger.info("AppleLocalLM: loading %r (expected %d-bit quantization)", model, bits)
@@ -275,6 +310,50 @@ class AppleLocalLM(BaseLM):
         return model, tokenizer
 
     # ------------------------------------------------------------------
+    # Structured output
+    # ------------------------------------------------------------------
+
+    def _build_schema_processor(self, schema: dict[str, Any]) -> Any | None:
+        """Build (or return a cached) outlines logits processor for a JSON schema.
+
+        Uses ``outlines`` (optional dependency) to compile a finite-state machine
+        that constrains ``mlx_lm.generate()`` to produce JSON matching ``schema``.
+        The compiled processor is cached on the instance so that repeated calls
+        with the same schema do not re-pay the FSM compilation cost.
+
+        Args:
+            schema: A JSON Schema dict (e.g. from ``PydanticModel.model_json_schema()``).
+
+        Returns:
+            An ``outlines`` logits processor, or ``None`` if ``outlines`` is not
+            installed or if compilation fails.  When ``None`` is returned,
+            callers fall back to prompt-only structured output.
+        """
+        cache_key = json.dumps(schema, sort_keys=True)
+        if cache_key in self._schema_processor_cache:
+            return self._schema_processor_cache[cache_key]
+
+        processor: Any = None
+        try:
+            from outlines import MLXLM
+            from outlines.generator import get_json_schema_logits_processor
+
+            outlines_model = MLXLM(self._mlx_model, self._mlx_tokenizer)
+            processor = get_json_schema_logits_processor(None, outlines_model, cache_key)
+            logger.debug("apple_local: compiled outlines FSM for schema (key=%d chars)", len(cache_key))
+        except ImportError:
+            logger.warning(
+                "apple_local: outlines is not installed — response_format falls back to "
+                "prompt-only mode and may not be honoured by small models. "
+                "Install with: pip install 'outlines[mlxlm]'"
+            )
+        except Exception as exc:
+            logger.warning("apple_local: failed to build outlines schema processor: %s", exc)
+
+        self._schema_processor_cache[cache_key] = processor
+        return processor
+
+    # ------------------------------------------------------------------
     # Inference
     # ------------------------------------------------------------------
 
@@ -283,6 +362,7 @@ class AppleLocalLM(BaseLM):
         messages: list[dict[str, Any]],
         temperature: float,
         max_tokens: int,
+        logits_processors: list[Any] | None = None,
     ) -> tuple[str, str]:
         """Run synchronous (non-streaming) MLX inference.
 
@@ -294,6 +374,9 @@ class AppleLocalLM(BaseLM):
                 via the tokenizer's chat template.
             temperature: Sampling temperature forwarded to ``make_sampler``.
             max_tokens: Maximum number of tokens to generate.
+            logits_processors: Optional list of logits processors (e.g. an
+                ``outlines`` JSON-schema processor) forwarded to
+                ``mlx_lm.generate()``.
 
         Returns:
             A ``(generated_text, flat_prompt)`` tuple.  ``flat_prompt`` is
@@ -306,13 +389,18 @@ class AppleLocalLM(BaseLM):
         flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
 
         sampler = make_sampler(temp=float(temperature))
+        generate_kwargs: dict[str, Any] = dict(
+            max_tokens=int(max_tokens),
+            sampler=sampler,
+            verbose=False,
+        )
+        if logits_processors:
+            generate_kwargs["logits_processors"] = logits_processors
         text = mlx_lm.generate(
             self._mlx_model,
             self._mlx_tokenizer,
             prompt=flat_prompt,
-            max_tokens=int(max_tokens),
-            sampler=sampler,
-            verbose=False,
+            **generate_kwargs,
         )
         return text, flat_prompt
 
@@ -389,9 +477,19 @@ class AppleLocalLM(BaseLM):
                 "Use dspy.streamify() to wrap your module for async streaming."
             )
 
-        # Discard LiteLLM-only / DSPy-internal kwargs that mlx_lm doesn't accept.
-        for _k in ("response_format", "tools", "num_retries", "stream", "n"):
+        # Intercept response_format before the discard loop so we can build a
+        # constrained logits processor from it.  All other LiteLLM/DSPy-internal
+        # kwargs that mlx_lm doesn't understand are discarded below.
+        response_format = kwargs.pop("response_format", None)
+        for _k in ("tools", "num_retries", "stream", "n"):
             kwargs.pop(_k, None)
+
+        schema = _response_format_to_schema(response_format)
+        logits_processors: list[Any] | None = None
+        if schema is not None:
+            proc = self._build_schema_processor(schema)
+            if proc is not None:
+                logits_processors = [proc]
 
         # Anything still in kwargs is unrecognised — warn and clear so it doesn't
         # silently pollute the cache key without affecting generation.
@@ -402,13 +500,17 @@ class AppleLocalLM(BaseLM):
             )
             kwargs.clear()
 
-        cache_request = {
+        cache_request: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
             **kwargs,
         }
+        if schema is not None:
+            # Include the schema in the cache key so constrained and unconstrained
+            # calls for the same prompt are cached separately.
+            cache_request["response_schema"] = json.dumps(schema, sort_keys=True)
 
         send_stream = dspy.settings.send_stream
 
@@ -433,13 +535,19 @@ class AppleLocalLM(BaseLM):
             flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
             sampler = make_sampler(temp=float(temperature))
 
+            stream_kwargs: dict[str, Any] = dict(
+                max_tokens=int(max_tokens),
+                sampler=sampler,
+            )
+            if logits_processors:
+                stream_kwargs["logits_processors"] = logits_processors
+
             _chunks: list[str] = []
             for _response in mlx_lm.stream_generate(
                 self._mlx_model,
                 self._mlx_tokenizer,
                 prompt=flat_prompt,
-                max_tokens=int(max_tokens),
-                sampler=sampler,
+                **stream_kwargs,
             ):
                 _chunks.append(_response.text)
                 _chunk = _LocalStreamChunk(text=_response.text, model=self.model, predict_id=predict_id)
@@ -449,7 +557,7 @@ class AppleLocalLM(BaseLM):
 
             text = "".join(_chunks)
         else:
-            text, flat_prompt = self._generate(messages, temperature, max_tokens)
+            text, flat_prompt = self._generate(messages, temperature, max_tokens, logits_processors)
 
         prompt_tokens = len(self._mlx_tokenizer.encode(flat_prompt))
         if prompt_tokens > self.context_window - max_tokens:
@@ -478,6 +586,7 @@ class AppleLocalLM(BaseLM):
         flat_prompt: str,
         temperature: float,
         max_tokens: int,
+        logits_processors: list[Any] | None = None,
     ) -> AsyncGenerator[str, None]:
         """Bridge ``mlx_lm.stream_generate()`` (sync generator) to an async generator.
 
@@ -489,6 +598,9 @@ class AppleLocalLM(BaseLM):
             flat_prompt: Pre-formatted prompt string from ``_apply_chat_template``.
             temperature: Sampling temperature forwarded to ``make_sampler``.
             max_tokens: Maximum number of tokens to generate.
+            logits_processors: Optional list of logits processors (e.g. an
+                ``outlines`` JSON-schema processor) forwarded to
+                ``mlx_lm.stream_generate()``.
 
         Yields:
             Individual token strings as they are produced by the model.
@@ -499,6 +611,12 @@ class AppleLocalLM(BaseLM):
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[str | None] = asyncio.Queue()
         sampler = make_sampler(temp=float(temperature))
+        stream_kwargs: dict[str, Any] = dict(
+            max_tokens=int(max_tokens),
+            sampler=sampler,
+        )
+        if logits_processors:
+            stream_kwargs["logits_processors"] = logits_processors
 
         def _run() -> None:
             """Generate tokens in a thread and enqueue each one for the async consumer."""
@@ -506,8 +624,7 @@ class AppleLocalLM(BaseLM):
                 self._mlx_model,
                 self._mlx_tokenizer,
                 prompt=flat_prompt,
-                max_tokens=int(max_tokens),
-                sampler=sampler,
+                **stream_kwargs,
             ):
                 # call_soon_threadsafe is required to safely enqueue from a non-async thread.
                 loop.call_soon_threadsafe(queue.put_nowait, response.text)
@@ -573,11 +690,20 @@ class AppleLocalLM(BaseLM):
             messages = [{"role": "user", "content": prompt or ""}]
         temperature = float(kwargs.pop("temperature", self._temperature))
         max_tokens = int(kwargs.pop("max_tokens", self._max_tokens))
-        # Strip DSPy-internal keys that mlx-lm doesn't accept.
-        for _k in ("response_format", "tools", "num_retries", "stream", "n"):
+        # Intercept response_format before discarding to build a constrained
+        # logits processor when outlines is available.
+        response_format = kwargs.pop("response_format", None)
+        for _k in ("tools", "num_retries", "stream", "n"):
             kwargs.pop(_k, None)
         if kwargs:
             logger.warning("apple_local: ignoring unsupported kwargs %s", sorted(kwargs))
+
+        schema = _response_format_to_schema(response_format)
+        logits_processors: list[Any] | None = None
+        if schema is not None:
+            proc = self._build_schema_processor(schema)
+            if proc is not None:
+                logits_processors = [proc]
 
         flat_prompt = _apply_chat_template(self._mlx_tokenizer, messages)
         caller_predict = dspy.settings.caller_predict
@@ -585,7 +711,9 @@ class AppleLocalLM(BaseLM):
         predict_id = id(caller_predict) if caller_predict else None
 
         full_text_parts: list[str] = []
-        async for token_text in self._stream_generate_async(flat_prompt, temperature, max_tokens):
+        async for token_text in self._stream_generate_async(
+            flat_prompt, temperature, max_tokens, logits_processors
+        ):
             full_text_parts.append(token_text)
             chunk = _LocalStreamChunk(text=token_text, model=self.model, predict_id=predict_id)
             await send_stream.send(chunk)
@@ -601,12 +729,14 @@ class AppleLocalLM(BaseLM):
         response = self._build_response(full_text, usage=usage)
 
         if cache:
-            cache_request = {
+            cache_request: dict[str, Any] = {
                 "model": self.model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
+            if schema is not None:
+                cache_request["response_schema"] = json.dumps(schema, sort_keys=True)
             dspy.cache.put(cache_request, response)
 
         return response
