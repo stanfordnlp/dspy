@@ -47,7 +47,7 @@ class Embeddings:
         pids = self._faiss_search(q_embeds, self.k * 10) if self.index else None
         pids = np.tile(np.arange(len(self.corpus)), (len(queries), 1)) if pids is None else pids
 
-        return self._rerank_and_predict(q_embeds, pids)
+        return [(passages, indices) for passages, indices, _ in self._rerank_and_predict(q_embeds, pids)]
 
     def _build_faiss(self):
         nbytes = 32
@@ -81,8 +81,13 @@ class Embeddings:
 
         top_k_indices = np.argsort(-scores, axis=1)[:, : self.k]
         top_indices = candidate_indices[np.arange(len(q_embeds))[:, None], top_k_indices]
+        top_scores = scores[np.arange(len(q_embeds))[:, None], top_k_indices]
 
-        return [([self.corpus[idx] for idx in indices], [idx for idx in indices]) for indices in top_indices]  # noqa: C416
+        results = []
+        for indices, query_scores in zip(top_indices, top_scores, strict=False):
+            passages = [self.corpus[idx] for idx in indices]
+            results.append((passages, indices.tolist(), query_scores.tolist()))
+        return results
 
     def _normalize(self, embeddings: np.ndarray):
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
@@ -214,3 +219,20 @@ class Embeddings:
         instance.search_fn = Unbatchify(instance._batch_forward)
         instance.load(path, embedder)
         return instance
+
+
+class EmbeddingsWithScores(Embeddings):
+    def forward(self, query: str):
+        import dspy
+
+        passages, indices, scores = self.search_fn(query)
+        return dspy.Prediction(passages=passages, indices=indices, scores=scores)
+
+    def _batch_forward(self, queries: list[str]):
+        q_embeds = self.embedder(queries)
+        q_embeds = self._normalize(q_embeds) if self.normalize else q_embeds
+
+        pids = self._faiss_search(q_embeds, self.k * 10) if self.index else None
+        pids = np.tile(np.arange(len(self.corpus)), (len(queries), 1)) if pids is None else pids
+
+        return self._rerank_and_predict(q_embeds, pids)
