@@ -1,18 +1,42 @@
 import copy
 import inspect
 import logging
+import os
 import threading
+import warnings
 from functools import wraps
 from hashlib import sha256
 from typing import Any
 
 import cloudpickle
+import diskcache
 import orjson
 import pydantic
 from cachetools import LRUCache
-from diskcache import FanoutCache
+
+from dspy.clients.cache_migration import has_legacy_diskcache
+from dspy.clients.disk import DSPyDisk
 
 logger = logging.getLogger(__name__)
+# Sentinel to distinguish a cache miss from a cached None value.
+_CACHE_MISS = object()
+
+
+def _transform_value(value):
+    """Convert a request field value to a JSON-serializable format for cache key hashing."""
+    if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
+        return value.model_json_schema()
+    elif isinstance(value, pydantic.BaseModel):
+        return value.model_dump(mode="json")
+    elif callable(value):
+        try:
+            return f"<callable_source:{inspect.getsource(value)}>"
+        except (TypeError, OSError):
+            return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
+    elif isinstance(value, dict):
+        return {k: _transform_value(v) for k, v in value.items()}
+    else:
+        return value
 
 
 class Cache:
@@ -20,7 +44,7 @@ class Cache:
 
     `Cache` provides 2 levels of caching (in the given order):
         1. In-memory cache - implemented with cachetools.LRUCache
-        2. On-disk cache - implemented with diskcache.FanoutCache
+        2. On-disk cache - implemented with diskcache.FanoutCache + orjson
     """
 
     def __init__(
@@ -51,16 +75,71 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            self.disk_cache = FanoutCache(
-                shards=16,
-                timeout=10,
+            # Check for legacy cache BEFORE creating FanoutCache, since FanoutCache
+            # will overwrite the shard DB files in the same directory.
+            self._pending_migration = self._check_legacy_cache(disk_cache_dir)
+            # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
+            # as a practical "no limit" when the caller passes None.
+            effective_limit = disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40
+            self.disk_cache = diskcache.FanoutCache(
                 directory=disk_cache_dir,
-                size_limit=disk_size_limit_bytes,
+                shards=16,
+                disk=DSPyDisk,
+                size_limit=effective_limit,
+                eviction_policy="least-recently-used",
+                timeout=60,
             )
+            self._run_pending_migration(disk_cache_dir)
         else:
             self.disk_cache = {}
 
         self._lock = threading.RLock()
+
+    def _check_legacy_cache(self, disk_cache_dir: str) -> list | None:
+        """Read legacy diskcache entries before FanoutCache overwrites the shard DBs.
+
+        Returns the list of (key, deserialized_value) pairs to migrate, or None.
+        """
+        if not has_legacy_diskcache(disk_cache_dir):
+            return None
+        if os.environ.get("DSPY_MIGRATE_CACHE") != "1":
+            logger.warning(
+                "Legacy diskcache format detected in %s but migration is disabled. "
+                "Set DSPY_MIGRATE_CACHE=1 to migrate. The old cache uses pickle deserialization "
+                "which is a security risk (CVE-2025-69872).",
+                disk_cache_dir,
+            )
+            return None
+        # Read all legacy entries now, before FanoutCache overwrites the shard DBs
+        from dspy.clients.cache_migration import read_legacy_entries
+        return read_legacy_entries(disk_cache_dir)
+
+    def _run_pending_migration(self, disk_cache_dir: str) -> None:
+        """Write pre-read legacy entries into the new FanoutCache."""
+        entries = self._pending_migration
+        self._pending_migration = None
+        if entries is None:
+            return
+        if len(self.disk_cache) > 0:
+            return
+        logger.info("Migrating %d legacy diskcache entries in %s to orjson format...", len(entries), disk_cache_dir)
+        migrated = 0
+        errors = 0
+        for key, value in entries:
+            try:
+                self.disk_cache[key] = value
+                migrated += 1
+            except TypeError as e:
+                errors += 1
+                logger.debug("Failed to migrate cache entry %.16s: %s", key, e)
+        if errors == 0:
+            logger.info("Cache migration complete: %d entries migrated.", migrated)
+        else:
+            logger.warning(
+                "Cache migration finished with errors: %d migrated, %d failed.",
+                migrated,
+                errors,
+            )
 
     def __contains__(self, key: str) -> bool:
         """Check if a key is in the cache."""
@@ -75,56 +154,54 @@ class Cache:
 
         ignored_args_for_cache_key = ignored_args_for_cache_key or []
 
-        def transform_value(value):
-            if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-                return value.model_json_schema()
-            elif isinstance(value, pydantic.BaseModel):
-                return value.model_dump(mode="json")
-            elif callable(value):
-                # Try to get the source code of the callable if available
-                import inspect
-
-                try:
-                    # For regular functions, we can get the source code
-                    return f"<callable_source:{inspect.getsource(value)}>"
-                except (TypeError, OSError):
-                    # For lambda functions or other callables where source isn't available,
-                    # use a string representation
-                    return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
-            elif isinstance(value, dict):
-                return {k: transform_value(v) for k, v in value.items()}
-            else:
-                return value
-
-        params = {k: transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
+        params = {k: _transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
         return sha256(orjson.dumps(params, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
     def get(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
-
+        """Look up a cached response for the given request, checking memory then disk."""
         if not self.enable_memory_cache and not self.enable_disk_cache:
             return None
 
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
-        except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
+        except (TypeError, orjson.JSONEncodeError):
+            logger.debug("Failed to generate cache key for request: %s", request)
             return None
 
-        if self.enable_memory_cache and key in self.memory_cache:
+        response = None
+        memory_hit = False
+        if self.enable_memory_cache:
             with self._lock:
-                response = self.memory_cache[key]
-        elif self.enable_disk_cache and key in self.disk_cache:
-            # Found on disk but not in memory cache, add to memory cache
-            response = self.disk_cache[key]
+                if key in self.memory_cache:
+                    response = self.memory_cache[key]
+                    memory_hit = True
+
+        if not memory_hit and self.enable_disk_cache:
+            try:
+                response = self.disk_cache.get(key, _CACHE_MISS)
+            except (
+                orjson.JSONDecodeError,  # corrupt or truncated cache blob
+                ImportError,  # referenced class module no longer importable
+                AttributeError,  # referenced class or nested attribute path no longer exists
+                pydantic.ValidationError,  # payload no longer matches the current pydantic schema
+                TypeError,  # constructor / encoded payload shape mismatch during reconstruction
+                KeyError,  # envelope missing required metadata keys (e.g. "_data", "__dspy_cache_module__")
+            ) as e:
+                logger.debug("Failed to deserialize disk cache entry %s: %s", key, e)
+                return None
+            if response is _CACHE_MISS:
+                return None
             if self.enable_memory_cache:
                 with self._lock:
                     self.memory_cache[key] = response
-        else:
+        elif not memory_hit:
             return None
 
+        # --- LM-specific response mutation ---
+        # deepcopy so callers can't mutate the cached object.
+        # For LM responses, clear usage (no real call was made) and mark cache_hit.
         response = copy.deepcopy(response)
         if hasattr(response, "usage"):
-            # Clear the usage data when cache is hit, because no LM call is made
             response.usage = {}
             response.cache_hit = True
         return response
@@ -136,6 +213,7 @@ class Cache:
         ignored_args_for_cache_key: list[str] | None = None,
         enable_memory_cache: bool = True,
     ) -> None:
+        """Store a response in the cache, writing to both memory and disk as configured."""
         enable_memory_cache = self.enable_memory_cache and enable_memory_cache
 
         # Early return to avoid computing cache key if both memory and disk cache are disabled
@@ -144,8 +222,8 @@ class Cache:
 
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
-        except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
+        except (TypeError, orjson.JSONEncodeError):
+            logger.debug("Failed to generate cache key for request: %s", request)
             return
 
         if enable_memory_cache:
@@ -155,9 +233,14 @@ class Cache:
         if self.enable_disk_cache:
             try:
                 self.disk_cache[key] = value
-            except Exception as e:
-                # Disk cache writing can fail for different reasons, e.g. disk full or the `value` is not picklable.
-                logger.debug(f"Failed to put value in disk cache: {value}, {e}")
+            except TypeError as e:
+                warnings.warn(
+                    f"Skipping disk cache write: {e}",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            except diskcache.Timeout as e:
+                logger.debug("Failed to put value in disk cache for key %s: %s", key, e)
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:
@@ -176,8 +259,10 @@ class Cache:
 
     def load_memory_cache(self, filepath: str, allow_pickle: bool = False) -> None:
         if not allow_pickle:
-            raise ValueError("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. \
-            Set `allow_pickle=True` to load if you are running in a trusted environment and the file is from a trusted source.")
+            raise ValueError(
+                "Loading untrusted .pkl files can run arbitrary code, which may be dangerous. "
+                "Set `allow_pickle=True` to load if you are running in a trusted environment and the file is from a trusted source."
+            )
 
         if not self.enable_memory_cache:
             return
@@ -204,6 +289,8 @@ def request_cache(
         enable_memory_cache: Whether to enable in-memory cache at call time. If False, the memory cache will not be
             written to on new data.
     """
+    # Default differs from cache_key() (which defaults to []) because LM calls
+    # should always ignore credentials; callers of cache_key() may not want that.
     ignored_args_for_cache_key = ignored_args_for_cache_key or ["api_key", "api_base", "base_url"]
     # Deprecation notice
     if maxsize is not None:
@@ -214,8 +301,7 @@ def request_cache(
         )
 
     def decorator(fn):
-        @wraps(fn)
-        def process_request(args, kwargs):
+        def build_cache_request(args, kwargs):
             # Use fully qualified function name for uniqueness
             fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
 
@@ -239,7 +325,7 @@ def request_cache(
             import dspy
 
             cache = dspy.cache
-            modified_request = process_request(args, kwargs)
+            modified_request = build_cache_request(args, kwargs)
 
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
@@ -256,12 +342,14 @@ def request_cache(
 
             return result
 
+        # Intentional duplication of sync_wrapper: `await` cannot be conditional,
+        # so we need a separate async function to properly await the wrapped coroutine.
         @wraps(fn)
         async def async_wrapper(*args, **kwargs):
             import dspy
 
             cache = dspy.cache
-            modified_request = process_request(args, kwargs)
+            modified_request = build_cache_request(args, kwargs)
 
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)

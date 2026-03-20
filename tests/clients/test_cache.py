@@ -1,19 +1,20 @@
+import logging
 import os
 from dataclasses import dataclass
 from unittest.mock import patch
 
+import diskcache
+import orjson
 import pydantic
 import pytest
 from cachetools import LRUCache
-from diskcache import FanoutCache
 
 from dspy.clients.cache import Cache
 
 
-@dataclass
-class DummyResponse:
-    message: str
-    usage: dict
+class CacheValidationModel(pydantic.BaseModel):
+    name: str
+    value: int
 
 
 @pytest.fixture
@@ -56,7 +57,7 @@ def test_initialization(tmp_path):
         disk_size_limit_bytes=1024,
         memory_max_entries=0,
     )
-    assert isinstance(disk_cache.disk_cache, FanoutCache)
+    assert isinstance(disk_cache.disk_cache, diskcache.FanoutCache)
     assert disk_cache.memory_cache == {}
 
     # Test disabled cache
@@ -120,14 +121,12 @@ def test_put_and_get(cache):
     """Test putting and getting from cache."""
     # Test putting and getting from memory cache
     request = {"prompt": "Hello", "model": "openai/gpt-4o-mini", "temperature": 0.7}
-
-    value = DummyResponse(message="This is a test response", usage={"prompt_tokens": 10, "completion_tokens": 20})
+    value = {"message": "This is a test response", "usage": {"prompt_tokens": 10, "completion_tokens": 20}}
 
     cache.put(request, value)
     result = cache.get(request)
 
-    assert result.message == value.message
-    assert result.usage == {}
+    assert result == value
 
     # Test with disk cache
     # First, clear memory cache to ensure we're using disk cache
@@ -135,35 +134,81 @@ def test_put_and_get(cache):
 
     # Get from disk cache
     result_from_disk = cache.get(request)
-    assert result_from_disk.message == value.message
-    assert result_from_disk.usage == {}
+    assert result_from_disk == value
 
     # Verify it was also added back to memory cache
     assert cache.cache_key(request) in cache.memory_cache
 
 
-def test_cache_miss(cache):
-    """Test getting a non-existent key."""
-    request = {"prompt": "Non-existent", "model": "gpt-4"}
-    result = cache.get(request)
-    assert result is None
+def test_cache_miss_and_unserializable_key(cache):
+    """Cache miss returns None; unserializable request key also returns None without raising."""
+    assert cache.get({"prompt": "Non-existent", "model": "gpt-4"}) is None
 
-
-def test_cache_key_error_handling(cache):
-    """Test error handling for unserializable objects."""
-
-    # Test with a request that can't be serialized to JSON
     class UnserializableObject:
         pass
 
     request = {"data": UnserializableObject()}
+    assert cache.get(request) is None
+    cache.put(request, "value")  # should not raise
 
-    # Should not raise an exception
+
+def test_full_cache_put_get_cycle_with_model_response(cache):
+    from litellm import ModelResponse
+
+    response = ModelResponse(
+        id="test-123",
+        choices=[{"message": {"content": "cached response"}, "index": 0, "finish_reason": "stop"}],
+        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    )
+    request = {"model": "openai/gpt-5-nano", "prompt": "test"}
+    cache.put(request, response)
+    cache.reset_memory_cache()
+
     result = cache.get(request)
-    assert result is None
+    assert isinstance(result, ModelResponse)
+    assert result.choices[0].message.content == "cached response"
+    assert result.usage == {}
+    assert result.cache_hit is True
 
-    # Should not raise an exception
+
+def test_cache_contains_checks_disk(cache):
+    request = {"prompt": "test"}
+    key = cache.cache_key(request)
+
+    assert key not in cache
     cache.put(request, "value")
+    assert key in cache
+    cache.reset_memory_cache()
+    assert key in cache
+
+
+def test_corrupt_disk_entries_return_none(tmp_path):
+    """Cache.get() returns None (not crash) for deserialization failures."""
+    cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=True,
+        disk_cache_dir=str(tmp_path),
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=100,
+    )
+
+    # Write a valid entry, then corrupt it at the shard level
+    request = {"model": "test", "prompt": "will_be_corrupted"}
+    key = cache.cache_key(request)
+    cache.put(request, "good_value")
+    cache.reset_memory_cache()
+
+    # Verify it works before corruption
+    assert cache.get(request) == "good_value"
+    cache.reset_memory_cache()
+
+    # Now corrupt the entry by patching fetch to raise
+    with patch.object(
+        type(cache.disk_cache),
+        "get",
+        side_effect=orjson.JSONDecodeError,
+    ):
+        assert cache.get(request) is None
 
 
 def test_reset_memory_cache(cache):
@@ -345,27 +390,240 @@ def test_cache_consistency_with_lm_call_modifies_the_request(cache):
         )
 
 
-def test_cache_fallback_on_restricted_environment():
-    """Test that DSPy gracefully falls back to memory-only cache when disk cache fails."""
-    old_env = os.environ.get("DSPY_CACHEDIR")
-    try:
-        # Set an invalid cache directory that can't be created
-        os.environ["DSPY_CACHEDIR"] = "/dev/null/invalid_path"
+# ---------------------------------------------------------------------------
+# Tests from test_cache_key_isolation.py
+# ---------------------------------------------------------------------------
 
-        import dspy
+
+class TestCacheKeyIsolation:
+    @pytest.mark.parametrize(
+        "field, val_a, val_b",
+        [
+            ("model", "openai/gpt-5-nano", "openai/gpt-5-mini"),
+            ("temperature", 0.7, 1.0),
+            ("_fn_identifier", "dspy.clients.lm.litellm_completion", "dspy.clients.lm.alitellm_completion"),
+        ],
+    )
+    def test_different_field_values_produce_different_keys(self, cache, field, val_a, val_b):
+        base = {
+            "_fn_identifier": "dspy.clients.lm.litellm_completion",
+            "model": "openai/gpt-5-nano",
+            "messages": [{"role": "user", "content": "hello"}],
+        }
+        assert cache.cache_key({**base, field: val_a}) != cache.cache_key({**base, field: val_b})
+
+    def test_api_credentials_excluded(self, cache):
+        """api_key, api_base, and base_url don't affect the cache key when excluded."""
+        request_base = {
+            "_fn_identifier": "dspy.clients.lm.litellm_completion",
+            "model": "openai/gpt-5-nano",
+            "messages": [{"role": "user", "content": "hello"}],
+        }
+        request_with_creds = {
+            **request_base,
+            "api_key": "test-api-key-placeholder",
+            "api_base": "https://custom.openai.com/v1",
+            "base_url": "https://custom.openai.com",
+        }
+
+        ignored = ["api_key", "api_base", "base_url"]
+        key_base = cache.cache_key(request_base, ignored_args_for_cache_key=ignored)
+        key_with_creds = cache.cache_key(request_with_creds, ignored_args_for_cache_key=ignored)
+
+        assert key_base == key_with_creds
+        assert key_base != cache.cache_key(request_with_creds)
+
+    def test_rollout_id_isolation_and_none_stripping(self, cache):
+        """Different rollout_id values produce different keys; same rollout_id reproduces;
+        stripping rollout_id=None matches absent rollout_id."""
+        base = {
+            "_fn_identifier": "dspy.clients.lm.litellm_completion",
+            "model": "openai/gpt-5-nano",
+            "messages": [{"role": "user", "content": "hello"}],
+        }
+        key_1 = cache.cache_key({**base, "rollout_id": 1})
+        key_2 = cache.cache_key({**base, "rollout_id": 2})
+        assert key_1 != key_2
+        assert key_1 == cache.cache_key({**base, "rollout_id": 1})
+
+        # Stripping None rollout_id matches absent
+        request_none = {**base, "rollout_id": None}
+        request_none.pop("rollout_id")
+        assert cache.cache_key(base) == cache.cache_key(request_none)
+
+    def test_key_order_independence(self, cache):
+        """Same key-value pairs in different insertion order produce the same cache key (OPT_SORT_KEYS)."""
+        request_order_a = {
+            "model": "openai/gpt-5-nano",
+            "_fn_identifier": "dspy.clients.lm.litellm_completion",
+            "messages": [{"role": "user", "content": "hello"}],
+            "temperature": 0.7,
+        }
+        request_order_b = {}
+        request_order_b["temperature"] = 0.7
+        request_order_b["messages"] = [{"role": "user", "content": "hello"}]
+        request_order_b["model"] = "openai/gpt-5-nano"
+        request_order_b["_fn_identifier"] = "dspy.clients.lm.litellm_completion"
+
+        assert cache.cache_key(request_order_a) == cache.cache_key(request_order_b)
+
+
+# ---------------------------------------------------------------------------
+# Tests from test_cache_error_handling.py
+# ---------------------------------------------------------------------------
+
+
+class TestCorruptSQLiteDBFallback:
+    """Corrupt SQLite DB file graceful degradation."""
+
+    def test_corrupt_sqlite_db_fallback(self, tmp_path, monkeypatch):
+        """When the SQLite DB file is corrupted, _get_dspy_cache() falls back to
+        memory-only cache without crashing."""
         from dspy.clients import _get_dspy_cache
 
-        dspy.cache = _get_dspy_cache()
+        cache_dir = str(tmp_path / "corrupt_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        # Corrupt shard 000's DB file
+        shard_dir = os.path.join(cache_dir, "000")
+        os.makedirs(shard_dir, exist_ok=True)
+        with open(os.path.join(shard_dir, "cache.db"), "wb") as f:
+            f.write(b"THIS IS NOT A SQLITE DATABASE" * 100)
 
-        # Cache should work with memory-only fallback despite invalid disk path
-        test_request = {"model": "test", "prompt": "hello"}
-        dspy.cache.put(test_request, "fallback_result")
-        result = dspy.cache.get(test_request)
+        monkeypatch.setenv("DSPY_CACHEDIR", cache_dir)
 
-        assert result == "fallback_result", "Memory cache fallback should work"
+        cache = _get_dspy_cache()
 
-    finally:
-        if old_env is None:
-            os.environ.pop("DSPY_CACHEDIR", None)
-        else:
-            os.environ["DSPY_CACHEDIR"] = old_env
+        # Cache should work with memory-only fallback
+        assert cache.enable_memory_cache is True
+        assert cache.enable_disk_cache is False
+
+        # Verify the memory-only cache is actually functional
+        request = {"model": "test", "prompt": "hello"}
+        cache.put(request, "fallback_result")
+        result = cache.get(request)
+        assert result == "fallback_result"
+
+
+class TestReadOnlyDatabasePut:
+    """Read-only directory cache write behavior."""
+
+    def test_readonly_database_reads_still_work(self, tmp_path):
+        """After making DB read-only, reads of previously-written values still work."""
+        cache = Cache(
+            enable_memory_cache=True,
+            enable_disk_cache=True,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=1024 * 1024,
+            memory_max_entries=100,
+        )
+
+        request = {"model": "test", "prompt": "before_readonly"}
+        cache.put(request, "stored_value")
+        cache.reset_memory_cache()
+
+        # Make all shard DB files read-only
+        db_files = []
+        for shard in range(16):
+            db_path = os.path.join(str(tmp_path), f"{shard:03d}", "cache.db")
+            if os.path.exists(db_path):
+                os.chmod(db_path, 0o444)
+                db_files.append(db_path)
+
+        try:
+            result = cache.get(request)
+            assert result == "stored_value"
+        finally:
+            for db_path in db_files:
+                os.chmod(db_path, 0o644)
+
+
+class TestCorruptPickleLoadMemoryCache:
+    """Corrupt pickle file for memory cache."""
+
+    def test_corrupt_pickle_load_memory_cache(self, tmp_path):
+        """Corrupt .pkl file passed to load_memory_cache raises
+        cloudpickle.pickle.UnpicklingError (not an unhandled crash).
+
+        NOTE: load_memory_cache() does NOT catch deserialization errors —
+        corrupt pickle files raise UnpicklingError. This is documented as
+        a discovered issue.
+        """
+        import pickle
+
+        cache = Cache(
+            enable_memory_cache=True,
+            enable_disk_cache=False,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=0,
+            memory_max_entries=100,
+        )
+
+        # Write garbage bytes to a .pkl file
+        pkl_path = str(tmp_path / "corrupt.pkl")
+        with open(pkl_path, "wb") as f:
+            f.write(b"\x80\x05\x95CORRUPT_GARBAGE_DATA_NOT_VALID_PICKLE")
+
+        # load_memory_cache does not catch deserialization errors;
+        # it raises UnpicklingError from cloudpickle/pickle
+        with pytest.raises((pickle.UnpicklingError, Exception)):
+            cache.load_memory_cache(pkl_path, allow_pickle=True)
+
+
+def test_non_serializable_values_warn_and_stay_in_memory(cache):
+    """Non-serializable values (tuple, dataclass) warn on disk write, remain in memory,
+    and don't corrupt other entries."""
+
+    @dataclass
+    class MyData:
+        x: int
+        y: str
+
+    good_request = {"model": "test", "prompt": "good_value"}
+    cache.put(good_request, "good")
+
+    for label, value in [("tuple", (1, 2, 3)), ("dataclass", MyData(x=42, y="hello"))]:
+        request = {"model": "test", "prompt": label}
+        with pytest.warns(UserWarning, match="Skipping disk cache write"):
+            cache.put(request, value)
+        assert cache.get(request) == value
+
+    cache.reset_memory_cache()
+    assert cache.get(good_request) == "good"
+
+
+class TestDiskCacheTimeoutInPutHandled:
+    """diskcache.Timeout in Cache.put() handled gracefully."""
+
+    def test_timeout_in_put_handled(self, tmp_path, caplog):
+        """Mocked diskcache.Timeout in disk write is caught, memory write
+        still succeeds."""
+        cache = Cache(
+            enable_memory_cache=True,
+            enable_disk_cache=True,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=1024 * 1024,
+            memory_max_entries=100,
+        )
+
+        request = {"model": "test", "prompt": "timeout_test"}
+
+        dspy_logger = logging.getLogger("dspy")
+        original_propagate = dspy_logger.propagate
+        dspy_logger.propagate = True
+
+        try:
+            with patch.object(
+                type(cache.disk_cache),
+                "__setitem__",
+                side_effect=diskcache.Timeout("database timeout"),
+            ):
+                with caplog.at_level(logging.DEBUG, logger="dspy.clients.cache"):
+                    cache.put(request, "survived_value")
+
+            assert any("Failed to put value in disk cache" in rec.message for rec in caplog.records)
+            result = cache.get(request)
+            assert result == "survived_value"
+        finally:
+            dspy_logger.propagate = original_propagate
+
+
