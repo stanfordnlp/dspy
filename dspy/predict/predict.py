@@ -63,12 +63,23 @@ class Predict(Module, Parameter):
         self.reset()
 
     def reset(self):
+        """Reset the module state, clearing the language model, traces, training data, and demos."""
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self, json_mode=True):
+        """Serialize the module state to a dictionary for saving.
+
+        Args:
+            json_mode: If True, convert demo examples to JSON-serializable dicts.
+                Defaults to True.
+
+        Returns:
+            A dictionary containing the serialized module state, including demos,
+            signature, traces, training data, and LM configuration.
+        """
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -130,6 +141,11 @@ class Predict(Module, Parameter):
         return super().__call__(**kwargs)
 
     async def acall(self, *args, **kwargs):
+        """Asynchronous version of ``__call__``.
+
+        Accepts the same keyword arguments as ``__call__``. Positional arguments
+        are not allowed and will raise a ``ValueError``.
+        """
         if args:
             raise ValueError(self._get_positional_args_error_message())
 
@@ -241,6 +257,20 @@ class Predict(Module, Parameter):
         return should_stream
 
     def forward(self, **kwargs):
+        """Execute the prediction by calling the language model.
+
+        This is the core execution method that preprocesses inputs, invokes the
+        language model through the configured adapter, and postprocesses the
+        completions into a ``dspy.Prediction``.
+
+        Args:
+            **kwargs: Keyword arguments matching the signature's input fields.
+                Additionally accepts ``signature``, ``demos``, ``config``, and
+                ``lm`` as privileged overrides for this call.
+
+        Returns:
+            A ``dspy.Prediction`` containing the model's output fields.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -255,6 +285,13 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     async def aforward(self, **kwargs):
+        """Asynchronous version of :meth:`forward`.
+
+        Accepts the same keyword arguments as ``forward``.
+
+        Returns:
+            A ``dspy.Prediction`` containing the model's output fields.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()

@@ -94,6 +94,20 @@ class ReAct(Module):
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
+        """Run the ReAct agent loop synchronously.
+
+        Iterates through reasoning steps, tool calls, and observations until the
+        agent calls the ``finish`` tool or reaches ``max_iters``. Falls back to a
+        ``ChainOfThought`` extraction if the context window is exceeded.
+
+        Args:
+            **input_args: Keyword arguments matching the signature's input fields.
+                Optionally pass ``max_iters`` to override the default for this call.
+
+        Returns:
+            A ``dspy.Prediction`` with the signature's output fields and the full
+            ``trajectory`` of thoughts, tool calls, and observations.
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
@@ -119,6 +133,14 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
+        """Asynchronous version of :meth:`forward`.
+
+        Accepts the same keyword arguments as ``forward``.
+
+        Returns:
+            A ``dspy.Prediction`` with the signature's output fields and the full
+            ``trajectory`` of thoughts, tool calls, and observations.
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
