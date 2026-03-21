@@ -63,12 +63,40 @@ class Predict(Module, Parameter):
         self.reset()
 
     def reset(self):
+        """Reset the module to its initial state.
+
+        Clears the language model override, accumulated traces, training
+        examples, and demos so the module behaves like a freshly created
+        instance.
+        """
         self.lm = None
         self.traces = []
         self.train = []
         self.demos = []
 
     def dump_state(self, json_mode=True):
+        """Serialize the module state to a plain dictionary.
+
+        The returned dictionary captures everything needed to recreate the
+        module later with ``load_state``: the signature, demos, traces,
+        training examples, and—when present—the language model configuration.
+
+        Args:
+            json_mode: When ``True`` (the default), ``Example`` demos are
+                converted to plain dicts so the result is JSON-serializable.
+
+        Returns:
+            A dictionary that can be passed to ``load_state`` to restore
+            this module.
+
+        Examples:
+            Save and reload a module:
+
+            >>> predict = dspy.Predict("question -> answer")
+            >>> state = predict.dump_state()
+            >>> restored = dspy.Predict("question -> answer")
+            >>> restored.load_state(state)
+        """
         state_keys = ["traces", "train"]
         state = {k: getattr(self, k) for k in state_keys}
 
@@ -241,6 +269,31 @@ class Predict(Module, Parameter):
         return should_stream
 
     def forward(self, **kwargs):
+        """Run the language model on the given inputs and return a prediction.
+
+        This is the synchronous entry point used internally by ``__call__``.
+        In most cases you call the module directly instead of calling
+        ``forward`` yourself:
+
+        >>> predict = dspy.Predict("question -> answer")
+        >>> result = predict(question="What is 2 + 2?")
+        >>> result.answer  # the model's answer
+        '4'
+
+        Args:
+            **kwargs: Input field values matching the module's signature.
+                Three special keys are also accepted:
+
+                * ``signature`` – override the module's signature for this
+                  call.
+                * ``demos`` – override the few-shot demos.
+                * ``config`` – extra keyword arguments forwarded to the
+                  language model (e.g. ``temperature``).
+
+        Returns:
+            A ``dspy.Prediction`` whose attributes correspond to the
+            signature's output fields.
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -255,6 +308,13 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     async def aforward(self, **kwargs):
+        """Async version of ``forward``.
+
+        Accepts the same arguments and returns the same ``dspy.Prediction``.
+        Use this when running inside an ``asyncio`` event loop:
+
+        >>> result = await predict.acall(question="What is 2 + 2?")
+        """
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
@@ -268,9 +328,19 @@ class Predict(Module, Parameter):
         return self._forward_postprocess(completions, signature, **kwargs)
 
     def update_config(self, **kwargs):
+        """Merge extra keyword arguments into the module's default LM config.
+
+        Values set here apply to every future call unless overridden by a
+        per-call ``config`` dict.
+
+        Args:
+            **kwargs: Keyword arguments forwarded to the language model,
+                e.g. ``temperature=0.9``.
+        """
         self.config = {**self.config, **kwargs}
 
     def get_config(self):
+        """Return the module's current default LM keyword arguments."""
         return self.config
 
     def __repr__(self):

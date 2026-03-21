@@ -100,6 +100,23 @@ class BaseLM:
         messages: list[dict[str, Any]] | None = None,
         **kwargs
     ) -> list[dict[str, Any] | str]:
+        """Async version of ``__call__``.
+
+        Sends the request through ``aforward`` and processes the response
+        identically to the synchronous path.  Use this when calling the
+        language model inside an ``asyncio`` event loop.
+
+        Args:
+            prompt: A plain-text prompt.  Ignored when *messages* is given.
+            messages: A list of chat messages in OpenAI format.  Takes
+                precedence over *prompt*.
+            **kwargs: Extra keyword arguments forwarded to the underlying
+                provider (e.g. ``temperature``, ``max_tokens``).
+
+        Returns:
+            A list of output strings or dictionaries, one per completion
+            choice.
+        """
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
         outputs = self._process_lm_response(response, prompt, messages, **kwargs)
         return outputs
@@ -161,9 +178,49 @@ class BaseLM:
         return new_instance
 
     def inspect_history(self, n: int = 1, file: "TextIO | None" = None) -> None:
+        """Print the last *n* LM interactions for this instance.
+
+        Each entry shows the prompt or messages sent to the model, the raw
+        response, token usage, and cost.  This is the per-instance history;
+        use the module-level ``dspy.inspect_history`` for the global log
+        shared across all LMs.
+
+        Args:
+            n: Number of recent entries to display.  Defaults to 1.
+            file: An optional file-like object to write output to.  When
+                provided, ANSI color codes are automatically disabled.
+                Defaults to ``None`` (prints to stdout).
+
+        Examples:
+            >>> lm = dspy.LM("openai/gpt-4o-mini")
+            >>> lm("What is DSPy?")
+            >>> lm.inspect_history(n=1)
+        """
         pretty_print_history(self.history, n, file=file)
 
     def update_history(self, entry):
+        """Append a completed LM interaction to the history logs.
+
+        Called automatically after every ``__call__`` / ``acall``.  The
+        entry is recorded in three places:
+
+        1. The **global** history (``dspy.inspect_history``).
+        2. This LM instance's ``self.history``.
+        3. The ``history`` list of every DSPy module currently on the call
+           stack, so that ``module.history`` reflects only the calls that
+           module triggered.
+
+        History recording is skipped entirely when
+        ``dspy.configure(disable_history=True)`` is set.  Both the global
+        and per-instance logs are capped by ``settings.max_history_size``
+        (default 10 000); when the cap is reached the oldest entry is
+        evicted.
+
+        Args:
+            entry: A dictionary describing the interaction.  Expected keys
+                include ``prompt``, ``messages``, ``response``, ``outputs``,
+                ``usage``, ``cost``, ``timestamp``, and ``model``.
+        """
         if settings.disable_history:
             return
 

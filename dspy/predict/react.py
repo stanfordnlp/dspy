@@ -94,6 +94,31 @@ class ReAct(Module):
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
+        """Execute the ReAct loop: reason, pick a tool, observe, repeat.
+
+        The agent iterates up to ``max_iters`` times.  In each iteration it
+        produces a thought, selects a tool, calls it, and records the
+        observation.  When it selects the ``finish`` tool the loop ends and
+        a ``ChainOfThought`` extractor produces the final output fields.
+
+        Args:
+            **input_args: Values for every input field in the module's
+                signature.  An optional ``max_iters`` key overrides the
+                default set in the constructor.
+
+        Returns:
+            A ``dspy.Prediction`` with the signature's output fields plus
+            a ``trajectory`` dict containing each step's thought, tool
+            name, tool args, and observation.
+
+        Examples:
+            >>> def add(a: int, b: int) -> int:
+            ...     return a + b
+            >>> react = dspy.ReAct("question -> answer", tools=[add])
+            >>> pred = react(question="What is 3 + 4?")
+            >>> pred.answer
+            '7'
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
@@ -119,6 +144,12 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
+        """Async version of ``forward``.
+
+        Identical behaviour to the synchronous loop but awaits both the
+        LM calls and any async-capable tools.  Use this when your tools
+        perform I/O that benefits from ``asyncio``.
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
