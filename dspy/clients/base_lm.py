@@ -68,7 +68,7 @@ class BaseLM:
             "kwargs": kwargs,
             "response": response,
             "outputs": outputs,
-            "usage": dict(response.usage),
+            "usage": dict(response.usage) if getattr(response, "usage", None) is not None else {},
             "cost": getattr(response, "_hidden_params", {}).get("response_cost"),
             "timestamp": datetime.datetime.now().isoformat(),
             "uuid": str(uuid.uuid4()),
@@ -263,7 +263,7 @@ class BaseLM:
                 for content_item in output_item.content:
                     text_outputs.append(content_item.text)
             elif output_item_type == "function_call":
-                tool_calls.append(output_item.model_dump())
+                tool_calls.append(output_item.model_dump(exclude_none=True))
             elif output_item_type == "reasoning":
                 if getattr(output_item, "content", None) and len(output_item.content) > 0:
                     for content_item in output_item.content:
