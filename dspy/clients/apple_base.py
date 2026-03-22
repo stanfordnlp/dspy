@@ -10,6 +10,7 @@ These are private implementation details; only ``AppleFoundationLM`` and
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 from typing import Any, Iterator
@@ -144,6 +145,46 @@ def _flatten_messages(messages: list[dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
+def _run_async(coro: Any) -> Any:
+    """Execute an async coroutine synchronously, regardless of event-loop state.
+
+    Works in both plain Python scripts (no running event loop) and Jupyter
+    notebooks / async frameworks (running event loop).  In the latter case,
+    ``nest_asyncio`` must be installed::
+
+        pip install nest_asyncio
+
+    Args:
+        coro: An awaitable coroutine to execute.
+
+    Returns:
+        The return value of the coroutine.
+
+    Raises:
+        RuntimeError: If called from within a running event loop and
+            ``nest_asyncio`` is not installed.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        try:
+            import nest_asyncio
+
+            nest_asyncio.apply(loop)
+        except ImportError:
+            raise RuntimeError(
+                "AppleFoundationLM.forward() was called from within a running event loop "
+                "(e.g. a Jupyter notebook). Install nest_asyncio to enable this:\n"
+                "    pip install nest_asyncio"
+            )
+        return loop.run_until_complete(coro)
+
+    return asyncio.run(coro)
+
+
 # ---------------------------------------------------------------------------
 # Shared base class
 # ---------------------------------------------------------------------------
@@ -157,6 +198,28 @@ class _AppleBaseLM(BaseLM):
     :class:`~dspy.clients.apple_local.AppleLocalLM`.  Not intended for direct
     instantiation — use one of the concrete subclasses instead.
     """
+
+    @staticmethod
+    def _raise_for_guardrail(exc: Exception) -> None:
+        """Re-raise ``exc`` as a descriptive ``RuntimeError`` if it is a guardrail violation.
+
+        Apple's SDK raises ``GuardrailViolationError`` when the on-device content
+        filter rejects a prompt.  This helper surfaces that as a plain
+        ``RuntimeError`` with actionable guidance and leaves all other exceptions
+        untouched so they propagate normally.
+
+        Args:
+            exc: The exception caught from an SDK ``respond()`` call.
+
+        Raises:
+            RuntimeError: If ``exc`` is a guardrail violation.
+        """
+        if "GuardrailViolation" in type(exc).__name__:
+            raise RuntimeError(
+                "Apple Foundation Model guardrail violation: the prompt was rejected "
+                "by Apple's on-device content filter. Try rephrasing your input.\n"
+                f"SDK error: {exc}"
+            ) from exc
 
     def _build_response(self, text: str, usage: _FMUsage | None = None) -> _FMResponse:
         """Wrap a raw text string in an OpenAI-compatible ``_FMResponse``.

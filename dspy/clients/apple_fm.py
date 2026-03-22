@@ -13,14 +13,21 @@ Usage::
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import json
 import logging
 import platform
 from typing import Any, Literal, get_args, get_origin
 
-from dspy.clients.apple_base import _AppleBaseLM, _FMChoice, _FMMessage, _FMResponse, _FMUsage, _flatten_messages
+from dspy.clients.apple_base import (
+    _AppleBaseLM,
+    _flatten_messages,
+    _FMChoice,  # noqa: F401 — re-exported for callers that import from this module
+    _FMMessage,  # noqa: F401
+    _FMResponse,
+    _FMUsage,  # noqa: F401
+    _run_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,46 +103,6 @@ def _pydantic_to_generable(model_cls: type, fm: Any) -> type | None:
     except Exception as exc:
         logger.warning("apple_fm: failed to build @generable class from %r: %s", model_cls, exc)
         return None
-
-
-def _run_async(coro: Any) -> Any:
-    """Execute an async coroutine synchronously, regardless of event-loop state.
-
-    Works in both plain Python scripts (no running event loop) and Jupyter
-    notebooks / async frameworks (running event loop).  In the latter case,
-    ``nest_asyncio`` must be installed::
-
-        pip install nest_asyncio
-
-    Args:
-        coro: An awaitable coroutine to execute.
-
-    Returns:
-        The return value of the coroutine.
-
-    Raises:
-        RuntimeError: If called from within a running event loop and
-            ``nest_asyncio`` is not installed.
-    """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        try:
-            import nest_asyncio
-
-            nest_asyncio.apply(loop)
-        except ImportError:
-            raise RuntimeError(
-                "AppleFoundationLM.forward() was called from within a running event loop "
-                "(e.g. a Jupyter notebook). Install nest_asyncio to enable this:\n"
-                "    pip install nest_asyncio"
-            )
-        return loop.run_until_complete(coro)
-
-    return asyncio.run(coro)
 
 
 # Cache of dynamically generated fm.Tool subclasses, keyed by (tool_name, id(func)).
@@ -476,12 +443,7 @@ class AppleFoundationLM(_AppleBaseLM):
             except Exception as exc:
                 # GuardrailViolationError means the content filter rejected the prompt.
                 # Retrying without the schema constraint won't help — re-raise immediately.
-                if "GuardrailViolation" in type(exc).__name__:
-                    raise RuntimeError(
-                        "Apple Foundation Model guardrail violation: the prompt was rejected "
-                        "by Apple's on-device content filter. Try rephrasing your input.\n"
-                        f"SDK error: {exc}"
-                    ) from exc
+                self._raise_for_guardrail(exc)
                 logger.warning(
                     "apple_fm: native @generable generation failed (%s); "
                     "recreating session and retrying without schema constraint "
@@ -497,12 +459,7 @@ class AppleFoundationLM(_AppleBaseLM):
             try:
                 text = await session.respond(prompt=flat_prompt, **respond_kwargs)
             except Exception as exc:
-                if "GuardrailViolation" in type(exc).__name__:
-                    raise RuntimeError(
-                        "Apple Foundation Model guardrail violation: the prompt was rejected "
-                        "by Apple's on-device content filter. Try rephrasing your input.\n"
-                        f"SDK error: {exc}"
-                    ) from exc
+                self._raise_for_guardrail(exc)
                 raise
 
         # Prompt ARC to release underlying OS objects before returning.
