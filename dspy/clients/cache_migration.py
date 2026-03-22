@@ -19,25 +19,28 @@ _DC_MODE_TEXT = 3
 _DC_MODE_PICKLE = 4
 
 
+MARKER_FILE = ".dspy_cache_orjson"
+
+
 def has_legacy_diskcache(directory: str) -> bool:
     """Check if directory contains an old pickle-based diskcache FanoutCache.
 
-    Distinguishes legacy (pickle, least-recently-stored) from the current
-    DSPyDisk-based cache (orjson, least-recently-used) by inspecting the
-    eviction policy stored in shard 000's Settings table.
+    Distinguishes legacy (pickle) from the current DSPyDisk-based cache (orjson)
+    by checking for a marker file written on first creation of the new cache.
+    A legacy cache has shard DB files (e.g. 000/cache.db) but no marker file.
     """
+    if os.path.isfile(os.path.join(directory, MARKER_FILE)):
+        return False
     shard_db = os.path.join(directory, "000", "cache.db")
-    if not os.path.isfile(shard_db):
-        return False
-    try:
-        conn = sqlite3.connect(shard_db, timeout=5)
-        row = conn.execute(
-            "SELECT value FROM Settings WHERE key = 'eviction_policy'"
-        ).fetchone()
-        conn.close()
-        return row is not None and row[0] != "least-recently-used"
-    except sqlite3.OperationalError:
-        return False
+    return os.path.isfile(shard_db)
+
+
+def write_marker(directory: str) -> None:
+    """Write the orjson cache marker file to distinguish from legacy pickle caches."""
+    marker_path = os.path.join(directory, MARKER_FILE)
+    if not os.path.isfile(marker_path):
+        with open(marker_path, "w") as f:
+            f.write("")
 
 
 def _deserialize_legacy_entry(mode: int, value_blob: bytes | None, shard_dir: str, filename: str | None) -> Any:

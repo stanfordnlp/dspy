@@ -14,7 +14,7 @@ import orjson
 import pydantic
 from cachetools import LRUCache
 
-from dspy.clients.cache_migration import has_legacy_diskcache
+from dspy.clients.cache_migration import has_legacy_diskcache, write_marker
 from dspy.clients.disk import DSPyDisk
 
 logger = logging.getLogger(__name__)
@@ -86,10 +86,11 @@ class Cache:
                 shards=16,
                 disk=DSPyDisk,
                 size_limit=effective_limit,
-                eviction_policy="least-recently-used",
+                eviction_policy="least-recently-stored",
                 timeout=60,
             )
             self._run_pending_migration(disk_cache_dir)
+            write_marker(disk_cache_dir)
         else:
             self.disk_cache = {}
 
