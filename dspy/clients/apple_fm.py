@@ -18,136 +18,11 @@ import dataclasses
 import json
 import logging
 import platform
-from typing import Any, Iterator, Literal, get_args, get_origin
+from typing import Any, Literal, get_args, get_origin
 
-from dspy.clients.base_lm import BaseLM
+from dspy.clients.apple_base import _AppleBaseLM, _FMChoice, _FMMessage, _FMResponse, _FMUsage, _flatten_messages
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Synthetic OpenAI-compatible response types
-# ---------------------------------------------------------------------------
-
-
-@dataclasses.dataclass
-class _FMMessage:
-    """A single message in a completion response, mirroring OpenAI's format.
-
-    Attributes:
-        content: The text content of the message.
-        tool_calls: Optional list of tool-call objects returned by the model.
-    """
-
-    content: str
-    tool_calls: list[Any] | None = None
-
-
-@dataclasses.dataclass
-class _FMChoice:
-    """One completion choice, mirroring OpenAI's ``Choice`` object.
-
-    Attributes:
-        message: The assistant message produced for this choice.
-    """
-
-    message: _FMMessage
-
-
-@dataclasses.dataclass
-class _FMUsage:
-    """Token-usage statistics for a completion, mirroring OpenAI's ``Usage`` object.
-
-    Implements the mapping protocol (``__iter__``) so that ``dict(usage)``
-    works as expected by ``BaseLM`` history tracking.
-
-    Attributes:
-        prompt_tokens: Number of tokens in the prompt.
-        completion_tokens: Number of tokens in the generated completion.
-        total_tokens: Sum of prompt and completion tokens.
-    """
-
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-
-    def __iter__(self) -> Iterator[tuple[str, int]]:
-        """Yield (key, value) pairs so that ``dict(usage)`` works as expected by BaseLM.
-
-        Yields:
-            Two-tuples of field name and integer value for each token count.
-        """
-        yield "prompt_tokens", self.prompt_tokens
-        yield "completion_tokens", self.completion_tokens
-        yield "total_tokens", self.total_tokens
-
-
-@dataclasses.dataclass
-class _FMResponse:
-    """A completion response object compatible with ``BaseLM._process_completion``.
-
-    Mirrors the subset of OpenAI's ``ChatCompletion`` that DSPy accesses.
-
-    Attributes:
-        choices: List of completion choices (always length 1 for Apple adapters).
-        usage: Token-usage breakdown for the request.
-        model: Model identifier string, echoed from the request.
-        _hidden_params: DSPy internal metadata dict.  ``response_cost`` is set
-            to ``0.0`` because on-device inference has no monetary cost.
-    """
-
-    choices: list[_FMChoice]
-    usage: _FMUsage
-    model: str
-    # BaseLM reads getattr(response, "_hidden_params", {}).get("response_cost").
-    # On-device inference has no monetary cost; declaring the field explicitly
-    # satisfies the interface without relying on the getattr fallback.
-    _hidden_params: dict[str, Any] = dataclasses.field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _flatten_messages(messages: list[dict[str, Any]]) -> str:
-    """Flatten a list of role/content message dicts into a single prompt string.
-
-    Apple's ``LanguageModelSession.respond()`` takes a plain string rather than
-    a structured message list.  System instructions are included as plain context
-    at the top — bracket prefixes such as ``[System]:`` trigger Apple's on-device
-    content guardrails and must be avoided.
-
-    Args:
-        messages: List of ``{"role": ..., "content": ...}`` dicts following the
-            OpenAI chat format.  Multi-modal ``content`` lists are supported;
-            only text blocks are extracted.
-
-    Returns:
-        A single string with all non-empty message contents joined by ``"\\n\\n"``.
-    """
-    parts: list[str] = []
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if isinstance(content, list):
-            # Multi-modal content blocks — extract text parts only.
-            content = " ".join(
-                block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text"
-            )
-        if not content:
-            continue
-        if role == "system":
-            # No bracket prefix — "[System]:" triggers Apple's on-device content
-            # guardrails (pattern-matched as a jailbreak attempt).  System content
-            # is included as plain context at the top of the prompt, which is
-            # semantically correct for a flat string.
-            parts.append(content)
-        elif role == "assistant":
-            parts.append(f"Assistant: {content}")
-        else:
-            parts.append(content)
-    return "\n\n".join(parts)
 
 
 def _pydantic_to_generable(model_cls: type, fm: Any) -> type | None:
@@ -312,7 +187,7 @@ def _dspy_tool_to_apple_tool(dspy_tool: Any, fm: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-class AppleFoundationLM(BaseLM):
+class AppleFoundationLM(_AppleBaseLM):
     """DSPy language model adapter for Apple's on-device Foundation Models.
 
     Wraps ``apple_fm_sdk.SystemLanguageModel`` + ``LanguageModelSession`` in a
@@ -430,23 +305,6 @@ class AppleFoundationLM(BaseLM):
         except Exception as exc:
             logger.debug("apple_fm: could not create GenerationOptions(%s): %s", opts, exc)
             return None
-
-    def _build_response(self, text: str) -> _FMResponse:
-        """Wrap a raw text string in an OpenAI-compatible ``_FMResponse``.
-
-        Args:
-            text: The model's generated text.
-
-        Returns:
-            An ``_FMResponse`` with a single choice, zeroed usage counters
-            (Apple's SDK does not expose token counts), and ``response_cost=0.0``.
-        """
-        return _FMResponse(
-            choices=[_FMChoice(message=_FMMessage(content=text))],
-            usage=_FMUsage(),
-            model=self.model,
-            _hidden_params={"response_cost": 0.0},
-        )
 
     # ------------------------------------------------------------------
     # BaseLM interface

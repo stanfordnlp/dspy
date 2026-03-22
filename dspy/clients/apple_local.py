@@ -43,21 +43,20 @@ Requirements (MLX backend):
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import platform
-from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
-from dspy.clients.apple_fm import _FMChoice, _FMMessage, _FMResponse, _FMUsage
-from dspy.clients.base_lm import BaseLM
+from dspy.clients.apple_base import _AppleBaseLM, _FMChoice, _FMMessage, _FMResponse, _FMUsage, _flatten_messages
 
 logger = logging.getLogger(__name__)
 
 _SUPPORTED_BACKENDS = ("mlx", "coreml")
 
 
-@dataclass
+@dataclasses.dataclass
 class _LocalStreamChunk:
     """A single token chunk emitted during AppleLocalLM streaming.
 
@@ -108,8 +107,6 @@ def _apply_chat_template(tokenizer: Any, messages: list[dict[str, Any]]) -> str:
             logger.debug("apply_chat_template failed (%s); falling back to concat", exc)
 
     # Fallback: reuse the same simple flattener as AppleFoundationLM.
-    from dspy.clients.apple_fm import _flatten_messages
-
     return _flatten_messages(messages)
 
 
@@ -148,7 +145,7 @@ def _response_format_to_schema(response_format: Any) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 
-class AppleLocalLM(BaseLM):
+class AppleLocalLM(_AppleBaseLM):
     """DSPy language model adapter for locally-managed Apple Silicon models.
 
     Wraps ``mlx-lm`` (and in future ``coremltools``) inside a ``dspy.BaseLM``
@@ -403,24 +400,6 @@ class AppleLocalLM(BaseLM):
             **generate_kwargs,
         )
         return text, flat_prompt
-
-    def _build_response(self, text: str, usage: _FMUsage | None = None) -> _FMResponse:
-        """Wrap a raw text string in an OpenAI-compatible ``_FMResponse``.
-
-        Args:
-            text: The model's generated text.
-            usage: Pre-computed token-usage statistics.  Defaults to zeroed
-                counters if not provided.
-
-        Returns:
-            An ``_FMResponse`` with a single choice and ``response_cost=0.0``.
-        """
-        return _FMResponse(
-            choices=[_FMChoice(message=_FMMessage(content=text))],
-            usage=usage or _FMUsage(),
-            model=self.model,
-            _hidden_params={"response_cost": 0.0},
-        )
 
     # ------------------------------------------------------------------
     # BaseLM interface
