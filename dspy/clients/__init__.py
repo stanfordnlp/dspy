@@ -34,7 +34,7 @@ def configure_cache(
                             bounds, set this parameter to `math.inf` or a similar value.
     """
 
-    dspy_cache = Cache(
+    DSPY_CACHE = Cache(
         enable_disk_cache,
         enable_memory_cache,
         disk_cache_dir,
@@ -45,7 +45,7 @@ def configure_cache(
     import dspy
 
     # Update the reference to point to the new cache
-    dspy.cache = dspy_cache
+    dspy.cache = DSPY_CACHE
 
 
 litellm.telemetry = False
