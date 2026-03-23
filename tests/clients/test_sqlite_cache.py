@@ -16,7 +16,7 @@ import pytest
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.cache import Cache, request_cache
-from dspy.clients.cache_migration import has_legacy_diskcache, migrate_diskcache, write_marker
+from dspy.clients.cache_migration import migrate_diskcache
 from dspy.clients.disk import DSPyDisk, _decode_value, _encode_value
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -454,19 +454,6 @@ def _make_legacy_model_response():
 
 
 class TestMigration:
-    def test_has_legacy_diskcache_detection(self, tmp_path):
-        assert not has_legacy_diskcache(str(tmp_path))
-        _create_diskcache_shard(str(tmp_path / "000"), [("k", "v", time.time())])
-        assert has_legacy_diskcache(str(tmp_path))
-
-    def test_new_cache_not_detected_as_legacy(self, tmp_path):
-        """A FanoutCache created with DSPyDisk + marker should NOT be detected as legacy."""
-        cache = _make_fanout_cache(str(tmp_path))
-        cache["test"] = "value"
-        cache.close()
-        write_marker(str(tmp_path))
-        assert not has_legacy_diskcache(str(tmp_path))
-
     def test_migrate_basic_entries(self, tmp_path):
         _create_diskcache_shard(
             str(tmp_path / "000"),

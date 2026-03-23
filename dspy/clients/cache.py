@@ -14,7 +14,7 @@ import orjson
 import pydantic
 from cachetools import LRUCache
 
-from dspy.clients.cache_migration import has_legacy_diskcache, write_marker
+from dspy.clients.cache_migration import read_legacy_entries
 from dspy.clients.disk import DSPyDisk
 
 logger = logging.getLogger(__name__)
@@ -75,9 +75,12 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            # Check for legacy cache BEFORE creating FanoutCache, since FanoutCache
-            # will overwrite the shard DB files in the same directory.
-            self._pending_migration = self._check_legacy_cache(disk_cache_dir)
+            # When DSPY_MIGRATE_CACHE=1, read legacy pickle entries BEFORE creating
+            # FanoutCache (which overwrites the shard DB files in the same directory).
+            pending_entries = None
+            if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
+                pending_entries = read_legacy_entries(disk_cache_dir)
+
             # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
             # as a practical "no limit" when the caller passes None.
             effective_limit = disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40
@@ -89,40 +92,16 @@ class Cache:
                 eviction_policy="least-recently-stored",
                 timeout=60,
             )
-            self._run_pending_migration(disk_cache_dir)
-            write_marker(disk_cache_dir)
+
+            if pending_entries and len(self.disk_cache) == 0:
+                self._migrate_entries(pending_entries, disk_cache_dir)
         else:
             self.disk_cache = {}
 
         self._lock = threading.RLock()
 
-    def _check_legacy_cache(self, disk_cache_dir: str) -> list | None:
-        """Read legacy diskcache entries before FanoutCache overwrites the shard DBs.
-
-        Returns the list of (key, deserialized_value) pairs to migrate, or None.
-        """
-        if not has_legacy_diskcache(disk_cache_dir):
-            return None
-        if os.environ.get("DSPY_MIGRATE_CACHE") != "1":
-            logger.warning(
-                "Legacy diskcache format detected in %s but migration is disabled. "
-                "Set DSPY_MIGRATE_CACHE=1 to migrate. The old cache uses pickle deserialization "
-                "which is a security risk (CVE-2025-69872).",
-                disk_cache_dir,
-            )
-            return None
-        # Read all legacy entries now, before FanoutCache overwrites the shard DBs
-        from dspy.clients.cache_migration import read_legacy_entries
-        return read_legacy_entries(disk_cache_dir)
-
-    def _run_pending_migration(self, disk_cache_dir: str) -> None:
+    def _migrate_entries(self, entries: list, disk_cache_dir: str) -> None:
         """Write pre-read legacy entries into the new FanoutCache."""
-        entries = self._pending_migration
-        self._pending_migration = None
-        if entries is None:
-            return
-        if len(self.disk_cache) > 0:
-            return
         logger.info("Migrating %d legacy diskcache entries in %s to orjson format...", len(entries), disk_cache_dir)
         migrated = 0
         errors = 0
