@@ -29,7 +29,7 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
             _ENCODED_MODULE_KEY: type(value).__module__,
             _ENCODED_QUALNAME_KEY: type(value).__qualname__,
-            _ENCODED_DATA_KEY: {k: _encode_value(v) for k, v in _pydantic_to_dict(value).items()},
+            _ENCODED_DATA_KEY: _pydantic_to_json(value),
         }
     if isinstance(value, np.ndarray):
         return {
@@ -37,11 +37,6 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_DTYPE_KEY: str(value.dtype),
             _ENCODED_DATA_KEY: value.tolist(),
         }
-    if isinstance(value, tuple):
-        raise TypeError(
-            "SQLite disk cache only supports JSON values, pydantic models, and numpy arrays; "
-            f"got {type(value).__module__}.{type(value).__qualname__}"
-        )
     if isinstance(value, dict):
         return {k: _encode_value(v) for k, v in value.items()}
     if isinstance(value, list):
@@ -49,7 +44,7 @@ def _encode_value(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     raise TypeError(
-        "SQLite disk cache only supports JSON values, pydantic models, and numpy arrays; "
+        "Disk cache only supports JSON values, pydantic models, and numpy arrays; "
         f"got {type(value).__module__}.{type(value).__qualname__}"
     )
 
@@ -59,9 +54,9 @@ def _decode_value(value: Any) -> Any:
         encoded_type = value.get(_ENCODED_TYPE_KEY)
         if encoded_type == _PYDANTIC_TYPE:
             cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
-            return cls.model_validate(_decode_value(value[_ENCODED_DATA_KEY]))
+            return cls.model_validate(value[_ENCODED_DATA_KEY])
         if encoded_type == _NDARRAY_TYPE:
-            return np.asarray(_decode_value(value[_ENCODED_DATA_KEY]), dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
+            return np.asarray(value[_ENCODED_DATA_KEY], dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
         return {k: _decode_value(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_decode_value(item) for item in value]
@@ -76,19 +71,27 @@ def _resolve_class(module_name: str, qualname: str) -> type:
     return obj
 
 
-def _pydantic_to_dict(value: pydantic.BaseModel) -> dict[str, Any]:
-    data = {}
-    for name, field in type(value).model_fields.items():
-        if name not in value.__dict__:
-            continue
-        key = field.serialization_alias or field.alias or name
-        data[key] = value.__dict__[name]
-
-    extra = getattr(value, "__pydantic_extra__", None)
-    if extra:
-        for key, item in extra.items():
-            data.setdefault(key, item)
-    return data
+def _pydantic_to_json(value: Any) -> Any:
+    """Convert a pydantic model to a JSON-serializable dict, recursively flattening
+    nested pydantic models into plain dicts (no type wrappers). model_validate()
+    on the top-level class handles nested reconstruction."""
+    if isinstance(value, pydantic.BaseModel):
+        data = {}
+        for name, field in type(value).model_fields.items():
+            if name not in value.__dict__:
+                continue
+            key = field.serialization_alias or field.alias or name
+            data[key] = _pydantic_to_json(value.__dict__[name])
+        extra = getattr(value, "__pydantic_extra__", None)
+        if extra:
+            for key, item in extra.items():
+                data.setdefault(key, _pydantic_to_json(item))
+        return data
+    if isinstance(value, dict):
+        return {k: _pydantic_to_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_pydantic_to_json(item) for item in value]
+    return value
 
 
 class DSPyDisk(Disk):
