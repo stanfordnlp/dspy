@@ -194,7 +194,7 @@ class GEPA(Teleprompter):
     GEPA can also be used as a batch inference-time search strategy, by passing `valset=trainset, track_stats=True, track_best_outputs=True`, and using the
     `detailed_results` attribute of the optimized program (returned by `compile`) to get the Pareto frontier of the batch. `optimized_program.detailed_results.best_outputs_valset` will contain the best outputs for each task in the batch.
 
-    Example:
+    Examples:
     ```
     gepa = GEPA(metric=metric, track_stats=True)
     batch_of_tasks = [dspy.Example(...) for task in tasks]
@@ -506,9 +506,15 @@ class GEPA(Teleprompter):
                 "No valset provided; Using trainset as valset. This is useful as an inference-time scaling strategy where you want GEPA to find the best solutions for the provided tasks in the trainset, as it makes GEPA overfit prompts to the provided trainset. In order to ensure generalization and perform well on unseen tasks, please provide separate trainset and valset. Provide the smallest valset that is just large enough to match the downstream task distribution, while keeping trainset as large as possible."
             )
         valset = valset or trainset
-        logger.info(
-            f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible."
-        )
+        # 35 matches the default minibatch_size in auto_budget(); when the valset is
+        # at or below this size, suggesting further reduction is unhelpful since GEPA
+        # would already evaluate the full valset per step.
+        if len(valset) > 35:
+            logger.info(
+                f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible."
+            )
+        else:
+            logger.info(f"Using {len(valset)} examples for tracking Pareto scores.")
 
         rng = random.Random(self.seed)
 

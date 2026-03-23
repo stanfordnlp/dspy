@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import pytest
 
 from dspy.adapters.types.tool import Tool
-from dspy.predict.rlm import RLM
+from dspy.predict.rlm import RLM, _strip_code_fences
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -266,6 +266,38 @@ class TestRLMInitialization:
 
         with pytest.raises(RuntimeError, match="LLM call limit exceeded"):
             tools["llm_query"](prompt="one more")
+
+
+class TestRLMCodeFenceParsing:
+    """Tests for robust fenced-code extraction."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            # Standard python fence
+            ("```python\nprint(1)\n```", "print(1)"),
+            ("```py\nx = 1\nprint(x)\n```", "x = 1\nprint(x)"),
+            # Bare fence (no language tag)
+            ("```\nprint('no lang')\n```", "print('no lang')"),
+            # No fences at all
+            ("not fenced code", "not fenced code"),
+            # Text before fence (preamble is skipped)
+            ("I'll inspect first.\n```python\nprint('hello')\n```\nThen I will submit.", "print('hello')"),
+            # Text after closing fence (ignored)
+            ("```python\nprint(1)\n```\nsome trailing text", "print(1)"),
+            # Unclosed fence (just return the body)
+            ("```python\nprint('oops')", "print('oops')"),
+            # Double fences (outer decorative ```)
+            ("```\n```python\nprint(1)\n```\n```", "print(1)"),
+            ("```\n```\nprint(2)\n```\n```", "print(2)"),
+        ],
+    )
+    def test_strip_code_fences(self, raw, expected):
+        assert _strip_code_fences(raw) == expected
+
+    def test_strip_code_fences_rejects_non_python_lang(self):
+        with pytest.raises(SyntaxError, match="json"):
+            _strip_code_fences('```json\n{"a": 1}\n```')
 
 
 class TestRLMFormatting:
@@ -533,6 +565,54 @@ class TestRLMToolExceptions:
 
         result = rlm.forward(query="test")
         assert result.answer == "recovered"
+
+    def test_runtime_error_history_uses_stripped_code(self):
+        """Runtime execution failures should preserve stripped code in history."""
+        mock = MockInterpreter(responses=[
+            CodeInterpreterError("NameError: name 'x' is not defined"),
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Will fail", "code": "```python\nprint(x)\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        first_step = result.trajectory[0]
+        assert first_step["code"] == "print(x)"
+
+    def test_syntax_error_from_execute_is_recoverable(self):
+        """SyntaxError from interpreter.execute should be surfaced as an iteration error."""
+        mock = MockInterpreter(responses=[
+            SyntaxError("invalid syntax"),
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Bad code", "code": "```python\ndef incomplete(\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        assert result.trajectory[0]["output"].startswith("[Error] invalid syntax")
+
+    def test_syntax_error_from_strip_code_fences_is_recoverable(self):
+        """SyntaxError raised by _strip_code_fences (e.g. non-Python fence tag) should be recoverable."""
+        mock = MockInterpreter(responses=[
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Wrong language", "code": "```bash\nls -la\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        assert result.trajectory[0]["output"].startswith("[Error]")
 
 
 class TestRLMDynamicSignature:

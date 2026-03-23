@@ -1,9 +1,10 @@
 import logging
 import random
-from typing import TypeVar, cast
+from typing import Any, Literal, TypeVar, cast, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
+from typeguard import TypeCheckError, check_type
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
@@ -14,11 +15,32 @@ from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.callback import BaseCallback
+from dspy.utils.constants import IS_TYPE_UNDEFINED
 
 logger = logging.getLogger(__name__)
 
 TInput = TypeVar("TInput")
 TOutput = TypeVar("TOutput")
+UNSAFE_LM_STATE_KEYS = {"api_base", "base_url", "model_list"}
+
+
+def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
+    if allow_unsafe_lm_state:
+        return lm_state
+
+    unsafe_keys = sorted(UNSAFE_LM_STATE_KEYS.intersection(lm_state))
+
+    if not unsafe_keys:
+        return lm_state
+
+    sanitized_lm_state = {k: v for k, v in lm_state.items() if k not in UNSAFE_LM_STATE_KEYS}
+    logger.warning(
+        "Ignoring unsafe LM config key(s) during state load: %s. "
+        "Pass allow_unsafe_lm_state=True to preserve these keys for trusted files.",
+        unsafe_keys,
+    )
+    return sanitized_lm_state
+
 
 class Predict(Module[TInput, TOutput], Parameter):
     """Basic DSPy module that maps inputs to outputs using a language model.
@@ -69,11 +91,13 @@ class Predict(Module[TInput, TOutput], Parameter):
         state["lm"] = self.lm.dump_state() if self.lm else None
         return state
 
-    def load_state(self, state: dict) -> "Predict":
+    def load_state(self, state: dict, *, allow_unsafe_lm_state: bool = False) -> "Predict":
         """Load the saved state of a `Predict` object.
 
         Args:
             state: The saved state of a `Predict` object.
+            allow_unsafe_lm_state: If True, preserves `api_base`, `base_url`, and `model_list` from
+                serialized LM state. Enable only when loading trusted files.
 
         Returns:
             Self to allow method chaining.
@@ -85,7 +109,8 @@ class Predict(Module[TInput, TOutput], Parameter):
                 setattr(self, name, value)
 
         self.signature = self.signature.load_state(state["signature"])
-        self.lm = LM(**state["lm"]) if state["lm"] else None
+        sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
+        self.lm = LM(**sanitized_lm_state) if sanitized_lm_state else None
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")
@@ -178,21 +203,23 @@ class Predict(Module[TInput, TOutput], Parameter):
             )
 
         # Validate input field types match signature
-        for field_name, field_info in signature.input_fields.items():
-            if field_name in kwargs:
-                value = kwargs[field_name]
-                expected_type: type = field_info.annotation
+        if settings.warn_on_type_mismatch:
+            for field_name, field_info in signature.input_fields.items():
+                if field_name in kwargs:
+                    value = kwargs[field_name]
+                    expected_type: type = field_info.annotation
 
-                if value is None:
-                    continue
+                    if value is None or field_info.json_schema_extra.get(IS_TYPE_UNDEFINED, False):
+                        continue
 
-                if not _is_value_compatible_with_type(value, expected_type):
-                    logger.warning(
-                        "Input field '%s' has type %s but signature expects %s.",
-                        field_name,
-                        type(value).__name__,
-                        _get_type_name(expected_type),
-                    )
+                    if not _is_value_compatible_with_type(value, expected_type):
+                        logger.warning(
+                            "Type mismatch for field '%s': expected %s based on given Signature, "
+                            "but the provided value is incompatible: %s.",
+                            field_name,
+                            _get_type_name(expected_type),
+                            value,
+                        )
 
         if not all(k in kwargs for k in signature.input_fields):
             present = [k for k in signature.input_fields if k in kwargs]
@@ -257,16 +284,14 @@ class Predict(Module[TInput, TOutput], Parameter):
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
 
-
 def _get_type_name(type_annotation) -> str:
     """Helper method to get the name for a type annotation."""
-    from typing import Literal, get_args, get_origin
 
     origin = get_origin(type_annotation)
     args = get_args(type_annotation)
 
     if origin is None:
-        # Simple types like str, int, etc.
+        # Primitives like str, int, etc.
         if hasattr(type_annotation, "__name__"):
             return type_annotation.__name__
         return str(type_annotation)
@@ -276,53 +301,27 @@ def _get_type_name(type_annotation) -> str:
         literal_values = ", ".join(repr(arg) for arg in args)
         return f"Literal[{literal_values}]"
 
-    # Complex types like list[str], dict[str, int], generics, etc.
+    # Types like list[str], dict[str, int], generics, etc.
     if args:
-        args_str = ", ".join(_get_type_name(arg) for arg in args)
+        # Handle Ellipsis in tuples (e.g., tuple[int, ...])
+        args_str = ", ".join("..." if arg is ... else _get_type_name(arg) for arg in args)
         origin_name = getattr(origin, "__name__", str(origin))
         return f"{origin_name}[{args_str}]"
 
     return getattr(origin, "__name__", str(origin))
 
-
-def _is_value_compatible_with_type(value, expected_type: type) -> bool:
-    """Check if a value is compatible with the expected type annotation."""
-    from typing import Literal, Union, get_args, get_origin
-
-    # Handle None type
-    if expected_type is type(None):
-        return value is None
-
-    origin = get_origin(expected_type)
-    args = get_args(expected_type)
-
-    # Handle Literal types
-    if origin is Literal:
-        return value in args
-
-    # Handle Union types
-    if origin is Union:
-        return any(_is_value_compatible_with_type(value, arg) for arg in args)
-
-    # Handle generic types (list[T], dict[K, V], etc.)
-    if origin is not None:
-        try:
-            return isinstance(value, origin)
-        except TypeError:
-            # Some types don't support isinstance
-            # In these cases, silently catch the exception
-            # and assume compatibility to avoid false warnings
-            return True
-
-    # Handle primitives and custom classes
+def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
+    """Return True if the value matches the expected type hint."""
     try:
-        return isinstance(value, expected_type)
-    except TypeError:
-        # Some types don't support isinstance
-        # In these cases, silently catch the exception
-        # and assume compatibility to avoid false warnings
-        return True
+        # Special handle list[str] because we allow setting input type to str, however, invoking with a list thereof.
+        if expected is str and isinstance(value, list):
+            if all(isinstance(item, str) for item in value):
+                return True
 
+        check_type(value, expected)
+        return True
+    except TypeCheckError:
+        return False
 
 def serialize_object(obj):
     """

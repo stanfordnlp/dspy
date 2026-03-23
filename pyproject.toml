@@ -26,7 +26,6 @@ dependencies = [
     "orjson>=3.9.0",
     "tqdm>=4.66.1",
     "requests>=2.31.0",
-    "optuna>=3.4.0",
     "pydantic>=2.0",
     "litellm>=1.64.0",
     "diskcache>=5.6.0",
@@ -38,7 +37,8 @@ dependencies = [
     "cloudpickle>=3.0.0",
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
-    "gepa[dspy]==0.0.26",
+    "gepa[dspy]==0.0.27",
+    "typeguard>=4.4.3",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +46,7 @@ anthropic = ["anthropic>=0.18.0,<1.0.0"]
 weaviate = ["weaviate-client~=4.5.4"]
 mcp = ["mcp; python_version >= '3.10'"]
 langchain = ["langchain_core"]
+optuna = ["optuna>=3.4.0"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",

@@ -19,7 +19,7 @@ class ProgramOfThought(Module[TInput, TOutput]):
     A DSPy module that runs Python programs to solve a problem.
     This module requires deno to be installed. Please install deno following https://docs.deno.com/runtime/getting_started/installation/
 
-    Example:
+    Examples:
     ```
     import dspy
 
@@ -70,35 +70,25 @@ class ProgramOfThought(Module[TInput, TOutput]):
         fields_for_mode = {
             "generate": {
                 "generated_code": dspy.OutputField(
-                    prefix="Code:",
                     desc="python code that answers the question",
-                    format=str,
                 ),
             },
             "regenerate": {
                 "previous_code": dspy.InputField(
-                    prefix="Previous Code:",
                     desc="previously-generated python code that errored",
-                    format=str,
                 ),
                 "error": dspy.InputField(
-                    prefix="Error:",
                     desc="error message from previously-generated python code",
                 ),
                 "generated_code": dspy.OutputField(
-                    prefix="Code:",
                     desc="python code that answers the question",
-                    format=str,
                 ),
             },
             "answer": {
                 "final_generated_code": dspy.InputField(
-                    prefix="Code:",
                     desc="python code that answers the question",
-                    format=str,
                 ),
                 "code_output": dspy.InputField(
-                    prefix="Code Output:",
                     desc="output of previously-generated python code",
                 ),
             }
@@ -139,7 +129,7 @@ class ProgramOfThought(Module[TInput, TOutput]):
     def _parse_code(self, code_data):
         code = code_data.get("generated_code", "").split("---", 1)[0].split("\n\n\n", 1)[0]
         code_match = re.search(r"```python[ \n](.*?)[ \n]```?", code, re.DOTALL)
-        code_block = (code_match.group(1) if code_match else code).replace("\\n", "\n")
+        code_block = code_match.group(1) if code_match else code
         if not code_block:
             return code, "Error: Empty code after parsing."
         if "\n" not in code_block and code_block.count("=") > 1:
@@ -148,17 +138,6 @@ class ProgramOfThought(Module[TInput, TOutput]):
         last_line_match = re.match(r"^(\w+)\s*=", lines[-1].strip())
         if last_line_match and len(lines) > 1:
             code_block += "\n" + last_line_match.group(1)
-        else:
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)(?=[a-zA-Z_]\w* *=)",
-                r"\1\n",
-                code_block,
-            )
-            code_block = re.sub(
-                r"([a-zA-Z_]\w* *=.*?)([a-zA-Z_]\w*)$",
-                r"\1\n\2",
-                code_block,
-            )
         return code_block, None
 
     def _execute_code(self, code):

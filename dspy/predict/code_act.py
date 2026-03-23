@@ -28,7 +28,7 @@ class CodeAct(ReAct, ProgramOfThought):
             tools (list[Callable]): The tool callables to be used. CodeAct only accepts functions and not callable objects.
             max_iters (int): The maximum number of iterations to generate the answer.
             interpreter: PythonInterpreter instance to use. If None, a new one is instantiated.
-        Example:
+        Examples:
             ```python
             from dspy.predict import CodeAct
             def factorial(n):

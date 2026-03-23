@@ -23,12 +23,13 @@ import sys
 import types
 import typing
 from copy import deepcopy
-from typing import Any, Generic, TypeVar, overload
+from typing import Any, Generic, Iterator, TypeVar, overload
 
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 from dspy.signatures.field import InputField, OutputField
+from dspy.utils.constants import IS_TYPE_UNDEFINED
 
 
 def _default_instructions(cls) -> str:
@@ -177,6 +178,7 @@ class SignatureMeta(type(BaseModel)):
                 continue  # Don't add types to non-field attributes
             if not name.startswith("__") and name not in raw_annotations:
                 raw_annotations[name] = str
+                field.json_schema_extra[IS_TYPE_UNDEFINED] = True  # Mark that the type was originally undefined in the signature
         # Create ordered annotations dictionary that preserves field order
         ordered_annotations = {name: raw_annotations[name] for name in field_order if name in raw_annotations}
         # Add any remaining annotations that weren't in field_order
@@ -273,7 +275,6 @@ class SignatureMeta(type(BaseModel)):
 TInput = TypeVar("TInput", bound=Any)
 TOutput = TypeVar("TOutput", bound=Any)
 
-
 class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
     """"""
 
@@ -305,7 +306,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
             A new Signature class whose fields match `cls.fields`
             and whose instructions equal `instructions`.
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -401,7 +402,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         Returns:
             A new `Signature` class with the field inserted first.
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -428,7 +429,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         Returns:
             A new Signature class with the field appended.
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -454,7 +455,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         Returns:
             A new Signature class with the field removed (or unchanged if the field was absent).
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -496,7 +497,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         Raises:
             ValueError: If `index` falls outside the valid range for the chosen section.
 
-        Example:
+        Examples:
             ```python
             import dspy
 
@@ -671,33 +672,45 @@ def make_signature(
     )
 
 
-def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Field]]:
+def _parse_signature(signature: str, names=None) -> dict[str, tuple[type, Any]]:
     if signature.count("->") != 1:
         raise ValueError(f"Invalid signature format: '{signature}', must contain exactly one '->'.")
 
     inputs_str, outputs_str = signature.split("->")
 
+    input_fields = list(_parse_field_string(inputs_str, names))
+    output_fields = list(_parse_field_string(outputs_str, names))
+    duplicate_field_names = sorted({field_name for field_name, *_ in input_fields}.intersection(
+        field_name for field_name, *_ in output_fields
+    ))
+    if duplicate_field_names:
+        raise ValueError(
+            "Input and output fields must have distinct names, but found duplicates: "
+            f"'{', '.join(duplicate_field_names)}'."
+        )
+
     fields = {}
-    for field_name, field_type in _parse_field_string(inputs_str, names):
-        fields[field_name] = (field_type, InputField())
-    for field_name, field_type in _parse_field_string(outputs_str, names):
+    for field_name, field_type, is_type_undefined in input_fields:
+        fields[field_name] = (field_type, InputField(IS_TYPE_UNDEFINED= is_type_undefined))
+    for field_name, field_type, _ in output_fields:
         fields[field_name] = (field_type, OutputField())
 
     return fields
 
 
-def _parse_field_string(field_string: str, names=None) -> dict[str, str]:
+def _parse_field_string(field_string: str, names=None) -> Iterator[tuple[str, type, bool]]:
     """Extract the field name and type from field string in the string-based Signature.
 
     It takes a string like "x: int, y: str" and returns a dictionary mapping field names to their types.
-    For example, "x: int, y: str" -> [("x", int), ("y", str)]. This function utitlizes the Python AST to parse the
+    For example, "x: int, y: str" -> [("x", int), ("y", str)]. This function utilizes the Python AST to parse the
     fields and types.
     """
 
     args = ast.parse(f"def f({field_string}): pass").body[0].args.args
-    field_names = [arg.arg for arg in args]
-    types = [str if arg.annotation is None else _parse_type_node(arg.annotation, names) for arg in args]
-    return zip(field_names, types, strict=False)
+    field_names: list[str] = [arg.arg for arg in args]
+    types_list: list[type] = [str if arg.annotation is None else _parse_type_node(arg.annotation, names) for arg in args]
+    is_type_undefined: list[bool] = [True if arg.annotation is None else False for arg in args]
+    return zip(field_names, types_list, is_type_undefined, strict=False)
 
 
 def _parse_type_node(node, names=None) -> Any:

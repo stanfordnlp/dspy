@@ -745,13 +745,13 @@ dependencies = [
     { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "openai", version = "1.75.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
     { name = "openai", version = "1.88.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
-    { name = "optuna" },
     { name = "orjson" },
     { name = "pydantic" },
     { name = "regex" },
     { name = "requests" },
     { name = "tenacity" },
     { name = "tqdm" },
+    { name = "typeguard" },
     { name = "xxhash" },
 ]
 
@@ -778,6 +778,9 @@ mcp = [
     { name = "mcp", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
     { name = "mcp", version = "1.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
+optuna = [
+    { name = "optuna" },
+]
 test-extras = [
     { name = "datasets" },
     { name = "langchain-core" },
@@ -801,7 +804,7 @@ requires-dist = [
     { name = "datamodel-code-generator", marker = "extra == 'dev'", specifier = ">=0.26.3" },
     { name = "datasets", marker = "extra == 'test-extras'", specifier = ">=2.14.6" },
     { name = "diskcache", specifier = ">=5.6.0" },
-    { name = "gepa", extras = ["dspy"], specifier = "==0.0.26" },
+    { name = "gepa", extras = ["dspy"], specifier = "==0.0.27" },
     { name = "json-repair", specifier = ">=0.54.2" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
     { name = "langchain-core", marker = "extra == 'test-extras'" },
@@ -812,7 +815,7 @@ requires-dist = [
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'test-extras'" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "openai", specifier = ">=0.28.1" },
-    { name = "optuna", specifier = ">=3.4.0" },
+    { name = "optuna", marker = "extra == 'optuna'", specifier = ">=3.4.0" },
     { name = "optuna", marker = "extra == 'test-extras'", specifier = ">=3.4.0" },
     { name = "orjson", specifier = ">=3.9.0" },
     { name = "pandas", marker = "extra == 'test-extras'", specifier = ">=2.1.1" },
@@ -827,10 +830,11 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "tenacity", specifier = ">=8.2.3" },
     { name = "tqdm", specifier = ">=4.66.1" },
+    { name = "typeguard", specifier = ">=4.4.3" },
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = "~=4.5.4" },
     { name = "xxhash", specifier = ">=3.5.0" },
 ]
-provides-extras = ["anthropic", "weaviate", "mcp", "langchain", "dev", "test-extras"]
+provides-extras = ["anthropic", "weaviate", "mcp", "langchain", "optuna", "dev", "test-extras"]
 
 [[package]]
 name = "email-validator"
@@ -1014,11 +1018,11 @@ wheels = [
 
 [[package]]
 name = "gepa"
-version = "0.0.26"
+version = "0.0.27"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ef/98/b8f1ccc8cc2a319f21433df45bcec8a8f7903ee08aacd0acfdc475f47c05/gepa-0.0.26.tar.gz", hash = "sha256:0119ca8022e93b6236bc154a57bb910bdb117485dc067d77777933dd3e9e9ad8", size = 141776, upload-time = "2026-01-24T18:11:18.362Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/99/6840f84498f2dcbfd27e8a15eeb4e637e84e9dbbd6331977b71f6ffad9c7/gepa-0.0.27.tar.gz", hash = "sha256:02ecb19e4aa6a1f5bb2994cd54b2057f25cd5e8cd662fee514303b2a8ba0a738", size = 155106, upload-time = "2026-01-28T00:33:51.72Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/6e/f1141b76398026ef77f0d52a17b37d26ceb7cd320e0ad3a72c59fe00b983/gepa-0.0.26-py3-none-any.whl", hash = "sha256:331e40d8693a4192de2eb3b2b4df10d410ead49173f748d50c32a035cf746e63", size = 139666, upload-time = "2026-01-24T18:11:16.836Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/bd/f9e83519099a9fd5d090520ab0c51a6278e473b914a9b32d1e812662dd3b/gepa-0.0.27-py3-none-any.whl", hash = "sha256:592beb084fd638d525edae84ca75ad8e9e9c3758e5498b933c17153addf5dd2d", size = 146454, upload-time = "2026-01-28T00:33:50.262Z" },
 ]
 
 [[package]]
@@ -1609,6 +1613,9 @@ name = "litellm-proxy-extras"
 version = "0.1.15"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d3/22/2d15f5c0198dee49f8296369486fa6319edca0c3af52e80ae2cdc1118b5a/litellm_proxy_extras-0.1.15.tar.gz", hash = "sha256:0e9b9074023eea8954183746f196d4a62f5d9fda2838fac3cb94d6ee1899a308", size = 11888, upload-time = "2025-05-03T16:29:02.297Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/eb/d85f375f12fa7cba9415d617d289ae969c461df918ce2c63fb22df5c77ef/litellm_proxy_extras-0.1.15-py3-none-any.whl", hash = "sha256:f0e96a2ff89e8ae67ec695db073958722a85dbea3f99a660ed16c47d585ae46e", size = 18941, upload-time = "2026-02-21T20:02:55.509Z" },
+]
 
 [[package]]
 name = "mako"

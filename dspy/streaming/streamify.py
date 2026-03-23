@@ -58,7 +58,7 @@ def streamify(
         A function that takes the same arguments as the original program, but returns an async
             generator that yields the program's outputs incrementally.
 
-    Example:
+    Examples:
 
     ```python
     import asyncio

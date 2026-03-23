@@ -111,7 +111,7 @@ class LM(BaseLM):
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
-        if not self._warned_zero_temp_rollout and rollout_id is not None and (temperature is None or temperature == 0):
+        if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:
             warnings.warn(
                 "rollout_id has no effect when temperature=0; set temperature>0 to bypass the cache.",
                 stacklevel=3,
