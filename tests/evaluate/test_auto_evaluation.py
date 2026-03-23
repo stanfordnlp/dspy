@@ -1,9 +1,9 @@
+import pytest
+
 import dspy
 from dspy.evaluate.auto_evaluation import (
     CompleteAndGrounded,
     SemanticF1,
-    _count_mentioned_numbers,
-    _count_numbered_items,
 )
 from dspy.primitives.prediction import Prediction
 from dspy.utils.dummies import DummyLM
@@ -199,22 +199,6 @@ def test_semantic_f1_prediction_can_be_compared():
 # --- Tests for computed SemanticF1 mode ---
 
 
-def test_count_numbered_items():
-    assert _count_numbered_items("1. first idea\n2. second idea\n3. third idea") == 3
-    assert _count_numbered_items("1) first\n2) second") == 2
-    assert _count_numbered_items("no numbered items here") == 0
-    assert _count_numbered_items("") == 0
-
-
-def test_count_mentioned_numbers():
-    assert _count_mentioned_numbers("1, 3, 4") == 3
-    assert _count_mentioned_numbers("1, 2") == 2
-    assert _count_mentioned_numbers("None") == 0
-    assert _count_mentioned_numbers("") == 0
-    # Duplicate numbers should be counted once
-    assert _count_mentioned_numbers("1, 1, 2") == 2
-
-
 def test_semantic_f1_computed_mode():
     # 3 ground truth ideas, 2 covered -> recall = 2/3
     # 2 system response ideas, 2 grounded -> precision = 2/2 = 1.0
@@ -223,10 +207,10 @@ def test_semantic_f1_computed_mode():
             [
                 {
                     "reasoning": "Enumerating and matching ideas",
-                    "ground_truth_key_ideas": "1. Earth orbits the Sun\n2. Earth has one moon\n3. Earth has water",
-                    "system_response_key_ideas": "1. Earth orbits the Sun\n2. Earth has oceans",
-                    "ground_truth_ideas_covered_by_system": "1, 3",
-                    "system_response_ideas_grounded_in_truth": "1, 2",
+                    "ground_truth_key_ideas": ["Earth orbits the Sun", "Earth has one moon", "Earth has water"],
+                    "system_response_key_ideas": ["Earth orbits the Sun", "Earth has oceans"],
+                    "ground_truth_ideas_covered_by_system": [0, 2],
+                    "system_response_ideas_grounded_in_truth": [0, 1],
                 }
             ]
         )
@@ -235,7 +219,7 @@ def test_semantic_f1_computed_mode():
     example = dspy.Example(question="Tell me about Earth", response="ground truth")
     pred = dspy.Prediction(response="system response")
 
-    metric = SemanticF1(decompositional="computed")
+    metric = SemanticF1(computed=True)
     result = metric(example, pred)
 
     assert isinstance(result, Prediction)
@@ -252,10 +236,10 @@ def test_semantic_f1_computed_mode_with_trace():
             [
                 {
                     "reasoning": "Enumerating and matching ideas",
-                    "ground_truth_key_ideas": "1. idea A\n2. idea B",
-                    "system_response_key_ideas": "1. idea A\n2. idea B",
-                    "ground_truth_ideas_covered_by_system": "1, 2",
-                    "system_response_ideas_grounded_in_truth": "1, 2",
+                    "ground_truth_key_ideas": ["idea A", "idea B"],
+                    "system_response_key_ideas": ["idea A", "idea B"],
+                    "ground_truth_ideas_covered_by_system": [0, 1],
+                    "system_response_ideas_grounded_in_truth": [0, 1],
                 }
             ]
         )
@@ -264,7 +248,7 @@ def test_semantic_f1_computed_mode_with_trace():
     example = dspy.Example(question="test", response="answer")
     pred = dspy.Prediction(response="response")
 
-    metric = SemanticF1(threshold=0.5, decompositional="computed")
+    metric = SemanticF1(threshold=0.5, computed=True)
     result = metric(example, pred, trace=True)
 
     assert isinstance(result, Prediction)
@@ -278,10 +262,10 @@ def test_semantic_f1_computed_mode_no_matches():
             [
                 {
                     "reasoning": "No overlap found",
-                    "ground_truth_key_ideas": "1. idea A\n2. idea B",
-                    "system_response_key_ideas": "1. idea C",
-                    "ground_truth_ideas_covered_by_system": "None",
-                    "system_response_ideas_grounded_in_truth": "None",
+                    "ground_truth_key_ideas": ["idea A", "idea B"],
+                    "system_response_key_ideas": ["idea C"],
+                    "ground_truth_ideas_covered_by_system": [],
+                    "system_response_ideas_grounded_in_truth": [],
                 }
             ]
         )
@@ -290,11 +274,46 @@ def test_semantic_f1_computed_mode_no_matches():
     example = dspy.Example(question="test", response="answer")
     pred = dspy.Prediction(response="response")
 
-    metric = SemanticF1(decompositional="computed")
+    metric = SemanticF1(computed=True)
     result = metric(example, pred)
 
     assert isinstance(result, Prediction)
     assert result.score == 0.0
+
+
+def test_semantic_f1_computed_mode_duplicate_indices():
+    # LLM returns duplicate indices — should be deduplicated
+    dspy.configure(
+        lm=DummyLM(
+            [
+                {
+                    "reasoning": "Matching ideas",
+                    "ground_truth_key_ideas": ["idea A", "idea B", "idea C"],
+                    "system_response_key_ideas": ["idea A", "idea B"],
+                    "ground_truth_ideas_covered_by_system": [0, 0, 1],  # duplicate 0
+                    "system_response_ideas_grounded_in_truth": [0, 1, 1],  # duplicate 1
+                }
+            ]
+        )
+    )
+
+    example = dspy.Example(question="test", response="answer")
+    pred = dspy.Prediction(response="response")
+
+    metric = SemanticF1(computed=True)
+    result = metric(example, pred)
+
+    # After dedup: gt_covered = {0, 1} = 2, sr_grounded = {0, 1} = 2
+    # recall = 2/3, precision = 2/2 = 1.0
+    expected_recall = 2 / 3
+    expected_precision = 1.0
+    expected_f1 = 2 * (expected_precision * expected_recall) / (expected_precision + expected_recall)
+    assert abs(result.score - expected_f1) < 0.001
+
+
+def test_semantic_f1_computed_and_decompositional_exclusive():
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        SemanticF1(decompositional=True, computed=True)
 
 
 def test_semantic_f1_computed_mode_backward_compat():

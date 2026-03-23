@@ -1,5 +1,3 @@
-import re
-
 from dspy.predict.chain_of_thought import ChainOfThought
 from dspy.primitives import Module
 from dspy.primitives.prediction import Prediction
@@ -37,37 +35,22 @@ class DecompositionalSemanticRecallPrecision(Signature):
 
 class ComputedSemanticRecallPrecision(Signature):
     """
-    Compare a system's response to the ground truth by enumerating key ideas and identifying which are covered.
-    List each key idea on its own numbered line (1. idea, 2. idea, ...).
-    For covered ideas, list ONLY the numbers of ideas that are present in the other response, e.g. "1, 3, 4".
-    If no ideas are covered, write "None".
+    Semantic recall and precision via programmatic computation over LLM-enumerated key ideas.
+    The LLM enumerates key ideas in each response and identifies which are covered by index.
+    Precision and recall are then computed from the coverage counts rather than LLM-estimated floats.
     """
 
     question: str = InputField()
     ground_truth: str = InputField()
     system_response: str = InputField()
-    ground_truth_key_ideas: str = OutputField(desc="numbered list (1. 2. 3. ...) of key ideas in the ground truth")
-    system_response_key_ideas: str = OutputField(
-        desc="numbered list (1. 2. 3. ...) of key ideas in the system response"
+    ground_truth_key_ideas: list[str] = OutputField(desc="key ideas in the ground truth")
+    system_response_key_ideas: list[str] = OutputField(desc="key ideas in the system response")
+    ground_truth_ideas_covered_by_system: list[int] = OutputField(
+        desc="indices of ground truth ideas that are covered by the system response"
     )
-    ground_truth_ideas_covered_by_system: str = OutputField(
-        desc="numbers of ground truth ideas covered by the system response, e.g. 1, 3, 4"
+    system_response_ideas_grounded_in_truth: list[int] = OutputField(
+        desc="indices of system response ideas that are supported by the ground truth"
     )
-    system_response_ideas_grounded_in_truth: str = OutputField(
-        desc="numbers of system response ideas supported by the ground truth, e.g. 1, 2"
-    )
-
-
-def _count_numbered_items(text: str) -> int:
-    """Count items in a numbered list like '1. foo\\n2. bar'."""
-    return len(re.findall(r"^\s*\d+[.\)]\s", text, re.MULTILINE))
-
-
-def _count_mentioned_numbers(text: str) -> int:
-    """Count distinct numbers mentioned in text like '1, 3, 4'. Returns 0 for 'None' or empty."""
-    if not text or text.strip().lower() == "none":
-        return 0
-    return len(set(re.findall(r"\d+", text)))
 
 
 def f1_score(precision, recall):
@@ -77,25 +60,16 @@ def f1_score(precision, recall):
 
 
 class SemanticF1(Module):
-    """Computes semantic F1 between a prediction and ground truth via LLM-based precision/recall.
+    """Computes semantic F1 between a prediction and ground truth via LLM-based precision/recall."""
 
-    Args:
-        threshold: Minimum F1 score to accept during optimization. Defaults to 0.66.
-        decompositional: Controls how precision and recall are obtained.
+    def __init__(self, threshold=0.66, decompositional=False, computed=False):
+        if decompositional and computed:
+            raise ValueError("decompositional and computed are mutually exclusive")
 
-            - ``False`` (default): the LLM directly outputs precision and recall floats.
-            - ``True``: the LLM enumerates key ideas and discusses overlap, then outputs
-              precision and recall floats.
-            - ``"computed"``: the LLM enumerates key ideas and identifies which are covered;
-              precision and recall are computed programmatically from the counts, avoiding
-              LLM float-calibration issues.
-    """
-
-    def __init__(self, threshold=0.66, decompositional=False):
         self.threshold = threshold
-        self._computed = decompositional == "computed"
+        self._computed = computed
 
-        if self._computed:
+        if computed:
             self.module = ChainOfThought(ComputedSemanticRecallPrecision)
         elif decompositional:
             self.module = ChainOfThought(DecompositionalSemanticRecallPrecision)
@@ -106,10 +80,10 @@ class SemanticF1(Module):
         scores = self.module(question=example.question, ground_truth=example.response, system_response=pred.response)
 
         if self._computed:
-            gt_count = _count_numbered_items(scores.ground_truth_key_ideas)
-            sr_count = _count_numbered_items(scores.system_response_key_ideas)
-            gt_covered = _count_mentioned_numbers(scores.ground_truth_ideas_covered_by_system)
-            sr_grounded = _count_mentioned_numbers(scores.system_response_ideas_grounded_in_truth)
+            gt_count = len(scores.ground_truth_key_ideas)
+            sr_count = len(scores.system_response_key_ideas)
+            gt_covered = len(set(scores.ground_truth_ideas_covered_by_system))
+            sr_grounded = len(set(scores.system_response_ideas_grounded_in_truth))
 
             recall = gt_covered / gt_count if gt_count > 0 else 0.0
             precision = sr_grounded / sr_count if sr_count > 0 else 0.0
