@@ -807,9 +807,12 @@ def test_positional_arguments():
     with pytest.raises(ValueError) as e:
         program("What is the capital of France?")
     assert str(e.value) == (
-        "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments that match "
-        "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
+        "You may use either positional or keyword arguments when calling `dspy.Predict`, not both. "
+        "Positional arguments must match be passed as an instance of the input type specified in the signature; "
+        "keywork argument must match input fields: 'question'. For example: "
+        "`predict(TInput(question=input_value, ...))` or `predict(question=input_value, ...)`."
     )
+
 
 def test_error_message_on_invalid_lm_setup():
     # No LM is loaded.
@@ -992,6 +995,7 @@ def test_per_module_history_disabled():
         program(question="What is the capital of France?")
     assert len(program.history) == 0
 
+
 def test_input_field_default_value():
     class SpyLM(dspy.LM):
         def __init__(self):
@@ -1015,11 +1019,13 @@ def test_input_field_default_value():
     user_message = lm.calls[0]["messages"][-1]["content"]
     assert "DEFAULT_CONTEXT" in user_message
 
+
 def log_test_helper():
     lm = DummyLM([{"answer": "test output"}])
     dspy.configure(lm=lm)
     dspy_logger = logging.getLogger("dspy")
     dspy_logger.propagate = True
+
 
 def test_extra_fields_warning(caplog):
     """Test that extra fields not in signature generate a warning."""
@@ -1052,6 +1058,7 @@ def test_warning_images(caplog):
         predict_instance(question="dog_image")
 
     assert "Type mismatch for field 'question': expected Image" in caplog.text
+
 
 def test_type_mismatch_warning(caplog):
     """Test that type mismatches in input fields generate a warning."""
@@ -1588,6 +1595,7 @@ def test_basic_types_string_signature(caplog, enable_type_warnings):
     else:
         assert "Type mismatch" not in caplog.text
 
+
 def test_untyped_string_signature(caplog):
     """Test type validation with basic types using string signatures without type."""
     log_test_helper()
@@ -1626,6 +1634,7 @@ def test_untyped_class_signature(caplog):
 
     assert "Type mismatch" not in caplog.text
 
+
 def test_string_to_list_signature(caplog):
     """Test type validation with string input field type where the module gets called with a list."""
     log_test_helper()
@@ -1645,6 +1654,7 @@ def test_string_to_list_signature(caplog):
         predict_instance(name=["abc", "def", "geh"], count=123)
 
     assert "Type mismatch" not in caplog.text
+
 
 @pytest.mark.parametrize("enable_type_warnings", [False, True])
 def test_custom_signature_types(caplog, enable_type_warnings):

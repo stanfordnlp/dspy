@@ -258,6 +258,23 @@ def test_typed_signatures_basic_types():
     assert sig.output_fields["output"].annotation == float
 
 
+def test_typed_signature_factory_from_models():
+    class InputModel(pydantic.BaseModel):
+        question: str
+        count: int
+
+    class OutputModel(pydantic.BaseModel):
+        answer: str
+
+    sig = Signature(input_type=InputModel, output_type=OutputModel)
+
+    assert sig.input_fields["question"].annotation == str
+    assert sig.input_fields["count"].annotation == int
+    assert sig.output_fields["answer"].annotation == str
+    assert sig.input_type is InputModel
+    assert sig.output_type is OutputModel
+
+
 def test_typed_signatures_generics():
     sig = Signature(
         "input_list: list[int], input_dict: dict[str, float] -> output_tuple: tuple[str, int]")
