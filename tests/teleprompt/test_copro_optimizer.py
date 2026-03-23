@@ -149,8 +149,8 @@ def test_statistics_tracking_during_optimization():
     assert "results_best" in optimized_student.__dict__, "Optimizer did not track the best results"
     assert "results_latest" in optimized_student.__dict__, "Optimizer did not track the latest results"
     assert len(optimized_student.results_best) > 0, "Optimizer did not properly populate the best results statistics"
-    assert (
-        len(optimized_student.results_latest) > 0
-    ), "Optimizer did not properly populate the latest results statistics"
+    assert len(optimized_student.results_latest) > 0, (
+        "Optimizer did not properly populate the latest results statistics"
+    )
 
     # Additional detailed checks can be added here to verify the contents of the tracked statistics

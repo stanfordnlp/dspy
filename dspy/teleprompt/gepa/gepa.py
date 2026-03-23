@@ -208,6 +208,9 @@ class GEPA(Teleprompter):
         auto: The auto budget to use for the run. Options: "light", "medium", "heavy".
         max_full_evals: The maximum number of full evaluations to perform.
         max_metric_calls: The maximum number of metric calls to perform.
+        fixed_trainset: A small set of critical examples (e.g. edge cases, frequent errors) that will be
+            injected into every reflection minibatch. This ensures the optimizer does not "forget" how to
+            handle these examples.
         reflection_minibatch_size: The number of examples to use for reflection in a single GEPA step. Default is 3.
         candidate_selection_strategy: The strategy to use for candidate selection. Default is "pareto",
             which stochastically selects candidates from the Pareto frontier of all validation scores.
@@ -252,8 +255,11 @@ class GEPA(Teleprompter):
             'all' (selects all components for simultaneous optimization). Custom selectors can implement strategies
             using LLM-driven selection logic based on optimization state and trajectories.
             See [gepa component selectors](https://github.com/gepa-ai/gepa/blob/main/src/gepa/strategies/component_selector.py)
-            for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.
-        add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
+            for available built-in selectors and the ReflectionComponentSelector protocol for implementing custom selectors.        constraint: Specific rules or constraints that the generated instructions must strictly follow.
+            Can be a single string or a list of strings (e.g. `["Do not delete existing rules.", "Output must be JSON."]`).
+            This text is injected into the LLM prompt during the reflection phase to protect critical core rules.
+        verbose: If True, prints verbose details of the reflection process to stdout, including the exact prompt
+            sent to the `reflection_lm`, the raw output, and the newly parsed instruction.        add_format_failure_as_feedback: Whether to add format failures as feedback. Default is False.
         use_merge: Whether to use merge-based optimization. Default is True.
         max_merge_invocations: The maximum number of merge invocations to perform. Default is 5.
         num_threads: The number of threads to use for evaluation with `Evaluate`. Optional.
@@ -336,6 +342,7 @@ class GEPA(Teleprompter):
         max_full_evals: int | None = None,
         max_metric_calls: int | None = None,
         # Reflection configuration
+        fixed_trainset: list["Example"] | None = None,
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
@@ -343,6 +350,10 @@ class GEPA(Teleprompter):
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
         component_selector: "ReflectionComponentSelector | str" = "round_robin",
+        # Constraint configuration
+        constraint: str | list[str] | None = None,
+        # Verbose output
+        verbose: bool = False,
         # Merge-based configuration
         use_merge: bool = True,
         max_merge_invocations: int | None = 5,
@@ -386,6 +397,7 @@ class GEPA(Teleprompter):
         self.max_metric_calls = max_metric_calls
 
         # Reflection configuration
+        self.fixed_trainset = fixed_trainset
         self.reflection_minibatch_size = reflection_minibatch_size
         self.candidate_selection_strategy = candidate_selection_strategy
 
@@ -398,6 +410,12 @@ class GEPA(Teleprompter):
         self.reflection_lm = reflection_lm
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
+
+        # Constraint configuration
+        self.constraint = constraint
+
+        # Verbose output
+        self.verbose = verbose
 
         # Merge-based configuration
         self.use_merge = use_merge
@@ -552,42 +570,102 @@ class GEPA(Teleprompter):
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
             reflection_minibatch_size=self.reflection_minibatch_size,
+            constraint=self.constraint,
+            verbose=self.verbose,
         )
 
         # Build the seed candidate: map each predictor name to its current instruction
         seed_candidate = {name: pred.signature.instructions for name, pred in student.named_predictors()}
 
-        gepa_result: GEPAResult = optimize(
-            seed_candidate=seed_candidate,
-            trainset=trainset,
-            valset=valset,
-            adapter=adapter,
+        optimize_kwargs = {
+            "seed_candidate": seed_candidate,
+            "valset": valset,
+            "adapter": adapter,
             # Reflection-based configuration
-            reflection_lm=(lambda x: adapter.stripped_lm_call(x)[0]) if self.reflection_lm is not None else None,
-            candidate_selection_strategy=self.candidate_selection_strategy,
-            skip_perfect_score=self.skip_perfect_score,
-            reflection_minibatch_size=self.reflection_minibatch_size,
-            module_selector=self.component_selector,
-            perfect_score=self.perfect_score,
+            "reflection_lm": (lambda x: adapter.stripped_lm_call(x)[0]) if self.reflection_lm is not None else None,
+            "candidate_selection_strategy": self.candidate_selection_strategy,
+            "skip_perfect_score": self.skip_perfect_score,
+            "module_selector": self.component_selector,
+            "perfect_score": self.perfect_score,
             # Merge-based configuration
-            use_merge=self.use_merge,
-            max_merge_invocations=self.max_merge_invocations,
+            "use_merge": self.use_merge,
+            "max_merge_invocations": self.max_merge_invocations,
             # Budget
-            max_metric_calls=self.max_metric_calls,
+            "max_metric_calls": self.max_metric_calls,
             # Logging
-            logger=LoggerAdapter(logger),
-            run_dir=self.log_dir,
-            use_wandb=self.use_wandb,
-            wandb_api_key=self.wandb_api_key,
-            wandb_init_kwargs=self.wandb_init_kwargs,
-            use_mlflow=self.use_mlflow,
-            track_best_outputs=self.track_best_outputs,
-            display_progress_bar=True,
-            raise_on_exception=True,
+            "logger": LoggerAdapter(logger),
+            "run_dir": self.log_dir,
+            "use_wandb": self.use_wandb,
+            "wandb_api_key": self.wandb_api_key,
+            "wandb_init_kwargs": self.wandb_init_kwargs,
+            "use_mlflow": self.use_mlflow,
+            "track_best_outputs": self.track_best_outputs,
+            "display_progress_bar": True,
+            "raise_on_exception": True,
             # Reproducibility
-            seed=self.seed,
-            **self.gepa_kwargs,
-        )
+            "seed": self.seed,
+            **(self.gepa_kwargs or {}),
+        }
+
+        if getattr(self, "fixed_trainset", None):
+            if len(self.fixed_trainset) > self.reflection_minibatch_size:
+                raise ValueError(
+                    f"Number of fixed trainset samples ({len(self.fixed_trainset)}) cannot exceed reflection_minibatch_size ({self.reflection_minibatch_size})"
+                )
+
+            combined_trainset = list(self.fixed_trainset) + list(trainset)
+            optimize_kwargs["trainset"] = combined_trainset
+
+            class AnchorBatchSampler:
+                def __init__(self, num_fixed, total_len, minibatch_size, rng_sampler):
+                    self.num_fixed = num_fixed
+                    self.total_len = total_len
+                    self.minibatch_size = minibatch_size
+                    self.rng = rng_sampler
+                    self.epoch = -1
+                    self.shuffled_ids = []
+
+                def _update_shuffled(self):
+                    self.shuffled_ids = list(range(self.num_fixed, self.total_len))
+                    self.rng.shuffle(self.shuffled_ids)
+
+                    needed_random = self.minibatch_size - self.num_fixed
+                    if needed_random > 0 and len(self.shuffled_ids) > 0:
+                        mod = len(self.shuffled_ids) % needed_random
+                        pad_len = (needed_random - mod) if mod != 0 else 0
+                        if pad_len > 0:
+                            self.shuffled_ids.extend(self.shuffled_ids[:pad_len])
+
+                def next_minibatch_ids(self, loader, state) -> list[int]:
+                    needed_random = self.minibatch_size - self.num_fixed
+                    fixed_ids = list(range(self.num_fixed))
+
+                    if needed_random == 0 or self.total_len <= self.num_fixed:
+                        return fixed_ids
+
+                    base_idx = state.i * needed_random
+                    curr_epoch = 0 if self.epoch == -1 else base_idx // max(len(self.shuffled_ids), 1)
+
+                    if not self.shuffled_ids or curr_epoch > self.epoch:
+                        self.epoch = curr_epoch
+                        self._update_shuffled()
+
+                    b_idx = base_idx % len(self.shuffled_ids)
+                    e_idx = b_idx + needed_random
+                    batch_random = self.shuffled_ids[b_idx:e_idx]
+                    return fixed_ids + batch_random
+
+            optimize_kwargs["batch_sampler"] = AnchorBatchSampler(
+                num_fixed=len(self.fixed_trainset),
+                total_len=len(combined_trainset),
+                minibatch_size=self.reflection_minibatch_size,
+                rng_sampler=rng,
+            )
+        else:
+            optimize_kwargs["trainset"] = trainset
+            optimize_kwargs["reflection_minibatch_size"] = self.reflection_minibatch_size
+
+        gepa_result: GEPAResult = optimize(**optimize_kwargs)
 
         new_prog = adapter.build_program(gepa_result.best_candidate)
 

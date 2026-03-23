@@ -88,6 +88,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         custom_instruction_proposer: "ProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
         reflection_minibatch_size: int | None = None,
+        constraint: str | list[str] | None = None,
+        verbose: bool = False,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -100,6 +102,41 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.reflection_minibatch_size = reflection_minibatch_size
+        self.constraint = constraint
+        self.verbose = verbose
+        self._reflection_call_count = 0  # 追踪反思轮次
+
+    def _build_constraint_prompt_template(self) -> str | None:
+        """根据 self.constraint 构建注入了约束的自定义 prompt_template。
+        若未设置 constraint 则返回 None，使用 InstructionProposalSignature 的默认模板。
+        """
+        if self.constraint is None:
+            return None
+
+        # 将约束格式化为编号列表
+        if isinstance(self.constraint, list):
+            constraint_text = "\n".join(f"  {i + 1}. {c}" for i, c in enumerate(self.constraint))
+        else:
+            constraint_text = f"  1. {self.constraint}"
+
+        constraint_block = (
+            f"\n**重要约束（IMPORTANT CONSTRAINTS）**：生成的新指令必须严格遵守以下所有约束，"
+            f"\n{constraint_text}\n\n"
+            "在输出新指令之前，请逐条检查上述约束是否均已满足。"
+        )
+
+        from gepa.strategies.instruction_proposal import InstructionProposalSignature as _IPS
+
+        base_template = _IPS.default_prompt_template
+        # 在末尾 "Provide the new instructions" 之前插入约束块
+        anchor = "Provide the new instructions within ``` blocks."
+        if anchor in base_template:
+            return base_template.replace(
+                anchor,
+                constraint_block + f"\n{anchor} 请确保新指令满足以上全部约束。",
+            )
+        # 若锚点不存在（版本差异），直接追加到末尾
+        return base_template + "\n" + constraint_block + "\nProvide the new instructions within ``` blocks."
 
     def propose_new_texts(
         self,
@@ -119,17 +156,30 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         results: dict[str, str] = {}
 
+        # 若设置了 constraint，构建注入约束的自定义 prompt_template
+        prompt_template = self._build_constraint_prompt_template()
+
         with dspy.context(lm=reflection_lm):
             for name in components_to_update:
                 base_instruction = candidate[name]
                 dataset_with_feedback = reflective_dataset[name]
-                results[name] = InstructionProposalSignature.run(
+                input_dict: dict[str, Any] = {
+                    "current_instruction_doc": base_instruction,
+                    "dataset_with_feedback": dataset_with_feedback,
+                }
+                if prompt_template is not None:
+                    input_dict["prompt_template"] = prompt_template
+                new_instruction = InstructionProposalSignature.run(
                     lm=(lambda x: self.stripped_lm_call(x)[0]),
-                    input_dict={
-                        "current_instruction_doc": base_instruction,
-                        "dataset_with_feedback": dataset_with_feedback,
-                    },
+                    input_dict=input_dict,
                 )["new_instruction"]
+                if self.verbose:
+                    print(f"\n{'─' * 70}")
+                    print(f"✏️  【第 {self._reflection_call_count} 次反思 · 组件: {name}】优化后新指令：")
+                    print(f"{'─' * 70}")
+                    print(new_instruction)
+                    print(f"{'─' * 70}\n")
+                results[name] = new_instruction
 
         return results
 
@@ -305,6 +355,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                             self.warn_on_score_mismatch = False
                         fb["score"] = module_score
 
+                # ── 只保留答错的样本进入 reflective dataset ──────────────────
+                # 正确样本（score >= perfect_score）的 feedback 对 reflection_lm
+                # 改进 prompt 没有帮助，只会稀释错误信号。
+                # GEPA 引擎层的 skip_perfect_score 仅在全部正确时跳过整轮，
+                # 但这里过滤确保传给 reflection_lm 的样本全部是错误案例。
+                # if module_score >= self.perfect_score:
+                #     continue
+
                 items.append(d)
 
             if len(items) == 0:
@@ -321,6 +379,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     # Always return strings from the LM outputs
     # Even when it returns a dict with e.g., "text" and "reasoning" fields
     def stripped_lm_call(self, x: str) -> list[str]:
+        self._reflection_call_count += 1
+
+        if self.verbose:
+            print(f"\n{'=' * 70}")
+            print(f"🔄 第 {self._reflection_call_count} 次反思 · 发给 reflection_lm 的 Prompt")
+            print(f"{'=' * 70}")
+            print(x)
+            print(f"{'=' * 70}")
+
         raw_outputs = self.reflection_lm(x)
         outputs = []
         for raw_output in raw_outputs:
@@ -333,5 +400,14 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             else:
                 raise TypeError("Unexpected output type from the base LM! Expected str or dict")
 
-        return outputs
+        if self.verbose:
+            print(f"\n{'─' * 70}")
+            print(f"💡 第 {self._reflection_call_count} 次反思 · reflection_lm 原始返回")
+            print(f"{'─' * 70}")
+            for i, o in enumerate(outputs):
+                if len(outputs) > 1:
+                    print(f"[输出 {i + 1}]:")
+                print(o)
+            print(f"{'─' * 70}\n")
 
+        return outputs
