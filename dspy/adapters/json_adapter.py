@@ -207,7 +207,7 @@ class JSONAdapter(ChatAdapter):
         else:
             d = fields_with_values.items()
             d = {k.name: v for k, v in d}
-            return json.dumps(serialize_for_json(d), indent=2)
+            return json.dumps(serialize_for_json(d), indent=2, ensure_ascii=False)
 
     def format_finetune_data(
         self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
