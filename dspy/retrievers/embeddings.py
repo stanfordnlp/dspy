@@ -84,7 +84,7 @@ class Embeddings:
         top_scores = scores[np.arange(len(q_embeds))[:, None], top_k_indices]
 
         results = []
-        for indices, query_scores in zip(top_indices, top_scores):
+        for indices, query_scores in zip(top_indices, top_scores, strict=True):
             passages = [self.corpus[idx] for idx in indices]
             results.append((passages, indices.tolist(), query_scores.tolist()))
         return results
