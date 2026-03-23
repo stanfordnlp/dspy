@@ -16,7 +16,7 @@ from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.cache import Cache
 from dspy.clients.cache_migration import migrate_diskcache
-from dspy.clients.disk import DSPyDisk, _decode_value, _encode_value
+from dspy.clients.disk_serialization import DSPyDisk, _decode_value, _encode_value
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

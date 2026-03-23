@@ -15,7 +15,7 @@ import pydantic
 from cachetools import LRUCache
 
 from dspy.clients.cache_migration import read_legacy_entries
-from dspy.clients.disk import DSPyDisk
+from dspy.clients.disk_serialization import DSPyDisk
 
 logger = logging.getLogger(__name__)
 # Sentinel to distinguish a cache miss from a cached None value.
