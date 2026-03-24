@@ -275,20 +275,28 @@ def test_typed_signature_factory_from_models():
     assert sig.output_type is OutputModel
 
 
-def test_typed_signature_factory_instructions():
-    class InputModel(pydantic.BaseModel):
-        question: str
+def test_typed_signature_factory_from_dataclasses():
+    from dataclasses import dataclass
 
-    class OutputModel(pydantic.BaseModel):
-        answer: str
+    instruction = "Be concise and precise."
 
-    sig = Signature(
-        input_type=InputModel,
-        output_type=OutputModel,
-        instructions="Be concise and accurate.",
-    )
+    @dataclass
+    class InputType:
+        context: str
+        question: str = dspy.InputField(desc="What is the capital of France?")
 
-    assert sig.instructions == "Be concise and accurate."
+    @dataclass
+    class OutputType:
+        response: str
+        confidence: int = dspy.OutputField(desc="Confidence score")
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType, instructions=instruction)
+
+    assert sig.instructions == instruction
+    assert sig.input_fields["question"].json_schema_extra["desc"] == "What is the capital of France?"
+    assert sig.output_fields["confidence"].json_schema_extra["desc"] == "Confidence score"
+    assert "context" in sig.input_fields
+    assert "response" in sig.output_fields
 
 
 def test_typed_signatures_generics():

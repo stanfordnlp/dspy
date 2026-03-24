@@ -171,45 +171,26 @@ def test_typed_demos_after_dump_and_load_state():
     assert loaded_demo["translated_items"][1]["name"] == "plátano"
 
 
-# def test_typed_demos_after_dump_and_load_state():
-#     class TypedTranslateToEnglish(dspy.Signature):
-#         """Translate content from a language to English."""
+def test_predict_with_dataclass_typed_signature():
+    from dataclasses import dataclass
 
-#         class Input(pydantic.BaseModel):
-#             content: str
-#             language: str
+    @dataclass
+    class InputType:
+        context: str
+        question: str = dspy.InputField(desc="What is the capital of France?")
 
-#         class Output(pydantic.BaseModel):
-#             translation: str
+    @dataclass
+    class OutputType:
+        response: str
+        confidence: int = dspy.OutputField(desc="Confidence score")
 
-#         input: Input = dspy.InputField()
-#         output: Output = dspy.OutputField()
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+    dspy.configure(lm=DummyLM([{"confidence": 1, "response": "Paris"}]))
 
-#     original_instance = TypedPredictor(TypedTranslateToEnglish).predictor
-#     original_instance.demos = [
-#         dspy.Example(
-#             input=TypedTranslateToEnglish.Input(
-#                 content="¿Qué tal?",
-#                 language="SPANISH",
-#             ),
-#             output=TypedTranslateToEnglish.Output(
-#                 translation="Hello there",
-#             ),
-#         ).with_inputs("input"),
-#     ]
-
-#     dumped_state = original_instance.dump_state()
-#     assert len(dumped_state["demos"]) == len(original_instance.demos)
-#     assert dumped_state["demos"][0]["input"] == original_instance.demos[0].input.model_dump_json()
-
-#     saved_state = orjson.dumps(dumped_state).decode()
-#     loaded_state = orjson.loads(saved_state)
-
-#     new_instance = TypedPredictor(TypedTranslateToEnglish).predictor
-#     new_instance.load_state(loaded_state)
-#     assert len(new_instance.demos) == len(original_instance.demos)
-#     # Demos don't need to keep the same types after saving and loading the state.
-#     assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
+    result = program(InputType(question="What is the capital of France?", context="Geography"))
+    assert result.response == "Paris"
+    assert result.confidence == 1
 
 
 def test_signature_fields_after_dump_and_load_state(tmp_path):
