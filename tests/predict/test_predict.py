@@ -177,12 +177,12 @@ def test_predict_with_dataclass_typed_signature():
     @dataclass
     class InputType:
         context: str
-        question: str = dspy.InputField(desc="What is the capital of France?")
+        question: str = dspy.Field(desc="What is the capital of France?")
 
     @dataclass
     class OutputType:
         response: str
-        confidence: int = dspy.OutputField(desc="Confidence score")
+        confidence: int = dspy.Field(desc="Confidence score")
 
     signature = dspy.Signature(input_type=InputType, output_type=OutputType)
     program = Predict(signature)

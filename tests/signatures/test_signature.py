@@ -283,12 +283,12 @@ def test_typed_signature_factory_from_dataclasses():
     @dataclass
     class InputType:
         context: str
-        question: str = dspy.InputField(desc="What is the capital of France?")
+        question: str = dspy.Field(desc="What is the capital of France?")
 
     @dataclass
     class OutputType:
         response: str
-        confidence: int = dspy.OutputField(desc="Confidence score")
+        confidence: int = dspy.Field(desc="Confidence score")
 
     sig = dspy.Signature(input_type=InputType, output_type=OutputType, instructions=instruction)
 
