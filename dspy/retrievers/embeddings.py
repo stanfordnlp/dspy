@@ -8,6 +8,13 @@ from dspy.utils.unbatchify import Unbatchify
 
 
 class Embeddings:
+    """DSPy Embeddings retriever.
+
+    This class retrieves the top-k most similar passages from a corpus using embedding-based similarity search.
+    For large corpora, a FAISS index is built for fast approximate candidate retrieval, followed by exact
+    re-ranking. For small corpora, brute-force search is used.
+    """
+
     def __init__(
         self,
         corpus: list[str],
@@ -35,6 +42,14 @@ class Embeddings:
         return self.forward(query)
 
     def forward(self, query: str):
+        """Search for the top-k passages most similar to the query.
+
+        Args:
+            query (str): The search query string
+
+        Returns:
+            dspy.Prediction: A prediction containing passages and their corpus indices.
+        """
         import dspy
 
         passages, indices, _scores = self.search_fn(query)
