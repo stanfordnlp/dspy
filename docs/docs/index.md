@@ -188,7 +188,6 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
             
             sentence: str = dspy.InputField()
             sentiment: Literal["positive", "negative", "neutral"] = dspy.OutputField()
-            confidence: float = dspy.OutputField()
 
         classify = dspy.Predict(Classify)
         classify(sentence="This book was super fun to read, though not the last chapter.")
@@ -198,8 +197,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
 
         ```text
         Prediction(
-            sentiment='positive',
-            confidence=0.75
+            sentiment='positive'
         )
         ```
 
