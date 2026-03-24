@@ -173,27 +173,28 @@ def test_typed_demos_after_dump_and_load_state():
 
 def test_predict_with_dataclass_typed_signature():
     from dataclasses import dataclass
+    dspy.configure(lm=DummyLM([{"confidence": 1, "answer": "Paris"}]))
 
     @dataclass
     class InputType:
         context: str
-        question: str = dspy.Field(desc="What is the capital of France?")
+        question: str = dspy.Field(desc="The question to answer")
 
-    @dataclass
     class OutputType:
-        response: str
-        confidence: int = dspy.Field(desc="Confidence score")
+        answer: str
+        confidence: int = dspy.Field(desc="How confident are you in your answer?")
 
     signature = dspy.Signature(input_type=InputType, output_type=OutputType)
     program = Predict(signature)
-    dspy.configure(lm=DummyLM([{"confidence": 1, "response": "Paris"}]))
 
-    result = program(InputType(question="What is the capital of France?", context="Geography"))
-    assert result.response == "Paris"
-    assert result.confidence == 1
-    assert isinstance(result.confidence, int)
-    assert isinstance(result.response, str)
+    response = program(InputType(question="What is the capital of France?", context="Geography"))
 
+    assert isinstance(response, OutputType)
+    assert isinstance(response.confidence, int)
+    assert isinstance(response.answer, str)
+
+    assert response.answer == "Paris"
+    assert response.confidence == 1
 
 def test_signature_fields_after_dump_and_load_state(tmp_path):
     class CustomSignature(dspy.Signature):

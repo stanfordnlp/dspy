@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Any, Literal, TypeVar, cast, get_args, get_origin
+from typing import Any, Literal, TypeVar, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
@@ -40,6 +40,29 @@ def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
         unsafe_keys,
     )
     return sanitized_lm_state
+
+
+def _coerce_prediction_to_output_type(pred: Prediction, signature: Signature) -> Any:
+    """Coerce a Prediction to the signature's output_type if available."""
+    output_type = getattr(signature, "output_type", None)
+    if output_type in (None, Signature):
+        return pred
+
+    output_values = {k: getattr(pred, k) for k in signature.output_fields}
+
+    # Try constructor first
+    try:
+        return output_type(**output_values)
+    except Exception:
+        # Fallback for plain classes
+        try:
+            instance = object.__new__(output_type)
+            for k, v in output_values.items():
+                setattr(instance, k, v)
+            return instance
+        except Exception:
+            # If all else fails, return raw Prediction
+            return pred
 
 
 class Predict(Module[TInput, TOutput], Parameter):
@@ -260,7 +283,8 @@ class Predict(Module[TInput, TOutput], Parameter):
             with settings.context(send_stream=None):
                 completions = adapter(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
-        return cast(TOutput, self._forward_postprocess(completions, signature, **kwargs))
+        pred = self._forward_postprocess(completions, signature, **kwargs)
+        return _coerce_prediction_to_output_type(pred, signature)
 
     async def aforward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
@@ -273,7 +297,8 @@ class Predict(Module[TInput, TOutput], Parameter):
             with settings.context(send_stream=None):
                 completions = await adapter.acall(lm, lm_kwargs=config, signature=signature, demos=demos, inputs=kwargs)
 
-        return self._forward_postprocess(completions, signature, **kwargs)
+        pred = self._forward_postprocess(completions, signature, **kwargs)
+        return _coerce_prediction_to_output_type(pred, signature)
 
     def update_config(self, **kwargs):
         self.config = {**self.config, **kwargs}

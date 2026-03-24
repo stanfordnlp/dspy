@@ -285,7 +285,6 @@ def test_typed_signature_factory_from_dataclasses():
         context: str
         question: str = dspy.Field(desc="What is the capital of France?")
 
-    @dataclass
     class OutputType:
         response: str
         confidence: int = dspy.Field(desc="Confidence score")
@@ -630,7 +629,6 @@ def test_dataclass_signature_with_instructions():
         context: str
         question: str = dspy.Field(desc="What is the capital of France?")
 
-    @dataclass
     class OutputType:
         confidence: int
         response: str
@@ -653,7 +651,6 @@ def test_dataclass_signature_with_updated_fields():
         context: str
         question: str = dspy.Field(desc="Input question")
 
-    @dataclass
     class OutputType:
         response: str
 
@@ -674,7 +671,6 @@ def test_dataclass_signature_prepend():
     class InputType:
         question: str
 
-    @dataclass
     class OutputType:
         response: str
 
@@ -694,7 +690,6 @@ def test_dataclass_signature_append():
     class InputType:
         question: str
 
-    @dataclass
     class OutputType:
         response: str
 
@@ -715,7 +710,6 @@ def test_dataclass_signature_insert():
         input1: str
         input2: str
 
-    @dataclass
     class OutputType:
         output1: str
         output2: str
@@ -737,7 +731,6 @@ def test_dataclass_signature_delete():
         input1: str
         input2: str
 
-    @dataclass
     class OutputType:
         output1: str
 
