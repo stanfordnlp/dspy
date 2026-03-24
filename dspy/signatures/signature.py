@@ -47,11 +47,12 @@ class SignatureMeta(type(BaseModel)):
             if (input_type is None) != (output_type is None):
                 raise ValueError(
                     "You must provide both 'input_type' and 'output_type' to create a typed signature. "
-                    "Received only one."
+                    "Signature instantiated with only one."
                 )
 
             if input_type is not None and output_type is not None:
-                return cls._create_typed_signature(input_type, output_type)
+                instructions = kwargs.get("instructions", None)
+                return cls._create_typed_signature(input_type, output_type, instructions=instructions)
 
             # We don't create an actual Signature instance, instead, we create a new Signature class.
             custom_types = kwargs.pop("custom_types", None)
@@ -322,8 +323,13 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         return Signature(cls.fields, instructions)
 
     @classmethod
-    def _create_typed_signature(cls, input_type: type[TInput], output_type: type[TOutput]) -> type[
-        "Signature[TInput, TOutput]"]:
+    def _create_typed_signature(
+        cls,
+        input_type: type[TInput],
+        output_type: type[TOutput],
+        *,
+        instructions: str | None = None,
+    ) -> type["Signature[TInput, TOutput]"]:
         """
         Creates a new Signature class based on input/output models.
         """
@@ -356,6 +362,9 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
                 **{k: v[1] for k, v in fields.items()}
             }
         )
+
+        if instructions is not None:
+            new_signature_class.__doc__ = instructions
 
         # Attach the original types
         new_signature_class.input_type = input_type

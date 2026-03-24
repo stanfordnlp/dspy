@@ -275,6 +275,22 @@ def test_typed_signature_factory_from_models():
     assert sig.output_type is OutputModel
 
 
+def test_typed_signature_factory_instructions():
+    class InputModel(pydantic.BaseModel):
+        question: str
+
+    class OutputModel(pydantic.BaseModel):
+        answer: str
+
+    sig = Signature(
+        input_type=InputModel,
+        output_type=OutputModel,
+        instructions="Be concise and accurate.",
+    )
+
+    assert sig.instructions == "Be concise and accurate."
+
+
 def test_typed_signatures_generics():
     sig = Signature(
         "input_list: list[int], input_dict: dict[str, float] -> output_tuple: tuple[str, int]")
