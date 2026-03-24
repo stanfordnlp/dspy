@@ -15,7 +15,7 @@ import pydantic
 from cachetools import LRUCache
 
 from dspy.clients.cache_migration import read_legacy_entries
-from dspy.clients.disk_serialization import DSPyDisk
+from dspy.clients.disk_serialization import OrjsonDisk
 
 logger = logging.getLogger(__name__)
 # Sentinel to distinguish a cache miss from a cached None value.
@@ -87,7 +87,7 @@ class Cache:
             self.disk_cache = diskcache.FanoutCache(
                 directory=disk_cache_dir,
                 shards=16,
-                disk=DSPyDisk,
+                disk=OrjsonDisk,
                 size_limit=effective_limit,
                 eviction_policy="least-recently-stored",
                 timeout=60,

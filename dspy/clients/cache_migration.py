@@ -1,7 +1,7 @@
 """Legacy diskcache migration utilities.
 
 Migrates entries from old pickle-based FanoutCache (16 shards) into
-a new diskcache FanoutCache with DSPyDisk (orjson serialization).
+a new diskcache FanoutCache with OrjsonDisk (orjson serialization).
 """
 
 import logging
@@ -90,7 +90,7 @@ def migrate_diskcache(directory: str, target) -> tuple[int, int]:
     """Migrate entries from a legacy diskcache FanoutCache (16 shards) into *target*.
 
     Values in the old cache are pickle-serialized. Each value is unpickled and
-    re-stored into the new cache using its serialization format (orjson via DSPyDisk).
+    re-stored into the new cache using its serialization format (orjson via OrjsonDisk).
     The target should be a diskcache.FanoutCache (or any dict-like cache).
 
     Returns ``(migrated_count, error_count)``.

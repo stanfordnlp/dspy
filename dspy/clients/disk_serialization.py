@@ -94,7 +94,7 @@ def _pydantic_to_json(value: Any) -> Any:
     return value
 
 
-class DSPyDisk(Disk):
+class OrjsonDisk(Disk):
     """Disk backend that serializes values with orjson instead of pickle.
 
     Handles pydantic models, numpy arrays, and JSON-native types.

@@ -1,4 +1,4 @@
-"""Tests for DSPyDisk serialization and legacy cache migration."""
+"""Tests for OrjsonDisk serialization and legacy cache migration."""
 
 import os
 import pickle
@@ -16,7 +16,7 @@ from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.cache import Cache
 from dspy.clients.cache_migration import migrate_diskcache
-from dspy.clients.disk_serialization import DSPyDisk, _decode_value, _encode_value
+from dspy.clients.disk_serialization import OrjsonDisk, _decode_value, _encode_value
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ def _deserialize(blob):
 
 def _make_fanout_cache(directory):
     return diskcache.FanoutCache(
-        directory=directory, shards=16, disk=DSPyDisk,
+        directory=directory, shards=16, disk=OrjsonDisk,
         size_limit=2**40, eviction_policy="least-recently-stored", timeout=60,
     )
 
