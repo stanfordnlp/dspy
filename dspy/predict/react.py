@@ -14,7 +14,7 @@ TInput = TypeVar("TInput")
 TOutput = TypeVar("TOutput")
 
 class ReAct(Module[TInput, TOutput]):
-    def __init__(self, signature: str | type["Signature"] | Signature[TInput, TOutput], tools: list[Callable], max_iters: int = 20):
+    def __init__(self, signature: str | type["Signature"] | type[Signature[TInput, TOutput]], tools: list[Callable], max_iters: int = 20):
         """
         ReAct stands for "Reasoning and Acting," a popular paradigm for building tool-using agents.
         In this approach, the language model is iteratively provided with a list of tools and has

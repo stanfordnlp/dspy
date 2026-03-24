@@ -30,7 +30,7 @@ class ProgramOfThought(Module[TInput, TOutput]):
     ```
     """
 
-    def __init__(self, signature: str | type[Signature] | Signature[TInput, TOutput], max_iters: int = 3, interpreter: PythonInterpreter | None = None):
+    def __init__(self, signature: str | type[Signature] | type[Signature[TInput, TOutput]], max_iters: int = 3, interpreter: PythonInterpreter | None = None):
         """
         Args:
             signature: The signature of the module.

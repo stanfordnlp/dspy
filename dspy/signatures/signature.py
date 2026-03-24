@@ -283,11 +283,11 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
     # for any signature that doesn't define its own instructions.
 
     @overload
-    def __new__(cls, input_type: type[TInput], output_type: type[TOutput]) -> "Signature[TInput, TOutput]":
+    def __new__(cls, input_type: type[TInput], output_type: type[TOutput]) -> "type[Signature[TInput, TOutput]]":
         ...
 
     @overload
-    def __new__(cls, *args, **kwargs) -> "Signature":
+    def __new__(cls, *args, **kwargs) -> "type[Signature]":
         ...
 
     def __new__(cls, *args, **kwargs):

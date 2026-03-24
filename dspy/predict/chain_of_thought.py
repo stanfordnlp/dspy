@@ -14,7 +14,7 @@ TOutput = TypeVar("TOutput")
 class ChainOfThought(Module[TInput, TOutput]):
     def __init__(
         self,
-        signature: str | type[Signature] | Signature[TInput, TOutput],
+        signature: str | type[Signature] | type[Signature[TInput, TOutput]],
         rationale_field: FieldInfo | None = None,
         rationale_field_type: type = str,
         **config: dict[str, Any],

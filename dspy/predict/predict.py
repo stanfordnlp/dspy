@@ -57,7 +57,7 @@ class Predict(Module[TInput, TOutput], Parameter):
                 predict(q="What is 1 + 52?", config={"rollout_id": 2, "temperature": 1.0})
     """
 
-    def __init__(self, signature: str | type[Signature] | Signature[TInput, TOutput], callbacks: list[BaseCallback] | None = None, **config):
+    def __init__(self, signature: str | type[Signature] | type[Signature[TInput, TOutput]], callbacks: list[BaseCallback] | None = None, **config):
         super().__init__(callbacks=callbacks)
         self.stage = random.randbytes(8).hex()
         self.signature = ensure_signature(signature)
