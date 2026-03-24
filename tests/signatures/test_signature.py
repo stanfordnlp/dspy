@@ -619,3 +619,131 @@ def test_pep604_union_type_with_custom_types():
     custom_obj = CustomType(value="test")
     pred = dspy.Predict(sig)(input=custom_obj)
     assert pred.output == "processed"
+
+
+def test_dataclass_signature_with_instructions():
+    """Test dataclass Signature with instructions using with_instructions()."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        context: str
+        question: str = dspy.Field(desc="What is the capital of France?")
+
+    @dataclass
+    class OutputType:
+        confidence: int
+        response: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.with_instructions("Be nice")
+
+    assert updated is not sig
+    assert updated.instructions == "Be nice"
+    assert list(updated.input_fields.keys()) == ["context", "question"]
+    assert list(updated.output_fields.keys()) == ["confidence", "response"]
+
+
+def test_dataclass_signature_with_updated_fields():
+    """Test dataclass Signature with_updated_fields() to modify field metadata."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        context: str
+        question: str = dspy.Field(desc="Input question")
+
+    @dataclass
+    class OutputType:
+        response: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.with_updated_fields("question", prefix="Q:", desc="Modified question")
+
+    assert updated is not sig
+    assert updated.input_fields["question"].json_schema_extra["desc"] == "Modified question"
+    assert updated.input_fields["question"].json_schema_extra["prefix"] == "Q:"
+    assert sig.input_fields["question"].json_schema_extra["desc"] == "Input question"
+
+
+def test_dataclass_signature_prepend():
+    """Test dataclass Signature prepend() to add field at start."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        question: str
+
+    @dataclass
+    class OutputType:
+        response: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.prepend("context", InputField(desc="Context"))
+
+    assert updated is not sig
+    assert list(updated.input_fields.keys()) == ["context", "question"]
+    assert updated.input_fields["context"].annotation == str
+
+
+def test_dataclass_signature_append():
+    """Test dataclass Signature append() to add field at end."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        question: str
+
+    @dataclass
+    class OutputType:
+        response: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.append("confidence", OutputField(), float)
+
+    assert updated is not sig
+    assert list(updated.output_fields.keys()) == ["response", "confidence"]
+    assert updated.output_fields["confidence"].annotation == float
+
+
+def test_dataclass_signature_insert():
+    """Test dataclass Signature insert() to add field at specific position."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        input1: str
+        input2: str
+
+    @dataclass
+    class OutputType:
+        output1: str
+        output2: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.insert(1, "middle", InputField(), int)
+
+    assert updated is not sig
+    assert list(updated.input_fields.keys()) == ["input1", "middle", "input2"]
+    assert updated.input_fields["middle"].annotation == int
+
+
+def test_dataclass_signature_delete():
+    """Test dataclass Signature delete() to remove field."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        input1: str
+        input2: str
+
+    @dataclass
+    class OutputType:
+        output1: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.delete("input2")
+
+    assert updated is not sig
+    assert "input2" not in updated.fields
+    assert list(updated.input_fields.keys()) == ["input1"]
