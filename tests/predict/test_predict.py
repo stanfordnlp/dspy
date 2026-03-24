@@ -191,6 +191,8 @@ def test_predict_with_dataclass_typed_signature():
     result = program(InputType(question="What is the capital of France?", context="Geography"))
     assert result.response == "Paris"
     assert result.confidence == 1
+    assert isinstance(result.confidence, int)
+    assert isinstance(result.response, str)
 
 
 def test_signature_fields_after_dump_and_load_state(tmp_path):
