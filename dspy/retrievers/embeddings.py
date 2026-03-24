@@ -222,7 +222,21 @@ class Embeddings:
 
 
 class EmbeddingsWithScores(Embeddings):
+    """DSPy EmbeddingsWithScores retriever.
+
+    This class extends the Embeddings retriever to also return similarity scores alongside passages and indices.
+    Similarity scores enable downstream such as thresholding and re-ranking.
+    """
+
     def forward(self, query: str):
+        """Search for the top-k passages most similar to the query.
+
+        Args:
+            query (str): The search query string.
+
+        Returns:
+            dspy.Prediction: A prediction containing passages, indices, and similarity scores.
+        """
         import dspy
 
         passages, indices, scores = self.search_fn(query)
