@@ -110,11 +110,13 @@ class Refine(Module):
 
         Returns:
             Prediction: The best prediction found across all attempts, determined by the highest
-                reward score. Returns ``None`` if all attempts fail with exceptions.
+                reward score. Returns ``None`` if no attempt succeeded and the ``fail_count``
+                re-raise threshold was not reached (possible when ``N <= 2`` or
+                ``fail_count >= N``).
 
         Raises:
-            Exception: Re-raises the last encountered exception if the number of consecutive
-                failures exceeds ``fail_count``.
+            Exception: Re-raises the last encountered exception when the current attempt
+                index exceeds the remaining ``fail_count`` (decremented after each failure).
         """
         lm = self.module.get_lm() or dspy.settings.lm
         start = lm.kwargs.get("rollout_id", 0)
