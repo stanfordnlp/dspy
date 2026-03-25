@@ -320,7 +320,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
             assert NewSig.instructions == "Translate to French."
             ```
         """
-        return Signature(cls.fields, instructions)
+        return cls._copy_typed_attrs(Signature(cls.fields, instructions))
 
     @classmethod
     def _create_typed_signature(
@@ -374,6 +374,14 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         return typing.cast(type["Signature[type[TInput], type[TOutput]]"], new_signature_class)
 
     @classmethod
+    def _copy_typed_attrs(cls, target: "type[Signature]") -> "type[Signature]":
+        """Copy ``input_type`` / ``output_type`` from this class to *target*, if present."""
+        for attr in ("input_type", "output_type"):
+            if hasattr(cls, attr):
+                setattr(target, attr, getattr(cls, attr))
+        return target
+
+    @classmethod
     def with_updated_fields(cls, name: str, type_: type | None = None, **kwargs: dict[str, Any]) -> type["Signature"]:
         """Create a new Signature class with the updated field information.
 
@@ -397,7 +405,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         }
         if type_ is not None:
             fields_copy[name].annotation = type_
-        return Signature(fields_copy, cls.instructions)
+        return cls._copy_typed_attrs(Signature(fields_copy, cls.instructions))
 
     @classmethod
     def prepend(cls, name, field, type_=None) -> type["Signature"]:
@@ -486,7 +494,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
 
         fields.pop(name, None)
 
-        return Signature(fields, cls.instructions)
+        return cls._copy_typed_attrs(Signature(fields, cls.instructions))
 
     @classmethod
     def insert(cls, index: int, name: str, field, type_: type | None = None) -> type["Signature"]:
@@ -545,12 +553,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         lst.insert(index, (name, (type_, field)))
 
         new_fields = dict(input_fields + output_fields)
-        new_sig = Signature(new_fields, cls.instructions)
-        if hasattr(cls, "input_type"):
-            new_sig.input_type = cls.input_type
-        if hasattr(cls, "output_type"):
-            new_sig.output_type = cls.output_type
-        return new_sig
+        return cls._copy_typed_attrs(Signature(new_fields, cls.instructions))
 
     @classmethod
     def equals(cls, other) -> bool:
@@ -581,7 +584,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
 
     @classmethod
     def load_state(cls, state):
-        signature_copy = Signature(deepcopy(cls.fields), cls.instructions)
+        signature_copy = cls._copy_typed_attrs(Signature(deepcopy(cls.fields), cls.instructions))
 
         signature_copy.instructions = state["instructions"]
         for field, saved_field in zip(signature_copy.fields.values(), state["fields"], strict=False):

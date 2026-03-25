@@ -1062,11 +1062,9 @@ def test_positional_arguments():
     with pytest.raises(ValueError) as e:
         program("What is the capital of France?")
     assert str(e.value) == (
-        "You may use either positional or keyword arguments when calling `dspy.Predict`, not both. "
-        "- Positional: pass an instance of the input type: "
-        "`predict(TInput(question=input_value, ...))`"
-        "- Keyword: pass individual fields: "
-        "`predict(question=input_value, ...)`"
+        "You may use either positional or keyword arguments when calling `dspy.Predict`, not both.\n"
+        "- Positional: pass an instance of the input type: `predict(TInput(question=input_value, ...))`\n"
+        "- Keyword: pass individual fields: `predict(question=input_value, ...)`"
     )
 
 

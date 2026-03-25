@@ -39,7 +39,7 @@ class ProgramMeta(type):
         return obj
 
 
-class Module(BaseModule, metaclass=ProgramMeta):
+class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
     """Base class for all DSPy modules (programs).
 
     A Module is a building block for DSPy programs that can contain predictors,
@@ -67,8 +67,6 @@ class Module(BaseModule, metaclass=ProgramMeta):
         ...     def forward(self, question):
         ...         return self.predictor(question=question)
     """
-
-class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
     def _base_init(self):
         self._compiled = False
         self.callbacks = []
@@ -93,65 +91,38 @@ class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
         if not hasattr(self, "callbacks"):
             self.callbacks = []
 
-    def _call_forward(self, *args, **kwargs):
-        """Call forward() with backward compatibility for different signatures.
+    @staticmethod
+    def _resolve_call_args(method, args: tuple, kwargs: dict) -> tuple[tuple, dict]:
+        """Resolve positional typed-input args for a forward/aforward call.
 
-        This method intelligently calls forward() based on whether it accepts *args.
-        If forward() doesn't accept *args but positional args are provided,
-        it converts them to kwargs using vars() (like Predict does).
+        If the method accepts *args, or there are no positional args, the
+        call passes through unchanged.  Otherwise a single positional arg that
+        has a __dict__ (dataclass / Pydantic model / plain object) is
+        unpacked into keyword arguments and merged with any existing kwargs.
         """
-        sig = inspect.signature(self.forward)
-
-        # Check if forward has VAR_POSITIONAL (*args) parameter
         has_var_positional = any(
-            param.kind == inspect.Parameter.VAR_POSITIONAL
-            for param in sig.parameters.values()
+            p.kind == inspect.Parameter.VAR_POSITIONAL
+            for p in inspect.signature(method).parameters.values()
         )
-
         if has_var_positional or not args:
-            # If forward accepts *args or there are no positional args, call normally
-            return self.forward(*args, **kwargs)
-        else:
-            # If forward doesn't accept *args but we have positional args,
-            # convert the positional arg to kwargs (like Predict does)
-            if len(args) == 1 and hasattr(args[0], "__dict__"):
-                # Merge the extracted kwargs with any existing kwargs
-                extracted_kwargs = vars(args[0])
-                merged_kwargs = {**extracted_kwargs, **kwargs}
-                return self.forward(**merged_kwargs)
-            else:
-                # If it's not a single object with __dict__, just drop args
-                return self.forward(**kwargs)
+            return args, kwargs
+        if len(args) == 1 and hasattr(args[0], "__dict__"):
+            from dspy.primitives.example import Example
+            arg = args[0]
+            # dspy.Example is not a typed-input object — pass it through so the
+            # caller receives it as-is (e.g. for Parallel batch processing).
+            if not isinstance(arg, Example):
+                return (), {**vars(arg), **kwargs}
+        # Arg is not an unpackable typed-input object; pass it through as-is.
+        return args, kwargs
+
+    def _call_forward(self, *args, **kwargs):
+        args, kwargs = self._resolve_call_args(self.forward, args, kwargs)
+        return self.forward(*args, **kwargs)
 
     async def _acall_forward(self, *args, **kwargs):
-        """Call aforward() with backward compatibility for different signatures.
-
-        This method intelligently calls aforward() based on whether it accepts *args.
-        If aforward() doesn't accept *args but positional args are provided,
-        it converts them to kwargs using vars() (like Predict does).
-        """
-        sig = inspect.signature(self.aforward)
-
-        # Check if aforward has VAR_POSITIONAL (*args) parameter
-        has_var_positional = any(
-            param.kind == inspect.Parameter.VAR_POSITIONAL
-            for param in sig.parameters.values()
-        )
-
-        if has_var_positional or not args:
-            # If aforward accepts *args or there are no positional args, call normally
-            return await self.aforward(*args, **kwargs)
-        else:
-            # If aforward doesn't accept *args but we have positional args,
-            # convert the positional arg to kwargs (like Predict does)
-            if len(args) == 1 and hasattr(args[0], "__dict__"):
-                # Merge the extracted kwargs with any existing kwargs
-                extracted_kwargs = vars(args[0])
-                merged_kwargs = {**extracted_kwargs, **kwargs}
-                return await self.aforward(**merged_kwargs)
-            else:
-                # If it's not a single object with __dict__, just drop args
-                return await self.aforward(**kwargs)
+        args, kwargs = self._resolve_call_args(self.aforward, args, kwargs)
+        return await self.aforward(*args, **kwargs)
 
     @with_callbacks
     def __call__(self, *args: TInput, **kwargs) -> TOutput | Prediction:
@@ -392,16 +363,20 @@ class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
         if prediction_in_output:
             prediction_in_output.set_lm_usage(tokens)
         else:
-            logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
+            logger.warning(
+                "Failed to set LM usage. Please return `dspy.Prediction` object from "
+                "dspy.Module to enable usage tracking."
+            )
 
 
     def __getattribute__(self, name):
         attr = super().__getattribute__(name)
 
         if name == "forward" and callable(attr):
-            # Check if forward is called through __call__ or directly
+            # Check if forward is called through __call__ (directly or via _call_forward)
+            _INTERNAL_CALLERS = {"__call__", "_call_forward", "_acall_forward"}
             stack = inspect.stack()
-            forward_called_directly = len(stack) <= 1 or stack[1].function != "__call__"
+            forward_called_directly = len(stack) <= 1 or stack[1].function not in _INTERNAL_CALLERS
 
             if forward_called_directly:
                 logger.warning(

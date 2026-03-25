@@ -50,19 +50,14 @@ def _coerce_prediction_to_output_type(pred: Prediction, signature: Signature) ->
 
     output_values = {k: getattr(pred, k) for k in signature.output_fields}
 
-    # Try constructor first
     try:
         return output_type(**output_values)
-    except Exception:
-        # Fallback for plain classes
-        try:
-            instance = object.__new__(output_type)
-            for k, v in output_values.items():
-                setattr(instance, k, v)
-            return instance
-        except Exception:
-            # If all else fails, return raw Prediction
-            return pred
+    except TypeError:
+        # Plain class with no keyword-accepting __init__ — set attributes directly.
+        instance = object.__new__(output_type)
+        for k, v in output_values.items():
+            setattr(instance, k, v)
+        return instance
 
 
 class Predict(Module[TInput, TOutput], Parameter):
@@ -142,18 +137,13 @@ class Predict(Module[TInput, TOutput], Parameter):
 
     def _get_positional_args_error_message(self):
         input_fields = list(self.signature.input_fields.keys())
-        input_type_name = getattr(self.signature, "input_type", None)
-        if input_type_name:
-            input_type_name = input_type_name.__name__
-        else:
-            input_type_name = "TInput"
+        input_type = getattr(self.signature, "input_type", None)
+        input_type_name = input_type.__name__ if input_type else "TInput"
 
         return (
-            "You may use either positional or keyword arguments when calling `dspy.Predict`, not both. "
-            "- Positional: pass an instance of the input type: "
-            f"`predict({input_type_name}({input_fields[0]}=input_value, ...))`"
-            "- Keyword: pass individual fields: "
-            f"`predict({input_fields[0]}=input_value, ...)`"
+            "You may use either positional or keyword arguments when calling `dspy.Predict`, not both.\n"
+            f"- Positional: pass an instance of the input type: `predict({input_type_name}({input_fields[0]}=input_value, ...))`\n"
+            f"- Keyword: pass individual fields: `predict({input_fields[0]}=input_value, ...)`"
         )
 
     def __call__(self, arg: TInput | None = None, /, **kwargs) -> TOutput | Prediction:
@@ -315,6 +305,7 @@ class Predict(Module[TInput, TOutput], Parameter):
     def __repr__(self):
         return f"{self.__class__.__name__}({self.signature})"
 
+
 def _get_type_name(type_annotation) -> str:
     """Helper method to get the name for a type annotation."""
 
@@ -340,6 +331,7 @@ def _get_type_name(type_annotation) -> str:
         return f"{origin_name}[{args_str}]"
 
     return getattr(origin, "__name__", str(origin))
+
 
 def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     """Return True if the value matches the expected type hint."""
