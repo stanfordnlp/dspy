@@ -93,6 +93,66 @@ class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
         if not hasattr(self, "callbacks"):
             self.callbacks = []
 
+    def _call_forward(self, *args, **kwargs):
+        """Call forward() with backward compatibility for different signatures.
+
+        This method intelligently calls forward() based on whether it accepts *args.
+        If forward() doesn't accept *args but positional args are provided,
+        it converts them to kwargs using vars() (like Predict does).
+        """
+        sig = inspect.signature(self.forward)
+
+        # Check if forward has VAR_POSITIONAL (*args) parameter
+        has_var_positional = any(
+            param.kind == inspect.Parameter.VAR_POSITIONAL
+            for param in sig.parameters.values()
+        )
+
+        if has_var_positional or not args:
+            # If forward accepts *args or there are no positional args, call normally
+            return self.forward(*args, **kwargs)
+        else:
+            # If forward doesn't accept *args but we have positional args,
+            # convert the positional arg to kwargs (like Predict does)
+            if len(args) == 1 and hasattr(args[0], "__dict__"):
+                # Merge the extracted kwargs with any existing kwargs
+                extracted_kwargs = vars(args[0])
+                merged_kwargs = {**extracted_kwargs, **kwargs}
+                return self.forward(**merged_kwargs)
+            else:
+                # If it's not a single object with __dict__, just drop args
+                return self.forward(**kwargs)
+
+    async def _acall_forward(self, *args, **kwargs):
+        """Call aforward() with backward compatibility for different signatures.
+
+        This method intelligently calls aforward() based on whether it accepts *args.
+        If aforward() doesn't accept *args but positional args are provided,
+        it converts them to kwargs using vars() (like Predict does).
+        """
+        sig = inspect.signature(self.aforward)
+
+        # Check if aforward has VAR_POSITIONAL (*args) parameter
+        has_var_positional = any(
+            param.kind == inspect.Parameter.VAR_POSITIONAL
+            for param in sig.parameters.values()
+        )
+
+        if has_var_positional or not args:
+            # If aforward accepts *args or there are no positional args, call normally
+            return await self.aforward(*args, **kwargs)
+        else:
+            # If aforward doesn't accept *args but we have positional args,
+            # convert the positional arg to kwargs (like Predict does)
+            if len(args) == 1 and hasattr(args[0], "__dict__"):
+                # Merge the extracted kwargs with any existing kwargs
+                extracted_kwargs = vars(args[0])
+                merged_kwargs = {**extracted_kwargs, **kwargs}
+                return await self.aforward(**merged_kwargs)
+            else:
+                # If it's not a single object with __dict__, just drop args
+                return await self.aforward(**kwargs)
+
     @with_callbacks
     def __call__(self, *args: TInput, **kwargs) -> TOutput | Prediction:
         from dspy.dsp.utils.settings import thread_local_overrides
@@ -104,13 +164,13 @@ class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
         with settings.context(caller_modules=caller_modules):
             if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
-                    output = self.forward(*args, **kwargs)
+                    output = self._call_forward(*args, **kwargs)
                 tokens = usage_tracker.get_total_tokens()
                 self._set_lm_usage(tokens, output)
 
                 return output
 
-            return self.forward(*args, **kwargs)
+            return self._call_forward(*args, **kwargs)
 
     @with_callbacks
     async def acall(self, *args: TInput, **kwargs) -> TOutput | Prediction:
@@ -123,13 +183,13 @@ class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
         with settings.context(caller_modules=caller_modules):
             if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
-                    output = await self.aforward(*args, **kwargs)
+                    output = await self._acall_forward(*args, **kwargs)
                     tokens = usage_tracker.get_total_tokens()
                     self._set_lm_usage(tokens, output)
 
                     return output
 
-            return await self.aforward(*args, **kwargs)
+            return await self._acall_forward(*args, **kwargs)
 
     def named_predictors(self):
         """Return all named Predict modules in this module.

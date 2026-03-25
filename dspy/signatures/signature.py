@@ -545,7 +545,12 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
         lst.insert(index, (name, (type_, field)))
 
         new_fields = dict(input_fields + output_fields)
-        return Signature(new_fields, cls.instructions)
+        new_sig = Signature(new_fields, cls.instructions)
+        if hasattr(cls, "input_type"):
+            new_sig.input_type = cls.input_type
+        if hasattr(cls, "output_type"):
+            new_sig.output_type = cls.output_type
+        return new_sig
 
     @classmethod
     def equals(cls, other) -> bool:
