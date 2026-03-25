@@ -56,12 +56,10 @@ jobs:
       - name: Build a binary wheel
         run: python -m build
       # Test the locally built wheel
-      - name: Create test environment
-        run: uv venv test_before_testpypi
       - name: Test package installation and functionality
         run: |
-          uv pip install -p test_before_testpypi dist/*.whl pytest pytest-asyncio
-          uv run -p test_before_testpypi pytest tests/metadata/test_metadata.py tests/predict
+          uv pip install -p .venv --no-deps dist/*.whl
+          pytest tests/metadata/test_metadata.py tests/predict
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
@@ -109,13 +107,10 @@ jobs:
       - name: Build a binary wheel
         run: python -m build
       # Test the locally built wheel before publishing to pypi
-      - name: Create test environment
-        run: uv venv test_before_pypi
       - name: Test package installation and functionality
         run: |
-          uv pip install -p test_before_pypi dist/*.whl pytest pytest-asyncio
-          uv run -p test_before_pypi pytest tests/metadata/test_metadata.py tests/predict
-          rm -r test_before_pypi
+          uv pip install -p .venv --no-deps dist/*.whl
+          pytest tests/metadata/test_metadata.py tests/predict
       - name: Publish distribution 📦 to PyPI (dspy)
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
         with:
