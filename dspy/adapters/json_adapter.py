@@ -16,7 +16,7 @@ from dspy.adapters.utils import (
     serialize_for_json,
     translate_field_type,
 )
-from dspy.clients.lm import LM
+from dspy.clients.base_lm import BaseLM
 from dspy.signatures.signature import Signature, SignatureMeta
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError
@@ -57,7 +57,7 @@ class JSONAdapter(ChatAdapter):
 
     def __call__(
         self,
-        lm: LM,
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -80,7 +80,7 @@ class JSONAdapter(ChatAdapter):
 
     async def acall(
         self,
-        lm: LM,
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
