@@ -143,6 +143,8 @@ class DatabricksProvider(Provider):
         client = OpenAI(
             api_key=databricks_token,
             base_url=f"{databricks_host}/serving-endpoints",
+            timeout=60.0,
+            max_retries=3,
         )
         # Wait for the deployment to be ready.
         num_retries = deploy_timeout // 60
