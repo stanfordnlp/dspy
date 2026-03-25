@@ -1063,9 +1063,10 @@ def test_positional_arguments():
         program("What is the capital of France?")
     assert str(e.value) == (
         "You may use either positional or keyword arguments when calling `dspy.Predict`, not both. "
-        "Positional arguments must match be passed as an instance of the input type specified in the signature; "
-        "keywork argument must match input fields: 'question'. For example: "
-        "`predict(TInput(question=input_value, ...))` or `predict(question=input_value, ...)`."
+        "- Positional: pass an instance of the input type: "
+        "`predict(TInput(question=input_value, ...))`"
+        "- Keyword: pass individual fields: "
+        "`predict(question=input_value, ...)`"
     )
 
 

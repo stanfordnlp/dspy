@@ -45,7 +45,7 @@ def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
 def _coerce_prediction_to_output_type(pred: Prediction, signature: Signature) -> Any:
     """Coerce a Prediction to the signature's output_type if available."""
     output_type = getattr(signature, "output_type", None)
-    if output_type in (None, Signature):
+    if output_type is None:
         return pred
 
     output_values = {k: getattr(pred, k) for k in signature.output_fields}
@@ -142,12 +142,18 @@ class Predict(Module[TInput, TOutput], Parameter):
 
     def _get_positional_args_error_message(self):
         input_fields = list(self.signature.input_fields.keys())
+        input_type_name = getattr(self.signature, "input_type", None)
+        if input_type_name:
+            input_type_name = input_type_name.__name__
+        else:
+            input_type_name = "TInput"
+
         return (
             "You may use either positional or keyword arguments when calling `dspy.Predict`, not both. "
-            "Positional arguments must match be passed as an instance of the input type specified in the signature; "
-            f"keywork argument must match input fields: '{', '.join(input_fields)}'. For example: "
-            f"`predict({TInput.__name__}({input_fields[0]}=input_value, ...))` or `predict({input_fields[0]}=input_value,"
-            f" ...)`."
+            "- Positional: pass an instance of the input type: "
+            f"`predict({input_type_name}({input_fields[0]}=input_value, ...))`"
+            "- Keyword: pass individual fields: "
+            f"`predict({input_fields[0]}=input_value, ...)`"
         )
 
     def __call__(self, arg: TInput | None = None, /, **kwargs) -> TOutput | Prediction:
