@@ -28,7 +28,7 @@ class BaseLM:
 
     class MyLM(dspy.BaseLM):
         def forward(self, prompt, messages=None, **kwargs):
-            client = OpenAI()
+            client = OpenAI(timeout=60.0, max_retries=3)
             return client.chat.completions.create(
                 model=self.model,
                 messages=messages or [{"role": "user", "content": prompt}],
