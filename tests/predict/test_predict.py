@@ -196,6 +196,277 @@ def test_predict_with_dataclass_typed_signature():
     assert response.answer == "Paris"
     assert response.confidence == 1
 
+
+def test_predict_with_nested_dataclass_output():
+    """Test typed signatures with nested output type."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Metadata:
+        confidence: int
+        source: str
+
+    @dataclass
+    class InputType:
+        question: str
+
+    class OutputType:
+        answer: str
+        metadata: Metadata
+
+    dspy.configure(lm=DummyLM([{
+        "answer": "Paris",
+        "metadata": Metadata(confidence=95, source="geography_db")
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    response = program(InputType(question="What is the capital of France?"))
+
+    assert isinstance(response, OutputType)
+    assert isinstance(response.answer, str)
+    assert response.answer == "Paris"
+
+    assert isinstance(response.metadata, Metadata)
+    assert response.metadata.confidence == 95
+    assert response.metadata.source == "geography_db"
+
+
+
+def test_predict_with_pydantic_nested_output():
+    """Test typed signatures with Pydantic models containing nested Pydantic model fields."""
+    from pydantic import BaseModel
+
+    class Address(BaseModel):
+        street: str
+        city: str
+
+    class InputType(BaseModel):
+        query: str
+
+    class OutputType(BaseModel):
+        name: str
+        address: Address
+
+    dspy.configure(lm=DummyLM([{
+        "name": "John Doe",
+        "address": Address(street="123 Main St", city="Paris")
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    response = program(InputType(query="Get info"))
+
+    assert isinstance(response, OutputType)
+    assert isinstance(response.name, str)
+    assert response.name == "John Doe"
+
+    assert isinstance(response.address, Address)
+    assert response.address.street == "123 Main St"
+    assert response.address.city == "Paris"
+
+
+def test_predict_with_nested_dataclass_input():
+    """Test typed signatures with nested dataclass input type."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Address:
+        street: str
+        city: str
+
+    @dataclass
+    class InputType:
+        name: str
+        address: Address
+
+    class OutputType:
+        result: str
+        location: str
+
+    dspy.configure(lm=DummyLM([{
+        "result": "Address received",
+        "location": "Paris, France"
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create nested input with Address dataclass
+    address = Address(street="123 Main St", city="Paris")
+    input_data = InputType(name="John", address=address)
+    response = program(input_data)
+
+    # Verify response is correct OutputType
+    assert isinstance(response, OutputType)
+    assert response.result == "Address received"
+    assert response.location == "Paris, France"
+
+
+def test_predict_with_pydantic_nested_input():
+    """Test typed signatures with Pydantic models containing nested Pydantic model fields in input."""
+    from pydantic import BaseModel
+
+    class Contact(BaseModel):
+        email: str
+        phone: str
+
+    class InputType(BaseModel):
+        name: str
+        contact: Contact
+
+    class OutputType(BaseModel):
+        message: str
+        status: str
+
+    dspy.configure(lm=DummyLM([{
+        "message": "Contact info received",
+        "status": "success"
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create nested input with Contact Pydantic model
+    contact = Contact(email="john@example.com", phone="555-1234")
+    input_data = InputType(name="John Doe", contact=contact)
+    response = program(input_data)
+
+    assert isinstance(response, OutputType)
+    assert response.message == "Contact info received"
+    assert response.status == "success"
+
+
+def test_predict_with_deeply_nested_dataclass_input():
+    """Test typed signatures with deeply nested dataclass input (3 levels of nesting)."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Coordinates:
+        latitude: float
+        longitude: float
+
+    @dataclass
+    class Location:
+        city: str
+        coordinates: Coordinates
+
+    @dataclass
+    class InputType:
+        name: str
+        location: Location
+
+    class OutputType:
+        description: str
+        distance: int
+
+    dspy.configure(lm=DummyLM([{
+        "description": "Location processed",
+        "distance": 100
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create nested input
+    coords = Coordinates(latitude=48.8566, longitude=2.3522)
+    location = Location(city="Paris", coordinates=coords)
+    input_data = InputType(name="Location Query", location=location)
+    response = program(input_data)
+
+    # Verify response is correct
+    assert isinstance(response, OutputType)
+    assert response.description == "Location processed"
+    assert response.distance == 100
+
+
+def test_predict_with_nested_input_and_nested_output():
+    """Test typed signatures with both nested input and nested output types."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputAddress:
+        street: str
+        city: str
+
+    @dataclass
+    class InputType:
+        name: str
+        address: InputAddress
+
+    @dataclass
+    class OutputMetadata:
+        processed_at: str
+        confidence: int
+
+    @dataclass
+    class OutputType:
+        result: str
+        metadata: OutputMetadata
+
+    dspy.configure(lm=DummyLM([{
+        "result": "Successfully processed",
+        "metadata": OutputMetadata(processed_at="2026-03-24", confidence=95)
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create nested input
+    address = InputAddress(street="456 Oak Ave", city="London")
+    input_data = InputType(name="Jane", address=address)
+    response = program(input_data)
+
+    # Verify both nested input and output work
+    assert isinstance(response, OutputType)
+    assert response.result == "Successfully processed"
+    assert isinstance(response.metadata, OutputMetadata)
+    assert response.metadata.processed_at == "2026-03-24"
+    assert response.metadata.confidence == 95
+
+
+def test_predict_with_nested_list_in_input():
+    """Test typed signatures with list of nested objects in input."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Item:
+        name: str
+        quantity: int
+
+    @dataclass
+    class InputType:
+        order_id: str
+        items: list[Item]
+
+    class OutputType:
+        total_items: int
+        status: str
+
+    dspy.configure(lm=DummyLM([{
+        "total_items": 3,
+        "status": "Order received"
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create input with list of nested Item objects
+    items = [
+        Item(name="Apple", quantity=5),
+        Item(name="Banana", quantity=3),
+        Item(name="Orange", quantity=2)
+    ]
+    input_data = InputType(order_id="ORD-001", items=items)
+    response = program(input_data)
+
+    assert isinstance(response, OutputType)
+    assert response.total_items == 3
+    assert response.status == "Order received"
+
+
 def test_signature_fields_after_dump_and_load_state(tmp_path):
     class CustomSignature(dspy.Signature):
         """I am just an instruction."""
