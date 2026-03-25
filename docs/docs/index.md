@@ -199,7 +199,7 @@ DSPy shifts your focus from tinkering with prompt strings to **programming with 
         ```text
         Prediction(
             sentiment='positive',
-            toxicity=0.75
+            toxicity=0.15
         )
         ```
 
