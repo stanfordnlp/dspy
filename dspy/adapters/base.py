@@ -102,6 +102,7 @@ class Adapter:
                 return signature_for_native_function_calling
 
         # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
+        deleted_field_names = set(signature.output_fields)
         for name, field in signature.output_fields.items():
             if (
                 isinstance(field.annotation, type)
@@ -110,7 +111,8 @@ class Adapter:
             ):
                 signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
 
-        return signature
+        deleted_field_names -= set(signature.output_fields)
+        return signature, deleted_field_names
 
     def _call_postprocess(
         self,
@@ -119,6 +121,7 @@ class Adapter:
         outputs: list[dict[str, Any] | str],
         lm: "LM",
         lm_kwargs: dict[str, Any],
+        deleted_field_names: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         values = []
 
@@ -162,8 +165,13 @@ class Adapter:
                 ]
                 value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
 
-            # Parse custom types that does not rely on the `Adapter.parse()` method
+            # Parse custom types that does not rely on the `Adapter.parse()` method.
+            # Only parse for fields that were actually deleted by adapt_to_native_lm_feature
+            # (i.e., fields handled by native LM features like vLLM reasoning_content).
+            # Fields not in deleted_field_names are handled by the adapter's parse() method.
             for name, field in original_signature.output_fields.items():
+                if deleted_field_names is not None and name not in deleted_field_names:
+                    continue
                 if (
                     isinstance(field.annotation, type)
                     and field.annotation in self.native_response_types
@@ -204,11 +212,13 @@ class Adapter:
             List of dictionaries representing parsed LM responses. Each dictionary contains keys matching the
             signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
         """
-        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+        processed_signature, deleted_field_names = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        return self._call_postprocess(
+            processed_signature, signature, outputs, lm, lm_kwargs, deleted_field_names
+        )
 
     async def acall(
         self,
@@ -218,11 +228,13 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+        processed_signature, deleted_field_names = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        return self._call_postprocess(
+            processed_signature, signature, outputs, lm, lm_kwargs, deleted_field_names
+        )
 
     def format(
         self,
