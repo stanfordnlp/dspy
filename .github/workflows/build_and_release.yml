@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
+        run: python3 -m pip install setuptools==82.0.1 wheel==0.46.3 twine==6.2.0 build==1.4.1 semver==3.0.4 packaging==26.0
       - name: Install Deno
         uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
         with:
@@ -57,7 +57,7 @@ jobs:
         run: |
           source test_before_testpypi/bin/activate
           # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest pytest-asyncio
+          pip install dist/*.whl pytest==9.0.2 pytest-asyncio==1.3.0
           pytest tests/metadata/test_metadata.py tests/predict
           deactivate
       # Publish to test-PyPI
@@ -85,7 +85,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine build
+        run: python3 -m pip install setuptools==82.0.1 wheel==0.46.3 twine==6.2.0 build==1.4.1
       - name: Install Deno
         uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
         with:
@@ -108,7 +108,7 @@ jobs:
         run: |
           source test_before_pypi/bin/activate
           # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest pytest-asyncio
+          pip install dist/*.whl pytest==9.0.2 pytest-asyncio==1.3.0
           pytest tests/metadata/test_metadata.py tests/predict
           deactivate
           rm -r test_before_pypi
