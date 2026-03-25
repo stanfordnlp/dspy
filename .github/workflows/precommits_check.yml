@@ -6,19 +6,19 @@ jobs:
   pre-commit-checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
         with:
           python-version: "3.10"
           cache: "pip"
       - name: Check Pull Request Title
-        uses: Slashgear/action-check-pr-title@main
+        uses: Slashgear/action-check-pr-title@76166c63ec0b25cdbe693e5e972e83ca186313fb # main
         with:
           regexp: '(break|build|ci|docs|feat|fix|perf|refactor|style|test|ops|hotfix|release|maint|init|enh|revert)\([a-z,A-Z,0-9,\-,\_,\/,:]+\)(:)\s{1}([\w\s]+)' # Regex the title should match.
       - name: Getting changed files list
         id: files
-        uses: jitterbit/get-changed-files@master
+        uses: jitterbit/get-changed-files@b17fbb00bdc0c0f63fcf166580804b4d2cdc2a42 # v1
       - name: Checking changed files
         shell: bash
         run: |
