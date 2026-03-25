@@ -10,7 +10,7 @@ jobs:
     outputs:
       version: ${{ steps.extract_tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - id: extract_tag
         name: Extract tag name
         run: echo "tag=$(echo $GITHUB_REF | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
@@ -24,19 +24,17 @@ jobs:
       id-token: write # IMPORTANT: mandatory for trusted publishing
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Set up Python 3.11
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
           python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
       - name: Install Deno
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "${HOME}/.deno/bin" >> $GITHUB_PATH
-      - name: Verify Deno installation
-        run: deno --version
+        uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: v2.x
       - name: Get correct version for TestPyPI release
         id: check_version
         run: |
@@ -64,7 +62,7 @@ jobs:
           deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -81,19 +79,17 @@ jobs:
       id-token: write # IMPORTANT: mandatory for trusted publishing
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Set up Python 3.11
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
           python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build
       - name: Install Deno
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "${HOME}/.deno/bin" >> $GITHUB_PATH
-      - name: Verify Deno installation
-        run: deno --version
+        uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: v2.x
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
       - name: Update version in __metadata__.py
@@ -117,7 +113,7 @@ jobs:
           deactivate
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (dspy)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
         with:
           attestations: false
       # Publish to dspy-ai
@@ -131,11 +127,11 @@ jobs:
       - name: Build a binary wheel (dspy-ai)
         run: python3 -m build .github/.internal_dspyai/
       - name: Publish distribution 📦 to PyPI (dspy-ai)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
         with:
           attestations: false
           packages-dir: .github/.internal_dspyai/dist/
-      - uses: stefanzweifel/git-auto-commit-action@v5 # auto commit changes to main
+      - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5 # auto commit changes to main
         with:
           commit_message: Update versions
           create_branch: true
