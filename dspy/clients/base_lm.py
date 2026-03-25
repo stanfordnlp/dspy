@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from functools import cached_property
 from typing import Any, TextIO
 
 from dspy.dsp.utils import settings
@@ -48,6 +49,26 @@ class BaseLM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+
+    @cached_property
+    def supports_function_calling(self) -> bool:
+        """Whether the model supports function calling (tool use)."""
+        return False
+
+    @cached_property
+    def supports_reasoning(self) -> bool:
+        """Whether the model supports native reasoning (extended thinking)."""
+        return False
+
+    @cached_property
+    def supports_response_schema(self) -> bool:
+        """Whether the model supports structured output via response schema."""
+        return False
+
+    @cached_property
+    def supported_params(self) -> set[str]:
+        """Set of supported OpenAI-style parameter names for the model."""
+        return set()
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}

@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING, Any, Optional, get_args, get_origin
 
 import json_repair
 import pydantic
-from litellm import ModelResponseStream
 
 if TYPE_CHECKING:
+    from litellm import ModelResponseStream
+
     from dspy.clients.lm import LM
     from dspy.signatures.signature import Signature
 
@@ -105,7 +106,7 @@ class Type(pydantic.BaseModel):
         return False
 
     @classmethod
-    def parse_stream_chunk(cls, chunk: ModelResponseStream) -> Optional["Type"]:
+    def parse_stream_chunk(cls, chunk: "ModelResponseStream") -> Optional["Type"]:
         """
         Parse a stream chunk into the custom type.
 
