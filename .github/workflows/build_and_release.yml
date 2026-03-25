@@ -34,7 +34,7 @@ jobs:
       - name: Install Deno
         uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
         with:
-          deno-version: v2.x
+          deno-version: v2.7.7
       - name: Get correct version for TestPyPI release
         id: check_version
         run: |
@@ -89,7 +89,7 @@ jobs:
       - name: Install Deno
         uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
         with:
-          deno-version: v2.x
+          deno-version: v2.7.7
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
       - name: Update version in __metadata__.py
