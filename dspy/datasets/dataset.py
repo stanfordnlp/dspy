@@ -10,6 +10,20 @@ from dspy.dsp.utils import dotdict
 
 
 class Dataset:
+    """Base class for DSPy datasets.
+
+    Provides train/dev/test splits with deterministic shuffling and sampling. Subclasses should
+    populate ``_train``, ``_dev``, and ``_test`` lists of dicts during ``__init__``.
+
+    Args:
+        train_seed: Random seed for shuffling the training set.
+        train_size: Maximum number of training examples to return. None means use all.
+        eval_seed: Random seed for shuffling dev and test sets.
+        dev_size: Maximum number of dev examples to return. None means use all.
+        test_size: Maximum number of test examples to return. None means use all.
+        input_keys: List of keys to mark as input fields on each ``Example``.
+    """
+
     def __init__(
         self,
         train_seed: int = 0,
@@ -39,6 +53,7 @@ class Dataset:
         dev_size: int | None = None,
         test_size: int | None = None,
     ) -> None:
+        """Reset seed and size parameters, clearing cached splits so they are regenerated on next access."""
         self.train_size = train_size or self.train_size
         self.train_seed = train_seed or self.train_seed
         self.dev_size = dev_size or self.dev_size
@@ -57,6 +72,7 @@ class Dataset:
 
     @property
     def train(self) -> list[Example]:
+        """Return the training split as a list of ``Example`` objects, shuffled and sampled on first access."""
         if not hasattr(self, "_train_"):
             self._train_ = self._shuffle_and_sample("train", self._train, self.train_size, self.train_seed)
 
@@ -64,6 +80,7 @@ class Dataset:
 
     @property
     def dev(self) -> list[Example]:
+        """Return the dev (validation) split as a list of ``Example`` objects, shuffled and sampled on first access."""
         if not hasattr(self, "_dev_"):
             self._dev_ = self._shuffle_and_sample("dev", self._dev, self.dev_size, self.dev_seed)
 
@@ -71,6 +88,7 @@ class Dataset:
 
     @property
     def test(self) -> list[Example]:
+        """Return the test split as a list of ``Example`` objects, shuffled and sampled on first access."""
         if not hasattr(self, "_test_"):
             self._test_ = self._shuffle_and_sample("test", self._test, self.test_size, self.test_seed)
 
