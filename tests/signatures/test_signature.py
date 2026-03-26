@@ -740,3 +740,74 @@ def test_dataclass_signature_delete():
     assert updated is not sig
     assert "input2" not in updated.fields
     assert list(updated.input_fields.keys()) == ["input1"]
+
+
+def _make_typed_sig():
+    from dataclasses import dataclass
+
+    @dataclass
+    class Q:
+        question: str
+
+    class A:
+        answer: str
+
+    return dspy.Signature(input_type=Q, output_type=A), Q, A
+
+
+def test_typed_attrs_preserved_by_with_instructions():
+    sig, Q, A = _make_typed_sig()
+    derived = sig.with_instructions("Answer briefly.")
+    assert getattr(derived, "input_type", None) is Q
+    assert getattr(derived, "output_type", None) is A
+
+
+def test_typed_attrs_preserved_by_with_updated_fields():
+    sig, Q, A = _make_typed_sig()
+    derived = sig.with_updated_fields("question", desc="The question to answer")
+    assert getattr(derived, "input_type", None) is Q
+    assert getattr(derived, "output_type", None) is A
+
+
+def test_typed_attrs_preserved_by_delete():
+    from dataclasses import dataclass
+
+    @dataclass
+    class Input:
+        main: str
+        extra: str
+
+    class Output:
+        result: str
+
+    sig = dspy.Signature(input_type=Input, output_type=Output)
+    derived = sig.delete("extra")
+    assert getattr(derived, "input_type", None) is Input
+    assert getattr(derived, "output_type", None) is Output
+
+
+def test_typed_attrs_preserved_by_insert():
+    sig, Q, A = _make_typed_sig()
+    derived = sig.insert(0, "hint", dspy.InputField(), str)
+    assert getattr(derived, "input_type", None) is Q
+    assert getattr(derived, "output_type", None) is A
+
+
+def test_typed_attrs_preserved_by_load_state():
+    sig, Q, A = _make_typed_sig()
+    state = sig.dump_state()
+    restored = sig.load_state(state)
+    assert getattr(restored, "input_type", None) is Q
+    assert getattr(restored, "output_type", None) is A
+
+
+def test_untyped_sig_has_no_typed_attrs_after_derivation():
+    sig = dspy.Signature("question -> answer")
+    for derived in [
+        sig.with_instructions("Be concise."),
+        sig.with_updated_fields("question", desc="Q"),
+        sig.delete("answer").append("answer", dspy.OutputField()),
+        sig.insert(0, "hint", dspy.InputField(), str),
+    ]:
+        assert not hasattr(derived, "input_type")
+        assert not hasattr(derived, "output_type")

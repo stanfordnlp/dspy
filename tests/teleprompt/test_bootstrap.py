@@ -132,3 +132,96 @@ def test_validation_set_usage():
 
     # Check that validation examples are part of student's demos after compilation
     assert len(compiled_student.predictor.demos) >= len(valset), "Validation set not used in compiled student demos"
+
+
+def test_bootstrap_typed_signature_demos_are_bootstrapped():
+    """BootstrapFewShot should bootstrap demos from a typed-signature module,
+    and those demos should be stored on the compiled predictor."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class QA_Input:
+        input: str
+
+    @dataclass
+    class QA_Output:
+        output: str
+
+    sig = dspy.Signature(input_type=QA_Input, output_type=QA_Output)
+
+    class TypedModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict(sig)
+
+        def forward(self, **kwargs):
+            return self.predictor(**kwargs)
+
+    student = TypedModule()
+    teacher = TypedModule()
+
+    # follow_examples=True: DummyLM returns the labelled answer when it sees a
+    # matching demo in the prompt, confirming the demo was written to the predictor.
+    lm = DummyLM([{"output": "blue"}], follow_examples=True)
+    dspy.configure(lm=lm, trace=[])
+
+    typed_trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+    ]
+
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled = bootstrap.compile(student, teacher=teacher, trainset=typed_trainset)
+
+    # Optimization ran and typed attrs survived
+    assert compiled._compiled
+    assert getattr(compiled.predictor.signature, "input_type", None) is QA_Input
+    assert getattr(compiled.predictor.signature, "output_type", None) is QA_Output
+    # At least one demo was bootstrapped into the predictor
+    assert len(compiled.predictor.demos) >= 1
+    assert compiled.predictor.demos[0]["input"] == typed_trainset[0].input
+
+
+def test_bootstrap_typed_invocation_returns_typed_output():
+    """After BootstrapFewShot compilation, calling the module with a typed input
+    object returns a properly-typed output instance (not a raw Prediction)."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class QA_Input:
+        input: str
+
+    @dataclass
+    class QA_Output:
+        output: str
+
+    sig = dspy.Signature(input_type=QA_Input, output_type=QA_Output)
+
+    class TypedModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict(sig)
+
+        def forward(self, **kwargs):
+            return self.predictor(**kwargs)
+
+    student = TypedModule()
+    teacher = TypedModule()
+
+    # First call: teacher generates the demo trace.
+    # Second call: student (with demos) answers the question — follow_examples=True
+    # means DummyLM returns "blue" whenever it sees a matching demo in the prompt.
+    lm = DummyLM([{"output": "blue"}, {"output": "blue"}], follow_examples=True)
+    dspy.configure(lm=lm, trace=[])
+
+    typed_trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+    ]
+
+    bootstrap = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    compiled = bootstrap.compile(student, teacher=teacher, trainset=typed_trainset)
+
+    # Typed positional invocation → _resolve_call_args unpacks QA_Input into kwargs,
+    # Predict coerces the prediction back to QA_Output.
+    result = compiled(QA_Input(input="What is the color of the sky?"))
+    assert isinstance(result, QA_Output), f"Expected QA_Output, got {type(result)}"
+    assert result.output == "blue"

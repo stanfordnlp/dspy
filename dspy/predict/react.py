@@ -94,18 +94,13 @@ class ReAct(Module[TInput, TOutput]):
 
     def _get_positional_args_error_message(self):
         input_fields = list(self.signature.input_fields.keys())
-        input_type_name = getattr(self.signature, "input_type", None)
-        if input_type_name:
-            input_type_name = input_type_name.__name__
-        else:
-            input_type_name = "TInput"
+        input_type = getattr(self.signature, "input_type", None)
+        input_type_name = input_type.__name__ if input_type else "TInput"
 
         return (
-            "You may use either positional or keyword arguments when calling `dspy.Predict`, not both. "
-            "- Positional: pass an instance of the input type: "
-            f"`predict({input_type_name}({input_fields[0]}=input_value, ...))`"
-            "- Keyword: pass individual fields: "
-            f"`predict({input_fields[0]}=input_value, ...)`"
+            "You may use either positional or keyword arguments when calling `dspy.ReAct`, not both.\n"
+            f"- Positional: pass an instance of the input type: `react({input_type_name}({input_fields[0]}=input_value, ...))`\n"
+            f"- Keyword: pass individual fields: `react({input_fields[0]}=input_value, ...)`"
         )
 
     def forward(self, arg: TInput | None = None, /, **input_args):

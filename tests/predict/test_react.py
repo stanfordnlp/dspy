@@ -517,3 +517,40 @@ def test_tool_calling_with_typed_signature():
         "observation_1": "Completed.",
     }
     assert outputs.trajectory == expected_trajectory
+
+
+def test_react_positional_args_error_message_with_input_type():
+    """Passing a non-typed positional arg + kwargs triggers an error naming the input type."""
+
+    @dataclass
+    class InputType:
+        question: str
+
+    @dataclass
+    class OutputType:
+        answer: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    react = dspy.ReAct(sig, tools=[])
+
+    # A plain string has no __dict__ so it passes through _resolve_call_args as a
+    # positional arg; ReAct.forward then detects the mixed positional+kwargs misuse.
+    with pytest.raises(ValueError) as exc_info:
+        react("not_a_typed_input", question="extra")
+
+    msg = str(exc_info.value)
+    assert "InputType" in msg
+    assert "question" in msg
+    assert msg.count("\n") >= 1  # message has newline-separated bullet points
+
+
+def test_react_positional_args_error_message_without_input_type():
+    """Without a typed signature, the error message falls back to 'TInput'."""
+    react = dspy.ReAct("question -> answer", tools=[])
+
+    with pytest.raises(ValueError) as exc_info:
+        react("positional", question="extra")
+
+    msg = str(exc_info.value)
+    assert "TInput" in msg
+    assert "question" in msg
