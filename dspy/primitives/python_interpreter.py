@@ -193,7 +193,7 @@ class PythonInterpreter:
     @functools.lru_cache(maxsize=1)
     def _get_deno_dir() -> str | None:
         if "DENO_DIR" in os.environ:
-            return os.environ["DENO_DIR"]
+            return os.path.realpath(os.environ["DENO_DIR"])
 
         try:
             result = subprocess.run(
@@ -204,7 +204,9 @@ class PythonInterpreter:
             )
             if result.returncode == 0:
                 info = json.loads(result.stdout)
-                return info.get("denoDir")
+                deno_dir = info.get("denoDir")
+                if deno_dir:
+                    return os.path.realpath(deno_dir)
         except Exception:
             logger.warning("Unable to find the Deno cache dir.")
 
