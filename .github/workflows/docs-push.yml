@@ -40,7 +40,7 @@ jobs:
           API_TOKEN_GITHUB: ${{ secrets.GH_PAT }}
         with:
           source-directory: "docs"
-          destination-github-username: "krypticmouse"
+          destination-github-username: "stanfordnlp"
           destination-repository-name: "dspy-docs"
           user-email: github-actions@github.com
           target-branch: master
