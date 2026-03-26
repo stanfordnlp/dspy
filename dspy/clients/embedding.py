@@ -136,7 +136,22 @@ class Embedder:
             embeddings_list.extend(compute_embeddings(self.model, batch, caching=caching, **kwargs))
         return self._postprocess(embeddings_list, is_single_input)
 
-    async def acall(self, inputs, batch_size=None, caching=None, **kwargs):
+    async def acall(self, inputs: str | list[str], batch_size: int | None = None, caching: bool | None = None, **kwargs: dict[str, Any]) -> np.ndarray:
+        """Asynchronously compute embeddings for the given inputs.
+
+        Args:
+            inputs: The inputs to compute embeddings for, can be a single string or a list of strings.
+            batch_size (int, optional): The batch size for processing inputs. If None, defaults to the batch_size set
+                during initialization.
+            caching (bool, optional): Whether to cache the embedding response when using a hosted model. If None,
+                defaults to the caching setting from initialization.
+            kwargs: Additional keyword arguments to pass to the embedding model. These will override the default
+                kwargs provided during initialization.
+
+        Returns:
+            numpy.ndarray: If the input is a single string, returns a 1D numpy array representing the embedding.
+            If the input is a list of strings, returns a 2D numpy array of embeddings, one embedding per row.
+        """
         input_batches, caching, kwargs, is_single_input = self._preprocess(inputs, batch_size, caching, **kwargs)
 
         embeddings_list = []
