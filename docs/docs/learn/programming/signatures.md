@@ -92,37 +92,79 @@ print("Reasoning:", response.reasoning)
 Reasoning: We need to highlight Lee's performance for West Ham, his loan spells in League One, and his new contract with Barnsley. We also need to mention that his contract length has not been disclosed.
 ```
 
-## **Class-based** DSPy Signatures
+## **Typed** DSPy Signatures
 
-For some advanced tasks, you need more verbose signatures. This is typically to:
+For some advanced tasks, you may need more verbose signatures with type annotations. DSPy supports a **typed signature API** that uses separate input and output schemas. It's useful when you want to:
 
-1. Clarify something about the nature of the task (expressed below as a `docstring`).
+1. Get autocompletions and type hints from your IDE: because the return value is a typed instance of your output class, Pylance, mypy, and PyCharm know which fields are available and what types they have.
+3. Supply hints on the nature of an input field or constraints of the output field, expressed as a `desc` keyword argument using `dspy.Field(desc="...")`.
+4. Clarify something about the nature of the task using `instructions`.
+5. Clearly separate input and output type definitions for reuse across multiple modules.
 
-2. Supply hints on the nature of an input field, expressed as a `desc` keyword argument for `dspy.InputField`.
-
-3. Supply constraints on an output field, expressed as a `desc` keyword argument for `dspy.OutputField`.
+With inline strings or class-based signatures, the return type is `Prediction`, a dynamic object that no static tool can inspect. With typed signatures, both the input *and* the return type are concrete Python classes, so your editor can auto-complete fields, flag typos, and infer types through your whole program.
 
 ### Example C: Classification
+
+```python
+import pydantic
+from typing import Literal
+
+class EmotionInput(pydantic.BaseModel):
+    sentence: str
+
+class EmotionOutput:
+    sentiment: Literal['sadness', 'joy', 'love', 'anger', 'fear', 'surprise']
+
+Emotion = dspy.Signature(
+    input_type=EmotionInput,
+    output_type=EmotionOutput,
+    instructions="Classify emotion.",
+)
+
+sentence = "i started feeling a little vulnerable when the giant spotlight started blinding me"  # from dair-ai/emotion
+
+classify = dspy.Predict(Emotion)
+result = classify(EmotionInput(sentence=sentence))
+
+assert isinstance(result, EmotionOutput)
+print(result.sentiment)
+```
+**Possible Output:**
+```text
+fear
+```
+
+You can also use a `dataclass` in place of `pydantic.BaseModel` -- both work identically:
+
+```python
+from dataclasses import dataclass
+from typing import Literal
+
+@dataclass
+class EmotionInput:
+    sentence: str
+
+class EmotionOutput:
+    sentiment: Literal['sadness', 'joy', 'love', 'anger', 'fear', 'surprise']
+
+Emotion = dspy.Signature(input_type=EmotionInput, output_type=EmotionOutput,
+                          instructions="Classify emotion.")
+```
+
+Alternatively, you can express the same signature as a single class. However, this variant does not support type annotations or autocompletion. The module's return value is of type `Prediction`:
 
 ```python
 from typing import Literal
 
 class Emotion(dspy.Signature):
     """Classify emotion."""
-    
     sentence: str = dspy.InputField()
     sentiment: Literal['sadness', 'joy', 'love', 'anger', 'fear', 'surprise'] = dspy.OutputField()
 
-sentence = "i started feeling a little vulnerable when the giant spotlight started blinding me"  # from dair-ai/emotion
-
 classify = dspy.Predict(Emotion)
-classify(sentence=sentence)
-```
-**Possible Output:**
-```text
-Prediction(
-    sentiment='fear'
-)
+result = classify(sentence=sentence)
+
+assert isinstance(result, Prediction)
 ```
 
 **Tip:** There's nothing wrong with specifying your requests to the LM more clearly. Class-based Signatures help you with that. However, don't prematurely tune the keywords of your signature by hand. The DSPy optimizers will likely do a better job (and will transfer better across LMs).
@@ -157,22 +199,30 @@ Prediction(
 ### Example E: Multi-modal image classification
 
 ```python
-class DogPictureSignature(dspy.Signature):
-    """Output the dog breed of the dog in the image."""
-    image_1: dspy.Image = dspy.InputField(desc="An image of a dog")
-    answer: str = dspy.OutputField(desc="The dog breed of the dog in the image")
+import pydantic
+
+class DogInput(pydantic.BaseModel):
+    image_1: dspy.Image = dspy.Field(desc="An image of a dog")
+
+class DogOutput:
+    answer: str = dspy.Field(desc="The dog breed of the dog in the image")
+
+DogPictureSignature = dspy.Signature(
+    input_type=DogInput,
+    output_type=DogOutput,
+    instructions="Output the dog breed of the dog in the image.",
+)
 
 image_url = "https://picsum.photos/id/237/200/300"
 classify = dspy.Predict(DogPictureSignature)
-classify(image_1=dspy.Image.from_url(image_url))
+result = classify(DogInput(image_1=dspy.Image.from_url(image_url)))
+print(result.answer)
 ```
 
 **Possible Output:**
 
 ```text
-Prediction(
-    answer='Labrador Retriever'
-)
+Labrador Retriever
 ```
 
 ## Type Resolution in Signatures
@@ -206,22 +256,40 @@ signature = dspy.Signature("query: MyContainer.Query -> score: MyContainer.Score
 
 ### Type Checking for Input Fields
 
-DSPy automatically validates that the values you pass to input fields match the types specified in your signature. This works for both inline and class-based signatures.
+DSPy automatically validates that the values you pass to input fields match the types specified in your signature. This works for inline, typed, and single-class-based signatures alike.
 When there's a type mismatch, DSPy will log a warning.
 
 **Example: Type Mismatch Warning**
 
 ```python
-# Define a signature expecting an integer as input
-class MathSignature(dspy.Signature):
-    """Perform a mathematical operation."""
-    number: int = dspy.InputField()
-    result: str = dspy.OutputField()
+from dataclasses import dataclass
+
+@dataclass
+class MathInput:
+    number: int
+
+class MathOutput:
+    result: str
+
+MathSignature = dspy.Signature(
+    input_type=MathInput,
+    output_type=MathOutput,
+    instructions="Perform a mathematical operation.",
+)
 
 predictor = dspy.Predict(MathSignature)
 
 # This will trigger a warning because we're passing a string instead of an int
-predictor(number="42")  # Warning: Type mismatch for field 'number': expected int, but provided value is incompatible
+predictor(MathInput(number="42"))  # Warning: Type mismatch for field 'number': expected int, but provided value is incompatible
+```
+
+The same type checking applies to the single-class-based style:
+
+```python
+class MathSignature(dspy.Signature):
+    """Perform a mathematical operation."""
+    number: int = dspy.InputField()
+    result: str = dspy.OutputField()
 ```
 **Disabling Type Checking**
 

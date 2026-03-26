@@ -22,11 +22,20 @@ predict(question="1+1", config={"rollout_id": 1, "temperature": 1.0})
 ### dspy.Signature
 
 ```python
-class BasicQA(dspy.Signature):
-    """Answer questions with short factoid answers."""
+from dataclasses import dataclass
 
-    question: str = dspy.InputField()
-    answer: str = dspy.OutputField(desc="often between 1 and 5 words")
+@dataclass  # Your input class could alternatively inherit from pydantic.BaseModel
+class BasicQAInput:
+    question: str
+
+class BasicQAOutput:
+    answer: str = dspy.Field(desc="often between 1 and 5 words")
+
+BasicQA = dspy.Signature(
+    input_type=BasicQAInput,
+    output_type=BasicQAOutput,
+    instructions="Answer questions with short factoid answers.",
+)
 ```
 
 ### dspy.ChainOfThought
@@ -34,9 +43,9 @@ class BasicQA(dspy.Signature):
 ```python
 generate_answer = dspy.ChainOfThought(BasicQA)
 
-# Call the predictor on a particular input alongside a hint.
+# Call with an instance of the input type.
 question='What is the color of the sky?'
-pred = generate_answer(question=question)
+pred = generate_answer(BasicQAInput(question=question))
 ```
 
 ### dspy.ProgramOfThought
@@ -45,7 +54,7 @@ pred = generate_answer(question=question)
 pot = dspy.ProgramOfThought(BasicQA)
 
 question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
-result = pot(question=question)
+result = pot(BasicQAInput(question=question))
 
 print(f"Question: {question}")
 print(f"Final Predicted Answer (after ProgramOfThought process): {result.answer}")
@@ -57,7 +66,7 @@ print(f"Final Predicted Answer (after ProgramOfThought process): {result.answer}
 react_module = dspy.ReAct(BasicQA)
 
 question = 'Sarah has 5 apples. She buys 7 more apples from the store. How many apples does Sarah have now?'
-result = react_module(question=question)
+result = react_module(BasicQAInput(question=question))
 
 print(f"Question: {question}")
 print(f"Final Predicted Answer (after ReAct process): {result.answer}")
@@ -145,18 +154,26 @@ def gsm8k_metric(gold, pred, trace=None) -> int:
 ### LLM as Judge
 
 ```python
-class FactJudge(dspy.Signature):
-    """Judge if the answer is factually correct based on the context."""
+import pydantic
 
-    context = dspy.InputField(desc="Context for the prediction")
-    question = dspy.InputField(desc="Question to be answered")
-    answer = dspy.InputField(desc="Answer for the question")
-    factually_correct: bool = dspy.OutputField(desc="Is the answer factually correct based on the context?")
+class FactJudgeInput(pydantic.BaseModel):
+    context: str = dspy.Field(desc="Context for the prediction")
+    question: str = dspy.Field(desc="Question to be answered")
+    answer: str = dspy.Field(desc="Answer for the question")
+
+class FactJudgeOutput:
+    factually_correct: bool = dspy.Field(desc="Is the answer factually correct based on the context?")
+
+FactJudge = dspy.Signature(
+    input_type=FactJudgeInput,
+    output_type=FactJudgeOutput,
+    instructions="Judge if the answer is factually correct based on the context.",
+)
 
 judge = dspy.ChainOfThought(FactJudge)
 
 def factuality_metric(example, pred):
-    factual = judge(context=example.context, question=example.question, answer=pred.answer)
+    factual = judge(FactJudgeInput(context=example.context, question=example.question, answer=pred.answer))
     return factual.factually_correct
 ```
 
@@ -452,7 +469,7 @@ asyncio.run(dspy_program(question="What is DSPy"))
 import dspy
 dspy.configure(track_usage=True)
 
-result = dspy.ChainOfThought(BasicQA)(question="What is 2+2?")
+result = dspy.ChainOfThought(BasicQA)(BasicQAInput(question="What is 2+2?"))
 print(f"Token usage: {result.get_lm_usage()}")
 ```
 
