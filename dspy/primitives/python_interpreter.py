@@ -204,6 +204,11 @@ class PythonInterpreter:
             )
             if result.returncode == 0:
                 info = json.loads(result.stdout)
+                # Check npmCache first - this is where npm packages like Pyodide are cached
+                npm_cache = info.get("npmCache")
+                if npm_cache:
+                    return npm_cache
+                # Fallback to denoDir for backward compatibility
                 return info.get("denoDir")
         except Exception:
             logger.warning("Unable to find the Deno cache dir.")
