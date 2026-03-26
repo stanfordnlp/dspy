@@ -782,7 +782,9 @@ def test_bettertogether_typed_signature_demos_bootstrapped():
     # Use a real BootstrapFewShot optimizer so that compilation actually runs.
     p_optimizer = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     optimizer = BetterTogether(metric=simple_metric, p=p_optimizer)
-    compiled = optimizer.compile(student, trainset=typed_trainset, strategy="p")
+    with patch("dspy.teleprompt.bettertogether.launch_lms"):
+        with patch("dspy.teleprompt.bettertogether.kill_lms"):
+            compiled = optimizer.compile(student, trainset=typed_trainset, strategy="p")
 
     # BootstrapFewShot should have added at least one demo.
     assert len(compiled.predictor.demos) >= 1, "BootstrapFewShot should have bootstrapped at least one demo"
@@ -829,7 +831,9 @@ def test_bettertogether_typed_invocation_after_bootstrap():
 
     p_optimizer = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
     optimizer = BetterTogether(metric=simple_metric, p=p_optimizer)
-    compiled = optimizer.compile(student, trainset=typed_trainset, strategy="p")
+    with patch("dspy.teleprompt.bettertogether.launch_lms"):
+        with patch("dspy.teleprompt.bettertogether.kill_lms"):
+            compiled = optimizer.compile(student, trainset=typed_trainset, strategy="p")
 
     # Typed positional call: _resolve_call_args unpacks BT_Input → kwargs,
     # Predict coerces the result back to BT_Output.
