@@ -1,3 +1,4 @@
+import copy
 import datetime
 import uuid
 from contextvars import ContextVar
@@ -139,6 +140,18 @@ class BaseLM:
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
         """
         raise NotImplementedError("Subclasses must implement this method.")
+
+    def __deepcopy__(self, memo: Any):
+        new_obj = self.__class__.__new__(self.__class__)
+        memo[id(self)] = new_obj
+
+        for k, v in self.__dict__.items():
+            if isinstance(v, ContextVar):
+                setattr(new_obj, k, v)  # shallow copy
+            else:
+                setattr(new_obj, k, copy.deepcopy(v, memo))
+
+        return new_obj
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters.
