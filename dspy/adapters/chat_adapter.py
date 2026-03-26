@@ -2,7 +2,6 @@ import re
 import textwrap
 from typing import Any, NamedTuple
 
-from litellm import ContextWindowExceededError
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
@@ -16,7 +15,7 @@ from dspy.adapters.utils import (
 from dspy.clients.lm import LM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
