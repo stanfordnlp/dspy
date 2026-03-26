@@ -19,10 +19,19 @@ class Hasher:
     dispatch: dict = {}
 
     def __init__(self):
+        """Initialize an empty xxhash64 hasher state."""
         self.m = xxhash.xxh64()
 
     @classmethod
     def hash_bytes(cls, value: bytes | list[bytes]) -> str:
+        """Return a hex digest for one or more byte chunks.
+
+        Args:
+            value: A single bytes object or a list of bytes to hash in order.
+
+        Returns:
+            The xxhash64 hexadecimal digest.
+        """
         value = [value] if isinstance(value, bytes) else value
         m = xxhash.xxh64()
         for x in value:
@@ -31,13 +40,27 @@ class Hasher:
 
     @classmethod
     def hash(cls, value: Any) -> str:
+        """Serialize and hash a Python object.
+
+        Args:
+            value: Any pickle-serializable Python object.
+
+        Returns:
+            The xxhash64 hexadecimal digest of the serialized object.
+        """
         return cls.hash_bytes(dumps(value))
 
     def update(self, value: Any) -> None:
+        """Update the running digest with a typed object payload.
+
+        Args:
+            value: Any pickle-serializable Python object to incorporate.
+        """
         header_for_update = f"=={type(value)}=="
         value_for_update = self.hash(value)
         self.m.update(header_for_update.encode("utf8"))
         self.m.update(value_for_update.encode("utf-8"))
 
     def hexdigest(self) -> str:
+        """Return the hexadecimal digest of the current hasher state."""
         return self.m.hexdigest()

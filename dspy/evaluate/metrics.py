@@ -22,7 +22,7 @@ def EM(prediction, answers_list):  # noqa: N802
     Returns:
         bool: Whether any reference exactly equals the prediction after normalization.
 
-    Example:
+    Examples:
         ```python
         EM("The Eiffel Tower", ["Eiffel Tower", "Louvre"])  # True
 
@@ -49,7 +49,7 @@ def F1(prediction, answers_list):  # noqa: N802
     Returns:
         float: Highest F1 score in [0.0, 1.0].
 
-    Example:
+    Examples:
         ```python
         round(F1("Eiffel Tower is in Paris", ["Paris"]), 2)  # 0.33
         ```
@@ -73,7 +73,7 @@ def HotPotF1(prediction, answers_list):  # noqa: N802
     Returns:
         float: Highest HotPotQA-style F1 in [0.0, 1.0].
 
-    Example:
+    Examples:
         ```python
         HotPotF1("yes", ["no"])  # 0.0
         ```
@@ -100,7 +100,7 @@ def normalize_text(s):
     Returns:
         str: Normalized string.
 
-    Example:
+    Examples:
         ```python
         normalize_text("The,  Eiffel  Tower!")  # "eiffel tower"
         ```
@@ -133,7 +133,7 @@ def em_score(prediction, ground_truth):
     Returns:
         bool: True if normalized strings are identical; otherwise False.
 
-    Example:
+    Examples:
         ```python
         em_score("Paris", "paris")  # True
         ```
@@ -155,7 +155,7 @@ def f1_score(prediction, ground_truth):
     Returns:
         float: F1 score in [0.0, 1.0].
 
-    Example:
+    Examples:
         ```python
         round(f1_score("the Eiffel Tower", "Eiffel Tower"), 2)  # 1.0
         ```
@@ -193,7 +193,7 @@ def hotpot_f1_score(prediction, ground_truth):
     Returns:
         float: HotPotQA-style F1 score in [0.0, 1.0].
 
-    Example:
+    Examples:
         ```python
         hotpot_f1_score("no", "yes")  # 0.0
         ```
@@ -232,7 +232,7 @@ def precision_score(prediction, ground_truth):
     Returns:
         float: Precision in [0.0, 1.0].
 
-    Example:
+    Examples:
         ```python
         precision_score("eiffel tower in paris", "eiffel tower")  # 0.67
         ```
@@ -298,7 +298,7 @@ def answer_exact_match(example, pred, trace=None, frac=1.0):
     Returns:
         bool: True if the match condition holds; otherwise False.
 
-    Example:
+    Examples:
         ```python
         import dspy
 
@@ -330,7 +330,7 @@ def answer_passage_match(example, pred, trace=None):
     Returns:
         bool: True if any passage contains any reference answer; otherwise False.
 
-    Example:
+    Examples:
         ```python
         import dspy
 

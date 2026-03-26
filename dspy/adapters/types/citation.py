@@ -14,7 +14,7 @@ class Citations(Type):
     citation extraction, particularly Anthropic's Citations API through LiteLLM.
     Citations include the quoted text and source information.
 
-    Example:
+    Examples:
         ```python
         import os
         import dspy
@@ -98,7 +98,7 @@ class Citations(Type):
         Returns:
             A Citations instance.
 
-        Example:
+        Examples:
             ```python
             citations_dict = [
                 {

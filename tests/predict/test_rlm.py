@@ -3,7 +3,7 @@ Tests for the RLM (Recursive Language Model) module.
 
 Test organization:
 - Unit tests (no Deno required): MockInterpreter, RLM formatting, signatures
-- Integration tests (@pytest.mark.integration): PythonInterpreter with Deno
+- Integration tests (@pytest.mark.deno): PythonInterpreter with Deno
 """
 
 from contextlib import contextmanager
@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import pytest
 
 from dspy.adapters.types.tool import Tool
-from dspy.predict.rlm import RLM
+from dspy.predict.rlm import RLM, _strip_code_fences
 from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -268,6 +268,38 @@ class TestRLMInitialization:
             tools["llm_query"](prompt="one more")
 
 
+class TestRLMCodeFenceParsing:
+    """Tests for robust fenced-code extraction."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            # Standard python fence
+            ("```python\nprint(1)\n```", "print(1)"),
+            ("```py\nx = 1\nprint(x)\n```", "x = 1\nprint(x)"),
+            # Bare fence (no language tag)
+            ("```\nprint('no lang')\n```", "print('no lang')"),
+            # No fences at all
+            ("not fenced code", "not fenced code"),
+            # Text before fence (preamble is skipped)
+            ("I'll inspect first.\n```python\nprint('hello')\n```\nThen I will submit.", "print('hello')"),
+            # Text after closing fence (ignored)
+            ("```python\nprint(1)\n```\nsome trailing text", "print(1)"),
+            # Unclosed fence (just return the body)
+            ("```python\nprint('oops')", "print('oops')"),
+            # Double fences (outer decorative ```)
+            ("```\n```python\nprint(1)\n```\n```", "print(1)"),
+            ("```\n```\nprint(2)\n```\n```", "print(2)"),
+        ],
+    )
+    def test_strip_code_fences(self, raw, expected):
+        assert _strip_code_fences(raw) == expected
+
+    def test_strip_code_fences_rejects_non_python_lang(self):
+        with pytest.raises(SyntaxError, match="json"):
+            _strip_code_fences('```json\n{"a": 1}\n```')
+
+
 class TestRLMFormatting:
     """Tests for RLM formatting helpers."""
 
@@ -306,11 +338,12 @@ class TestRLMFormatting:
         formatted = rlm._format_output("")
         assert "no output" in formatted.lower()
 
-    def test_format_output_truncation(self):
-        """Test that long output is truncated."""
+    def test_format_output_passthrough(self):
+        """Test that _format_output passes through non-empty output without truncation."""
         rlm = RLM("context -> answer", max_output_chars=100)
-        formatted = rlm._format_output("x" * 200)
-        assert "truncated" in formatted.lower()
+        long_output = "a" * 200
+        formatted = rlm._format_output(long_output)
+        assert formatted == long_output
 
     def test_format_variable_info_string(self):
         """Test variable info formatting for string value using REPLVariable."""
@@ -319,7 +352,8 @@ class TestRLMFormatting:
         assert "Variable: `context`" in formatted
         assert "Type: str" in formatted
         assert "11" in formatted  # length
-        assert "Hello" in formatted
+        assert "He" in formatted  # head
+        assert "ld" in formatted  # tail
         assert "..." in formatted  # truncation indicator
 
     def test_format_variable_info_dict(self):
@@ -379,10 +413,33 @@ class TestREPLTypes:
         assert "1" in formatted
 
     def test_repl_entry_format_truncation(self):
-        """Test REPLEntry output truncation."""
-        entry = REPLEntry(code="print('x' * 1000)", output="x" * 1000)
-        formatted = entry.format(index=0, max_output_chars=50)
-        assert "truncated" in formatted
+        """Test REPLEntry.format() truncates with head+tail and shows true length."""
+        output = "a" * 100 + "b" * 100
+        entry = REPLEntry(code="print('a' + 'b')", output=output)
+        formatted = entry.format(index=0, max_output_chars=100)
+        # Head and tail preserved
+        assert "a" * 50 in formatted
+        assert "b" * 50 in formatted
+        assert "100 characters omitted" in formatted
+        # True original length shown in header
+        assert "200 chars" in formatted
+
+    def test_repl_entry_format_no_truncation(self):
+        """Test REPLEntry.format() passes short output through without truncation."""
+        output = "a" * 50
+        entry = REPLEntry(code="print('a')", output=output)
+        formatted = entry.format(index=0, max_output_chars=100)
+        assert output in formatted
+        assert "omitted" not in formatted
+
+    def test_repl_history_threads_max_output_chars(self):
+        """Test REPLHistory carries max_output_chars through append()."""
+        h = REPLHistory(max_output_chars=50)
+        h2 = h.append(code="print(1)", output="a" * 100)
+        assert h2.max_output_chars == 50
+        # Formatting should truncate at 50 chars
+        formatted = h2.format()
+        assert "50 characters omitted" in formatted
 
     def test_repl_variable_from_value(self):
         """Test REPLVariable.from_value() factory."""
@@ -393,10 +450,11 @@ class TestREPLTypes:
         assert "hello world" in var.preview
 
     def test_repl_variable_truncation(self):
-        """Test REPLVariable preview truncation."""
-        var = REPLVariable.from_value("big", "x" * 1000, preview_chars=50)
-        assert len(var.preview) == 53  # 50 + "..."
-        assert var.preview.endswith("...")
+        """Test REPLVariable preview shows head and tail."""
+        var = REPLVariable.from_value("big", "a" * 500 + "b" * 500, preview_chars=50)
+        assert var.preview.startswith("a" * 25)
+        assert var.preview.endswith("b" * 25)
+        assert "..." in var.preview
 
     def test_repl_variable_with_field_info(self):
         """Test REPLVariable includes desc and constraints from field_info."""
@@ -508,6 +566,54 @@ class TestRLMToolExceptions:
         result = rlm.forward(query="test")
         assert result.answer == "recovered"
 
+    def test_runtime_error_history_uses_stripped_code(self):
+        """Runtime execution failures should preserve stripped code in history."""
+        mock = MockInterpreter(responses=[
+            CodeInterpreterError("NameError: name 'x' is not defined"),
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Will fail", "code": "```python\nprint(x)\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        first_step = result.trajectory[0]
+        assert first_step["code"] == "print(x)"
+
+    def test_syntax_error_from_execute_is_recoverable(self):
+        """SyntaxError from interpreter.execute should be surfaced as an iteration error."""
+        mock = MockInterpreter(responses=[
+            SyntaxError("invalid syntax"),
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Bad code", "code": "```python\ndef incomplete(\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        assert result.trajectory[0]["output"].startswith("[Error] invalid syntax")
+
+    def test_syntax_error_from_strip_code_fences_is_recoverable(self):
+        """SyntaxError raised by _strip_code_fences (e.g. non-Python fence tag) should be recoverable."""
+        mock = MockInterpreter(responses=[
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Wrong language", "code": "```bash\nls -la\n```"},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        assert result.trajectory[0]["output"].startswith("[Error]")
+
 
 class TestRLMDynamicSignature:
     """Tests for the dynamically built RLM signatures."""
@@ -549,7 +655,7 @@ class TestRLMDynamicSignature:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestPythonInterpreter:
     """Integration tests for the secure sandbox with tool support."""
 
@@ -708,7 +814,7 @@ print(f"Count: {info['count']}")
                 interp.execute("undefined_variable")
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestSandboxSecurity:
     """Integration tests for sandbox security restrictions."""
 
@@ -828,7 +934,7 @@ class TestRLMTypeCoercionMock:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMTypeCoercion:
     """Tests for RLM type coercion through full forward pass with PythonInterpreter.
 
@@ -872,7 +978,7 @@ class TestRLMTypeCoercion:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMMultipleOutputs:
     """Tests for signatures with multiple typed output fields.
 
@@ -959,7 +1065,7 @@ class TestRLMMultipleOutputs:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.deno
 class TestRLMWithDummyLM:
     """End-to-end tests using DummyLM with RLM and PythonInterpreter.
 

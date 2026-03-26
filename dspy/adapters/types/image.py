@@ -30,7 +30,7 @@ class Image(Type):
         extra="forbid",
     )
 
-    def __init__(self, url: Any = None, *, download: bool = False, **data):
+    def __init__(self, url: Any = None, *, download: bool = False, verify: bool = True, **data):
         """Create an Image.
 
         Parameters
@@ -47,6 +47,10 @@ class Image(Type):
         download:
             Whether remote URLs should be downloaded to infer their MIME type.
 
+        verify:
+            Whether to verify SSL certificates when downloading images from URLs.
+            Set to False for self-signed certificates. Default is True.
+
         Any additional keyword arguments are passed to :class:`pydantic.BaseModel`.
         """
 
@@ -61,7 +65,7 @@ class Image(Type):
 
         if "url" in data:
             # Normalize any accepted input into a base64 data URI or plain URL.
-            data["url"] = encode_image(data["url"], download_images=download)
+            data["url"] = encode_image(data["url"], download_images=download, verify=verify)
 
         # Delegate the rest of initialization to pydantic's BaseModel.
         super().__init__(**data)
@@ -121,13 +125,14 @@ def is_url(string: str) -> bool:
         return False
 
 
-def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_images: bool = False) -> str:
+def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_images: bool = False, verify: bool = True) -> str:
     """
     Encode an image or file to a base64 data URI.
 
     Args:
         image: The image or file to encode. Can be a PIL Image, file path, URL, or data URI.
         download_images: Whether to download images from URLs.
+        verify: Whether to verify SSL certificates when downloading images.
 
     Returns:
         str: The data URI of the file or the URL if download_images is False.
@@ -148,7 +153,7 @@ def encode_image(image: Union[str, bytes, "PILImage.Image", dict], download_imag
         elif is_url(image):
             # URL
             if download_images:
-                return _encode_image_from_url(image)
+                return _encode_image_from_url(image, verify=verify)
             else:
                 # Return the URL as is
                 return image
@@ -185,9 +190,14 @@ def _encode_image_from_file(file_path: str) -> str:
     return f"data:{mime_type};base64,{encoded_data}"
 
 
-def _encode_image_from_url(image_url: str) -> str:
-    """Encode a file from a URL to a base64 data URI."""
-    response = requests.get(image_url)
+def _encode_image_from_url(image_url: str, verify: bool = True) -> str:
+    """Encode a file from a URL to a base64 data URI.
+    
+    Args:
+        image_url: The URL of the image to download.
+        verify: Whether to verify SSL certificates. Set to False for self-signed certs.
+    """
+    response = requests.get(image_url, verify=verify)
     response.raise_for_status()
     content_type = response.headers.get("Content-Type", "")
 

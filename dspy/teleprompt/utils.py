@@ -383,6 +383,7 @@ def create_n_fewshot_demo_sets(
             program = BootstrapFewShot(
                 metric=metric,
                 max_errors=max_errors,
+                metric_threshold=metric_threshold,
                 max_bootstrapped_demos=max_bootstrapped_demos,
                 max_labeled_demos=max_labeled_demos,
                 teacher_settings=teacher_settings,

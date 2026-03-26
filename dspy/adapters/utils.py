@@ -12,8 +12,16 @@ from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.types.base_type import Type as DspyType
+from dspy.adapters.types.code import Code
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.signatures.utils import get_dspy_field_type
+
+
+def _annotation_is_subclass(annotation: Any, expected_base: type) -> bool:
+    try:
+        return inspect.isclass(annotation) and issubclass(annotation, expected_base)
+    except TypeError:
+        return False
 
 
 def serialize_for_json(value: Any) -> Any:
@@ -91,7 +99,7 @@ def translate_field_type(field_name, field_info):
         desc = "must be True or False"
     elif field_type in (int, float):
         desc = f"must be a single {field_type.__name__} value"
-    elif inspect.isclass(field_type) and issubclass(field_type, enum.Enum):
+    elif _annotation_is_subclass(field_type, enum.Enum):
         enum_vals = "; ".join(str(member.value) for member in field_type)
         desc = f"must be one of: {enum_vals}"
     elif hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
@@ -100,6 +108,9 @@ def translate_field_type(field_name, field_info):
             # literal or returning a value of the form 'Literal[<selected_value>]'
             f"must exactly match (no extra characters) one of: {'; '.join([str(x) for x in field_type.__args__])}"
         )
+    elif _annotation_is_subclass(field_type, Code) and field_type.description():
+        # Code has a rich type description already; avoid duplicating its large schema block.
+        desc = ""
     else:
         desc = f"must adhere to the JSON schema: {json.dumps(_get_json_schema(field_type), ensure_ascii=False)}"
 
@@ -178,7 +189,7 @@ def parse_value(value, annotation):
     try:
         return TypeAdapter(annotation).validate_python(candidate)
     except pydantic.ValidationError as e:
-        if inspect.isclass(annotation) and issubclass(annotation, DspyType):
+        if _annotation_is_subclass(annotation, DspyType):
             try:
                 # For dspy.Type, try parsing from the original value in case it has a custom parser
                 return TypeAdapter(annotation).validate_python(value)

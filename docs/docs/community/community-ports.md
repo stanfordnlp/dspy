@@ -12,6 +12,7 @@ If you have created a DSPy port in another language, please submit a PR to add i
 | **Elixir** | [dspy.ex](https://github.com/arthurcolle/dspy.ex) | ![GitHub stars](https://img.shields.io/github/stars/arthurcolle/dspy.ex?style=flat) | Inspired by DSPy, adapts for Elixir |
 | **Go** | [dspy-go](https://github.com/XiaoConstantine/dspy-go) | ![GitHub stars](https://img.shields.io/github/stars/XiaoConstantine/dspy-go?style=flat) | Native Go implementation |
 | **.NET** | [DSpyNet](https://github.com/al322se/DSpyNet) | ![GitHub stars](https://img.shields.io/github/stars/al322se/DSpyNet?style=flat) | C# .NET port |
+| **R** | [dsprrr](https://github.com/jameshwade/dsprrr) | ![GitHub stars](https://img.shields.io/github/stars/jameshwade/dsprrr?style=flat) | R implementation inspired by DSPy |
 | **Ruby** | [dspy.rb](https://github.com/vicentereig/dspy.rb) | ![GitHub stars](https://img.shields.io/github/stars/vicentereig/dspy.rb?style=flat) | Ruby port |
 | **Rust** | [DSRs](https://github.com/krypticmouse/DSRs) | ![GitHub stars](https://img.shields.io/github/stars/krypticmouse/DSRs?style=flat) | Ground-up Rust rewrite |
 | **TypeScript** | [ax](https://github.com/ax-llm/ax) | ![GitHub stars](https://img.shields.io/github/stars/ax-llm/ax?style=flat) | Inspired by DSPy for TypeScript |

@@ -11,7 +11,6 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -26,7 +25,7 @@ from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreter, Code
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
-from dspy.primitives.repl_types import REPLHistory, REPLVariable
+from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
 
@@ -62,16 +61,41 @@ IMPORTANT: This is ITERATIVE. Each code block you write will execute, you'll see
 
 You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your output."""
 
-# Pattern to match markdown code fences: ```python\n...\n``` or ```\n...\n```
-_CODE_FENCE_PATTERN = re.compile(r"^```(?:python|py)?\s*\n(.*)\n```\s*$", re.DOTALL)
+_PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 
 def _strip_code_fences(code: str) -> str:
+    """Extract Python code from markdown fences, or return as-is if no fences."""
     code = code.strip()
-    match = _CODE_FENCE_PATTERN.match(code)
-    if match:
-        return match.group(1)
-    return code
+    if "```" not in code:
+        return code
+
+    # Strip outer decorative fence pairs (e.g. ```\n```python\n...\n```\n```)
+    lines = code.splitlines()
+    while len(lines) >= 2 and lines[0].strip() == "```" and lines[-1].strip() == "```":
+        lines.pop(0)
+        lines.pop()
+    code = "\n".join(lines).strip()
+    if "```" not in code:
+        return code
+
+    # Find the first opening fence (skip any text before it)
+    fence_start = code.find("```")
+    lang_line, separator, remainder = code[fence_start + 3:].partition("\n")
+    if not separator:
+        return code
+
+    # Accept python-labeled fences or bare ``` fences; reject explicit non-Python tags
+    lang = (lang_line.strip().split(maxsplit=1)[0] if lang_line.strip() else "").lower()
+    if lang not in _PYTHON_FENCE_LANGS:
+        raise SyntaxError(f"Expected Python code but got ```{lang} fence. Write Python code, not {lang}.")
+
+    # Find closing fence
+    block_end = remainder.find("```")
+    if block_end == -1:
+        return remainder.strip()
+
+    return remainder[:block_end].strip()
 
 
 @experimental
@@ -89,7 +113,7 @@ class RLM(Module):
     Create separate RLM instances for concurrent use, or use the default
     PythonInterpreter which creates a fresh instance per forward() call.
 
-    Example:
+    Examples:
         ```python
         # Basic usage
         rlm = dspy.RLM("context, query -> output", max_iterations=10)
@@ -103,7 +127,7 @@ class RLM(Module):
         signature: type[Signature] | str,
         max_iterations: int = 20,
         max_llm_calls: int = 50,
-        max_output_chars: int = 100_000,
+        max_output_chars: int = 10_000,
         verbose: bool = False,
         tools: list[Callable] | None = None,
         sub_lm: dspy.LM | None = None,
@@ -336,11 +360,8 @@ class RLM(Module):
         return variables
 
     def _format_output(self, output: str) -> str:
-        """Format and truncate REPL output."""
         if not output:
             return "(no output - did you forget to print?)"
-        if len(output) > self.max_output_chars:
-            return output[:self.max_output_chars] + "\n... (truncated)"
         return output
 
     def _validate_inputs(self, input_args: dict[str, Any]) -> None:
@@ -453,7 +474,8 @@ class RLM(Module):
 
     def _process_execution_result(
         self,
-        pred: Any,
+        pred: Prediction,
+        code: str,
         result: Any,
         history: REPLHistory,
         output_field_names: list[str],
@@ -464,6 +486,7 @@ class RLM(Module):
 
         Args:
             pred: The prediction containing reasoning and code attributes
+            code: Code to record in history (already stripped when possible)
             result: Result from interpreter.execute() - FinalOutput, list, str, or error string
             history: Current REPL history
             output_field_names: List of expected output field names
@@ -471,8 +494,6 @@ class RLM(Module):
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
         """
-        # Strip markdown fences from code for history (format() will re-add them)
-        code = _strip_code_fences(pred.code)
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
@@ -501,7 +522,21 @@ class RLM(Module):
             output = str(result) if result else ""
 
         output = self._format_output(output)
+        if self.verbose:
+            logger.info(REPLEntry.format_output(output, self.max_output_chars))
         return history.append(reasoning=pred.reasoning, code=code, output=output)
+
+    def _execute_code(
+        self,
+        repl: CodeInterpreter,
+        code: str,
+        input_args: dict[str, Any],
+    ) -> Any:
+        """Execute code in the interpreter, returning the result or an error string."""
+        try:
+            return repl.execute(code, variables=dict(input_args))
+        except (CodeInterpreterError, SyntaxError) as e:
+            return f"[Error] {e}"
 
     def _execute_iteration(
         self,
@@ -527,11 +562,12 @@ class RLM(Module):
 
         try:
             code = _strip_code_fences(action.code)
-            result = repl.execute(code, variables=dict(input_args))
-        except (CodeInterpreterError, SyntaxError) as e:
+        except SyntaxError as e:
+            code = action.code
             result = f"[Error] {e}"
-
-        return self._process_execution_result(action, result, history, output_field_names)
+            return self._process_execution_result(action, code, result, history, output_field_names)
+        result = self._execute_code(repl, code, input_args)
+        return self._process_execution_result(action, code, result, history, output_field_names)
 
     # =========================================================================
     # Public Interface
@@ -556,7 +592,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
-            history: REPLHistory = REPLHistory()
+            history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
                 result: Prediction | REPLHistory = self._execute_iteration(
@@ -614,11 +650,12 @@ class RLM(Module):
 
         try:
             code = _strip_code_fences(pred.code)
-            result = repl.execute(code, variables=dict(input_args))
-        except (CodeInterpreterError, SyntaxError) as e:
+        except SyntaxError as e:
+            code = pred.code
             result = f"[Error] {e}"
-
-        return self._process_execution_result(pred, result, history, output_field_names)
+            return self._process_execution_result(pred, code, result, history, output_field_names)
+        result = self._execute_code(repl, code, input_args)
+        return self._process_execution_result(pred, code, result, history, output_field_names)
 
     async def aforward(self, **input_args) -> Prediction:
         """Async version of forward(). Execute RLM to produce outputs.
@@ -639,7 +676,7 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
-            history = REPLHistory()
+            history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
                 result = await self._aexecute_iteration(

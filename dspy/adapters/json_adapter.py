@@ -98,7 +98,9 @@ class JSONAdapter(ChatAdapter):
             return await result
 
         try:
-            structured_output_model = _get_structured_outputs_response_format(signature)
+            structured_output_model = _get_structured_outputs_response_format(
+                signature, self.use_native_function_calling
+            )
             lm_kwargs["response_format"] = structured_output_model
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
         except Exception:
@@ -205,7 +207,7 @@ class JSONAdapter(ChatAdapter):
         else:
             d = fields_with_values.items()
             d = {k.name: v for k, v in d}
-            return json.dumps(serialize_for_json(d), indent=2)
+            return json.dumps(serialize_for_json(d), indent=2, ensure_ascii=False)
 
     def format_finetune_data(
         self, signature: type[Signature], demos: list[dict[str, Any]], inputs: dict[str, Any], outputs: dict[str, Any]
