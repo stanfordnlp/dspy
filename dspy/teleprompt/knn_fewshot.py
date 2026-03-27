@@ -1,15 +1,17 @@
 import types
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from dspy.clients import Embedder
 from dspy.predict.knn import KNN
+
+if TYPE_CHECKING:
+    from dspy.clients.embedding import Embedder
 from dspy.primitives import Example
 from dspy.teleprompt import BootstrapFewShot
 from dspy.teleprompt.teleprompt import Teleprompter
 
 
 class KNNFewShot(Teleprompter):
-    def __init__(self, k: int, trainset: list[Example], vectorizer: Embedder, **few_shot_bootstrap_args: dict[str, Any]):
+    def __init__(self, k: int, trainset: list[Example], vectorizer: "Embedder", **few_shot_bootstrap_args: dict[str, Any]):
         """
         KNNFewShot is an optimizer that uses an in-memory KNN retriever to find the k nearest neighbors
         in a trainset at test time. For each input example in a forward call, it identifies the k most

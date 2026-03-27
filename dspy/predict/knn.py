@@ -1,11 +1,15 @@
+from typing import TYPE_CHECKING
+
 import numpy as np
 
-from dspy.clients import Embedder
 from dspy.primitives import Example
+
+if TYPE_CHECKING:
+    from dspy.clients.embedding import Embedder
 
 
 class KNN:
-    def __init__(self, k: int, trainset: list[Example], vectorizer: Embedder):
+    def __init__(self, k: int, trainset: list[Example], vectorizer: "Embedder"):
         """
         A k-nearest neighbors retriever that finds similar examples from a training set.
 

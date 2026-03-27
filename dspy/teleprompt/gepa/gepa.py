@@ -2,13 +2,14 @@ import inspect
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Protocol, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
 
 from gepa import GEPAResult
 from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
-from dspy.clients.lm import LM
+if TYPE_CHECKING:
+    from dspy.clients.lm import LM
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
 from dspy.teleprompt.teleprompt import Teleprompter
@@ -338,7 +339,7 @@ class GEPA(Teleprompter):
         # Reflection configuration
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
-        reflection_lm: LM | None = None,
+        reflection_lm: "LM | None" = None,
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,

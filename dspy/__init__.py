@@ -15,7 +15,6 @@ from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, en
 from dspy.utils.asyncify import asyncify
 from dspy.utils.syncify import syncify
 from dspy.utils.saving import load
-from dspy.streaming.streamify import streamify
 from dspy.utils.usage_tracker import track_usage
 
 from dspy.dsp.utils.settings import settings
@@ -33,3 +32,16 @@ context = settings.context
 BootstrapRS = BootstrapFewShotWithRandomSearch
 
 cache = DSPY_CACHE
+
+
+def __getattr__(name):
+    """Lazy access for litellm-dependent names (LM, Embedder, streamify)."""
+    if name in ("LM", "Embedder"):
+        from dspy.clients import __getattr__ as _clients_getattr
+
+        return _clients_getattr(name)
+    if name == "streamify":
+        from dspy.streaming.streamify import streamify
+
+        return streamify
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

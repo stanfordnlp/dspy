@@ -2,12 +2,8 @@ import logging
 import os
 from pathlib import Path
 
-import litellm
-
 from dspy.clients.base_lm import BaseLM, inspect_history
 from dspy.clients.cache import Cache
-from dspy.clients.embedding import Embedder
-from dspy.clients.lm import LM
 from dspy.clients.provider import Provider, TrainingJob
 
 logger = logging.getLogger(__name__)
@@ -48,8 +44,70 @@ def configure_cache(
     dspy.cache = DSPY_CACHE
 
 
-litellm.telemetry = False
-litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
+def _configure_litellm_defaults():
+    """Configure litellm defaults. Called lazily on first litellm use."""
+    try:
+        import litellm
+    except ImportError:
+        return
+
+    litellm.telemetry = False
+    litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
+    _suppress_litellm_logging()
+
+
+def _suppress_litellm_logging():
+    """Suppress litellm logging by default."""
+    try:
+        import litellm
+        from litellm._logging import verbose_logger
+
+        litellm.suppress_debug_info = True
+        numeric_level = logging.ERROR
+        verbose_logger.setLevel(numeric_level)
+        for h in verbose_logger.handlers:
+            h.setLevel(numeric_level)
+    except ImportError:
+        pass
+
+
+_litellm_configured = False
+
+
+def _ensure_litellm_configured():
+    """Ensure litellm defaults are set. Safe to call multiple times."""
+    global _litellm_configured
+    if not _litellm_configured:
+        _configure_litellm_defaults()
+        _litellm_configured = True
+
+
+def configure_litellm_logging(level: str = "ERROR"):
+    """Configure LiteLLM logging to the specified level."""
+    _ensure_litellm_configured()
+    from litellm._logging import verbose_logger
+
+    numeric_logging_level = getattr(logging, level)
+
+    verbose_logger.setLevel(numeric_logging_level)
+    for h in verbose_logger.handlers:
+        h.setLevel(numeric_logging_level)
+
+
+def enable_litellm_logging():
+    import litellm
+
+    _ensure_litellm_configured()
+    litellm.suppress_debug_info = False
+    configure_litellm_logging("DEBUG")
+
+
+def disable_litellm_logging():
+    import litellm
+
+    _ensure_litellm_configured()
+    litellm.suppress_debug_info = True
+    configure_litellm_logging("ERROR")
 
 
 def _get_dspy_cache():
@@ -79,38 +137,31 @@ def _get_dspy_cache():
 
 DSPY_CACHE = _get_dspy_cache()
 
-def configure_litellm_logging(level: str = "ERROR"):
-    """Configure LiteLLM logging to the specified level."""
-    # Litellm uses a global logger called `verbose_logger` to control all loggings.
-    from litellm._logging import verbose_logger
 
-    numeric_logging_level = getattr(logging, level)
+def __getattr__(name):
+    """Lazy imports for litellm-dependent classes."""
+    if name == "LM":
+        _ensure_litellm_configured()
+        from dspy.clients.lm import LM
+        return LM
+    if name == "Embedder":
+        _ensure_litellm_configured()
+        from dspy.clients.embedding import Embedder
+        return Embedder
+    # Allow normal submodule access (e.g., dspy.clients.lm)
+    import importlib
 
-    verbose_logger.setLevel(numeric_logging_level)
-    for h in verbose_logger.handlers:
-        h.setLevel(numeric_logging_level)
+    try:
+        return importlib.import_module(f".{name}", __name__)
+    except ImportError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-
-def enable_litellm_logging():
-    litellm.suppress_debug_info = False
-    configure_litellm_logging("DEBUG")
-
-
-def disable_litellm_logging():
-    litellm.suppress_debug_info = True
-    configure_litellm_logging("ERROR")
-
-
-# By default, we disable LiteLLM logging for clean logging
-disable_litellm_logging()
 
 __all__ = [
     "BaseLM",
-    "LM",
     "Provider",
     "TrainingJob",
     "inspect_history",
-    "Embedder",
     "enable_litellm_logging",
     "disable_litellm_logging",
     "configure_cache",

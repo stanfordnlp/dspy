@@ -2,12 +2,14 @@ import logging
 import random
 import time
 from collections import Counter, deque
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.xml_adapter import XMLAdapter
-from dspy.clients.lm import LM
+
+if TYPE_CHECKING:
+    from dspy.clients.lm import LM
 from dspy.clients.utils_finetune import GRPOGroup, GRPOStatus, TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.evaluate.evaluate import Evaluate
@@ -28,8 +30,8 @@ class GRPO(FinetuneTeleprompter):
         self,
         metric: Callable | None = None,
         multitask: bool = True,
-        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
-        adapter: Adapter | dict[LM, Adapter] | None = None,
+        train_kwargs: "dict[str, Any] | dict[LM, dict[str, Any]] | None" = None,
+        adapter: "Adapter | dict[LM, Adapter] | None" = None,
         exclude_demos: bool = False,
         num_threads: int = 6,
         num_train_steps: int = 100,

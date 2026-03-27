@@ -1,11 +1,19 @@
 import logging
 from collections import defaultdict
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import dspy
 from dspy.adapters.base import Adapter
 from dspy.adapters.chat_adapter import ChatAdapter
-from dspy.clients.lm import LM
+
+if TYPE_CHECKING:
+    from dspy.clients.lm import LM
+
+
+def _is_lm_keyed_dict(arg: dict) -> bool:
+    from dspy.clients.lm import LM
+
+    return all(isinstance(k, LM) for k in arg.keys())
 from dspy.clients.utils_finetune import infer_data_format
 from dspy.dsp.utils.settings import settings
 from dspy.predict.predict import Predict
@@ -20,14 +28,14 @@ logger = logging.getLogger(__name__)
 class FinetuneTeleprompter(Teleprompter):
     def __init__(
         self,
-        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
+        train_kwargs: "dict[str, Any] | dict[LM, dict[str, Any]] | None" = None,
     ):
         self.train_kwargs: dict[LM, Any] = self.convert_to_lm_dict(train_kwargs or {})
 
     @staticmethod
-    def convert_to_lm_dict(arg) -> dict[LM, Any]:
+    def convert_to_lm_dict(arg) -> "dict[LM, Any]":
         non_empty_dict = arg and isinstance(arg, dict)
-        if non_empty_dict and all(isinstance(k, LM) for k in arg.keys()):
+        if non_empty_dict and _is_lm_keyed_dict(arg):
             return arg
         # Default to using the same value for all LMs
         return defaultdict(lambda: arg)
@@ -38,8 +46,8 @@ class BootstrapFinetune(FinetuneTeleprompter):
         self,
         metric: Callable | None = None,
         multitask: bool = True,
-        train_kwargs: dict[str, Any] | dict[LM, dict[str, Any]] | None = None,
-        adapter: Adapter | dict[LM, Adapter] | None = None,
+        train_kwargs: "dict[str, Any] | dict[LM, dict[str, Any]] | None" = None,
+        adapter: "Adapter | dict[LM, Adapter] | None" = None,
         exclude_demos: bool = False,
         num_threads: int | None = None,
     ):
@@ -134,7 +142,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
         return student
 
     @staticmethod
-    def finetune_lms(finetune_dict) -> dict[Any, LM]:
+    def finetune_lms(finetune_dict) -> "dict[Any, LM]":
         num_jobs = len(finetune_dict)
         logger.info(f"Starting {num_jobs} fine-tuning job(s)...")
         # TODO(nit) Pass an identifier to the job so that we can tell the logs
@@ -165,7 +173,7 @@ class BootstrapFinetune(FinetuneTeleprompter):
 
         return key_to_lm
 
-    def _prepare_finetune_data(self, trace_data: list[dict[str, Any]], lm: LM, pred_ind: int | None = None):
+    def _prepare_finetune_data(self, trace_data: list[dict[str, Any]], lm: "LM", pred_ind: int | None = None):
         # TODO(nit) Log dataset details/size; make logs nicer
         if self.metric:
             logger.info(f"Collected data for {len(trace_data)} examples")
@@ -305,7 +313,7 @@ def assert_no_shared_predictor(program1: Module, program2: Module):
     assert not shared_ids, err
 
 
-def get_unique_lms(program: Module) -> list[LM]:
+def get_unique_lms(program: Module) -> "list[LM]":
     lms = [pred.lm for pred in program.predictors()]
     return list(set(lms))
 
