@@ -9,6 +9,7 @@ import litellm
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
+from litellm import ContextWindowExceededError as LitellmContextWindowExceededError
 
 import dspy
 from dspy.clients.cache import request_cache
@@ -17,6 +18,7 @@ from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
+from dspy.utils.exceptions import ContextWindowExceededError
 
 from .base_lm import BaseLM
 
@@ -156,11 +158,14 @@ class LM(BaseLM):
             completion = litellm_responses_completion
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
-        results = completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-            cache=litellm_cache_args,
-        )
+        try:
+            results = completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+                cache=litellm_cache_args,
+            )
+        except LitellmContextWindowExceededError as e:
+            raise ContextWindowExceededError(model=self.model) from e
 
         self._check_truncation(results)
 
@@ -194,11 +199,14 @@ class LM(BaseLM):
             completion = alitellm_responses_completion
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
-        results = await completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-            cache=litellm_cache_args,
-        )
+        try:
+            results = await completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+                cache=litellm_cache_args,
+            )
+        except LitellmContextWindowExceededError as e:
+            raise ContextWindowExceededError(model=self.model) from e
 
         self._check_truncation(results)
 
