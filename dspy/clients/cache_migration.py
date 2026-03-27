@@ -86,6 +86,20 @@ def read_legacy_entries(directory: str) -> list[tuple[str, Any]]:
     return entries
 
 
+def remove_legacy_shard_dbs(directory: str) -> None:
+    """Delete legacy shard DB files so FanoutCache starts with clean tables.
+
+    Without this, FanoutCache reuses existing DBs and stale pickle rows
+    corrupt its internal count/size bookkeeping.
+    """
+    for shard_id in range(16):
+        shard_dir = os.path.join(directory, f"{shard_id:03d}")
+        for suffix in ("cache.db", "cache.db-wal", "cache.db-shm"):
+            path = os.path.join(shard_dir, suffix)
+            if os.path.isfile(path):
+                os.remove(path)
+
+
 def migrate_diskcache(directory: str, target) -> tuple[int, int]:
     """Migrate entries from a legacy diskcache FanoutCache (16 shards) into *target*.
 

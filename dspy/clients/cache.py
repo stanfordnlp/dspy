@@ -15,7 +15,7 @@ import orjson
 import pydantic
 from cachetools import LRUCache
 
-from dspy.clients.cache_migration import read_legacy_entries
+from dspy.clients.cache_migration import read_legacy_entries, remove_legacy_shard_dbs
 from dspy.clients.disk_serialization import DeserializationError, OrjsonDisk
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,8 @@ class Cache:
             pending_entries = None
             if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
                 pending_entries = read_legacy_entries(disk_cache_dir)
+                if pending_entries:
+                    remove_legacy_shard_dbs(disk_cache_dir)
 
             # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
             # as a practical "no limit" when the caller passes None.
@@ -94,7 +96,7 @@ class Cache:
                 timeout=60,
             )
 
-            if pending_entries and len(self.disk_cache) == 0:
+            if pending_entries:
                 self._migrate_entries(pending_entries, disk_cache_dir)
         else:
             self.disk_cache = {}
