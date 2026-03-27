@@ -1942,3 +1942,32 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+def test_coerce_prediction_to_pydantic_output_type_validator_error():
+    """When a pydantic field_validator on output_type rejects an LM value, coercion must not raise ValidationError."""
+    from pydantic import field_validator
+
+    class InputType(pydantic.BaseModel):
+        question: str
+
+    class OutputType(pydantic.BaseModel):
+        answer: str
+
+        @field_validator("answer")
+        @classmethod
+        def must_be_short(cls, v):
+            if len(v) > 5:
+                raise ValueError("Answer too long")
+            return v
+
+    # DummyLM returns a long answer — the validator rejects it in _coerce_prediction_to_output_type
+    dspy.configure(lm=DummyLM([{"answer": "Paris is the capital of France"}]))
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(sig)
+
+    # Must not raise — falls back to best-effort instance that still exposes the raw value
+    result = program(InputType(question="What is the capital of France?"))
+    assert hasattr(result, "answer")
+    assert result.answer == "Paris is the capital of France"

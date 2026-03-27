@@ -3,6 +3,7 @@ import random
 from typing import Any, Literal, TypeVar, get_args, get_origin
 
 from pydantic import BaseModel
+from pydantic import ValidationError as PydanticValidationError
 from pydantic_core import PydanticUndefined
 from typeguard import TypeCheckError, check_type
 
@@ -52,11 +53,14 @@ def _coerce_prediction_to_output_type(pred: Prediction, signature: Signature) ->
 
     try:
         return output_type(**output_values)
-    except TypeError:
+    except (TypeError, PydanticValidationError):
         # Plain class with no keyword-accepting __init__ — set attributes directly.
         instance = object.__new__(output_type)
         for k, v in output_values.items():
-            setattr(instance, k, v)
+            try:
+                setattr(instance, k, v)
+            except (AttributeError, TypeError):
+                return pred
         return instance
 
 

@@ -349,6 +349,7 @@ class Signature(BaseModel, Generic[TInput, TOutput], metaclass=SignatureMeta):
 
                 # Use the user's field if valid InputField or OutputField, otherwise create a new one using the factory
                 if is_correct_dspy_field:
+                    attr = deepcopy(attr)
                     attr.json_schema_extra["__dspy_field_type"] = field_type_str
                 field_obj = attr if is_correct_dspy_field else field_factory()
 
