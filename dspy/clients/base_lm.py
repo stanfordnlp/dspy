@@ -27,6 +27,24 @@ class BaseLM:
 
 
     class MyLM(dspy.BaseLM):
+        @property
+        def supports_function_calling(self) -> bool:
+            return self.model.startswith("openai/gpt-4o")
+
+        @property
+        def supports_reasoning(self) -> bool:
+            return self.model.startswith("anthropic/claude-3-7")
+
+        @property
+        def supports_response_schema(self) -> bool:
+            return self.model.startswith("openai/gpt-4o")
+
+        @property
+        def supported_params(self) -> set[str]:
+            if self.model.startswith("openai/gpt-4o"):
+                return {"response_format"}  # accepts response_format=...
+            return set()
+
         def forward(self, prompt, messages=None, **kwargs):
             client = OpenAI()
             return client.chat.completions.create(
@@ -48,6 +66,26 @@ class BaseLM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+
+    @property
+    def supports_function_calling(self) -> bool:
+        """Whether the model supports function calling (tool use)."""
+        return False
+
+    @property
+    def supports_reasoning(self) -> bool:
+        """Whether the model supports native reasoning (extended thinking)."""
+        return False
+
+    @property
+    def supports_response_schema(self) -> bool:
+        """Whether the model supports structured output via response schema."""
+        return False
+
+    @property
+    def supported_params(self) -> set[str]:
+        """Set of supported OpenAI-style parameter names for the model."""
+        return set()
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
