@@ -66,6 +66,16 @@ test_extras = [
     "optuna>=3.4.0",
     "langchain_core",
 ]
+release = [
+    "setuptools>=77.0.1",
+    "wheel>=0.43.0",
+    "twine>=6.0.0",
+    "build>=1.0.3",
+    "semver>=3.0.0",
+    "packaging>=24.0",
+    "pytest>=6.2.5",
+    "pytest-asyncio>=0.26.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

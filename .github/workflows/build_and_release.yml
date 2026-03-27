@@ -29,8 +29,13 @@ jobs:
         uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
           python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
       - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          uv sync -p .venv --extra release
       - name: Install Deno
         uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
         with:
@@ -49,17 +54,12 @@ jobs:
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml
       - name: Build a binary wheel
-        run: python3 -m build
+        run: python -m build
       # Test the locally built wheel
-      - name: Create test environment
-        run: python -m venv test_before_testpypi
       - name: Test package installation and functionality
         run: |
-          source test_before_testpypi/bin/activate
-          # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest pytest-asyncio
+          uv pip install -p .venv --no-deps dist/*.whl
           pytest tests/metadata/test_metadata.py tests/predict
-          deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
@@ -84,8 +84,13 @@ jobs:
         uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
           python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
       - name: Install dependencies
-        run: python3 -m pip install --upgrade setuptools wheel twine build
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          uv sync -p .venv --extra release
       - name: Install Deno
         uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
         with:
@@ -100,18 +105,12 @@ jobs:
       - name: Update package name in metadata.py
         run: sed -i '/#replace_package_name_marker/{n;s/__name__ *= *"[^"]*"/__name__="dspy"/;}' ./dspy/__metadata__.py
       - name: Build a binary wheel
-        run: python3 -m build
+        run: python -m build
       # Test the locally built wheel before publishing to pypi
-      - name: Create test environment
-        run: python -m venv test_before_pypi
       - name: Test package installation and functionality
         run: |
-          source test_before_pypi/bin/activate
-          # Install the locally built wheel and testing dependencies
-          pip install dist/*.whl pytest pytest-asyncio
+          uv pip install -p .venv --no-deps dist/*.whl
           pytest tests/metadata/test_metadata.py tests/predict
-          deactivate
-          rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (dspy)
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
         with:
@@ -125,7 +124,7 @@ jobs:
         run: |
           sed -i '/#replace_dspy_version_marker/{n;s/dspy>=[^"]*/dspy>=${{ needs.extract-tag.outputs.version }}/;}' .github/.internal_dspyai/pyproject.toml
       - name: Build a binary wheel (dspy-ai)
-        run: python3 -m build .github/.internal_dspyai/
+        run: python -m build .github/.internal_dspyai/
       - name: Publish distribution 📦 to PyPI (dspy-ai)
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
         with:
