@@ -8,7 +8,6 @@ import importlib
 import sqlite3
 from typing import Any
 
-import numpy as np
 import orjson
 import pydantic
 from diskcache import Disk
@@ -23,6 +22,15 @@ _PYDANTIC_TYPE = "pydantic"
 _NDARRAY_TYPE = "ndarray"
 
 
+def _is_ndarray(value: Any) -> bool:
+    try:
+        import numpy as np
+
+        return isinstance(value, np.ndarray)
+    except ImportError:
+        return False
+
+
 def _encode_value(value: Any) -> Any:
     if isinstance(value, pydantic.BaseModel):
         return {
@@ -31,7 +39,7 @@ def _encode_value(value: Any) -> Any:
             _ENCODED_QUALNAME_KEY: type(value).__qualname__,
             _ENCODED_DATA_KEY: _pydantic_to_json(value),
         }
-    if isinstance(value, np.ndarray):
+    if _is_ndarray(value):
         return {
             _ENCODED_TYPE_KEY: _NDARRAY_TYPE,
             _ENCODED_DTYPE_KEY: str(value.dtype),
@@ -56,6 +64,8 @@ def _decode_value(value: Any) -> Any:
             cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
             return cls.model_validate(value[_ENCODED_DATA_KEY])
         if encoded_type == _NDARRAY_TYPE:
+            import numpy as np
+
             return np.asarray(value[_ENCODED_DATA_KEY], dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
         return {k: _decode_value(v) for k, v in value.items()}
     if isinstance(value, list):
@@ -94,6 +104,10 @@ def _pydantic_to_json(value: Any) -> Any:
     return value
 
 
+class DeserializationError(Exception):
+    """Raised when a cached value cannot be deserialized."""
+
+
 class OrjsonDisk(Disk):
     """Disk backend that serializes values with orjson instead of pickle.
 
@@ -110,6 +124,9 @@ class OrjsonDisk(Disk):
     def fetch(self, mode, filename, value, read):
         data = super().fetch(mode, filename, value, read)
         if not read and mode == MODE_RAW and isinstance(data, bytes):
-            envelope = orjson.loads(data)
-            return _decode_value(envelope["_data"])
+            try:
+                envelope = orjson.loads(data)
+                return _decode_value(envelope["_data"])
+            except (ValueError, TypeError, KeyError, ImportError, AttributeError) as e:
+                raise DeserializationError(e) from e
         return data

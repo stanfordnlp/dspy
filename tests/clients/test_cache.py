@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from unittest.mock import patch
 
 import diskcache
-import orjson
 import pydantic
 import pytest
 from cachetools import LRUCache
 
 from dspy.clients.cache import Cache
+from dspy.clients.disk_serialization import DeserializationError
 
 
 class CacheValidationModel(pydantic.BaseModel):
@@ -202,11 +202,11 @@ def test_corrupt_disk_entries_return_none(tmp_path):
     assert cache.get(request) == "good_value"
     cache.reset_memory_cache()
 
-    # Now corrupt the entry by patching fetch to raise
+    # Simulate a deserialization failure
     with patch.object(
         type(cache.disk_cache),
         "get",
-        side_effect=orjson.JSONDecodeError,
+        side_effect=DeserializationError("corrupt"),
     ):
         assert cache.get(request) is None
 

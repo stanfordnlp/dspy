@@ -2,6 +2,7 @@ import copy
 import inspect
 import logging
 import os
+import sqlite3
 import threading
 import warnings
 from functools import wraps
@@ -15,7 +16,7 @@ import pydantic
 from cachetools import LRUCache
 
 from dspy.clients.cache_migration import read_legacy_entries
-from dspy.clients.disk_serialization import OrjsonDisk
+from dspy.clients.disk_serialization import DeserializationError, OrjsonDisk
 
 logger = logging.getLogger(__name__)
 # Sentinel to distinguish a cache miss from a cached None value.
@@ -159,15 +160,8 @@ class Cache:
         if not memory_hit and self.enable_disk_cache:
             try:
                 response = self.disk_cache.get(key, _CACHE_MISS)
-            except (
-                orjson.JSONDecodeError,  # corrupt or truncated cache blob
-                ImportError,  # referenced class module no longer importable
-                AttributeError,  # referenced class or nested attribute path no longer exists
-                pydantic.ValidationError,  # payload no longer matches the current pydantic schema
-                TypeError,  # constructor / encoded payload shape mismatch during reconstruction
-                KeyError,  # envelope missing required metadata keys (e.g. "_data", "__dspy_cache_module__")
-            ) as e:
-                logger.debug("Failed to deserialize disk cache entry %s: %s", key, e)
+            except DeserializationError as e:
+                logger.debug("Failed to read disk cache entry %s: %s", key, e)
                 return None
             if response is _CACHE_MISS:
                 return None
@@ -221,6 +215,8 @@ class Cache:
                 )
             except diskcache.Timeout as e:
                 logger.debug("Failed to put value in disk cache for key %s: %s", key, e)
+            except (OSError, sqlite3.OperationalError) as e:
+                logger.debug("Failed to write to disk cache for key %s: %s", key, e)
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:
