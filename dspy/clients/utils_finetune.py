@@ -1,12 +1,14 @@
 import os
 from enum import Enum
-from typing import Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 import orjson
 
 import dspy
-from dspy.adapters.base import Adapter
 from dspy.utils.caching import DSPY_CACHEDIR
+
+if TYPE_CHECKING:
+    from dspy.adapters.base import Adapter
 
 
 class TrainingStatus(str, Enum):
@@ -53,7 +55,7 @@ class GRPOStatus(TypedDict):
     pending_batch_ids: list[int] = []
 
 
-def infer_data_format(adapter: Adapter) -> str:
+def infer_data_format(adapter: "Adapter") -> str:
     if isinstance(adapter, dspy.ChatAdapter):
         return TrainDataFormat.CHAT
     raise ValueError(f"Could not infer the data format for: {adapter}")
