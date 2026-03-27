@@ -3,7 +3,6 @@ import os
 import re
 import threading
 import warnings
-from functools import cached_property
 from typing import Any, Literal, cast
 
 import litellm
@@ -111,26 +110,26 @@ class LM(BaseLM):
 
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
-    @cached_property
+    @property
     def _provider_name(self) -> str:
         """Extract the provider name from the model string (e.g., 'openai' from 'openai/gpt-4o')."""
         if "/" in self.model:
             return self.model.split("/", 1)[0]
         return "openai"
 
-    @cached_property
+    @property
     def supports_function_calling(self) -> bool:
         return litellm.supports_function_calling(model=self.model)
 
-    @cached_property
+    @property
     def supports_reasoning(self) -> bool:
         return litellm.supports_reasoning(self.model)
 
-    @cached_property
+    @property
     def supports_response_schema(self) -> bool:
         return litellm.supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
 
-    @cached_property
+    @property
     def supported_params(self) -> set[str]:
         params = litellm.get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
         return set(params) if params else set()
