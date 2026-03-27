@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, get_origin
+from typing import Any, get_origin
 
 import json_repair
 
@@ -7,15 +7,13 @@ from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
+from dspy.clients.base_lm import BaseLM
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from dspy.clients.lm import LM
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
 
@@ -67,7 +65,7 @@ class Adapter:
 
     def _call_preprocess(
         self,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         inputs: dict[str, Any],
@@ -114,7 +112,7 @@ class Adapter:
         processed_signature: type[Signature],
         original_signature: type[Signature],
         outputs: list[dict[str, Any] | str],
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         values = []
@@ -179,7 +177,7 @@ class Adapter:
 
     def __call__(
         self,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -209,7 +207,7 @@ class Adapter:
 
     async def acall(
         self,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],

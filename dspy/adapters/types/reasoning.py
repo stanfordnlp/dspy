@@ -3,9 +3,9 @@ from typing import TYPE_CHECKING, Any, Optional
 import pydantic
 
 from dspy.adapters.types.base_type import Type
+from dspy.clients.base_lm import BaseLM
 
 if TYPE_CHECKING:
-    from dspy.clients.lm import LM
     from dspy.signatures.signature import Signature
 
 
@@ -47,7 +47,7 @@ class Reasoning(Type):
         cls,
         signature: type["Signature"],
         field_name: str,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> type["Signature"]:
         if "reasoning_effort" in lm_kwargs:
