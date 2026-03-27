@@ -12,12 +12,12 @@ class ContextWindowExceededError(Exception):
 
     Args:
         model: The model identifier that rejected the request.
-        message: Optional description. Defaults to `"Context window exceeded"`.
+        message: Description of the error. Defaults to `"Context window exceeded"`.
     """
 
-    def __init__(self, *, model: str | None = None, message: str | None = None):
+    def __init__(self, *, model: str | None = None, message: str = "Context window exceeded"):
         self.model = model
-        msg = message or "Context window exceeded"
+        msg = message
         prefix = f"[{model}] " if model else ""
         super().__init__(f"{prefix}{msg}")
 
