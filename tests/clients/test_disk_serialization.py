@@ -196,6 +196,29 @@ def test_litellm_response_roundtrip(response, check):
     assert check(result)
 
 
+def test_openai_chat_completion_roundtrip():
+    from openai.types.chat import ChatCompletion, ChatCompletionMessage
+    from openai.types.chat.chat_completion import Choice
+    from openai.types.completion_usage import CompletionUsage
+
+    cc = ChatCompletion(
+        id="chatcmpl-test",
+        created=1234567890,
+        model="gpt-4o-mini",
+        object="chat.completion",
+        choices=[Choice(
+            index=0,
+            finish_reason="stop",
+            message=ChatCompletionMessage(role="assistant", content="Hello world"),
+        )],
+        usage=CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+    )
+    result = _deserialize(_serialize(cc))
+    assert isinstance(result, ChatCompletion)
+    assert result.choices[0].message.content == "Hello world"
+    assert result.usage.total_tokens == 15
+
+
 def test_serialize_roundtrip_pydantic_extra_fields():
     from litellm.types.utils import ChatCompletionMessageToolCall
 
