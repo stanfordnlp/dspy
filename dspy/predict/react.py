@@ -102,14 +102,9 @@ class ReAct(Module[TInput, TOutput]):
             f"- Keyword: pass individual fields: `react({input_fields[0]}=input_value, ...)`"
         )
 
-    def forward(self, arg: TInput | None = None, /, **input_args):
+    def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-
-        if arg is not None:
-            if input_args or not hasattr(arg, "__dict__"):
-                raise ValueError(self._get_positional_args_error_message())
-            input_args = vars(arg)
 
         for idx in range(max_iters):
             try:
@@ -133,14 +128,9 @@ class ReAct(Module[TInput, TOutput]):
         extract = self._call_with_potential_trajectory_truncation(self.extract, trajectory, **input_args)
         return dspy.Prediction(trajectory=trajectory, **extract)
 
-    async def aforward(self, arg: TInput | None = None, /, **input_args):
+    async def aforward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-
-        if arg is not None:
-            if input_args or not hasattr(arg, "__dict__"):
-                raise ValueError(self._get_positional_args_error_message())
-            input_args = vars(arg)
 
         for idx in range(max_iters):
             try:

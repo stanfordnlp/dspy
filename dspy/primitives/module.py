@@ -116,12 +116,34 @@ class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
         # Arg is not an unpackable typed-input object; pass it through as-is.
         return args, kwargs
 
+    @staticmethod
+    def _forward_has_positional_params(method) -> bool:
+        """Return True if *method* declares any explicit positional parameters."""
+        return any(
+            p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY)
+            for p in inspect.signature(method).parameters.values()
+        )
+
     def _call_forward(self, *args, **kwargs):
         args, kwargs = self._resolve_call_args(self.forward, args, kwargs)
+        if args and kwargs and not self._forward_has_positional_params(self.forward):
+            # Positional arg couldn't be unpacked (e.g. a plain string) AND keyword args were also
+            # provided, but forward accepts no positional parameters
+            error_fn = getattr(self, "_get_positional_args_error_message", None)
+            raise ValueError(error_fn() if callable(error_fn) else (
+                "Cannot mix positional and keyword arguments when calling a DSPy module. "
+                "Pass either a typed input instance or individual keyword fields, not both."
+            ))
         return self.forward(*args, **kwargs)
 
     async def _acall_forward(self, *args, **kwargs):
         args, kwargs = self._resolve_call_args(self.aforward, args, kwargs)
+        if args and kwargs and not self._forward_has_positional_params(self.aforward):
+            error_fn = getattr(self, "_get_positional_args_error_message", None)
+            raise ValueError(error_fn() if callable(error_fn) else (
+                "Cannot mix positional and keyword arguments when calling a DSPy module. "
+                "Pass either a typed input instance or individual keyword fields, not both."
+            ))
         return await self.aforward(*args, **kwargs)
 
     @with_callbacks

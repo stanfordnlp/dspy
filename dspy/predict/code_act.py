@@ -90,7 +90,7 @@ class CodeAct(ReAct, ProgramOfThought):
 
         return instructions
 
-    def forward(self, *args, **kwargs):
+    def forward(self, **kwargs):
         # Define the tool functions in the interpreter
         for tool in self.tools.values():
             self.interpreter(inspect.getsource(tool.func))
@@ -98,7 +98,7 @@ class CodeAct(ReAct, ProgramOfThought):
         trajectory = {}
         max_iters = kwargs.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
-            code_data = self.codeact(*args, trajectory=trajectory, **kwargs)
+            code_data = self.codeact(trajectory=trajectory, **kwargs)
             output = None
             code, error = self._parse_code(code_data)
 

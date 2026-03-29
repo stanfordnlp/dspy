@@ -157,9 +157,9 @@ class ProgramOfThought(Module[TInput, TOutput]):
         except Exception as e:
             return None, str(e)
 
-    def forward(self, *args, **kwargs):
+    def forward(self, **kwargs):
         input_kwargs = {field_name: kwargs[field_name] for field_name in self.input_fields}
-        code_data = self.code_generate(*args, **input_kwargs)
+        code_data = self.code_generate(**input_kwargs)
         output = None
         code, error = self._parse_code(code_data)
         if not error:
@@ -172,12 +172,12 @@ class ProgramOfThought(Module[TInput, TOutput]):
                 self.interpreter.shutdown()
                 raise RuntimeError(f"Max hops reached. Failed to run ProgramOfThought: {error}")
             input_kwargs.update({"previous_code": code, "error": error})
-            code_data = self.code_regenerate(*args, **input_kwargs)
+            code_data = self.code_regenerate(**input_kwargs)
             code, error = self._parse_code(code_data)
             if not error:
                 output, error = self._execute_code(code)
             hop += 1
         input_kwargs.update({"final_generated_code": code, "code_output": output})
-        output_gen_result = self.generate_output(*args, **input_kwargs)
+        output_gen_result = self.generate_output(**input_kwargs)
         self.interpreter.shutdown()
         return output_gen_result
