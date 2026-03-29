@@ -91,16 +91,6 @@ class ReAct(Module[TInput, TOutput]):
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
-    def _get_positional_args_error_message(self):
-        input_fields = list(self.signature.input_fields.keys())
-        input_type = getattr(self.signature, "input_type", None)
-        input_type_name = input_type.__name__ if input_type else "TInput"
-
-        return (
-            "You may use either positional or keyword arguments when calling `dspy.ReAct`, not both.\n"
-            f"- Positional: pass an instance of the input type: `react({input_type_name}({input_fields[0]}=input_value, ...))`\n"
-            f"- Keyword: pass individual fields: `react({input_fields[0]}=input_value, ...)`"
-        )
 
     def forward(self, **input_args):
         trajectory = {}
