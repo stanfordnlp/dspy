@@ -93,6 +93,7 @@ nav:
         - Adapters:
             - Adapter: api/adapters/Adapter.md
             - ChatAdapter: api/adapters/ChatAdapter.md
+            - XMLAdapter: api/adapters/XMLAdapter.md
             - JSONAdapter: api/adapters/JSONAdapter.md
             - TwoStepAdapter: api/adapters/TwoStepAdapter.md
         - Evaluation:

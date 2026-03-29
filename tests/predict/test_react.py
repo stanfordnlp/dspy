@@ -1,6 +1,5 @@
 import re
 
-import litellm
 import pytest
 from pydantic import BaseModel
 
@@ -8,6 +7,7 @@ import dspy
 import dspy.adapters.base as adapter_base
 import dspy.adapters.utils as adapter_utils
 from dspy.utils.dummies import DummyLM
+from dspy.utils.exceptions import ContextWindowExceededError
 
 
 @pytest.mark.extra
@@ -235,7 +235,7 @@ def test_trajectory_truncation():
             )
         elif call_count == 3:
             # The 3rd call raises context window exceeded error
-            raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+            raise ContextWindowExceededError()
         else:
             # The 4th call finishes
             return dspy.Prediction(next_thought="Final thought", next_tool_name="finish", next_tool_args={})
@@ -260,7 +260,7 @@ async def test_context_window_exceeded_after_retries():
     react = dspy.ReAct("input_text -> output_text", tools=[echo])
 
     def mock_react(**kwargs):
-        raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+        raise ContextWindowExceededError()
 
     # Test sync version
     extract_calls = []
@@ -283,7 +283,7 @@ async def test_context_window_exceeded_after_retries():
     async_extract_calls = []
 
     async def mock_react_async(**kwargs):
-        raise litellm.ContextWindowExceededError("Context window exceeded", "dummy_model", "dummy_provider")
+        raise ContextWindowExceededError()
 
     async def mock_extract_async(**kwargs):
         async_extract_calls.append(kwargs)

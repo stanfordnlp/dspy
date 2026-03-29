@@ -2,6 +2,26 @@
 from dspy.signatures.signature import Signature
 
 
+class ContextWindowExceededError(Exception):
+    """Raised when the prompt exceeds the model's context window.
+
+    Any `BaseLM` subclass should raise this error (or a subclass of it) when the
+    request fails because the input is too long for the model. Adapters and some
+    modules rely on catching this specific type to decide whether a fallback
+    retry is appropriate.
+
+    Args:
+        model: The model identifier that rejected the request.
+        message: Description of the error. Defaults to `"Context window exceeded"`.
+    """
+
+    def __init__(self, *, model: str | None = None, message: str = "Context window exceeded"):
+        self.model = model
+        msg = message
+        prefix = f"[{model}] " if model else ""
+        super().__init__(f"{prefix}{msg}")
+
+
 class AdapterParseError(Exception):
     """Exception raised when adapter cannot parse the LM response."""
 

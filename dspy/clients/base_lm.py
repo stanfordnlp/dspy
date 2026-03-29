@@ -27,6 +27,24 @@ class BaseLM:
 
 
     class MyLM(dspy.BaseLM):
+        @property
+        def supports_function_calling(self) -> bool:
+            return self.model.startswith("openai/gpt-4o")
+
+        @property
+        def supports_reasoning(self) -> bool:
+            return self.model.startswith("anthropic/claude-3-7")
+
+        @property
+        def supports_response_schema(self) -> bool:
+            return self.model.startswith("openai/gpt-4o")
+
+        @property
+        def supported_params(self) -> set[str]:
+            if self.model.startswith("openai/gpt-4o"):
+                return {"response_format"}  # accepts response_format=...
+            return set()
+
         def forward(self, prompt, messages=None, **kwargs):
             client = OpenAI()
             return client.chat.completions.create(
@@ -48,6 +66,26 @@ class BaseLM:
         self.cache = cache
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
+
+    @property
+    def supports_function_calling(self) -> bool:
+        """Whether the model supports function calling (tool use)."""
+        return False
+
+    @property
+    def supports_reasoning(self) -> bool:
+        """Whether the model supports native reasoning (extended thinking)."""
+        return False
+
+    @property
+    def supports_response_schema(self) -> bool:
+        """Whether the model supports structured output via response schema."""
+        return False
+
+    @property
+    def supported_params(self) -> set[str]:
+        """Set of supported OpenAI-style parameter names for the model."""
+        return set()
 
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
@@ -113,9 +151,18 @@ class BaseLM:
         """Forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to either of the following formats:
+
         - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
         - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
+
+        Raises:
+            dspy.ContextWindowExceededError: When the request fails because the
+                input exceeds the model's context window. DSPy adapters and
+                modules rely on this error to trigger fallback behavior (e.g.
+                truncating the prompt and retrying). Each subclass is
+                responsible for catching its provider's native error and
+                re-raising it as `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -128,9 +175,18 @@ class BaseLM:
         """Async forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to either of the following formats:
+
         - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
         - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
+
+        Raises:
+            dspy.ContextWindowExceededError: When the request fails because the
+                input exceeds the model's context window. DSPy adapters and
+                modules rely on this error to trigger fallback behavior (e.g.
+                truncating the prompt and retrying). Each subclass is
+                responsible for catching its provider's native error and
+                re-raising it as `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 

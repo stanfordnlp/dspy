@@ -2,7 +2,6 @@ import re
 import textwrap
 from typing import Any, NamedTuple
 
-from litellm import ContextWindowExceededError
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.base import Adapter
@@ -13,10 +12,10 @@ from dspy.adapters.utils import (
     parse_value,
     translate_field_type,
 )
-from dspy.clients.lm import LM
+from dspy.clients.base_lm import BaseLM
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
 
 field_header_pattern = re.compile(r"\[\[ ## (\w+) ## \]\]")
 
@@ -63,7 +62,7 @@ class ChatAdapter(Adapter):
 
     def __call__(
         self,
-        lm: LM,
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -87,7 +86,7 @@ class ChatAdapter(Adapter):
 
     async def acall(
         self,
-        lm: LM,
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
