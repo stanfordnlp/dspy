@@ -136,7 +136,37 @@ class Embedder:
             embeddings_list.extend(compute_embeddings(self.model, batch, caching=caching, **kwargs))
         return self._postprocess(embeddings_list, is_single_input)
 
-    async def acall(self, inputs, batch_size=None, caching=None, **kwargs):
+    async def acall(self, inputs: str | list[str], batch_size: int | None = None, caching: bool | None = None, **kwargs: dict[str, Any]) -> np.ndarray:
+        """Asynchronously compute embeddings for the given inputs.
+
+        This is the async version of `__call__`. It uses asynchronous API calls for hosted models
+        via ``litellm.aembedding``, which can be useful when you want to compute embeddings without
+        blocking the event loop.
+
+        Args:
+            inputs: The inputs to compute embeddings for, can be a single string or a list of strings.
+            batch_size (int, optional): The batch size for processing inputs. If None, defaults to the batch_size set
+                during initialization.
+            caching (bool, optional): Whether to cache the embedding response when using a hosted model. If None,
+                defaults to the caching setting from initialization.
+            **kwargs: Additional keyword arguments to pass to the embedding model. These will override the default
+                kwargs provided during initialization.
+
+        Returns:
+            numpy.ndarray: If the input is a single string, returns a 1D numpy array representing the embedding.
+            If the input is a list of strings, returns a 2D numpy array of embeddings, one embedding per row.
+
+        Examples:
+            ```python
+            import dspy
+            import asyncio
+
+            embedder = dspy.Embedder("openai/text-embedding-3-small", batch_size=100)
+            embeddings = asyncio.run(embedder.acall(["hello", "world"]))
+
+            assert embeddings.shape == (2, 1536)
+            ```
+        """
         input_batches, caching, kwargs, is_single_input = self._preprocess(inputs, batch_size, caching, **kwargs)
 
         embeddings_list = []

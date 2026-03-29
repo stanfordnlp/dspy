@@ -10,6 +10,50 @@ from dspy.dsp.utils import dotdict
 
 
 class Dataset:
+    """Base class for all DSPy datasets.
+
+    The ``Dataset`` class provides a standard interface for loading, shuffling, and splitting data into
+    train, dev, and test sets. Subclasses should populate the ``_train``, ``_dev``, and ``_test`` attributes
+    with raw data (iterables of dicts), and this base class handles shuffling, sampling, and wrapping
+    each record as a :class:`dspy.Example`.
+
+    Shuffling is seeded for reproducibility. You can control the random seeds and split sizes at
+    construction time or later via :meth:`reset_seeds`.
+
+    Args:
+        train_seed (int): Random seed used for shuffling the training set. Defaults to 0.
+        train_size (int, optional): Maximum number of training examples to return. If None, all
+            available training examples are returned.
+        eval_seed (int): Random seed used for shuffling both the dev and test sets. Defaults to 0.
+        dev_size (int, optional): Maximum number of dev examples to return. If None, all available
+            dev examples are returned.
+        test_size (int, optional): Maximum number of test examples to return. If None, all available
+            test examples are returned.
+        input_keys (list[str], optional): Field names to mark as inputs on every example via
+            :meth:`Example.with_inputs`. If None, no input keys are set.
+
+    Examples:
+        ```python
+        import dspy
+
+        class MyDataset(dspy.Dataset):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self._train = [
+                    {"question": "What is 2+2?", "answer": "4"},
+                    {"question": "What is 3+3?", "answer": "6"},
+                ]
+                self._dev = [
+                    {"question": "What is 4+4?", "answer": "8"},
+                ]
+                self._test = []
+
+        dataset = MyDataset(train_size=1, input_keys=["question"])
+        print(len(dataset.train))  # 1
+        print(dataset.train[0].question)
+        ```
+    """
+
     def __init__(
         self,
         train_seed: int = 0,
@@ -39,6 +83,23 @@ class Dataset:
         dev_size: int | None = None,
         test_size: int | None = None,
     ) -> None:
+        """Reset the random seeds and split sizes, clearing any cached splits.
+
+        After calling this method, the next access to :attr:`train`, :attr:`dev`, or :attr:`test`
+        will re-shuffle and re-sample the data with the updated seeds and sizes.
+
+        Args:
+            train_seed (int, optional): New random seed for the training split. If None, keeps the
+                current seed.
+            train_size (int, optional): New maximum number of training examples. If None, keeps the
+                current size.
+            eval_seed (int, optional): New random seed for both the dev and test splits. If None,
+                keeps the current seed.
+            dev_size (int, optional): New maximum number of dev examples. If None, keeps the current
+                size.
+            test_size (int, optional): New maximum number of test examples. If None, keeps the
+                current size.
+        """
         self.train_size = train_size or self.train_size
         self.train_seed = train_seed or self.train_seed
         self.dev_size = dev_size or self.dev_size
@@ -57,6 +118,14 @@ class Dataset:
 
     @property
     def train(self) -> list[Example]:
+        """Return the training split as a list of :class:`dspy.Example` objects.
+
+        The result is shuffled and sampled on first access using :attr:`train_seed` and
+        :attr:`train_size`, then cached. Call :meth:`reset_seeds` to regenerate.
+
+        Returns:
+            list[Example]: The training examples.
+        """
         if not hasattr(self, "_train_"):
             self._train_ = self._shuffle_and_sample("train", self._train, self.train_size, self.train_seed)
 
@@ -64,6 +133,14 @@ class Dataset:
 
     @property
     def dev(self) -> list[Example]:
+        """Return the development (validation) split as a list of :class:`dspy.Example` objects.
+
+        The result is shuffled and sampled on first access using :attr:`dev_seed` and
+        :attr:`dev_size`, then cached. Call :meth:`reset_seeds` to regenerate.
+
+        Returns:
+            list[Example]: The dev examples.
+        """
         if not hasattr(self, "_dev_"):
             self._dev_ = self._shuffle_and_sample("dev", self._dev, self.dev_size, self.dev_seed)
 
@@ -71,6 +148,14 @@ class Dataset:
 
     @property
     def test(self) -> list[Example]:
+        """Return the test split as a list of :class:`dspy.Example` objects.
+
+        The result is shuffled and sampled on first access using :attr:`test_seed` and
+        :attr:`test_size`, then cached. Call :meth:`reset_seeds` to regenerate.
+
+        Returns:
+            list[Example]: The test examples.
+        """
         if not hasattr(self, "_test_"):
             self._test_ = self._shuffle_and_sample("test", self._test, self.test_size, self.test_seed)
 
