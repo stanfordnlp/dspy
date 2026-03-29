@@ -271,7 +271,7 @@ class Predict(Module[TInput, TOutput], Parameter):
 
         return should_stream
 
-    def forward(self, **kwargs) -> TOutput:
+    def forward(self, **kwargs):
         lm, config, signature, demos, kwargs = self._forward_preprocess(**kwargs)
 
         adapter = settings.adapter or ChatAdapter()
