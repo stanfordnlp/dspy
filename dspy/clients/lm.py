@@ -125,7 +125,15 @@ class LM(BaseLM):
 
     @property
     def supports_reasoning(self) -> bool:
-        return litellm.supports_reasoning(self.model)
+        if litellm.supports_reasoning(self.model):
+            return True
+
+        # For models not in litellm's built-in registry (e.g., vLLM-hosted models), allow users to
+        # signal reasoning support by explicitly setting `reasoning_effort` in the LM kwargs.
+        if "reasoning_effort" in self.kwargs and self.kwargs["reasoning_effort"] is not None:
+            return True
+
+        return False
 
     @property
     def supports_response_schema(self) -> bool:

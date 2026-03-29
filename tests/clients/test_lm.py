@@ -1033,3 +1033,33 @@ async def test_streaming_passes_headers_correctly():
             mock_acompletion.assert_called_once()
             call_kwargs = mock_acompletion.call_args.kwargs
             assert call_kwargs["headers"]["Authorization"] == "Bearer my-custom-token"
+
+
+def test_supports_reasoning_with_explicit_reasoning_effort():
+    """Test that supports_reasoning returns True when reasoning_effort is explicitly set,
+    even if litellm doesn't recognize the model (e.g., vLLM-hosted models)."""
+    with mock.patch("litellm.supports_reasoning", return_value=False):
+        # Without reasoning_effort, should return False for unregistered models
+        lm = dspy.LM(model="openai/Qwen/Qwen3.5-4B", api_base="http://localhost:8000/v1")
+        assert lm.supports_reasoning is False
+
+        # With explicit reasoning_effort, should return True
+        lm = dspy.LM(
+            model="openai/Qwen/Qwen3.5-4B",
+            api_base="http://localhost:8000/v1",
+            reasoning_effort="low",
+        )
+        assert lm.supports_reasoning is True
+
+        # With reasoning_effort=None, should return False (user explicitly disabling)
+        lm = dspy.LM(
+            model="openai/Qwen/Qwen3.5-4B",
+            api_base="http://localhost:8000/v1",
+            reasoning_effort=None,
+        )
+        assert lm.supports_reasoning is False
+
+    # When litellm recognizes the model, should still return True regardless
+    with mock.patch("litellm.supports_reasoning", return_value=True):
+        lm = dspy.LM(model="anthropic/claude-3-7-sonnet-20250219", temperature=1.0, max_tokens=16000)
+        assert lm.supports_reasoning is True
