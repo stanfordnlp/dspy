@@ -4,10 +4,32 @@ from dspy.teleprompt.teleprompt import Teleprompter
 
 
 class LabeledFewShot(Teleprompter):
+    """A simple teleprompter that assigns labeled training examples as few-shot demonstrations.
+
+    Randomly samples up to ``k`` examples from the training set and attaches them
+    as demonstrations to each predictor in the student program. No bootstrapping
+    or optimization is performed—the labeled examples are used directly.
+
+    Args:
+        k: Maximum number of labeled demonstrations to attach per predictor.
+            Defaults to 16.
+    """
+
     def __init__(self, k=16):
         self.k = k
 
     def compile(self, student, *, trainset, sample=True):
+        """Compile the student program by attaching labeled demonstrations.
+
+        Args:
+            student: The student :class:`dspy.Module` to compile.
+            trainset: A list of :class:`dspy.Example` objects to sample demonstrations from.
+            sample: If ``True``, randomly sample up to ``k`` examples. If ``False``,
+                take the first ``k`` examples in order. Defaults to ``True``.
+
+        Returns:
+            The compiled student module with demonstrations attached to its predictors.
+        """
         self.student = student.reset_copy()
         self.trainset = trainset
 
