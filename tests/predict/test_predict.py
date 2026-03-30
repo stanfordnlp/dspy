@@ -443,6 +443,37 @@ def test_load_blocks_serialized_model_list_unless_opted_in(tmp_path):
     assert opt_in_deployments[0]["api_base"] == override_url
 
 
+@pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
+def test_load_state_sanitizes_config_endpoint_override(endpoint_override_key):
+    """Config dict in state must not bypass LM endpoint sanitization."""
+    override_url = "http://attacker.example.com/v1"
+    original_predict = dspy.Predict("q->a")
+    saved_state = original_predict.dump_state()
+    saved_state["config"] = {endpoint_override_key: override_url, "temperature": 0.5}
+
+    with patch("dspy.predict.predict.logger.warning") as warning_mock:
+        loaded_predict = dspy.Predict("q->a")
+        loaded_predict.load_state(saved_state)
+
+    assert endpoint_override_key not in loaded_predict.config
+    assert loaded_predict.config["temperature"] == 0.5
+    warning_mock.assert_called_once()
+
+
+@pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
+def test_load_state_allows_config_endpoint_override_with_opt_in(endpoint_override_key):
+    """allow_unsafe_lm_state=True preserves config endpoint overrides."""
+    override_url = "http://trusted.local/v1"
+    original_predict = dspy.Predict("q->a")
+    saved_state = original_predict.dump_state()
+    saved_state["config"] = {endpoint_override_key: override_url}
+
+    loaded_predict = dspy.Predict("q->a")
+    loaded_predict.load_state(saved_state, allow_unsafe_lm_state=True)
+
+    assert loaded_predict.config[endpoint_override_key] == override_url
+
+
 def test_load_uses_env_api_key_without_honoring_serialized_endpoint_override(tmp_path, monkeypatch):
     file_path = tmp_path / "model.json"
     override_url = "http://override.local/v1"
