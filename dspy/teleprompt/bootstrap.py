@@ -82,6 +82,23 @@ class BootstrapFewShot(Teleprompter):
         self.error_lock = threading.Lock()
 
     def compile(self, student, *, teacher=None, trainset):
+        """Compile the student program by bootstrapping few-shot demonstrations.
+
+        Runs the teacher program on examples from the training set, collects successful
+        traces as demonstrations, and attaches them to the corresponding predictors in
+        the student program.
+
+        Args:
+            student: The student :class:`dspy.Module` to compile. Must be uncompiled.
+            teacher: An optional teacher :class:`dspy.Module` used to generate bootstrap
+                demonstrations. If ``None``, a deep copy of the student is used as the
+                teacher.
+            trainset: A list of :class:`dspy.Example` objects to use for bootstrapping.
+
+        Returns:
+            The compiled student module with bootstrapped and labeled demonstrations
+            attached to its predictors.
+        """
         self.trainset = trainset
 
         self._prepare_student_and_teacher(student, teacher)
