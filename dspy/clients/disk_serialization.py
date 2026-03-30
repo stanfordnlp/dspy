@@ -49,7 +49,7 @@ def _encode_value(value: Any) -> Any:
         return {k: _encode_value(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_encode_value(item) for item in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, str | int | float | bool) or value is None:
         return value
     raise TypeError(
         "Disk cache only supports JSON values, pydantic models, and numpy arrays; "

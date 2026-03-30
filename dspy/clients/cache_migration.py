@@ -68,7 +68,7 @@ def read_legacy_entries(directory: str) -> list[tuple[str, Any]]:
             conn.close()
             continue
         conn.close()
-        for key, value_blob, mode, access_time, filename in rows:
+        for key, value_blob, mode, _access_time, filename in rows:
             try:
                 obj = _deserialize_legacy_entry(mode, value_blob, shard_dir, filename)
                 entries.append((key, obj))
@@ -130,7 +130,7 @@ def migrate_diskcache(directory: str, target) -> tuple[int, int]:
             continue
         conn.close()
 
-        for key, value_blob, mode, access_time, filename in rows:
+        for key, value_blob, mode, _access_time, filename in rows:
             try:
                 obj = _deserialize_legacy_entry(mode, value_blob, shard_dir, filename)
                 target[key] = obj

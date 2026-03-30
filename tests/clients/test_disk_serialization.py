@@ -322,6 +322,7 @@ class TestMigration:
         cache = Cache(
             enable_disk_cache=True, enable_memory_cache=True,
             disk_cache_dir=str(tmp_path), disk_size_limit_bytes=1024 * 1024, memory_max_entries=100,
+            use_pickle=False,
         )
         result = cache.get(request)
         assert isinstance(result, ModelResponse)
@@ -336,6 +337,7 @@ class TestMigration:
         cache = Cache(
             enable_disk_cache=True, enable_memory_cache=False,
             disk_cache_dir=str(tmp_path), disk_size_limit_bytes=1024 * 1024, memory_max_entries=100,
+            use_pickle=False,
         )
         assert len(cache.disk_cache) == 0
 
@@ -347,6 +349,7 @@ def test_concurrent_disk_to_memory_promotion(tmp_path):
     cache = Cache(
         enable_memory_cache=True, enable_disk_cache=True,
         disk_cache_dir=str(tmp_path), disk_size_limit_bytes=int(1e9), memory_max_entries=100_000,
+        use_pickle=False,
     )
     response = ModelResponse(
         id="chatcmpl-concurrent",

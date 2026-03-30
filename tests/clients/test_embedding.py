@@ -19,7 +19,7 @@ class MockEmbeddingResponse:
 @pytest.fixture
 def cache(tmp_path):
     original_cache = dspy.cache
-    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache")
+    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache", use_pickle=True)
     yield
     dspy.cache = original_cache
 

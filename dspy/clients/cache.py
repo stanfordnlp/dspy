@@ -2,6 +2,7 @@ import copy
 import inspect
 import logging
 import os
+import pickle
 import sqlite3
 import threading
 import warnings
@@ -55,6 +56,7 @@ class Cache:
         disk_cache_dir: str,
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
         memory_max_entries: int = 1000000,
+        use_pickle: bool = True,
     ):
         """
         Args:
@@ -63,10 +65,13 @@ class Cache:
             disk_cache_dir: The directory where the disk cache is stored.
             disk_size_limit_bytes: The maximum size of the disk cache (in bytes).
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
+            use_pickle: When True (default), use pickle serialization for disk cache.
+                When False, use orjson serialization (no arbitrary code execution on read).
         """
 
         self.enable_disk_cache = enable_disk_cache
         self.enable_memory_cache = enable_memory_cache
+        self.use_pickle = use_pickle
         if self.enable_memory_cache:
             if memory_max_entries is None:
                 raise ValueError("`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache.")
@@ -76,28 +81,38 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            # When DSPY_MIGRATE_CACHE=1, read legacy pickle entries BEFORE creating
-            # FanoutCache (which overwrites the shard DB files in the same directory).
-            pending_entries = None
-            if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
-                pending_entries = read_legacy_entries(disk_cache_dir)
-                if pending_entries:
-                    remove_legacy_shard_dbs(disk_cache_dir)
-
             # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
             # as a practical "no limit" when the caller passes None.
             effective_limit = disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40
-            self.disk_cache = diskcache.FanoutCache(
-                directory=disk_cache_dir,
-                shards=16,
-                disk=OrjsonDisk,
-                size_limit=effective_limit,
-                eviction_policy="least-recently-stored",
-                timeout=60,
-            )
 
-            if pending_entries:
-                self._migrate_entries(pending_entries, disk_cache_dir)
+            if use_pickle:
+                self.disk_cache = diskcache.FanoutCache(
+                    directory=disk_cache_dir,
+                    shards=16,
+                    size_limit=effective_limit,
+                    eviction_policy="least-recently-stored",
+                    timeout=60,
+                )
+            else:
+                # When DSPY_MIGRATE_CACHE=1, read legacy pickle entries BEFORE
+                # creating FanoutCache (which overwrites the shard DB files).
+                pending_entries = None
+                if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
+                    pending_entries = read_legacy_entries(disk_cache_dir)
+                    if pending_entries:
+                        remove_legacy_shard_dbs(disk_cache_dir)
+
+                self.disk_cache = diskcache.FanoutCache(
+                    directory=disk_cache_dir,
+                    shards=16,
+                    disk=OrjsonDisk,
+                    size_limit=effective_limit,
+                    eviction_policy="least-recently-stored",
+                    timeout=60,
+                )
+
+                if pending_entries:
+                    self._migrate_entries(pending_entries, disk_cache_dir)
         else:
             self.disk_cache = {}
 
@@ -162,8 +177,8 @@ class Cache:
         if not memory_hit and self.enable_disk_cache:
             try:
                 response = self.disk_cache.get(key, _CACHE_MISS)
-            except DeserializationError as e:
-                logger.debug("Failed to read disk cache entry %s: %s", key, e)
+            except DeserializationError:
+                logger.debug("Failed to deserialize disk cache entry %s", key)
                 return None
             if response is _CACHE_MISS:
                 return None
@@ -215,9 +230,7 @@ class Cache:
                     UserWarning,
                     stacklevel=2,
                 )
-            except diskcache.Timeout as e:
-                logger.debug("Failed to put value in disk cache for key %s: %s", key, e)
-            except (OSError, sqlite3.OperationalError) as e:
+            except (pickle.PicklingError, diskcache.Timeout, OSError, sqlite3.OperationalError) as e:
                 logger.debug("Failed to write to disk cache for key %s: %s", key, e)
 
     def reset_memory_cache(self) -> None:

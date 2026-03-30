@@ -19,25 +19,39 @@ class CacheValidationModel(pydantic.BaseModel):
 
 @pytest.fixture
 def cache_config(tmp_path):
-    """Default cache configuration."""
+    """Default cache configuration (pickle backend)."""
     return {
         "enable_disk_cache": True,
         "enable_memory_cache": True,
         "disk_cache_dir": str(tmp_path),
         "disk_size_limit_bytes": 1024 * 1024,  # 1MB
         "memory_max_entries": 100,
+        "use_pickle": True,
     }
 
 
 @pytest.fixture
 def cache(cache_config):
-    """Create a cache instance with the default configuration."""
+    """Create a cache instance with the pickle configuration."""
     return Cache(**cache_config)
+
+
+@pytest.fixture
+def orjson_cache(tmp_path):
+    """Create a cache instance with the orjson backend."""
+    return Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=True,
+        disk_cache_dir=str(tmp_path / "orjson"),
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=100,
+        use_pickle=False,
+    )
 
 
 def test_initialization(tmp_path):
     """Test different cache initialization configurations."""
-    # Test memory-only cache
+    # Test memory-only cache (no warning -- disk cache disabled)
     memory_cache = Cache(
         enable_disk_cache=False,
         enable_memory_cache=True,
@@ -49,16 +63,31 @@ def test_initialization(tmp_path):
     assert memory_cache.memory_cache.maxsize == 50
     assert memory_cache.disk_cache == {}
 
-    # Test disk-only cache
+    # Test disk-only cache (pickle, explicit)
     disk_cache = Cache(
         enable_disk_cache=True,
         enable_memory_cache=False,
-        disk_cache_dir=str(tmp_path),
+        disk_cache_dir=str(tmp_path / "pickle"),
         disk_size_limit_bytes=1024,
         memory_max_entries=0,
+        use_pickle=True,
     )
     assert isinstance(disk_cache.disk_cache, diskcache.FanoutCache)
+    assert disk_cache.use_pickle is True
     assert disk_cache.memory_cache == {}
+
+    # Test disk-only cache (orjson)
+    orjson_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=str(tmp_path / "orjson"),
+        disk_size_limit_bytes=1024,
+        memory_max_entries=0,
+        use_pickle=False,
+    )
+    assert isinstance(orjson_cache.disk_cache, diskcache.FanoutCache)
+    assert orjson_cache.use_pickle is False
+    assert orjson_cache.memory_cache == {}
 
     # Test disabled cache
     disabled_cache = Cache(
@@ -182,33 +211,21 @@ def test_cache_contains_checks_disk(cache):
     assert key in cache
 
 
-def test_corrupt_disk_entries_return_none(tmp_path):
-    """Cache.get() returns None (not crash) for deserialization failures."""
-    cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=True,
-        disk_cache_dir=str(tmp_path),
-        disk_size_limit_bytes=1024 * 1024,
-        memory_max_entries=100,
-    )
-
-    # Write a valid entry, then corrupt it at the shard level
+def test_corrupt_disk_entries_return_none(orjson_cache):
+    """Cache.get() returns None (not crash) for deserialization failures with orjson backend."""
     request = {"model": "test", "prompt": "will_be_corrupted"}
-    key = cache.cache_key(request)
-    cache.put(request, "good_value")
-    cache.reset_memory_cache()
+    orjson_cache.put(request, "good_value")
+    orjson_cache.reset_memory_cache()
 
-    # Verify it works before corruption
-    assert cache.get(request) == "good_value"
-    cache.reset_memory_cache()
+    assert orjson_cache.get(request) == "good_value"
+    orjson_cache.reset_memory_cache()
 
-    # Simulate a deserialization failure
     with patch.object(
-        type(cache.disk_cache),
+        type(orjson_cache.disk_cache),
         "get",
         side_effect=DeserializationError("corrupt"),
     ):
-        assert cache.get(request) is None
+        assert orjson_cache.get(request) is None
 
 
 def test_reset_memory_cache(cache):
@@ -515,6 +532,7 @@ class TestReadOnlyDatabasePut:
             disk_cache_dir=str(tmp_path),
             disk_size_limit_bytes=1024 * 1024,
             memory_max_entries=100,
+            use_pickle=True,
         )
 
         request = {"model": "test", "prompt": "before_readonly"}
@@ -569,9 +587,9 @@ class TestCorruptPickleLoadMemoryCache:
             cache.load_memory_cache(pkl_path, allow_pickle=True)
 
 
-def test_non_serializable_values_warn_and_stay_in_memory(cache):
-    """Non-serializable values (tuple, dataclass) warn on disk write, remain in memory,
-    and don't corrupt other entries."""
+def test_non_serializable_values_warn_and_stay_in_memory(orjson_cache):
+    """Non-serializable values (tuple, dataclass) warn on disk write with orjson backend,
+    remain in memory, and don't corrupt other entries."""
 
     @dataclass
     class MyData:
@@ -579,16 +597,16 @@ def test_non_serializable_values_warn_and_stay_in_memory(cache):
         y: str
 
     good_request = {"model": "test", "prompt": "good_value"}
-    cache.put(good_request, "good")
+    orjson_cache.put(good_request, "good")
 
     for label, value in [("tuple", (1, 2, 3)), ("dataclass", MyData(x=42, y="hello"))]:
         request = {"model": "test", "prompt": label}
         with pytest.warns(UserWarning, match="Skipping disk cache write"):
-            cache.put(request, value)
-        assert cache.get(request) == value
+            orjson_cache.put(request, value)
+        assert orjson_cache.get(request) == value
 
-    cache.reset_memory_cache()
-    assert cache.get(good_request) == "good"
+    orjson_cache.reset_memory_cache()
+    assert orjson_cache.get(good_request) == "good"
 
 
 class TestDiskCacheTimeoutInPutHandled:
@@ -603,6 +621,7 @@ class TestDiskCacheTimeoutInPutHandled:
             disk_cache_dir=str(tmp_path),
             disk_size_limit_bytes=1024 * 1024,
             memory_max_entries=100,
+            use_pickle=True,
         )
 
         request = {"model": "test", "prompt": "timeout_test"}
@@ -620,7 +639,7 @@ class TestDiskCacheTimeoutInPutHandled:
                 with caplog.at_level(logging.DEBUG, logger="dspy.clients.cache"):
                     cache.put(request, "survived_value")
 
-            assert any("Failed to put value in disk cache" in rec.message for rec in caplog.records)
+            assert any("Failed to write to disk cache" in rec.message for rec in caplog.records)
             result = cache.get(request)
             assert result == "survived_value"
         finally:
