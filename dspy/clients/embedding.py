@@ -137,6 +137,21 @@ class Embedder:
         return self._postprocess(embeddings_list, is_single_input)
 
     async def acall(self, inputs, batch_size=None, caching=None, **kwargs):
+        """Asynchronously compute embeddings for the given inputs.
+
+        This is the async counterpart of :meth:`__call__`. It processes inputs in
+        batches and returns a 2D numpy array of embeddings, using ``litellm.aembedding``
+        for hosted models or calling the custom embedding function directly.
+
+        Args:
+            inputs: A single string or a list of strings to embed.
+            batch_size: Number of inputs per batch. Overrides the instance default if provided.
+            caching: Whether to cache results. Overrides the instance default if provided.
+            **kwargs: Additional keyword arguments forwarded to the embedding model.
+
+        Returns:
+            A 2D numpy array of shape ``(len(inputs), embedding_dim)`` with dtype ``float32``.
+        """
         input_batches, caching, kwargs, is_single_input = self._preprocess(inputs, batch_size, caching, **kwargs)
 
         embeddings_list = []
