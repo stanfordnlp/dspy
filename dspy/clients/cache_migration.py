@@ -60,6 +60,8 @@ def read_legacy_entries(directory: str) -> list[tuple[str, Any]]:
             continue
         conn = sqlite3.connect(shard_db, timeout=10)
         try:
+            # raw=1 selects entries with raw-bytes keys, which is the default for
+            # string keys in diskcache (all DSPy cache keys are SHA-256 hex strings).
             rows = conn.execute(
                 "SELECT key, value, mode, access_time, filename FROM Cache WHERE raw = 1"
             ).fetchall()
@@ -91,13 +93,18 @@ def remove_legacy_shard_dbs(directory: str) -> None:
 
     Without this, FanoutCache reuses existing DBs and stale pickle rows
     corrupt its internal count/size bookkeeping.
+
+    Logs a warning and continues if a file cannot be removed (e.g. read-only filesystem).
     """
     for shard_id in range(16):
         shard_dir = os.path.join(directory, f"{shard_id:03d}")
         for suffix in ("cache.db", "cache.db-wal", "cache.db-shm"):
             path = os.path.join(shard_dir, suffix)
             if os.path.isfile(path):
-                os.remove(path)
+                try:
+                    os.remove(path)
+                except OSError as e:
+                    logger.warning("Could not remove legacy shard file %s: %s", path, e)
 
 
 def migrate_diskcache(directory: str, target) -> tuple[int, int]:
@@ -109,44 +116,14 @@ def migrate_diskcache(directory: str, target) -> tuple[int, int]:
 
     Returns ``(migrated_count, error_count)``.
     """
+    entries = read_legacy_entries(directory)
     migrated = 0
     errors = 0
-
-    for shard_id in range(16):
-        shard_dir = os.path.join(directory, f"{shard_id:03d}")
-        shard_db = os.path.join(shard_dir, "cache.db")
-
-        if not os.path.isfile(shard_db):
-            continue
-
-        conn = sqlite3.connect(shard_db, timeout=10)
+    for key, value in entries:
         try:
-            rows = conn.execute(
-                "SELECT key, value, mode, access_time, filename FROM Cache WHERE raw = 1"
-            ).fetchall()
-        except sqlite3.OperationalError as e:
-            logger.warning("Skipping diskcache shard %03d: %s", shard_id, e)
-            conn.close()
-            continue
-        conn.close()
-
-        for key, value_blob, mode, _access_time, filename in rows:
-            try:
-                obj = _deserialize_legacy_entry(mode, value_blob, shard_dir, filename)
-                target[key] = obj
-                migrated += 1
-            except ValueError:
-                logger.debug("Skipping entry with unknown diskcache mode %d", mode)
-                errors += 1
-            except (
-                pickle.UnpicklingError,
-                ModuleNotFoundError,
-                AttributeError,
-                ImportError,
-                TypeError,
-                OSError,
-            ) as e:
-                errors += 1
-                logger.debug("Failed to migrate cache entry %.16s: %s", key, e)
-
+            target[key] = value
+            migrated += 1
+        except (TypeError, OSError) as e:
+            errors += 1
+            logger.debug("Failed to write migrated entry %.16s: %s", key, e)
     return migrated, errors

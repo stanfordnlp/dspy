@@ -46,7 +46,7 @@ class Cache:
 
     `Cache` provides 2 levels of caching (in the given order):
         1. In-memory cache - implemented with cachetools.LRUCache
-        2. On-disk cache - implemented with diskcache.FanoutCache + orjson
+        2. On-disk cache - implemented with diskcache.FanoutCache (pickle or orjson)
     """
 
     def __init__(
@@ -81,17 +81,12 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
-            # as a practical "no limit" when the caller passes None.
-            effective_limit = disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40
-
             if use_pickle:
                 self.disk_cache = diskcache.FanoutCache(
-                    directory=disk_cache_dir,
                     shards=16,
-                    size_limit=effective_limit,
-                    eviction_policy="least-recently-stored",
-                    timeout=60,
+                    timeout=10,
+                    directory=disk_cache_dir,
+                    size_limit=disk_size_limit_bytes,
                 )
             else:
                 # When DSPY_MIGRATE_CACHE=1, read legacy pickle entries BEFORE
@@ -102,6 +97,9 @@ class Cache:
                     if pending_entries:
                         remove_legacy_shard_dbs(disk_cache_dir)
 
+                # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
+                # as a practical "no limit" when the caller passes None.
+                effective_limit = disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40
                 self.disk_cache = diskcache.FanoutCache(
                     directory=disk_cache_dir,
                     shards=16,
