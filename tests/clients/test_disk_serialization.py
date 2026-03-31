@@ -16,7 +16,7 @@ from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.cache import Cache
 from dspy.clients.cache_migration import migrate_diskcache
-from dspy.clients.disk_serialization import _DEFAULT_ALLOWED_MODULE_PREFIXES, OrjsonDisk, _decode_value, _encode_value
+from dspy.clients.disk_serialization import OrjsonDisk, _decode_value, _encode_value
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,11 +50,8 @@ def _serialize(value):
     return orjson.dumps({"_data": _encode_value(value)})
 
 
-_TEST_ALLOWED_PREFIXES = (*_DEFAULT_ALLOWED_MODULE_PREFIXES, "test_disk_serialization")
-
-
 def _deserialize(blob):
-    return _decode_value(orjson.loads(blob)["_data"], _TEST_ALLOWED_PREFIXES)
+    return _decode_value(orjson.loads(blob)["_data"])
 
 
 def _make_fanout_cache(directory):
@@ -231,52 +228,6 @@ def test_serialize_roundtrip_pydantic_extra_fields():
     result = _deserialize(_serialize(tc))
     assert isinstance(result, ChatCompletionMessageToolCall)
     assert result.function.name == "test"
-
-
-def test_disallowed_module_blocked():
-    """Pydantic model from a module not in the allowlist raises DeserializationError."""
-    from dspy.clients.disk_serialization import (
-        _ENCODED_DATA_KEY,
-        _ENCODED_MODULE_KEY,
-        _ENCODED_QUALNAME_KEY,
-        _ENCODED_TYPE_KEY,
-        _PYDANTIC_TYPE,
-        DeserializationError,
-    )
-
-    blob = orjson.dumps({
-        "_data": {
-            _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
-            _ENCODED_MODULE_KEY: "os",
-            _ENCODED_QUALNAME_KEY: "path",
-            _ENCODED_DATA_KEY: {},
-        }
-    })
-    with pytest.raises(DeserializationError, match="not in the allowed prefixes"):
-        _deserialize(blob)
-
-
-def test_non_basemodel_class_blocked():
-    """Resolved class that is not a pydantic BaseModel subclass raises DeserializationError."""
-    from dspy.clients.disk_serialization import (
-        _ENCODED_DATA_KEY,
-        _ENCODED_MODULE_KEY,
-        _ENCODED_QUALNAME_KEY,
-        _ENCODED_TYPE_KEY,
-        _PYDANTIC_TYPE,
-        DeserializationError,
-    )
-
-    blob = orjson.dumps({
-        "_data": {
-            _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
-            _ENCODED_MODULE_KEY: "pydantic",
-            _ENCODED_QUALNAME_KEY: "Field",
-            _ENCODED_DATA_KEY: {},
-        }
-    })
-    with pytest.raises(DeserializationError, match="not a pydantic BaseModel subclass"):
-        _deserialize(blob)
 
 
 def test_envelope_like_keys_not_confused(tmp_path):

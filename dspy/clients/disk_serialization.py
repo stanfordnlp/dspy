@@ -57,38 +57,27 @@ def _encode_value(value: Any) -> Any:
     )
 
 
-def _decode_value(value: Any, allowed_prefixes: tuple[str, ...]) -> Any:
+def _decode_value(value: Any) -> Any:
     if isinstance(value, dict):
         encoded_type = value.get(_ENCODED_TYPE_KEY)
         if encoded_type == _PYDANTIC_TYPE:
-            cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY], allowed_prefixes)
+            cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
             return cls.model_validate(value[_ENCODED_DATA_KEY])
         if encoded_type == _NDARRAY_TYPE:
             import numpy as np
 
             return np.asarray(value[_ENCODED_DATA_KEY], dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
-        return {k: _decode_value(v, allowed_prefixes) for k, v in value.items()}
+        return {k: _decode_value(v) for k, v in value.items()}
     if isinstance(value, list):
-        return [_decode_value(item, allowed_prefixes) for item in value]
+        return [_decode_value(item) for item in value]
     return value
 
 
-_DEFAULT_ALLOWED_MODULE_PREFIXES = ("litellm.", "openai.", "dspy.", "pydantic.")
-
-
-def _resolve_class(module_name: str, qualname: str, allowed_prefixes: tuple[str, ...]) -> type:
-    if not any(module_name.startswith(p) or module_name == p.rstrip(".") for p in allowed_prefixes):
-        raise DeserializationError(
-            f"Module {module_name!r} is not in the allowed prefixes for cache deserialization: {allowed_prefixes}"
-        )
+def _resolve_class(module_name: str, qualname: str) -> type:
     module = importlib.import_module(module_name)
     obj = module
     for attr in qualname.split("."):
         obj = getattr(obj, attr)
-    if not (isinstance(obj, type) and issubclass(obj, pydantic.BaseModel)):
-        raise DeserializationError(
-            f"Resolved class {module_name}.{qualname} is not a pydantic BaseModel subclass"
-        )
     return obj
 
 
@@ -124,12 +113,7 @@ class OrjsonDisk(Disk):
 
     Handles pydantic models, numpy arrays, and JSON-native types.
     Raises TypeError for unsupported types rather than falling back to pickle.
-
-    Set ``allowed_module_prefixes`` on the class or instance to control which
-    modules can be imported during pydantic model deserialization.
     """
-
-    allowed_module_prefixes = _DEFAULT_ALLOWED_MODULE_PREFIXES
 
     def store(self, value, read, key=UNKNOWN):
         if not read:
@@ -142,7 +126,7 @@ class OrjsonDisk(Disk):
         if not read and mode == MODE_RAW and isinstance(data, bytes):
             try:
                 envelope = orjson.loads(data)
-                return _decode_value(envelope["_data"], self.allowed_module_prefixes)
+                return _decode_value(envelope["_data"])
             except (ValueError, TypeError, KeyError, ImportError, AttributeError) as e:
                 raise DeserializationError(e) from e
         return data
