@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 
 import pytest
 from pydantic import BaseModel
@@ -471,3 +472,85 @@ async def test_async_error_retry():
     for i in range(2):
         obs = traj[f"observation_{i}"]
         assert re.search(r"\btool error\b", obs), f"unexpected observation_{i!r}: {obs}"
+
+
+def test_tool_calling_with_typed_signature():
+    def foo(a, b):
+        """Add two numbers."""
+        return a + b
+
+    @dataclass
+    class InputType:
+        a: int
+        b: int
+
+    @dataclass
+    class OutputType:
+        c: int
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    react = dspy.ReAct(sig, tools=[foo])
+    lm = DummyLM(
+        [
+            {"next_thought": "I need to add two numbers.", "next_tool_name": "foo", "next_tool_args": {"a": 1, "b": 2}},
+            {"next_thought": "I have the sum, now I can finish.", "next_tool_name": "finish", "next_tool_args": {}},
+            {"reasoning": "I added the numbers successfully", "c": 3},
+        ]
+    )
+    dspy.configure(lm=lm)
+    outputs = react(InputType(a=1, b=2))
+
+    result = outputs.c
+    print(f"Result: {result}")
+
+    expected_trajectory = {
+        "thought_0": "I need to add two numbers.",
+        "tool_name_0": "foo",
+        "tool_args_0": {
+            "a": 1,
+            "b": 2,
+        },
+        "observation_0": 3,
+        "thought_1": "I have the sum, now I can finish.",
+        "tool_name_1": "finish",
+        "tool_args_1": {},
+        "observation_1": "Completed.",
+    }
+    assert outputs.trajectory == expected_trajectory
+
+
+def test_react_positional_args_error_message_with_input_type():
+    """Passing a non-typed positional arg + kwargs triggers an error naming the input type."""
+
+    @dataclass
+    class InputType:
+        question: str
+
+    @dataclass
+    class OutputType:
+        answer: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    react = dspy.ReAct(sig, tools=[])
+
+    # A plain string has no __dict__ so it passes through _resolve_call_args as a
+    # positional arg; ReAct.forward then detects the mixed positional+kwargs misuse.
+    with pytest.raises(ValueError) as exc_info:
+        react("not_a_typed_input", question="extra")
+
+    msg = str(exc_info.value)
+    assert "InputType" in msg
+    assert "question" in msg
+    assert msg.count("\n") >= 1  # message has newline-separated bullet points
+
+
+def test_react_positional_args_error_message_without_input_type():
+    """Without a typed signature, the error message falls back to 'TInput'."""
+    react = dspy.ReAct("question -> answer", tools=[])
+
+    with pytest.raises(ValueError) as exc_info:
+        react("positional", question="extra")
+
+    msg = str(exc_info.value)
+    assert "TInput" in msg
+    assert "question" in msg

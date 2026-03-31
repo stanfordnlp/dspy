@@ -1,20 +1,19 @@
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import Any, Callable, Literal, TypeVar
 
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.primitives.module import Module
-from dspy.signatures.signature import ensure_signature
+from dspy.signatures.signature import Signature, ensure_signature
 from dspy.utils.exceptions import ContextWindowExceededError
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    from dspy.signatures.signature import Signature
+TInput = TypeVar("TInput")
+TOutput = TypeVar("TOutput")
 
-
-class ReAct(Module):
-    def __init__(self, signature: type["Signature"], tools: list[Callable], max_iters: int = 20):
+class ReAct(Module[TInput, TOutput]):
+    def __init__(self, signature: str | type["Signature"] | type[Signature[TInput, TOutput]], tools: list[Callable], max_iters: int = 20):
         """
         ReAct stands for "Reasoning and Acting," a popular paradigm for building tool-using agents.
         In this approach, the language model is iteratively provided with a list of tools and has
@@ -92,9 +91,21 @@ class ReAct(Module):
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
+    def _get_positional_args_error_message(self):
+        input_fields = list(self.signature.input_fields.keys())
+        input_type = getattr(self.signature, "input_type", None)
+        input_type_name = input_type.__name__ if input_type else "TInput"
+
+        return (
+            "You may use either positional or keyword arguments when calling `dspy.ReAct`, not both.\n"
+            f"- Positional: pass an instance of the input type: `react({input_type_name}({input_fields[0]}=input_value, ...))`\n"
+            f"- Keyword: pass individual fields: `react({input_fields[0]}=input_value, ...)`"
+        )
+
     def forward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+
         for idx in range(max_iters):
             try:
                 pred = self._call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)
@@ -120,6 +131,7 @@ class ReAct(Module):
     async def aforward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+
         for idx in range(max_iters):
             try:
                 pred = await self._async_call_with_potential_trajectory_truncation(self.react, trajectory, **input_args)

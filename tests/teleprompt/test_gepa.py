@@ -521,3 +521,70 @@ def test_alternating_half_component_selector():
             # Odd iteration should select second half: ["generator"]
             assert "generator" in selection["selected"], f"Odd iteration {selection['iteration']} should include generator"
             assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"
+
+
+def test_gepa_typed_signature_compilation_and_invocation():
+    """GEPA should compile a typed-signature module, preserve input_type/output_type,
+    and deliver typed output instances both to the metric and on post-compile invocation."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class QA_Input:
+        input: str
+
+    @dataclass
+    class QA_Output:
+        output: str
+
+    sig = dspy.Signature(input_type=QA_Input, output_type=QA_Output)
+
+    class TypedModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict(sig)
+
+        def forward(self, **kwargs):
+            return self.predictor(**kwargs)
+
+    # Track what the metric receives during GEPA's internal evaluation.
+    received_predictions = []
+
+    def typed_metric(example, prediction, trace=None, pred_name=None, pred_trace=None):
+        received_predictions.append(prediction)
+        return dspy.Prediction(
+            score=1.0 if example.output == prediction.output else 0.0,
+            feedback="Check the answer.",
+        )
+
+    student = TypedModule()
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+    ]
+
+    task_lm = DummyLM([{"output": "blue"}] * 20)
+    reflection_lm = DummyLM([{"improved_instruction": "Answer questions directly."}] * 10)
+
+    with dspy.context(lm=task_lm):
+        optimizer = dspy.GEPA(
+            metric=typed_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=3,
+        )
+        compiled = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    # GEPA actually ran and called the metric.
+    assert len(received_predictions) > 0, "Metric should have been called during GEPA compilation"
+    # _coerce_prediction_to_output_type must have coerced each metric input to QA_Output.
+    assert all(isinstance(p, QA_Output) for p in received_predictions), (
+        f"All metric predictions should be QA_Output instances; got {[type(p) for p in received_predictions]}"
+    )
+
+    # input_type / output_type must survive GEPA's instruction rewriting.
+    assert getattr(compiled.predictor.signature, "input_type", None) is QA_Input
+    assert getattr(compiled.predictor.signature, "output_type", None) is QA_Output
+
+    # Post-compile typed invocation: positional QA_Input → QA_Output.
+    with dspy.context(lm=task_lm):
+        result = compiled(QA_Input(input="What is the color of the sky?"))
+    assert isinstance(result, QA_Output), f"Expected QA_Output, got {type(result)}"
+    assert result.output == "blue"

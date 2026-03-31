@@ -171,45 +171,300 @@ def test_typed_demos_after_dump_and_load_state():
     assert loaded_demo["translated_items"][1]["name"] == "plátano"
 
 
-# def test_typed_demos_after_dump_and_load_state():
-#     class TypedTranslateToEnglish(dspy.Signature):
-#         """Translate content from a language to English."""
+def test_predict_with_dataclass_typed_signature():
+    from dataclasses import dataclass
+    dspy.configure(lm=DummyLM([{"confidence": 1, "answer": "Paris"}]))
 
-#         class Input(pydantic.BaseModel):
-#             content: str
-#             language: str
+    @dataclass
+    class InputType:
+        context: str
+        question: str = dspy.Field(desc="The question to answer")
 
-#         class Output(pydantic.BaseModel):
-#             translation: str
+    class OutputType:
+        answer: str
+        confidence: int = dspy.Field(desc="How confident are you in your answer?")
 
-#         input: Input = dspy.InputField()
-#         output: Output = dspy.OutputField()
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
 
-#     original_instance = TypedPredictor(TypedTranslateToEnglish).predictor
-#     original_instance.demos = [
-#         dspy.Example(
-#             input=TypedTranslateToEnglish.Input(
-#                 content="¿Qué tal?",
-#                 language="SPANISH",
-#             ),
-#             output=TypedTranslateToEnglish.Output(
-#                 translation="Hello there",
-#             ),
-#         ).with_inputs("input"),
-#     ]
+    response = program(InputType(question="What is the capital of France?", context="Geography"))
 
-#     dumped_state = original_instance.dump_state()
-#     assert len(dumped_state["demos"]) == len(original_instance.demos)
-#     assert dumped_state["demos"][0]["input"] == original_instance.demos[0].input.model_dump_json()
+    assert isinstance(response, OutputType)
+    assert isinstance(response.confidence, int)
+    assert isinstance(response.answer, str)
 
-#     saved_state = orjson.dumps(dumped_state).decode()
-#     loaded_state = orjson.loads(saved_state)
+    assert response.answer == "Paris"
+    assert response.confidence == 1
 
-#     new_instance = TypedPredictor(TypedTranslateToEnglish).predictor
-#     new_instance.load_state(loaded_state)
-#     assert len(new_instance.demos) == len(original_instance.demos)
-#     # Demos don't need to keep the same types after saving and loading the state.
-#     assert new_instance.demos[0]["input"] == original_instance.demos[0].input.model_dump_json()
+
+def test_predict_with_nested_dataclass_output():
+    """Test typed signatures with nested output type."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Metadata:
+        confidence: int
+        source: str
+
+    @dataclass
+    class InputType:
+        question: str
+
+    class OutputType:
+        answer: str
+        metadata: Metadata
+
+    dspy.configure(lm=DummyLM([{
+        "answer": "Paris",
+        "metadata": Metadata(confidence=95, source="geography_db")
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    response = program(InputType(question="What is the capital of France?"))
+
+    assert isinstance(response, OutputType)
+    assert isinstance(response.answer, str)
+    assert response.answer == "Paris"
+
+    assert isinstance(response.metadata, Metadata)
+    assert response.metadata.confidence == 95
+    assert response.metadata.source == "geography_db"
+
+
+
+def test_predict_with_pydantic_nested_output():
+    """Test typed signatures with Pydantic models containing nested Pydantic model fields."""
+    from pydantic import BaseModel
+
+    class Address(BaseModel):
+        street: str
+        city: str
+
+    class InputType(BaseModel):
+        query: str
+
+    class OutputType(BaseModel):
+        name: str
+        address: Address
+
+    dspy.configure(lm=DummyLM([{
+        "name": "John Doe",
+        "address": Address(street="123 Main St", city="Paris")
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    response = program(InputType(query="Get info"))
+
+    assert isinstance(response, OutputType)
+    assert isinstance(response.name, str)
+    assert response.name == "John Doe"
+
+    assert isinstance(response.address, Address)
+    assert response.address.street == "123 Main St"
+    assert response.address.city == "Paris"
+
+
+def test_predict_with_nested_dataclass_input():
+    """Test typed signatures with nested dataclass input type."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Address:
+        street: str
+        city: str
+
+    @dataclass
+    class InputType:
+        name: str
+        address: Address
+
+    class OutputType:
+        result: str
+        location: str
+
+    dspy.configure(lm=DummyLM([{
+        "result": "Address received",
+        "location": "Paris, France"
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create nested input with Address dataclass
+    address = Address(street="123 Main St", city="Paris")
+    input_data = InputType(name="John", address=address)
+    response = program(input_data)
+
+    # Verify response is correct OutputType
+    assert isinstance(response, OutputType)
+    assert response.result == "Address received"
+    assert response.location == "Paris, France"
+
+
+def test_predict_with_pydantic_nested_input():
+    """Test typed signatures with Pydantic models containing nested Pydantic model fields in input."""
+    from pydantic import BaseModel
+
+    class Contact(BaseModel):
+        email: str
+        phone: str
+
+    class InputType(BaseModel):
+        name: str
+        contact: Contact
+
+    class OutputType(BaseModel):
+        message: str
+        status: str
+
+    dspy.configure(lm=DummyLM([{
+        "message": "Contact info received",
+        "status": "success"
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create nested input with Contact Pydantic model
+    contact = Contact(email="john@example.com", phone="555-1234")
+    input_data = InputType(name="John Doe", contact=contact)
+    response = program(input_data)
+
+    assert isinstance(response, OutputType)
+    assert response.message == "Contact info received"
+    assert response.status == "success"
+
+
+def test_predict_with_deeply_nested_dataclass_input():
+    """Test typed signatures with deeply nested dataclass input (3 levels of nesting)."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Coordinates:
+        latitude: float
+        longitude: float
+
+    @dataclass
+    class Location:
+        city: str
+        coordinates: Coordinates
+
+    @dataclass
+    class InputType:
+        name: str
+        location: Location
+
+    class OutputType:
+        description: str
+        distance: int
+
+    dspy.configure(lm=DummyLM([{
+        "description": "Location processed",
+        "distance": 100
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create nested input
+    coords = Coordinates(latitude=48.8566, longitude=2.3522)
+    location = Location(city="Paris", coordinates=coords)
+    input_data = InputType(name="Location Query", location=location)
+    response = program(input_data)
+
+    # Verify response is correct
+    assert isinstance(response, OutputType)
+    assert response.description == "Location processed"
+    assert response.distance == 100
+
+
+def test_predict_with_nested_input_and_nested_output():
+    """Test typed signatures with both nested input and nested output types."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputAddress:
+        street: str
+        city: str
+
+    @dataclass
+    class InputType:
+        name: str
+        address: InputAddress
+
+    @dataclass
+    class OutputMetadata:
+        processed_at: str
+        confidence: int
+
+    @dataclass
+    class OutputType:
+        result: str
+        metadata: OutputMetadata
+
+    dspy.configure(lm=DummyLM([{
+        "result": "Successfully processed",
+        "metadata": OutputMetadata(processed_at="2026-03-24", confidence=95)
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create nested input
+    address = InputAddress(street="456 Oak Ave", city="London")
+    input_data = InputType(name="Jane", address=address)
+    response = program(input_data)
+
+    # Verify both nested input and output work
+    assert isinstance(response, OutputType)
+    assert response.result == "Successfully processed"
+    assert isinstance(response.metadata, OutputMetadata)
+    assert response.metadata.processed_at == "2026-03-24"
+    assert response.metadata.confidence == 95
+
+
+def test_predict_with_nested_list_in_input():
+    """Test typed signatures with list of nested objects in input."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Item:
+        name: str
+        quantity: int
+
+    @dataclass
+    class InputType:
+        order_id: str
+        items: list[Item]
+
+    class OutputType:
+        total_items: int
+        status: str
+
+    dspy.configure(lm=DummyLM([{
+        "total_items": 3,
+        "status": "Order received"
+    }]))
+
+    signature = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(signature)
+
+    # Create input with list of nested Item objects
+    items = [
+        Item(name="Apple", quantity=5),
+        Item(name="Banana", quantity=3),
+        Item(name="Orange", quantity=2)
+    ]
+    input_data = InputType(order_id="ORD-001", items=items)
+    response = program(input_data)
+
+    assert isinstance(response, OutputType)
+    assert response.total_items == 3
+    assert response.status == "Order received"
 
 
 def test_signature_fields_after_dump_and_load_state(tmp_path):
@@ -807,9 +1062,11 @@ def test_positional_arguments():
     with pytest.raises(ValueError) as e:
         program("What is the capital of France?")
     assert str(e.value) == (
-        "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments that match "
-        "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
+        "You may use either positional or keyword arguments when calling `dspy.Predict`, not both.\n"
+        "- Positional: pass an instance of the input type: `predict(TInput(question=input_value, ...))`\n"
+        "- Keyword: pass individual fields: `predict(question=input_value, ...)`"
     )
+
 
 def test_error_message_on_invalid_lm_setup():
     # No LM is loaded.
@@ -992,6 +1249,7 @@ def test_per_module_history_disabled():
         program(question="What is the capital of France?")
     assert len(program.history) == 0
 
+
 def test_input_field_default_value():
     class SpyLM(dspy.LM):
         def __init__(self):
@@ -1015,11 +1273,13 @@ def test_input_field_default_value():
     user_message = lm.calls[0]["messages"][-1]["content"]
     assert "DEFAULT_CONTEXT" in user_message
 
+
 def log_test_helper():
     lm = DummyLM([{"answer": "test output"}])
     dspy.configure(lm=lm)
     dspy_logger = logging.getLogger("dspy")
     dspy_logger.propagate = True
+
 
 def test_extra_fields_warning(caplog):
     """Test that extra fields not in signature generate a warning."""
@@ -1052,6 +1312,7 @@ def test_warning_images(caplog):
         predict_instance(question="dog_image")
 
     assert "Type mismatch for field 'question': expected Image" in caplog.text
+
 
 def test_type_mismatch_warning(caplog):
     """Test that type mismatches in input fields generate a warning."""
@@ -1588,6 +1849,7 @@ def test_basic_types_string_signature(caplog, enable_type_warnings):
     else:
         assert "Type mismatch" not in caplog.text
 
+
 def test_untyped_string_signature(caplog):
     """Test type validation with basic types using string signatures without type."""
     log_test_helper()
@@ -1626,6 +1888,7 @@ def test_untyped_class_signature(caplog):
 
     assert "Type mismatch" not in caplog.text
 
+
 def test_string_to_list_signature(caplog):
     """Test type validation with string input field type where the module gets called with a list."""
     log_test_helper()
@@ -1645,6 +1908,7 @@ def test_string_to_list_signature(caplog):
         predict_instance(name=["abc", "def", "geh"], count=123)
 
     assert "Type mismatch" not in caplog.text
+
 
 @pytest.mark.parametrize("enable_type_warnings", [False, True])
 def test_custom_signature_types(caplog, enable_type_warnings):
@@ -1678,3 +1942,32 @@ def test_custom_signature_types(caplog, enable_type_warnings):
         assert "Type mismatch for field 'query': expected Query" in caplog.text
     else:
         assert "Type mismatch" not in caplog.text
+
+
+def test_coerce_prediction_to_pydantic_output_type_validator_error():
+    """When a pydantic field_validator on output_type rejects an LM value, coercion must not raise ValidationError."""
+    from pydantic import field_validator
+
+    class InputType(pydantic.BaseModel):
+        question: str
+
+    class OutputType(pydantic.BaseModel):
+        answer: str
+
+        @field_validator("answer")
+        @classmethod
+        def must_be_short(cls, v):
+            if len(v) > 5:
+                raise ValueError("Answer too long")
+            return v
+
+    # DummyLM returns a long answer — the validator rejects it in _coerce_prediction_to_output_type
+    dspy.configure(lm=DummyLM([{"answer": "Paris is the capital of France"}]))
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    program = Predict(sig)
+
+    # Must not raise — falls back to best-effort instance that still exposes the raw value
+    result = program(InputType(question="What is the capital of France?"))
+    assert hasattr(result, "answer")
+    assert result.answer == "Paris is the capital of France"

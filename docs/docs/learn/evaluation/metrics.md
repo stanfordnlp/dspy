@@ -87,13 +87,22 @@ For most applications, your system will output long-form outputs, so your metric
 This simple signature could come in handy.
 
 ```python
-# Define the signature for automatic assessments.
-class Assess(dspy.Signature):
-    """Assess the quality of a tweet along the specified dimension."""
+from dataclasses import dataclass
 
-    assessed_text = dspy.InputField()
-    assessment_question = dspy.InputField()
-    assessment_answer: bool = dspy.OutputField()
+# Define the signature for automatic assessments.
+@dataclass
+class AssessInput:
+    assessed_text: str
+    assessment_question: str
+
+class AssessOutput:
+    assessment_answer: bool
+
+Assess = dspy.Signature(
+    input_type=AssessInput,
+    output_type=AssessOutput,
+    instructions="Assess the quality of a tweet along the specified dimension.",
+)
 ```
 
 For example, below is a simple metric that checks a generated tweet (1) answers a given question correctly and (2) whether it's also engaging. We also check that (3) `len(tweet) <= 280` characters.
@@ -105,8 +114,8 @@ def metric(gold, pred, trace=None):
     engaging = "Does the assessed text make for a self-contained, engaging tweet?"
     correct = f"The text should answer `{question}` with `{answer}`. Does the assessed text contain this answer?"
     
-    correct =  dspy.Predict(Assess)(assessed_text=tweet, assessment_question=correct)
-    engaging = dspy.Predict(Assess)(assessed_text=tweet, assessment_question=engaging)
+    correct =  dspy.Predict(Assess)(AssessInput(assessed_text=tweet, assessment_question=correct))
+    engaging = dspy.Predict(Assess)(AssessInput(assessed_text=tweet, assessment_question=engaging))
 
     correct, engaging = [m.assessment_answer for m in [correct, engaging]]
     score = (correct + engaging) if correct and (len(tweet) <= 280) else 0

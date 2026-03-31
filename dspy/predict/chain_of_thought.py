@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic.fields import FieldInfo
 
@@ -8,11 +8,13 @@ from dspy.signatures.signature import Signature, ensure_signature
 
 # NOTE: This restores the legacy rationale_field behavior after PR #8822.
 
+TInput = TypeVar("TInput")
+TOutput = TypeVar("TOutput")
 
-class ChainOfThought(Module):
+class ChainOfThought(Module[TInput, TOutput]):
     def __init__(
         self,
-        signature: str | type[Signature],
+        signature: str | type[Signature] | type[Signature[TInput, TOutput]],
         rationale_field: FieldInfo | None = None,
         rationale_field_type: type = str,
         **config: dict[str, Any],
@@ -21,7 +23,7 @@ class ChainOfThought(Module):
         A module that reasons step by step in order to predict the output of a task.
 
         Args:
-            signature (Type[dspy.Signature]): The signature of the module.
+            signature (Type[dspy.Signature] | Type[dspy.Signature[Input, Output]]): The signature of the module.
             rationale_field (Optional[Union[dspy.OutputField, pydantic.fields.FieldInfo]]): The field that will contain the reasoning.
             rationale_field_type (Type): The type of the rationale field.
             **config: The configuration for the module.

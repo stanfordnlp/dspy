@@ -1,6 +1,6 @@
 import inspect
 import logging
-from typing import Any, TextIO
+from typing import Any, Generic, TextIO, TypeVar
 
 from dspy.dsp.utils.settings import settings
 from dspy.predict.parallel import Parallel
@@ -14,6 +14,8 @@ from dspy.utils.usage_tracker import track_usage
 
 logger = logging.getLogger(__name__)
 
+TInput = TypeVar("TInput")
+TOutput = TypeVar("TOutput")
 
 class ProgramMeta(type):
     """Metaclass ensuring every ``dspy.Module`` instance is properly initialised."""
@@ -37,7 +39,7 @@ class ProgramMeta(type):
         return obj
 
 
-class Module(BaseModule, metaclass=ProgramMeta):
+class Module(BaseModule, Generic[TInput, TOutput], metaclass=ProgramMeta):
     """Base class for all DSPy modules (programs).
 
     A Module is a building block for DSPy programs that can contain predictors,
@@ -65,7 +67,6 @@ class Module(BaseModule, metaclass=ProgramMeta):
         ...     def forward(self, question):
         ...         return self.predictor(question=question)
     """
-
     def _base_init(self):
         self._compiled = False
         self.callbacks = []
@@ -90,8 +91,63 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if not hasattr(self, "callbacks"):
             self.callbacks = []
 
+    @staticmethod
+    def _resolve_call_args(method, args: tuple, kwargs: dict) -> tuple[tuple, dict]:
+        """Resolve positional typed-input args for a forward/aforward call.
+
+        If the method accepts *args, or there are no positional args, the
+        call passes through unchanged.  Otherwise a single positional arg that
+        has a __dict__ (dataclass / Pydantic model / plain object) is
+        unpacked into keyword arguments and merged with any existing kwargs.
+        """
+        has_var_positional = any(
+            p.kind == inspect.Parameter.VAR_POSITIONAL
+            for p in inspect.signature(method).parameters.values()
+        )
+        if has_var_positional or not args:
+            return args, kwargs
+        if len(args) == 1 and hasattr(args[0], "__dict__"):
+            from dspy.primitives.example import Example
+            arg = args[0]
+            # dspy.Example is not a typed-input object — pass it through so the
+            # caller receives it as-is (e.g. for Parallel batch processing).
+            if not isinstance(arg, Example):
+                return (), {**vars(arg), **kwargs}
+        # Arg is not an unpackable typed-input object; pass it through as-is.
+        return args, kwargs
+
+    @staticmethod
+    def _forward_has_positional_params(method) -> bool:
+        """Return True if *method* declares any explicit positional parameters."""
+        return any(
+            p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY)
+            for p in inspect.signature(method).parameters.values()
+        )
+
+    def _call_forward(self, *args, **kwargs):
+        args, kwargs = self._resolve_call_args(self.forward, args, kwargs)
+        if args and kwargs and not self._forward_has_positional_params(self.forward):
+            # Positional arg couldn't be unpacked (e.g. a plain string) AND keyword args were also
+            # provided, but forward accepts no positional parameters
+            error_fn = getattr(self, "_get_positional_args_error_message", None)
+            raise ValueError(error_fn() if callable(error_fn) else (
+                "Cannot mix positional and keyword arguments when calling a DSPy module. "
+                "Pass either a typed input instance or individual keyword fields, not both."
+            ))
+        return self.forward(*args, **kwargs)
+
+    async def _acall_forward(self, *args, **kwargs):
+        args, kwargs = self._resolve_call_args(self.aforward, args, kwargs)
+        if args and kwargs and not self._forward_has_positional_params(self.aforward):
+            error_fn = getattr(self, "_get_positional_args_error_message", None)
+            raise ValueError(error_fn() if callable(error_fn) else (
+                "Cannot mix positional and keyword arguments when calling a DSPy module. "
+                "Pass either a typed input instance or individual keyword fields, not both."
+            ))
+        return await self.aforward(*args, **kwargs)
+
     @with_callbacks
-    def __call__(self, *args, **kwargs) -> Prediction:
+    def __call__(self, *args: TInput, **kwargs) -> TOutput | Prediction:
         from dspy.dsp.utils.settings import thread_local_overrides
 
         caller_modules = settings.caller_modules or []
@@ -101,16 +157,16 @@ class Module(BaseModule, metaclass=ProgramMeta):
         with settings.context(caller_modules=caller_modules):
             if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
-                    output = self.forward(*args, **kwargs)
+                    output = self._call_forward(*args, **kwargs)
                 tokens = usage_tracker.get_total_tokens()
                 self._set_lm_usage(tokens, output)
 
                 return output
 
-            return self.forward(*args, **kwargs)
+            return self._call_forward(*args, **kwargs)
 
     @with_callbacks
-    async def acall(self, *args, **kwargs) -> Prediction:
+    async def acall(self, *args: TInput, **kwargs) -> TOutput | Prediction:
         from dspy.dsp.utils.settings import thread_local_overrides
 
         caller_modules = settings.caller_modules or []
@@ -120,13 +176,13 @@ class Module(BaseModule, metaclass=ProgramMeta):
         with settings.context(caller_modules=caller_modules):
             if settings.track_usage and thread_local_overrides.get().get("usage_tracker") is None:
                 with track_usage() as usage_tracker:
-                    output = await self.aforward(*args, **kwargs)
+                    output = await self._acall_forward(*args, **kwargs)
                     tokens = usage_tracker.get_total_tokens()
                     self._set_lm_usage(tokens, output)
 
                     return output
 
-            return await self.aforward(*args, **kwargs)
+            return await self._acall_forward(*args, **kwargs)
 
     def named_predictors(self):
         """Return all named Predict modules in this module.
@@ -329,16 +385,20 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if prediction_in_output:
             prediction_in_output.set_lm_usage(tokens)
         else:
-            logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
+            logger.warning(
+                "Failed to set LM usage. Please return `dspy.Prediction` object from "
+                "dspy.Module to enable usage tracking."
+            )
 
 
     def __getattribute__(self, name):
         attr = super().__getattribute__(name)
 
         if name == "forward" and callable(attr):
-            # Check if forward is called through __call__ or directly
+            # Check if forward is called through __call__ (directly or via _call_forward)
+            _INTERNAL_CALLERS = {"__call__", "_call_forward", "_acall_forward"}
             stack = inspect.stack()
-            forward_called_directly = len(stack) <= 1 or stack[1].function != "__call__"
+            forward_called_directly = len(stack) <= 1 or stack[1].function not in _INTERNAL_CALLERS
 
             if forward_called_directly:
                 logger.warning(

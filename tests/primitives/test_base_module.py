@@ -542,3 +542,47 @@ def test_forward_through_call_no_warning(capsys):
     module(x="test")
     captured = capsys.readouterr()
     assert "directly is discouraged" not in captured.err
+
+
+def test_positional_dataclass_arg_unpacked_to_kwargs():
+    """A dataclass positional arg is unpacked via vars() into keyword args."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Input:
+        question: str
+        context: str
+
+    received = {}
+
+    class M(dspy.Module):
+        def forward(self, question, context):
+            received.update(question=question, context=context)
+
+    M()(Input(question="q", context="ctx"))
+    assert received == {"question": "q", "context": "ctx"}
+
+
+def test_example_positional_arg_not_unpacked():
+    """dspy.Example passed as positional arg must arrive intact, not unpacked."""
+    received = []
+
+    class M(dspy.Module):
+        def forward(self, example):
+            received.append(example)
+
+    ex = dspy.Example(question="q").with_inputs("question")
+    M()(ex)
+    assert len(received) == 1
+    assert isinstance(received[0], dspy.Example)
+    assert received[0]["question"] == "q"
+
+
+def test_positional_and_kwargs_both_forbidden_for_typed_input():
+    """Passing both a positional typed-input object and keyword args raises."""
+    import dspy
+
+    predict = dspy.Predict("question -> answer")
+
+    with pytest.raises(ValueError, match="not both"):
+        predict("something", question="q")

@@ -742,3 +742,101 @@ def test_empty_valset_handling(student_with_lm):
     # Both should behave the same way
     assert hasattr(result2, "marker"), "Result2 should have marker"
     assert result2.marker == "optimized", "Should return the latest program when valset is None"
+
+def test_bettertogether_typed_signature_demos_bootstrapped():
+    """BetterTogether with BootstrapFewShot as the prompt optimizer should
+    bootstrap demos into a typed-signature predictor and preserve input_type/output_type."""
+    from dataclasses import dataclass
+
+    from dspy.teleprompt import BootstrapFewShot
+
+    @dataclass
+    class BT_Input:
+        input: str
+
+    @dataclass
+    class BT_Output:
+        output: str
+
+    sig = dspy.Signature(input_type=BT_Input, output_type=BT_Output)
+
+    class TypedModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict(sig)
+
+        def forward(self, **kwargs):
+            return self.predictor(**kwargs)
+
+    # DummyLM with follow_examples=True: returns the labeled answer when it
+    # sees a matching demo, confirming the bootstrapped demo was stored.
+    lm = DummyLM([{"output": "Göbekli Tepe"}], follow_examples=True)
+    dspy.configure(lm=lm, trace=[])
+
+    student = TypedModule()
+    student.set_lm(lm)  # Required so launch_lms(student) finds a non-None LM.
+    typed_trainset = [
+        Example(input="What is the oldest monument?", output="Göbekli Tepe").with_inputs("input"),
+    ]
+
+    # Use a real BootstrapFewShot optimizer so that compilation actually runs.
+    p_optimizer = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    optimizer = BetterTogether(metric=simple_metric, p=p_optimizer)
+    with patch("dspy.teleprompt.bettertogether.launch_lms"):
+        with patch("dspy.teleprompt.bettertogether.kill_lms"):
+            compiled = optimizer.compile(student, trainset=typed_trainset, strategy="p")
+
+    # BootstrapFewShot should have added at least one demo.
+    assert len(compiled.predictor.demos) >= 1, "BootstrapFewShot should have bootstrapped at least one demo"
+    assert compiled.predictor.demos[0]["input"] == typed_trainset[0].input
+
+    # Typed signature attributes must survive the full optimization cycle.
+    assert getattr(compiled.predictor.signature, "input_type", None) is BT_Input
+    assert getattr(compiled.predictor.signature, "output_type", None) is BT_Output
+
+
+def test_bettertogether_typed_invocation_after_bootstrap():
+    """After BetterTogether + BootstrapFewShot compilation, a typed positional call
+    should return a typed output instance, not a raw Prediction."""
+    from dataclasses import dataclass
+
+    from dspy.teleprompt import BootstrapFewShot
+
+    @dataclass
+    class BT_Input:
+        input: str
+
+    @dataclass
+    class BT_Output:
+        output: str
+
+    sig = dspy.Signature(input_type=BT_Input, output_type=BT_Output)
+
+    class TypedModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = Predict(sig)
+
+        def forward(self, **kwargs):
+            return self.predictor(**kwargs)
+
+    lm = DummyLM([{"output": "Göbekli Tepe"}], follow_examples=True)
+    dspy.configure(lm=lm, trace=[])
+
+    student = TypedModule()
+    student.set_lm(lm)  # Required so launch_lms(student) finds a non-None LM.
+    typed_trainset = [
+        Example(input="What is the oldest monument?", output="Göbekli Tepe").with_inputs("input"),
+    ]
+
+    p_optimizer = BootstrapFewShot(metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=1)
+    optimizer = BetterTogether(metric=simple_metric, p=p_optimizer)
+    with patch("dspy.teleprompt.bettertogether.launch_lms"):
+        with patch("dspy.teleprompt.bettertogether.kill_lms"):
+            compiled = optimizer.compile(student, trainset=typed_trainset, strategy="p")
+
+    # Typed positional call: _resolve_call_args unpacks BT_Input → kwargs,
+    # Predict coerces the result back to BT_Output.
+    result = compiled(BT_Input(input="What is the oldest monument?"))
+    assert isinstance(result, BT_Output), f"Expected BT_Output, got {type(result)}"
+    assert result.output == "Göbekli Tepe"

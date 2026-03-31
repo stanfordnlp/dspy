@@ -86,6 +86,11 @@ def OutputField(**kwargs): # noqa: N802
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 
 
+def Field(**kwargs): # noqa: N802
+    _warn_deprecated_field_args(**kwargs)
+    return pydantic.Field(**move_kwargs(**kwargs))
+
+
 def new_to_old_field(field):
     return (OldInputField if field.json_schema_extra["__dspy_field_type"] == "input" else OldOutputField)(
         prefix=field.json_schema_extra["prefix"],

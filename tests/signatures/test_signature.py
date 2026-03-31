@@ -258,6 +258,46 @@ def test_typed_signatures_basic_types():
     assert sig.output_fields["output"].annotation == float
 
 
+def test_typed_signature_factory_from_models():
+    class InputModel(pydantic.BaseModel):
+        question: str
+        count: int
+
+    class OutputModel(pydantic.BaseModel):
+        answer: str
+
+    sig = Signature(input_type=InputModel, output_type=OutputModel)
+
+    assert sig.input_fields["question"].annotation == str
+    assert sig.input_fields["count"].annotation == int
+    assert sig.output_fields["answer"].annotation == str
+    assert sig.input_type is InputModel
+    assert sig.output_type is OutputModel
+
+
+def test_typed_signature_factory_from_dataclasses():
+    from dataclasses import dataclass
+
+    instruction = "Be concise and precise."
+
+    @dataclass
+    class InputType:
+        context: str
+        question: str = dspy.Field(desc="What is the capital of France?")
+
+    class OutputType:
+        response: str
+        confidence: int = dspy.Field(desc="Confidence score")
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType, instructions=instruction)
+
+    assert sig.instructions == instruction
+    assert sig.input_fields["question"].json_schema_extra["desc"] == "What is the capital of France?"
+    assert sig.output_fields["confidence"].json_schema_extra["desc"] == "Confidence score"
+    assert "context" in sig.input_fields
+    assert "response" in sig.output_fields
+
+
 def test_typed_signatures_generics():
     sig = Signature(
         "input_list: list[int], input_dict: dict[str, float] -> output_tuple: tuple[str, int]")
@@ -578,3 +618,196 @@ def test_pep604_union_type_with_custom_types():
     custom_obj = CustomType(value="test")
     pred = dspy.Predict(sig)(input=custom_obj)
     assert pred.output == "processed"
+
+
+def test_dataclass_signature_with_instructions():
+    """Test dataclass Signature with instructions using with_instructions()."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        context: str
+        question: str = dspy.Field(desc="What is the capital of France?")
+
+    class OutputType:
+        confidence: int
+        response: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.with_instructions("Be nice")
+
+    assert updated is not sig
+    assert updated.instructions == "Be nice"
+    assert list(updated.input_fields.keys()) == ["context", "question"]
+    assert list(updated.output_fields.keys()) == ["confidence", "response"]
+
+
+def test_dataclass_signature_with_updated_fields():
+    """Test dataclass Signature with_updated_fields() to modify field metadata."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        context: str
+        question: str = dspy.Field(desc="Input question")
+
+    class OutputType:
+        response: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.with_updated_fields("question", prefix="Q:", desc="Modified question")
+
+    assert updated is not sig
+    assert updated.input_fields["question"].json_schema_extra["desc"] == "Modified question"
+    assert updated.input_fields["question"].json_schema_extra["prefix"] == "Q:"
+    assert sig.input_fields["question"].json_schema_extra["desc"] == "Input question"
+
+
+def test_dataclass_signature_prepend():
+    """Test dataclass Signature prepend() to add field at start."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        question: str
+
+    class OutputType:
+        response: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.prepend("context", InputField(desc="Context"))
+
+    assert updated is not sig
+    assert list(updated.input_fields.keys()) == ["context", "question"]
+    assert updated.input_fields["context"].annotation == str
+
+
+def test_dataclass_signature_append():
+    """Test dataclass Signature append() to add field at end."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        question: str
+
+    class OutputType:
+        response: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.append("confidence", OutputField(), float)
+
+    assert updated is not sig
+    assert list(updated.output_fields.keys()) == ["response", "confidence"]
+    assert updated.output_fields["confidence"].annotation == float
+
+
+def test_dataclass_signature_insert():
+    """Test dataclass Signature insert() to add field at specific position."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        input1: str
+        input2: str
+
+    class OutputType:
+        output1: str
+        output2: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.insert(1, "middle", InputField(), int)
+
+    assert updated is not sig
+    assert list(updated.input_fields.keys()) == ["input1", "middle", "input2"]
+    assert updated.input_fields["middle"].annotation == int
+
+
+def test_dataclass_signature_delete():
+    """Test dataclass Signature delete() to remove field."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class InputType:
+        input1: str
+        input2: str
+
+    class OutputType:
+        output1: str
+
+    sig = dspy.Signature(input_type=InputType, output_type=OutputType)
+    updated = sig.delete("input2")
+
+    assert updated is not sig
+    assert "input2" not in updated.fields
+    assert list(updated.input_fields.keys()) == ["input1"]
+
+
+def _make_typed_sig():
+    from dataclasses import dataclass
+
+    @dataclass
+    class Q:
+        question: str
+
+    class A:
+        answer: str
+
+    return dspy.Signature(input_type=Q, output_type=A), Q, A
+
+
+def test_typed_attrs_preserved_by_with_instructions():
+    sig, Q, A = _make_typed_sig()
+    derived = sig.with_instructions("Answer briefly.")
+    assert getattr(derived, "input_type", None) is Q
+    assert getattr(derived, "output_type", None) is A
+
+
+def test_typed_attrs_preserved_by_with_updated_fields():
+    sig, Q, A = _make_typed_sig()
+    derived = sig.with_updated_fields("question", desc="The question to answer")
+    assert getattr(derived, "input_type", None) is Q
+    assert getattr(derived, "output_type", None) is A
+
+
+def test_typed_attrs_preserved_by_delete():
+    from dataclasses import dataclass
+
+    @dataclass
+    class Input:
+        main: str
+        extra: str
+
+    class Output:
+        result: str
+
+    sig = dspy.Signature(input_type=Input, output_type=Output)
+    derived = sig.delete("extra")
+    assert getattr(derived, "input_type", None) is Input
+    assert getattr(derived, "output_type", None) is Output
+
+
+def test_typed_attrs_preserved_by_insert():
+    sig, Q, A = _make_typed_sig()
+    derived = sig.insert(0, "hint", dspy.InputField(), str)
+    assert getattr(derived, "input_type", None) is Q
+    assert getattr(derived, "output_type", None) is A
+
+
+def test_typed_attrs_preserved_by_load_state():
+    sig, Q, A = _make_typed_sig()
+    state = sig.dump_state()
+    restored = sig.load_state(state)
+    assert getattr(restored, "input_type", None) is Q
+    assert getattr(restored, "output_type", None) is A
+
+
+def test_untyped_sig_has_no_typed_attrs_after_derivation():
+    sig = dspy.Signature("question -> answer")
+    for derived in [
+        sig.with_instructions("Be concise."),
+        sig.with_updated_fields("question", desc="Q"),
+        sig.delete("answer").append("answer", dspy.OutputField()),
+        sig.insert(0, "hint", dspy.InputField(), str),
+    ]:
+        assert not hasattr(derived, "input_type")
+        assert not hasattr(derived, "output_type")
