@@ -38,7 +38,7 @@ dependencies = [
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
     "gepa[dspy]==0.0.27",
-    "typeguard>=4.4.3",
+    "typeguard==4.4.3",
 ]
 
 [project.optional-dependencies]
