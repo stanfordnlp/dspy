@@ -39,6 +39,10 @@ def _resolve_backend(model: str, model_type: str):
         from dspy.clients import _openai
         return _openai
 
+    if prefix == "anthropic":
+        from dspy.clients import _anthropic
+        return _anthropic
+
     from dspy.clients import _litellm
     return _litellm
 
@@ -289,7 +293,8 @@ class LM(BaseLM):
         return {key: getattr(self, key) for key in state_keys} | filtered_kwargs
 
     def _check_truncation(self, results):
-        if self.model_type != "responses" and any(c.finish_reason == "length" for c in results["choices"]):
+        choices = results.choices if hasattr(results, "choices") else results.get("choices", [])
+        if self.model_type != "responses" and any(c.finish_reason == "length" for c in choices):
             logger.warning(
                 f"LM response was truncated due to exceeding max_tokens={self.kwargs['max_tokens']}. "
                 "You can inspect the latest LM interactions with `dspy.inspect_history()`. "
