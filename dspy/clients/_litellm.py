@@ -1,10 +1,8 @@
 """litellm backend module.
 
-Stateless functions that wrap litellm for DSPy's backend protocol.
-All litellm imports and configuration live here — nowhere else in dspy/clients/.
-
-Functions use generic names (complete, acomplete, etc.) so callers never
-reference "litellm" directly.
+Implements the DSPy backend protocol using litellm. Every backend
+(_litellm, _openai, _anthropic, …) exports the same interface so
+LM can swap between them transparently.
 """
 
 import logging
@@ -26,9 +24,20 @@ logger = logging.getLogger(__name__)
 
 ContextWindowError = litellm.ContextWindowExceededError
 
+# Always disable litellm's internal cache — DSPy has its own.
+_NO_LITELLM_CACHE = {"no-cache": True, "no-store": True}
+
 # ---------------------------------------------------------------------------
 # Capability queries
+#
+# These take just a model string. The provider prefix is extracted
+# internally so callers don't need to know about litellm's
+# custom_llm_provider kwarg.
 # ---------------------------------------------------------------------------
+
+
+def _provider_prefix(model: str) -> str:
+    return model.split("/", 1)[0] if "/" in model else "openai"
 
 
 def supports_function_calling(model: str) -> bool:
@@ -39,13 +48,44 @@ def supports_reasoning(model: str) -> bool:
     return litellm.supports_reasoning(model)
 
 
-def supports_response_schema(model: str, custom_llm_provider: str | None = None) -> bool:
-    return litellm.supports_response_schema(model=model, custom_llm_provider=custom_llm_provider)
+def supports_response_schema(model: str) -> bool:
+    return litellm.supports_response_schema(model=model, custom_llm_provider=_provider_prefix(model))
 
 
-def get_supported_params(model: str, custom_llm_provider: str | None = None) -> set[str]:
-    params = litellm.get_supported_openai_params(model=model, custom_llm_provider=custom_llm_provider)
+def supported_params(model: str) -> set[str]:
+    params = litellm.get_supported_openai_params(model=model, custom_llm_provider=_provider_prefix(model))
     return set(params) if params else set()
+
+
+# ---------------------------------------------------------------------------
+# Dispatching entry points
+#
+# These select the right completion function based on model_type and
+# handle litellm cache disabling, so callers only pass
+# (request, model_type, num_retries).
+# ---------------------------------------------------------------------------
+
+
+def complete_request(request: dict[str, Any], model_type: str, num_retries: int):
+    """Sync completion — dispatches by model_type."""
+    if model_type == "chat":
+        return complete(request, num_retries)
+    elif model_type == "text":
+        return text_complete(request, num_retries)
+    elif model_type == "responses":
+        return responses_complete(request, num_retries)
+    raise ValueError(f"Unknown model_type: {model_type!r}")
+
+
+async def acomplete_request(request: dict[str, Any], model_type: str, num_retries: int):
+    """Async completion — dispatches by model_type."""
+    if model_type == "chat":
+        return await acomplete(request, num_retries)
+    elif model_type == "text":
+        return await atext_complete(request, num_retries)
+    elif model_type == "responses":
+        return await aresponses_complete(request, num_retries)
+    raise ValueError(f"Unknown model_type: {model_type!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +145,7 @@ def _get_stream_completion_fn(
 
 
 def complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
+    cache = cache or _NO_LITELLM_CACHE
     request = dict(request)
     request.pop("rollout_id", None)
     headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
@@ -123,7 +163,7 @@ def complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | 
 
 
 def text_complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
+    cache = cache or _NO_LITELLM_CACHE
     request = dict(request)
     request.pop("rollout_id", None)
     headers = request.pop("headers", None)
@@ -149,7 +189,7 @@ def text_complete(request: dict[str, Any], num_retries: int, cache: dict[str, An
 
 
 def responses_complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
+    cache = cache or _NO_LITELLM_CACHE
     request = dict(request)
     request.pop("rollout_id", None)
     headers = request.pop("headers", None)
@@ -170,7 +210,7 @@ def responses_complete(request: dict[str, Any], num_retries: int, cache: dict[st
 
 
 async def acomplete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
+    cache = cache or _NO_LITELLM_CACHE
     request = dict(request)
     request.pop("rollout_id", None)
     headers = request.pop("headers", None)
@@ -188,7 +228,7 @@ async def acomplete(request: dict[str, Any], num_retries: int, cache: dict[str, 
 
 
 async def atext_complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
+    cache = cache or _NO_LITELLM_CACHE
     request = dict(request)
     request.pop("rollout_id", None)
     model = request.pop("model").split("/", 1)
@@ -214,7 +254,7 @@ async def atext_complete(request: dict[str, Any], num_retries: int, cache: dict[
 
 
 async def aresponses_complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
+    cache = cache or _NO_LITELLM_CACHE
     request = dict(request)
     request.pop("rollout_id", None)
     headers = request.pop("headers", None)

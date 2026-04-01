@@ -5,19 +5,6 @@ import warnings
 from typing import Any, Literal
 
 import dspy
-from dspy.clients._litellm import (
-    ContextWindowError,
-    acomplete,
-    aresponses_complete,
-    atext_complete,
-    complete,
-    get_supported_params,
-    responses_complete,
-    supports_function_calling,
-    supports_reasoning,
-    supports_response_schema,
-    text_complete,
-)
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
@@ -29,6 +16,26 @@ from dspy.utils.exceptions import ContextWindowExceededError
 from .base_lm import BaseLM
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Backend resolution
+# ---------------------------------------------------------------------------
+
+def _backend_capability(name):
+    """Property that delegates a capability query to the backend."""
+    return property(lambda self: getattr(self._get_backend(), name)(self.model))
+
+
+def _resolve_backend(model: str, model_type: str):
+    """Resolve a backend module from a model string.
+
+    Phase 1: always returns the litellm backend.
+    Phase 2+: will route openai/*, anthropic/*, etc. to native SDK backends,
+    check entry points for community backends, and accept backend= overrides.
+    """
+    from dspy.clients import _litellm
+    return _litellm
 
 
 class LM(BaseLM):
@@ -118,28 +125,20 @@ class LM(BaseLM):
 
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
-    @property
-    def _provider_name(self) -> str:
-        """Extract the provider name from the model string (e.g., 'openai' from 'openai/gpt-4o')."""
-        if "/" in self.model:
-            return self.model.split("/", 1)[0]
-        return "openai"
+    # ------------------------------------------------------------------
+    # Backend wiring
+    # ------------------------------------------------------------------
 
-    @property
-    def supports_function_calling(self) -> bool:
-        return supports_function_calling(model=self.model)
+    def _get_backend(self):
+        """Lazily resolve and cache the backend module."""
+        if not hasattr(self, "_backend"):
+            self._backend = _resolve_backend(self.model, self.model_type)
+        return self._backend
 
-    @property
-    def supports_reasoning(self) -> bool:
-        return supports_reasoning(self.model)
-
-    @property
-    def supports_response_schema(self) -> bool:
-        return supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
-
-    @property
-    def supported_params(self) -> set[str]:
-        return get_supported_params(model=self.model, custom_llm_provider=self._provider_name)
+    supports_function_calling = _backend_capability("supports_function_calling")
+    supports_reasoning = _backend_capability("supports_reasoning")
+    supports_response_schema = _backend_capability("supports_response_schema")
+    supported_params = _backend_capability("supported_params")
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:
@@ -149,99 +148,55 @@ class LM(BaseLM):
             )
             self._warned_zero_temp_rollout = True
 
-    def _get_cached_completion_fn(self, completion_fn, cache):
-        ignored_args_for_cache_key = ["api_key", "api_base", "base_url"]
+    def _build_request(self, prompt, messages, kwargs):
+        """Shared request-building logic for forward/aforward."""
+        kwargs = dict(kwargs)
+        cache = kwargs.pop("cache", self.cache)
+        messages = messages or [{"role": "user", "content": prompt}]
+        if self.use_developer_role and self.model_type == "responses":
+            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
+        kwargs = {**self.kwargs, **kwargs}
+        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
+        if kwargs.get("rollout_id") is None:
+            kwargs.pop("rollout_id", None)
+        request = dict(model=self.model, messages=messages, **kwargs)
+        return request, cache
+
+    def _apply_cache(self, fn, cache):
+        """Wrap *fn* with DSPy's request cache when *cache* is enabled."""
         if cache:
-            completion_fn = request_cache(
+            fn = request_cache(
                 cache_arg_name="request",
-                ignored_args_for_cache_key=ignored_args_for_cache_key,
-            )(completion_fn)
+                ignored_args_for_cache_key=["api_key", "api_base", "base_url"],
+            )(fn)
+        return fn
 
-        backend_cache_args = {"no-cache": True, "no-store": True}
-
-        return completion_fn, backend_cache_args
-
-    def forward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
-        # Build the request.
-        kwargs = dict(kwargs)
-        cache = kwargs.pop("cache", self.cache)
-
-        messages = messages or [{"role": "user", "content": prompt}]
-        if self.use_developer_role and self.model_type == "responses":
-            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
-        kwargs = {**self.kwargs, **kwargs}
-        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
-        if kwargs.get("rollout_id") is None:
-            kwargs.pop("rollout_id", None)
-
-        if self.model_type == "chat":
-            completion = complete
-        elif self.model_type == "text":
-            completion = text_complete
-        elif self.model_type == "responses":
-            completion = responses_complete
-        completion, backend_cache_args = self._get_cached_completion_fn(completion, cache)
-
-        try:
-            results = completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-                cache=backend_cache_args,
-            )
-        except ContextWindowError as e:
-            raise ContextWindowExceededError(model=self.model) from e
-
+    def _post_process(self, results):
+        """Shared post-processing for forward/aforward."""
         self._check_truncation(results)
-
         if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
-    async def aforward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs,
-    ):
-        # Build the request.
-        kwargs = dict(kwargs)
-        cache = kwargs.pop("cache", self.cache)
-
-        messages = messages or [{"role": "user", "content": prompt}]
-        if self.use_developer_role and self.model_type == "responses":
-            messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
-        kwargs = {**self.kwargs, **kwargs}
-        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
-        if kwargs.get("rollout_id") is None:
-            kwargs.pop("rollout_id", None)
-
-        if self.model_type == "chat":
-            completion = acomplete
-        elif self.model_type == "text":
-            completion = atext_complete
-        elif self.model_type == "responses":
-            completion = aresponses_complete
-        completion, backend_cache_args = self._get_cached_completion_fn(completion, cache)
-
+    def forward(self, prompt=None, messages=None, **kwargs):
+        request, cache = self._build_request(prompt, messages, kwargs)
+        backend = self._get_backend()
+        completion = self._apply_cache(backend.complete_request, cache)
         try:
-            results = await completion(
-                request=dict(model=self.model, messages=messages, **kwargs),
-                num_retries=self.num_retries,
-                cache=backend_cache_args,
-            )
-        except ContextWindowError as e:
+            results = completion(request=request, model_type=self.model_type, num_retries=self.num_retries)
+        except backend.ContextWindowError as e:
             raise ContextWindowExceededError(model=self.model) from e
+        return self._post_process(results)
 
-        self._check_truncation(results)
-
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
-            settings.usage_tracker.add_usage(self.model, dict(results.usage))
-        return results
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        request, cache = self._build_request(prompt, messages, kwargs)
+        backend = self._get_backend()
+        completion = self._apply_cache(backend.acomplete_request, cache)
+        try:
+            results = await completion(request=request, model_type=self.model_type, num_retries=self.num_retries)
+        except backend.ContextWindowError as e:
+            raise ContextWindowExceededError(model=self.model) from e
+        return self._post_process(results)
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
         self.provider.launch(self, launch_kwargs)
@@ -342,20 +297,16 @@ class LM(BaseLM):
 
 # ---------------------------------------------------------------------------
 # Backward-compatible re-exports for tests that import old names from here.
-# These will be removed once all references are updated.
 # ---------------------------------------------------------------------------
 
-# Re-export request transformation helpers (used directly by tests)
 from dspy.clients._litellm import (  # noqa: F401, E402
     _convert_chat_request_to_responses_request,
     _convert_content_item_to_responses_format,
     _get_stream_completion_fn,
+    acomplete as alitellm_completion,
+    atext_complete as alitellm_text_completion,
+    aresponses_complete as alitellm_responses_completion,
+    complete as litellm_completion,
+    text_complete as litellm_text_completion,
+    responses_complete as litellm_responses_completion,
 )
-
-# Re-export old function names → new generic names
-litellm_completion = complete
-litellm_text_completion = text_complete
-litellm_responses_completion = responses_complete
-alitellm_completion = acomplete
-alitellm_text_completion = atext_complete
-alitellm_responses_completion = aresponses_complete
