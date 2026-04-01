@@ -1,3 +1,4 @@
+import importlib.metadata
 import logging
 import re
 import threading
@@ -27,13 +28,79 @@ def _backend_capability(name):
     return property(lambda self: getattr(self._get_backend(), name)(self.model))
 
 
+# Cache for discovered entry-point backends so we scan metadata only once.
+_EP_BACKENDS: dict[str, Any] | None = None
+
+_REQUIRED_BACKEND_ATTRS = (
+    "ContextWindowError",
+    "supports_function_calling",
+    "supports_reasoning",
+    "supports_response_schema",
+    "supported_params",
+    "complete_request",
+    "acomplete_request",
+)
+
+
+def _load_entrypoint_backends() -> dict[str, Any]:
+    """Discover community backends registered under the ``dspy.backends`` entry-point group.
+
+    Each entry point maps a model-string prefix (e.g. ``"mistral"``) to a
+    Python module that implements the DSPy backend protocol.  The module is
+    loaded lazily when its prefix is first requested and validated against
+    the required protocol attributes.
+
+    Returns:
+        A dict mapping prefix strings to loaded backend modules.
+    """
+    global _EP_BACKENDS
+    if _EP_BACKENDS is not None:
+        return _EP_BACKENDS
+
+    _EP_BACKENDS = {}
+    eps = importlib.metadata.entry_points(group="dspy.backends")
+    for ep in eps:
+        try:
+            mod = ep.load()
+        except Exception:
+            logger.warning("Failed to load dspy.backends entry point %r", ep.name, exc_info=True)
+            continue
+
+        missing = [attr for attr in _REQUIRED_BACKEND_ATTRS if not hasattr(mod, attr)]
+        if missing:
+            logger.warning(
+                "dspy.backends entry point %r is missing required attributes: %s — skipping",
+                ep.name,
+                ", ".join(missing),
+            )
+            continue
+
+        _EP_BACKENDS[ep.name] = mod
+
+    return _EP_BACKENDS
+
+
 def _resolve_backend(model: str, model_type: str):
     """Resolve a backend module from a model string.
 
-    Routes openai/* and azure/* chat models to the native OpenAI SDK backend.
-    Everything else falls back to litellm.
+    Resolution order:
+
+    1. Custom backends registered as ``dspy.backends`` `entry points
+       <https://packaging.python.org/en/latest/specifications/entry-points/>`_.
+       Install a package that declares an entry point for the prefix you
+       need (e.g. ``"mistral"``), and ``dspy.LM("mistral/mistral-large")``
+       will pick it up automatically.  This also lets you override a
+       built-in backend if you need to.
+    2. Built-in backends matched by prefix (``openai``, ``azure``,
+       ``anthropic``, ``google``, ``gemini``).
+    3. The litellm catch-all backend.
     """
     prefix = model.split("/", 1)[0] if "/" in model else ""
+
+    # Custom backends registered via entry points (highest priority).
+    ep_backends = _load_entrypoint_backends()
+    if prefix in ep_backends:
+        return ep_backends[prefix]
 
     if prefix in ("openai", "azure") or model.startswith("ft:"):
         from dspy.clients import _openai
@@ -71,6 +138,7 @@ class LM(BaseLM):
         launch_kwargs: dict[str, Any] | None = None,
         train_kwargs: dict[str, Any] | None = None,
         use_developer_role: bool = False,
+        backend=None,
         **kwargs,
     ):
         """
@@ -96,10 +164,15 @@ class LM(BaseLM):
                 future calls with the same inputs and rollout ID. Note that `rollout_id`
                 only affects generation when `temperature` is non-zero. This argument is
                 stripped before sending requests to the provider.
+            backend: A custom backend module or object that implements the DSPy backend
+                protocol. When provided, DSPy skips automatic backend resolution and uses
+                this directly. See the *Community Backends* guide for details.
         """
         # Remember to update LM.copy() if you modify the constructor!
         self.model = model
         self.model_type = model_type
+        if backend is not None:
+            self._backend = backend
         self.cache = cache
         self.provider = provider or self.infer_provider()
         self.callbacks = callbacks or []
@@ -148,6 +221,8 @@ class LM(BaseLM):
         if not hasattr(self, "_backend"):
             self._backend = _resolve_backend(self.model, self.model_type)
         return self._backend
+
+
 
     supports_function_calling = _backend_capability("supports_function_calling")
     supports_reasoning = _backend_capability("supports_reasoning")
