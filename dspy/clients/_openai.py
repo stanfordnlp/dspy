@@ -8,17 +8,20 @@ Supports chat completions, the Responses API, and legacy text completions.
 No litellm dependency.
 """
 
-import asyncio
 import logging
 import os
 import re
-import time
 from typing import Any
 
 import openai
 
-import dspy
-from dspy.clients._request_utils import convert_chat_to_responses_request
+from dspy.clients._request_utils import (
+    acall_with_retries,
+    call_with_retries,
+    convert_chat_to_responses_request,
+    dspy_user_agent,
+    strip_prefix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,14 +79,9 @@ def _make_client(request: dict, async_: bool = False):
         kwargs["base_url"] = request.pop("api_base")
     elif "base_url" in request:
         kwargs["base_url"] = request.pop("base_url")
-    kwargs["default_headers"] = {"User-Agent": f"DSPy/{dspy.__version__}"}
+    kwargs["default_headers"] = {"User-Agent": dspy_user_agent()}
     cls = openai.AsyncOpenAI if async_ else openai.OpenAI
     return cls(**kwargs)
-
-
-def _strip_prefix(model: str) -> str:
-    """'openai/gpt-4o' → 'gpt-4o'."""
-    return model.split("/", 1)[1] if "/" in model else model
 
 
 def _prepare(request: dict) -> dict:
@@ -91,39 +89,11 @@ def _prepare(request: dict) -> dict:
     request = dict(request)
     request.pop("rollout_id", None)
     request.pop("headers", None)
-    request["model"] = _strip_prefix(request["model"])
+    request["model"] = strip_prefix(request["model"])
     return request
 
 
-# ---------------------------------------------------------------------------
-# Retry helpers
-# ---------------------------------------------------------------------------
-
 _TRANSIENT = (openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError)
-
-
-def _call_with_retries(fn, num_retries: int, **kwargs):
-    last_err = None
-    for attempt in range(num_retries + 1):
-        try:
-            return fn(**kwargs)
-        except _TRANSIENT as e:
-            last_err = e
-            if attempt < num_retries:
-                time.sleep(2 ** attempt)
-    raise last_err
-
-
-async def _acall_with_retries(fn, num_retries: int, **kwargs):
-    last_err = None
-    for attempt in range(num_retries + 1):
-        try:
-            return await fn(**kwargs)
-        except _TRANSIENT as e:
-            last_err = e
-            if attempt < num_retries:
-                await asyncio.sleep(2 ** attempt)
-    raise last_err
 
 
 # ---------------------------------------------------------------------------
@@ -161,13 +131,13 @@ async def acomplete_request(request: dict[str, Any], model_type: str, num_retrie
 def chat_complete(request: dict[str, Any], num_retries: int):
     request = _prepare(request)
     client = _make_client(request)
-    return _call_with_retries(client.chat.completions.create, num_retries, **request)
+    return call_with_retries(client.chat.completions.create, num_retries, _TRANSIENT, **request)
 
 
 async def achat_complete(request: dict[str, Any], num_retries: int):
     request = _prepare(request)
     client = _make_client(request, async_=True)
-    return await _acall_with_retries(client.chat.completions.create, num_retries, **request)
+    return await acall_with_retries(client.chat.completions.create, num_retries, _TRANSIENT, **request)
 
 
 # ---------------------------------------------------------------------------
@@ -179,14 +149,14 @@ def responses_complete(request: dict[str, Any], num_retries: int):
     request = _prepare(request)
     request = convert_chat_to_responses_request(request)
     client = _make_client(request)
-    return _call_with_retries(client.responses.create, num_retries, **request)
+    return call_with_retries(client.responses.create, num_retries, _TRANSIENT, **request)
 
 
 async def aresponses_complete(request: dict[str, Any], num_retries: int):
     request = _prepare(request)
     request = convert_chat_to_responses_request(request)
     client = _make_client(request, async_=True)
-    return await _acall_with_retries(client.responses.create, num_retries, **request)
+    return await acall_with_retries(client.responses.create, num_retries, _TRANSIENT, **request)
 
 
 # ---------------------------------------------------------------------------
@@ -197,28 +167,14 @@ async def aresponses_complete(request: dict[str, Any], num_retries: int):
 def text_complete(request: dict[str, Any], num_retries: int):
     request = _prepare(request)
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
-    request.pop("model")  # text completions don't take model in the same way
-
-    api_key = request.pop("api_key", None) or os.getenv("OPENAI_API_KEY")
-    api_base = request.pop("api_base", request.pop("base_url", None))
-    client = openai.OpenAI(
-        api_key=api_key,
-        base_url=api_base,
-        default_headers={"User-Agent": f"DSPy/{dspy.__version__}"},
-    )
-    return _call_with_retries(client.completions.create, num_retries, prompt=prompt, **request)
+    request.pop("model")
+    client = _make_client(request)
+    return call_with_retries(client.completions.create, num_retries, _TRANSIENT, prompt=prompt, **request)
 
 
 async def atext_complete(request: dict[str, Any], num_retries: int):
     request = _prepare(request)
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
     request.pop("model")
-
-    api_key = request.pop("api_key", None) or os.getenv("OPENAI_API_KEY")
-    api_base = request.pop("api_base", request.pop("base_url", None))
-    client = openai.AsyncOpenAI(
-        api_key=api_key,
-        base_url=api_base,
-        default_headers={"User-Agent": f"DSPy/{dspy.__version__}"},
-    )
-    return await _acall_with_retries(client.completions.create, num_retries, prompt=prompt, **request)
+    client = _make_client(request, async_=True)
+    return await acall_with_retries(client.completions.create, num_retries, _TRANSIENT, prompt=prompt, **request)

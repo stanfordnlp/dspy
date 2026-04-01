@@ -7,11 +7,8 @@ the Gemini generateContent API.
 No litellm dependency.
 """
 
-import asyncio
 import json
 import logging
-import re
-import time
 from typing import Any
 
 import google.genai as genai
@@ -21,7 +18,11 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 from openai.types import CompletionUsage
 
-import dspy
+from dspy.clients._request_utils import (
+    acall_with_retries,
+    call_with_retries,
+    strip_prefix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,7 @@ def _model_family(model: str) -> str:
     return model.split("/")[-1] if "/" in model else model
 
 
-def _strip_prefix(model: str) -> str:
-    """'google/gemini-2.5-flash' → 'gemini-2.5-flash'."""
-    if "/" in model:
-        parts = model.split("/", 1)
-        # Handle google/gemini-... and gemini/gemini-...
-        return parts[1]
-    return model
+
 
 
 _FINISH_REASON_MAP = {
@@ -100,7 +95,7 @@ def _translate_request(request: dict) -> tuple[str, list, types.GenerateContentC
     Returns (model, contents, config) ready for client.models.generate_content().
     """
     request = dict(request)
-    model = _strip_prefix(request.pop("model"))
+    model = strip_prefix(request.pop("model"))
 
     # Strip params Google doesn't understand
     for key in list(request.keys()):
@@ -317,35 +312,7 @@ def _translate_response(resp: types.GenerateContentResponse, model: str) -> Chat
     )
 
 
-# ---------------------------------------------------------------------------
-# Retry helpers
-# ---------------------------------------------------------------------------
-
 _TRANSIENT = (genai_errors.ServerError,)
-
-
-def _call_with_retries(fn, num_retries: int, **kwargs):
-    last_err = None
-    for attempt in range(num_retries + 1):
-        try:
-            return fn(**kwargs)
-        except _TRANSIENT as e:
-            last_err = e
-            if attempt < num_retries:
-                time.sleep(2 ** attempt)
-    raise last_err
-
-
-async def _acall_with_retries(fn, num_retries: int, **kwargs):
-    last_err = None
-    for attempt in range(num_retries + 1):
-        try:
-            return await fn(**kwargs)
-        except _TRANSIENT as e:
-            last_err = e
-            if attempt < num_retries:
-                await asyncio.sleep(2 ** attempt)
-    raise last_err
 
 
 # ---------------------------------------------------------------------------
@@ -395,9 +362,10 @@ async def acomplete_request(request: dict[str, Any], model_type: str, num_retrie
 def complete(request: dict[str, Any], num_retries: int):
     model, contents, config = _translate_request(request)
     client = _make_client(request)
-    resp = _call_with_retries(
+    resp = call_with_retries(
         client.models.generate_content,
         num_retries,
+        _TRANSIENT,
         model=model,
         contents=contents,
         config=config,
@@ -408,9 +376,10 @@ def complete(request: dict[str, Any], num_retries: int):
 async def acomplete(request: dict[str, Any], num_retries: int):
     model, contents, config = _translate_request(request)
     client = _make_client(request)
-    resp = await _acall_with_retries(
+    resp = await acall_with_retries(
         client.aio.models.generate_content,
         num_retries,
+        _TRANSIENT,
         model=model,
         contents=contents,
         config=config,

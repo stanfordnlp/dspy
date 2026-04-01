@@ -1,10 +1,64 @@
-"""Shared request transformation helpers.
+"""Shared utilities for backend modules.
 
-These convert DSPy's chat-style request format to other OpenAI API formats
-(Responses API, text completions). Used by multiple backends.
+Contains request transformers, retry logic, and other helpers used
+across multiple backends so each backend stays DRY.
 """
 
+import asyncio
+import time
 from typing import Any
+
+import dspy
+
+
+# ---------------------------------------------------------------------------
+# Common helpers
+# ---------------------------------------------------------------------------
+
+
+def dspy_user_agent() -> str:
+    return f"DSPy/{dspy.__version__}"
+
+
+def strip_prefix(model: str) -> str:
+    """Remove the provider prefix: 'openai/gpt-4o' → 'gpt-4o'."""
+    return model.split("/", 1)[1] if "/" in model else model
+
+
+# ---------------------------------------------------------------------------
+# Retry with exponential backoff
+# ---------------------------------------------------------------------------
+
+
+def call_with_retries(fn, num_retries: int, transient_errors: tuple, **kwargs):
+    """Call *fn* with exponential backoff on transient errors."""
+    last_err = None
+    for attempt in range(num_retries + 1):
+        try:
+            return fn(**kwargs)
+        except transient_errors as e:
+            last_err = e
+            if attempt < num_retries:
+                time.sleep(2 ** attempt)
+    raise last_err
+
+
+async def acall_with_retries(fn, num_retries: int, transient_errors: tuple, **kwargs):
+    """Async call *fn* with exponential backoff on transient errors."""
+    last_err = None
+    for attempt in range(num_retries + 1):
+        try:
+            return await fn(**kwargs)
+        except transient_errors as e:
+            last_err = e
+            if attempt < num_retries:
+                await asyncio.sleep(2 ** attempt)
+    raise last_err
+
+
+# ---------------------------------------------------------------------------
+# Request transformation: chat → Responses API
+# ---------------------------------------------------------------------------
 
 
 def convert_chat_to_responses_request(request: dict[str, Any]) -> dict[str, Any]:

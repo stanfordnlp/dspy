@@ -7,10 +7,8 @@ the Anthropic Messages API.
 No litellm dependency.
 """
 
-import asyncio
 import json
 import logging
-import time
 from typing import Any
 
 import anthropic
@@ -18,7 +16,12 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 from openai.types import CompletionUsage
 
-import dspy
+from dspy.clients._request_utils import (
+    acall_with_retries,
+    call_with_retries,
+    dspy_user_agent,
+    strip_prefix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +74,7 @@ def _make_client(request: dict, async_: bool = False):
     return cls(**kwargs)
 
 
-def _strip_prefix(model: str) -> str:
-    """'anthropic/claude-3-5-sonnet' → 'claude-3-5-sonnet'."""
-    return model.split("/", 1)[1] if "/" in model else model
+
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +101,7 @@ def _translate_request(request: dict) -> dict:
     request = dict(request)
 
     # Strip provider prefix
-    request["model"] = _strip_prefix(request["model"])
+    request["model"] = strip_prefix(request["model"])
 
     # Extract system message from the messages list
     messages = request.pop("messages", [])
@@ -215,35 +216,7 @@ def _translate_response(msg: anthropic.types.Message) -> ChatCompletion:
     )
 
 
-# ---------------------------------------------------------------------------
-# Retry helpers
-# ---------------------------------------------------------------------------
-
 _TRANSIENT = (anthropic.RateLimitError, anthropic.APIConnectionError, anthropic.InternalServerError)
-
-
-def _call_with_retries(fn, num_retries: int, **kwargs):
-    last_err = None
-    for attempt in range(num_retries + 1):
-        try:
-            return fn(**kwargs)
-        except _TRANSIENT as e:
-            last_err = e
-            if attempt < num_retries:
-                time.sleep(2 ** attempt)
-    raise last_err
-
-
-async def _acall_with_retries(fn, num_retries: int, **kwargs):
-    last_err = None
-    for attempt in range(num_retries + 1):
-        try:
-            return await fn(**kwargs)
-        except _TRANSIENT as e:
-            last_err = e
-            if attempt < num_retries:
-                await asyncio.sleep(2 ** attempt)
-    raise last_err
 
 
 # ---------------------------------------------------------------------------
@@ -277,12 +250,12 @@ async def acomplete_request(request: dict[str, Any], model_type: str, num_retrie
 def complete(request: dict[str, Any], num_retries: int):
     request = _translate_request(request)
     client = _make_client(request)
-    msg = _call_with_retries(client.messages.create, num_retries, **request)
+    msg = call_with_retries(client.messages.create, num_retries, _TRANSIENT, **request)
     return _translate_response(msg)
 
 
 async def acomplete(request: dict[str, Any], num_retries: int):
     request = _translate_request(request)
     client = _make_client(request, async_=True)
-    msg = await _acall_with_retries(client.messages.create, num_retries, **request)
+    msg = await acall_with_retries(client.messages.create, num_retries, _TRANSIENT, **request)
     return _translate_response(msg)
