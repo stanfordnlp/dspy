@@ -33,12 +33,11 @@ For minor changes (simple bug fixes or documentation fixes), feel free to open a
 ### Step 2. Make Code Changes
 
 To make code changes, fork the repository and set up your local development environment following the
-instructions in the "Environment Setup" section below.
+instructions in the [Environment Setup](#environment-setup) section below.
 
 ### Step 3 Commit Your Code and Run Autoformatting
 
 We follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) and use `ruff` for both linting and formatting. To ensure consistent code quality, we use pre-commit hooks that automatically check and fix common issues.
-
 
 First you need to set up the pre-commit hooks (do this once after cloning the repository):
 
@@ -151,4 +150,61 @@ Then verify the installation by running some unit tests:
 ```shell
 pytest tests/predict
 ```
+
+## Design Proposals
+
+For significant changes to DSPy, we use a lightweight design proposal process. This gives the community
+a chance to discuss and shape ideas before implementation work begins.
+
+### When Do I Need a Design Proposal?
+
+Open a [Design Proposal](https://github.com/stanfordnlp/dspy/issues/new?template=design_proposal.yml) when your change:
+
+- Introduces or modifies a **core abstraction** (Module, Predict, Optimizer, Adapter, Signatures, LM)
+- Adds a **new optimizer or module type** to the core library
+- Changes DSPy's **programming model** or how users compose programs
+- Proposes a **breaking change** to a public API
+- Introduces a **new concept** that affects how DSPy programs are written or executed
+
+You do **not** need a proposal for:
+
+- Bug fixes
+- Documentation improvements
+- Test additions or improvements
+- Small, self-contained features that don't change core abstractions
+
+If you're unsure, open a feature request first. A maintainer will let you know if a design proposal
+would be helpful.
+
+We highly encourage you to use AI assistance for brainstorming, but to write the proposal yourself to ensure understanding of the change.
+
+### How the Process Works
+
+1. **Open a proposal issue.** Use the [Design Proposal](https://github.com/stanfordnlp/dspy/issues/new?template=design_proposal.yml)
+   template. Describe the motivation, proposed design, alternatives considered, and scope of the change.
+   A champion (usually the proposer) drives the discussion forward.
+
+2. **Community discussion.** The proposal is discussed on the issue. Maintainers and community members
+   provide feedback. Proposals may also be discussed in monthly community calls. Expect iteration as proposals often evolve significantly through discussion.
+
+3. **Maintainer decision.** Once discussion converges, maintainers will either approve the proposal
+   (labeling it as accepted), request changes, or close it with an explanation. Approved proposals can
+   move to implementation.
+
+4. **Implementation via PR.** The champion (or another contributor) opens a PR implementing the
+   accepted design. Standard code review applies.
+
+### dspy-community
+
+Not every idea needs to land in the core DSPy library. We intentionally keep the core small and
+composable. The [dspy-community](https://github.com/dspy-community) organization is the home for:
+
+- **Notebooks and tutorials** demonstrating DSPy patterns and use cases
+- **Extensions and plugins** that build on DSPy without modifying its core
+- **Experimental modules and optimizers** that need real-world validation before core inclusion
+
+If your idea is useful but doesn't meet the bar for a core design proposal, consider contributing to
+dspy-community first. Extensions that gain strong community adoption and prove their value are good
+candidates for eventual inclusion in the core library via the design proposal process.
+
 
