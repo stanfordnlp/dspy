@@ -43,6 +43,10 @@ def _resolve_backend(model: str, model_type: str):
         from dspy.clients import _anthropic
         return _anthropic
 
+    if prefix in ("google", "gemini"):
+        from dspy.clients import _google
+        return _google
+
     from dspy.clients import _litellm
     return _litellm
 
