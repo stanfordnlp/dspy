@@ -48,6 +48,7 @@ def _resolve_backend(model: str, model_type: str):
         return _google
 
     from dspy.clients import _litellm
+    _litellm._configure_litellm()
     return _litellm
 
 

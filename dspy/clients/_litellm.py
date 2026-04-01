@@ -3,6 +3,8 @@
 Implements the DSPy backend protocol using litellm. Every backend
 (_litellm, _openai, _anthropic, …) exports the same interface so
 LM can swap between them transparently.
+
+This is the **only** module that imports litellm directly.
 """
 
 import logging
@@ -14,6 +16,46 @@ import litellm
 import dspy
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# litellm configuration — called once on first use
+# ---------------------------------------------------------------------------
+
+_configured = False
+
+
+def _configure_litellm():
+    """One-time litellm setup: disable telemetry, cache, and noisy logging."""
+    global _configured
+    if _configured:
+        return
+    _configured = True
+
+    litellm.telemetry = False
+    litellm.cache = None  # DSPy has its own cache.
+    disable_litellm_logging()
+
+
+def configure_litellm_logging(level: str = "ERROR"):
+    """Configure litellm logging to the specified level."""
+    from litellm._logging import verbose_logger
+
+    numeric_level = getattr(logging, level)
+    verbose_logger.setLevel(numeric_level)
+    for h in verbose_logger.handlers:
+        h.setLevel(numeric_level)
+
+
+def enable_litellm_logging():
+    """Enable verbose litellm debug logging."""
+    litellm.suppress_debug_info = False
+    configure_litellm_logging("DEBUG")
+
+
+def disable_litellm_logging():
+    """Suppress litellm logging for clean output."""
+    litellm.suppress_debug_info = True
+    configure_litellm_logging("ERROR")
 
 # ---------------------------------------------------------------------------
 # Re-export the context-window error so callers can catch it generically
