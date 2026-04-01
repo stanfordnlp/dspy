@@ -17,6 +17,7 @@ from openai.types.chat.chat_completion import Choice
 from openai.types import CompletionUsage
 
 from dspy.clients._request_utils import (
+    StreamChunk,
     acall_with_retries,
     call_with_retries,
     dspy_user_agent,
@@ -259,3 +260,138 @@ async def acomplete(request: dict[str, Any], num_retries: int):
     client = _make_client(request, async_=True)
     msg = await acall_with_retries(client.messages.create, num_retries, _TRANSIENT, **request)
     return _translate_response(msg)
+
+
+# ---------------------------------------------------------------------------
+# Streaming
+# ---------------------------------------------------------------------------
+
+
+def normalize_chunk(event) -> StreamChunk | None:
+    """Convert an Anthropic SSE event to a ``StreamChunk``, or ``None`` to skip."""
+    if event.type == "content_block_delta":
+        delta = event.delta
+        dt = delta.type
+        if dt == "text_delta":
+            return StreamChunk(content=delta.text)
+        elif dt == "thinking_delta":
+            return StreamChunk(reasoning_content=delta.thinking)
+        elif dt == "input_json_delta":
+            # Tool-call argument fragment — pass as tool_calls
+            return StreamChunk(tool_calls=[{"partial_json": delta.partial_json}])
+        elif dt == "citations_delta":
+            citation = delta.citation
+            return StreamChunk(
+                provider_specific_fields={"citation": citation.model_dump() if hasattr(citation, "model_dump") else citation},
+            )
+    elif event.type == "message_delta":
+        return StreamChunk(finish_reason=_STOP_REASON_MAP.get(event.delta.stop_reason, "stop"))
+    return None
+
+
+async def astream_complete(request: dict[str, Any], num_retries: int):
+    """Return an async iterator of ``StreamChunk`` for Anthropic.
+
+    After exhaustion, ``.assembled`` holds the ``ChatCompletion``.
+    """
+    request = _translate_request(request)
+    client = _make_client(request, async_=True)
+    request["stream"] = True
+    stream = await acall_with_retries(client.messages.create, num_retries, _TRANSIENT, **request)
+    return _AnthropicStreamWrapper(stream)
+
+
+class _AnthropicStreamWrapper:
+    """Wraps an Anthropic async stream, normalizing events and collecting them."""
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._text_parts: list[str] = []
+        self._reasoning_parts: list[str] = []
+        self._tool_calls: list[dict] = []
+        self._current_tool: dict | None = None
+        self._finish_reason: str = "stop"
+        self._model: str = ""
+        self._msg_id: str = ""
+        self._input_tokens: int = 0
+        self._output_tokens: int = 0
+        self.assembled = None
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> StreamChunk:
+        while True:
+            try:
+                event = await self._stream.__anext__()
+            except StopAsyncIteration:
+                self.assembled = self._build_response()
+                raise
+
+            self._collect(event)
+            sc = normalize_chunk(event)
+            if sc is not None:
+                return sc
+
+    def _collect(self, event):
+        """Accumulate raw data for response assembly."""
+        if event.type == "message_start":
+            msg = event.message
+            self._model = msg.model
+            self._msg_id = msg.id
+            if msg.usage:
+                self._input_tokens = msg.usage.input_tokens or 0
+        elif event.type == "content_block_start":
+            cb = event.content_block
+            if cb.type == "tool_use":
+                self._current_tool = {"id": cb.id, "name": cb.name, "input_json": ""}
+        elif event.type == "content_block_delta":
+            dt = event.delta.type
+            if dt == "text_delta":
+                self._text_parts.append(event.delta.text)
+            elif dt == "thinking_delta":
+                self._reasoning_parts.append(event.delta.thinking)
+            elif dt == "input_json_delta" and self._current_tool:
+                self._current_tool["input_json"] += event.delta.partial_json
+        elif event.type == "content_block_stop":
+            if self._current_tool:
+                self._tool_calls.append(self._current_tool)
+                self._current_tool = None
+        elif event.type == "message_delta":
+            self._finish_reason = _STOP_REASON_MAP.get(event.delta.stop_reason, "stop")
+            if event.usage:
+                self._output_tokens = event.usage.output_tokens or 0
+
+    def _build_response(self):
+        content = "".join(self._text_parts) if self._text_parts else None
+        msg_kwargs: dict[str, Any] = {"role": "assistant", "content": content}
+        if self._reasoning_parts:
+            msg_kwargs["reasoning_content"] = "".join(self._reasoning_parts)
+        if self._tool_calls:
+            msg_kwargs["tool_calls"] = [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": tc["input_json"],
+                    },
+                }
+                for tc in self._tool_calls
+            ]
+
+        message = ChatCompletionMessage(**msg_kwargs)
+        choice = Choice(finish_reason=self._finish_reason, index=0, message=message)
+        usage = CompletionUsage(
+            prompt_tokens=self._input_tokens,
+            completion_tokens=self._output_tokens,
+            total_tokens=self._input_tokens + self._output_tokens,
+        )
+        return ChatCompletion(
+            id=self._msg_id or "anthropic-stream",
+            choices=[choice],
+            created=0,
+            model=self._model,
+            object="chat.completion",
+            usage=usage,
+        )

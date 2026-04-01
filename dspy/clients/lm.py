@@ -191,9 +191,21 @@ class LM(BaseLM):
             settings.usage_tracker.add_usage(self.model, dict(results.usage))
         return results
 
+    def _should_use_streaming(self, backend):
+        """Whether to use the streaming path for this call."""
+        return (
+            settings.send_stream is not None
+            and self.model_type == "chat"
+            and hasattr(backend, "astream_complete")
+        )
+
     def forward(self, prompt=None, messages=None, **kwargs):
         request, cache = self._build_request(prompt, messages, kwargs)
         backend = self._get_backend()
+
+        if self._should_use_streaming(backend):
+            return self._stream_forward_sync(request, cache, backend)
+
         completion = self._apply_cache(backend.complete_request, cache)
         try:
             results = completion(request=request, model_type=self.model_type, num_retries=self.num_retries)
@@ -204,9 +216,60 @@ class LM(BaseLM):
     async def aforward(self, prompt=None, messages=None, **kwargs):
         request, cache = self._build_request(prompt, messages, kwargs)
         backend = self._get_backend()
+
+        if self._should_use_streaming(backend):
+            return await self._stream_forward_async(request, cache, backend)
+
         completion = self._apply_cache(backend.acomplete_request, cache)
         try:
             results = await completion(request=request, model_type=self.model_type, num_retries=self.num_retries)
+        except backend.ContextWindowError as e:
+            raise ContextWindowExceededError(model=self.model) from e
+        return self._post_process(results)
+
+    # ------------------------------------------------------------------
+    # Streaming helpers
+    # ------------------------------------------------------------------
+
+    async def _stream_forward_core(self, request, backend):
+        """Async streaming loop shared by sync and async paths.
+
+        Iterates the backend's async stream, sends normalised
+        ``StreamChunk`` objects to ``settings.send_stream``, and returns
+        the assembled ``ChatCompletion``-shaped response.
+        """
+        from anyio.streams.memory import MemoryObjectSendStream
+        stream_channel = settings.send_stream
+        caller_predict = settings.caller_predict
+        predict_id = id(caller_predict) if caller_predict else None
+
+        stream_iter = await backend.astream_complete(request, self.num_retries)
+
+        async for chunk in stream_iter:
+            chunk.predict_id = predict_id
+            if isinstance(stream_channel, MemoryObjectSendStream):
+                await stream_channel.send(chunk)
+
+        # The wrapper populates .assembled after StopAsyncIteration.
+        return stream_iter.assembled
+
+    def _stream_forward_sync(self, request, cache, backend):
+        """Sync streaming: run the async loop via ``syncify``."""
+        from asyncer import syncify
+
+        async def _run(request):
+            return await self._stream_forward_core(request, backend)
+
+        try:
+            results = syncify(_run)(request)
+        except backend.ContextWindowError as e:
+            raise ContextWindowExceededError(model=self.model) from e
+        return self._post_process(results)
+
+    async def _stream_forward_async(self, request, cache, backend):
+        """Async streaming: directly await the streaming loop."""
+        try:
+            results = await self._stream_forward_core(request, backend)
         except backend.ContextWindowError as e:
             raise ContextWindowExceededError(model=self.model) from e
         return self._post_process(results)

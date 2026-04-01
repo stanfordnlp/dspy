@@ -282,3 +282,67 @@ from dspy.clients._request_utils import _convert_content_item as _convert_conten
 def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
     headers = headers or {}
     return {"User-Agent": f"DSPy/{dspy.__version__}", **headers}
+
+
+# ---------------------------------------------------------------------------
+# New-protocol streaming (used by LM's unified streaming path)
+# ---------------------------------------------------------------------------
+
+from dspy.clients._request_utils import StreamChunk  # noqa: E402
+
+
+def normalize_chunk(chunk) -> StreamChunk:
+    """Convert a litellm ``ModelResponseStream`` to a ``StreamChunk``."""
+    delta = chunk.choices[0].delta if chunk.choices else None
+    return StreamChunk(
+        content=getattr(delta, "content", None) if delta else None,
+        reasoning_content=getattr(delta, "reasoning_content", None) if delta else None,
+        tool_calls=[tc.model_dump() if hasattr(tc, "model_dump") else tc for tc in delta.tool_calls] if delta and getattr(delta, "tool_calls", None) else None,
+        provider_specific_fields=getattr(delta, "provider_specific_fields", None) if delta else None,
+        finish_reason=chunk.choices[0].finish_reason if chunk.choices and chunk.choices[0].finish_reason else None,
+    )
+
+
+async def astream_complete(request: dict[str, Any], num_retries: int):
+    """Return an async iterator of ``StreamChunk`` for litellm chat completion.
+
+    After exhaustion, ``.assembled`` holds the rebuilt ``ModelResponse``.
+    """
+    cache = _NO_LITELLM_CACHE
+    request = dict(request)
+    request.pop("rollout_id", None)
+    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
+
+    if dspy.settings.track_usage:
+        request["stream_options"] = {"include_usage": True}
+
+    response = await litellm.acompletion(
+        cache=cache,
+        stream=True,
+        headers=headers,
+        num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
+        **request,
+    )
+    return _LitellmStreamWrapper(response)
+
+
+class _LitellmStreamWrapper:
+    """Wraps a litellm async stream, normalizing chunks and collecting them."""
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._raw_chunks: list = []
+        self.assembled = None
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> StreamChunk:
+        try:
+            raw = await self._stream.__anext__()
+        except StopAsyncIteration:
+            self.assembled = litellm.stream_chunk_builder(self._raw_chunks)
+            raise
+        self._raw_chunks.append(raw)
+        return normalize_chunk(raw)

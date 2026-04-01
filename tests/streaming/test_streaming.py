@@ -7,12 +7,98 @@ from unittest.mock import AsyncMock
 import pydantic
 import pytest
 from asyncer import syncify
-from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
 from dspy.adapters.types import Type
+from dspy.clients._request_utils import StreamChunk
 from dspy.experimental import Citations, Document
 from dspy.streaming import StatusMessage, StatusMessageProvider, StreamResponse, streaming_response
+
+
+# ---------------------------------------------------------------------------
+# Test helpers
+# ---------------------------------------------------------------------------
+
+
+class MockStreamWrapper:
+    """Mimics the async-iterator wrapper returned by ``backend.astream_complete``.
+
+    Yields ``StreamChunk`` objects, then sets ``.assembled`` to a fake
+    ``ChatCompletion`` once exhaustion completes.
+    """
+
+    def __init__(self, chunks: list[StreamChunk], model: str = "mock-model"):
+        self._chunks = list(chunks)
+        self._idx = 0
+        self._model = model
+        self.assembled = None
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> StreamChunk:
+        if self._idx >= len(self._chunks):
+            self.assembled = self._build_response()
+            raise StopAsyncIteration
+        chunk = self._chunks[self._idx]
+        self._idx += 1
+        return chunk
+
+    def _build_response(self):
+        from openai.types.chat import ChatCompletion, ChatCompletionMessage
+        from openai.types.chat.chat_completion import Choice
+        from openai.types import CompletionUsage
+
+        text = "".join(c.content or "" for c in self._chunks)
+        reasoning = "".join(c.reasoning_content or "" for c in self._chunks)
+        msg_kwargs = {"role": "assistant", "content": text or None}
+        if reasoning:
+            msg_kwargs["reasoning_content"] = reasoning
+        return ChatCompletion(
+            id="mock-stream",
+            choices=[Choice(finish_reason="stop", index=0, message=ChatCompletionMessage(**msg_kwargs))],
+            created=0,
+            model=self._model,
+            object="chat.completion",
+            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+        )
+
+
+def _sc(content=None, reasoning_content=None, provider_specific_fields=None):
+    """Shorthand to create a StreamChunk."""
+    return StreamChunk(
+        content=content,
+        reasoning_content=reasoning_content,
+        provider_specific_fields=provider_specific_fields,
+    )
+
+
+def _mock_astream(chunks, model="mock-model"):
+    """Return an ``AsyncMock`` that returns a ``MockStreamWrapper``."""
+    wrapper = MockStreamWrapper(chunks, model=model)
+
+    async def _factory(request, num_retries):
+        return wrapper
+
+    return _factory
+
+
+def _mock_astream_factory(chunk_lists, model="mock-model"):
+    """Return a side-effect function that returns successive ``MockStreamWrapper`` instances."""
+    wrappers = [MockStreamWrapper(cl, model=model) for cl in chunk_lists]
+    idx = {"i": 0}
+
+    async def _factory(request, num_retries):
+        w = wrappers[idx["i"]]
+        idx["i"] += 1
+        return w
+
+    return _factory
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -328,19 +414,16 @@ async def test_streaming_handles_space_correctly():
         my_program, stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")]
     )
 
-    async def gpt_4o_mini_stream(*args, **kwargs):
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))]
-        )
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="How "))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="are "))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="you "))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="doing?"))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
-        )
+    chunks = [
+        _sc("[[ ## answer ## ]]\n"),
+        _sc("How "),
+        _sc("are "),
+        _sc("you "),
+        _sc("doing?"),
+        _sc("\n\n[[ ## completed ## ]]"),
+    ]
 
-    with mock.patch("litellm.acompletion", side_effect=gpt_4o_mini_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="What is the capital of France?")
             all_chunks = []
@@ -428,55 +511,25 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter():
             judgement = self.predict2(question=question, answer=answer, **kwargs)
             return judgement
 
-    async def gpt_4o_mini_stream_1(*args, **kwargs):
-        # Recorded streaming from openai/gpt-4o-mini
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n\n"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="To"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" get"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" other"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" side"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" of"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" dinner"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" plate"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="!\n\n[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
+    stream_1_chunks = [
+        _sc("[["), _sc(" ##"), _sc(" answer"), _sc(" ##"), _sc(" ]]\n\n"),
+        _sc("To"), _sc(" get"), _sc(" to"), _sc(" the"), _sc(" other"),
+        _sc(" side"), _sc(" of"), _sc(" the"), _sc(" dinner"), _sc(" plate"),
+        _sc("!\n\n[[ ##"), _sc(" completed"), _sc(" ##"), _sc(" ]]"),
+    ]
 
-    async def gpt_4o_mini_stream_2():
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" judgement"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n\n"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="The"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" is"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" humorous"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" and"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" plays"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" on"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" classic"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" joke"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" format"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=".\n\n[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
+    stream_2_chunks = [
+        _sc("[[ ##"), _sc(" judgement"), _sc(" ##"), _sc(" ]]\n\n"),
+        _sc("The"), _sc(" answer"), _sc(" is"), _sc(" humorous"),
+        _sc(" and"), _sc(" plays"), _sc(" on"), _sc(" the"),
+        _sc(" classic"), _sc(" joke"), _sc(" format"),
+        _sc(".\n\n[[ ##"), _sc(" completed"), _sc(" ##"), _sc(" ]]"),
+    ]
 
-    stream_generators = [gpt_4o_mini_stream_1, gpt_4o_mini_stream_2]
-
-    async def completion_side_effect(*args, **kwargs):
-        return stream_generators.pop(0)()  # return new async generator instance
-
-    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+    with mock.patch(
+        "dspy.clients._openai.astream_complete",
+        side_effect=_mock_astream_factory([stream_1_chunks, stream_2_chunks]),
+    ):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -536,53 +589,24 @@ async def test_stream_listener_returns_correct_chunk_json_adapter():
             judgement = self.predict2(question=question, answer=answer, **kwargs)
             return judgement
 
-    async def gpt_4o_mini_stream_1(*args, **kwargs):
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='":'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"To'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" get"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" other"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" side"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" of"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" frying"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" pan"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='!"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="}\n"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
+    stream_1_chunks = [
+        _sc('{"'), _sc("answer"), _sc('":'), _sc('"To'), _sc(" get"),
+        _sc(" to"), _sc(" the"), _sc(" other"), _sc(" side"), _sc(" of"),
+        _sc(" the"), _sc(" frying"), _sc(" pan"), _sc('!"'), _sc("}\n"),
+        _sc("None"), _sc("None"), _sc("None"),
+    ]
 
-    async def gpt_4o_mini_stream_2(*args, **kwargs):
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="jud"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="gement"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='":'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"The'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" is"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" humorous"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" and"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" plays"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" on"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" very"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" funny"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" and"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" classic"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" joke"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" format"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='."'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="}"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="None"))])
+    stream_2_chunks = [
+        _sc('{"'), _sc("jud"), _sc("gement"), _sc('":'), _sc('"The'),
+        _sc(" answer"), _sc(" is"), _sc(" humorous"), _sc(" and"),
+        _sc(" plays"), _sc(" on"), _sc(" the"), _sc(" very"), _sc(" funny"),
+        _sc(" and"), _sc(" classic"), _sc(" joke"), _sc(" format"),
+        _sc('."'), _sc("}"), _sc("None"), _sc("None"), _sc("None"),
+    ]
 
     with mock.patch(
-        "litellm.acompletion", new_callable=AsyncMock, side_effect=[gpt_4o_mini_stream_1(), gpt_4o_mini_stream_2()]
+        "dspy.clients._openai.astream_complete",
+        side_effect=_mock_astream_factory([stream_1_chunks, stream_2_chunks]),
     ):
         program = dspy.streamify(
             MyProgram(),
@@ -646,40 +670,26 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
             judgement = self.predict2(question=question, answer=answer, **kwargs)
             return judgement
 
-    async def gemini_stream_1(*args, **kwargs):
-        yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
-        yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content=" answer ## ]]"))])
-        yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content="To get to the other side."))]
-        )
-        yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
-        )
+    stream_1_chunks = [
+        _sc("[[ ##"), _sc(" answer ## ]]"),
+        _sc("To get to the other side."),
+        _sc("\n\n[[ ## completed ## ]]"),
+    ]
 
-    async def gemini_stream_2(*args, **kwargs):
-        yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content="[[ ## judgement ## ]]\n\n"))]
-        )
-        yield ModelResponseStream(
-            model="gemini",
-            choices=[
-                StreamingChoices(
-                    delta=Delta(
-                        content=(
-                            "The answer provides the standard punchline for this classic joke format, adapted to the "
-                            "specific location mentioned in the question. It is the expected and appropriate response."
-                        )
-                    )
-                )
-            ],
-        )
-        yield ModelResponseStream(
-            model="gemini",
-            choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))],
-        )
-        yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="}\n"))])
+    stream_2_chunks = [
+        _sc("[[ ## judgement ## ]]\n\n"),
+        _sc(
+            "The answer provides the standard punchline for this classic joke format, adapted to the "
+            "specific location mentioned in the question. It is the expected and appropriate response."
+        ),
+        _sc("\n\n[[ ## completed ## ]]"),
+        _sc("}\n"),
+    ]
 
-    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[gemini_stream_1(), gemini_stream_2()]):
+    with mock.patch(
+        "dspy.clients._google.astream_complete",
+        side_effect=_mock_astream_factory([stream_1_chunks, stream_2_chunks], model="gemini-2.5-flash"),
+    ):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -709,13 +719,7 @@ async def test_stream_listener_returns_correct_chunk_chat_adapter_untokenized_st
 
 @pytest.mark.anyio
 async def test_stream_listener_missing_completion_marker_chat_adapter():
-    """Test that streaming works correctly when LLM response omits a final completion marker.
-
-    This test verifies that:
-    1. All tokens are yielded including those in the buffer
-    2. The last chunk is properly marked with is_last_chunk=True
-    3. No tokens are lost when the completion marker is missing
-    """
+    """Test that streaming works correctly when LLM response omits a final completion marker."""
 
     class MyProgram(dspy.Module):
         def __init__(self):
@@ -725,31 +729,16 @@ async def test_stream_listener_missing_completion_marker_chat_adapter():
         def forward(self, question, **kwargs):
             return self.predict(question=question, **kwargs)
 
-    async def incomplete_stream(*args, **kwargs):
-        """Stream that includes start marker but MISSING completion marker"""
-        # Start marker
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
-
-        # Content tokens - more than 10 to ensure buffering happens
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="This"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" is"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" a"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" test"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" with"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" many"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" tokens"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ensure"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" buffering"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" works"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" correctly"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="."))])
+    chunks = [
+        _sc("[[ ##"), _sc(" answer"), _sc(" ## ]]\n\n"),
+        _sc("This"), _sc(" is"), _sc(" a"), _sc(" test"), _sc(" response"),
+        _sc(" with"), _sc(" many"), _sc(" tokens"), _sc(" to"),
+        _sc(" ensure"), _sc(" buffering"), _sc(" works"), _sc(" correctly"),
+        _sc("."),
         # NO COMPLETION MARKER
+    ]
 
-    with mock.patch("litellm.acompletion", side_effect=incomplete_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -785,34 +774,24 @@ async def test_stream_listener_returns_correct_chunk_json_adapter_untokenized_st
             judgement = self.predict2(question=question, answer=answer, **kwargs)
             return judgement
 
-    async def gemini_stream_1(*args, **kwargs):
-        yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="{\n"))])
-        yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content='  "answer": "To get to'))]
-        )
-        yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content=' the other side... of the cutting board!"'))]
-        )
-        yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="}\n"))])
+    stream_1_chunks = [
+        _sc("{\n"),
+        _sc('  "answer": "To get to'),
+        _sc(' the other side... of the cutting board!"'),
+        _sc("}\n"),
+    ]
 
-    async def gemini_stream_2(*args, **kwargs):
-        yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="{\n"))])
-        yield ModelResponseStream(
-            model="gemini", choices=[StreamingChoices(delta=Delta(content='  "judgement": "The'))]
-        )
-        yield ModelResponseStream(
-            model="gemini",
-            choices=[
-                StreamingChoices(
-                    delta=Delta(
-                        content=' answer provides a humorous and relevant punchline to the classic joke setup."'
-                    )
-                )
-            ],
-        )
-        yield ModelResponseStream(model="gemini", choices=[StreamingChoices(delta=Delta(content="}\n"))])
+    stream_2_chunks = [
+        _sc("{\n"),
+        _sc('  "judgement": "The'),
+        _sc(' answer provides a humorous and relevant punchline to the classic joke setup."'),
+        _sc("}\n"),
+    ]
 
-    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[gemini_stream_1(), gemini_stream_2()]):
+    with mock.patch(
+        "dspy.clients._google.astream_complete",
+        side_effect=_mock_astream_factory([stream_1_chunks, stream_2_chunks], model="gemini-2.5-flash"),
+    ):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -852,18 +831,15 @@ async def test_status_message_non_blocking():
 
     program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider())
 
-    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
-            output = program(question="why did a chicken cross the kitchen?")
-            timestamps = []
-            async for value in output:
-                if isinstance(value, dspy.streaming.StatusMessage):
-                    timestamps.append(time.time())
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+        output = program(question="why did a chicken cross the kitchen?")
+        timestamps = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StatusMessage):
+                timestamps.append(time.time())
 
     # timestamps[0]: tool start message
     # timestamps[1]: tool end message
-    # There should be ~1 second delay between the tool start and end messages because we explicitly sleep for 1 second
-    # in the tool.
     assert timestamps[1] - timestamps[0] >= 1
 
 
@@ -880,18 +856,13 @@ async def test_status_message_non_blocking_async_program():
 
     program = dspy.streamify(MyProgram(), status_message_provider=StatusMessageProvider(), is_async_program=True)
 
-    with mock.patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[dummy_tool]):
-        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
-            output = program(question="why did a chicken cross the kitchen?")
-            timestamps = []
-            async for value in output:
-                if isinstance(value, dspy.streaming.StatusMessage):
-                    timestamps.append(time.time())
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+        output = program(question="why did a chicken cross the kitchen?")
+        timestamps = []
+        async for value in output:
+            if isinstance(value, dspy.streaming.StatusMessage):
+                timestamps.append(time.time())
 
-    # timestamps[0]: tool start message
-    # timestamps[1]: tool end message
-    # There should be ~1 second delay between the tool start and end messages because we explicitly sleep for 1 second
-    # in the tool.
     assert timestamps[1] - timestamps[0] >= 1
 
 
@@ -913,30 +884,16 @@ async def test_stream_listener_allow_reuse():
         ],
     )
 
-    async def gpt_4o_mini_stream(*args, **kwargs):
-        # Recorded streaming from openai/gpt-4o-mini
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n\n"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="To"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" get"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" other"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" side"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="!\n\n[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
+    reuse_chunks = [
+        _sc("[["), _sc(" ##"), _sc(" answer"), _sc(" ##"), _sc(" ]]\n\n"),
+        _sc("To"), _sc(" get"), _sc(" to"), _sc(" the"), _sc(" other"),
+        _sc(" side"), _sc("!\n\n[[ ##"), _sc(" completed"), _sc(" ##"), _sc(" ]]"),
+    ]
 
-    stream_generators = [gpt_4o_mini_stream, gpt_4o_mini_stream]
-
-    async def completion_side_effect(*args, **kwargs):
-        return stream_generators.pop(0)()  # return new async generator instance
-
-    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+    with mock.patch(
+        "dspy.clients._openai.astream_complete",
+        side_effect=_mock_astream_factory([reuse_chunks, reuse_chunks]),
+    ):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
             output = program(question="why did a chicken cross the kitchen?")
             all_chunks = []
@@ -962,40 +919,22 @@ async def test_stream_listener_returns_correct_chunk_xml_adapter():
             judgement = self.predict2(question=question, answer=answer, **kwargs)
             return judgement
 
-    async def xml_stream_1(*args, **kwargs):
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="To"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" get"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" to"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" the"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" other"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" side"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="!"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="/answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
+    stream_1_chunks = [
+        _sc("<"), _sc("answer"), _sc(">"),
+        _sc("To"), _sc(" get"), _sc(" to"), _sc(" the"), _sc(" other"), _sc(" side"), _sc("!"),
+        _sc("<"), _sc("/answer"), _sc(">"),
+    ]
 
-    async def xml_stream_2(*args, **kwargs):
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="judgement"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="The"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" is"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" humorous"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="."))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="<"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="/judgement"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=">"))])
+    stream_2_chunks = [
+        _sc("<"), _sc("judgement"), _sc(">"),
+        _sc("The"), _sc(" answer"), _sc(" is"), _sc(" humorous"), _sc("."),
+        _sc("<"), _sc("/judgement"), _sc(">"),
+    ]
 
-    stream_generators = [xml_stream_1, xml_stream_2]
-
-    async def completion_side_effect(*args, **kwargs):
-        return stream_generators.pop(0)()
-
-    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+    with mock.patch(
+        "dspy.clients._openai.astream_complete",
+        side_effect=_mock_astream_factory([stream_1_chunks, stream_2_chunks]),
+    ):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -1082,16 +1021,12 @@ async def test_streaming_allows_custom_streamable_type():
         ],
     )
 
-    async def stream(*args, **kwargs):
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="Hello"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="World"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
+    chunks = [
+        _sc("Hello"), _sc("World"), _sc("\n\n"),
+        _sc("[[ ##"), _sc(" completed"), _sc(" ##"), _sc(" ]]"),
+    ]
 
-    with mock.patch("litellm.acompletion", side_effect=stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(
             lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter(native_response_types=[CustomType])
         ):
@@ -1125,53 +1060,31 @@ async def test_streaming_with_citations():
         def forward(self, documents, question, **kwargs):
             return self.predict(documents=documents, question=question, **kwargs)
 
-    async def citation_stream(*args, **kwargs):
-        # Stream chunks with citation data in provider_specific_fields
-        # To verify the realistic scenario with more than 10 chunks in the stream, include more than 10 chunks before the citation.
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" answer"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="A"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="c"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="c"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="o"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="r"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="d"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="i"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="n"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="g"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" to "))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content="the references,"))])
-        yield ModelResponseStream(
-            model="claude",
-            choices=[
-                StreamingChoices(
-                    delta=Delta(
-                        content="",
-                        provider_specific_fields={
-                            "citation": {
-                                "type": "char_location",
-                                "cited_text": "water boils at 100°C",
-                                "document_index": 0,
-                                "document_title": "Physics Facts",
-                                "start_char_index": 0,
-                                "end_char_index": 19,
-                            }
-                        },
-                    )
-                )
-            ],
-        )
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" water"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" boils"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" at"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" 100°C"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=".\n\n[[ ##"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" completed"))])
-        yield ModelResponseStream(model="claude", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
+    chunks = [
+        _sc("[[ ##"), _sc(" answer"), _sc(" ## ]]\n\n"),
+        _sc("A"), _sc("c"), _sc("c"), _sc("o"), _sc("r"), _sc("d"),
+        _sc("i"), _sc("n"), _sc("g"), _sc(" to "), _sc("the references,"),
+        StreamChunk(
+            content="",
+            provider_specific_fields={
+                "citation": {
+                    "type": "char_location",
+                    "cited_text": "water boils at 100°C",
+                    "document_index": 0,
+                    "document_title": "Physics Facts",
+                    "start_char_index": 0,
+                    "end_char_index": 19,
+                }
+            },
+        ),
+        _sc(" water"), _sc(" boils"), _sc(" at"), _sc(" 100°C"),
+        _sc(".\n\n[[ ##"), _sc(" completed"), _sc(" ## ]]"),
+    ]
 
-    # Mock the final response choice to include provider_specific_fields with citations
-    with mock.patch("litellm.acompletion", return_value=citation_stream()):
+    with mock.patch(
+        "dspy.clients._anthropic.astream_complete",
+        side_effect=_mock_astream(chunks, model="claude-3-5-sonnet-20241022"),
+    ):
         program = dspy.streamify(
             MyProgram(),
             stream_listeners=[
@@ -1249,20 +1162,12 @@ async def test_chat_adapter_simple_pydantic_streaming():
         def forward(self, question, **kwargs):
             return self.predict(question=question, **kwargs)
 
-    async def chat_stream(*args, **kwargs):
-        # Simulate streaming of a pydantic model via ChatAdapter format
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"message": "Hello'))]
-        )
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=' world!"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status":'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=' "success"}'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
+    chunks = [
+        _sc("[[ ##"), _sc(" response"), _sc(" ## ]]\n\n"),
+        _sc('{"message": "Hello'), _sc(' world!"'),
+        _sc(', "status":'), _sc(' "success"}'),
+        _sc("\n\n[[ ##"), _sc(" completed"), _sc(" ## ]]"),
+    ]
 
     program = dspy.streamify(
         MyProgram(),
@@ -1271,20 +1176,17 @@ async def test_chat_adapter_simple_pydantic_streaming():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=chat_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="Say hello")
-            chunks = []
+            chunks_out = []
             async for value in output:
                 if isinstance(value, StreamResponse):
-                    chunks.append(value)
+                    chunks_out.append(value)
 
-    # Verify we got chunks for the pydantic field
-    assert len(chunks) > 0
-    assert chunks[0].signature_field_name == "response"
-
-    # Combine all chunks to verify the content
-    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert len(chunks_out) > 0
+    assert chunks_out[0].signature_field_name == "response"
+    full_content = "".join(chunk.chunk for chunk in chunks_out)
     assert "Hello world!" in full_content
     assert "success" in full_content
 
@@ -1302,16 +1204,11 @@ async def test_chat_adapter_with_generic_type_annotation():
         def forward(self, question, **kwargs):
             return self.predict(question=question, **kwargs)
 
-    async def chat_stream(*args, **kwargs):
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" response"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]\n\n"))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="1"))]
-        )
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ##"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ## ]]"))])
+    chunks = [
+        _sc("[[ ##"), _sc(" response"), _sc(" ## ]]\n\n"),
+        _sc("1"),
+        _sc("\n\n[[ ##"), _sc(" completed"), _sc(" ## ]]"),
+    ]
 
     program = dspy.streamify(
         MyProgram(),
@@ -1320,18 +1217,17 @@ async def test_chat_adapter_with_generic_type_annotation():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=chat_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="Say hello")
-            chunks = []
+            chunks_out = []
             async for value in output:
                 if isinstance(value, StreamResponse):
-                    chunks.append(value)
+                    chunks_out.append(value)
 
-    assert len(chunks) > 0
-    assert chunks[0].signature_field_name == "response"
-
-    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert len(chunks_out) > 0
+    assert chunks_out[0].signature_field_name == "response"
+    full_content = "".join(chunk.chunk for chunk in chunks_out)
     assert "1" in full_content
 
 
@@ -1343,25 +1239,14 @@ async def test_chat_adapter_nested_pydantic_streaming():
         question: str = dspy.InputField()
         response: NestedResponse = dspy.OutputField()
 
-    async def nested_stream(*args, **kwargs):
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## response ## ]]\n\n"))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"title": "Test"'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "content": {"key": "value"}'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "metadata": {"message": "nested"'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "ok"}}'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
-        )
+    chunks = [
+        _sc("[[ ## response ## ]]\n\n"),
+        _sc('{"title": "Test"'),
+        _sc(', "content": {"key": "value"}'),
+        _sc(', "metadata": {"message": "nested"'),
+        _sc(', "status": "ok"}}'),
+        _sc("\n\n[[ ## completed ## ]]"),
+    ]
 
     program = dspy.streamify(
         dspy.Predict(TestSignature),
@@ -1370,16 +1255,16 @@ async def test_chat_adapter_nested_pydantic_streaming():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=nested_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="Generate nested response")
-            chunks = []
+            chunks_out = []
             async for value in output:
                 if isinstance(value, StreamResponse):
-                    chunks.append(value)
+                    chunks_out.append(value)
 
-    assert len(chunks) > 0
-    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert len(chunks_out) > 0
+    full_content = "".join(chunk.chunk for chunk in chunks_out)
     assert "nested" in full_content
     assert "Test" in full_content
 
@@ -1393,30 +1278,15 @@ async def test_chat_adapter_mixed_fields_streaming():
         summary: str = dspy.OutputField()
         details: SimpleResponse = dspy.OutputField()
 
-    async def mixed_stream(*args, **kwargs):
-        # First output field (summary - string)
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## summary ## ]]\n\n"))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="This is a summary"))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" of the response"))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## details ## ]]\n\n"))]
-        )
-        # Second output field (details - pydantic)
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"message": "Detailed info"'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "complete"}'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))]
-        )
+    chunks = [
+        _sc("[[ ## summary ## ]]\n\n"),
+        _sc("This is a summary"),
+        _sc(" of the response"),
+        _sc("\n\n[[ ## details ## ]]\n\n"),
+        _sc('{"message": "Detailed info"'),
+        _sc(', "status": "complete"}'),
+        _sc("\n\n[[ ## completed ## ]]"),
+    ]
 
     program = dspy.streamify(
         dspy.Predict(TestSignature),
@@ -1426,7 +1296,7 @@ async def test_chat_adapter_mixed_fields_streaming():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=mixed_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.ChatAdapter()):
             output = program(question="Generate mixed response")
             summary_chunks = []
@@ -1438,13 +1308,10 @@ async def test_chat_adapter_mixed_fields_streaming():
                     elif value.signature_field_name == "details":
                         details_chunks.append(value)
 
-    # Verify both field types were streamed
     assert len(summary_chunks) > 0
     assert len(details_chunks) > 0
-
     summary_content = "".join(chunk.chunk for chunk in summary_chunks)
     details_content = "".join(chunk.chunk for chunk in details_chunks)
-
     assert "summary" in summary_content
     assert "Detailed info" in details_content
 
@@ -1457,19 +1324,12 @@ async def test_json_adapter_simple_pydantic_streaming():
         question: str = dspy.InputField()
         response: SimpleResponse = dspy.OutputField()
 
-    async def json_stream(*args, **kwargs):
-        # Simulate JSON streaming with proper bracket balance tracking
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='response"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=":"))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"message"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=': "Hello'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=' JSON!"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=': "ok"}'))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="}"))]
-        )  # Close main object
+    chunks = [
+        _sc('{"'), _sc('response"'), _sc(":"),
+        _sc('{"message"'), _sc(': "Hello'), _sc(' JSON!"'),
+        _sc(', "status"'), _sc(': "ok"}'),
+        _sc("}"),
+    ]
 
     program = dspy.streamify(
         dspy.Predict(TestSignature),
@@ -1478,18 +1338,17 @@ async def test_json_adapter_simple_pydantic_streaming():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=json_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
             output = program(question="Say hello in JSON")
-            chunks = []
+            chunks_out = []
             async for value in output:
                 if isinstance(value, StreamResponse):
-                    chunks.append(value)
+                    chunks_out.append(value)
 
-    assert len(chunks) > 0
-    assert chunks[0].signature_field_name == "response"
-
-    full_content = "".join(chunk.chunk for chunk in chunks)
+    assert len(chunks_out) > 0
+    assert chunks_out[0].signature_field_name == "response"
+    full_content = "".join(chunk.chunk for chunk in chunks_out)
     assert "Hello JSON!" in full_content
 
 
@@ -1501,26 +1360,13 @@ async def test_json_adapter_bracket_balance_detection():
         question: str = dspy.InputField()
         response: ComplexResponse = dspy.OutputField()
 
-    async def complex_json_stream(*args, **kwargs):
-        # Test nested objects and arrays for bracket counting
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"'))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='response": {'))]
-        )  # +1 bracket
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"items": ["a"'))])
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "b"], '))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"settings": {"key"'))]
-        )  # +1 bracket
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=': "value"}, '))]
-        )  # -1 bracket
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"active": true}'))]
-        )  # -1 bracket (should end field)
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="}"))]
-        )  # Close main object
+    chunks = [
+        _sc('{"'), _sc('response": {'),
+        _sc('"items": ["a"'), _sc(', "b"], '),
+        _sc('"settings": {"key"'), _sc(': "value"}, '),
+        _sc('"active": true}'),
+        _sc("}"),
+    ]
 
     program = dspy.streamify(
         dspy.Predict(TestSignature),
@@ -1529,20 +1375,17 @@ async def test_json_adapter_bracket_balance_detection():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=complex_json_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
             output = program(question="Generate complex JSON")
-            chunks = []
+            chunks_out = []
             async for value in output:
                 if isinstance(value, StreamResponse):
-                    chunks.append(value)
+                    chunks_out.append(value)
 
-    assert len(chunks) > 0
-    # Check that the last chunk is marked as the last
-    assert chunks[-1].is_last_chunk is True
-
-    full_content = "".join(chunk.chunk for chunk in chunks)
-
+    assert len(chunks_out) > 0
+    assert chunks_out[-1].is_last_chunk is True
+    full_content = "".join(chunk.chunk for chunk in chunks_out)
     assert "items" in full_content
     assert "settings" in full_content
 
@@ -1556,23 +1399,14 @@ async def test_json_adapter_multiple_fields_detection():
         first: SimpleResponse = dspy.OutputField()
         second: SimpleResponse = dspy.OutputField()
 
-    async def multi_field_stream(*args, **kwargs):
-        # First field
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"first": {'))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"message": "first response"'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "ok"}'))]
-        )
-        # Second field starts
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "second": {'))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='"message": "second response"'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=', "status": "done"}}'))]
-        )
+    chunks = [
+        _sc('{"first": {'),
+        _sc('"message": "first response"'),
+        _sc(', "status": "ok"}'),
+        _sc(', "second": {'),
+        _sc('"message": "second response"'),
+        _sc(', "status": "done"}}'),
+    ]
 
     program = dspy.streamify(
         dspy.Predict(TestSignature),
@@ -1582,7 +1416,7 @@ async def test_json_adapter_multiple_fields_detection():
         ],
     )
 
-    with mock.patch("litellm.acompletion", side_effect=multi_field_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False), adapter=dspy.JSONAdapter()):
             output = program(question="Generate two responses")
             first_chunks = []
@@ -1594,32 +1428,23 @@ async def test_json_adapter_multiple_fields_detection():
                     elif value.signature_field_name == "second":
                         second_chunks.append(value)
 
-    # Verify both fields were detected and streamed
     assert len(first_chunks) > 0
     assert len(second_chunks) > 0
-
     first_content = "".join(chunk.chunk for chunk in first_chunks)
     second_content = "".join(chunk.chunk for chunk in second_chunks)
-
     assert "first response" in first_content
     assert "second response" in second_content
 
 
 def test_stream_listener_could_form_end_identifier_chat_adapter():
     listener = dspy.streaming.StreamListener(signature_field_name="answer")
-
-    # Should return True for partial bracket sequences
     assert listener._could_form_end_identifier("some text [", "ChatAdapter") is True
     assert listener._could_form_end_identifier("some text [[", "ChatAdapter") is True
     assert listener._could_form_end_identifier("some text [[ ", "ChatAdapter") is True
     assert listener._could_form_end_identifier("some text [[ #", "ChatAdapter") is True
     assert listener._could_form_end_identifier("some text [[ ##", "ChatAdapter") is True
-
-    # Should return True for partial field names after "[[ ##"
     assert listener._could_form_end_identifier("some text [[ ## com", "ChatAdapter") is True
     assert listener._could_form_end_identifier("some text [[ ## completed", "ChatAdapter") is True
-
-    # Should return False for text that clearly cannot form the pattern
     assert listener._could_form_end_identifier("hello world", "ChatAdapter") is False
     assert listener._could_form_end_identifier("some text", "ChatAdapter") is False
     assert listener._could_form_end_identifier("answer: hello", "ChatAdapter") is False
@@ -1627,40 +1452,26 @@ def test_stream_listener_could_form_end_identifier_chat_adapter():
 
 def test_stream_listener_could_form_end_identifier_json_adapter():
     listener = dspy.streaming.StreamListener(signature_field_name="output")
-
-    # Should return True for partial quote/brace sequences
     assert listener._could_form_end_identifier('some text "', "JSONAdapter") is True
     assert listener._could_form_end_identifier('some text ",', "JSONAdapter") is True
     assert listener._could_form_end_identifier('some text " ', "JSONAdapter") is True
     assert listener._could_form_end_identifier('some text "}', "JSONAdapter") is True
-
-    # Should return False for text that cannot form the pattern
     assert listener._could_form_end_identifier("hello world", "JSONAdapter") is False
     assert listener._could_form_end_identifier("some text", "JSONAdapter") is False
 
 
 def test_stream_listener_could_form_end_identifier_xml_adapter():
     listener = dspy.streaming.StreamListener(signature_field_name="result")
-
-    # Should return True for partial closing tag
     assert listener._could_form_end_identifier("some text <", "XMLAdapter") is True
     assert listener._could_form_end_identifier("some text </", "XMLAdapter") is True
     assert listener._could_form_end_identifier("some text </result", "XMLAdapter") is True
-
-    # Should return False for text that cannot form the pattern
     assert listener._could_form_end_identifier("hello world", "XMLAdapter") is False
     assert listener._could_form_end_identifier("some text", "XMLAdapter") is False
 
 
 @pytest.mark.anyio
 async def test_streaming_reasoning_model():
-    """Test streaming behavior for reasoning-capable models using dspy.Reasoning.
-
-    This test verifies that:
-    1. Reasoning content is extracted from delta.reasoning_content in stream chunks
-    2. Reasoning chunks are streamed independently from regular content
-    3. The final prediction contains a Reasoning object with the full reasoning content
-    """
+    """Test streaming behavior for reasoning-capable models using dspy.Reasoning."""
 
     class ReasoningSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -1675,154 +1486,82 @@ async def test_streaming_reasoning_model():
         def forward(self, question, **kwargs):
             return self.predict(question=question, **kwargs)
 
-    async def reasoning_stream(*args, **kwargs):
-        """Simulate streaming from a reasoning model like Claude 3.7 Sonnet"""
-        # Reasoning content comes through delta.reasoning_content
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[
-                StreamingChoices(delta=Delta(reasoning_content="First, let's think about this problem step by step. "))
-            ],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(reasoning_content="We need to consider the context of a kitchen. "))],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[
-                StreamingChoices(
-                    delta=Delta(reasoning_content="The chicken likely wants to reach something on the other side.")
-                )
-            ],
-        )
-        # Regular answer content comes through delta.content
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(content="[[ ## answer ## ]]\n"))],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(content="To"))],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(content=" get"))],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(content=" to"))],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(content=" the"))],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(content=" other"))],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(content=" side"))],
-        )
-        yield ModelResponseStream(
-            model="anthropic/claude-3-7-sonnet-20250219",
-            choices=[StreamingChoices(delta=Delta(content="!\n\n[[ ## completed ## ]]"))],
-        )
+    chunks = [
+        # Reasoning content comes through reasoning_content
+        StreamChunk(reasoning_content="First, let's think about this problem step by step. "),
+        StreamChunk(reasoning_content="We need to consider the context of a kitchen. "),
+        StreamChunk(reasoning_content="The chicken likely wants to reach something on the other side."),
+        # Regular answer content comes through content
+        _sc("[[ ## answer ## ]]\n"),
+        _sc("To"), _sc(" get"), _sc(" to"), _sc(" the"),
+        _sc(" other"), _sc(" side"),
+        _sc("!\n\n[[ ## completed ## ]]"),
+    ]
 
-    with mock.patch("litellm.acompletion", side_effect=reasoning_stream):
-        with mock.patch("litellm.supports_reasoning", return_value=True):
-            program = dspy.streamify(
-                MyProgram(),
-                stream_listeners=[
-                    dspy.streaming.StreamListener(signature_field_name="reasoning"),
-                    dspy.streaming.StreamListener(signature_field_name="answer"),
-                ],
+    with mock.patch("dspy.clients._anthropic.astream_complete", side_effect=_mock_astream(chunks, model="claude-3-7-sonnet-20250219")):
+        program = dspy.streamify(
+            MyProgram(),
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="reasoning"),
+                dspy.streaming.StreamListener(signature_field_name="answer"),
+            ],
+        )
+        with dspy.context(
+            lm=dspy.LM("anthropic/claude-3-7-sonnet-20250219", cache=False),
+            adapter=dspy.ChatAdapter(native_response_types=[dspy.Reasoning]),
+        ):
+            output = program(question="Why did a chicken cross the kitchen?")
+            reasoning_chunks = []
+            answer_chunks = []
+            final_prediction = None
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    if value.signature_field_name == "reasoning":
+                        reasoning_chunks.append(value)
+                    elif value.signature_field_name == "answer":
+                        answer_chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    final_prediction = value
+
+            # Verify reasoning chunks were streamed
+            assert len(reasoning_chunks) == 3
+            assert reasoning_chunks[0].chunk == "First, let's think about this problem step by step. "
+            assert reasoning_chunks[1].chunk == "We need to consider the context of a kitchen. "
+            assert reasoning_chunks[2].chunk == "The chicken likely wants to reach something on the other side."
+
+            # Verify answer chunks were streamed
+            assert len(answer_chunks) > 0
+            assert answer_chunks[0].chunk == "To"
+            full_answer = "".join([chunk.chunk for chunk in answer_chunks])
+            assert full_answer == "To get to the other side!"
+
+            # Verify final prediction has Reasoning object
+            assert final_prediction is not None
+            assert hasattr(final_prediction, "reasoning")
+            assert isinstance(final_prediction.reasoning, dspy.Reasoning)
+            expected_reasoning = (
+                "First, let's think about this problem step by step. "
+                "We need to consider the context of a kitchen. "
+                "The chicken likely wants to reach something on the other side."
             )
-            with dspy.context(
-                lm=dspy.LM("anthropic/claude-3-7-sonnet-20250219", cache=False),
-                adapter=dspy.ChatAdapter(native_response_types=[dspy.Reasoning]),
-            ):
-                output = program(question="Why did a chicken cross the kitchen?")
-                reasoning_chunks = []
-                answer_chunks = []
-                final_prediction = None
-                async for value in output:
-                    if isinstance(value, dspy.streaming.StreamResponse):
-                        if value.signature_field_name == "reasoning":
-                            reasoning_chunks.append(value)
-                        elif value.signature_field_name == "answer":
-                            answer_chunks.append(value)
-                    elif isinstance(value, dspy.Prediction):
-                        final_prediction = value
-
-                # Verify reasoning chunks were streamed
-                assert len(reasoning_chunks) == 3
-                assert reasoning_chunks[0].chunk == "First, let's think about this problem step by step. "
-                assert reasoning_chunks[1].chunk == "We need to consider the context of a kitchen. "
-                assert reasoning_chunks[2].chunk == "The chicken likely wants to reach something on the other side."
-
-                # Verify answer chunks were streamed
-                assert len(answer_chunks) > 0
-                assert answer_chunks[0].chunk == "To"
-                full_answer = "".join([chunk.chunk for chunk in answer_chunks])
-                assert full_answer == "To get to the other side!"
-
-                # Verify final prediction has Reasoning object
-                assert final_prediction is not None
-                assert hasattr(final_prediction, "reasoning")
-                assert isinstance(final_prediction.reasoning, dspy.Reasoning)
-                expected_reasoning = (
-                    "First, let's think about this problem step by step. "
-                    "We need to consider the context of a kitchen. "
-                    "The chicken likely wants to reach something on the other side."
-                )
-                assert final_prediction.reasoning.content == expected_reasoning
+            assert final_prediction.reasoning.content == expected_reasoning
 
 
 @pytest.mark.anyio
 async def test_stream_listener_empty_last_chunk_chat_adapter():
-    """Test that StreamListener emits an empty chunk marking field end.
-
-    This test covers the scenario where:
-    1. Tokens that cannot form the end identifier are immediately yielded
-    2. The last chunk received contains only the marker for the next field (or completion marker)
-    3. An empty chunk with is_last_chunk=True is emitted to properly mark field end
-    """
-
     predict = dspy.Predict("question->reasoning, answer")
 
-    async def mock_stream(*args, **kwargs):
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[[ ## reasoning ## ]]\n"))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="Let's think about this problem step by step. "))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="We need to consider the context of a kitchen. "))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[
-                StreamingChoices(delta=Delta(content="The chicken likely wants to reach something on the other side. "))
-            ],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## answer ## ]]\n"))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="To get to the other side!"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))],
-        )
+    chunks = [
+        _sc("[[ ## reasoning ## ]]\n"),
+        _sc("Let's think about this problem step by step. "),
+        _sc("We need to consider the context of a kitchen. "),
+        _sc("The chicken likely wants to reach something on the other side. "),
+        _sc("\n\n[[ ## answer ## ]]\n"),
+        _sc("To get to the other side!"),
+        _sc("\n\n[[ ## completed ## ]]"),
+    ]
 
-    with mock.patch("litellm.acompletion", side_effect=mock_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         program = dspy.streamify(
             predict,
             stream_listeners=[
@@ -1837,11 +1576,9 @@ async def test_stream_listener_empty_last_chunk_chat_adapter():
                 if isinstance(value, dspy.streaming.StreamResponse):
                     all_chunks.append(value)
 
-            # Find answer and judgement chunks
             reasoning_chunks = [c for c in all_chunks if c.signature_field_name == "reasoning"]
             answer_chunks = [c for c in all_chunks if c.signature_field_name == "answer"]
 
-            # The last chunk should be marked as last chunk for both fields.
             assert answer_chunks[-1].is_last_chunk is True
             assert reasoning_chunks[-1].is_last_chunk is True
 
@@ -1850,34 +1587,17 @@ async def test_stream_listener_empty_last_chunk_chat_adapter():
 async def test_stream_listener_empty_last_chunk_json_adapter():
     predict = dspy.Predict("question->reasoning, answer")
 
-    async def mock_stream(*args, **kwargs):
-        yield ModelResponseStream(
-            model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content='{"reasoning": "'))]
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="Let's think about this problem step by step. "))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="We need to consider the context of a kitchen. "))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[
-                StreamingChoices(
-                    delta=Delta(content='The chicken likely wants to reach something on the other side. "')
-                )
-            ],
-        )
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=',"answer": "'))])
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content='To get to the other side!"'))],
-        )
-        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="\n}"))])
+    chunks = [
+        _sc('{"reasoning": "'),
+        _sc("Let's think about this problem step by step. "),
+        _sc("We need to consider the context of a kitchen. "),
+        _sc('The chicken likely wants to reach something on the other side. "'),
+        _sc(',"answer": "'),
+        _sc('To get to the other side!"'),
+        _sc("\n}"),
+    ]
 
-    with mock.patch("litellm.acompletion", side_effect=mock_stream):
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
         program = dspy.streamify(
             predict,
             stream_listeners=[
@@ -1892,25 +1612,16 @@ async def test_stream_listener_empty_last_chunk_json_adapter():
                 if isinstance(value, dspy.streaming.StreamResponse):
                     all_chunks.append(value)
 
-            # Find answer and judgement chunks
             reasoning_chunks = [c for c in all_chunks if c.signature_field_name == "reasoning"]
             answer_chunks = [c for c in all_chunks if c.signature_field_name == "answer"]
 
-            # The last chunk should be marked as last chunk for both fields.
             assert answer_chunks[-1].is_last_chunk is True
             assert reasoning_chunks[-1].is_last_chunk is True
 
 
 @pytest.mark.anyio
 async def test_streaming_reasoning_fallback():
-    """Test fallback behavior for non-reasoning models using dspy.Reasoning.
-
-    This test verifies that:
-    1. For non-reasoning models, reasoning is treated as a regular string field
-    2. Reasoning content is streamed through regular adapter parsing (not reasoning_content)
-    3. The Reasoning object is created from the parsed string content
-    4. Streaming behavior is identical to regular string fields
-    """
+    """Test fallback behavior for non-reasoning models using dspy.Reasoning."""
 
     class ReasoningSignature(dspy.Signature):
         question: str = dspy.InputField()
@@ -1925,140 +1636,57 @@ async def test_streaming_reasoning_fallback():
         def forward(self, question, **kwargs):
             return self.predict(question=question, **kwargs)
 
-    async def non_reasoning_stream(*args, **kwargs):
-        """Simulate streaming from a non-reasoning model like GPT-4o-mini.
+    chunks = [
+        _sc("[[ ## reasoning ## ]]\n"),
+        _sc("Let"), _sc("'s"), _sc(" think"), _sc(" step"), _sc(" by"),
+        _sc(" step"), _sc(" about"), _sc(" this"), _sc(" question"), _sc("."),
+        _sc("\n\n[[ ## answer ## ]]\n"),
+        _sc("To"), _sc(" get"), _sc(" to"), _sc(" the"),
+        _sc(" other"), _sc(" side"), _sc("!"),
+        _sc("\n\n[[ ## completed ## ]]"),
+    ]
 
-        The reasoning field is formatted by the adapter as a regular field,
-        and content comes through delta.content (not reasoning_content).
-        """
-        # Reasoning field marker (ChatAdapter format)
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="[[ ## reasoning ## ]]\n"))],
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=_mock_astream(chunks)):
+        program = dspy.streamify(
+            MyProgram(),
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="reasoning"),
+                dspy.streaming.StreamListener(signature_field_name="answer"),
+            ],
         )
-        # Reasoning content as regular text
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="Let"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="'s"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" think"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" step"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" by"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" step"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" about"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" this"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" question"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="."))],
-        )
-        # Answer field marker
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## answer ## ]]\n"))],
-        )
-        # Answer content
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="To"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" get"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" to"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" the"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" other"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content=" side"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="!"))],
-        )
-        yield ModelResponseStream(
-            model="gpt-4o-mini",
-            choices=[StreamingChoices(delta=Delta(content="\n\n[[ ## completed ## ]]"))],
-        )
+        with dspy.context(
+            lm=dspy.LM("openai/gpt-4o-mini", cache=False),
+            adapter=dspy.ChatAdapter(),
+        ):
+            output = program(question="Why did a chicken cross the kitchen?")
+            reasoning_chunks = []
+            answer_chunks = []
+            final_prediction = None
+            async for value in output:
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    if value.signature_field_name == "reasoning":
+                        reasoning_chunks.append(value)
+                    elif value.signature_field_name == "answer":
+                        answer_chunks.append(value)
+                elif isinstance(value, dspy.Prediction):
+                    final_prediction = value
 
-    with mock.patch("litellm.acompletion", side_effect=non_reasoning_stream):
-        with mock.patch("litellm.supports_reasoning", return_value=False):
-            program = dspy.streamify(
-                MyProgram(),
-                stream_listeners=[
-                    dspy.streaming.StreamListener(signature_field_name="reasoning"),
-                    dspy.streaming.StreamListener(signature_field_name="answer"),
-                ],
-            )
-            with dspy.context(
-                lm=dspy.LM("openai/gpt-4o-mini", cache=False),
-                adapter=dspy.ChatAdapter(),
-            ):
-                output = program(question="Why did a chicken cross the kitchen?")
-                reasoning_chunks = []
-                answer_chunks = []
-                final_prediction = None
-                async for value in output:
-                    if isinstance(value, dspy.streaming.StreamResponse):
-                        if value.signature_field_name == "reasoning":
-                            reasoning_chunks.append(value)
-                        elif value.signature_field_name == "answer":
-                            answer_chunks.append(value)
-                    elif isinstance(value, dspy.Prediction):
-                        final_prediction = value
+            # Verify reasoning was streamed as regular text
+            assert len(reasoning_chunks) > 0
+            assert reasoning_chunks[0].chunk == "Let"
+            assert reasoning_chunks[1].chunk == "'s"
+            full_reasoning = "".join([chunk.chunk for chunk in reasoning_chunks])
+            assert full_reasoning == "Let's think step by step about this question."
 
-                # Verify reasoning was streamed as regular text
-                assert len(reasoning_chunks) > 0
-                assert reasoning_chunks[0].chunk == "Let"
-                assert reasoning_chunks[1].chunk == "'s"
-                full_reasoning = "".join([chunk.chunk for chunk in reasoning_chunks])
-                assert full_reasoning == "Let's think step by step about this question."
+            # Verify answer chunks were streamed
+            assert len(answer_chunks) > 0
+            assert answer_chunks[0].chunk == "To"
+            full_answer = "".join([chunk.chunk for chunk in answer_chunks])
+            assert full_answer == "To get to the other side!"
 
-                # Verify answer chunks were streamed
-                assert len(answer_chunks) > 0
-                assert answer_chunks[0].chunk == "To"
-                full_answer = "".join([chunk.chunk for chunk in answer_chunks])
-                assert full_answer == "To get to the other side!"
-
-                # Verify final prediction has Reasoning object created from string
-                assert final_prediction is not None
-                assert hasattr(final_prediction, "reasoning")
-                assert isinstance(final_prediction.reasoning, dspy.Reasoning)
-                assert final_prediction.reasoning.content == "Let's think step by step about this question."
-                # Verify Reasoning object is str-like
-                assert str(final_prediction.reasoning) == "Let's think step by step about this question."
+            # Verify final prediction has Reasoning object created from string
+            assert final_prediction is not None
+            assert hasattr(final_prediction, "reasoning")
+            assert isinstance(final_prediction.reasoning, dspy.Reasoning)
+            assert final_prediction.reasoning.content == "Let's think step by step about this question."
+            assert str(final_prediction.reasoning) == "Let's think step by step about this question."

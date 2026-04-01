@@ -19,6 +19,7 @@ from openai.types.chat.chat_completion import Choice
 from openai.types import CompletionUsage
 
 from dspy.clients._request_utils import (
+    StreamChunk,
     acall_with_retries,
     call_with_retries,
     strip_prefix,
@@ -385,3 +386,144 @@ async def acomplete(request: dict[str, Any], num_retries: int):
         config=config,
     )
     return _translate_response(resp, model)
+
+
+# ---------------------------------------------------------------------------
+# Streaming
+# ---------------------------------------------------------------------------
+
+
+def normalize_chunk(resp, model: str = "") -> StreamChunk:
+    """Convert a Google GenAI streaming ``GenerateContentResponse`` to ``StreamChunk``."""
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_calls: list[dict] = []
+    finish_reason = None
+
+    for candidate in (resp.candidates or []):
+        if candidate.finish_reason:
+            finish_reason = _FINISH_REASON_MAP.get(candidate.finish_reason.name, "stop")
+        for part in (candidate.content.parts if candidate.content else []):
+            if part.function_call:
+                fc = part.function_call
+                tool_calls.append({
+                    "id": f"call_{fc.name}",
+                    "type": "function",
+                    "function": {"name": fc.name, "arguments": json.dumps(fc.args) if isinstance(fc.args, dict) else str(fc.args)},
+                })
+            elif part.thought:
+                reasoning_parts.append(part.text or "")
+            elif part.text is not None:
+                content_parts.append(part.text)
+
+    return StreamChunk(
+        content="".join(content_parts) if content_parts else None,
+        reasoning_content="".join(reasoning_parts) if reasoning_parts else None,
+        tool_calls=tool_calls or None,
+        finish_reason=finish_reason,
+    )
+
+
+async def astream_complete(request: dict[str, Any], num_retries: int):
+    """Return an async iterator of ``StreamChunk`` for Google GenAI.
+
+    After exhaustion, ``.assembled`` holds the ``ChatCompletion``.
+    """
+    model, contents, config = _translate_request(request)
+    client = _make_client(request)
+    stream = await acall_with_retries(
+        client.aio.models.generate_content_stream,
+        num_retries,
+        _TRANSIENT,
+        model=model,
+        contents=contents,
+        config=config,
+    )
+    return _GoogleStreamWrapper(stream, model)
+
+
+class _GoogleStreamWrapper:
+    """Wraps a Google GenAI async stream, normalizing chunks."""
+
+    def __init__(self, stream, model: str):
+        self._stream = stream
+        self._model = model
+        self._raw_chunks: list = []
+        self.assembled = None
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> StreamChunk:
+        try:
+            raw = await self._stream.__anext__()
+        except StopAsyncIteration:
+            self.assembled = self._build_response()
+            raise
+        self._raw_chunks.append(raw)
+        return normalize_chunk(raw, self._model)
+
+    def _build_response(self):
+        """Merge all raw chunks into a single ``ChatCompletion``."""
+        text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tool_calls: list[dict] = []
+        finish_reason = "stop"
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        response_id = ""
+
+        for resp in self._raw_chunks:
+            if resp.response_id:
+                response_id = resp.response_id
+            um = resp.usage_metadata
+            if um:
+                prompt_tokens = um.prompt_token_count or prompt_tokens
+                completion_tokens = um.candidates_token_count or completion_tokens
+                total_tokens = um.total_token_count or total_tokens
+            for candidate in (resp.candidates or []):
+                if candidate.finish_reason:
+                    finish_reason = _FINISH_REASON_MAP.get(candidate.finish_reason.name, "stop")
+                for part in (candidate.content.parts if candidate.content else []):
+                    if part.function_call:
+                        fc = part.function_call
+                        tool_calls.append({
+                            "id": f"call_{fc.name}",
+                            "type": "function",
+                            "function": {
+                                "name": fc.name,
+                                "arguments": json.dumps(fc.args) if isinstance(fc.args, dict) else str(fc.args),
+                            },
+                        })
+                    elif part.thought:
+                        reasoning_parts.append(part.text or "")
+                    elif part.text is not None:
+                        text_parts.append(part.text)
+
+        content = "".join(text_parts) if text_parts else None
+        msg_kwargs: dict[str, Any] = {"role": "assistant", "content": content}
+        if reasoning_parts:
+            msg_kwargs["reasoning_content"] = "".join(reasoning_parts)
+        if tool_calls:
+            msg_kwargs["tool_calls"] = tool_calls
+
+        from openai.types.chat import ChatCompletion, ChatCompletionMessage
+        from openai.types.chat.chat_completion import Choice
+        from openai.types import CompletionUsage
+
+        message = ChatCompletionMessage(**msg_kwargs)
+        choice = Choice(finish_reason=finish_reason, index=0, message=message)
+        usage = CompletionUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
+        return ChatCompletion(
+            id=response_id or "genai-stream",
+            choices=[choice],
+            created=0,
+            model=self._model,
+            object="chat.completion",
+            usage=usage,
+        )
