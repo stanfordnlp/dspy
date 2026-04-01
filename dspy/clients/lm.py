@@ -30,10 +30,15 @@ def _backend_capability(name):
 def _resolve_backend(model: str, model_type: str):
     """Resolve a backend module from a model string.
 
-    Phase 1: always returns the litellm backend.
-    Phase 2+: will route openai/*, anthropic/*, etc. to native SDK backends,
-    check entry points for community backends, and accept backend= overrides.
+    Routes openai/* and azure/* chat models to the native OpenAI SDK backend.
+    Everything else falls back to litellm.
     """
+    prefix = model.split("/", 1)[0] if "/" in model else ""
+
+    if prefix in ("openai", "azure") or model.startswith("ft:"):
+        from dspy.clients import _openai
+        return _openai
+
     from dspy.clients import _litellm
     return _litellm
 
