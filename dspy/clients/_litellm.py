@@ -326,3 +326,24 @@ class _LitellmStreamWrapper:
             raise
         self._raw_chunks.append(raw)
         return normalize_chunk(raw)
+
+
+# ---------------------------------------------------------------------------
+# Embeddings
+# ---------------------------------------------------------------------------
+
+
+def compute_embedding(model: str, inputs: list[str], caching: bool = False, **kwargs) -> list:
+    """Compute embeddings for a batch of inputs via litellm."""
+    _configure_litellm()
+    caching = caching and litellm.cache is not None
+    response = litellm.embedding(model=model, input=inputs, caching=caching, **kwargs)
+    return [data["embedding"] for data in response.data]
+
+
+async def acompute_embedding(model: str, inputs: list[str], caching: bool = False, **kwargs) -> list:
+    """Async compute embeddings for a batch of inputs via litellm."""
+    _configure_litellm()
+    caching = caching and litellm.cache is not None
+    response = await litellm.aembedding(model=model, input=inputs, caching=caching, **kwargs)
+    return [data["embedding"] for data in response.data]

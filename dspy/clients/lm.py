@@ -430,15 +430,23 @@ class LM(BaseLM):
 
 # ---------------------------------------------------------------------------
 # Backward-compatible re-exports for tests that import old names from here.
+# Lazy to avoid pulling in litellm at import time.
 # ---------------------------------------------------------------------------
 
-from dspy.clients._litellm import (  # noqa: F401, E402
-    _convert_chat_request_to_responses_request,
-    _convert_content_item_to_responses_format,
-    acomplete as alitellm_completion,
-    atext_complete as alitellm_text_completion,
-    aresponses_complete as alitellm_responses_completion,
-    complete as litellm_completion,
-    text_complete as litellm_text_completion,
-    responses_complete as litellm_responses_completion,
-)
+
+def __getattr__(name):
+    _compat = {
+        "_convert_chat_request_to_responses_request": "_convert_chat_request_to_responses_request",
+        "_convert_content_item_to_responses_format": "_convert_content_item_to_responses_format",
+        "_get_stream_completion_fn": "_get_stream_completion_fn",
+        "alitellm_completion": "acomplete",
+        "alitellm_text_completion": "atext_complete",
+        "alitellm_responses_completion": "aresponses_complete",
+        "litellm_completion": "complete",
+        "litellm_text_completion": "text_complete",
+        "litellm_responses_completion": "responses_complete",
+    }
+    if name in _compat:
+        from dspy.clients import _litellm
+        return getattr(_litellm, _compat[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
