@@ -490,7 +490,7 @@ async def test_async_lm_call_with_cache(tmp_path):
 
     lm = dspy.LM(model="openai/gpt-4o-mini")
 
-    with mock.patch("dspy.clients.lm.alitellm_completion") as mock_alitellm_completion:
+    with mock.patch("dspy.clients.lm.acomplete") as mock_alitellm_completion:
         mock_alitellm_completion.return_value = ModelResponse(
             choices=[Choices(message=Message(content="answer"))], model="openai/gpt-4o-mini"
         )
@@ -597,7 +597,7 @@ def test_responses_api():
 
 
 def test_lm_replaces_system_with_developer_role():
-    with mock.patch("dspy.clients.lm.litellm_responses_completion", return_value={"choices": []}) as mock_completion:
+    with mock.patch("dspy.clients.lm.responses_complete", return_value={"choices": []}) as mock_completion:
         lm = dspy.LM(
             "openai/gpt-4o-mini",
             cache=False,

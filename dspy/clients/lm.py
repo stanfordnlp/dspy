@@ -1,17 +1,23 @@
 import logging
-import os
 import re
 import threading
 import warnings
-from typing import Any, Literal, cast
-
-import litellm
-import pydantic
-from anyio.streams.memory import MemoryObjectSendStream
-from asyncer import syncify
-from litellm import ContextWindowExceededError as LitellmContextWindowExceededError
+from typing import Any, Literal
 
 import dspy
+from dspy.clients._litellm import (
+    ContextWindowError,
+    acomplete,
+    aresponses_complete,
+    atext_complete,
+    complete,
+    get_supported_params,
+    responses_complete,
+    supports_function_calling,
+    supports_reasoning,
+    supports_response_schema,
+    text_complete,
+)
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
@@ -121,20 +127,19 @@ class LM(BaseLM):
 
     @property
     def supports_function_calling(self) -> bool:
-        return litellm.supports_function_calling(model=self.model)
+        return supports_function_calling(model=self.model)
 
     @property
     def supports_reasoning(self) -> bool:
-        return litellm.supports_reasoning(self.model)
+        return supports_reasoning(self.model)
 
     @property
     def supports_response_schema(self) -> bool:
-        return litellm.supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
+        return supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
 
     @property
     def supported_params(self) -> set[str]:
-        params = litellm.get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
-        return set(params) if params else set()
+        return get_supported_params(model=self.model, custom_llm_provider=self._provider_name)
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:
@@ -152,9 +157,9 @@ class LM(BaseLM):
                 ignored_args_for_cache_key=ignored_args_for_cache_key,
             )(completion_fn)
 
-        litellm_cache_args = {"no-cache": True, "no-store": True}
+        backend_cache_args = {"no-cache": True, "no-store": True}
 
-        return completion_fn, litellm_cache_args
+        return completion_fn, backend_cache_args
 
     def forward(
         self,
@@ -175,20 +180,20 @@ class LM(BaseLM):
             kwargs.pop("rollout_id", None)
 
         if self.model_type == "chat":
-            completion = litellm_completion
+            completion = complete
         elif self.model_type == "text":
-            completion = litellm_text_completion
+            completion = text_complete
         elif self.model_type == "responses":
-            completion = litellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
+            completion = responses_complete
+        completion, backend_cache_args = self._get_cached_completion_fn(completion, cache)
 
         try:
             results = completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
-                cache=litellm_cache_args,
+                cache=backend_cache_args,
             )
-        except LitellmContextWindowExceededError as e:
+        except ContextWindowError as e:
             raise ContextWindowExceededError(model=self.model) from e
 
         self._check_truncation(results)
@@ -216,20 +221,20 @@ class LM(BaseLM):
             kwargs.pop("rollout_id", None)
 
         if self.model_type == "chat":
-            completion = alitellm_completion
+            completion = acomplete
         elif self.model_type == "text":
-            completion = alitellm_text_completion
+            completion = atext_complete
         elif self.model_type == "responses":
-            completion = alitellm_responses_completion
-        completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
+            completion = aresponses_complete
+        completion, backend_cache_args = self._get_cached_completion_fn(completion, cache)
 
         try:
             results = await completion(
                 request=dict(model=self.model, messages=messages, **kwargs),
                 num_retries=self.num_retries,
-                cache=litellm_cache_args,
+                cache=backend_cache_args,
             )
-        except LitellmContextWindowExceededError as e:
+        except ContextWindowError as e:
             raise ContextWindowExceededError(model=self.model) from e
 
         self._check_truncation(results)
@@ -334,261 +339,23 @@ class LM(BaseLM):
             )
 
 
-def _get_stream_completion_fn(
-    request: dict[str, Any],
-    cache_kwargs: dict[str, Any],
-    sync=True,
-    headers: dict[str, Any] | None = None,
-):
-    stream = dspy.settings.send_stream
-    caller_predict = dspy.settings.caller_predict
 
-    if stream is None:
-        return None
+# ---------------------------------------------------------------------------
+# Backward-compatible re-exports for tests that import old names from here.
+# These will be removed once all references are updated.
+# ---------------------------------------------------------------------------
 
-    # The stream is already opened, and will be closed by the caller.
-    stream = cast(MemoryObjectSendStream, stream)
-    caller_predict_id = id(caller_predict) if caller_predict else None
+# Re-export request transformation helpers (used directly by tests)
+from dspy.clients._litellm import (  # noqa: F401, E402
+    _convert_chat_request_to_responses_request,
+    _convert_content_item_to_responses_format,
+    _get_stream_completion_fn,
+)
 
-    if dspy.settings.track_usage:
-        request["stream_options"] = {"include_usage": True}
-
-    async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
-        response = await litellm.acompletion(
-            cache=cache_kwargs,
-            stream=True,
-            headers=headers,
-            **request,
-        )
-        chunks = []
-        async for chunk in response:
-            if caller_predict_id:
-                # Add the predict id to the chunk so that the stream listener can identify which predict produces it.
-                chunk.predict_id = caller_predict_id
-            chunks.append(chunk)
-            await stream.send(chunk)
-        return litellm.stream_chunk_builder(chunks)
-
-    def sync_stream_completion():
-        syncified_stream_completion = syncify(stream_completion)
-        return syncified_stream_completion(request, cache_kwargs)
-
-    async def async_stream_completion():
-        return await stream_completion(request, cache_kwargs)
-
-    if sync:
-        return sync_stream_completion
-    else:
-        return async_stream_completion
-
-
-def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
-    stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers)
-    if stream_completion is None:
-        return litellm.completion(
-            cache=cache,
-            num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
-            headers=headers,
-            **request,
-        )
-
-    return stream_completion()
-
-
-def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    # Extract the provider and model from the model string.
-    # TODO: Not all the models are in the format of "provider/model"
-    model = request.pop("model").split("/", 1)
-    provider, model = model[0] if len(model) > 1 else "openai", model[-1]
-
-    # Use the API key and base from the request, or from the environment.
-    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
-    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
-
-    # Build the prompt from the messages.
-    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
-
-    return litellm.text_completion(
-        cache=cache,
-        model=f"text-completion-openai/{model}",
-        api_key=api_key,
-        api_base=api_base,
-        prompt=prompt,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
-        **request,
-    )
-
-
-async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    stream_completion = _get_stream_completion_fn(request, cache, sync=False)
-    if stream_completion is None:
-        return await litellm.acompletion(
-            cache=cache,
-            num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
-            headers=_add_dspy_identifier_to_headers(headers),
-            **request,
-        )
-
-    return await stream_completion()
-
-
-async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    model = request.pop("model").split("/", 1)
-    headers = request.pop("headers", None)
-    provider, model = model[0] if len(model) > 1 else "openai", model[-1]
-
-    # Use the API key and base from the request, or from the environment.
-    api_key = request.pop("api_key", None) or os.getenv(f"{provider}_API_KEY")
-    api_base = request.pop("api_base", None) or os.getenv(f"{provider}_API_BASE")
-
-    # Build the prompt from the messages.
-    prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
-
-    return await litellm.atext_completion(
-        cache=cache,
-        model=f"text-completion-openai/{model}",
-        api_key=api_key,
-        api_base=api_base,
-        prompt=prompt,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
-        **request,
-    )
-
-
-def litellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    request = _convert_chat_request_to_responses_request(request)
-
-    return litellm.responses(
-        cache=cache,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
-        **request,
-    )
-
-
-async def alitellm_responses_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
-    cache = cache or {"no-cache": True, "no-store": True}
-    request = dict(request)
-    request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    request = _convert_chat_request_to_responses_request(request)
-
-    return await litellm.aresponses(
-        cache=cache,
-        num_retries=num_retries,
-        retry_strategy="exponential_backoff_retry",
-        headers=_add_dspy_identifier_to_headers(headers),
-        **request,
-    )
-
-
-def _convert_chat_request_to_responses_request(request: dict[str, Any]):
-    """
-    Convert a chat request to a responses request
-    See https://platform.openai.com/docs/api-reference/responses/create for the responses API specification.
-    Also see https://platform.openai.com/docs/api-reference/chat/create for the chat API specification.
-    """
-    request = dict(request)
-    if "messages" in request:
-        content_blocks = []
-        for msg in request.pop("messages"):
-            c = msg.get("content")
-            if isinstance(c, str):
-                content_blocks.append({"type": "input_text", "text": c})
-            elif isinstance(c, list):
-                # Convert each content item from Chat API format to Responses API format
-                for item in c:
-                    content_blocks.append(_convert_content_item_to_responses_format(item))
-        request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
-    # Convert `reasoning_effort` to reasoning format supported by the Responses API
-    if "reasoning_effort" in request:
-        effort = request.pop("reasoning_effort")
-        request["reasoning"] = {"effort": effort, "summary": "auto"}
-
-    # Convert `response_format` to `text.format` for Responses API
-    if "response_format" in request:
-        response_format = request.pop("response_format")
-        if isinstance(response_format, type) and issubclass(response_format, pydantic.BaseModel):
-            response_format = {
-                "name": response_format.__name__,
-                "type": "json_schema",
-                "schema": response_format.model_json_schema(),
-            }
-        text = request.pop("text", {})
-        request["text"] = {**text, "format": response_format}
-
-    return request
-
-
-def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
-    """
-    Convert a content item from Chat API format to Responses API format.
-
-    For images, converts from:
-        {"type": "image_url", "image_url": {"url": "..."}}
-    To:
-        {"type": "input_image", "image_url": "..."}
-
-    For text, converts from:
-        {"type": "text", "text": "..."}
-    To:
-        {"type": "input_text", "text": "..."}
-
-    For other types, passes through as-is.
-    """
-    if item.get("type") == "image_url":
-        image_url = item.get("image_url", {}).get("url", "")
-        return {
-            "type": "input_image",
-            "image_url": image_url,
-        }
-    elif item.get("type") == "text":
-        return {
-            "type": "input_text",
-            "text": item.get("text", ""),
-        }
-    elif item.get("type") == "file":
-        file = item.get("file", {})
-        return {
-            "type": "input_file",
-            "file_data": file.get("file_data"),
-            "filename": file.get("filename"),
-            "file_id": file.get("file_id"),
-        }
-
-    # For other items, return as-is
-    return item
-
-
-def _add_dspy_identifier_to_headers(headers: dict[str, Any] | None = None):
-    headers = headers or {}
-    return {
-        "User-Agent": f"DSPy/{dspy.__version__}",
-        **headers,
-    }
+# Re-export old function names → new generic names
+litellm_completion = complete
+litellm_text_completion = text_complete
+litellm_responses_completion = responses_complete
+alitellm_completion = acomplete
+alitellm_text_completion = atext_complete
+alitellm_responses_completion = aresponses_complete
