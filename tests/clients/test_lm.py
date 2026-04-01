@@ -1000,36 +1000,29 @@ def test_responses_api_with_pydantic_model_input():
 
 @pytest.mark.asyncio
 async def test_streaming_passes_headers_correctly():
-    from dspy.clients.lm import _get_stream_completion_fn
+    """Verify that headers from the request reach the litellm streaming call."""
 
-    custom_headers = {"Authorization": "Bearer my-custom-token"}
-    request = {
-        "model": "openai/gpt-4o-mini",
-        "messages": [{"role": "user", "content": "test"}],
-    }
+    with mock.patch("litellm.acompletion") as mock_acompletion:
+        # Return an empty async iterator; stream_chunk_builder will get []
+        async def empty_stream():
+            return
+            yield  # noqa — makes this an async generator
 
-    mock_stream = mock.AsyncMock()
-    mock_stream.send = mock.AsyncMock()
+        mock_acompletion.return_value = empty_stream()
 
-    async def empty_async_generator():
-        return
-        yield  # Make it a generator
+        with mock.patch("litellm.stream_chunk_builder", return_value=mock.MagicMock(usage={})):
+            from dspy.clients._litellm import astream_complete
 
-    with mock.patch("dspy.settings") as mock_settings:
-        mock_settings.send_stream = mock_stream
-        mock_settings.caller_predict = None
-        mock_settings.track_usage = False
+            request = {
+                "model": "openai/gpt-4o-mini",
+                "messages": [{"role": "user", "content": "test"}],
+                "headers": {"Authorization": "Bearer my-custom-token"},
+            }
+            wrapper = await astream_complete(request, num_retries=0)
+            # Exhaust the iterator
+            async for _ in wrapper:
+                pass
 
-        with mock.patch("litellm.acompletion") as mock_acompletion:
-            mock_acompletion.return_value = empty_async_generator()
-
-            stream_fn = _get_stream_completion_fn(request, {}, sync=False, headers=custom_headers)
-            assert stream_fn is not None
-
-            with mock.patch("litellm.stream_chunk_builder", return_value={}):
-                await stream_fn()
-
-            # Verify headers were passed to litellm.acompletion
-            mock_acompletion.assert_called_once()
-            call_kwargs = mock_acompletion.call_args.kwargs
-            assert call_kwargs["headers"]["Authorization"] == "Bearer my-custom-token"
+        mock_acompletion.assert_called_once()
+        call_kwargs = mock_acompletion.call_args.kwargs
+        assert call_kwargs["headers"]["Authorization"] == "Bearer my-custom-token"

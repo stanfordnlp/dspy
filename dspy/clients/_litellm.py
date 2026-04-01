@@ -7,14 +7,11 @@ LM can swap between them transparently.
 
 import logging
 import os
-from typing import Any, cast
+from typing import Any
 
 import litellm
-from anyio.streams.memory import MemoryObjectSendStream
-from asyncer import syncify
 
 import dspy
-from dspy.dsp.utils.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -89,57 +86,6 @@ async def acomplete_request(request: dict[str, Any], model_type: str, num_retrie
 
 
 # ---------------------------------------------------------------------------
-# Streaming helper
-# ---------------------------------------------------------------------------
-
-
-def _get_stream_completion_fn(
-    request: dict[str, Any],
-    cache_kwargs: dict[str, Any],
-    sync: bool = True,
-    headers: dict[str, Any] | None = None,
-):
-    stream = dspy.settings.send_stream
-    caller_predict = dspy.settings.caller_predict
-
-    if stream is None:
-        return None
-
-    stream = cast(MemoryObjectSendStream, stream)
-    caller_predict_id = id(caller_predict) if caller_predict else None
-
-    if dspy.settings.track_usage:
-        request["stream_options"] = {"include_usage": True}
-
-    async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
-        response = await litellm.acompletion(
-            cache=cache_kwargs,
-            stream=True,
-            headers=headers,
-            **request,
-        )
-        chunks = []
-        async for chunk in response:
-            if caller_predict_id:
-                chunk.predict_id = caller_predict_id
-            chunks.append(chunk)
-            await stream.send(chunk)
-        return litellm.stream_chunk_builder(chunks)
-
-    def sync_stream_completion():
-        syncified_stream_completion = syncify(stream_completion)
-        return syncified_stream_completion(request, cache_kwargs)
-
-    async def async_stream_completion():
-        return await stream_completion(request, cache_kwargs)
-
-    if sync:
-        return sync_stream_completion
-    else:
-        return async_stream_completion
-
-
-# ---------------------------------------------------------------------------
 # Sync completion functions
 # ---------------------------------------------------------------------------
 
@@ -149,17 +95,13 @@ def complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | 
     request = dict(request)
     request.pop("rollout_id", None)
     headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
-    stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers)
-    if stream_completion is None:
-        return litellm.completion(
-            cache=cache,
-            num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
-            headers=headers,
-            **request,
-        )
-
-    return stream_completion()
+    return litellm.completion(
+        cache=cache,
+        num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
+        headers=headers,
+        **request,
+    )
 
 
 def text_complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
@@ -214,17 +156,13 @@ async def acomplete(request: dict[str, Any], num_retries: int, cache: dict[str, 
     request = dict(request)
     request.pop("rollout_id", None)
     headers = request.pop("headers", None)
-    stream_completion = _get_stream_completion_fn(request, cache, sync=False)
-    if stream_completion is None:
-        return await litellm.acompletion(
-            cache=cache,
-            num_retries=num_retries,
-            retry_strategy="exponential_backoff_retry",
-            headers=_add_dspy_identifier_to_headers(headers),
-            **request,
-        )
-
-    return await stream_completion()
+    return await litellm.acompletion(
+        cache=cache,
+        num_retries=num_retries,
+        retry_strategy="exponential_backoff_retry",
+        headers=_add_dspy_identifier_to_headers(headers),
+        **request,
+    )
 
 
 async def atext_complete(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):

@@ -102,6 +102,52 @@ def _mock_astream_factory(chunk_lists, model="mock-model"):
 
 
 @pytest.mark.anyio
+async def test_streaming_cache_hit_skips_streaming():
+    """Second call with cache=True should return the cached response without streaming."""
+    import uuid
+
+    my_program = dspy.Predict("question->answer")
+    program = dspy.streamify(
+        my_program,
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    chunks = [
+        _sc("[[ ## answer ## ]]\n"),
+        _sc("Hello!"),
+        _sc("\n\n[[ ## completed ## ]]"),
+    ]
+
+    call_count = {"n": 0}
+
+    async def counting_astream(request, num_retries):
+        call_count["n"] += 1
+        return MockStreamWrapper(chunks)
+
+    # Use a unique question to avoid hitting disk cache from previous runs.
+    unique_q = f"cache_test_{uuid.uuid4().hex[:8]}"
+
+    with mock.patch("dspy.clients._openai.astream_complete", side_effect=counting_astream):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=True), adapter=dspy.ChatAdapter()):
+            # First call — should stream
+            output1 = program(question=unique_q)
+            chunks1 = [v async for v in output1]
+            pred1 = [c for c in chunks1 if isinstance(c, dspy.Prediction)]
+            assert len(pred1) == 1
+            assert pred1[0].answer == "Hello!"
+            assert call_count["n"] == 1
+
+            # Second call (same input) — should hit cache, no streaming
+            output2 = program(question=unique_q)
+            chunks2 = [v async for v in output2]
+            assert len(chunks2) == 1  # only the Prediction
+            assert isinstance(chunks2[0], dspy.Prediction)
+            assert chunks2[0].answer == "Hello!"
+            # astream_complete should NOT have been called again
+            assert call_count["n"] == 1
+
+
+@pytest.mark.anyio
 async def test_streamify_yields_expected_response_chunks(litellm_test_server):
     api_base, _ = litellm_test_server
     lm = dspy.LM(

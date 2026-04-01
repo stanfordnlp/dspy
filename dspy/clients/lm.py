@@ -231,6 +231,47 @@ class LM(BaseLM):
     # Streaming helpers
     # ------------------------------------------------------------------
 
+    def _check_stream_cache(self, request, cache):
+        """Check DSPy's request cache before streaming.
+
+        Returns the cached ``ChatCompletion`` on a hit, or ``None`` on a
+        miss.  The cache wrapper is the same one used by the non-streaming
+        path so keys are interchangeable: a non-streaming call populates
+        the cache, and a subsequent streaming call with the same request
+        returns the cached result without streaming.
+        """
+        if not cache:
+            return None
+
+        import copy
+
+        backend = self._get_backend()
+        # Build the same modified-request dict that request_cache would
+        # use for key computation.
+        fn = backend.complete_request
+        fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
+        modified = copy.deepcopy(request)
+        modified["_fn_identifier"] = fn_identifier
+
+        ignored = ["api_key", "api_base", "base_url"]
+        return dspy.cache.get(modified, ignored)
+
+    def _store_stream_cache(self, request, result, cache):
+        """Store the assembled streaming result in DSPy's request cache."""
+        if not cache:
+            return
+
+        import copy
+
+        backend = self._get_backend()
+        fn = backend.complete_request
+        fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
+        modified = copy.deepcopy(request)
+        modified["_fn_identifier"] = fn_identifier
+
+        ignored = ["api_key", "api_base", "base_url"]
+        dspy.cache.put(modified, result, ignored)
+
     async def _stream_forward_core(self, request, backend):
         """Async streaming loop shared by sync and async paths.
 
@@ -254,24 +295,38 @@ class LM(BaseLM):
         return stream_iter.assembled
 
     def _stream_forward_sync(self, request, cache, backend):
-        """Sync streaming: run the async loop via ``syncify``."""
+        """Sync streaming: check cache, then stream on miss."""
         from asyncer import syncify
 
-        async def _run(request):
-            return await self._stream_forward_core(request, backend)
+        # Fast path: return cached result without streaming.
+        cached = self._check_stream_cache(request, cache)
+        if cached is not None:
+            return self._post_process(cached)
+
+        async def _run(req):
+            return await self._stream_forward_core(req, backend)
 
         try:
             results = syncify(_run)(request)
         except backend.ContextWindowError as e:
             raise ContextWindowExceededError(model=self.model) from e
+
+        self._store_stream_cache(request, results, cache)
         return self._post_process(results)
 
     async def _stream_forward_async(self, request, cache, backend):
-        """Async streaming: directly await the streaming loop."""
+        """Async streaming: check cache, then stream on miss."""
+        # Fast path: return cached result without streaming.
+        cached = self._check_stream_cache(request, cache)
+        if cached is not None:
+            return self._post_process(cached)
+
         try:
             results = await self._stream_forward_core(request, backend)
         except backend.ContextWindowError as e:
             raise ContextWindowExceededError(model=self.model) from e
+
+        self._store_stream_cache(request, results, cache)
         return self._post_process(results)
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
@@ -379,7 +434,6 @@ class LM(BaseLM):
 from dspy.clients._litellm import (  # noqa: F401, E402
     _convert_chat_request_to_responses_request,
     _convert_content_item_to_responses_format,
-    _get_stream_completion_fn,
     acomplete as alitellm_completion,
     atext_complete as alitellm_text_completion,
     aresponses_complete as alitellm_responses_completion,
