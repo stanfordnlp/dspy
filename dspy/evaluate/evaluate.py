@@ -1,4 +1,5 @@
 import csv
+import functools
 import importlib
 import json
 import logging
@@ -15,28 +16,37 @@ from dspy.primitives.prediction import Prediction
 from dspy.utils.callback import with_callbacks
 from dspy.utils.parallelizer import ParallelExecutor
 
-try:
-    from IPython.display import HTML
-    from IPython.display import display as display
 
-except ImportError:
+@functools.lru_cache(maxsize=1)
+def _get_display():
+    """Return IPython's display if available, otherwise print."""
+    try:
+        from IPython.display import display
+        return display
+    except ImportError:
+        return print
 
-    def display(obj: Any):
-        """
-        Display the specified Python object in the console.
 
-        :param obj: The Python object to display.
-        """
-        print(obj)
+@functools.lru_cache(maxsize=1)
+def _get_HTML():
+    """Return IPython's HTML if available, otherwise a passthrough."""
+    try:
+        from IPython.display import HTML
+        return HTML
+    except ImportError:
+        return lambda x: x
 
-    def HTML(x: str) -> str:  # noqa: N802
-        """
-        Obtain the HTML representation of the specified string.
-        """
-        # NB: This method exists purely for code compatibility with the IPython HTML() function in
-        # environments where IPython is not available. In such environments where IPython is not
-        # available, this method will simply return the input string.
-        return x
+
+# Keep module-level names for backward compat — but as thin wrappers
+# so IPython is only imported when actually called.
+def display(obj: Any):
+    """Display *obj* via IPython if available, otherwise print."""
+    return _get_display()(obj)
+
+
+def HTML(x: str) -> str:  # noqa: N802
+    """Return an IPython HTML object if available, otherwise the raw string."""
+    return _get_HTML()(x)
 
 
 # TODO: Counting failures and having a max_failure count. When that is exceeded (also just at the end),

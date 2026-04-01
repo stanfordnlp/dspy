@@ -8,11 +8,12 @@ import sys
 
 import numpy as np
 
-try:
-    from IPython.core.magics.code import extract_symbols
-except ImportError:
-    # Won't be able to read code from jupyter notebooks
-    extract_symbols = None
+def _get_extract_symbols():
+    try:
+        from IPython.core.magics.code import extract_symbols
+        return extract_symbols
+    except ImportError:
+        return None
 
 import dspy
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot

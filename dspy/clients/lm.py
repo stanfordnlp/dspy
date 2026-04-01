@@ -7,7 +7,6 @@ from typing import Any, Literal
 
 import dspy
 from dspy.clients.cache import request_cache
-from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
@@ -472,6 +471,7 @@ class LM(BaseLM):
             job.set_result(err)
 
     def infer_provider(self) -> Provider:
+        from dspy.clients.openai import OpenAIProvider
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
         return Provider()

@@ -4,11 +4,12 @@ import re
 
 import dspy
 
-try:
-    from IPython.core.magics.code import extract_symbols
-except ImportError:
-    # Won't be able to read code from jupyter notebooks
-    extract_symbols = None
+def _get_extract_symbols():
+    try:
+        from IPython.core.magics.code import extract_symbols
+        return extract_symbols
+    except ImportError:
+        return None
 
 from dspy.predict.parameter import Parameter
 from dspy.teleprompt.utils import get_signature, new_getfile
@@ -155,6 +156,7 @@ def get_dspy_source_code(module):
         except TypeError:
             obj = type(module)
             cell_code = "".join(inspect.linecache.getlines(new_getfile(obj)))
+            extract_symbols = _get_extract_symbols()
             class_code = extract_symbols(cell_code, obj.__name__)[0][0]
             base_code = str(class_code)
 

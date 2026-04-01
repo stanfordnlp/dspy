@@ -1,4 +1,4 @@
-from dspy.evaluate import normalize_text
+from dspy.evaluate.metrics import normalize_text
 from dspy.primitives.prediction import Completions, Prediction
 
 
