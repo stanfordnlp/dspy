@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+        with:
+          persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
         with:
@@ -23,14 +25,18 @@ jobs:
         shell: bash
         run: |
           echo "Changed files"
-          echo ${{ steps.files.outputs.all }}
+          echo ${STEPS_FILES_OUTPUTS_ALL}
           echo "GitHub Client version"
           echo $(gh --version)
+        env:
+          STEPS_FILES_OUTPUTS_ALL: ${{ steps.files.outputs.all }}
       - name: Pre-Commit Checks
         run: |
           python -m pip install --upgrade pip
           pip install pre-commit
           echo "Running pre-commit scans:"
           # adding log display in case of pre-commit errors
-          pre-commit run -v --files ${{ steps.files.outputs.all }}
+          pre-commit run -v --files ${STEPS_FILES_OUTPUTS_ALL}
         shell: bash
+        env:
+          STEPS_FILES_OUTPUTS_ALL: ${{ steps.files.outputs.all }}

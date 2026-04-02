@@ -11,6 +11,8 @@ jobs:
       version: ${{ steps.extract_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - id: extract_tag
         name: Extract tag name
         run: echo "tag=$(echo $GITHUB_REF | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
@@ -25,6 +27,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - name: Set up Python 3.11
         uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
@@ -38,14 +42,18 @@ jobs:
       - name: Get correct version for TestPyPI release
         id: check_version
         run: |
-          VERSION=${{ needs.extract-tag.outputs.version }}  
+          VERSION=${NEEDS_EXTRACT_TAG_OUTPUTS_VERSION}  
           PACKAGE_NAME="dspy-ai-test"
           echo "Checking if $VERSION for $PACKAGE_NAME exists on TestPyPI"  
           NEW_VERSION=$(python3 .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+        env:
+          NEEDS_EXTRACT_TAG_OUTPUTS_VERSION: ${{ needs.extract-tag.outputs.version }}
       - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml
+        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${STEPS_CHECK_VERSION_OUTPUTS_VERSION}"/;}' pyproject.toml
+        env:
+          STEPS_CHECK_VERSION_OUTPUTS_VERSION: ${{ steps.check_version.outputs.version }}
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml
       - name: Build a binary wheel
@@ -80,6 +88,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - name: Set up Python 3.11
         uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
@@ -91,9 +101,13 @@ jobs:
         with:
           deno-version: v2.7.7
       - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
+        run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${NEEDS_EXTRACT_TAG_OUTPUTS_VERSION}"/;}' pyproject.toml
+        env:
+          NEEDS_EXTRACT_TAG_OUTPUTS_VERSION: ${{ needs.extract-tag.outputs.version }}
       - name: Update version in __metadata__.py
-        run: sed -i '/#replace_package_version_marker/{n;s/__version__ *= *"[^"]*"/__version__="${{ needs.extract-tag.outputs.version }}"/;}' ./dspy/__metadata__.py
+        run: sed -i '/#replace_package_version_marker/{n;s/__version__ *= *"[^"]*"/__version__="${NEEDS_EXTRACT_TAG_OUTPUTS_VERSION}"/;}' ./dspy/__metadata__.py
+        env:
+          NEEDS_EXTRACT_TAG_OUTPUTS_VERSION: ${{ needs.extract-tag.outputs.version }}
       # Publish to dspy
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name *= *"[^"]*"/name="dspy"/;}' pyproject.toml
@@ -120,10 +134,14 @@ jobs:
       - name: Update package name in pyproject.toml
         run: sed -i '/#replace_package_name_marker/{n;s/name *= *"[^"]*"/name="dspy-ai"/;}' .github/.internal_dspyai/pyproject.toml
       - name: Update version for dspy-ai release
-        run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' .github/.internal_dspyai/pyproject.toml
+        run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${NEEDS_EXTRACT_TAG_OUTPUTS_VERSION}"/;}' .github/.internal_dspyai/pyproject.toml
+        env:
+          NEEDS_EXTRACT_TAG_OUTPUTS_VERSION: ${{ needs.extract-tag.outputs.version }}
       - name: Update dspy dependency for dspy-ai release
         run: |
-          sed -i '/#replace_dspy_version_marker/{n;s/dspy>=[^"]*/dspy>=${{ needs.extract-tag.outputs.version }}/;}' .github/.internal_dspyai/pyproject.toml
+          sed -i '/#replace_dspy_version_marker/{n;s/dspy>=[^"]*/dspy>=${NEEDS_EXTRACT_TAG_OUTPUTS_VERSION}/;}' .github/.internal_dspyai/pyproject.toml
+        env:
+          NEEDS_EXTRACT_TAG_OUTPUTS_VERSION: ${{ needs.extract-tag.outputs.version }}
       - name: Build a binary wheel (dspy-ai)
         run: python3 -m build .github/.internal_dspyai/
       - name: Publish distribution 📦 to PyPI (dspy-ai)
@@ -146,7 +164,9 @@ jobs:
           git config --global user.name "Github Actions"
       - name: Merge release branch into main
         run: |
-          git merge --no-ff release-${{ needs.extract-tag.outputs.version }}
+          git merge --no-ff release-${NEEDS_EXTRACT_TAG_OUTPUTS_VERSION}
+        env:
+          NEEDS_EXTRACT_TAG_OUTPUTS_VERSION: ${{ needs.extract-tag.outputs.version }}
       - name: Push changes to main
         run: |
           git push origin main
