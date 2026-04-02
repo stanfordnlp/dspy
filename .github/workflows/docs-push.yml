@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3.9.1
         with:
@@ -34,6 +36,7 @@ jobs:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Push docs to separate repo
         uses: cpina/github-action-push-to-another-repository@55306faa4ed53b815ae49e564af8cfb359d32ae2 # main
         env:
