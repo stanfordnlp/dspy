@@ -121,18 +121,22 @@ class LM(BaseLM):
 
     @property
     def supports_function_calling(self) -> bool:
+        """Whether the model supports function calling (tool use)."""
         return litellm.supports_function_calling(model=self.model)
 
     @property
     def supports_reasoning(self) -> bool:
+        """Whether the model supports chain-of-thought reasoning natively."""
         return litellm.supports_reasoning(self.model)
 
     @property
     def supports_response_schema(self) -> bool:
+        """Whether the model supports structured JSON output via a response schema."""
         return litellm.supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
 
     @property
     def supported_params(self) -> set[str]:
+        """Return the set of OpenAI-compatible parameters supported by this model."""
         params = litellm.get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
         return set(params) if params else set()
 
@@ -162,6 +166,23 @@ class LM(BaseLM):
         messages: list[dict[str, Any]] | None = None,
         **kwargs
     ):
+        """Send a synchronous completion request to the language model.
+
+        Either ``prompt`` or ``messages`` must be provided. When ``prompt`` is given, it
+        is wrapped in a single ``{"role": "user", "content": prompt}`` message.
+
+        Args:
+            prompt: A plain text prompt to send to the model.
+            messages: A list of chat messages in OpenAI format (each with ``role`` and ``content``).
+            **kwargs: Additional keyword arguments forwarded to the LiteLLM completion call.
+                A ``cache`` key (bool) can be included to override the instance-level cache setting.
+
+        Returns:
+            The LiteLLM ``ModelResponse`` containing the model's completion(s).
+
+        Raises:
+            ContextWindowExceededError: If the request exceeds the model's context window.
+        """
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -203,6 +224,23 @@ class LM(BaseLM):
         messages: list[dict[str, Any]] | None = None,
         **kwargs,
     ):
+        """Send an asynchronous completion request to the language model.
+
+        Async counterpart of :meth:`forward`. Either ``prompt`` or ``messages`` must be
+        provided.
+
+        Args:
+            prompt: A plain text prompt to send to the model.
+            messages: A list of chat messages in OpenAI format (each with ``role`` and ``content``).
+            **kwargs: Additional keyword arguments forwarded to the LiteLLM async completion call.
+                A ``cache`` key (bool) can be included to override the instance-level cache setting.
+
+        Returns:
+            The LiteLLM ``ModelResponse`` containing the model's completion(s).
+
+        Raises:
+            ContextWindowExceededError: If the request exceeds the model's context window.
+        """
         # Build the request.
         kwargs = dict(kwargs)
         cache = kwargs.pop("cache", self.cache)
@@ -239,9 +277,19 @@ class LM(BaseLM):
         return results
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
+        """Launch the model via the provider (e.g., start a local inference server).
+
+        Args:
+            launch_kwargs: Optional provider-specific keyword arguments for launching.
+        """
         self.provider.launch(self, launch_kwargs)
 
     def kill(self, launch_kwargs: dict[str, Any] | None = None):
+        """Shut down a model that was previously started with :meth:`launch`.
+
+        Args:
+            launch_kwargs: Optional provider-specific keyword arguments for shutdown.
+        """
         self.provider.kill(self, launch_kwargs)
 
     def finetune(
@@ -250,6 +298,22 @@ class LM(BaseLM):
         train_data_format: TrainDataFormat | None,
         train_kwargs: dict[str, Any] | None = None,
     ) -> TrainingJob:
+        """Start a fine-tuning job on the language model.
+
+        The job runs in a background thread. Use the returned :class:`TrainingJob` to
+        poll for status or retrieve the fine-tuned model once complete.
+
+        Args:
+            train_data: A list of training examples as dictionaries.
+            train_data_format: The format of the training data (e.g., chat or completion).
+            train_kwargs: Optional provider-specific keyword arguments for fine-tuning.
+
+        Returns:
+            A :class:`TrainingJob` that tracks the fine-tuning progress.
+
+        Raises:
+            ValueError: If the provider does not support fine-tuning.
+        """
         from dspy import settings as settings
 
         if not self.provider.finetunable:
@@ -277,6 +341,18 @@ class LM(BaseLM):
         return job
 
     def reinforce(self, train_kwargs) -> ReinforceJob:
+        """Start a reinforcement learning job (e.g., GRPO) on the language model.
+
+        Args:
+            train_kwargs: Provider-specific keyword arguments for the reinforcement
+                learning job (e.g., reward function, hyperparameters).
+
+        Returns:
+            A :class:`ReinforceJob` that tracks the reinforcement learning progress.
+
+        Raises:
+            AssertionError: If the provider does not support reinforcement learning.
+        """
         # TODO(GRPO Team): Should we return an initialized job here?
         from dspy import settings as settings
 
@@ -305,11 +381,23 @@ class LM(BaseLM):
             job.set_result(err)
 
     def infer_provider(self) -> Provider:
+        """Infer the provider from the model string.
+
+        Returns:
+            An :class:`OpenAIProvider` if the model matches an OpenAI model pattern,
+            otherwise a generic :class:`Provider`.
+        """
         if OpenAIProvider.is_provider_model(self.model):
             return OpenAIProvider()
         return Provider()
 
     def dump_state(self):
+        """Serialize the LM configuration to a dictionary for saving and restoring.
+
+        Returns:
+            A dictionary of configuration keys (model, model_type, cache, etc.) and
+            kwargs, excluding sensitive values like ``api_key``.
+        """
         state_keys = [
             "model",
             "model_type",
@@ -383,6 +471,17 @@ def _get_stream_completion_fn(
 
 
 def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    """Send a synchronous chat completion request via LiteLLM.
+
+    Args:
+        request: The request dictionary containing ``model``, ``messages``, and any
+            additional parameters supported by the model.
+        num_retries: Number of retries with exponential backoff on transient failures.
+        cache: LiteLLM cache control flags. Defaults to disabled (no-cache, no-store).
+
+    Returns:
+        The LiteLLM ``ModelResponse`` from the completion call.
+    """
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -401,6 +500,20 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
 
 
 def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    """Send a synchronous text completion request via LiteLLM.
+
+    Unlike :func:`litellm_completion`, this uses the text-completion API rather than
+    chat. Messages are concatenated into a single prompt string.
+
+    Args:
+        request: The request dictionary containing ``model``, ``messages``, and any
+            additional parameters.
+        num_retries: Number of retries with exponential backoff on transient failures.
+        cache: LiteLLM cache control flags. Defaults to disabled.
+
+    Returns:
+        The LiteLLM text completion response.
+    """
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -431,6 +544,19 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
 
 
 async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    """Send an asynchronous chat completion request via LiteLLM.
+
+    Async counterpart of :func:`litellm_completion`.
+
+    Args:
+        request: The request dictionary containing ``model``, ``messages``, and any
+            additional parameters.
+        num_retries: Number of retries with exponential backoff on transient failures.
+        cache: LiteLLM cache control flags. Defaults to disabled.
+
+    Returns:
+        The LiteLLM ``ModelResponse`` from the async completion call.
+    """
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
@@ -449,6 +575,19 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
 
 
 async def alitellm_text_completion(request: dict[str, Any], num_retries: int, cache: dict[str, Any] | None = None):
+    """Send an asynchronous text completion request via LiteLLM.
+
+    Async counterpart of :func:`litellm_text_completion`.
+
+    Args:
+        request: The request dictionary containing ``model``, ``messages``, and any
+            additional parameters.
+        num_retries: Number of retries with exponential backoff on transient failures.
+        cache: LiteLLM cache control flags. Defaults to disabled.
+
+    Returns:
+        The LiteLLM async text completion response.
+    """
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
