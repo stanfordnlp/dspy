@@ -96,3 +96,58 @@ async def test_convert_mcp_tool():
             assert current_datetime_tool.arg_types == {}
             assert current_datetime_tool.arg_desc == {}
             assert await current_datetime_tool.acall() == "2025-07-23T09:10:10.0+00:00"
+
+
+class _FakeResultWithIsError:
+    """Simulates fastmcp CallToolResult which uses is_error."""
+
+    def __init__(self, content, is_error=False):
+        self.content = content
+        self.is_error = is_error
+
+
+class _FakeResultWithCamelCase:
+    """Simulates the official MCP SDK CallToolResult which uses isError."""
+
+    def __init__(self, content, isError=False):  # noqa: N803
+        self.content = content
+        self.isError = isError
+
+
+def test_convert_mcp_tool_result_is_error_attribute():
+    """_convert_mcp_tool_result should detect errors via is_error (fastmcp)."""
+    from mcp.types import TextContent
+
+    from dspy.utils.mcp import _convert_mcp_tool_result
+
+    result = _FakeResultWithIsError(
+        content=[TextContent(type="text", text="something went wrong")],
+        is_error=True,
+    )
+    with pytest.raises(RuntimeError, match="Failed to call a MCP tool"):
+        _convert_mcp_tool_result(result)
+
+
+def test_convert_mcp_tool_result_isError_attribute():
+    """_convert_mcp_tool_result should detect errors via isError (official SDK)."""
+    from mcp.types import TextContent
+
+    from dspy.utils.mcp import _convert_mcp_tool_result
+
+    result = _FakeResultWithCamelCase(
+        content=[TextContent(type="text", text="something went wrong")],
+        isError=True,
+    )
+    with pytest.raises(RuntimeError, match="Failed to call a MCP tool"):
+        _convert_mcp_tool_result(result)
+
+
+def test_convert_mcp_tool_result_success():
+    """Non-error results should return content normally."""
+    from mcp.types import TextContent
+
+    from dspy.utils.mcp import _convert_mcp_tool_result
+
+    for fake_cls in (_FakeResultWithIsError, _FakeResultWithCamelCase):
+        result = fake_cls(content=[TextContent(type="text", text="ok")])
+        assert _convert_mcp_tool_result(result) == "ok"
