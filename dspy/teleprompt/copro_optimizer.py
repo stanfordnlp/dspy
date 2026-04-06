@@ -57,6 +57,39 @@ class GenerateInstructionGivenAttempts(dspy.Signature):
 
 
 class COPRO(Teleprompter):
+    """Collaborative Prompt Optimization (COPRO) for DSPy programs.
+
+    COPRO optimizes the instructions and output field prefixes of each predictor
+    in a DSPy program. At each depth iteration it generates a batch of candidate
+    instructions (controlled by ``breadth``), evaluates every candidate on the
+    training set, keeps the best, and then feeds the history of scored attempts
+    back to the prompt model to propose the next batch.
+
+    The optimizer is particularly useful when you want to improve the natural-
+    language instructions that guide each predictor, without changing the
+    demonstrations (few-shot examples).
+
+    Examples:
+        ```python
+        import dspy
+
+        dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+        # A simple QA program
+        qa = dspy.ChainOfThought("question -> answer")
+
+        # A small labeled training set
+        trainset = [
+            dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"),
+            dspy.Example(question="What is 2 + 2?", answer="4").with_inputs("question"),
+        ]
+
+        # Optimize instructions
+        optimizer = COPRO(metric=dspy.evaluate.metrics.answer_exact_match, breadth=5, depth=2)
+        optimized_qa = optimizer.compile(qa, trainset=trainset, eval_kwargs=dict(num_threads=1))
+        ```
+    """
+
     def __init__(
         self,
         prompt_model=None,
@@ -67,6 +100,30 @@ class COPRO(Teleprompter):
         track_stats=False,
         **_kwargs,
     ):
+        """Initialize the COPRO optimizer.
+
+        Args:
+            prompt_model: The language model used to propose new instructions. When
+                ``None``, defaults to the globally configured LM
+                (``dspy.settings.lm``).
+            metric: The evaluation metric function. It should accept
+                ``(example, prediction, trace=None)`` and return a numeric score.
+            breadth: The number of new candidate instructions to generate at each
+                depth iteration. Must be greater than 1.
+            depth: The number of refinement rounds. At each round the optimizer
+                reviews past candidates and proposes ``breadth`` new ones.
+            init_temperature: The sampling temperature used when generating
+                candidate instructions. Higher values produce more diverse
+                proposals.
+            track_stats: If ``True``, the returned program will carry additional
+                attributes with optimization statistics:
+
+                - ``results_best`` -- min/max/avg/std of the top-10 scores for
+                  each predictor at each depth.
+                - ``results_latest`` -- min/max/avg/std of the newest scores for
+                  each predictor at each depth.
+                - ``total_calls`` -- total number of metric evaluations performed.
+        """
         if breadth <= 1:
             raise ValueError("Breadth must be greater than 1")
         self.metric = metric
@@ -121,16 +178,26 @@ class COPRO(Teleprompter):
         predictor.signature = updated_signature
 
     def compile(self, student, *, trainset, eval_kwargs):
-        """
-        optimizes `signature` of `student` program - note that it may be zero-shot or already pre-optimized (demos already chosen - `demos != []`)
+        """Optimize the instructions of each predictor in the student program.
 
-        parameters:
-        student: program to optimize and left modified.
-        trainset: iterable of `Example`s
-        eval_kwargs: optional, dict
-           Additional keywords to go into `Evaluate` for the metric.
+        The student may be zero-shot or already pre-optimized (e.g. with
+        demonstrations chosen by another optimizer). COPRO only modifies the
+        signature instructions and the output-field prefix of each predictor;
+        it does not change demonstrations.
 
-        Returns optimized version of `student`.
+        Args:
+            student: The DSPy program to optimize. A deep copy is made
+                internally, so the original is not modified.
+            trainset: A list of ``dspy.Example`` objects used for evaluation
+                during optimization.
+            eval_kwargs: Keyword arguments forwarded to ``dspy.Evaluate``
+                (e.g. ``num_threads``, ``display_progress``, ``display_table``).
+
+        Returns:
+            The optimized program. The returned program also carries a
+            ``candidate_programs`` attribute containing all evaluated
+            candidates sorted by score, and a ``total_calls`` attribute
+            with the total number of metric evaluations.
         """
         module = student.deepcopy()
         evaluate = Evaluate(devset=trainset, metric=self.metric, **eval_kwargs)
