@@ -76,15 +76,10 @@ From v2.5, you can turn off the cache by setting `cache` parameter in `dspy.LM` 
 dspy.LM('openai/gpt-4o-mini',  cache=False)
 ```
 
-Your local cache will be saved to the global env directory `os.environ["DSP_CACHEDIR"]` or for notebooks `os.environ["DSP_NOTEBOOK_CACHEDIR"]`. You can usually set the cachedir to `os.path.join(repo_path, 'cache')` and export this cache from here:
+Your local cache will be saved to `~/.dspy_cache` by default. You can customize the cache directory by setting the `DSPY_CACHEDIR` environment variable:
 ```python
-os.environ["DSP_NOTEBOOK_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
+os.environ["DSPY_CACHEDIR"] = os.path.join(os.getcwd(), 'cache')
 ```
-
-!!! warning "Important"
-    `DSP_CACHEDIR` is responsible for old clients (including dspy.OpenAI, dspy.ColBERTv2, etc.) and `DSPY_CACHEDIR` is responsible for the new dspy.LM client.
-
-    In the AWS lambda deployment, you should disable both DSP_\* and DSPY_\*.
 
 
 ## Advanced Usage
