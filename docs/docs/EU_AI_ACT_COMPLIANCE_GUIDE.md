@@ -41,7 +41,7 @@ Map the full chain. When something goes wrong, regulators will trace the pipelin
 
 ## Article 50: User Disclosure
 
-If your DSPy pipeline interacts with end users (chatbots, decision-support tools, content generation), you must disclose that the output is AI-generated. This applies regardless of how the pipeline is optimized. The disclosure must be clear and provided before or at the time of interaction.
+If your DSPy pipeline interacts with end users (chatbots, decision-support tools, content generation), you must disclose that the output is AI-generated — unless this is obvious from the circumstances and context of use (Article 50(1)). A dedicated AI assistant satisfies this inherently. An AI feature embedded in a non-AI product requires explicit disclosure. This applies regardless of how the pipeline is optimized.
 
 ---
 
