@@ -43,17 +43,6 @@ Map the full chain. When something goes wrong, regulators will trace the pipelin
 
 If your DSPy pipeline interacts with end users (chatbots, decision-support tools, content generation), you must disclose that the output is AI-generated. This applies regardless of how the pipeline is optimized. The disclosure must be clear and provided before or at the time of interaction.
 
-## Tooling
-
-For automated trace auditing against Article 12 requirements:
-
-```bash
-pip install ai-trace-auditor
-aitrace audit traces.json
-```
-
-This checks your logged traces for completeness: missing model versions, absent retrieval logs, chain-of-thought gaps. It does not certify compliance (nothing does, short of a conformity assessment), but it catches the obvious holes before an auditor does.
-
 ---
 
 *This guide covers the EU AI Act as published (Regulation 2024/1689). National implementing measures may add requirements. If your system falls under Annex III, get legal counsel. This document is a technical mapping, not legal advice.*
