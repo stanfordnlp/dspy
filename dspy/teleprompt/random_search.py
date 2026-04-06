@@ -38,6 +38,39 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         stop_at_score=None,
         metric_threshold=None,
     ):
+        """A Teleprompter that extends ``BootstrapFewShot`` with random search over demo sets.
+
+        Generates multiple candidate programs by bootstrapping few-shot examples with
+        different random seeds and varying numbers of demonstrations, then selects the
+        best-performing candidate on a validation set.
+
+        Three baseline candidates are always included (zero-shot, labeled-only, and
+        unshuffled bootstrap), followed by ``num_candidate_programs`` randomly shuffled
+        variants.
+
+        Args:
+            metric: A function that compares an expected value and predicted value,
+                outputting the result of that comparison.
+            teacher_settings: Settings for the teacher model.
+                Defaults to None.
+            max_bootstrapped_demos: Maximum number of bootstrapped demonstrations to
+                include per candidate. Defaults to 4.
+            max_labeled_demos: Maximum number of labeled demonstrations to include.
+                Defaults to 16.
+            max_rounds: Maximum number of bootstrap rounds per training example.
+                Defaults to 1.
+            num_candidate_programs: Number of randomly seeded candidate programs to
+                generate and evaluate. Defaults to 16.
+            num_threads: Number of threads to use for evaluation.
+                Defaults to None.
+            max_errors: Maximum number of errors before the program stops. If ``None``,
+                inherits from ``dspy.settings.max_errors``.
+            stop_at_score: If set, stop searching once a candidate achieves this score.
+                Defaults to None.
+            metric_threshold: If the metric yields a numerical value, check it against
+                this threshold when deciding whether to accept a bootstrap example.
+                Defaults to None.
+        """
         self.metric = metric
         self.teacher_settings = teacher_settings or {}
         self.max_rounds = max_rounds
@@ -55,6 +88,27 @@ class BootstrapFewShotWithRandomSearch(Teleprompter):
         print(f"Will attempt to bootstrap {self.num_candidate_sets} candidate sets.")
 
     def compile(self, student, *, teacher=None, trainset, valset=None, restrict=None, labeled_sample=True):
+        """Compile the student program by searching over randomly bootstrapped demo sets.
+
+        Generates candidate programs using three baselines (zero-shot, labeled-only,
+        unshuffled bootstrap) plus additional randomly seeded variants, evaluates each
+        on the validation set, and returns the highest-scoring candidate.
+
+        Args:
+            student: The student program to optimize.
+            teacher: An optional teacher program used to bootstrap demonstrations.
+                If ``None``, the student itself is used as the teacher.
+            trainset: The training examples to bootstrap from.
+            valset: The validation set for scoring candidates. If ``None``, defaults
+                to ``trainset``.
+            restrict: An optional collection of seed values. If provided, only
+                candidates whose seed is in this collection will be evaluated.
+            labeled_sample: Whether to randomly sample labeled demos. Defaults to True.
+
+        Returns:
+            The best-scoring program, with a ``candidate_programs`` attribute containing
+            all evaluated candidates sorted by score in descending order.
+        """
         self.trainset = trainset
         self.valset = valset or trainset  # TODO: FIXME: Note this choice.
 
