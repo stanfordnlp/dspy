@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 class LocalProvider(Provider):
+    """Provider implementation for local model serving and finetuning.
+
+    This provider integrates with SGLang for local model serving and with TRL
+    training utilities for local supervised finetuning.
+    """
+
     def __init__(self):
         super().__init__()
         self.finetunable = True
@@ -27,6 +33,25 @@ class LocalProvider(Provider):
 
     @staticmethod
     def launch(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
+        """Launch a local SGLang server for an LM instance.
+
+        The method starts a background server process, waits for readiness,
+        and mutates the provided `lm` object with local OpenAI-compatible
+        connection details and process handles.
+
+        Args:
+            lm: Language model object to bind to the launched server.
+            launch_kwargs: Optional server launch configuration. When omitted,
+                uses `lm.launch_kwargs`.
+
+        Raises:
+            ImportError: If `sglang` is not installed.
+            TimeoutError: If the launched server is not ready before timeout.
+
+        Example:
+            >>> lm = dspy.LM("openai/huggingface/meta-llama/Llama-3.1-8B-Instruct")
+            >>> dspy.clients.lm_local.LocalProvider.launch(lm)
+        """
         try:
             import sglang  # noqa: F401
         except ImportError:
@@ -129,6 +154,12 @@ class LocalProvider(Provider):
 
     @staticmethod
     def kill(lm: "LM", launch_kwargs: dict[str, Any] | None = None):
+        """Terminate a running local SGLang server associated with an LM.
+
+        Args:
+            lm: Language model object that may hold server process handles.
+            launch_kwargs: Unused placeholder for API compatibility.
+        """
         from sglang.utils import terminate_process
 
         if not hasattr(lm, "process"):
@@ -150,6 +181,23 @@ class LocalProvider(Provider):
         train_data_format: TrainDataFormat | None,
         train_kwargs: dict[str, Any] | None = None,
     ) -> str:
+        """Run local supervised finetuning and return a model identifier.
+
+        Args:
+            job: Training job metadata object for provider API compatibility.
+            model: Source model identifier.
+            train_data: Training examples in chat-message format.
+            train_data_format: Declared format for `train_data`. Only chat is
+                currently supported.
+            train_kwargs: Optional training overrides merged into provider
+                defaults.
+
+        Returns:
+            OpenAI-compatible model string for the finetuned local model.
+
+        Raises:
+            ValueError: If `train_data_format` is not chat format.
+        """
         if model.startswith("openai/"):
             model = model[7:]
         if model.startswith("local:"):
@@ -189,6 +237,15 @@ class LocalProvider(Provider):
 
 
 def create_output_dir(model_name, data_path):
+    """Create a unique output directory path for a finetuning run.
+
+    Args:
+        model_name: Model identifier used for naming the output directory.
+        data_path: Path to the serialized training data JSONL file.
+
+    Returns:
+        A unique output directory path derived from model name and timestamp.
+    """
     model_str = model_name.replace("/", "-")
     time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     rnd_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -198,6 +255,19 @@ def create_output_dir(model_name, data_path):
 
 
 def train_sft_locally(model_name, train_data, train_kwargs):
+    """Train a local causal LM with TRL SFT and save artifacts.
+
+    Args:
+        model_name: Hugging Face model name or local model path.
+        train_data: List of chat-formatted training examples.
+        train_kwargs: Training configuration used to build `SFTConfig`.
+
+    Returns:
+        The output directory containing trained model artifacts.
+
+    Raises:
+        ImportError: If required finetuning dependencies are missing.
+    """
     try:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
