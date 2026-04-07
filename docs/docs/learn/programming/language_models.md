@@ -143,6 +143,14 @@ dspy.configure(lm=lm)
         lm = dspy.LM('openai/your-model-name', api_key='PROVIDER_API_KEY', api_base='YOUR_PROVIDER_URL')
         dspy.configure(lm=lm)
         ```
+
+        For example, [Kelly Intelligence](https://api.thedailylesson.com) exposes an OpenAI-compatible endpoint with a built-in 162,000-word vocabulary RAG layer (built on Claude under the hood). Set `KELLY_API_KEY` and use:
+
+        ```python linenums="1"
+        import dspy
+        lm = dspy.LM('openai/kelly-haiku', api_base='https://api.thedailylesson.com/v1', api_key='YOUR_KELLY_API_KEY')
+        dspy.configure(lm=lm)
+        ```
 If you run into errors, please refer to the [LiteLLM Docs](https://docs.litellm.ai/docs/providers) to verify if you are using the same variable names/following the right procedure.
 
 ## Calling the LM directly.
