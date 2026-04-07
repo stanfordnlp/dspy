@@ -8,14 +8,16 @@ from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.clients.base_lm import BaseLM
-from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
+def _default_native_response_types():
+    from dspy.experimental import Citations
+    return [Citations, Reasoning]
+
 
 
 class Adapter:
@@ -54,9 +56,10 @@ class Adapter:
         """
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
-        self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
+        self.native_response_types = native_response_types or _default_native_response_types()
 
     def __init_subclass__(cls, **kwargs) -> None:
+        breakpoint()
         super().__init_subclass__(**kwargs)
 
         # Decorate format() and parse() method with with_callbacks
