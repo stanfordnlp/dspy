@@ -70,6 +70,7 @@ nav:
             - Tracking DSPy Optimizers: tutorials/optimizer_tracking/index.md
             - Streaming: tutorials/streaming/index.md
             - Async: tutorials/async/index.md
+            - AI Governance with Asqav: tutorials/asqav_governance/index.md
         - Real-World Examples:
             - Overview: tutorials/real_world_examples/index.md
             - Generating llms.txt: tutorials/llms_txt_generation/index.md

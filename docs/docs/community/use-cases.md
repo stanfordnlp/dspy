@@ -113,5 +113,6 @@ This list showcases some of the open-source projects and repositories using DSPy
 | **Langfuse** | [Link](https://langfuse.com/docs/integrations/dspy) |
 | **OpenLIT** | [Link](https://docs.openlit.io/latest/integrations/dspy) |
 | **Relevance AI** | [Link](https://relevanceai.com/blog/dspy-programming---not-prompting---language-models) |
+| **Asqav** | [Link](https://github.com/jagmarques/asqav-sdk) |
 
 Credit: Some of these resources were originally compiled in the [Awesome DSPy](https://github.com/ganarajpr/awesome-dspy/tree/master) repo.
