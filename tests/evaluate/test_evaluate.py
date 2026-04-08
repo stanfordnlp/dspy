@@ -423,3 +423,144 @@ def test_evaluate_save_as_csv_with_history():
         if os.path.exists(temp_csv):
             os.unlink(temp_csv)
 
+
+def test_evaluate_population_metric_only():
+    """Test Evaluate with only a population_metric (no per-sample metric)."""
+    dspy.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+                "What is 3+3?": {"answer": "6"},
+            }
+        )
+    )
+    devset = [
+        new_example("What is 1+1?", "2"),
+        new_example("What is 2+2?", "4"),
+        new_example("What is 3+3?", "6"),
+    ]
+    program = Predict("question -> answer")
+
+    def pop_metric(examples, predictions):
+        # Simple population metric: fraction of exact matches
+        correct = sum(
+            1 for ex, pred in zip(examples, predictions) if ex.answer == pred.answer
+        )
+        return round(correct / len(examples), 2)
+
+    ev = Evaluate(
+        devset=devset,
+        population_metric=pop_metric,
+        display_progress=False,
+    )
+    result = ev(program)
+    assert result.score == 1.0
+    assert len(result.results) == 3
+    # Per-sample scores should be None when no sample-wise metric is given
+    for _, _, score in result.results:
+        assert score is None
+
+
+def test_evaluate_population_metric_with_sample_metric():
+    """Test Evaluate with both a per-sample metric and a population_metric.
+    The per-sample metric should still produce per-row scores, but the
+    overall EvaluationResult.score should come from population_metric.
+    """
+    dspy.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+            }
+        )
+    )
+    devset = [
+        new_example("What is 1+1?", "2"),
+        new_example("What is 2+2?", "4"),
+    ]
+    program = Predict("question -> answer")
+
+    def pop_metric(examples, predictions):
+        # Always returns a fixed value so we can assert it overrides the sample average
+        return 42.0
+
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        population_metric=pop_metric,
+        display_progress=False,
+    )
+    result = ev(program)
+    # The overall score comes from the population_metric, not the per-sample average
+    assert result.score == 42.0
+    # But per-sample scores should still be present from the sample metric
+    for _, _, score in result.results:
+        assert score is not None
+
+
+def test_evaluate_population_metric_pearson():
+    """End-to-end test using Pearson correlation as a population_metric.
+    This is the motivating use-case from issue #9076.
+    """
+    from scipy.stats import pearsonr
+
+    dspy.configure(
+        lm=DummyLM(
+            {
+                "Rate item A": {"rating": "5"},
+                "Rate item B": {"rating": "3"},
+                "Rate item C": {"rating": "1"},
+                "Rate item D": {"rating": "4"},
+            }
+        )
+    )
+    devset = [
+        dspy.Example(text="Rate item A", rating=5).with_inputs("text"),
+        dspy.Example(text="Rate item B", rating=3).with_inputs("text"),
+        dspy.Example(text="Rate item C", rating=1).with_inputs("text"),
+        dspy.Example(text="Rate item D", rating=4).with_inputs("text"),
+    ]
+    program = Predict("text -> rating")
+
+    def pearson_population_metric(examples, predictions):
+        ground_truth = [float(ex.rating) for ex in examples]
+        predicted = [float(pred.rating) for pred in predictions]
+        r, _ = pearsonr(ground_truth, predicted)
+        return round(r, 4)
+
+    ev = Evaluate(
+        devset=devset,
+        population_metric=pearson_population_metric,
+        display_progress=False,
+    )
+    result = ev(program)
+    # The DummyLM returns perfect predictions, so Pearson r should be 1.0
+    assert result.score == 1.0
+
+
+def test_evaluate_backward_compatible_without_population_metric():
+    """Ensure that existing behavior is unchanged when population_metric is not provided."""
+    dspy.configure(
+        lm=DummyLM(
+            {
+                "What is 1+1?": {"answer": "2"},
+                "What is 2+2?": {"answer": "4"},
+            }
+        )
+    )
+    devset = [
+        new_example("What is 1+1?", "2"),
+        new_example("What is 2+2?", "4"),
+    ]
+    program = Predict("question -> answer")
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+    )
+    result = ev(program)
+    # Original behavior: score is the percentage of correct answers
+    assert result.score == 100.0
+    assert len(result.results) == 2
+

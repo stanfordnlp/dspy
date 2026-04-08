@@ -73,6 +73,7 @@ class Evaluate:
         *,
         devset: list["dspy.Example"],
         metric: Callable | None = None,
+        population_metric: Callable | None = None,
         num_threads: int | None = None,
         display_progress: bool = False,
         display_table: bool | int = False,
@@ -86,7 +87,15 @@ class Evaluate:
         """
         Args:
             devset (list[dspy.Example]): the evaluation dataset.
-            metric (Callable): The metric function to use for evaluation.
+            metric (Callable): The metric function to use for evaluation. This is a sample-wise metric that is called
+                as ``metric(example, prediction) -> score`` for each individual example.
+            population_metric (Callable): An optional population-wise / aggregate metric that is called once with all
+                examples and predictions: ``population_metric(examples, predictions) -> float``. This is useful for
+                metrics that need to see the full population, such as Pearson correlation, Spearman rank, or corpus
+                BLEU. When provided, the final ``EvaluationResult.score`` is determined by this metric instead of the
+                average of per-sample scores. If both ``metric`` and ``population_metric`` are provided, the per-sample
+                ``metric`` is still used for display and per-row scoring but ``population_metric`` determines the
+                overall score.
             num_threads (Optional[int]): The number of threads to use for parallel evaluation.
             display_progress (bool): Whether to display progress during evaluation.
             display_table (Union[bool, int]): Whether to display the evaluation results in a table.
@@ -101,6 +110,7 @@ class Evaluate:
         """
         self.devset = devset
         self.metric = metric
+        self.population_metric = population_metric
         self.num_threads = num_threads
         self.display_progress = display_progress
         self.display_table = display_table
@@ -118,6 +128,7 @@ class Evaluate:
         self,
         program: "dspy.Module",
         metric: Callable | None = None,
+        population_metric: Callable | None = None,
         devset: list["dspy.Example"] | None = None,
         num_threads: int | None = None,
         display_progress: bool | None = None,
@@ -130,6 +141,8 @@ class Evaluate:
         Args:
             program (dspy.Module): The DSPy program to evaluate.
             metric (Callable): The metric function to use for evaluation. if not provided, use `self.metric`.
+            population_metric (Callable): An optional population-wise / aggregate metric. if not provided, use
+                `self.population_metric`. Called as ``population_metric(examples, predictions) -> float``.
             devset (list[dspy.Example]): the evaluation dataset. if not provided, use `self.devset`.
             num_threads (Optional[int]): The number of threads to use for parallel evaluation. if not provided, use
                 `self.num_threads`.
@@ -142,11 +155,13 @@ class Evaluate:
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
 
-            - score: A float percentage score (e.g., 67.30) representing overall performance
+            - score: A float percentage score (e.g., 67.30) representing overall performance.
+              When ``population_metric`` is provided, this is the value returned by ``population_metric``.
 
             - results: a list of (example, prediction, score) tuples for each example in devset
         """
         metric = metric if metric is not None else self.metric
+        population_metric = population_metric if population_metric is not None else self.population_metric
         devset = devset if devset is not None else self.devset
         num_threads = num_threads if num_threads is not None else self.num_threads
         display_progress = display_progress if display_progress is not None else self.display_progress
@@ -164,27 +179,56 @@ class Evaluate:
             disable_progress_bar=not display_progress,
             max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
             provide_traceback=self.provide_traceback,
-            compare_results=True,
+            compare_results=(metric is not None),
         )
 
-        def process_item(example):
-            prediction = program(**example.inputs())
-            score = metric(example, prediction)
-            return prediction, score
+        if metric is not None:
+            def process_item(example):
+                prediction = program(**example.inputs())
+                score = metric(example, prediction)
+                return prediction, score
+        else:
+            # When only population_metric is provided (no per-sample metric), we still need
+            # to run the program on each example but there is no per-sample score.
+            def process_item(example):
+                prediction = program(**example.inputs())
+                return prediction, None
 
         results = executor.execute(process_item, devset)
         assert len(devset) == len(results)
 
         results = [((dspy.Prediction(), self.failure_score) if r is None else r) for r in results]
         results = [(example, prediction, score) for example, (prediction, score) in zip(devset, results, strict=False)]
-        ncorrect, ntotal = sum(score for *_, score in results), len(devset)
 
-        logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+        if population_metric is not None:
+            examples = [example for example, _, _ in results]
+            predictions = [prediction for _, prediction, _ in results]
+            overall_score = population_metric(examples, predictions)
+        else:
+            ncorrect, ntotal = sum(score for *_, score in results), len(devset)
+            overall_score = round(100 * ncorrect / ntotal, 2)
+
+        if metric is not None:
+            ncorrect, ntotal = sum(score for *_, score in results), len(devset)
+            logger.info(f"Average Metric: {ncorrect} / {ntotal} ({round(100 * ncorrect / ntotal, 1)}%)")
+
+        if population_metric is not None:
+            logger.info(f"Population Metric: {overall_score}")
+
+        # Resolve a display name for the metric column
+        if metric is not None:
+            metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
+        elif population_metric is not None:
+            metric_name = (
+                population_metric.__name__
+                if isinstance(population_metric, types.FunctionType)
+                else population_metric.__class__.__name__
+            )
+        else:
+            metric_name = "metric"
 
         if display_table:
             if importlib.util.find_spec("pandas") is not None:
-                # Rename the 'correct' column to the name of the metric object
-                metric_name = metric.__name__ if isinstance(metric, types.FunctionType) else metric.__class__.__name__
                 # Construct a pandas DataFrame from the results
                 result_df = self._construct_result_table(results, metric_name)
 
@@ -193,11 +237,6 @@ class Evaluate:
                 logger.warning("Skipping table display since `pandas` is not installed.")
 
         if save_as_csv:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
-            )
             data = self._prepare_results_output(results, metric_name)
 
             with open(save_as_csv, "w", newline="") as csvfile:
@@ -208,11 +247,6 @@ class Evaluate:
                 for row in data:
                     writer.writerow(row)
         if save_as_json:
-            metric_name = (
-                metric.__name__
-                if isinstance(metric, types.FunctionType)
-                else metric.__class__.__name__
-            )
             data = self._prepare_results_output(results, metric_name)
             with open(
                     save_as_json,
@@ -221,7 +255,7 @@ class Evaluate:
                 json.dump(data, f)
 
         return EvaluationResult(
-            score=round(100 * ncorrect / ntotal, 2),
+            score=overall_score,
             results=results,
         )
 
