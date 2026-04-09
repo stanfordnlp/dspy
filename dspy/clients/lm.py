@@ -516,8 +516,9 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     """
     request = dict(request)
     if "messages" in request:
-        content_blocks = []
+        input_items = []
         for msg in request.pop("messages"):
+            content_blocks = []
             c = msg.get("content")
             if isinstance(c, str):
                 content_blocks.append({"type": "input_text", "text": c})
@@ -525,7 +526,8 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
                 # Convert each content item from Chat API format to Responses API format
                 for item in c:
                     content_blocks.append(_convert_content_item_to_responses_format(item))
-        request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+            input_items.append({"role": msg.get("role", "user"), "content": content_blocks})
+        request["input"] = input_items
     # Convert `reasoning_effort` to reasoning format supported by the Responses API
     if "reasoning_effort" in request:
         effort = request.pop("reasoning_effort")
