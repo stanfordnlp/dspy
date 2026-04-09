@@ -259,7 +259,10 @@ class BaseLM:
         outputs = []
         for c in response.choices:
             output = {}
-            output["text"] = c.message.content if hasattr(c, "message") else c["text"]
+            if hasattr(c, "message"):
+                output["text"] = getattr(c.message, "content", "") or ""
+            else:
+                output["text"] = c["text"]
 
             if hasattr(c, "message") and hasattr(c.message, "reasoning_content") and c.message.reasoning_content:
                 output["reasoning_content"] = c.message.reasoning_content

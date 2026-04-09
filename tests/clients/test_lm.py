@@ -16,6 +16,8 @@ from openai.types.responses import ResponseOutputMessage, ResponseReasoningItem
 from openai.types.responses.response_reasoning_item import Summary
 
 import dspy
+from dspy.clients.base_lm import BaseLM
+from dspy.dsp.utils.utils import dotdict
 from dspy.utils.usage_tracker import track_usage
 
 
@@ -44,6 +46,28 @@ def make_response(output_blocks):
         usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
         user=None,
     )
+
+
+class DummyLM(BaseLM):
+    pass
+
+
+@pytest.mark.parametrize(
+    "message_kwargs",
+    [
+        pytest.param({"tool_calls": None}, id="content_missing"),
+        pytest.param({"content": None, "tool_calls": None}, id="content_none"),
+    ],
+)
+def test_process_completion_tolerates_missing_message_content(message_kwargs):
+    lm = DummyLM("dummy", model_type="chat")
+    response = dotdict(
+        choices=[dotdict(message=dotdict(**message_kwargs), finish_reason="stop")],
+        usage=dotdict(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+        model="dummy",
+    )
+
+    assert lm._process_completion(response, {}) == [""]
 
 
 def test_chat_lms_can_be_queried(litellm_test_server):
