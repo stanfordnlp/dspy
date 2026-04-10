@@ -7,8 +7,7 @@ DSPy is an actively growing project and community! We welcome your contributions
 The fastest way to contribute is to find open issues that need an assignee. We maintain two lists of GitHub tags for contributors:
 
 - [good first issue](https://github.com/stanfordnlp/dspy/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22):
-  a list of small, well-defined issues for newcomers to the project. These should be solved
-  without AI-generated code as the point is to learn the codebase and the contribution process.
+  a list of small, well-defined issues for newcomers to the project.
 - [help wanted](https://github.com/stanfordnlp/dspy/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22):
   a list of issues that welcome community contributions. These issues have a wide range of complexity.
 
