@@ -169,7 +169,8 @@ AI-assisted contributions are welcome under these conditions:
 - Share your prompts. It helps reviewers and shows you thought through the problem.
 - Verify AI-found bugs yourself. Reproduce and confirm before filing. Write the report in
   your own words.
-- No AI-generated text in issues or PR descriptions. Translation and grammar help is fine.
+- Keep PR descriptions short and specific. If you can't describe your change in a few sentences,
+  you probably don't understand it well enough to submit it.
 - You own everything you submit: correctness, style, tests, and licensing. Ensure AI-generated
   code is compatible with DSPy's MIT license.
 
