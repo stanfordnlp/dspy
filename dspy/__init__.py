@@ -17,6 +17,7 @@ from dspy.utils.syncify import syncify
 from dspy.utils.saving import load
 from dspy.streaming.streamify import streamify
 from dspy.utils.usage_tracker import track_usage
+from dspy.utils.cost_tracker import CostTracker, BudgetExceededError, track_cost, register_model_pricing
 
 from dspy.dsp.utils.settings import settings
 from dspy.dsp.colbertv2 import ColBERTv2
