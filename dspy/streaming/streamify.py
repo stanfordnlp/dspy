@@ -232,6 +232,8 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
     # To propagate prediction request ID context to the child thread
     context = contextvars.copy_context()
 
+    _exception_sentinel = object()  # Sentinel to signal an exception occurred
+
     def producer():
         """Runs in a background thread to fetch items asynchronously."""
 
@@ -239,6 +241,9 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
             try:
                 async for item in async_generator:
                     queue.put(item)
+            except BaseException as exc:
+                # Propagate the exception to the consumer thread
+                queue.put((_exception_sentinel, exc))
             finally:
                 # Signal completion
                 queue.put(stop_sentinel)
@@ -254,6 +259,9 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
         item = queue.get()  # Block until an item is available
         if item is stop_sentinel:
             break
+        # Re-raise exceptions from the producer thread
+        if isinstance(item, tuple) and len(item) == 2 and item[0] is _exception_sentinel:
+            raise item[1]
         yield item
 
 
