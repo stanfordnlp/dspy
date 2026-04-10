@@ -1,0 +1,9 @@
+name: aime
+train_size: 5    # Reduced for fast iteration
+dev_size: 3      # Reduced for fast iteration
+test_size: 5     # Reduced for fast iteration
+test_repeat: 1   # Single run instead of 5
+train_seed: 1
+eval_seed: 2023
+keep_details: true
+params: {}

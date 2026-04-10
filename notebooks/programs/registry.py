@@ -62,14 +62,16 @@ def _register_builtin_programs() -> None:
     """Register built-in program classes."""
     from programs.qa import (
         NaiveQA,
-        ReasoningFirstQA, 
+        ReasoningFirstQA,
         ContextQA,
         ReasoningContextQA,
         MLflowBasePromptContextQA,
         MLflowBasePromptContextQAv2,
         SimpleContextQA,
+        MathCoT,
+        MathNaive,
     )
-    
+
     ProgramRegistry.register("naive", NaiveQA)
     ProgramRegistry.register("reasoning", ReasoningFirstQA)
     ProgramRegistry.register("context", ContextQA)
@@ -77,7 +79,8 @@ def _register_builtin_programs() -> None:
     ProgramRegistry.register("mlflow_base_prompt", MLflowBasePromptContextQA)
     ProgramRegistry.register("mlflow_v2", MLflowBasePromptContextQAv2)
     ProgramRegistry.register("simple_context", SimpleContextQA)
-
+    ProgramRegistry.register("math_cot", MathCoT)
+    ProgramRegistry.register("math_naive", MathNaive)
 
 # Auto-register on import
 _register_builtin_programs()

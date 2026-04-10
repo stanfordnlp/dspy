@@ -195,7 +195,64 @@ class SimpleContextQA(dspy.Module, BaseProgram):
     def forward(self, question: str, context: dict | list[str] | str = None, **kwargs) -> Prediction:
         context_str = format_context(context)
         return self.answer(context=context_str, question=question)
-    
+
     @property
     def name(self) -> str:
         return "simple_context"
+
+
+class MathNaive(dspy.Module, BaseProgram):
+    """Math problem solving program that directly predicts the answer from the problem."""
+
+    def __init__(self):
+        super().__init__()
+        self.answer = dspy.Predict(
+            dspy.Signature(
+                "problem -> solution, answer",
+                "Solve the given math problem. Present your solution concisely and then the final answer."
+            )
+        )
+
+    def forward(self, problem: str, **kwargs) -> Prediction:
+        return self.answer(problem=problem)
+
+    @property
+    def name(self) -> str:
+        return "math_naive"
+    
+class MathCoT(dspy.Module, BaseProgram):
+    """Math problem solving program using Chain of Thought.
+
+    This program is designed for mathematical reasoning tasks like AIME.
+    It uses ChainOfThought to generate step-by-step reasoning before
+    producing the final numerical answer.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.solve = dspy.ChainOfThought(
+            dspy.Signature(
+                "problem -> answer",
+                "Solve the given math problem. Your answer must be ONLY the final numerical result as an integer (e.g., 42, 157, 1000). Do not include any additional text, explanation, units, or formatting."
+            ),
+            rationale_field=dspy.OutputField(
+                prefix="Reasoning:",
+                desc="Solve the problem within less than 1000 words",
+            ),
+            rationale_field_type=str,
+        )
+
+    def forward(self, problem: str, **kwargs) -> Prediction:
+        """Solve a math problem with chain-of-thought reasoning.
+
+        Args:
+            problem: The math problem to solve.
+
+        Returns:
+            Prediction with reasoning and answer fields.
+        """
+        return self.solve(problem=problem)
+
+    @property
+    def name(self) -> str:
+        return "math_cot"

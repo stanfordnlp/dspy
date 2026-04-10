@@ -1,0 +1,9 @@
+name: aime_baseline
+description: AIME baseline evaluation without optimization
+
+# Reference shared configs
+dataset_ref: aime_standard
+model_ref: qwen3_4b
+optimizer_ref: baseline
+program_ref: math_cot
+logging_ref: logging

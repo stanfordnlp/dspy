@@ -168,13 +168,16 @@ class ExperimentRunner:
         self.logger.log_model_setup(self.config.model.name, self.config.model.cache)
     
     def _evaluate_program(
-        self, 
-        program: Module, 
-        dataset: list, 
-        metric: Any, 
+        self,
+        program: Module,
+        dataset: list,
+        metric: Any,
         name: str
     ) -> Any:
         """Evaluate a program on a dataset."""
+        self.logger.logger.info(f"Setting up evaluator for {len(dataset)} examples...")
+        self.logger.logger.info(f"Using {self.config.optimizer.num_threads} thread(s)")
+
         evaluator = dspy.Evaluate(
             devset=dataset,
             metric=metric,
@@ -182,7 +185,10 @@ class ExperimentRunner:
             display_table=False,
             display_progress=True,
         )
+
+        self.logger.logger.info(f"Starting evaluation...")
         results = evaluator(program)
+        self.logger.logger.info(f"Evaluation complete")
         
         # Log detailed results
         scores = [score for _, _, score in results.results]
@@ -195,7 +201,9 @@ class ExperimentRunner:
         self.logger.logger.info(f"Total Score: {total_score:.2f} / {len(dataset)} ({100 * avg_score:.1f}%)")
 
         for i, (example, prediction, score) in enumerate(results.results):
-            question_preview = example.question[:80]
+            # Handle both "question" (HotPotQA) and "problem" (AIME) fields
+            question_text = getattr(example, "question", None) or getattr(example, "problem", "")
+            question_preview = question_text[:80] if question_text else ""
             pred_answer = getattr(prediction, "answer", str(prediction))
             self.logger.logger.info(f"\n[{i + 1}] Q: {question_preview}...")
             self.logger.logger.info(f"    Gold: {example.answer}")

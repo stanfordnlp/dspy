@@ -132,7 +132,7 @@ def exact_match_metric_gepa(
     """GEPA-compatible exact match metric."""
     pred_answer = _get_answer(pred)
     gold_answer = _get_answer(gold)
-    
+
     pred_normalized = normalize_text(pred_answer)
     gold_normalized = normalize_text(gold_answer)
     score = 1.0 if pred_normalized == gold_normalized else 0.0
@@ -141,9 +141,93 @@ def exact_match_metric_gepa(
     return dspy.Prediction(score=score, feedback=feedback)
 
 
+def aime_metric(example: Example, pred: Prediction, trace: Any = None) -> float:
+    """Standard AIME metric for evaluation.
+
+    Exact match on integer answers. Parses both prediction and gold answer as integers.
+    """
+    correct_answer = _get_answer(example)
+    pred_answer = _get_answer(pred)
+
+    try:
+        correct_int = int(correct_answer)
+    except ValueError:
+        # If gold answer isn't an integer, fall back to string comparison
+        return 1.0 if pred_answer == correct_answer else 0.0
+
+    try:
+        pred_int = int(pred_answer)
+    except ValueError:
+        # If prediction isn't parseable as integer, it's wrong
+        return 0.0
+
+    return 1.0 if correct_int == pred_int else 0.0
+
+
+def aime_metric_gepa(
+    gold: Example,
+    pred: Prediction,
+    trace: Any = None,
+    pred_name: str | None = None,
+    pred_trace: Any = None,
+) -> Prediction:
+    """GEPA-compatible metric with feedback for AIME math problems.
+
+    Provides detailed feedback including the solution when available.
+    """
+    correct_answer = _get_answer(gold)
+    pred_answer = _get_answer(pred)
+    written_solution = getattr(gold, 'solution', '')
+
+    try:
+        correct_int = int(correct_answer)
+    except ValueError:
+        # If gold answer isn't an integer, provide error feedback
+        feedback = f"The correct answer '{correct_answer}' couldn't be parsed as an integer."
+        return dspy.Prediction(score=0.0, feedback=feedback)
+
+    try:
+        pred_int = int(pred_answer)
+    except ValueError:
+        # Prediction couldn't be parsed as integer
+        feedback_text = (
+            f"The final answer must be a valid integer and nothing else. "
+            f"You responded with '{pred_answer}', which couldn't be parsed as a python integer. "
+            f"Please ensure your answer is a valid integer without any additional text or formatting."
+        )
+        feedback_text += f" The correct answer is '{correct_answer}'."
+
+        if written_solution:
+            feedback_text += (
+                f" Here's the full step-by-step solution:\n{written_solution}\n\n"
+                f"Think about what takeaways you can learn from this solution to improve your "
+                f"future answers and approach to similar problems and ensure your final answer "
+                f"is a valid integer."
+            )
+
+        return dspy.Prediction(score=0.0, feedback=feedback_text)
+
+    score = 1.0 if correct_int == pred_int else 0.0
+
+    # Provide appropriate feedback
+    if score == 1.0:
+        feedback_text = f"Your answer is correct. The correct answer is '{correct_answer}'."
+    else:
+        feedback_text = f"Your answer is incorrect. The correct answer is '{correct_answer}'."
+
+    if written_solution:
+        feedback_text += (
+            f" Here's the full step-by-step solution:\n{written_solution}\n\n"
+            f"Think about what takeaways you can learn from this solution to improve your "
+            f"future answers and approach to similar problems."
+        )
+
+    return dspy.Prediction(score=score, feedback=feedback_text)
+
+
 class MetricRegistry:
     """Registry for dataset-specific metrics."""
-    
+
     _metrics: Dict[str, Dict[str, Callable]] = {
         "hotpotqa": {
             "standard": hotpotqa_metric,
@@ -152,6 +236,10 @@ class MetricRegistry:
         "exact_match": {
             "standard": exact_match_metric,
             "gepa": exact_match_metric_gepa
+        },
+        "aime": {
+            "standard": aime_metric,
+            "gepa": aime_metric_gepa
         }
     }
     
