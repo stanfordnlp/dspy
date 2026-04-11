@@ -59,6 +59,18 @@ ENDC = "\033[0m"  # Resets the color to default
 
 
 class MIPROv2(Teleprompter):
+    """Bayesian prompt optimizer that searches over instruction candidates and few-shot demo sets.
+
+    Uses Optuna-based optimization to find the best combination of instructions
+    and demonstrations for each predictor in a DSPy program, evaluating
+    candidates against a user-supplied metric.
+
+    Example::
+
+        optimizer = dspy.MIPROv2(metric=my_metric, auto="light")
+        optimized = optimizer.compile(my_program, trainset=trainset)
+    """
+
     def __init__(
         self,
         metric: Callable,
