@@ -10,7 +10,7 @@ jobs:
     outputs:
       version: ${{ steps.extract_tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - id: extract_tag
         name: Extract tag name
         run: echo "tag=$(echo $GITHUB_REF | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
@@ -24,7 +24,7 @@ jobs:
       id-token: write # IMPORTANT: mandatory for trusted publishing
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Set up Python 3.11
         uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
@@ -79,7 +79,7 @@ jobs:
       id-token: write # IMPORTANT: mandatory for trusted publishing
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Set up Python 3.11
         uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
