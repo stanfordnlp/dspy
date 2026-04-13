@@ -231,10 +231,41 @@ def test_serialize_roundtrip_pydantic_extra_fields():
 
 
 def test_envelope_like_keys_not_confused(tmp_path):
+    """User dicts containing our sentinel keys must roundtrip as plain dicts,
+    not be misinterpreted as pydantic/ndarray envelopes."""
     cache = _make_fanout_cache(str(tmp_path))
-    tricky = {"_pydantic": "fake.Module.FakeClass", "_data": {"foo": "bar"}}
-    cache["tricky"] = tricky
-    assert cache["tricky"] == tricky
+
+    # Dict with real sentinel keys but extra keys -- not an exact envelope match
+    tricky_extra = {
+        "__dspy_cache_type__": "pydantic",
+        "__dspy_cache_module__": "os",
+        "__dspy_cache_qualname__": "system",
+        "__dspy_cache_data__": {},
+        "extra_key": "this makes it not an envelope",
+    }
+    cache["tricky_extra"] = tricky_extra
+    assert cache["tricky_extra"] == tricky_extra
+
+    # Dict with only some sentinel keys
+    tricky_partial = {"__dspy_cache_type__": "pydantic", "user_data": 42}
+    cache["tricky_partial"] = tricky_partial
+    assert cache["tricky_partial"] == tricky_partial
+
+
+def test_poisoned_module_entry_rejected():
+    """A crafted envelope pointing to a non-BaseModel class raises DeserializationError."""
+    from dspy.clients.disk_serialization import DeserializationError
+
+    poisoned = orjson.dumps({
+        "_data": {
+            "__dspy_cache_type__": "pydantic",
+            "__dspy_cache_module__": "os",
+            "__dspy_cache_qualname__": "getcwd",
+            "__dspy_cache_data__": {},
+        }
+    })
+    with pytest.raises(DeserializationError, match="not a pydantic BaseModel subclass"):
+        _deserialize(poisoned)
 
 
 # ── Migration ────────────────────────────────────────────────────────────────
