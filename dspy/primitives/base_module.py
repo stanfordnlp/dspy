@@ -159,7 +159,20 @@ class BaseModule:
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         from dspy.predict.predict import Predict
 
-        for name, param in self.named_parameters():
+        param_items = list(self.named_parameters())
+
+        # Two-phase load: validate all keys are present before mutating any parameter.
+        # Without this check, a missing key would raise after earlier parameters have already
+        # been overwritten, leaving the module in a partially-hydrated (corrupted) state.
+        missing = [name for name, _ in param_items if name not in state]
+        if missing:
+            raise KeyError(
+                f"Saved state is missing required keys for the following parameters: {missing}. "
+                "This can happen when the saved state was created from a different version of the "
+                "module (e.g. a parameter was added or renamed). No parameters were modified."
+            )
+
+        for name, param in param_items:
             if isinstance(param, Predict):
                 param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
             else:
