@@ -131,7 +131,7 @@ jobs:
         with:
           attestations: false
           packages-dir: .github/.internal_dspyai/dist/
-      - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5 # auto commit changes to main
+      - uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v5 # auto commit changes to main
         with:
           commit_message: Update versions
           create_branch: true
