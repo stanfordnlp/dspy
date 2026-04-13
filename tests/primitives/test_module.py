@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 import dspy
 from dspy.primitives.module import Module, set_attribute_by_name  # Adjust the import based on your file structure
 from dspy.utils import DummyLM
@@ -26,7 +27,7 @@ def test_named_predictors():
     module = HopModule()
     named_preds = module.named_predictors()
     assert len(named_preds) == 2, "Should identify correct number of Predict instances"
-    names, preds = zip(*named_preds, strict=False)
+    names, _preds = zip(*named_preds, strict=False)
     assert "predict1" in names and "predict2" in names, "Named predictors should include 'predict1' and 'predict2'"
 
 
