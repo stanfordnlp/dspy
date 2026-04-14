@@ -81,6 +81,29 @@ This is especially beneficial when:
 - Working with long system prompts that remain constant
 - Making multiple requests with similar context
 
+## Switching to Orjson Serialization
+
+By default, DSPy's disk cache uses pickle serialization. In a future release, DSPy will switch to
+orjson as the default serialization format. You can opt in to orjson now, which prevents arbitrary
+code execution during deserialization:
+
+```python
+dspy.configure_cache(use_pickle=False)
+```
+
+If you have an existing pickle-based cache that you want to migrate to orjson, set the
+`DSPY_MIGRATE_CACHE` environment variable before configuring the cache:
+
+```python
+import os
+os.environ["DSPY_MIGRATE_CACHE"] = "1"
+dspy.configure_cache(use_pickle=False)
+```
+
+This reads all legacy pickle entries, deletes the old shard database files, and re-writes the
+entries with orjson serialization. The migration is a one-time operation -- once complete, you
+can remove the environment variable.
+
 ## Disabling/Enabling DSPy Cache
 
 There are scenarios where you might need to disable caching, either entirely or selectively for in-memory or on-disk caches. For instance:

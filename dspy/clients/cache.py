@@ -20,8 +20,6 @@ from dspy.clients.cache_migration import read_legacy_entries, remove_legacy_shar
 from dspy.clients.disk_serialization import DeserializationError, OrjsonDisk
 
 logger = logging.getLogger(__name__)
-# Sentinel to distinguish a cache miss from a cached None value.
-_CACHE_MISS = object()
 
 
 def _transform_value(value):
@@ -57,6 +55,7 @@ class Cache:
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
         memory_max_entries: int = 1000000,
         use_pickle: bool = True,
+        allowed_namespaces: tuple[str, ...] | None = None,
     ):
         """
         Args:
@@ -67,6 +66,15 @@ class Cache:
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
             use_pickle: When True (default), use pickle serialization for disk cache.
                 When False, use orjson serialization (no arbitrary code execution on read).
+                To migrate an existing pickle-based cache to orjson, set the environment
+                variable `DSPY_MIGRATE_CACHE=1` before initializing the cache. Legacy
+                pickle entries are read, the old shard DBs are deleted, and entries are
+                re-written with orjson serialization.
+            allowed_namespaces: Top-level module names allowed during orjson deserialization.
+                Only modules whose root package is in this tuple will be imported when
+                reconstructing pydantic models from cached data.  Ignored when `use_pickle`
+                is True.  Defaults to `DEFAULT_ALLOWED_NAMESPACES`
+                (`litellm`, `openai`, `dspy`, `pydantic`).
         """
 
         self.enable_disk_cache = enable_disk_cache
@@ -100,6 +108,9 @@ class Cache:
                 # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
                 # as a practical "no limit" when the caller passes None.
                 effective_limit = disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40
+                fanout_kwargs = {}
+                if allowed_namespaces is not None:
+                    fanout_kwargs["disk_allowed_namespaces"] = ",".join(allowed_namespaces)
                 self.disk_cache = diskcache.FanoutCache(
                     directory=disk_cache_dir,
                     shards=16,
@@ -107,6 +118,7 @@ class Cache:
                     size_limit=effective_limit,
                     eviction_policy="least-recently-stored",
                     timeout=60,
+                    **fanout_kwargs,
                 )
 
                 if pending_entries:
@@ -174,11 +186,11 @@ class Cache:
 
         if not memory_hit and self.enable_disk_cache:
             try:
-                response = self.disk_cache.get(key, _CACHE_MISS)
+                response = self.disk_cache.get(key)
             except DeserializationError:
                 logger.debug("Failed to deserialize disk cache entry %s", key)
                 return None
-            if response is _CACHE_MISS:
+            if response is None:
                 return None
             if self.enable_memory_cache:
                 with self._lock:

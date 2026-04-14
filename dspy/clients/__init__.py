@@ -23,6 +23,7 @@ def configure_cache(
     disk_size_limit_bytes: int | None = DISK_CACHE_LIMIT,
     memory_max_entries: int = 1000000,
     use_pickle: bool = True,
+    allowed_namespaces: tuple[str, ...] | None = None,
 ):
     """Configure the cache for DSPy.
 
@@ -35,6 +36,14 @@ def configure_cache(
                             bounds, set this parameter to `math.inf` or a similar value.
         use_pickle: When True (default), use pickle serialization for disk cache. When False, use orjson
                           serialization which prevents arbitrary code execution during deserialization.
+                          To migrate an existing pickle-based cache to orjson, set the environment
+                          variable `DSPY_MIGRATE_CACHE=1` before calling this function. Legacy
+                          pickle entries are read, the old shard DBs are deleted, and entries are
+                          re-written with orjson serialization.
+        allowed_namespaces: Top-level module names allowed during orjson deserialization.
+                          Only modules whose root package is in this tuple will be imported.
+                          Ignored when `use_pickle` is True.
+                          Defaults to ("litellm", "openai", "dspy", "pydantic").
     """
 
     DSPY_CACHE = Cache(
@@ -44,6 +53,7 @@ def configure_cache(
         disk_size_limit_bytes,
         memory_max_entries,
         use_pickle=use_pickle,
+        allowed_namespaces=allowed_namespaces,
     )
 
     import dspy

@@ -16,7 +16,9 @@ from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.cache import Cache
 from dspy.clients.cache_migration import migrate_diskcache
-from dspy.clients.disk_serialization import OrjsonDisk, _decode_value, _encode_value
+from dspy.clients.disk_serialization import DEFAULT_ALLOWED_NAMESPACES, OrjsonDisk, _decode_value, _encode_value
+
+_TEST_ALLOWED_NAMESPACES = (*DEFAULT_ALLOWED_NAMESPACES, "tests", "test_disk_serialization")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,8 +52,8 @@ def _serialize(value):
     return orjson.dumps({"_data": _encode_value(value)})
 
 
-def _deserialize(blob):
-    return _decode_value(orjson.loads(blob)["_data"])
+def _deserialize(blob, allowed_namespaces=_TEST_ALLOWED_NAMESPACES):
+    return _decode_value(orjson.loads(blob)["_data"], allowed_namespaces)
 
 
 def _make_fanout_cache(directory):
@@ -253,7 +255,7 @@ def test_envelope_like_keys_not_confused(tmp_path):
 
 
 def test_poisoned_module_entry_rejected():
-    """A crafted envelope pointing to a non-BaseModel class raises DeserializationError."""
+    """A crafted envelope pointing to a disallowed namespace is rejected before import."""
     from dspy.clients.disk_serialization import DeserializationError
 
     poisoned = orjson.dumps({
@@ -261,6 +263,22 @@ def test_poisoned_module_entry_rejected():
             "__dspy_cache_type__": "pydantic",
             "__dspy_cache_module__": "os",
             "__dspy_cache_qualname__": "getcwd",
+            "__dspy_cache_data__": {},
+        }
+    })
+    with pytest.raises(DeserializationError, match="not in the allowed namespaces"):
+        _deserialize(poisoned)
+
+
+def test_allowed_namespace_non_basemodel_rejected():
+    """An allowed namespace but non-BaseModel class is rejected after import."""
+    from dspy.clients.disk_serialization import DeserializationError
+
+    poisoned = orjson.dumps({
+        "_data": {
+            "__dspy_cache_type__": "pydantic",
+            "__dspy_cache_module__": "pydantic",
+            "__dspy_cache_qualname__": "ConfigDict",
             "__dspy_cache_data__": {},
         }
     })

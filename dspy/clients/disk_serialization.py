@@ -6,6 +6,7 @@ Supports JSON-native types, pydantic models, and numpy arrays.
 
 import importlib
 import sqlite3
+from collections.abc import Sequence
 from typing import Any
 
 import orjson
@@ -20,6 +21,8 @@ _ENCODED_DATA_KEY = "__dspy_cache_data__"
 _ENCODED_DTYPE_KEY = "__dspy_cache_dtype__"
 _PYDANTIC_TYPE = "pydantic"
 _NDARRAY_TYPE = "ndarray"
+
+DEFAULT_ALLOWED_NAMESPACES = ("litellm", "openai", "dspy", "pydantic")
 
 
 def _is_ndarray(value: Any) -> bool:
@@ -61,24 +64,29 @@ _PYDANTIC_ENVELOPE_KEYS = frozenset({_ENCODED_TYPE_KEY, _ENCODED_MODULE_KEY, _EN
 _NDARRAY_ENVELOPE_KEYS = frozenset({_ENCODED_TYPE_KEY, _ENCODED_DTYPE_KEY, _ENCODED_DATA_KEY})
 
 
-def _decode_value(value: Any) -> Any:
+def _decode_value(value: Any, allowed_namespaces: Sequence[str] = DEFAULT_ALLOWED_NAMESPACES) -> Any:
     if isinstance(value, dict):
         keys = value.keys()
         encoded_type = value.get(_ENCODED_TYPE_KEY)
         if encoded_type == _PYDANTIC_TYPE and keys == _PYDANTIC_ENVELOPE_KEYS:
-            cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY])
+            cls = _resolve_class(value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY], allowed_namespaces)
             return cls.model_validate(value[_ENCODED_DATA_KEY])
         if encoded_type == _NDARRAY_TYPE and keys == _NDARRAY_ENVELOPE_KEYS:
             import numpy as np
 
             return np.asarray(value[_ENCODED_DATA_KEY], dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
-        return {k: _decode_value(v) for k, v in value.items()}
+        return {k: _decode_value(v, allowed_namespaces) for k, v in value.items()}
     if isinstance(value, list):
-        return [_decode_value(item) for item in value]
+        return [_decode_value(item, allowed_namespaces) for item in value]
     return value
 
 
-def _resolve_class(module_name: str, qualname: str) -> type:
+def _resolve_class(module_name: str, qualname: str, allowed_namespaces: Sequence[str]) -> type:
+    root_namespace = module_name.split(".")[0]
+    if root_namespace not in allowed_namespaces:
+        raise DeserializationError(
+            f"Module {module_name!r} is not in the allowed namespaces: {list(allowed_namespaces)}"
+        )
     module = importlib.import_module(module_name)
     obj = module
     for attr in qualname.split("."):
@@ -99,7 +107,20 @@ class OrjsonDisk(Disk):
 
     Handles pydantic models, numpy arrays, and JSON-native types.
     Raises TypeError for unsupported types rather than falling back to pickle.
+
+    Pass `disk_allowed_namespaces` as a comma-separated string to
+    `FanoutCache` to control which top-level module names are permitted
+    during deserialization (e.g. `disk_allowed_namespaces="litellm,openai,dspy,pydantic"`).
     """
+
+    def __init__(self, directory, allowed_namespaces=None, **kwargs):
+        super().__init__(directory, **kwargs)
+        if allowed_namespaces is None:
+            self._allowed_namespaces = DEFAULT_ALLOWED_NAMESPACES
+        elif isinstance(allowed_namespaces, str):
+            self._allowed_namespaces = tuple(allowed_namespaces.split(","))
+        else:
+            raise TypeError(f"allowed_namespaces must be a comma-separated string, got {type(allowed_namespaces).__name__}")
 
     def store(self, value, read, key=UNKNOWN):
         if not read:
@@ -112,7 +133,7 @@ class OrjsonDisk(Disk):
         if not read and mode == MODE_RAW and isinstance(data, bytes):
             try:
                 envelope = orjson.loads(data)
-                return _decode_value(envelope["_data"])
+                return _decode_value(envelope["_data"], self._allowed_namespaces)
             except (ValueError, TypeError, KeyError, ImportError, AttributeError) as e:
                 raise DeserializationError(e) from e
         return data

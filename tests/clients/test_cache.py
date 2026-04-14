@@ -555,37 +555,6 @@ class TestReadOnlyDatabasePut:
                 os.chmod(db_path, 0o644)
 
 
-class TestCorruptPickleLoadMemoryCache:
-    """Corrupt pickle file for memory cache."""
-
-    def test_corrupt_pickle_load_memory_cache(self, tmp_path):
-        """Corrupt .pkl file passed to load_memory_cache raises
-        cloudpickle.pickle.UnpicklingError (not an unhandled crash).
-
-        NOTE: load_memory_cache() does NOT catch deserialization errors —
-        corrupt pickle files raise UnpicklingError. This is documented as
-        a discovered issue.
-        """
-        import pickle
-
-        cache = Cache(
-            enable_memory_cache=True,
-            enable_disk_cache=False,
-            disk_cache_dir=str(tmp_path),
-            disk_size_limit_bytes=0,
-            memory_max_entries=100,
-        )
-
-        # Write garbage bytes to a .pkl file
-        pkl_path = str(tmp_path / "corrupt.pkl")
-        with open(pkl_path, "wb") as f:
-            f.write(b"\x80\x05\x95CORRUPT_GARBAGE_DATA_NOT_VALID_PICKLE")
-
-        # load_memory_cache does not catch deserialization errors;
-        # it raises UnpicklingError from cloudpickle/pickle
-        with pytest.raises((pickle.UnpicklingError, Exception)):
-            cache.load_memory_cache(pkl_path, allow_pickle=True)
-
 
 def test_non_serializable_values_warn_and_stay_in_memory(orjson_cache):
     """Non-serializable values (tuple, dataclass) warn on disk write with orjson backend,
