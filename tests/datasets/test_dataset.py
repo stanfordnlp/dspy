@@ -1,7 +1,7 @@
 import tempfile
 import uuid
 
-import pytest
+import pytest # type: ignore
 
 from dspy import Example
 from dspy.datasets.dataset import Dataset
