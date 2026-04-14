@@ -95,25 +95,24 @@ def _iter_legacy_entries(directory: str) -> Iterator[tuple[str, Any]]:
             continue
         conn = sqlite3.connect(shard_db, timeout=10)
         try:
-            rows = conn.execute("SELECT key, value, mode, filename FROM Cache WHERE raw = 1").fetchall()
+            cursor = conn.execute("SELECT key, value, mode, filename FROM Cache WHERE raw = 1")
+            for key, value_blob, mode, filename in cursor:
+                try:
+                    yield key, _deserialize_legacy_entry(mode, value_blob, shard_dir, filename)
+                except (
+                    ValueError,
+                    pickle.UnpicklingError,
+                    ModuleNotFoundError,
+                    AttributeError,
+                    ImportError,
+                    TypeError,
+                    OSError,
+                ) as e:
+                    raise LegacyCacheReadError(f"Failed to read legacy cache entry {key!r}") from e
         except sqlite3.OperationalError as e:
             raise LegacyCacheReadError(f"Failed to read diskcache shard {shard_id:03d}") from e
         finally:
             conn.close()
-
-        for key, value_blob, mode, filename in rows:
-            try:
-                yield key, _deserialize_legacy_entry(mode, value_blob, shard_dir, filename)
-            except (
-                ValueError,
-                pickle.UnpicklingError,
-                ModuleNotFoundError,
-                AttributeError,
-                ImportError,
-                TypeError,
-                OSError,
-            ) as e:
-                raise LegacyCacheReadError(f"Failed to read legacy cache entry {key!r}") from e
 
 
 def _transform_value(value):
@@ -129,6 +128,8 @@ def _transform_value(value):
             return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
     elif isinstance(value, dict):
         return {k: _transform_value(v) for k, v in value.items()}
+    elif isinstance(value, (list, tuple, set)):
+        return [_transform_value(v) for v in value]
     else:
         return value
 
@@ -370,14 +371,7 @@ class Cache:
         elif not memory_hit:
             return None
 
-        # --- LM-specific response mutation ---
-        # deepcopy so callers can't mutate the cached object.
-        # For LM responses, clear usage (no real call was made) and mark cache_hit.
-        response = copy.deepcopy(response)
-        if hasattr(response, "usage"):
-            response.usage = {}
-            response.cache_hit = True
-        return response
+        return copy.deepcopy(response)
 
     def put(
         self,
@@ -445,6 +439,14 @@ class Cache:
                 self.memory_cache = cloudpickle.load(f)
 
 
+def _mark_cache_hit(response: Any) -> Any:
+    """For LM responses, clear usage (no real call was made) and mark cache_hit."""
+    if hasattr(response, "usage"):
+        response.usage = {}
+        response.cache_hit = True
+    return response
+
+
 def request_cache(
     cache_arg_name: str | None = None,
     ignored_args_for_cache_key: list[str] | None = None,
@@ -504,7 +506,7 @@ def request_cache(
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
 
             if cached_result is not None:
-                return cached_result
+                return _mark_cache_hit(cached_result)
 
             # Otherwise, compute and store the result
             # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
@@ -527,7 +529,7 @@ def request_cache(
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
             if cached_result is not None:
-                return cached_result
+                return _mark_cache_hit(cached_result)
 
             # Otherwise, compute and store the result
             # Make a copy of the original request in case it's modified in place, e.g., deleting some fields

@@ -196,8 +196,6 @@ def test_full_cache_put_get_cycle_with_model_response(cache):
     result = cache.get(request)
     assert isinstance(result, ModelResponse)
     assert result.choices[0].message.content == "cached response"
-    assert result.usage == {}
-    assert result.cache_hit is True
 
 
 def test_cache_contains_checks_disk(cache):

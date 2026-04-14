@@ -349,8 +349,6 @@ class TestMigration:
         assert isinstance(result, ModelResponse)
         assert result.id == response.id
         assert result.choices[0].message.tool_calls[0].function.name == "lookup_weather"
-        assert result.cache_hit is True
-        assert result.usage == {}
 
     def test_orjson_cache_does_not_read_legacy_pickle_rows_without_migration(self, tmp_path, monkeypatch):
         request = {"model": "openai/gpt-5-nano", "prompt": "legacy_without_migration"}
@@ -482,7 +480,6 @@ def test_concurrent_disk_to_memory_promotion(tmp_path):
     for result in results:
         assert isinstance(result, ModelResponse)
         assert result.choices[0].message.content == "concurrent response"
-        assert result.cache_hit is True
 
     # deepcopy isolation: mutating one result doesn't affect another
     results[0].choices[0].message.content = "mutated"

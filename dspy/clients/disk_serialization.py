@@ -15,7 +15,7 @@ from diskcache import Disk
 from diskcache.core import MODE_BINARY, MODE_RAW, UNKNOWN
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
 _ENCODED_TYPE_KEY = "__dspy_cache_type__"
 _ENCODED_MODULE_KEY = "__dspy_cache_module__"
@@ -28,57 +28,14 @@ _NDARRAY_TYPE = "ndarray"
 
 DEFAULT_ALLOWED_NAMESPACES: tuple[str, ...] = ()
 
-def _load_embedding_response() -> type[pydantic.BaseModel]:
-    from litellm.types.utils import EmbeddingResponse
-
-    return EmbeddingResponse
-
-
-def _load_model_response() -> type[pydantic.BaseModel]:
-    from litellm.types.utils import ModelResponse
-
-    return ModelResponse
-
-
-def _load_model_response_stream() -> type[pydantic.BaseModel]:
-    from litellm.types.utils import ModelResponseStream
-
-    return ModelResponseStream
-
-
-def _load_chat_completion_message_tool_call() -> type[pydantic.BaseModel]:
-    from litellm.types.utils import ChatCompletionMessageToolCall
-
-    return ChatCompletionMessageToolCall
-
-
-def _load_chat_completion() -> type[pydantic.BaseModel]:
-    from openai.types.chat.chat_completion import ChatCompletion
-
-    return ChatCompletion
-
-
-def _load_openai_response() -> type[pydantic.BaseModel]:
-    from openai.types.responses.response import Response
-
-    return Response
-
-
-_REGISTERED_PYDANTIC_TYPES: dict[tuple[str, str], Callable[[], type[pydantic.BaseModel]]] = {
-    ("litellm.types.utils", "EmbeddingResponse"): _load_embedding_response,
-    ("litellm.types.utils", "ModelResponse"): _load_model_response,
-    ("litellm.types.utils", "ModelResponseStream"): _load_model_response_stream,
-    ("litellm.types.utils", "ChatCompletionMessageToolCall"): _load_chat_completion_message_tool_call,
-    ("openai.types.chat.chat_completion", "ChatCompletion"): _load_chat_completion,
-    ("openai.types.responses.response", "Response"): _load_openai_response,
-}
-
-
-def _load_registered_model_class(module_name: str, qualname: str) -> type[pydantic.BaseModel] | None:
-    loader = _REGISTERED_PYDANTIC_TYPES.get((module_name, qualname))
-    if loader is None:
-        return None
-    return loader()
+_REGISTERED_PYDANTIC_TYPES: frozenset[tuple[str, str]] = frozenset({
+    ("litellm.types.utils", "EmbeddingResponse"),
+    ("litellm.types.utils", "ModelResponse"),
+    ("litellm.types.utils", "ModelResponseStream"),
+    ("litellm.types.utils", "ChatCompletionMessageToolCall"),
+    ("openai.types.chat.chat_completion", "ChatCompletion"),
+    ("openai.types.responses.response", "Response"),
+})
 
 
 def _is_ndarray(value: Any) -> bool:
@@ -159,22 +116,13 @@ def _decode_value(
 
 def _resolve_class(module_name: str, qualname: str, allowed_namespaces: Sequence[str]) -> type:
     """Import and return the pydantic BaseModel class at *module_name*.*qualname*."""
-    try:
-        registered = _load_registered_model_class(module_name, qualname)
-    except ImportError as e:
-        raise DeserializationError(
-            f"Cannot import registered cache type {module_name}.{qualname!s}"
-        ) from e
-
-    if registered is not None:
-        return registered
-
-    root_namespace = module_name.split(".")[0]
-    if root_namespace not in allowed_namespaces:
-        raise DeserializationError(
-            f"{module_name}.{qualname} is not in the registered cache type registry and "
-            f"namespace {root_namespace!r} is not in allowed_namespaces {list(allowed_namespaces)}"
-        )
+    if (module_name, qualname) not in _REGISTERED_PYDANTIC_TYPES:
+        root_namespace = module_name.split(".")[0]
+        if root_namespace not in allowed_namespaces:
+            raise DeserializationError(
+                f"{module_name}.{qualname} is not in the registered cache type registry and "
+                f"namespace {root_namespace!r} is not in allowed_namespaces {list(allowed_namespaces)}"
+            )
     try:
         module = importlib.import_module(module_name)
     except ImportError as e:
@@ -247,7 +195,8 @@ class OrjsonDisk(Disk):
         try:
             envelope = orjson.loads(data)
             payload = envelope[_ENVELOPE_KEY]
-        except (ValueError, KeyError, TypeError) as e:
+            return _decode_value(payload, self._allowed_namespaces)
+        except DeserializationError:
+            raise
+        except Exception as e:
             raise DeserializationError(e) from e
-
-        return _decode_value(payload, self._allowed_namespaces)
