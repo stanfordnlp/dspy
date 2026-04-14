@@ -15,7 +15,7 @@ from diskcache import Disk
 from diskcache.core import MODE_BINARY, MODE_RAW, UNKNOWN
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 _ENCODED_TYPE_KEY = "__dspy_cache_type__"
 _ENCODED_MODULE_KEY = "__dspy_cache_module__"
@@ -28,69 +28,57 @@ _NDARRAY_TYPE = "ndarray"
 
 DEFAULT_ALLOWED_NAMESPACES: tuple[str, ...] = ()
 
-_REGISTERED_PYDANTIC_TYPE_KEYS = frozenset({
-    ("litellm.types.utils", "EmbeddingResponse"),
-    ("litellm.types.utils", "ModelResponse"),
-    ("litellm.types.utils", "ModelResponseStream"),
-    ("litellm.types.utils", "ChatCompletionMessageToolCall"),
-    ("openai.types.chat.chat_completion", "ChatCompletion"),
-    ("openai.types.responses.response", "Response"),
-})
+def _load_embedding_response() -> type[pydantic.BaseModel]:
+    from litellm.types.utils import EmbeddingResponse
+
+    return EmbeddingResponse
 
 
-def _model_key(model_cls: type[pydantic.BaseModel]) -> tuple[str, str]:
-    return model_cls.__module__, model_cls.__qualname__
+def _load_model_response() -> type[pydantic.BaseModel]:
+    from litellm.types.utils import ModelResponse
+
+    return ModelResponse
+
+
+def _load_model_response_stream() -> type[pydantic.BaseModel]:
+    from litellm.types.utils import ModelResponseStream
+
+    return ModelResponseStream
+
+
+def _load_chat_completion_message_tool_call() -> type[pydantic.BaseModel]:
+    from litellm.types.utils import ChatCompletionMessageToolCall
+
+    return ChatCompletionMessageToolCall
+
+
+def _load_chat_completion() -> type[pydantic.BaseModel]:
+    from openai.types.chat.chat_completion import ChatCompletion
+
+    return ChatCompletion
+
+
+def _load_openai_response() -> type[pydantic.BaseModel]:
+    from openai.types.responses.response import Response
+
+    return Response
+
+
+_REGISTERED_PYDANTIC_TYPES: dict[tuple[str, str], Callable[[], type[pydantic.BaseModel]]] = {
+    ("litellm.types.utils", "EmbeddingResponse"): _load_embedding_response,
+    ("litellm.types.utils", "ModelResponse"): _load_model_response,
+    ("litellm.types.utils", "ModelResponseStream"): _load_model_response_stream,
+    ("litellm.types.utils", "ChatCompletionMessageToolCall"): _load_chat_completion_message_tool_call,
+    ("openai.types.chat.chat_completion", "ChatCompletion"): _load_chat_completion,
+    ("openai.types.responses.response", "Response"): _load_openai_response,
+}
 
 
 def _load_registered_model_class(module_name: str, qualname: str) -> type[pydantic.BaseModel] | None:
-    key = (module_name, qualname)
-
-    if key == ("litellm.types.utils", "EmbeddingResponse"):
-        from litellm.types.utils import EmbeddingResponse
-
-        return EmbeddingResponse
-    if key == ("litellm.types.utils", "ModelResponse"):
-        from litellm.types.utils import ModelResponse
-
-        return ModelResponse
-    if key == ("litellm.types.utils", "ModelResponseStream"):
-        from litellm.types.utils import ModelResponseStream
-
-        return ModelResponseStream
-    if key == ("litellm.types.utils", "ChatCompletionMessageToolCall"):
-        from litellm.types.utils import ChatCompletionMessageToolCall
-
-        return ChatCompletionMessageToolCall
-    if key == ("openai.types.chat.chat_completion", "ChatCompletion"):
-        from openai.types.chat.chat_completion import ChatCompletion
-
-        return ChatCompletion
-    if key == ("openai.types.responses.response", "Response"):
-        from openai.types.responses.response import Response
-
-        return Response
-
-    return None
-
-
-def _is_allowed_model_class(
-    model_cls: type[pydantic.BaseModel], allowed_namespaces: Sequence[str],
-) -> bool:
-    if _model_key(model_cls) in _REGISTERED_PYDANTIC_TYPE_KEYS:
-        return True
-
-    return model_cls.__module__.split(".")[0] in allowed_namespaces
-
-
-def _raise_for_disallowed_model_class(
-    model_cls: type[pydantic.BaseModel], allowed_namespaces: Sequence[str],
-) -> None:
-    root_namespace = model_cls.__module__.split(".")[0]
-    raise TypeError(
-        f"Cannot cache {model_cls.__module__}.{model_cls.__qualname__}: the type is not in "
-        f"the registered cache type registry and namespace {root_namespace!r} is not in "
-        f"allowed_namespaces {list(allowed_namespaces)}"
-    )
+    loader = _REGISTERED_PYDANTIC_TYPES.get((module_name, qualname))
+    if loader is None:
+        return None
+    return loader()
 
 
 def _is_ndarray(value: Any) -> bool:
@@ -108,8 +96,14 @@ def _encode_value(
     """Convert *value* to a JSON-safe structure, wrapping pydantic models and ndarrays in envelopes."""
     if isinstance(value, pydantic.BaseModel):
         model_cls = type(value)
-        if not _is_allowed_model_class(model_cls, allowed_namespaces):
-            _raise_for_disallowed_model_class(model_cls, allowed_namespaces)
+        model_key = (model_cls.__module__, model_cls.__qualname__)
+        root_namespace = model_cls.__module__.split(".")[0]
+        if model_key not in _REGISTERED_PYDANTIC_TYPES and root_namespace not in allowed_namespaces:
+            raise TypeError(
+                f"Cannot cache {model_cls.__module__}.{model_cls.__qualname__}: the type is not in "
+                f"the registered cache type registry and namespace {root_namespace!r} is not in "
+                f"allowed_namespaces {list(allowed_namespaces)}"
+            )
 
         return {
             _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
@@ -161,18 +155,6 @@ def _decode_value(
     if isinstance(value, list):
         return [_decode_value(item, allowed_namespaces) for item in value]
     return value
-
-
-def _decode_blob(
-    blob: bytes, allowed_namespaces: Sequence[str] = DEFAULT_ALLOWED_NAMESPACES,
-) -> Any:
-    try:
-        envelope = orjson.loads(blob)
-        payload = envelope[_ENVELOPE_KEY]
-    except (ValueError, KeyError, TypeError) as e:
-        raise DeserializationError(e) from e
-
-    return _decode_value(payload, allowed_namespaces)
 
 
 def _resolve_class(module_name: str, qualname: str, allowed_namespaces: Sequence[str]) -> type:
@@ -262,4 +244,10 @@ class OrjsonDisk(Disk):
                 f"Expected orjson-encoded bytes for OrjsonDisk entry, got {type(data).__name__}"
             )
 
-        return _decode_blob(data, self._allowed_namespaces)
+        try:
+            envelope = orjson.loads(data)
+            payload = envelope[_ENVELOPE_KEY]
+        except (ValueError, KeyError, TypeError) as e:
+            raise DeserializationError(e) from e
+
+        return _decode_value(payload, self._allowed_namespaces)

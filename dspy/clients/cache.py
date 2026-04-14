@@ -7,6 +7,7 @@ import shutil
 import sqlite3
 import threading
 import warnings
+from collections.abc import Iterator
 from functools import wraps
 from hashlib import sha256
 from typing import Any
@@ -18,14 +19,101 @@ import orjson
 import pydantic
 from cachetools import LRUCache
 
-from dspy.clients.cache_migration import _NUM_SHARDS, inspect_legacy_entries
 from dspy.clients.disk_serialization import DeserializationError, OrjsonDisk
 
 logger = logging.getLogger(__name__)
 
+_NUM_SHARDS = 16
+
+# Legacy diskcache mode constants for staged migration from pickle-backed shards.
+_DC_MODE_RAW = 1
+_DC_MODE_BINARY = 2
+_DC_MODE_TEXT = 3
+_DC_MODE_PICKLE = 4
+
 
 class CacheMigrationError(RuntimeError):
     """Raised when an explicit disk cache migration cannot complete safely."""
+
+
+class LegacyCacheReadError(RuntimeError):
+    """Raised when a legacy cache entry cannot be read safely."""
+
+
+def _rebuild_incomplete_models(obj: Any) -> None:
+    """Call ``model_rebuild()`` on any incomplete pydantic model classes in *obj*."""
+    seen: set[type] = set()
+
+    def _walk(value: Any) -> None:
+        if isinstance(value, pydantic.BaseModel):
+            cls = type(value)
+            if cls not in seen:
+                seen.add(cls)
+                if not cls.__pydantic_complete__:
+                    cls.model_rebuild()
+            for field_value in dict(value).values():
+                _walk(field_value)
+        elif isinstance(value, dict):
+            for child in value.values():
+                _walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                _walk(child)
+
+    _walk(obj)
+
+
+def _deserialize_legacy_entry(mode: int, value_blob: bytes | None, shard_dir: str, filename: str | None) -> Any:
+    if mode == _DC_MODE_PICKLE:
+        if value_blob is not None:
+            obj = pickle.loads(value_blob)
+        else:
+            filepath = os.path.join(shard_dir, filename)
+            with open(filepath, "rb") as f:
+                obj = pickle.loads(f.read())
+        _rebuild_incomplete_models(obj)
+        return obj
+    if mode == _DC_MODE_TEXT:
+        filepath = os.path.join(shard_dir, filename)
+        with open(filepath, encoding="UTF-8") as f:
+            return f.read()
+    if mode == _DC_MODE_RAW:
+        return bytes(value_blob) if value_blob is not None else b""
+    if mode == _DC_MODE_BINARY:
+        filepath = os.path.join(shard_dir, filename)
+        with open(filepath, "rb") as f:
+            return f.read()
+    raise ValueError(f"Unknown diskcache mode {mode}")
+
+
+def _iter_legacy_entries(directory: str) -> Iterator[tuple[str, Any]]:
+    """Yield decoded legacy cache entries from *directory*."""
+    for shard_id in range(_NUM_SHARDS):
+        shard_dir = os.path.join(directory, f"{shard_id:03d}")
+        shard_db = os.path.join(shard_dir, "cache.db")
+        if not os.path.isfile(shard_db):
+            continue
+        conn = sqlite3.connect(shard_db, timeout=10)
+        try:
+            rows = conn.execute("SELECT key, value, mode, filename FROM Cache WHERE raw = 1").fetchall()
+        except sqlite3.OperationalError as e:
+            raise LegacyCacheReadError(f"Failed to read diskcache shard {shard_id:03d}") from e
+        finally:
+            conn.close()
+
+        for key, value_blob, mode, filename in rows:
+            try:
+                yield key, _deserialize_legacy_entry(mode, value_blob, shard_dir, filename)
+            except (
+                ValueError,
+                pickle.UnpicklingError,
+                ModuleNotFoundError,
+                AttributeError,
+                ImportError,
+                TypeError,
+                OSError,
+            ) as e:
+                raise LegacyCacheReadError(f"Failed to read legacy cache entry {key!r}") from e
 
 
 def _transform_value(value):
@@ -130,7 +218,15 @@ class Cache:
         if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
             self._migrate_legacy_cache(disk_cache_dir, effective_limit, fanout_kwargs)
 
-        self.disk_cache = diskcache.FanoutCache(
+        self.disk_cache = self._create_orjson_disk_cache(disk_cache_dir, effective_limit, fanout_kwargs)
+
+    @staticmethod
+    def _create_orjson_disk_cache(
+        disk_cache_dir: str,
+        effective_limit: int,
+        fanout_kwargs: dict[str, str],
+    ) -> diskcache.FanoutCache:
+        return diskcache.FanoutCache(
             directory=disk_cache_dir,
             shards=_NUM_SHARDS,
             disk=OrjsonDisk,
@@ -146,41 +242,44 @@ class Cache:
         effective_limit: int,
         fanout_kwargs: dict[str, str],
     ) -> None:
-        """Read legacy pickle entries, write to a staging cache, and swap on success."""
-        legacy_report = inspect_legacy_entries(disk_cache_dir)
-        if legacy_report.row_count == 0 and legacy_report.read_failures == 0:
-            return
-
+        """Copy legacy pickle entries into staging and swap on success."""
         staging_dir = f"{disk_cache_dir}.dspy_orjson_staging"
         self._remove_staging_dir(staging_dir)
 
-        if legacy_report.read_failures > 0:
-            raise CacheMigrationError(
-                "Cache migration aborted after "
-                f"{legacy_report.read_failures} read failures; the legacy cache was preserved. "
-                "Fix the unreadable entries and re-run with DSPY_MIGRATE_CACHE=1."
-            )
-
-        staging_cache = diskcache.FanoutCache(
-            directory=staging_dir,
-            shards=_NUM_SHARDS,
-            disk=OrjsonDisk,
-            size_limit=effective_limit,
-            eviction_policy="least-recently-stored",
-            timeout=60,
-            **fanout_kwargs,
-        )
+        staging_cache = self._create_orjson_disk_cache(staging_dir, effective_limit, fanout_kwargs)
+        migrated = 0
+        read_failure: LegacyCacheReadError | None = None
+        write_failure: TypeError | orjson.JSONEncodeError | diskcache.Timeout | OSError | sqlite3.OperationalError | None = None
         try:
-            errors = self._migrate_entries(legacy_report.entries, staging_cache, disk_cache_dir)
+            for key, value in _iter_legacy_entries(disk_cache_dir):
+                try:
+                    staging_cache[key] = value
+                except (TypeError, orjson.JSONEncodeError, diskcache.Timeout, OSError, sqlite3.OperationalError) as e:
+                    write_failure = e
+                    break
+                migrated += 1
+        except LegacyCacheReadError as e:
+            read_failure = e
         finally:
             staging_cache.close()
 
-        if errors > 0:
+        if read_failure is not None:
             self._remove_staging_dir(staging_dir)
             raise CacheMigrationError(
-                f"Cache migration aborted after {errors} write failures; the legacy cache was "
-                "preserved. Re-run with DSPY_MIGRATE_CACHE=1 after fixing the failing entries."
-            )
+                "Cache migration aborted after a read failure; the legacy cache was preserved. "
+                "Fix the unreadable entry and re-run with DSPY_MIGRATE_CACHE=1."
+            ) from read_failure
+
+        if write_failure is not None:
+            self._remove_staging_dir(staging_dir)
+            raise CacheMigrationError(
+                "Cache migration aborted after a write failure; the legacy cache was preserved. "
+                "Re-run with DSPY_MIGRATE_CACHE=1 after fixing the failing entry."
+            ) from write_failure
+
+        if migrated == 0:
+            self._remove_staging_dir(staging_dir)
+            return
 
         self._promote_staging_dir(disk_cache_dir, staging_dir)
 
@@ -221,28 +320,6 @@ class Cache:
             shutil.rmtree(staging_dir)
         except OSError as e:
             logger.warning("Could not remove staging directory %s: %s", staging_dir, e)
-
-    def _migrate_entries(self, entries: list, target: diskcache.FanoutCache, disk_cache_dir: str) -> int:
-        """Write pre-read legacy entries into *target* and return the number of errors."""
-        logger.info("Migrating %d legacy diskcache entries in %s to orjson format...", len(entries), disk_cache_dir)
-        migrated = 0
-        errors = 0
-        for key, value in entries:
-            try:
-                target[key] = value
-                migrated += 1
-            except (TypeError, orjson.JSONEncodeError) as e:
-                errors += 1
-                logger.debug("Failed to migrate cache entry %.16s: %s", key, e)
-        if errors == 0:
-            logger.info("Cache migration complete: %d entries migrated.", migrated)
-        else:
-            logger.warning(
-                "Cache migration finished with errors: %d migrated, %d failed.",
-                migrated,
-                errors,
-            )
-        return errors
 
     def __contains__(self, key: str) -> bool:
         """Check if a key is in the cache."""

@@ -16,7 +16,6 @@ import pytest
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.cache import Cache, CacheMigrationError
-from dspy.clients.cache_migration import migrate_diskcache
 from dspy.clients.disk_serialization import (
     _ENVELOPE_KEY,
     DEFAULT_ALLOWED_NAMESPACES,
@@ -328,72 +327,6 @@ def test_allowed_namespace_non_basemodel_rejected():
 
 
 class TestMigration:
-    def test_migrate_basic_entries(self, tmp_path):
-        _create_diskcache_shard(
-            str(tmp_path / "000"),
-            [("key1", {"hello": "world"}, 1000.0), ("key2", 42, 2000.0)],
-        )
-        target = _make_fanout_cache(str(tmp_path / "new_cache"))
-        migrated, errors = migrate_diskcache(str(tmp_path), target)
-        assert migrated == 2
-        assert errors == 0
-        assert target["key1"] == {"hello": "world"}
-        assert target["key2"] == 42
-
-    def test_migrate_file_backed_entries(self, tmp_path):
-        _create_diskcache_shard_with_file(
-            str(tmp_path / "000"), "file_key", {"large": "data"}, time.time()
-        )
-        target = _make_fanout_cache(str(tmp_path / "new_cache"))
-        migrated, errors = migrate_diskcache(str(tmp_path), target)
-        assert migrated == 1
-        assert target["file_key"] == {"large": "data"}
-
-    def test_migrate_skips_corrupt_entries(self, tmp_path):
-        shard_dir = str(tmp_path / "000")
-        os.makedirs(shard_dir)
-        conn = sqlite3.connect(os.path.join(shard_dir, "cache.db"))
-        conn.execute("CREATE TABLE IF NOT EXISTS Settings (key TEXT NOT NULL UNIQUE, value)")
-        conn.execute("INSERT OR REPLACE INTO Settings VALUES ('eviction_policy', 'least-recently-stored')")
-        conn.execute(
-            "CREATE TABLE Cache ("
-            "  rowid INTEGER PRIMARY KEY, key BLOB, raw INTEGER,"
-            "  store_time REAL, expire_time REAL, access_time REAL,"
-            "  access_count INTEGER DEFAULT 0, tag BLOB, size INTEGER DEFAULT 0,"
-            "  mode INTEGER DEFAULT 0, filename TEXT, value BLOB)"
-        )
-        conn.execute(
-            "INSERT INTO Cache (key, raw, value, mode, access_time, size) VALUES (?, 1, ?, 4, ?, 50)",
-            ("good", pickle.dumps("hello"), time.time()),
-        )
-        conn.execute(
-            "INSERT INTO Cache (key, raw, value, mode, access_time, size) VALUES (?, 1, ?, 4, ?, 50)",
-            ("bad", b"\x80\x04\x95CORRUPT", time.time()),
-        )
-        conn.commit()
-        conn.close()
-
-        target = _make_fanout_cache(str(tmp_path / "new_cache"))
-        migrated, errors = migrate_diskcache(str(tmp_path), target)
-        # read_legacy_entries silently skips the corrupt entry, so only 1 is read and migrated
-        assert migrated == 1
-        assert errors == 0
-        assert target["good"] == "hello"
-
-    def test_migrate_handles_missing_shards_and_wrong_schema(self, tmp_path):
-        _create_diskcache_shard(str(tmp_path / "000"), [("k1", "v1", time.time())])
-        shard_dir = str(tmp_path / "001")
-        os.makedirs(shard_dir)
-        conn = sqlite3.connect(os.path.join(shard_dir, "cache.db"))
-        conn.execute("CREATE TABLE other (id INTEGER)")
-        conn.commit()
-        conn.close()
-
-        target = _make_fanout_cache(str(tmp_path / "new_cache"))
-        migrated, errors = migrate_diskcache(str(tmp_path), target)
-        assert migrated == 1
-        assert errors == 0
-
     def test_cache_init_migration_e2e(self, tmp_path, monkeypatch):
         response = ModelResponse(
             id="chatcmpl-legacy",
@@ -404,7 +337,7 @@ class TestMigration:
         )
         request = {"model": "openai/gpt-5-nano", "prompt": "what is 2+2"}
         key = sha256(orjson.dumps(request, option=orjson.OPT_SORT_KEYS)).hexdigest()
-        _create_diskcache_shard(str(tmp_path / "000"), [(key, response, time.time())])
+        _create_diskcache_shard_with_file(str(tmp_path / "000"), key, response, time.time())
 
         monkeypatch.setenv("DSPY_MIGRATE_CACHE", "1")
         cache = Cache(
@@ -464,7 +397,7 @@ class TestMigration:
 
         monkeypatch.setenv("DSPY_MIGRATE_CACHE", "1")
 
-        with pytest.raises(CacheMigrationError, match="read failures"):
+        with pytest.raises(CacheMigrationError, match="read failure"):
             Cache(
                 enable_disk_cache=True,
                 enable_memory_cache=False,
@@ -480,20 +413,15 @@ class TestMigration:
     def test_cache_init_migration_preserves_legacy_on_partial_failure(self, tmp_path, monkeypatch):
         """When some entries fail to migrate, legacy shard DBs are preserved."""
         key_good = sha256(orjson.dumps({"p": "good"}, option=orjson.OPT_SORT_KEYS)).hexdigest()
-        _create_diskcache_shard(str(tmp_path / "000"), [(key_good, {"v": 1}, time.time())])
+        key_bad = sha256(orjson.dumps({"p": "bad"}, option=orjson.OPT_SORT_KEYS)).hexdigest()
+        _create_diskcache_shard(
+            str(tmp_path / "000"),
+            [(key_good, {"v": 1}, time.time()), (key_bad, (1, 2, 3), time.time())],
+        )
 
         monkeypatch.setenv("DSPY_MIGRATE_CACHE", "1")
 
-        # Patch _migrate_entries to simulate a failure (return errors > 0)
-        def failing_migrate(self, entries, target, disk_cache_dir):
-            # Write one entry, then pretend one failed
-            for k, v in entries:
-                target[k] = v
-            return 1  # 1 error
-
-        monkeypatch.setattr(Cache, "_migrate_entries", failing_migrate)
-
-        with pytest.raises(CacheMigrationError, match="write failures"):
+        with pytest.raises(CacheMigrationError, match="write failure"):
             Cache(
                 enable_disk_cache=True,
                 enable_memory_cache=False,
