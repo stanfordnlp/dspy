@@ -643,6 +643,35 @@ def test_direct_cache_get_marks_cache_hit(cache):
     assert result.usage == {}
 
 
+def test_cache_hit_does_not_mutate_stored_response(cache):
+    """Cache hits should mark only the returned copy, not the stored cache entry."""
+    from litellm import ModelResponse
+
+    response = ModelResponse(
+        id="test",
+        choices=[{"message": {"content": "hi"}, "index": 0, "finish_reason": "stop"}],
+        usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    )
+    request = {"model": "test", "prompt": "non_mutating_cache_hit"}
+    key = cache.cache_key(request)
+
+    cache.put(request, response)
+
+    result_from_memory = cache.get(request)
+    assert result_from_memory.cache_hit is True
+    assert result_from_memory.usage == {}
+    assert cache.memory_cache[key].usage.total_tokens == 2
+    assert not hasattr(cache.memory_cache[key], "cache_hit")
+
+    cache.reset_memory_cache()
+
+    result_from_disk = cache.get(request)
+    assert result_from_disk.cache_hit is True
+    assert result_from_disk.usage == {}
+    assert cache.memory_cache[key].usage.total_tokens == 2
+    assert not hasattr(cache.memory_cache[key], "cache_hit")
+
+
 def test_deep_nesting_returns_none_on_recursion_error(cache):
     """Deeply nested structures gracefully return None instead of crashing."""
 

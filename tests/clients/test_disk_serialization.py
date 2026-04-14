@@ -51,6 +51,11 @@ class AliasPydanticModel(pydantic.BaseModel):
     actual_name: int = pydantic.Field(alias="wire_name")
 
 
+class NullablePydanticModel(pydantic.BaseModel):
+    required_nullable: int | None
+    optional_nullable: int | None = None
+
+
 def _serialize(value, allowed_namespaces=_TEST_ALLOWED_NAMESPACES):
     return orjson.dumps({_ENVELOPE_KEY: _encode_value(value, allowed_namespaces)})
 
@@ -119,6 +124,25 @@ def test_serialize_roundtrip_pydantic(model):
     result = _deserialize(_serialize(model))
     assert isinstance(result, type(model))
     assert result == model
+
+
+def test_serialize_roundtrip_pydantic_preserves_explicit_none_fields():
+    model = NullablePydanticModel(required_nullable=None, optional_nullable=None)
+
+    result = _deserialize(_serialize(model))
+
+    assert result == model
+    assert result.model_fields_set == {"required_nullable", "optional_nullable"}
+
+
+def test_serialize_roundtrip_pydantic_preserves_unset_fields():
+    model = NullablePydanticModel(required_nullable=None)
+
+    result = _deserialize(_serialize(model))
+
+    assert result == model
+    assert result.model_fields_set == {"required_nullable"}
+    assert result.model_dump(exclude_unset=True) == {"required_nullable": None}
 
 
 def test_large_orjson_entries_use_diskcache_file_storage(tmp_path):

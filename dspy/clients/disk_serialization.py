@@ -66,7 +66,7 @@ def _encode_value(
             _ENCODED_TYPE_KEY: _PYDANTIC_TYPE,
             _ENCODED_MODULE_KEY: model_cls.__module__,
             _ENCODED_QUALNAME_KEY: model_cls.__qualname__,
-            _ENCODED_DATA_KEY: value.model_dump(mode="json", exclude_none=True, by_alias=True),
+            _ENCODED_DATA_KEY: value.model_dump(mode="json", by_alias=True, exclude_unset=True),
         }
     if _is_ndarray(value):
         return {

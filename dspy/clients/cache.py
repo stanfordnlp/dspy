@@ -35,8 +35,14 @@ def _transform_value(value):
             return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
     elif isinstance(value, dict):
         return {k: _transform_value(v) for k, v in value.items()}
-    elif isinstance(value, (list, tuple, set)):
+    elif isinstance(value, (list, tuple)):
         return [_transform_value(v) for v in value]
+    elif isinstance(value, (set, frozenset)):
+        transformed_values = [_transform_value(v) for v in value]
+        return sorted(
+            transformed_values,
+            key=lambda transformed_value: orjson.dumps(transformed_value, option=orjson.OPT_SORT_KEYS),
+        )
     else:
         return value
 
@@ -160,8 +166,7 @@ class Cache:
             with self._lock:
                 if key in self.memory_cache:
                     response = self.memory_cache[key]
-                    response = _mark_cache_hit(response)
-                    return copy.deepcopy(response)
+                    return _mark_cache_hit(copy.deepcopy(response))
 
         if self.enable_disk_cache:
             try:
@@ -176,8 +181,7 @@ class Cache:
                 if self.enable_memory_cache:
                     with self._lock:
                         self.memory_cache[key] = response
-                response = _mark_cache_hit(response)
-                return copy.deepcopy(response)
+                return _mark_cache_hit(copy.deepcopy(response))
 
         return None
 
@@ -314,7 +318,7 @@ def request_cache(
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
 
             if cached_result is not None:
-                return _mark_cache_hit(cached_result)
+                return cached_result
 
             # Otherwise, compute and store the result
             # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
@@ -337,7 +341,7 @@ def request_cache(
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
             if cached_result is not None:
-                return _mark_cache_hit(cached_result)
+                return cached_result
 
             # Otherwise, compute and store the result
             # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
