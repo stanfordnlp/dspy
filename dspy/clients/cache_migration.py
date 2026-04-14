@@ -1,7 +1,4 @@
-"""Legacy pickle-to-orjson cache migration utilities.
-
-Extracted from cache.py to keep the runtime Cache class focused on read/write.
-"""
+"""Legacy pickle-to-orjson cache migration utilities."""
 
 import logging
 import os

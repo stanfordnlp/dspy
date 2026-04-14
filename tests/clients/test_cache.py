@@ -437,7 +437,7 @@ def test_cache_consistency_with_lm_call_modifies_the_request(cache):
 
 
 # ---------------------------------------------------------------------------
-# Tests from test_cache_key_isolation.py
+# Cache key isolation
 # ---------------------------------------------------------------------------
 
 
@@ -515,7 +515,7 @@ class TestCacheKeyIsolation:
 
 
 # ---------------------------------------------------------------------------
-# Tests from test_cache_error_handling.py
+# Cache error handling
 # ---------------------------------------------------------------------------
 
 
