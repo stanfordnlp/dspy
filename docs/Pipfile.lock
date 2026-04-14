@@ -1236,11 +1236,11 @@
         },
         "mkdocs-autorefs": {
             "hashes": [
-                "sha256:4b5b6235a4becb2b10425c2fa191737e415b37aa3418919db33e5d774c9db079",
-                "sha256:9793c5ac06a6ebbe52ec0f8439256e66187badf4b5334b5fde0b128ec134df4f"
+                "sha256:834ef5408d827071ad1bc69e0f39704fa34c7fc05bc8e1c72b227dfdc5c76089",
+                "sha256:d54a284f27a7346b9c38f1f852177940c222da508e66edc816a0fa55fc6da197"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.4.1"
+            "version": "==1.4.4"
         },
         "mkdocs-get-deps": {
             "hashes": [
@@ -1290,12 +1290,12 @@
         },
         "mkdocstrings": {
             "hashes": [
-                "sha256:3657be1384543ce0ee82112c3e521bbf48e41303aa0c229b9ffcccba057d922e",
-                "sha256:8ea98358d2006f60befa940fdebbbc88a26b37ecbcded10be726ba359284f73d"
+                "sha256:0d66d18430c2201dc7fe85134277382baaa15e6b30979f3f3bdbabd6dbdb6046",
+                "sha256:ab670f55040722b49bb45865b2e93b824450fb4aef638b00d7acb493a9020434"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.9'",
-            "version": "==0.29.0"
+            "markers": "python_version >= '3.10'",
+            "version": "==1.0.3"
         },
         "mkdocstrings-python": {
             "hashes": [
