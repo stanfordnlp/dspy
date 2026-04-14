@@ -9,7 +9,7 @@ import dspy
 import dspy.clients
 from dspy import Example
 from dspy.predict import Predict
-from dspy.teleprompt.gepa import instruction_proposal
+from dspy.teleprompt.gepa import gepa_utils, instruction_proposal
 from dspy.utils.dummies import DummyLM
 
 
@@ -521,3 +521,89 @@ def test_alternating_half_component_selector():
             # Odd iteration should select second half: ["generator"]
             assert "generator" in selection["selected"], f"Odd iteration {selection['iteration']} should include generator"
             assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"
+
+
+def _run_gepa_capture_feedbacks(metric_fn):
+    """Helper: run GEPA with the given metric and return all Feedback strings produced."""
+    captured_datasets = []
+    original = gepa_utils.DspyAdapter.make_reflective_dataset
+
+    def capturing_make_reflective(self, candidate, eval_batch, components_to_update):
+        result = original(self, candidate, eval_batch, components_to_update)
+        captured_datasets.append(result)
+        return result
+
+    task_lm = DummyLM([{"answer": "4"}] * 20)
+    reflection_lm = DummyLM([{"improved_instruction": "Be more precise."}] * 10)
+    trainset = [dspy.Example(question="What is 2+2?", answer="4").with_inputs("question")]
+
+    with mock.patch.object(gepa_utils.DspyAdapter, "make_reflective_dataset", capturing_make_reflective):
+        with dspy.context(lm=task_lm):
+            optimizer = dspy.GEPA(
+                metric=metric_fn,
+                reflection_lm=reflection_lm,
+                max_metric_calls=4,
+                warn_on_score_mismatch=False,
+            )
+            optimizer.compile(dspy.Predict("question -> answer"), trainset=trainset, valset=trainset)
+
+    return [
+        example["Feedback"]
+        for dataset in captured_datasets
+        for examples in dataset.values()
+        for example in examples
+    ]
+
+
+def test_gepa_feedback_updated_on_score_mismatch():
+    """
+    When a stochastic metric returns different scores at module level vs predictor level,
+    GEPA overrides fb["score"] to module_score. The Feedback field in the resulting
+    ReflectiveExample must also be updated to the module-level feedback so that score
+    and feedback describe the same evaluation.
+
+    Regression test for: https://github.com/stanfordnlp/dspy/issues/8846
+    """
+    module_feedback_sentinel = "module-level-feedback-SENTINEL"
+    predictor_feedback_sentinel = "predictor-level-feedback-SENTINEL"
+
+    def stochastic_metric(example, pred, trace=None, pred_name=None, pred_trace=None):
+        # Simulates a stochastic LLM-as-judge: different score and feedback at each call level
+        if pred_name is None:
+            return dspy.Prediction(score=0.9, feedback=module_feedback_sentinel)
+        return dspy.Prediction(score=0.3, feedback=predictor_feedback_sentinel)
+
+    all_feedbacks = _run_gepa_capture_feedbacks(stochastic_metric)
+    assert len(all_feedbacks) > 0, "No reflective examples generated — test setup issue."
+
+    for feedback in all_feedbacks:
+        assert feedback == module_feedback_sentinel, (
+            f"Score was overridden to module_score but Feedback still came from the "
+            f"predictor-level call. Expected {module_feedback_sentinel!r}, got {feedback!r}. "
+            f"See https://github.com/stanfordnlp/dspy/issues/8846"
+        )
+
+
+def test_gepa_feedback_fallback_when_no_module_feedback():
+    """
+    When the module-level metric returns no feedback field (score only), GEPA should
+    fall back to the documented default: "This trajectory got a score of {score}."
+    rather than leaving the mismatched predictor-level feedback in place.
+
+    Regression test for: https://github.com/stanfordnlp/dspy/issues/8846
+    """
+
+    def score_only_metric(example, pred, trace=None, pred_name=None, pred_trace=None):
+        # Module-level call returns score only (no feedback) — predictor level returns both
+        if pred_name is None:
+            return dspy.Prediction(score=0.9)
+        return dspy.Prediction(score=0.3, feedback="predictor-level-feedback")
+
+    all_feedbacks = _run_gepa_capture_feedbacks(score_only_metric)
+    assert len(all_feedbacks) > 0, "No reflective examples generated — test setup issue."
+
+    for feedback in all_feedbacks:
+        assert feedback == "This trajectory got a score of 0.9.", (
+            f"When module-level metric returns no feedback, expected score-based fallback, "
+            f"got {feedback!r}. See https://github.com/stanfordnlp/dspy/issues/8846"
+        )
