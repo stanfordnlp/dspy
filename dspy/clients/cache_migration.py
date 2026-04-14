@@ -8,15 +8,59 @@ import logging
 import os
 import pickle
 import sqlite3
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_NUM_SHARDS = 16
 
 # Legacy diskcache mode constants (used during migration from FanoutCache shards)
 _DC_MODE_RAW = 1
 _DC_MODE_BINARY = 2
 _DC_MODE_TEXT = 3
 _DC_MODE_PICKLE = 4
+
+
+@dataclass
+class LegacyReadReport:
+    entries: list[tuple[str, Any]]
+    row_count: int
+    read_failures: int
+
+
+def _rebuild_incomplete_models(obj: Any) -> None:
+    """Call ``model_rebuild()`` on any incomplete pydantic model classes in *obj*.
+
+    Unpickling pydantic models across Python versions, or when the openai/litellm
+    SDK defers model building (``DEFER_PYDANTIC_BUILD``), can leave classes with a
+    ``MockValSer`` placeholder instead of a real ``SchemaSerializer``.  Calling
+    ``model_rebuild()`` forces the class to build its schema; this is a no-op if
+    the class is already complete.
+
+    See https://github.com/pydantic/pydantic/issues/7713
+    """
+    import pydantic
+
+    seen: set[type] = set()
+
+    def _walk(value: Any) -> None:
+        if isinstance(value, pydantic.BaseModel):
+            cls = type(value)
+            if cls not in seen:
+                seen.add(cls)
+                if not cls.__pydantic_complete__:
+                    cls.model_rebuild()
+            for field_value in dict(value).values():
+                _walk(field_value)
+        elif isinstance(value, dict):
+            for v in value.values():
+                _walk(v)
+        elif isinstance(value, list):
+            for item in value:
+                _walk(item)
+
+    _walk(obj)
 
 
 def _deserialize_legacy_entry(mode: int, value_blob: bytes | None, shard_dir: str, filename: str | None) -> Any:
@@ -26,10 +70,13 @@ def _deserialize_legacy_entry(mode: int, value_blob: bytes | None, shard_dir: st
     """
     if mode == _DC_MODE_PICKLE:
         if value_blob is not None:
-            return pickle.loads(value_blob)
-        filepath = os.path.join(shard_dir, filename)
-        with open(filepath, "rb") as f:
-            return pickle.loads(f.read())
+            obj = pickle.loads(value_blob)
+        else:
+            filepath = os.path.join(shard_dir, filename)
+            with open(filepath, "rb") as f:
+                obj = pickle.loads(f.read())
+        _rebuild_incomplete_models(obj)
+        return obj
     if mode == _DC_MODE_TEXT:
         filepath = os.path.join(shard_dir, filename)
         with open(filepath, encoding="UTF-8") as f:
@@ -43,17 +90,20 @@ def _deserialize_legacy_entry(mode: int, value_blob: bytes | None, shard_dir: st
     raise ValueError(f"Unknown diskcache mode {mode}")
 
 
-def read_legacy_entries(directory: str) -> list[tuple[str, Any]]:
-    """Read all legacy diskcache entries from 16 shards, returning (key, value) pairs.
+def inspect_legacy_entries(directory: str) -> LegacyReadReport:
+    """Read all legacy diskcache entries from 16 shards and report read failures.
 
     Must be called BEFORE FanoutCache is created in the same directory,
     since FanoutCache will overwrite the shard DB files.
 
     Entries that fail to deserialize (corrupt pickle, missing modules, etc.)
-    are silently skipped.
+    are counted in ``read_failures`` so callers can decide whether to abort
+    migration and preserve the source cache.
     """
     entries = []
-    for shard_id in range(16):
+    row_count = 0
+    read_failures = 0
+    for shard_id in range(_NUM_SHARDS):
         shard_dir = os.path.join(directory, f"{shard_id:03d}")
         shard_db = os.path.join(shard_dir, "cache.db")
         if not os.path.isfile(shard_db):
@@ -66,16 +116,19 @@ def read_legacy_entries(directory: str) -> list[tuple[str, Any]]:
                 "SELECT key, value, mode, access_time, filename FROM Cache WHERE raw = 1"
             ).fetchall()
         except sqlite3.OperationalError as e:
-            logger.warning("Skipping diskcache shard %03d: %s", shard_id, e)
-            conn.close()
+            read_failures += 1
+            logger.warning("Failed to read diskcache shard %03d during migration: %s", shard_id, e)
             continue
-        conn.close()
+        finally:
+            conn.close()
         for key, value_blob, mode, _access_time, filename in rows:
+            row_count += 1
             try:
                 obj = _deserialize_legacy_entry(mode, value_blob, shard_dir, filename)
                 entries.append((key, obj))
-            except ValueError:
-                logger.debug("Skipping entry with unknown diskcache mode %d", mode)
+            except ValueError as e:
+                read_failures += 1
+                logger.debug("Failed to read legacy cache entry %.16s: %s", key, e)
             except (
                 pickle.UnpicklingError,
                 ModuleNotFoundError,
@@ -84,8 +137,14 @@ def read_legacy_entries(directory: str) -> list[tuple[str, Any]]:
                 TypeError,
                 OSError,
             ) as e:
+                read_failures += 1
                 logger.debug("Failed to read legacy cache entry %.16s: %s", key, e)
-    return entries
+    return LegacyReadReport(entries=entries, row_count=row_count, read_failures=read_failures)
+
+
+def read_legacy_entries(directory: str) -> list[tuple[str, Any]]:
+    """Read all legacy diskcache entries from 16 shards, returning (key, value) pairs."""
+    return inspect_legacy_entries(directory).entries
 
 
 def remove_legacy_shard_dbs(directory: str) -> None:
@@ -96,7 +155,7 @@ def remove_legacy_shard_dbs(directory: str) -> None:
 
     Logs a warning and continues if a file cannot be removed (e.g. read-only filesystem).
     """
-    for shard_id in range(16):
+    for shard_id in range(_NUM_SHARDS):
         shard_dir = os.path.join(directory, f"{shard_id:03d}")
         for suffix in ("cache.db", "cache.db-wal", "cache.db-shm"):
             path = os.path.join(shard_dir, suffix)

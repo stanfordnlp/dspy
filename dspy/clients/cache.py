@@ -3,12 +3,14 @@ import inspect
 import logging
 import os
 import pickle
+import shutil
 import sqlite3
 import threading
 import warnings
 from functools import wraps
 from hashlib import sha256
 from typing import Any
+from uuid import uuid4
 
 import cloudpickle
 import diskcache
@@ -16,10 +18,14 @@ import orjson
 import pydantic
 from cachetools import LRUCache
 
-from dspy.clients.cache_migration import read_legacy_entries, remove_legacy_shard_dbs
+from dspy.clients.cache_migration import _NUM_SHARDS, inspect_legacy_entries
 from dspy.clients.disk_serialization import DeserializationError, OrjsonDisk
 
 logger = logging.getLogger(__name__)
+
+
+class CacheMigrationError(RuntimeError):
+    """Raised when an explicit disk cache migration cannot complete safely."""
 
 
 def _transform_value(value):
@@ -68,13 +74,13 @@ class Cache:
                 When False, use orjson serialization (no arbitrary code execution on read).
                 To migrate an existing pickle-based cache to orjson, set the environment
                 variable `DSPY_MIGRATE_CACHE=1` before initializing the cache. Legacy
-                pickle entries are read, the old shard DBs are deleted, and entries are
-                re-written with orjson serialization.
-            allowed_namespaces: Top-level module names allowed during orjson deserialization.
-                Only modules whose root package is in this tuple will be imported when
-                reconstructing pydantic models from cached data.  Ignored when `use_pickle`
-                is True.  Defaults to `DEFAULT_ALLOWED_NAMESPACES`
-                (`litellm`, `openai`, `dspy`, `pydantic`).
+                pickle entries are read and re-written with orjson serialization. Migration
+                aborts if any legacy entries cannot be read or written, preserving the source
+                cache for a retry.
+            allowed_namespaces: Additional top-level module names allowed during orjson
+                deserialization for custom pydantic models that are not part of the built-in
+                cache type registry. Ignored when `use_pickle` is True. Defaults to no
+                additional namespaces.
         """
 
         self.enable_disk_cache = enable_disk_cache
@@ -89,55 +95,143 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            if use_pickle:
-                self.disk_cache = diskcache.FanoutCache(
-                    shards=16,
-                    timeout=10,
-                    directory=disk_cache_dir,
-                    size_limit=disk_size_limit_bytes,
-                )
-            else:
-                # When DSPY_MIGRATE_CACHE=1, read legacy pickle entries BEFORE
-                # creating FanoutCache (which overwrites the shard DB files).
-                pending_entries = None
-                if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
-                    pending_entries = read_legacy_entries(disk_cache_dir)
-                    if pending_entries:
-                        remove_legacy_shard_dbs(disk_cache_dir)
-
-                # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
-                # as a practical "no limit" when the caller passes None.
-                effective_limit = disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40
-                fanout_kwargs = {}
-                if allowed_namespaces is not None:
-                    fanout_kwargs["disk_allowed_namespaces"] = ",".join(allowed_namespaces)
-                self.disk_cache = diskcache.FanoutCache(
-                    directory=disk_cache_dir,
-                    shards=16,
-                    disk=OrjsonDisk,
-                    size_limit=effective_limit,
-                    eviction_policy="least-recently-stored",
-                    timeout=60,
-                    **fanout_kwargs,
-                )
-
-                if pending_entries:
-                    self._migrate_entries(pending_entries, disk_cache_dir)
+            self._init_disk_cache(
+                use_pickle, disk_cache_dir, disk_size_limit_bytes, allowed_namespaces,
+            )
         else:
             self.disk_cache = {}
 
         self._lock = threading.RLock()
 
-    def _migrate_entries(self, entries: list, disk_cache_dir: str) -> None:
-        """Write pre-read legacy entries into the new FanoutCache."""
+    def _init_disk_cache(
+        self,
+        use_pickle: bool,
+        disk_cache_dir: str,
+        disk_size_limit_bytes: int | None,
+        allowed_namespaces: tuple[str, ...] | None,
+    ) -> None:
+        """Create the on-disk FanoutCache and assign it to `self.disk_cache`."""
+        if use_pickle:
+            self.disk_cache = diskcache.FanoutCache(
+                shards=_NUM_SHARDS,
+                timeout=10,
+                directory=disk_cache_dir,
+                size_limit=disk_size_limit_bytes,
+            )
+            return
+
+        # FanoutCache divides size_limit across shards; use 2**40 (~1 TB)
+        # as a practical "no limit" when the caller passes None.
+        effective_limit = disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40
+        fanout_kwargs: dict[str, str] = {}
+        if allowed_namespaces is not None:
+            fanout_kwargs["disk_allowed_namespaces"] = ",".join(allowed_namespaces)
+
+        if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
+            self._migrate_legacy_cache(disk_cache_dir, effective_limit, fanout_kwargs)
+
+        self.disk_cache = diskcache.FanoutCache(
+            directory=disk_cache_dir,
+            shards=_NUM_SHARDS,
+            disk=OrjsonDisk,
+            size_limit=effective_limit,
+            eviction_policy="least-recently-stored",
+            timeout=60,
+            **fanout_kwargs,
+        )
+
+    def _migrate_legacy_cache(
+        self,
+        disk_cache_dir: str,
+        effective_limit: int,
+        fanout_kwargs: dict[str, str],
+    ) -> None:
+        """Read legacy pickle entries, write to a staging cache, and swap on success."""
+        legacy_report = inspect_legacy_entries(disk_cache_dir)
+        if legacy_report.row_count == 0 and legacy_report.read_failures == 0:
+            return
+
+        staging_dir = f"{disk_cache_dir}.dspy_orjson_staging"
+        self._remove_staging_dir(staging_dir)
+
+        if legacy_report.read_failures > 0:
+            raise CacheMigrationError(
+                "Cache migration aborted after "
+                f"{legacy_report.read_failures} read failures; the legacy cache was preserved. "
+                "Fix the unreadable entries and re-run with DSPY_MIGRATE_CACHE=1."
+            )
+
+        staging_cache = diskcache.FanoutCache(
+            directory=staging_dir,
+            shards=_NUM_SHARDS,
+            disk=OrjsonDisk,
+            size_limit=effective_limit,
+            eviction_policy="least-recently-stored",
+            timeout=60,
+            **fanout_kwargs,
+        )
+        try:
+            errors = self._migrate_entries(legacy_report.entries, staging_cache, disk_cache_dir)
+        finally:
+            staging_cache.close()
+
+        if errors > 0:
+            self._remove_staging_dir(staging_dir)
+            raise CacheMigrationError(
+                f"Cache migration aborted after {errors} write failures; the legacy cache was "
+                "preserved. Re-run with DSPY_MIGRATE_CACHE=1 after fixing the failing entries."
+            )
+
+        self._promote_staging_dir(disk_cache_dir, staging_dir)
+
+    def _promote_staging_dir(self, disk_cache_dir: str, staging_dir: str) -> None:
+        """Promote a fully-migrated staging cache into place without deleting the source first."""
+        backup_dir = None
+        if os.path.exists(disk_cache_dir):
+            backup_dir = f"{disk_cache_dir}.dspy_legacy_backup.{uuid4().hex}"
+
+        try:
+            if backup_dir is not None:
+                os.replace(disk_cache_dir, backup_dir)
+            os.replace(staging_dir, disk_cache_dir)
+        except OSError as e:
+            if backup_dir is not None and os.path.exists(backup_dir) and not os.path.exists(disk_cache_dir):
+                try:
+                    os.replace(backup_dir, disk_cache_dir)
+                except OSError as rollback_error:
+                    raise CacheMigrationError(
+                        "Failed to promote the migrated cache and failed to restore the legacy "
+                        f"cache from {backup_dir}: {rollback_error}"
+                    ) from e
+
+            raise CacheMigrationError(
+                f"Failed to promote the migrated cache from {staging_dir}; the legacy cache was preserved."
+            ) from e
+
+        if backup_dir is not None:
+            self._remove_staging_dir(backup_dir)
+
+    @staticmethod
+    def _remove_staging_dir(staging_dir: str) -> None:
+        """Remove the migration staging directory, logging on failure."""
+        if not os.path.exists(staging_dir):
+            return
+
+        try:
+            shutil.rmtree(staging_dir)
+        except OSError as e:
+            logger.warning("Could not remove staging directory %s: %s", staging_dir, e)
+
+    def _migrate_entries(self, entries: list, target: diskcache.FanoutCache, disk_cache_dir: str) -> int:
+        """Write pre-read legacy entries into *target* and return the number of errors."""
         logger.info("Migrating %d legacy diskcache entries in %s to orjson format...", len(entries), disk_cache_dir)
         migrated = 0
         errors = 0
         for key, value in entries:
             try:
-                self.disk_cache[key] = value
+                target[key] = value
                 migrated += 1
-            except TypeError as e:
+            except (TypeError, orjson.JSONEncodeError) as e:
                 errors += 1
                 logger.debug("Failed to migrate cache entry %.16s: %s", key, e)
         if errors == 0:
@@ -148,6 +242,7 @@ class Cache:
                 migrated,
                 errors,
             )
+        return errors
 
     def __contains__(self, key: str) -> bool:
         """Check if a key is in the cache."""

@@ -228,6 +228,37 @@ def test_corrupt_disk_entries_return_none(orjson_cache):
         assert orjson_cache.get(request) is None
 
 
+def test_allowed_namespaces_allows_custom_model_roundtrip(tmp_path):
+    """Custom pydantic models can opt into disk caching via allowed_namespaces."""
+    cache = Cache(
+        enable_disk_cache=True, enable_memory_cache=False,
+        disk_cache_dir=str(tmp_path), use_pickle=False,
+        allowed_namespaces=("tests", "test_cache"),
+    )
+    request = {"model": "test", "prompt": "namespace_test"}
+    response = CacheValidationModel(name="hello", value=3)
+
+    cache.put(request, response)
+    result = cache.get(request)
+
+    assert isinstance(result, CacheValidationModel)
+    assert result == response
+
+
+def test_recursive_custom_models_require_allowed_namespaces(orjson_cache):
+    """Nested custom pydantic models are rejected on write unless explicitly allowed."""
+    request = {"model": "test", "prompt": "nested_custom_model"}
+    value = {"outer": {"inner": CacheValidationModel(name="hello", value=3)}}
+
+    with pytest.warns(UserWarning, match="Skipping disk cache write"):
+        orjson_cache.put(request, value)
+
+    assert orjson_cache.get(request) == value
+
+    orjson_cache.reset_memory_cache()
+    assert orjson_cache.get(request) is None
+
+
 def test_reset_memory_cache(cache):
     """Test resetting memory cache."""
     # Add some items to the memory cache
@@ -613,5 +644,4 @@ class TestDiskCacheTimeoutInPutHandled:
             assert result == "survived_value"
         finally:
             dspy_logger.propagate = original_propagate
-
 

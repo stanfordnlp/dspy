@@ -7,6 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from hashlib import sha256
+from unittest.mock import patch
 
 import diskcache
 import orjson
@@ -14,9 +15,16 @@ import pydantic
 import pytest
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 
-from dspy.clients.cache import Cache
+from dspy.clients.cache import Cache, CacheMigrationError
 from dspy.clients.cache_migration import migrate_diskcache
-from dspy.clients.disk_serialization import DEFAULT_ALLOWED_NAMESPACES, OrjsonDisk, _decode_value, _encode_value
+from dspy.clients.disk_serialization import (
+    _ENVELOPE_KEY,
+    DEFAULT_ALLOWED_NAMESPACES,
+    DeserializationError,
+    OrjsonDisk,
+    _decode_value,
+    _encode_value,
+)
 
 _TEST_ALLOWED_NAMESPACES = (*DEFAULT_ALLOWED_NAMESPACES, "tests", "test_disk_serialization")
 
@@ -48,19 +56,41 @@ class AliasPydanticModel(pydantic.BaseModel):
     actual_name: int = pydantic.Field(alias="wire_name")
 
 
-def _serialize(value):
-    return orjson.dumps({"_data": _encode_value(value)})
+def _serialize(value, allowed_namespaces=_TEST_ALLOWED_NAMESPACES):
+    return orjson.dumps({_ENVELOPE_KEY: _encode_value(value, allowed_namespaces)})
 
 
 def _deserialize(blob, allowed_namespaces=_TEST_ALLOWED_NAMESPACES):
-    return _decode_value(orjson.loads(blob)["_data"], allowed_namespaces)
+    return _decode_value(orjson.loads(blob)[_ENVELOPE_KEY], allowed_namespaces)
 
 
-def _make_fanout_cache(directory):
+def _make_fanout_cache(directory, **kwargs):
     return diskcache.FanoutCache(
         directory=directory, shards=16, disk=OrjsonDisk,
         size_limit=2**40, eviction_policy="least-recently-stored", timeout=60,
+        **kwargs,
     )
+
+
+def _find_cache_row(directory, key):
+    for shard_id in range(16):
+        shard_db = os.path.join(directory, f"{shard_id:03d}", "cache.db")
+        if not os.path.exists(shard_db):
+            continue
+
+        conn = sqlite3.connect(shard_db)
+        try:
+            row = conn.execute(
+                "SELECT mode, filename FROM Cache WHERE key = ? AND raw = 1",
+                (key,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if row is not None:
+            return row
+
+    raise AssertionError(f"Could not find cache row for key {key!r}")
 
 
 def _create_diskcache_shard(shard_dir, entries):
@@ -141,6 +171,18 @@ def test_serialize_roundtrip_pydantic(model):
     result = _deserialize(_serialize(model))
     assert isinstance(result, type(model))
     assert result == model
+
+
+def test_large_orjson_entries_use_diskcache_file_storage(tmp_path):
+    cache = _make_fanout_cache(str(tmp_path), disk_min_file_size=1)
+    value = {"payload": "x" * 8192}
+
+    cache["large"] = value
+
+    mode, filename = _find_cache_row(str(tmp_path), "large")
+    assert mode == 2
+    assert filename is not None
+    assert cache["large"] == value
 
 
 def test_serialize_non_serializable_raises():
@@ -256,26 +298,22 @@ def test_envelope_like_keys_not_confused(tmp_path):
 
 def test_poisoned_module_entry_rejected():
     """A crafted envelope pointing to a disallowed namespace is rejected before import."""
-    from dspy.clients.disk_serialization import DeserializationError
-
     poisoned = orjson.dumps({
-        "_data": {
+        _ENVELOPE_KEY: {
             "__dspy_cache_type__": "pydantic",
             "__dspy_cache_module__": "os",
             "__dspy_cache_qualname__": "getcwd",
             "__dspy_cache_data__": {},
         }
     })
-    with pytest.raises(DeserializationError, match="not in the allowed namespaces"):
-        _deserialize(poisoned)
+    with pytest.raises(DeserializationError, match="registered cache type registry"):
+        _deserialize(poisoned, allowed_namespaces=DEFAULT_ALLOWED_NAMESPACES)
 
 
 def test_allowed_namespace_non_basemodel_rejected():
     """An allowed namespace but non-BaseModel class is rejected after import."""
-    from dspy.clients.disk_serialization import DeserializationError
-
     poisoned = orjson.dumps({
-        "_data": {
+        _ENVELOPE_KEY: {
             "__dspy_cache_type__": "pydantic",
             "__dspy_cache_module__": "pydantic",
             "__dspy_cache_qualname__": "ConfigDict",
@@ -283,7 +321,7 @@ def test_allowed_namespace_non_basemodel_rejected():
         }
     })
     with pytest.raises(DeserializationError, match="not a pydantic BaseModel subclass"):
-        _deserialize(poisoned)
+        _deserialize(poisoned, allowed_namespaces=("pydantic",))
 
 
 # ── Migration ────────────────────────────────────────────────────────────────
@@ -380,6 +418,93 @@ class TestMigration:
         assert result.choices[0].message.tool_calls[0].function.name == "lookup_weather"
         assert result.cache_hit is True
         assert result.usage == {}
+
+    def test_orjson_cache_does_not_read_legacy_pickle_rows_without_migration(self, tmp_path, monkeypatch):
+        request = {"model": "openai/gpt-5-nano", "prompt": "legacy_without_migration"}
+        key = sha256(orjson.dumps(request, option=orjson.OPT_SORT_KEYS)).hexdigest()
+        _create_diskcache_shard(str(tmp_path / "000"), [(key, {"legacy": True}, time.time())])
+
+        monkeypatch.delenv("DSPY_MIGRATE_CACHE", raising=False)
+        cache = Cache(
+            enable_disk_cache=True,
+            enable_memory_cache=False,
+            disk_cache_dir=str(tmp_path),
+            disk_size_limit_bytes=1024 * 1024,
+            memory_max_entries=100,
+            use_pickle=False,
+        )
+
+        with patch("pickle.load", side_effect=AssertionError("legacy pickle load should not run")):
+            assert cache.get(request) is None
+
+    def test_cache_init_migration_preserves_legacy_on_read_failure(self, tmp_path, monkeypatch):
+        """Unreadable legacy rows abort migration before the source cache is touched."""
+        shard_dir = str(tmp_path / "000")
+        os.makedirs(shard_dir)
+        conn = sqlite3.connect(os.path.join(shard_dir, "cache.db"))
+        conn.execute("CREATE TABLE IF NOT EXISTS Settings (key TEXT NOT NULL UNIQUE, value)")
+        conn.execute("INSERT OR REPLACE INTO Settings VALUES ('eviction_policy', 'least-recently-stored')")
+        conn.execute(
+            "CREATE TABLE Cache ("
+            "  rowid INTEGER PRIMARY KEY, key BLOB, raw INTEGER,"
+            "  store_time REAL, expire_time REAL, access_time REAL,"
+            "  access_count INTEGER DEFAULT 0, tag BLOB, size INTEGER DEFAULT 0,"
+            "  mode INTEGER DEFAULT 0, filename TEXT, value BLOB)"
+        )
+        conn.execute(
+            "INSERT INTO Cache (key, raw, value, mode, access_time, size) VALUES (?, 1, ?, 4, ?, 50)",
+            ("good", pickle.dumps("hello"), time.time()),
+        )
+        conn.execute(
+            "INSERT INTO Cache (key, raw, value, mode, access_time, size) VALUES (?, 1, ?, 4, ?, 50)",
+            ("bad", b"\x80\x04\x95CORRUPT", time.time()),
+        )
+        conn.commit()
+        conn.close()
+
+        monkeypatch.setenv("DSPY_MIGRATE_CACHE", "1")
+
+        with pytest.raises(CacheMigrationError, match="read failures"):
+            Cache(
+                enable_disk_cache=True,
+                enable_memory_cache=False,
+                disk_cache_dir=str(tmp_path),
+                disk_size_limit_bytes=1024 * 1024,
+                memory_max_entries=100,
+                use_pickle=False,
+            )
+
+        assert (tmp_path / "000" / "cache.db").exists()
+        assert not (tmp_path.parent / f"{tmp_path.name}.dspy_orjson_staging").exists()
+
+    def test_cache_init_migration_preserves_legacy_on_partial_failure(self, tmp_path, monkeypatch):
+        """When some entries fail to migrate, legacy shard DBs are preserved."""
+        key_good = sha256(orjson.dumps({"p": "good"}, option=orjson.OPT_SORT_KEYS)).hexdigest()
+        _create_diskcache_shard(str(tmp_path / "000"), [(key_good, {"v": 1}, time.time())])
+
+        monkeypatch.setenv("DSPY_MIGRATE_CACHE", "1")
+
+        # Patch _migrate_entries to simulate a failure (return errors > 0)
+        def failing_migrate(self, entries, target, disk_cache_dir):
+            # Write one entry, then pretend one failed
+            for k, v in entries:
+                target[k] = v
+            return 1  # 1 error
+
+        monkeypatch.setattr(Cache, "_migrate_entries", failing_migrate)
+
+        with pytest.raises(CacheMigrationError, match="write failures"):
+            Cache(
+                enable_disk_cache=True,
+                enable_memory_cache=False,
+                disk_cache_dir=str(tmp_path),
+                disk_size_limit_bytes=1024 * 1024,
+                memory_max_entries=100,
+                use_pickle=False,
+            )
+
+        assert (tmp_path / "000" / "cache.db").exists()
+        assert not (tmp_path.parent / f"{tmp_path.name}.dspy_orjson_staging").exists()
 
     def test_cache_init_skips_migration_without_env_var(self, tmp_path, monkeypatch):
         _create_diskcache_shard(str(tmp_path / "000"), [("k", {"v": 1}, time.time())])

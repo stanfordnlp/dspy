@@ -37,13 +37,14 @@ def configure_cache(
         use_pickle: When True (default), use pickle serialization for disk cache. When False, use orjson
                           serialization which prevents arbitrary code execution during deserialization.
                           To migrate an existing pickle-based cache to orjson, set the environment
-                          variable `DSPY_MIGRATE_CACHE=1` before calling this function. Legacy
-                          pickle entries are read, the old shard DBs are deleted, and entries are
-                          re-written with orjson serialization.
-        allowed_namespaces: Top-level module names allowed during orjson deserialization.
-                          Only modules whose root package is in this tuple will be imported.
+                          variable `DSPY_MIGRATE_CACHE=1` before calling this function. Migration
+                          aborts if any legacy entries cannot be read or written, preserving the
+                          source cache for a retry.
+        allowed_namespaces: Additional top-level module names allowed during orjson deserialization
+                          for custom pydantic models that are not part of the built-in cache type
+                          registry. Only modules whose root package is in this tuple will be imported.
                           Ignored when `use_pickle` is True.
-                          Defaults to ("litellm", "openai", "dspy", "pydantic").
+                          Defaults to no additional namespaces.
     """
 
     DSPY_CACHE = Cache(
