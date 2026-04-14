@@ -1297,12 +1297,12 @@
         },
         "mkdocs-redirects": {
             "hashes": [
-                "sha256:3094981b42ffab29313c2c1b8ac3969861109f58b2dd58c45fc81cd44bfa0095",
-                "sha256:7dbfa5647b79a3589da4401403d69494bd1f4ad03b9c15136720367e1f340ed5"
+                "sha256:5e980330999299729a2d6a125347d1af78023d68a23681a4de3053ce7dfe2e51",
+                "sha256:ec7312fff462d03ec16395d0c001006a418f8d0c21cdf2b47ff11cf839dc3ce0"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==1.2.2"
+            "markers": "python_version >= '3.10'",
+            "version": "==1.2.3"
         },
         "mkdocstrings": {
             "hashes": [
@@ -1858,6 +1858,14 @@
             ],
             "markers": "python_version >= '3.9'",
             "version": "==0.3.0"
+        },
+        "properdocs": {
+            "hashes": [
+                "sha256:6fa0cfa2e01bf338f684892c8a506cf70ea88ae7f3479c933b6fa20168101cbd",
+                "sha256:adc7b16e562890af0e098a7e5b02e3a81c20894a87d6a28d345c9300de73c26e"
+            ],
+            "markers": "python_version >= '3.9'",
+            "version": "==1.6.7"
         },
         "psutil": {
             "hashes": [
