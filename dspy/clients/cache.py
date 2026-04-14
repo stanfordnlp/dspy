@@ -1,7 +1,6 @@
 import copy
 import inspect
 import logging
-import os
 import pickle
 import sqlite3
 import threading
@@ -16,8 +15,7 @@ import orjson
 import pydantic
 from cachetools import LRUCache
 
-from dspy.clients.cache_migration import _create_orjson_disk_cache, migrate_legacy_cache
-from dspy.clients.disk_serialization import DeserializationError
+from dspy.clients.disk_serialization import DeserializationError, OrjsonDisk
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +68,7 @@ class Cache:
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
             use_pickle: When True (default), use pickle serialization for disk cache.
                 When False, use orjson serialization (no arbitrary code execution on read).
-                To migrate an existing pickle-based cache to orjson, set the environment
-                variable `DSPY_MIGRATE_CACHE=1` before initializing the cache. Legacy
-                pickle entries are read and re-written with orjson serialization. Migration
-                aborts if any legacy entries cannot be read or written, preserving the source
-                cache for a retry.
+                Switching from pickle to orjson requires deleting the existing cache directory.
             allowed_namespaces: Additional top-level module names allowed during orjson
                 deserialization for custom pydantic models that are not part of the built-in
                 cache type registry. Ignored when `use_pickle` is True. Defaults to no
@@ -125,10 +119,15 @@ class Cache:
         if allowed_namespaces is not None:
             fanout_kwargs["disk_allowed_namespaces"] = ",".join(allowed_namespaces)
 
-        if os.environ.get("DSPY_MIGRATE_CACHE") == "1":
-            migrate_legacy_cache(disk_cache_dir, effective_limit, fanout_kwargs)
-
-        self.disk_cache = _create_orjson_disk_cache(disk_cache_dir, effective_limit, fanout_kwargs)
+        self.disk_cache = diskcache.FanoutCache(
+            directory=disk_cache_dir,
+            shards=_NUM_SHARDS,
+            disk=OrjsonDisk,
+            size_limit=effective_limit,
+            eviction_policy="least-recently-stored",
+            timeout=60,
+            **fanout_kwargs,
+        )
 
     def __contains__(self, key: str) -> bool:
         """Check if a key is in the cache."""
