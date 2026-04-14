@@ -15,7 +15,8 @@ import pydantic
 import pytest
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 
-from dspy.clients.cache import Cache, CacheMigrationError
+from dspy.clients.cache import Cache
+from dspy.clients.cache_migration import CacheMigrationError
 from dspy.clients.disk_serialization import (
     _ENVELOPE_KEY,
     DEFAULT_ALLOWED_NAMESPACES,
