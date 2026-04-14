@@ -272,6 +272,20 @@ def test_allowed_namespace_non_basemodel_rejected():
         _deserialize(poisoned, allowed_namespaces=("pydantic",))
 
 
+def test_malformed_pydantic_metadata_rejected():
+    """Malformed pydantic envelope metadata is normalized as a deserialization error."""
+    poisoned = orjson.dumps({
+        _ENVELOPE_KEY: {
+            "__dspy_cache_type__": "pydantic",
+            "__dspy_cache_module__": ["not", "a", "string"],
+            "__dspy_cache_qualname__": "PydanticModel",
+            "__dspy_cache_data__": {},
+        }
+    })
+    with pytest.raises(DeserializationError, match="metadata must be strings"):
+        _deserialize(poisoned, allowed_namespaces=_TEST_ALLOWED_NAMESPACES)
+
+
 # ── Concurrent disk-to-memory promotion ──────────────────────────────────────
 
 

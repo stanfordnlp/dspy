@@ -152,14 +152,16 @@ class Cache:
 
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
-        except (TypeError, orjson.JSONEncodeError):
+        except (TypeError, orjson.JSONEncodeError, RecursionError, MemoryError):
             logger.debug("Failed to generate cache key for request: %s", request)
             return None
 
         if self.enable_memory_cache:
             with self._lock:
                 if key in self.memory_cache:
-                    return copy.deepcopy(self.memory_cache[key])
+                    response = self.memory_cache[key]
+                    response = _mark_cache_hit(response)
+                    return copy.deepcopy(response)
 
         if self.enable_disk_cache:
             try:
@@ -167,10 +169,14 @@ class Cache:
             except DeserializationError:
                 logger.debug("Failed to deserialize disk cache entry %s", key)
                 return None
+            except Exception as e:
+                logger.debug("Failed to read disk cache entry %s: %s", key, e, exc_info=True)
+                return None
             if response is not None:
                 if self.enable_memory_cache:
                     with self._lock:
                         self.memory_cache[key] = response
+                response = _mark_cache_hit(response)
                 return copy.deepcopy(response)
 
         return None
@@ -191,7 +197,7 @@ class Cache:
 
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
-        except (TypeError, orjson.JSONEncodeError):
+        except (TypeError, orjson.JSONEncodeError, RecursionError, MemoryError):
             logger.debug("Failed to generate cache key for request: %s", request)
             return
 

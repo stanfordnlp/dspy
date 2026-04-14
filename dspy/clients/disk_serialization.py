@@ -103,11 +103,23 @@ def _decode_value(
             cls = _resolve_class(
                 value[_ENCODED_MODULE_KEY], value[_ENCODED_QUALNAME_KEY], allowed_namespaces,
             )
-            return cls.model_validate(value[_ENCODED_DATA_KEY])
+            try:
+                return cls.model_validate(value[_ENCODED_DATA_KEY])
+            except pydantic.ValidationError as e:
+                raise DeserializationError(
+                    f"{value[_ENCODED_MODULE_KEY]}.{value[_ENCODED_QUALNAME_KEY]} failed validation"
+                ) from e
         if encoded_type == _NDARRAY_TYPE and keys == _NDARRAY_ENVELOPE_KEYS:
-            import numpy as np
+            try:
+                import numpy as np
+            except ImportError as e:
+                raise DeserializationError("Cannot import module 'numpy'") from e
 
-            return np.asarray(value[_ENCODED_DATA_KEY], dtype=np.dtype(value[_ENCODED_DTYPE_KEY]))
+            try:
+                dtype = np.dtype(value[_ENCODED_DTYPE_KEY])
+                return np.asarray(value[_ENCODED_DATA_KEY], dtype=dtype)
+            except (TypeError, ValueError) as e:
+                raise DeserializationError("Invalid ndarray payload in cache entry") from e
         return {k: _decode_value(v, allowed_namespaces) for k, v in value.items()}
     if isinstance(value, list):
         return [_decode_value(item, allowed_namespaces) for item in value]
@@ -116,6 +128,9 @@ def _decode_value(
 
 def _resolve_class(module_name: str, qualname: str, allowed_namespaces: Sequence[str]) -> type:
     """Import and return the pydantic BaseModel class at *module_name*.*qualname*."""
+    if not isinstance(module_name, str) or not isinstance(qualname, str):
+        raise DeserializationError("Encoded pydantic type metadata must be strings")
+
     if (module_name, qualname) not in _REGISTERED_PYDANTIC_TYPES:
         root_namespace = module_name.split(".")[0]
         if root_namespace not in allowed_namespaces:
@@ -194,9 +209,20 @@ class OrjsonDisk(Disk):
 
         try:
             envelope = orjson.loads(data)
+        except orjson.JSONDecodeError as e:
+            raise DeserializationError("Invalid orjson payload in cache entry") from e
+
+        if not isinstance(envelope, dict):
+            raise DeserializationError(
+                f"Expected top-level cache envelope to be a dict, got {type(envelope).__name__}"
+            )
+
+        try:
             payload = envelope[_ENVELOPE_KEY]
+        except KeyError as e:
+            raise DeserializationError(f"Missing {_ENVELOPE_KEY!r} in cache entry envelope") from e
+
+        try:
             return _decode_value(payload, self._allowed_namespaces)
-        except DeserializationError:
-            raise
-        except Exception as e:
-            raise DeserializationError(e) from e
+        except RecursionError as e:
+            raise DeserializationError("Cache entry exceeded recursion limit during deserialization") from e
