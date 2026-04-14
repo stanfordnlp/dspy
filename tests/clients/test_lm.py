@@ -75,7 +75,6 @@ def test_dspy_cache(litellm_test_server, tmp_path):
         enable_disk_cache=True,
         enable_memory_cache=True,
         disk_cache_dir=tmp_path / ".disk_cache",
-        use_pickle=True,
     )
     cache = dspy.cache
 
@@ -150,7 +149,6 @@ def test_rollout_id_bypasses_cache(monkeypatch, tmp_path):
         enable_disk_cache=True,
         enable_memory_cache=True,
         disk_cache_dir=tmp_path / ".disk_cache",
-        use_pickle=True,
     )
 
     lm = dspy.LM(model="openai/dspy-test-model", model_type="chat")
@@ -487,7 +485,6 @@ async def test_async_lm_call_with_cache(tmp_path):
         enable_disk_cache=True,
         enable_memory_cache=True,
         disk_cache_dir=tmp_path / ".disk_cache",
-        use_pickle=True,
     )
     cache = dspy.cache
 
