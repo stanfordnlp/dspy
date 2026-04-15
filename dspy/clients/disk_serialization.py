@@ -14,9 +14,6 @@ import orjson
 import pydantic
 from diskcache import Disk
 from diskcache.core import MODE_BINARY, MODE_RAW, UNKNOWN
-from litellm.types.utils import EmbeddingResponse, ModelResponse, ModelResponseStream
-from openai.types.chat.chat_completion import ChatCompletion
-from openai.types.responses.response import Response
 
 _JSON_PREFIX = b"json:"
 _NPY_PREFIX = b"npy:"
@@ -158,6 +155,28 @@ def _decode_value(data: bytes) -> Any:
 class OrjsonDisk(Disk):
     """Disk backend that serializes values with the safe cache format."""
 
+    _default_types_registered = False
+
+    def __init__(self, directory, **kwargs):
+        if not OrjsonDisk._default_types_registered:
+            OrjsonDisk._default_types_registered = True
+
+            from openai.types.chat.chat_completion import ChatCompletion
+            from openai.types.responses.response import Response
+
+            for safe_type in (ChatCompletion, Response):
+                register_safe_type(safe_type)
+
+            try:
+                from litellm.types.utils import EmbeddingResponse, ModelResponse, ModelResponseStream
+            except ImportError:
+                pass
+            else:
+                for safe_type in (EmbeddingResponse, ModelResponse, ModelResponseStream):
+                    register_safe_type(safe_type)
+
+        super().__init__(directory, **kwargs)
+
     def store(self, value, read, key=UNKNOWN):
         """Serialize *value* and return fields for the Cache table."""
         if not read:
@@ -181,5 +200,4 @@ class OrjsonDisk(Disk):
         return _decode_value(data)
 
 
-for _safe_type in (EmbeddingResponse, ModelResponse, ModelResponseStream, ChatCompletion, Response):
-    register_safe_type(_safe_type)
+

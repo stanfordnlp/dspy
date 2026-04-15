@@ -41,10 +41,13 @@ def _transform_value(value):
         return [_transform_value(v) for v in value]
     elif isinstance(value, (set, frozenset)):
         transformed_values = [_transform_value(v) for v in value]
-        return sorted(
-            transformed_values,
-            key=lambda item: orjson.dumps(item, option=orjson.OPT_SORT_KEYS),
-        )
+        try:
+            return sorted(
+                transformed_values,
+                key=lambda item: orjson.dumps(item, option=orjson.OPT_SORT_KEYS),
+            )
+        except (orjson.JSONEncodeError, TypeError):
+            return sorted(transformed_values, key=str)
     else:
         return value
 
@@ -140,10 +143,13 @@ class Cache:
             logger.debug(f"Failed to generate cache key for request: {request}")
             return None
 
-        if self.enable_memory_cache and key in self.memory_cache:
+        if self.enable_memory_cache:
             with self._lock:
-                response = self.memory_cache[key]
-        elif self.enable_disk_cache:
+                response = self.memory_cache.get(key)
+            if response is not None:
+                return self._prepare_cached_response(response)
+
+        if self.enable_disk_cache:
             try:
                 response = self.disk_cache.get(key)
             except DeserializationError:
@@ -158,9 +164,11 @@ class Cache:
                 # Found on disk but not in memory cache, add to memory cache
                 with self._lock:
                     self.memory_cache[key] = response
-        else:
-            return None
+            return self._prepare_cached_response(response)
 
+        return None
+
+    def _prepare_cached_response(self, response):
         response = copy.deepcopy(response)
         if hasattr(response, "usage"):
             # Clear the usage data when cache is hit, because no LM call is made
