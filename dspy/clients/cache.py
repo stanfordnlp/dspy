@@ -18,10 +18,8 @@ from diskcache import FanoutCache
 from dspy.clients.disk_serialization import (
     DeserializationError,
     LegacyFormatError,
-    NoPickleDisk,
-    create_default_registry,
-    decode_value,
-    encode_value,
+    default_allowed_types,
+    make_safe_disk,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,9 +90,9 @@ class Cache:
         self.enable_memory_cache = enable_memory_cache
         self.use_pickle = use_pickle
         self.disk_cache_dir = os.fspath(disk_cache_dir)
-        self._registry = create_default_registry()
-        for safe_type in safe_types or []:
-            self._registry.register(safe_type)
+        self._allowed_types = default_allowed_types()
+        for cls in safe_types or []:
+            self._allowed_types.add((cls.__module__, cls.__name__))
         if self.enable_memory_cache:
             if memory_max_entries is None:
                 raise ValueError("`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache.")
@@ -115,7 +113,7 @@ class Cache:
                 self.disk_cache = FanoutCache(
                     directory=self.disk_cache_dir,
                     shards=16,
-                    disk=NoPickleDisk,
+                    disk=make_safe_disk(self._allowed_types),
                     size_limit=disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40,
                     eviction_policy="none" if disk_size_limit_bytes is None else "least-recently-stored",
                     timeout=60,
@@ -158,7 +156,7 @@ class Cache:
 
         if self.enable_disk_cache:
             try:
-                raw = self.disk_cache.get(key)
+                response = self.disk_cache.get(key)
             except LegacyFormatError:
                 warnings.warn(
                     "Existing disk cache entry could not be deserialized and will be skipped. "
@@ -168,23 +166,11 @@ class Cache:
                     stacklevel=2,
                 )
                 return None
-            if raw is None:
+            except DeserializationError:
+                logger.debug("Failed to deserialize disk cache entry %s", key)
                 return None
-
-            if self.use_pickle:
-                if isinstance(raw, bytes):
-                    try:
-                        response = decode_value(raw, self._registry)
-                    except DeserializationError:
-                        response = raw
-                else:
-                    response = raw
-            else:
-                try:
-                    response = decode_value(raw, self._registry)
-                except DeserializationError:
-                    logger.debug("Failed to deserialize disk cache entry %s", key)
-                    return None
+            if response is None:
+                return None
 
             if self.enable_memory_cache:
                 with self._lock:
@@ -226,12 +212,10 @@ class Cache:
 
         if self.enable_disk_cache:
             try:
-                disk_value = encode_value(value, self._registry) if not self.use_pickle else value
-                self.disk_cache[key] = disk_value
+                self.disk_cache[key] = value
             except TypeError as e:
                 warnings.warn(f"Skipping disk cache write: {e}", UserWarning, stacklevel=2)
             except Exception as e:
-                # Disk cache writing can fail for different reasons, e.g. disk full or the `value` is not picklable.
                 logger.debug("Failed to put value in disk cache: %s, %s", value, e)
 
     def reset_memory_cache(self) -> None:

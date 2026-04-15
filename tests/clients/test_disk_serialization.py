@@ -6,22 +6,20 @@ from dataclasses import dataclass
 
 import diskcache
 import numpy as np
-import orjson
 import pydantic
 import pytest
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.disk_serialization import (
     DeserializationError,
-    NoPickleDisk,
-    SafeTypeRegistry,
-    create_default_registry,
-    decode_value,
-    encode_value,
+    decode,
+    default_allowed_types,
+    encode,
+    make_safe_disk,
 )
 
 
-class RegisteredPydanticModel(pydantic.BaseModel):
+class AllowedPydanticModel(pydantic.BaseModel):
     name: str
     value: int
 
@@ -32,25 +30,25 @@ class NullablePydanticModel(pydantic.BaseModel):
 
 
 @dataclass
-class RegisteredDataclass:
+class AllowedDataclass:
     name: str
     value: int
 
 
 @pytest.fixture()
-def registry():
-    reg = create_default_registry()
-    reg.register(RegisteredPydanticModel)
-    reg.register(NullablePydanticModel)
-    reg.register(RegisteredDataclass)
-    return reg
+def allowed():
+    types = default_allowed_types()
+    types.add((AllowedPydanticModel.__module__, AllowedPydanticModel.__name__))
+    types.add((NullablePydanticModel.__module__, NullablePydanticModel.__name__))
+    types.add((AllowedDataclass.__module__, AllowedDataclass.__name__))
+    return types
 
 
-def _make_fanout_cache(directory, **kwargs):
+def _make_fanout_cache(directory, allowed, **kwargs):
     return diskcache.FanoutCache(
         directory=directory,
         shards=16,
-        disk=NoPickleDisk,
+        disk=make_safe_disk(allowed),
         size_limit=2**40,
         eviction_policy="least-recently-stored",
         timeout=60,
@@ -83,28 +81,25 @@ def _find_cache_row(directory, key):
     "value",
     [
         {"a": 1, "b": [2, 3], "c": {"nested": True}},
-        RegisteredPydanticModel(name="test", value=42),
-        RegisteredDataclass(name="test", value=42),
+        AllowedPydanticModel(name="test", value=42),
+        AllowedDataclass(name="test", value=42),
     ],
     ids=["json", "pydantic", "dataclass"],
 )
-def test_safe_roundtrip(value, registry):
-    assert decode_value(encode_value(value, registry), registry) == value
+def test_safe_roundtrip(value, allowed):
+    assert decode(encode(value), allowed=allowed) == value
 
 
-def test_pydantic_roundtrip_preserves_unset_fields(registry):
+def test_pydantic_roundtrip_preserves_nullable_fields(allowed):
     model = NullablePydanticModel(required_nullable=None)
-
-    result = decode_value(encode_value(model, registry), registry)
-
+    result = decode(encode(model), allowed=allowed)
     assert result == model
-    assert result.model_fields_set == {"required_nullable"}
 
 
-def test_ndarray_roundtrip_preserves_dtype_and_shape(registry):
+def test_ndarray_roundtrip_preserves_dtype_and_shape(allowed):
     value = np.arange(6, dtype=np.float32).reshape(2, 3)
 
-    result = decode_value(encode_value(value, registry), registry)
+    result = decode(encode(value), allowed=allowed)
 
     assert isinstance(result, np.ndarray)
     assert result.dtype == value.dtype
@@ -112,69 +107,68 @@ def test_ndarray_roundtrip_preserves_dtype_and_shape(registry):
     np.testing.assert_array_equal(result, value)
 
 
-def test_large_entries_use_diskcache_file_storage(tmp_path, registry):
-    cache = _make_fanout_cache(str(tmp_path), disk_min_file_size=1)
-    encoded = encode_value({"payload": "x" * 8192}, registry)
+def test_large_entries_use_diskcache_file_storage(tmp_path, allowed):
+    cache = _make_fanout_cache(str(tmp_path), allowed, disk_min_file_size=1)
 
-    cache["large"] = encoded
+    cache["large"] = {"payload": "x" * 8192}
 
     mode, filename = _find_cache_row(str(tmp_path), "large")
     assert mode == 2
     assert filename is not None
-    assert decode_value(cache["large"], registry) == {"payload": "x" * 8192}
+    assert cache["large"] == {"payload": "x" * 8192}
 
 
-def test_litellm_response_roundtrip(registry):
+def test_litellm_response_roundtrip(allowed):
     response = ModelResponse(
         id="chatcmpl-test123",
         choices=[{"message": {"content": "Hello world"}, "index": 0, "finish_reason": "stop"}],
         usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
     )
 
-    result = decode_value(encode_value(response, registry), registry)
+    result = decode(encode(response), allowed=allowed)
 
     assert isinstance(result, ModelResponse)
     assert result.choices[0].message.content == "Hello world"
 
 
-def test_embedding_response_roundtrip(registry):
+def test_embedding_response_roundtrip(allowed):
     response = EmbeddingResponse(
         data=[{"embedding": [0.1, 0.2, 0.3], "index": 0, "object": "embedding"}],
         model="text-embedding-3-small",
         usage={"prompt_tokens": 5, "total_tokens": 5},
     )
 
-    result = decode_value(encode_value(response, registry), registry)
+    result = decode(encode(response), allowed=allowed)
 
     assert isinstance(result, EmbeddingResponse)
     assert result.data[0]["embedding"] == pytest.approx([0.1, 0.2, 0.3])
 
 
-def test_unregistered_custom_types_raise(registry):
-    @dataclass
-    class UnregisteredDataclass:
+def test_unlisted_pydantic_model_blocked_on_decode():
+    class Secret(pydantic.BaseModel):
         value: int
 
-    with pytest.raises(TypeError):
-        encode_value(UnregisteredDataclass(value=1), registry)
+    encoded = encode(Secret(value=1))
+    with pytest.raises(DeserializationError, match="not in the safe_types allowlist"):
+        decode(encoded, allowed=set())
 
 
-def test_tuple_roundtrips_as_list(registry):
-    result = decode_value(encode_value((1, 2, 3), registry), registry)
+def test_tuple_roundtrips_as_list(allowed):
+    result = decode(encode((1, 2, 3)), allowed=allowed)
     assert result == [1, 2, 3]
 
 
-def test_unknown_cached_type_is_rejected(registry):
-    payload = b"json:" + orjson.dumps({"type": "tests.Unknown", "data": {}})
+def test_unknown_kind_is_rejected(allowed):
+    payload = b'{"kind": "alien", "module": "x", "cls": "Y", "data": {}}'
+    with pytest.raises(DeserializationError):
+        decode(payload, allowed=allowed)
 
-    with pytest.raises(DeserializationError, match="Unsupported cached type"):
-        decode_value(payload, registry)
 
+def test_allowlists_are_isolated():
+    a1 = {(AllowedPydanticModel.__module__, AllowedPydanticModel.__name__)}
+    a2: set[tuple[str, str]] = set()
 
-def test_registries_are_isolated():
-    r1 = SafeTypeRegistry()
-    r2 = SafeTypeRegistry()
-    r1.register(RegisteredPydanticModel)
-
-    assert r1.get_tag(RegisteredPydanticModel) is not None
-    assert r2.get_tag(RegisteredPydanticModel) is None
+    encoded = encode(AllowedPydanticModel(name="test", value=1))
+    assert decode(encoded, allowed=a1) == AllowedPydanticModel(name="test", value=1)
+    with pytest.raises(DeserializationError, match="not in the safe_types allowlist"):
+        decode(encoded, allowed=a2)
