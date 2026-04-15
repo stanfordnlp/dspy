@@ -28,6 +28,10 @@ class DeserializationError(Exception):
     """Raised when a cached value cannot be deserialized."""
 
 
+class LegacyFormatError(DeserializationError):
+    """Raised when a cache entry was written by the legacy pickle-based backend."""
+
+
 def register_safe_type(cls: type[Any], *, tag: str | None = None) -> None:
     """Register a top-level cache value type for safe-mode roundtrips."""
     if not isinstance(cls, type):
@@ -186,7 +190,7 @@ class OrjsonDisk(Disk):
     def fetch(self, mode, filename, value, read):
         """Deserialize a previously-stored safe cache payload."""
         if mode not in (MODE_RAW, MODE_BINARY):
-            raise DeserializationError(
+            raise LegacyFormatError(
                 f"Unsupported diskcache mode {mode} for OrjsonDisk entry; refusing legacy format"
             )
 

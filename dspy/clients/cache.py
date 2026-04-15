@@ -14,7 +14,7 @@ import pydantic
 from cachetools import LRUCache
 from diskcache import FanoutCache
 
-from dspy.clients.disk_serialization import DeserializationError, OrjsonDisk, register_safe_type
+from dspy.clients.disk_serialization import DeserializationError, LegacyFormatError, OrjsonDisk, register_safe_type
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +152,15 @@ class Cache:
         if self.enable_disk_cache:
             try:
                 response = self.disk_cache.get(key)
+            except LegacyFormatError:
+                warnings.warn(
+                    "Existing disk cache entry could not be deserialized and will be skipped. "
+                    "This is expected when switching from pickle to safe serialization mode. "
+                    "Affected entries will be re-computed and stored in the new format.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                return None
             except DeserializationError:
                 logger.debug("Failed to deserialize disk cache entry %s", key)
                 return None
