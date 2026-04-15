@@ -91,6 +91,22 @@ code execution during deserialization:
 dspy.configure_cache(use_pickle=False)
 ```
 
+If you cache custom top-level Pydantic models or stdlib dataclasses in safe
+mode, register them when you configure the cache:
+
+```python
+import dspy
+from dataclasses import dataclass
+
+
+@dataclass
+class CachedAnswer:
+    text: str
+
+
+dspy.configure_cache(use_pickle=False, safe_types=[CachedAnswer])
+```
+
 ## Disabling/Enabling DSPy Cache
 
 There are scenarios where you might need to disable caching, either entirely or selectively for in-memory or on-disk caches. For instance:

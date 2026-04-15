@@ -277,7 +277,7 @@ def test_lm_calls_support_pydantic_models(litellm_test_server):
 
 
 def test_retry_number_set_correctly():
-    lm = dspy.LM("openai/gpt-4o-mini", num_retries=3, cache=False)
+    lm = dspy.LM("openai/gpt-4o-mini", num_retries=3)
     with mock.patch("litellm.completion") as mock_completion:
         lm("query")
 
@@ -643,12 +643,7 @@ def test_reasoning_effort_responses_api():
     with mock.patch("litellm.responses") as mock_responses:
         # OpenAI model with Responses API - should normalize
         lm = dspy.LM(
-            model="openai/gpt-5",
-            model_type="responses",
-            reasoning_effort="low",
-            max_tokens=16000,
-            temperature=1.0,
-            cache=False,
+            model="openai/gpt-5", model_type="responses", reasoning_effort="low", max_tokens=16000, temperature=1.0
         )
         lm("openai query")
         call_kwargs = mock_responses.call_args.kwargs

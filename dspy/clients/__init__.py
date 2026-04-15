@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import litellm
 
@@ -23,7 +24,7 @@ def configure_cache(
     disk_size_limit_bytes: int | None = DISK_CACHE_LIMIT,
     memory_max_entries: int = 1000000,
     use_pickle: bool = True,
-    allowed_namespaces: tuple[str, ...] | None = None,
+    safe_types: list[type[Any]] | None = None,
 ):
     """Configure the cache for DSPy.
 
@@ -36,11 +37,8 @@ def configure_cache(
                             bounds, set this parameter to `math.inf` or a similar value.
         use_pickle: When True (default), use pickle serialization for disk cache. When False, use orjson
                           serialization which prevents arbitrary code execution during deserialization.
-        allowed_namespaces: Additional top-level module names allowed during orjson deserialization
-                          for custom pydantic models that are not part of the built-in cache type
-                          registry. Only modules whose root package is in this tuple will be imported.
-                          Ignored when `use_pickle` is True.
-                          Defaults to no additional namespaces.
+        safe_types: Optional top-level pydantic model or dataclass types to
+                    register for safe disk-cache serialization.
     """
 
     DSPY_CACHE = Cache(
@@ -50,7 +48,7 @@ def configure_cache(
         disk_size_limit_bytes,
         memory_max_entries,
         use_pickle=use_pickle,
-        allowed_namespaces=allowed_namespaces,
+        safe_types=safe_types,
     )
 
     import dspy

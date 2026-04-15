@@ -19,7 +19,7 @@ class MockEmbeddingResponse:
 @pytest.fixture
 def cache(tmp_path):
     original_cache = dspy.cache
-    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache", use_pickle=True)
+    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache")
     yield
     dspy.cache = original_cache
 
@@ -92,7 +92,9 @@ def test_callable_embedding(cache):
     np.testing.assert_allclose(result, expected_embeddings)
 
 
-def test_callable_numpy_embedding_persists_to_disk(cache):
+def test_callable_numpy_embedding_persists_to_disk(cache, tmp_path):
+    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache_safe", use_pickle=False)
+
     inputs = ["hello", "world"]
     expected_embeddings = np.array(
         [
