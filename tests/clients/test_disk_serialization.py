@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import diskcache
 import numpy as np
+import orjson
 import pydantic
 import pytest
 from litellm.types.utils import EmbeddingResponse, ModelResponse
@@ -172,3 +173,27 @@ def test_allowlists_are_isolated():
     assert decode(encoded, allowed=a1) == AllowedPydanticModel(name="test", value=1)
     with pytest.raises(DeserializationError, match="not in the safe_types allowlist"):
         decode(encoded, allowed=a2)
+
+
+def test_schema_change_detected_on_decode(allowed):
+    encoded = encode(AllowedPydanticModel(name="test", value=42))
+    payload = orjson.loads(encoded)
+    payload["schema"] = "0000000000000000"
+    with pytest.raises(DeserializationError, match="has changed"):
+        decode(orjson.dumps(payload), allowed=allowed)
+
+
+@pytest.mark.parametrize("value", [
+    AllowedPydanticModel(name="test", value=1),
+    AllowedDataclass(name="test", value=1),
+], ids=["pydantic", "dataclass"])
+def test_encode_checks_allowlist(value):
+    empty_allowlist: set[tuple[str, str]] = set()
+    with pytest.raises(TypeError, match="not in the safe_types allowlist"):
+        encode(value, allowed=empty_allowlist)
+    encode(value)
+
+
+def test_envelope_contains_version():
+    payload = orjson.loads(encode({"key": "value"}))
+    assert payload["v"] == 1

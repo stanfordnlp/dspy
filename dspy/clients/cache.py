@@ -102,22 +102,16 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            if use_pickle:
-                self.disk_cache = FanoutCache(
-                    shards=16,
-                    timeout=10,
-                    directory=self.disk_cache_dir,
-                    size_limit=disk_size_limit_bytes,
-                )
-            else:
-                self.disk_cache = FanoutCache(
-                    directory=self.disk_cache_dir,
-                    shards=16,
-                    disk=make_safe_disk(self._allowed_types),
-                    size_limit=disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40,
-                    eviction_policy="none" if disk_size_limit_bytes is None else "least-recently-stored",
-                    timeout=60,
-                )
+            fanout_kwargs = dict(
+                directory=self.disk_cache_dir,
+                shards=16,
+                timeout=10,
+                size_limit=disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40,
+                eviction_policy="none" if disk_size_limit_bytes is None else "least-recently-stored",
+            )
+            if not use_pickle:
+                fanout_kwargs["disk"] = make_safe_disk(self._allowed_types)
+            self.disk_cache = FanoutCache(**fanout_kwargs)
         else:
             self.disk_cache = {}
 

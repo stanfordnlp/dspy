@@ -291,18 +291,20 @@ def test_safe_mode_refuses_pickle_entries(tmp_path):
         assert safe_cache.get(request) is None
 
 
-def test_unlisted_dataclass_writes_to_disk_but_blocked_on_read(orjson_cache):
+def test_unlisted_type_blocked_on_write_and_read(orjson_cache):
     @dataclass
     class UnlistedDataclass:
         value: int
 
     request = {"model": "test", "prompt": "dataclass"}
-    orjson_cache.put(request, UnlistedDataclass(value=1))
 
-    # Served from memory cache
+    with pytest.warns(UserWarning, match="Skipping disk cache write"):
+        orjson_cache.put(request, UnlistedDataclass(value=1))
+
+    # Served from memory cache (memory cache doesn't go through encode)
     assert orjson_cache.get(request) == UnlistedDataclass(value=1)
 
-    # After clearing memory, the disk entry is blocked by the allowlist
+    # After clearing memory, nothing on disk because write was rejected
     orjson_cache.reset_memory_cache()
     assert orjson_cache.get(request) is None
 
