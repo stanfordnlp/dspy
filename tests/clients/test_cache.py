@@ -311,7 +311,8 @@ def test_safe_mode_refuses_pickle_entries(tmp_path):
         use_pickle=False,
     )
 
-    assert safe_cache.get(request) is None
+    with pytest.warns(UserWarning, match="could not be deserialized"):
+        assert safe_cache.get(request) is None
 
 
 def test_non_serializable_values_warn_and_stay_in_memory(orjson_cache):
@@ -322,11 +323,10 @@ def test_non_serializable_values_warn_and_stay_in_memory(orjson_cache):
     class UnregisteredDataclass:
         value: int
 
-    for label, value in [("tuple", (1, 2, 3)), ("dataclass", UnregisteredDataclass(value=1))]:
-        request = {"model": "test", "prompt": label}
-        with pytest.warns(UserWarning, match="Skipping disk cache write"):
-            orjson_cache.put(request, value)
-        assert orjson_cache.get(request) == value
+    request = {"model": "test", "prompt": "dataclass"}
+    with pytest.warns(UserWarning, match="Skipping disk cache write"):
+        orjson_cache.put(request, UnregisteredDataclass(value=1))
+    assert orjson_cache.get(request) == UnregisteredDataclass(value=1)
 
     orjson_cache.reset_memory_cache()
     assert orjson_cache.get(good_request) == "good"

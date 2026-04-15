@@ -156,10 +156,12 @@ def test_unregistered_custom_types_raise(registry):
         value: int
 
     with pytest.raises(TypeError):
-        encode_value((1, 2, 3), registry)
-
-    with pytest.raises(TypeError):
         encode_value(UnregisteredDataclass(value=1), registry)
+
+
+def test_tuple_roundtrips_as_list(registry):
+    result = decode_value(encode_value((1, 2, 3), registry), registry)
+    assert result == [1, 2, 3]
 
 
 def test_unknown_cached_type_is_rejected(registry):

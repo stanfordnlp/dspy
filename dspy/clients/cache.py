@@ -117,7 +117,7 @@ class Cache:
                     shards=16,
                     disk=NoPickleDisk,
                     size_limit=disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40,
-                    eviction_policy="least-recently-stored",
+                    eviction_policy="none" if disk_size_limit_bytes is None else "least-recently-stored",
                     timeout=60,
                 )
         else:
@@ -147,7 +147,7 @@ class Cache:
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
+            logger.debug("Failed to generate cache key for request: %s", request)
             return None
 
         if self.enable_memory_cache:
@@ -217,7 +217,7 @@ class Cache:
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
+            logger.debug("Failed to generate cache key for request: %s", request)
             return
 
         if enable_memory_cache:
@@ -232,7 +232,7 @@ class Cache:
                 warnings.warn(f"Skipping disk cache write: {e}", UserWarning, stacklevel=2)
             except Exception as e:
                 # Disk cache writing can fail for different reasons, e.g. disk full or the `value` is not picklable.
-                logger.debug(f"Failed to put value in disk cache: {value}, {e}")
+                logger.debug("Failed to put value in disk cache: %s, %s", value, e)
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:
@@ -292,7 +292,7 @@ def request_cache(
 
     def decorator(fn):
         @wraps(fn)
-        def process_request(args, kwargs):
+        def build_cache_request(args, kwargs):
             # Use fully qualified function name for uniqueness
             fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
 
@@ -316,7 +316,7 @@ def request_cache(
             import dspy
 
             cache = dspy.cache
-            modified_request = process_request(args, kwargs)
+            modified_request = build_cache_request(args, kwargs)
 
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
@@ -337,7 +337,7 @@ def request_cache(
             import dspy
 
             cache = dspy.cache
-            modified_request = process_request(args, kwargs)
+            modified_request = build_cache_request(args, kwargs)
 
             # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)

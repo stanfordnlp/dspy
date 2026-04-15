@@ -96,16 +96,6 @@ def _is_ndarray(value: Any) -> bool:
         return False
 
 
-def _is_json_value(value: Any) -> bool:
-    if isinstance(value, str | int | float | bool) or value is None:
-        return True
-    if isinstance(value, list):
-        return all(_is_json_value(item) for item in value)
-    if isinstance(value, dict):
-        return all(isinstance(key, str) and _is_json_value(item) for key, item in value.items())
-    return False
-
-
 def encode_value(value: Any, registry: SafeTypeRegistry) -> bytes:
     """Serialize *value* into the safe cache wire format."""
     if _is_ndarray(value):
@@ -117,10 +107,11 @@ def encode_value(value: Any, registry: SafeTypeRegistry) -> bytes:
 
     tag = registry.get_tag(type(value))
     if tag is None:
-        if not _is_json_value(value):
+        if isinstance(value, pydantic.BaseModel) or (is_dataclass(value) and not isinstance(value, type)):
             raise TypeError(
                 "Disk cache only supports JSON values, registered pydantic models/dataclasses, "
-                f"and numpy arrays; got {type(value).__module__}.{type(value).__qualname__}"
+                f"and numpy arrays; got {type(value).__module__}.{type(value).__qualname__}. "
+                "Register it via safe_types=[...] in configure_cache()."
             )
         payload = {_TYPE_KEY: None, _DATA_KEY: value}
     else:
@@ -135,7 +126,7 @@ def encode_value(value: Any, registry: SafeTypeRegistry) -> bytes:
                     exclude_unset=True,
                 ),
             }
-        except Exception as e:
+        except (pydantic.PydanticSerializationError, TypeError, ValueError) as e:
             raise TypeError(f"Cannot cache {tag}: {e}") from e
 
     try:
