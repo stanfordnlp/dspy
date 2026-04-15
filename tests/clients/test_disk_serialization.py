@@ -1,4 +1,4 @@
-"""Tests for OrjsonDisk serialization."""
+"""Tests for safe cache serialization."""
 
 import os
 import sqlite3
@@ -13,10 +13,11 @@ from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.disk_serialization import (
     DeserializationError,
-    OrjsonDisk,
-    _decode_value,
-    _encode_value,
-    register_safe_type,
+    NoPickleDisk,
+    SafeTypeRegistry,
+    create_default_registry,
+    decode_value,
+    encode_value,
 )
 
 
@@ -36,16 +37,20 @@ class RegisteredDataclass:
     value: int
 
 
-register_safe_type(RegisteredPydanticModel)
-register_safe_type(NullablePydanticModel)
-register_safe_type(RegisteredDataclass)
+@pytest.fixture()
+def registry():
+    reg = create_default_registry()
+    reg.register(RegisteredPydanticModel)
+    reg.register(NullablePydanticModel)
+    reg.register(RegisteredDataclass)
+    return reg
 
 
 def _make_fanout_cache(directory, **kwargs):
     return diskcache.FanoutCache(
         directory=directory,
         shards=16,
-        disk=OrjsonDisk,
+        disk=NoPickleDisk,
         size_limit=2**40,
         eviction_policy="least-recently-stored",
         timeout=60,
@@ -83,23 +88,23 @@ def _find_cache_row(directory, key):
     ],
     ids=["json", "pydantic", "dataclass"],
 )
-def test_safe_roundtrip(value):
-    assert _decode_value(_encode_value(value)) == value
+def test_safe_roundtrip(value, registry):
+    assert decode_value(encode_value(value, registry), registry) == value
 
 
-def test_pydantic_roundtrip_preserves_unset_fields():
+def test_pydantic_roundtrip_preserves_unset_fields(registry):
     model = NullablePydanticModel(required_nullable=None)
 
-    result = _decode_value(_encode_value(model))
+    result = decode_value(encode_value(model, registry), registry)
 
     assert result == model
     assert result.model_fields_set == {"required_nullable"}
 
 
-def test_ndarray_roundtrip_preserves_dtype_and_shape():
+def test_ndarray_roundtrip_preserves_dtype_and_shape(registry):
     value = np.arange(6, dtype=np.float32).reshape(2, 3)
 
-    result = _decode_value(_encode_value(value))
+    result = decode_value(encode_value(value, registry), registry)
 
     assert isinstance(result, np.ndarray)
     assert result.dtype == value.dtype
@@ -107,58 +112,67 @@ def test_ndarray_roundtrip_preserves_dtype_and_shape():
     np.testing.assert_array_equal(result, value)
 
 
-def test_large_entries_use_diskcache_file_storage(tmp_path):
+def test_large_entries_use_diskcache_file_storage(tmp_path, registry):
     cache = _make_fanout_cache(str(tmp_path), disk_min_file_size=1)
-    value = {"payload": "x" * 8192}
+    encoded = encode_value({"payload": "x" * 8192}, registry)
 
-    cache["large"] = value
+    cache["large"] = encoded
 
     mode, filename = _find_cache_row(str(tmp_path), "large")
     assert mode == 2
     assert filename is not None
-    assert cache["large"] == value
+    assert decode_value(cache["large"], registry) == {"payload": "x" * 8192}
 
 
-def test_litellm_response_roundtrip():
+def test_litellm_response_roundtrip(registry):
     response = ModelResponse(
         id="chatcmpl-test123",
         choices=[{"message": {"content": "Hello world"}, "index": 0, "finish_reason": "stop"}],
         usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
     )
 
-    result = _decode_value(_encode_value(response))
+    result = decode_value(encode_value(response, registry), registry)
 
     assert isinstance(result, ModelResponse)
     assert result.choices[0].message.content == "Hello world"
 
 
-def test_embedding_response_roundtrip():
+def test_embedding_response_roundtrip(registry):
     response = EmbeddingResponse(
         data=[{"embedding": [0.1, 0.2, 0.3], "index": 0, "object": "embedding"}],
         model="text-embedding-3-small",
         usage={"prompt_tokens": 5, "total_tokens": 5},
     )
 
-    result = _decode_value(_encode_value(response))
+    result = decode_value(encode_value(response, registry), registry)
 
     assert isinstance(result, EmbeddingResponse)
     assert result.data[0]["embedding"] == pytest.approx([0.1, 0.2, 0.3])
 
 
-def test_unregistered_custom_types_raise():
+def test_unregistered_custom_types_raise(registry):
     @dataclass
     class UnregisteredDataclass:
         value: int
 
     with pytest.raises(TypeError):
-        _encode_value((1, 2, 3))
+        encode_value((1, 2, 3), registry)
 
     with pytest.raises(TypeError):
-        _encode_value(UnregisteredDataclass(value=1))
+        encode_value(UnregisteredDataclass(value=1), registry)
 
 
-def test_unknown_cached_type_is_rejected():
+def test_unknown_cached_type_is_rejected(registry):
     payload = b"json:" + orjson.dumps({"type": "tests.Unknown", "data": {}})
 
     with pytest.raises(DeserializationError, match="Unsupported cached type"):
-        _decode_value(payload)
+        decode_value(payload, registry)
+
+
+def test_registries_are_isolated():
+    r1 = SafeTypeRegistry()
+    r2 = SafeTypeRegistry()
+    r1.register(RegisteredPydanticModel)
+
+    assert r1.get_tag(RegisteredPydanticModel) is not None
+    assert r2.get_tag(RegisteredPydanticModel) is None

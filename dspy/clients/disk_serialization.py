@@ -1,4 +1,4 @@
-"""Custom diskcache Disk backend for safe cache serialization.
+"""Safe cache serialization utilities.
 
 Supports JSON-native values, explicitly registered pydantic/dataclass types,
 and numpy arrays stored as .npy payloads.
@@ -13,15 +13,12 @@ from typing import Any
 import orjson
 import pydantic
 from diskcache import Disk
-from diskcache.core import MODE_BINARY, MODE_RAW, UNKNOWN
+from diskcache.core import MODE_BINARY, MODE_RAW
 
 _JSON_PREFIX = b"json:"
 _NPY_PREFIX = b"npy:"
 _TYPE_KEY = "type"
 _DATA_KEY = "data"
-
-_TYPE_TAGS: dict[type[Any], str] = {}
-_TAG_ADAPTERS: dict[str, pydantic.TypeAdapter[Any]] = {}
 
 
 class DeserializationError(Exception):
@@ -32,25 +29,62 @@ class LegacyFormatError(DeserializationError):
     """Raised when a cache entry was written by the legacy pickle-based backend."""
 
 
-def register_safe_type(cls: type[Any], *, tag: str | None = None) -> None:
-    """Register a top-level cache value type for safe-mode roundtrips."""
-    if not isinstance(cls, type):
-        raise TypeError(f"Expected a type to register, got {type(cls).__name__}")
-    if not (issubclass(cls, pydantic.BaseModel) or is_dataclass(cls)):
-        raise TypeError(
-            "Safe cache registration only supports pydantic BaseModel subclasses and dataclasses; "
-            f"got {cls.__module__}.{cls.__qualname__}"
-        )
+class SafeTypeRegistry:
+    """Registry of types that can be safely serialized in the disk cache."""
 
-    tag = tag or f"{cls.__module__}.{cls.__qualname__}"
-    existing_tag = _TYPE_TAGS.get(cls)
-    if existing_tag is not None and existing_tag != tag:
-        raise ValueError(f"{cls.__module__}.{cls.__qualname__} is already registered as {existing_tag!r}")
-    if tag in _TAG_ADAPTERS and existing_tag != tag:
-        raise ValueError(f"Safe cache tag {tag!r} is already registered")
+    def __init__(self):
+        self._type_tags: dict[type[Any], str] = {}
+        self._tag_adapters: dict[str, pydantic.TypeAdapter[Any]] = {}
 
-    _TYPE_TAGS[cls] = tag
-    _TAG_ADAPTERS[tag] = pydantic.TypeAdapter(cls)
+    def register(self, cls: type[Any], *, tag: str | None = None) -> None:
+        """Register a top-level cache value type for safe-mode roundtrips."""
+        if not isinstance(cls, type):
+            raise TypeError(f"Expected a type to register, got {type(cls).__name__}")
+        if not (issubclass(cls, pydantic.BaseModel) or is_dataclass(cls)):
+            raise TypeError(
+                "Safe cache registration only supports pydantic BaseModel subclasses and dataclasses; "
+                f"got {cls.__module__}.{cls.__qualname__}"
+            )
+
+        tag = tag or f"{cls.__module__}.{cls.__qualname__}"
+        existing_tag = self._type_tags.get(cls)
+        if existing_tag is not None and existing_tag != tag:
+            raise ValueError(f"{cls.__module__}.{cls.__qualname__} is already registered as {existing_tag!r}")
+        if tag in self._tag_adapters and existing_tag != tag:
+            raise ValueError(f"Safe cache tag {tag!r} is already registered")
+
+        self._type_tags[cls] = tag
+        self._tag_adapters[tag] = pydantic.TypeAdapter(cls)
+
+    def get_tag(self, cls: type[Any]) -> str | None:
+        return self._type_tags.get(cls)
+
+    def get_adapter(self, tag: str) -> pydantic.TypeAdapter[Any] | None:
+        return self._tag_adapters.get(tag)
+
+
+def create_default_registry() -> SafeTypeRegistry:
+    """Create a registry pre-populated with the default safe types."""
+    registry = SafeTypeRegistry()
+
+    try:
+        from openai.types.chat.chat_completion import ChatCompletion
+        from openai.types.responses.response import Response
+    except ImportError:
+        pass
+    else:
+        for cls in (ChatCompletion, Response):
+            registry.register(cls)
+
+    try:
+        from litellm.types.utils import EmbeddingResponse, ModelResponse, ModelResponseStream
+    except ImportError:
+        pass
+    else:
+        for cls in (EmbeddingResponse, ModelResponse, ModelResponseStream):
+            registry.register(cls)
+
+    return registry
 
 
 def _is_ndarray(value: Any) -> bool:
@@ -72,7 +106,7 @@ def _is_json_value(value: Any) -> bool:
     return False
 
 
-def _encode_value(value: Any) -> bytes:
+def encode_value(value: Any, registry: SafeTypeRegistry) -> bytes:
     """Serialize *value* into the safe cache wire format."""
     if _is_ndarray(value):
         buffer = io.BytesIO()
@@ -81,7 +115,7 @@ def _encode_value(value: Any) -> bytes:
         np.save(buffer, value, allow_pickle=False)
         return _NPY_PREFIX + buffer.getvalue()
 
-    tag = _TYPE_TAGS.get(type(value))
+    tag = registry.get_tag(type(value))
     if tag is None:
         if not _is_json_value(value):
             raise TypeError(
@@ -90,10 +124,11 @@ def _encode_value(value: Any) -> bytes:
             )
         payload = {_TYPE_KEY: None, _DATA_KEY: value}
     else:
+        adapter = registry.get_adapter(tag)
         try:
             payload = {
                 _TYPE_KEY: tag,
-                _DATA_KEY: _TAG_ADAPTERS[tag].dump_python(
+                _DATA_KEY: adapter.dump_python(
                     value,
                     mode="json",
                     by_alias=True,
@@ -112,7 +147,7 @@ def _encode_value(value: Any) -> bytes:
         ) from e
 
 
-def _decode_value(data: bytes) -> Any:
+def decode_value(data: bytes, registry: SafeTypeRegistry) -> Any:
     """Deserialize *data* from the safe cache wire format."""
     if data.startswith(_NPY_PREFIX):
         try:
@@ -146,7 +181,7 @@ def _decode_value(data: bytes) -> Any:
     if not isinstance(type_tag, str):
         raise DeserializationError("Encoded cache type metadata must be a string or null")
 
-    adapter = _TAG_ADAPTERS.get(type_tag)
+    adapter = registry.get_adapter(type_tag)
     if adapter is None:
         raise DeserializationError(f"Unsupported cached type {type_tag!r}")
 
@@ -156,52 +191,12 @@ def _decode_value(data: bytes) -> Any:
         raise DeserializationError(f"{type_tag} failed validation") from e
 
 
-class OrjsonDisk(Disk):
-    """Disk backend that serializes values with the safe cache format."""
-
-    _default_types_registered = False
-
-    def __init__(self, directory, **kwargs):
-        if not OrjsonDisk._default_types_registered:
-            OrjsonDisk._default_types_registered = True
-
-            from openai.types.chat.chat_completion import ChatCompletion
-            from openai.types.responses.response import Response
-
-            for safe_type in (ChatCompletion, Response):
-                register_safe_type(safe_type)
-
-            try:
-                from litellm.types.utils import EmbeddingResponse, ModelResponse, ModelResponseStream
-            except ImportError:
-                pass
-            else:
-                for safe_type in (EmbeddingResponse, ModelResponse, ModelResponseStream):
-                    register_safe_type(safe_type)
-
-        super().__init__(directory, **kwargs)
-
-    def store(self, value, read, key=UNKNOWN):
-        """Serialize *value* and return fields for the Cache table."""
-        if not read:
-            return super().store(_encode_value(value), False, key=key)
-        return super().store(value, read, key=key)
+class NoPickleDisk(Disk):
+    """Disk backend that refuses to deserialize legacy pickle entries."""
 
     def fetch(self, mode, filename, value, read):
-        """Deserialize a previously-stored safe cache payload."""
         if mode not in (MODE_RAW, MODE_BINARY):
             raise LegacyFormatError(
-                f"Unsupported diskcache mode {mode} for OrjsonDisk entry; refusing legacy format"
+                f"Unsupported diskcache mode {mode}; refusing to unpickle legacy entry"
             )
-
-        data = super().fetch(mode, filename, value, read)
-        if read:
-            return data
-        if not isinstance(data, bytes):
-            raise DeserializationError(
-                f"Expected safe cache bytes for OrjsonDisk entry, got {type(data).__name__}"
-            )
-        return _decode_value(data)
-
-
-
+        return super().fetch(mode, filename, value, read)

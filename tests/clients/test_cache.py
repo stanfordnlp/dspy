@@ -9,7 +9,6 @@ from diskcache import FanoutCache
 
 import dspy
 from dspy.clients.cache import Cache
-from dspy.clients.disk_serialization import DeserializationError
 
 
 @dataclass
@@ -256,8 +255,63 @@ def test_corrupt_disk_entries_return_none(orjson_cache):
     orjson_cache.put(request, "good_value")
     orjson_cache.reset_memory_cache()
 
-    with patch.object(type(orjson_cache.disk_cache), "get", side_effect=DeserializationError("corrupt")):
+    with patch.object(type(orjson_cache.disk_cache), "get", return_value=b"corrupt garbage"):
         assert orjson_cache.get(request) is None
+
+
+def test_pickle_mode_reads_safe_entries(tmp_path):
+    shared_dir = tmp_path / "shared-cache-root"
+    request = {"model": "test", "prompt": "format-switch"}
+
+    safe_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=shared_dir,
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=1,
+        use_pickle=False,
+    )
+    safe_cache.put(request, {"value": "safe"})
+    safe_cache.disk_cache.close()
+
+    pickle_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=shared_dir,
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=1,
+        use_pickle=True,
+    )
+
+    assert safe_cache.disk_cache_dir == pickle_cache.disk_cache_dir
+    assert pickle_cache.get(request) == {"value": "safe"}
+
+
+def test_safe_mode_refuses_pickle_entries(tmp_path):
+    shared_dir = tmp_path / "shared-cache-root"
+    request = {"model": "test", "prompt": "format-switch"}
+
+    pickle_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=shared_dir,
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=1,
+        use_pickle=True,
+    )
+    pickle_cache.put(request, {"value": "pickled"})
+    pickle_cache.disk_cache.close()
+
+    safe_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=shared_dir,
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=1,
+        use_pickle=False,
+    )
+
+    assert safe_cache.get(request) is None
 
 
 def test_non_serializable_values_warn_and_stay_in_memory(orjson_cache):
