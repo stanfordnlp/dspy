@@ -158,21 +158,27 @@ def test_put_and_get(cache):
     request = {"prompt": "Hello", "model": "openai/gpt-4o-mini", "temperature": 0.7}
     value = DummyResponse(message="This is a test response", usage={"prompt_tokens": 10, "completion_tokens": 20})
 
+    # Test putting and getting from memory cache.
     cache.put(request, value)
     result = cache.get(request)
 
     assert result.message == value.message
     assert result.usage == {}
 
+    # First, clear memory cache to ensure we're using disk cache.
     cache.reset_memory_cache()
 
+    # Get from disk cache.
     result_from_disk = cache.get(request)
     assert result_from_disk.message == value.message
     assert result_from_disk.usage == {}
+
+    # Verify it was also added back to memory cache.
     assert cache.cache_key(request) in cache.memory_cache
 
 
 def test_cache_miss_and_unserializable_key(cache):
+    """Cache miss returns None; unserializable request key also returns None without raising."""
     assert cache.get({"prompt": "Non-existent", "model": "gpt-4"}) is None
 
     class UnserializableObject:
@@ -180,7 +186,7 @@ def test_cache_miss_and_unserializable_key(cache):
 
     request = {"data": UnserializableObject()}
     assert cache.get(request) is None
-    cache.put(request, "value")
+    cache.put(request, "value")  # should not raise
 
 
 def test_model_response_roundtrip_in_safe_mode(orjson_cache):
@@ -275,16 +281,23 @@ def test_non_serializable_values_warn_and_stay_in_memory(orjson_cache):
 def test_reset_memory_cache(cache):
     """Test resetting memory cache."""
     requests = [{"prompt": f"Hello {i}", "model": "openai/gpt-4o-mini"} for i in range(5)]
+
+    # Add some items to the memory cache.
     for i, req in enumerate(requests):
         cache.put(req, f"Response {i}")
 
+    # Verify items are in memory cache.
     for req in requests:
         key = cache.cache_key(req)
         assert key in cache.memory_cache
 
+    # Reset memory cache.
     cache.reset_memory_cache()
+
+    # Verify memory cache is empty.
     assert len(cache.memory_cache) == 0
 
+    # But disk cache still has the items.
     for req in requests:
         result = cache.get(req)
         assert result is not None
@@ -293,12 +306,16 @@ def test_reset_memory_cache(cache):
 def test_save_and_load_memory_cache(cache, tmp_path):
     """Test saving and loading memory cache."""
     requests = [{"prompt": f"Hello {i}", "model": "openai/gpt-4o-mini"} for i in range(5)]
+
+    # Add some items to the memory cache.
     for i, req in enumerate(requests):
         cache.put(req, f"Response {i}")
 
+    # Save memory cache to a temporary file.
     temp_cache_file = tmp_path / "memory_cache.pkl"
     cache.save_memory_cache(str(temp_cache_file))
 
+    # Create a new cache instance with disk cache disabled.
     new_cache = Cache(
         enable_memory_cache=True,
         enable_disk_cache=False,
@@ -307,11 +324,14 @@ def test_save_and_load_memory_cache(cache, tmp_path):
         memory_max_entries=100,
     )
 
+    # Load the memory cache without allowing pickle (default).
     with pytest.raises(ValueError):
         new_cache.load_memory_cache(str(temp_cache_file))
 
+    # Load the memory cache with allow_pickle=True.
     new_cache.load_memory_cache(str(temp_cache_file), allow_pickle=True)
 
+    # Verify items are in the new memory cache.
     for req in requests:
         result = new_cache.get(req)
         assert result is not None
@@ -322,20 +342,25 @@ def test_request_cache_decorator(cache):
     """Test the lm_cache decorator."""
     from dspy.clients.cache import request_cache
 
+    # Mock the dspy.cache attribute.
     with patch("dspy.cache", cache):
+        # Define a test function.
         @request_cache()
         def test_function(prompt, model):
             return f"Response for {prompt} with {model}"
 
+        # First call should compute the result.
         result1 = test_function(prompt="Hello", model="openai/gpt-4o-mini")
         assert result1 == "Response for Hello with openai/gpt-4o-mini"
 
+        # Second call with same arguments should use cache.
         with patch.object(cache, "get") as mock_get:
             mock_get.return_value = "Cached response"
             result2 = test_function(prompt="Hello", model="openai/gpt-4o-mini")
             assert result2 == "Cached response"
             mock_get.assert_called_once()
 
+        # Call with different arguments should compute again.
         result3 = test_function(prompt="Different", model="openai/gpt-4o-mini")
         assert result3 == "Response for Different with openai/gpt-4o-mini"
 
@@ -344,7 +369,9 @@ def test_request_cache_decorator_with_ignored_args_for_cache_key(cache):
     """Test the request_cache decorator with ignored_args_for_cache_key."""
     from dspy.clients.cache import request_cache
 
+    # Mock the dspy.cache attribute.
     with patch("dspy.cache", cache):
+        # Define test functions.
         @request_cache(ignored_args_for_cache_key=["model"])
         def test_function1(prompt, model):
             return f"Response for {prompt} with {model}"
@@ -353,10 +380,12 @@ def test_request_cache_decorator_with_ignored_args_for_cache_key(cache):
         def test_function2(prompt, model):
             return f"Response for {prompt} with {model}"
 
+        # Because model is ignored, both calls should hit the same cache entry.
         result1 = test_function1(prompt="Hello", model="openai/gpt-4o-mini")
         result2 = test_function1(prompt="Hello", model="openai/gpt-4o")
         assert result1 == result2
 
+        # Because model is not ignored here, the cache keys should differ.
         result3 = test_function2(prompt="Hello", model="openai/gpt-4o-mini")
         result4 = test_function2(prompt="Hello", model="openai/gpt-4o")
         assert result3 != result4
@@ -367,20 +396,25 @@ async def test_request_cache_decorator_async(cache):
     """Test the request_cache decorator with async functions."""
     from dspy.clients.cache import request_cache
 
+    # Mock the dspy.cache attribute.
     with patch("dspy.cache", cache):
+        # Define a test function.
         @request_cache()
         async def test_function(prompt, model):
             return f"Response for {prompt} with {model}"
 
+        # First call should compute the result.
         result1 = await test_function(prompt="Hello", model="openai/gpt-4o-mini")
         assert result1 == "Response for Hello with openai/gpt-4o-mini"
 
+        # Second call with same arguments should use cache.
         with patch.object(cache, "get") as mock_get:
             mock_get.return_value = "Cached response"
             result2 = await test_function(prompt="Hello", model="openai/gpt-4o-mini")
             assert result2 == "Cached response"
             mock_get.assert_called_once()
 
+        # Call with different arguments should compute again.
         result3 = await test_function(prompt="Different", model="openai/gpt-4o-mini")
         assert result3 == "Response for Different with openai/gpt-4o-mini"
 
@@ -389,14 +423,18 @@ def test_cache_consistency_with_lm_call_modifies_the_request(cache):
     """Test that the cache is consistent with the LM call that modifies the request."""
     from dspy.clients.cache import request_cache
 
+    # Mock the dspy.cache attribute.
     with patch("dspy.cache", cache):
+        # Define a test function.
         @request_cache()
         def test_function(**kwargs):
             del kwargs["field_to_delete"]
             return kwargs
 
+        # First call should compute the result.
         test_function(field_to_delete="delete", field_to_keep="keep")
 
+        # The cache key should use the original request, not the modified one.
         assert (
             cache.get(
                 {

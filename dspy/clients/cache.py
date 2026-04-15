@@ -27,9 +27,13 @@ def _transform_value(value):
     elif dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {field.name: _transform_value(getattr(value, field.name)) for field in dataclasses.fields(value)}
     elif callable(value):
+        # Try to get the source code of the callable if available
         try:
+            # For regular functions, we can get the source code
             return f"<callable_source:{inspect.getsource(value)}>"
         except (TypeError, OSError):
+            # For lambda functions or other callables where source isn't available,
+            # use a string representation
             return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
     elif isinstance(value, dict):
         return {k: _transform_value(v) for k, v in value.items()}
@@ -151,6 +155,7 @@ class Cache:
             if response is None:
                 return None
             if self.enable_memory_cache:
+                # Found on disk but not in memory cache, add to memory cache
                 with self._lock:
                     self.memory_cache[key] = response
         else:
@@ -158,6 +163,7 @@ class Cache:
 
         response = copy.deepcopy(response)
         if hasattr(response, "usage"):
+            # Clear the usage data when cache is hit, because no LM call is made
             response.usage = {}
             response.cache_hit = True
         return response
@@ -171,6 +177,7 @@ class Cache:
     ) -> None:
         enable_memory_cache = self.enable_memory_cache and enable_memory_cache
 
+        # Early return to avoid computing cache key if both memory and disk cache are disabled
         if not enable_memory_cache and not self.enable_disk_cache:
             return
 
@@ -190,6 +197,7 @@ class Cache:
             except TypeError as e:
                 warnings.warn(f"Skipping disk cache write: {e}", UserWarning, stacklevel=2)
             except Exception as e:
+                # Disk cache writing can fail for different reasons, e.g. disk full or the `value` is not picklable.
                 logger.debug(f"Failed to put value in disk cache: {value}, {e}")
 
     def reset_memory_cache(self) -> None:
@@ -226,8 +234,8 @@ def request_cache(
     cache_arg_name: str | None = None,
     ignored_args_for_cache_key: list[str] | None = None,
     enable_memory_cache: bool = True,
-    *,
-    maxsize: int | None = None,
+    *,  # everything after this is keyword-only
+    maxsize: int | None = None,  # legacy / no-op
 ):
     """
     Decorator for applying caching to a function based on the request argument.
@@ -240,6 +248,7 @@ def request_cache(
             written to on new data.
     """
     ignored_args_for_cache_key = ignored_args_for_cache_key or ["api_key", "api_base", "base_url"]
+    # Deprecation notice
     if maxsize is not None:
         logger.warning(
             "[DEPRECATION] `maxsize` is deprecated and no longer does anything; "
@@ -250,11 +259,17 @@ def request_cache(
     def decorator(fn):
         @wraps(fn)
         def process_request(args, kwargs):
+            # Use fully qualified function name for uniqueness
             fn_identifier = f"{fn.__module__}.{fn.__qualname__}"
 
+            # Create a modified request that includes the function identifier so that it's incorporated into the cache
+            # key. Deep copy is required because litellm sometimes modifies the kwargs in place.
             if cache_arg_name:
+                # When `cache_arg_name` is provided, use the value of the argument with this name as the request for
+                # caching.
                 modified_request = copy.deepcopy(kwargs[cache_arg_name])
             else:
+                # When `cache_arg_name` is not provided, use the entire kwargs as the request for caching.
                 modified_request = copy.deepcopy(kwargs)
                 for i, arg in enumerate(args):
                     modified_request[f"positional_arg_{i}"] = arg
@@ -269,12 +284,16 @@ def request_cache(
             cache = dspy.cache
             modified_request = process_request(args, kwargs)
 
+            # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
             if cached_result is not None:
                 return cached_result
 
+            # Otherwise, compute and store the result
+            # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
             original_request = copy.deepcopy(modified_request)
             result = fn(*args, **kwargs)
+            # `enable_memory_cache` can be provided at call time to avoid indefinite growth.
             cache.put(original_request, result, ignored_args_for_cache_key, enable_memory_cache)
 
             return result
@@ -286,10 +305,13 @@ def request_cache(
             cache = dspy.cache
             modified_request = process_request(args, kwargs)
 
+            # Retrieve from cache if available
             cached_result = cache.get(modified_request, ignored_args_for_cache_key)
             if cached_result is not None:
                 return cached_result
 
+            # Otherwise, compute and store the result
+            # Make a copy of the original request in case it's modified in place, e.g., deleting some fields
             original_request = copy.deepcopy(modified_request)
             result = await fn(*args, **kwargs)
             cache.put(original_request, result, ignored_args_for_cache_key, enable_memory_cache)
