@@ -62,7 +62,7 @@ jobs:
           deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -113,7 +113,7 @@ jobs:
           deactivate
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (dspy)
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           attestations: false
       # Publish to dspy-ai
@@ -127,7 +127,7 @@ jobs:
       - name: Build a binary wheel (dspy-ai)
         run: python3 -m build .github/.internal_dspyai/
       - name: Publish distribution 📦 to PyPI (dspy-ai)
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           attestations: false
           packages-dir: .github/.internal_dspyai/dist/
