@@ -573,3 +573,13 @@ def test_cache_fallback_on_restricted_environment():
             os.environ.pop("DSPY_CACHEDIR", None)
         else:
             os.environ["DSPY_CACHEDIR"] = old_env
+
+
+def test_cache_init_with_disk_disabled_and_none_dir():
+    cache = Cache(
+        enable_disk_cache=False,
+        enable_memory_cache=True,
+        disk_cache_dir=None,
+    )
+    assert cache.disk_cache_dir is None
+    assert cache.enable_disk_cache is False

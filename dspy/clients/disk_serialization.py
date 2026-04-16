@@ -161,7 +161,7 @@ def decode(data: bytes, *, allowed: set[tuple[str, str]]) -> Any:
             )
 
         try:
-            return cls(**payload["data"])
+            return pydantic.TypeAdapter(cls).validate_python(payload["data"])
         except (TypeError, pydantic.ValidationError) as e:
             raise DeserializationError(f"Failed to reconstruct {mod_name}.{cls_name}") from e
 

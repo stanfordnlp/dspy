@@ -91,7 +91,7 @@ class Cache:
         self.enable_disk_cache = enable_disk_cache
         self.enable_memory_cache = enable_memory_cache
         self.use_pickle = use_pickle
-        self.disk_cache_dir = os.fspath(disk_cache_dir)
+        self.disk_cache_dir = os.fspath(disk_cache_dir) if disk_cache_dir is not None else None
         self._allowed_types = default_allowed_types()
         for cls in safe_types or []:
             self._allowed_types.add((cls.__module__, cls.__name__))

@@ -2,7 +2,7 @@
 
 import os
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import diskcache
 import numpy as np
@@ -30,10 +30,25 @@ class NullablePydanticModel(pydantic.BaseModel):
     optional_nullable: int | None = None
 
 
+class RootListModel(pydantic.RootModel[list[int]]):
+    pass
+
+
+class RootScalarModel(pydantic.RootModel[str]):
+    pass
+
+
 @dataclass
 class AllowedDataclass:
     name: str
     value: int
+
+
+@dataclass
+class DataclassWithNonInitField:
+    name: str
+    value: int
+    computed: str = field(init=False, default="default")
 
 
 @pytest.fixture()
@@ -42,6 +57,9 @@ def allowed():
     types.add((AllowedPydanticModel.__module__, AllowedPydanticModel.__name__))
     types.add((NullablePydanticModel.__module__, NullablePydanticModel.__name__))
     types.add((AllowedDataclass.__module__, AllowedDataclass.__name__))
+    types.add((RootListModel.__module__, RootListModel.__name__))
+    types.add((RootScalarModel.__module__, RootScalarModel.__name__))
+    types.add((DataclassWithNonInitField.__module__, DataclassWithNonInitField.__name__))
     return types
 
 
@@ -197,3 +215,27 @@ def test_encode_checks_allowlist(value):
 def test_envelope_contains_version():
     payload = orjson.loads(encode({"key": "value"}))
     assert payload["v"] == 1
+
+
+def test_root_model_list_roundtrip(allowed):
+    model = RootListModel([1, 2, 3])
+    result = decode(encode(model), allowed=allowed)
+    assert isinstance(result, RootListModel)
+    assert result.root == [1, 2, 3]
+
+
+def test_root_model_scalar_roundtrip(allowed):
+    model = RootScalarModel("hello")
+    result = decode(encode(model), allowed=allowed)
+    assert isinstance(result, RootScalarModel)
+    assert result.root == "hello"
+
+
+def test_dataclass_with_non_init_field_roundtrip(allowed):
+    obj = DataclassWithNonInitField(name="test", value=42)
+    obj.computed = "custom"
+    result = decode(encode(obj), allowed=allowed)
+    assert isinstance(result, DataclassWithNonInitField)
+    assert result.name == "test"
+    assert result.value == 42
+    assert result.computed == "default"
