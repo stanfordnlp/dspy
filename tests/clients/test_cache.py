@@ -291,6 +291,70 @@ def test_safe_mode_refuses_pickle_entries(tmp_path):
         assert safe_cache.get(request) is None
 
 
+def test_pickle_mode_reads_safe_mode_entries(tmp_path):
+    shared_dir = tmp_path / "shared-cache-root"
+    request = {"model": "test", "prompt": "safe-to-pickle"}
+
+    safe_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=shared_dir,
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=1,
+        use_pickle=False,
+    )
+    safe_cache.put(request, {"value": "safe-encoded"})
+    safe_cache.disk_cache.close()
+
+    pickle_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=shared_dir,
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=1,
+        use_pickle=True,
+    )
+
+    result = pickle_cache.get(request)
+    assert result == {"value": "safe-encoded"}
+
+
+def test_pickle_mode_reads_safe_mode_model_response(tmp_path):
+    from litellm import ModelResponse
+
+    shared_dir = tmp_path / "shared-cache-root"
+    request = {"model": "test", "prompt": "safe-to-pickle-model"}
+
+    safe_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=shared_dir,
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=1,
+        use_pickle=False,
+    )
+    response = ModelResponse(
+        id="test-safe-to-pickle",
+        choices=[{"message": {"content": "hello"}, "index": 0, "finish_reason": "stop"}],
+        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    )
+    safe_cache.put(request, response)
+    safe_cache.disk_cache.close()
+
+    pickle_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=shared_dir,
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=1,
+        use_pickle=True,
+    )
+
+    result = pickle_cache.get(request)
+    assert isinstance(result, ModelResponse)
+    assert result.choices[0].message.content == "hello"
+
+
 def test_unlisted_type_blocked_on_write_and_read(orjson_cache):
     @dataclass
     class UnlistedDataclass:

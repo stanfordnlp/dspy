@@ -20,6 +20,7 @@ import pydantic
 from diskcache import Disk
 from diskcache.core import MODE_BINARY, MODE_RAW, UNKNOWN
 
+SAFE_TAG = "s"
 _NPY_PREFIX = b"npy:"
 
 

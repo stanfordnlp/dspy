@@ -16,8 +16,10 @@ from cachetools import LRUCache
 from diskcache import FanoutCache
 
 from dspy.clients.disk_serialization import (
+    SAFE_TAG,
     DeserializationError,
     LegacyFormatError,
+    decode,
     default_allowed_types,
     make_safe_disk,
 )
@@ -150,7 +152,7 @@ class Cache:
 
         if self.enable_disk_cache:
             try:
-                response = self.disk_cache.get(key)
+                result = self.disk_cache.get(key, tag=self.use_pickle)
             except LegacyFormatError:
                 warnings.warn(
                     "Existing disk cache entry could not be deserialized and will be skipped. "
@@ -163,8 +165,21 @@ class Cache:
             except DeserializationError:
                 logger.debug("Failed to deserialize disk cache entry %s", key)
                 return None
-            if response is None:
-                return None
+
+            if self.use_pickle:
+                response, tag = result
+                if response is None:
+                    return None
+                if tag == SAFE_TAG:
+                    try:
+                        response = decode(response, allowed=self._allowed_types)
+                    except DeserializationError:
+                        logger.debug("Failed to decode safe-mode cache entry %s", key)
+                        return None
+            else:
+                response = result
+                if response is None:
+                    return None
 
             if self.enable_memory_cache:
                 with self._lock:
@@ -206,7 +221,7 @@ class Cache:
 
         if self.enable_disk_cache:
             try:
-                self.disk_cache[key] = value
+                self.disk_cache.set(key, value, tag=None if self.use_pickle else SAFE_TAG)
             except TypeError as e:
                 warnings.warn(f"Skipping disk cache write: {e}", UserWarning, stacklevel=2)
             except Exception as e:
