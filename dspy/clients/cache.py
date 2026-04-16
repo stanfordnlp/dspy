@@ -1,5 +1,4 @@
 import copy
-import dataclasses
 import inspect
 import logging
 import os
@@ -32,27 +31,13 @@ def _transform_value(value):
         return value.model_json_schema()
     elif isinstance(value, pydantic.BaseModel):
         return value.model_dump(mode="json")
-    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return {field.name: _transform_value(getattr(value, field.name)) for field in dataclasses.fields(value)}
     elif callable(value):
-        # Try to get the source code of the callable if available
         try:
-            # For regular functions, we can get the source code
             return f"<callable_source:{inspect.getsource(value)}>"
         except (TypeError, OSError):
-            # For lambda functions or other callables where source isn't available,
-            # use a string representation
             return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
     elif isinstance(value, dict):
         return {k: _transform_value(v) for k, v in value.items()}
-    elif isinstance(value, (list, tuple)):
-        return [_transform_value(v) for v in value]
-    elif isinstance(value, (set, frozenset)):
-        transformed_values = [_transform_value(v) for v in value]
-        return sorted(
-            transformed_values,
-            key=lambda item: orjson.dumps(item, option=orjson.OPT_SORT_KEYS),
-        )
     else:
         return value
 

@@ -39,6 +39,7 @@ dependencies = [
     "xxhash>=3.5.0",
     "gepa[dspy]==0.0.27",
     "typeguard==4.4.3",
+    "msgspec>=0.18.0",
 ]
 
 [project.optional-dependencies]

@@ -583,3 +583,28 @@ def test_cache_init_with_disk_disabled_and_none_dir():
     )
     assert cache.disk_cache_dir is None
     assert cache.enable_disk_cache is False
+
+
+def test_safe_mode_skips_legacy_primitive_entries(tmp_path):
+    """Legacy pickle cache stores primitives as raw SQLite values (int, str, etc).
+    Reopening with use_pickle=False should skip them as cache misses, not crash."""
+    cache_dir = str(tmp_path / "legacy")
+    pickle_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=cache_dir,
+        use_pickle=True,
+    )
+    request = {"prompt": "test_legacy"}
+    pickle_cache.put(request, 123)
+
+    safe_cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=cache_dir,
+        use_pickle=False,
+    )
+    assert safe_cache.get(request) is None
+
+
+

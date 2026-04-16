@@ -1,9 +1,13 @@
 """Safe cache serialization without pickle.
 
-Encodes pydantic models and dataclasses as JSON with embedded type
-metadata (module + class name), then reconstructs via importlib on
-decode. An allowlist of (module, classname) pairs controls which types
-may be reconstructed. Numpy arrays use a separate binary prefix.
+Uses a routing-byte prefix (inspired by CocoIndex) to dispatch between
+serialization engines:
+
+    0x01  msgspec (msgpack) -- plain values, dataclasses
+    0x02  pydantic          -- BaseModel subclasses (type metadata in msgpack body)
+    0x80  restricted pickle -- numpy ndarray only
+
+See: https://cocoindex.io/blogs/type-guided-serde
 """
 
 from __future__ import annotations
@@ -12,16 +16,20 @@ import dataclasses
 import functools
 import importlib
 import io
+import pickle
 from hashlib import sha256 as _sha256
 from typing import Any
 
-import orjson
+import msgspec.msgpack
 import pydantic
 from diskcache import Disk
 from diskcache.core import MODE_BINARY, MODE_RAW, UNKNOWN
 
 SAFE_TAG = "s"
-_NPY_PREFIX = b"npy:"
+
+_TAG_MSGSPEC = b"\x01"
+_TAG_PYDANTIC = b"\x02"
+_TAG_PICKLE = b"\x80"
 
 
 class DeserializationError(Exception):
@@ -30,6 +38,20 @@ class DeserializationError(Exception):
 
 class LegacyFormatError(DeserializationError):
     """Raised when a cache entry was written by the legacy pickle-based backend."""
+
+
+class _RestrictedUnpickler(pickle.Unpickler):
+    _ALLOWED = {
+        ("numpy", "dtype"),
+        ("numpy._core.numeric", "_frombuffer"),
+        ("numpy.core.numeric", "_frombuffer"),
+        ("numpy.core.multiarray", "_reconstruct"),
+    }
+
+    def find_class(self, module: str, name: str):
+        if (module, name) not in self._ALLOWED:
+            raise DeserializationError(f"Refusing to unpickle {module}.{name}")
+        return super().find_class(module, name)
 
 
 def _is_ndarray(value: Any) -> bool:
@@ -45,9 +67,9 @@ def _is_ndarray(value: Any) -> bool:
 def _schema_hash(cls: type) -> str:
     """Short hash of a class's schema; detects stale entries after library upgrades."""
     if issubclass(cls, pydantic.BaseModel):
-        raw = orjson.dumps(cls.model_json_schema(), option=orjson.OPT_SORT_KEYS)
+        raw = msgspec.json.encode(cls.model_json_schema())
     else:  # dataclass
-        raw = orjson.dumps([f.name for f in dataclasses.fields(cls)])
+        raw = msgspec.json.encode([f.name for f in dataclasses.fields(cls)])
     return _sha256(raw).hexdigest()[:16]
 
 
@@ -75,42 +97,48 @@ def default_allowed_types() -> set[tuple[str, str]]:
     return allowed
 
 
-def _typed_envelope(value: Any, kind: str, data: Any, allowed: set[tuple[str, str]] | None) -> bytes:
+def _check_allowlist(value: Any, allowed: set[tuple[str, str]] | None) -> None:
+    if allowed is None:
+        return
     cls = value.__class__
     mod, name = cls.__module__, cls.__name__
-    if allowed is not None and (mod, name) not in allowed:
+    if (mod, name) not in allowed:
         raise TypeError(
             f"Type {mod}.{name} is not in the safe_types allowlist. "
             f"Register it via safe_types=[...] in configure_cache()."
         )
-    return orjson.dumps({
-        "v": 1, "kind": kind, "module": mod, "cls": name,
-        "schema": _schema_hash(cls), "data": data,
-    })
 
 
 def encode(value: Any, *, allowed: set[tuple[str, str]] | None = None) -> bytes:
-    """Serialize *value* to the safe cache wire format.
-
-    When *allowed* is provided, pydantic/dataclass types not in the set raise TypeError.
-    """
+    """Serialize *value* to the safe cache wire format."""
     if _is_ndarray(value):
-        import numpy as np
-
-        buffer = io.BytesIO()
-        np.save(buffer, value, allow_pickle=False)
-        return _NPY_PREFIX + buffer.getvalue()
+        return _TAG_PICKLE + pickle.dumps(value)
 
     if isinstance(value, pydantic.BaseModel):
-        return _typed_envelope(value, "pydantic", value.model_dump(mode="json"), allowed)
+        _check_allowlist(value, allowed)
+        cls = value.__class__
+        payload = {
+            "module": cls.__module__,
+            "cls": cls.__name__,
+            "schema": _schema_hash(cls),
+            "data": value.model_dump(mode="json"),
+        }
+        return _TAG_PYDANTIC + msgspec.msgpack.encode(payload)
 
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        data = {f.name: getattr(value, f.name) for f in dataclasses.fields(value)}
-        return _typed_envelope(value, "dataclass", data, allowed)
+        _check_allowlist(value, allowed)
+        cls = value.__class__
+        payload = {
+            "module": cls.__module__,
+            "cls": cls.__name__,
+            "schema": _schema_hash(cls),
+            "data": {f.name: getattr(value, f.name) for f in dataclasses.fields(value)},
+        }
+        return _TAG_PYDANTIC + msgspec.msgpack.encode(payload)
 
     try:
-        return orjson.dumps({"v": 1, "kind": "value", "data": value})
-    except orjson.JSONEncodeError as e:
+        return _TAG_MSGSPEC + msgspec.msgpack.encode(value)
+    except TypeError as e:
         raise TypeError(
             f"Disk cache only supports JSON values, pydantic models, dataclasses, "
             f"and numpy arrays; got {type(value).__module__}.{type(value).__qualname__}"
@@ -119,28 +147,29 @@ def encode(value: Any, *, allowed: set[tuple[str, str]] | None = None) -> bytes:
 
 def decode(data: bytes, *, allowed: set[tuple[str, str]]) -> Any:
     """Deserialize a value, restricting typed reconstruction to the allowlist."""
-    if data.startswith(_NPY_PREFIX):
+    if not data:
+        raise DeserializationError("Empty cache entry")
+
+    tag = data[0:1]
+    body = data[1:]
+
+    if tag == _TAG_MSGSPEC:
         try:
-            import numpy as np
-        except ImportError as e:
-            raise DeserializationError("Cannot import module 'numpy'") from e
+            return msgspec.msgpack.decode(body)
+        except msgspec.DecodeError as e:
+            raise DeserializationError("Invalid msgpack in cache entry") from e
+
+    if tag == _TAG_PYDANTIC:
         try:
-            return np.load(io.BytesIO(data[len(_NPY_PREFIX) :]), allow_pickle=False)
-        except (TypeError, ValueError) as e:
-            raise DeserializationError("Invalid ndarray payload in cache entry") from e
+            payload = msgspec.msgpack.decode(body)
+        except msgspec.DecodeError as e:
+            raise DeserializationError("Invalid msgpack in cache entry") from e
 
-    try:
-        payload = orjson.loads(data)
-    except orjson.JSONDecodeError as e:
-        raise DeserializationError("Invalid JSON in cache entry") from e
-
-    kind = payload.get("kind")
-    if kind == "value":
-        return payload["data"]
-
-    if kind in ("pydantic", "dataclass"):
-        mod_name = payload["module"]
-        cls_name = payload["cls"]
+        try:
+            mod_name = payload["module"]
+            cls_name = payload["cls"]
+        except (KeyError, TypeError) as e:
+            raise DeserializationError("Cache entry missing 'module' or 'cls' field") from e
 
         if (mod_name, cls_name) not in allowed:
             raise DeserializationError(
@@ -162,14 +191,22 @@ def decode(data: bytes, *, allowed: set[tuple[str, str]]) -> Any:
 
         try:
             return pydantic.TypeAdapter(cls).validate_python(payload["data"])
-        except (TypeError, pydantic.ValidationError) as e:
+        except (TypeError, pydantic.ValidationError, KeyError) as e:
             raise DeserializationError(f"Failed to reconstruct {mod_name}.{cls_name}") from e
 
-    raise DeserializationError(f"Unknown cache entry kind: {kind!r}")
+    if tag == _TAG_PICKLE:
+        try:
+            return _RestrictedUnpickler(io.BytesIO(body)).load()
+        except DeserializationError:
+            raise
+        except Exception as e:
+            raise DeserializationError("Invalid pickle payload in cache entry") from e
+
+    raise DeserializationError(f"Unknown routing byte: {tag!r}")
 
 
 class SafeDisk(Disk):
-    """Disk backend that uses safe JSON serialization with an allowlist.
+    """Disk backend that uses safe serialization with an allowlist.
 
     Use ``make_safe_disk(allowed)`` to create a subclass bound to a
     specific allowlist.
@@ -190,6 +227,11 @@ class SafeDisk(Disk):
         data = super().fetch(mode, filename, value, read)
         if read:
             return data
+        if not isinstance(data, bytes):
+            raise LegacyFormatError(
+                f"Expected bytes from disk cache, got {type(data).__name__}; "
+                f"this entry was likely written by the legacy pickle backend"
+            )
         return decode(data, allowed=self._allowed)
 
 

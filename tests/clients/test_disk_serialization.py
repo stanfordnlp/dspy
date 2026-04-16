@@ -5,13 +5,14 @@ import sqlite3
 from dataclasses import dataclass, field
 
 import diskcache
+import msgspec.msgpack
 import numpy as np
-import orjson
 import pydantic
 import pytest
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 
 from dspy.clients.disk_serialization import (
+    _TAG_PYDANTIC,
     DeserializationError,
     decode,
     default_allowed_types,
@@ -177,10 +178,9 @@ def test_tuple_roundtrips_as_list(allowed):
     assert result == [1, 2, 3]
 
 
-def test_unknown_kind_is_rejected(allowed):
-    payload = b'{"kind": "alien", "module": "x", "cls": "Y", "data": {}}'
-    with pytest.raises(DeserializationError):
-        decode(payload, allowed=allowed)
+def test_unknown_routing_byte_is_rejected(allowed):
+    with pytest.raises(DeserializationError, match="Unknown routing byte"):
+        decode(b"\xff" + b"body", allowed=allowed)
 
 
 def test_allowlists_are_isolated():
@@ -195,10 +195,11 @@ def test_allowlists_are_isolated():
 
 def test_schema_change_detected_on_decode(allowed):
     encoded = encode(AllowedPydanticModel(name="test", value=42))
-    payload = orjson.loads(encoded)
+    payload = msgspec.msgpack.decode(encoded[1:])
     payload["schema"] = "0000000000000000"
+    tampered = _TAG_PYDANTIC + msgspec.msgpack.encode(payload)
     with pytest.raises(DeserializationError, match="has changed"):
-        decode(orjson.dumps(payload), allowed=allowed)
+        decode(tampered, allowed=allowed)
 
 
 @pytest.mark.parametrize("value", [
@@ -212,9 +213,9 @@ def test_encode_checks_allowlist(value):
     encode(value)
 
 
-def test_envelope_contains_version():
-    payload = orjson.loads(encode({"key": "value"}))
-    assert payload["v"] == 1
+def test_plain_value_uses_msgspec_tag():
+    encoded = encode({"key": "value"})
+    assert encoded[0:1] == b"\x01"
 
 
 def test_root_model_list_roundtrip(allowed):
@@ -239,3 +240,24 @@ def test_dataclass_with_non_init_field_roundtrip(allowed):
     assert result.name == "test"
     assert result.value == 42
     assert result.computed == "default"
+
+
+@pytest.mark.parametrize("payload", [
+    b"",
+    b"\xff" + b"junk",
+    _TAG_PYDANTIC + msgspec.msgpack.encode({"cls": "X"}),
+    _TAG_PYDANTIC + msgspec.msgpack.encode({"module": "X"}),
+    _TAG_PYDANTIC + msgspec.msgpack.encode({"module": "X", "cls": "Y", "data": {}}),
+    b"\x01" + b"\xc1",
+], ids=["empty", "unknown-tag", "pydantic-missing-module", "pydantic-missing-cls", "pydantic-unlisted-type", "bad-msgpack"])
+def test_corrupt_payload_raises_deserialization_error(payload, allowed):
+    with pytest.raises(DeserializationError):
+        decode(payload, allowed=allowed)
+
+
+def test_restricted_unpickler_rejects_non_numpy(allowed):
+    import pickle as _pickle
+
+    payload = b"\x80" + _pickle.dumps(AllowedPydanticModel(name="test", value=1))
+    with pytest.raises(DeserializationError, match="Refusing to unpickle"):
+        decode(payload, allowed=allowed)
