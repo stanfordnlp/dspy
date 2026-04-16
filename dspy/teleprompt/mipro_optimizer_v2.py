@@ -780,7 +780,7 @@ class MIPROv2(Teleprompter):
                 predictor.demos = demo_candidates[i][demos_idx]
                 trial_logs[trial_num][f"{i}_predictor_demos"] = demos_idx
                 chosen_params.append(f"Predictor {i}: Few-Shot Set {demos_idx}")
-                raw_chosen_params[f"{i}_predictor_demos"] = instruction_idx
+                raw_chosen_params[f"{i}_predictor_demos"] = demos_idx
 
         return chosen_params, raw_chosen_params
 
