@@ -34,7 +34,7 @@ dependencies = [
     "anyio",
     "asyncer==0.0.8",
     "cachetools>=5.5.0",
-    "cloudpickle>=3.0.0",
+    "cloudpickle>=3.1.2",
     "numpy>=1.26.0",
     "xxhash>=3.5.0",
     "gepa[dspy]==0.0.27",
