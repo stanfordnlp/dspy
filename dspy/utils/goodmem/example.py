@@ -52,6 +52,7 @@ from dspy.utils.goodmem.client import GoodMemClient
 # Configuration
 # =========================================================================
 
+
 def get_config() -> dict:
     """Read configuration from environment variables.
 
@@ -129,6 +130,7 @@ DOCUMENTS = [
 # Step 1: Set Up GoodMem (Space & Memories)
 # =========================================================================
 
+
 def setup_goodmem(client: GoodMemClient) -> tuple[str, list[str]]:
     """Create a GoodMem space and ingest the sample documents.
 
@@ -150,8 +152,7 @@ def setup_goodmem(client: GoodMemClient) -> tuple[str, list[str]]:
     embedders = client.list_embedders()
     if not embedders:
         sys.exit(
-            "Error: No embedders registered on the GoodMem server.\n"
-            "Register one first — see https://docs.goodmem.ai"
+            "Error: No embedders registered on the GoodMem server.\nRegister one first — see https://docs.goodmem.ai"
         )
 
     embedder = embedders[0]
@@ -197,6 +198,7 @@ def setup_goodmem(client: GoodMemClient) -> tuple[str, list[str]]:
 # Step 2: Build the RAG Module
 # =========================================================================
 
+
 class RAG(dspy.Module):
     """A retrieval-augmented generation module powered by GoodMem.
 
@@ -239,6 +241,7 @@ class RAG(dspy.Module):
 # Step 3: Run Inference
 # =========================================================================
 
+
 def run_inference(rag: RAG) -> None:
     """Ask a few questions and display the RAG pipeline's answers.
 
@@ -266,6 +269,7 @@ def run_inference(rag: RAG) -> None:
 # =========================================================================
 # Step 4: Evaluate Quality
 # =========================================================================
+
 
 def evaluate_quality(rag: RAG) -> float:
     """Measure answer quality using DSPy's SemanticF1 metric.
@@ -324,6 +328,7 @@ def evaluate_quality(rag: RAG) -> float:
 # Step 5: Cleanup
 # =========================================================================
 
+
 def cleanup(client: GoodMemClient, space_id: str, memory_ids: list[str]) -> None:
     """Delete all test memories and the space created by this example."""
     print(f"  Deleting {len(memory_ids)} memories...")
@@ -346,6 +351,7 @@ def cleanup(client: GoodMemClient, space_id: str, memory_ids: list[str]) -> None
 # Main
 # =========================================================================
 
+
 def main() -> None:
     """Run the full GoodMem + DSPy RAG example end-to-end."""
 
@@ -359,6 +365,7 @@ def main() -> None:
     # Suppress SSL warnings when using self-signed certs.
     if not config["verify_ssl"]:
         import urllib3
+
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     # Configure the language model.
