@@ -3,7 +3,6 @@ import inspect
 import logging
 import os
 import threading
-import warnings
 from functools import wraps
 from hashlib import sha256
 from typing import Any
@@ -15,12 +14,8 @@ from cachetools import LRUCache
 from diskcache import FanoutCache
 
 from dspy.clients.disk_serialization import (
-    SAFE_TAG,
     DeserializationError,
-    LegacyFormatError,
-    decode,
-    default_allowed_types,
-    make_safe_disk,
+    make_restricted_disk,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,7 +52,7 @@ class Cache:
         disk_cache_dir: str,
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
         memory_max_entries: int = 1000000,
-        use_pickle: bool = True,
+        restrict_pickle: bool = False,
         safe_types: list[type[Any]] | None = None,
     ):
         """
@@ -67,19 +62,14 @@ class Cache:
             disk_cache_dir: The directory where the disk cache is stored.
             disk_size_limit_bytes: The maximum size of the disk cache (in bytes).
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
-            use_pickle: When True (default), use pickle serialization for disk cache.
-                When False, use the safe serializer.
-            safe_types: Optional top-level pydantic model or dataclass types to
-                register for safe disk-cache serialization.
+            restrict_pickle: When True, restrict pickle deserialization to a known-safe
+                set of types. When False (default), use unrestricted pickle.
+            safe_types: Additional types to allow when restrict_pickle is True.
         """
 
         self.enable_disk_cache = enable_disk_cache
         self.enable_memory_cache = enable_memory_cache
-        self.use_pickle = use_pickle
         self.disk_cache_dir = os.fspath(disk_cache_dir) if disk_cache_dir is not None else None
-        self._allowed_types = default_allowed_types()
-        for cls in safe_types or []:
-            self._allowed_types.add((cls.__module__, cls.__name__))
         if self.enable_memory_cache:
             if memory_max_entries is None:
                 raise ValueError("`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache.")
@@ -96,8 +86,9 @@ class Cache:
                 size_limit=disk_size_limit_bytes if disk_size_limit_bytes is not None else 2**40,
                 eviction_policy="none" if disk_size_limit_bytes is None else "least-recently-stored",
             )
-            if not use_pickle:
-                fanout_kwargs["disk"] = make_safe_disk(self._allowed_types)
+            if restrict_pickle:
+                allowed = {(cls.__module__, cls.__name__) for cls in (safe_types or [])}
+                fanout_kwargs["disk"] = make_restricted_disk(allowed)
             self.disk_cache = FanoutCache(**fanout_kwargs)
         else:
             self.disk_cache = {}
@@ -137,34 +128,13 @@ class Cache:
 
         if self.enable_disk_cache:
             try:
-                result = self.disk_cache.get(key, tag=self.use_pickle)
-            except LegacyFormatError:
-                warnings.warn(
-                    "Existing disk cache entry could not be deserialized and will be skipped. "
-                    "This is expected when switching from pickle to safe serialization mode. "
-                    "Affected entries will be re-computed and stored in the new format.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                return None
+                response = self.disk_cache.get(key)
             except DeserializationError:
                 logger.debug("Failed to deserialize disk cache entry %s", key)
                 return None
 
-            if self.use_pickle:
-                response, tag = result
-                if response is None:
-                    return None
-                if tag == SAFE_TAG:
-                    try:
-                        response = decode(response, allowed=self._allowed_types)
-                    except DeserializationError:
-                        logger.debug("Failed to decode safe-mode cache entry %s", key)
-                        return None
-            else:
-                response = result
-                if response is None:
-                    return None
+            if response is None:
+                return None
 
             if self.enable_memory_cache:
                 with self._lock:
@@ -206,9 +176,7 @@ class Cache:
 
         if self.enable_disk_cache:
             try:
-                self.disk_cache.set(key, value, tag=None if self.use_pickle else SAFE_TAG)
-            except TypeError as e:
-                warnings.warn(f"Skipping disk cache write: {e}", UserWarning, stacklevel=2)
+                self.disk_cache.set(key, value)
             except Exception as e:
                 logger.debug("Failed to put value in disk cache: %s, %s", value, e)
 

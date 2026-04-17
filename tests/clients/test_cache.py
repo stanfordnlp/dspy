@@ -42,15 +42,15 @@ def cache(cache_config):
 
 
 @pytest.fixture
-def orjson_cache(tmp_path):
-    """Create a cache instance with the safe serializer backend."""
+def restricted_cache(tmp_path):
+    """Create a cache instance with restricted pickle deserialization."""
     return Cache(
         enable_disk_cache=True,
         enable_memory_cache=True,
-        disk_cache_dir=str(tmp_path / "orjson"),
+        disk_cache_dir=str(tmp_path / "restricted"),
         disk_size_limit_bytes=1024 * 1024,
         memory_max_entries=100,
-        use_pickle=False,
+        restrict_pickle=True,
     )
 
 
@@ -70,24 +70,23 @@ def test_initialization(tmp_path):
     disk_cache = Cache(
         enable_disk_cache=True,
         enable_memory_cache=False,
-        disk_cache_dir=str(tmp_path / "pickle"),
+        disk_cache_dir=str(tmp_path / "disk"),
         disk_size_limit_bytes=1024,
         memory_max_entries=0,
     )
     assert isinstance(disk_cache.disk_cache, FanoutCache)
     assert disk_cache.memory_cache == {}
 
-    safe_cache = Cache(
+    restricted_cache = Cache(
         enable_disk_cache=True,
         enable_memory_cache=False,
-        disk_cache_dir=str(tmp_path / "orjson"),
+        disk_cache_dir=str(tmp_path / "restricted"),
         disk_size_limit_bytes=1024,
         memory_max_entries=0,
-        use_pickle=False,
+        restrict_pickle=True,
     )
-    assert isinstance(safe_cache.disk_cache, FanoutCache)
-    assert safe_cache.use_pickle is False
-    assert safe_cache.memory_cache == {}
+    assert isinstance(restricted_cache.disk_cache, FanoutCache)
+    assert restricted_cache.memory_cache == {}
 
     disabled_cache = Cache(
         enable_disk_cache=False,
@@ -188,7 +187,7 @@ def test_cache_miss_and_unserializable_key(cache):
     cache.put(request, "value")  # should not raise
 
 
-def test_model_response_roundtrip_in_safe_mode(orjson_cache):
+def test_model_response_roundtrip_in_restricted_mode(restricted_cache):
     from litellm import ModelResponse
 
     response = ModelResponse(
@@ -198,20 +197,20 @@ def test_model_response_roundtrip_in_safe_mode(orjson_cache):
     )
     request = {"model": "openai/gpt-5-nano", "prompt": "test"}
 
-    orjson_cache.put(request, response)
-    orjson_cache.reset_memory_cache()
+    restricted_cache.put(request, response)
+    restricted_cache.reset_memory_cache()
 
-    result = orjson_cache.get(request)
+    result = restricted_cache.get(request)
     assert isinstance(result, ModelResponse)
     assert result.choices[0].message.content == "cached response"
 
 
-def test_registered_dataclass_roundtrip_in_safe_mode(tmp_path):
+def test_registered_dataclass_roundtrip_in_restricted_mode(tmp_path):
     cache = Cache(
         enable_disk_cache=True,
         enable_memory_cache=False,
         disk_cache_dir=str(tmp_path),
-        use_pickle=False,
+        restrict_pickle=True,
         safe_types=[CacheValidationDataclass],
     )
     request = {
@@ -235,7 +234,7 @@ def test_configure_cache_registers_safe_types(tmp_path):
             enable_disk_cache=True,
             enable_memory_cache=False,
             disk_cache_dir=str(tmp_path / "configured"),
-            use_pickle=False,
+            restrict_pickle=True,
             safe_types=[CacheValidationDataclass],
         )
         request = {"model": "test", "prompt": "configured_safe_type"}
@@ -250,127 +249,55 @@ def test_configure_cache_registers_safe_types(tmp_path):
         dspy.cache = original_cache
 
 
-def test_corrupt_disk_entries_return_none(orjson_cache):
-    from dspy.clients.disk_serialization import DeserializationError, SafeDisk
+def test_corrupt_disk_entries_return_none(restricted_cache):
+    from dspy.clients.disk_serialization import DeserializationError, RestrictedDisk
 
     request = {"model": "test", "prompt": "will_be_corrupted"}
-    orjson_cache.put(request, "good_value")
-    orjson_cache.reset_memory_cache()
+    restricted_cache.put(request, "good_value")
+    restricted_cache.reset_memory_cache()
 
-    disk_cls = type(orjson_cache.disk_cache._shards[0].disk)
-    assert issubclass(disk_cls, SafeDisk)
+    disk_cls = type(restricted_cache.disk_cache._shards[0].disk)
+    assert issubclass(disk_cls, RestrictedDisk)
     with patch.object(disk_cls, "fetch", side_effect=DeserializationError("corrupt")):
-        assert orjson_cache.get(request) is None
+        assert restricted_cache.get(request) is None
 
 
-def test_safe_mode_refuses_pickle_entries(tmp_path):
-    shared_dir = tmp_path / "shared-cache-root"
-    request = {"model": "test", "prompt": "format-switch"}
+def test_restricted_and_unrestricted_share_wire_format(tmp_path):
+    """Both modes use standard pickle, so entries written by one can be read by the other."""
+    shared_dir = tmp_path / "shared"
+    request = {"model": "test", "prompt": "shared"}
 
-    pickle_cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=False,
-        disk_cache_dir=shared_dir,
-        disk_size_limit_bytes=1024 * 1024,
-        memory_max_entries=1,
-        use_pickle=True,
+    unrestricted = Cache(
+        enable_disk_cache=True, enable_memory_cache=False,
+        disk_cache_dir=shared_dir, disk_size_limit_bytes=1024 * 1024,
     )
-    pickle_cache.put(request, {"value": "pickled"})
-    pickle_cache.disk_cache.close()
+    unrestricted.put(request, {"value": "hello"})
+    unrestricted.disk_cache.close()
 
-    safe_cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=False,
-        disk_cache_dir=shared_dir,
-        disk_size_limit_bytes=1024 * 1024,
-        memory_max_entries=1,
-        use_pickle=False,
+    restricted = Cache(
+        enable_disk_cache=True, enable_memory_cache=False,
+        disk_cache_dir=shared_dir, disk_size_limit_bytes=1024 * 1024,
+        restrict_pickle=True,
     )
-
-    with pytest.warns(UserWarning, match="could not be deserialized"):
-        assert safe_cache.get(request) is None
+    assert restricted.get(request) == {"value": "hello"}
 
 
-def test_pickle_mode_reads_safe_mode_entries(tmp_path):
-    shared_dir = tmp_path / "shared-cache-root"
-    request = {"model": "test", "prompt": "safe-to-pickle"}
-
-    safe_cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=False,
-        disk_cache_dir=shared_dir,
-        disk_size_limit_bytes=1024 * 1024,
-        memory_max_entries=1,
-        use_pickle=False,
-    )
-    safe_cache.put(request, {"value": "safe-encoded"})
-    safe_cache.disk_cache.close()
-
-    pickle_cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=False,
-        disk_cache_dir=shared_dir,
-        disk_size_limit_bytes=1024 * 1024,
-        memory_max_entries=1,
-        use_pickle=True,
-    )
-
-    result = pickle_cache.get(request)
-    assert result == {"value": "safe-encoded"}
+@dataclass
+class _UnlistedDataclass:
+    value: int
 
 
-def test_pickle_mode_reads_safe_mode_model_response(tmp_path):
-    from litellm import ModelResponse
-
-    shared_dir = tmp_path / "shared-cache-root"
-    request = {"model": "test", "prompt": "safe-to-pickle-model"}
-
-    safe_cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=False,
-        disk_cache_dir=shared_dir,
-        disk_size_limit_bytes=1024 * 1024,
-        memory_max_entries=1,
-        use_pickle=False,
-    )
-    response = ModelResponse(
-        id="test-safe-to-pickle",
-        choices=[{"message": {"content": "hello"}, "index": 0, "finish_reason": "stop"}],
-        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-    )
-    safe_cache.put(request, response)
-    safe_cache.disk_cache.close()
-
-    pickle_cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=False,
-        disk_cache_dir=shared_dir,
-        disk_size_limit_bytes=1024 * 1024,
-        memory_max_entries=1,
-        use_pickle=True,
-    )
-
-    result = pickle_cache.get(request)
-    assert isinstance(result, ModelResponse)
-    assert result.choices[0].message.content == "hello"
-
-
-def test_unlisted_type_blocked_on_write_and_read(orjson_cache):
-    @dataclass
-    class UnlistedDataclass:
-        value: int
-
+def test_unlisted_type_blocked_on_read(restricted_cache):
     request = {"model": "test", "prompt": "dataclass"}
 
-    with pytest.warns(UserWarning, match="Skipping disk cache write"):
-        orjson_cache.put(request, UnlistedDataclass(value=1))
+    restricted_cache.put(request, _UnlistedDataclass(value=1))
 
-    # Served from memory cache (memory cache doesn't go through encode)
-    assert orjson_cache.get(request) == UnlistedDataclass(value=1)
+    # Served from memory cache (memory cache doesn't go through restricted unpickler)
+    assert restricted_cache.get(request) == _UnlistedDataclass(value=1)
 
-    # After clearing memory, nothing on disk because write was rejected
-    orjson_cache.reset_memory_cache()
-    assert orjson_cache.get(request) is None
+    # After clearing memory, restricted unpickler rejects the unlisted type
+    restricted_cache.reset_memory_cache()
+    assert restricted_cache.get(request) is None
 
 
 def test_reset_memory_cache(cache):
@@ -585,26 +512,7 @@ def test_cache_init_with_disk_disabled_and_none_dir():
     assert cache.enable_disk_cache is False
 
 
-def test_safe_mode_skips_legacy_primitive_entries(tmp_path):
-    """Legacy pickle cache stores primitives as raw SQLite values (int, str, etc).
-    Reopening with use_pickle=False should skip them as cache misses, not crash."""
-    cache_dir = str(tmp_path / "legacy")
-    pickle_cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=False,
-        disk_cache_dir=cache_dir,
-        use_pickle=True,
-    )
-    request = {"prompt": "test_legacy"}
-    pickle_cache.put(request, 123)
 
-    safe_cache = Cache(
-        enable_disk_cache=True,
-        enable_memory_cache=False,
-        disk_cache_dir=cache_dir,
-        use_pickle=False,
-    )
-    assert safe_cache.get(request) is None
 
 
 

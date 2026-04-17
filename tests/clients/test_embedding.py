@@ -93,7 +93,7 @@ def test_callable_embedding(cache):
 
 
 def test_callable_numpy_embedding_persists_to_disk(cache, tmp_path):
-    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache_safe", use_pickle=False)
+    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache_safe", restrict_pickle=True)
 
     inputs = ["hello", "world"]
     expected_embeddings = np.array(
