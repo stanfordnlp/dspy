@@ -13,6 +13,11 @@ import pydantic
 from cachetools import LRUCache
 from diskcache import FanoutCache
 
+from dspy.clients.disk_serialization import (
+    DeserializationError,
+    restricted_disk,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +52,8 @@ class Cache:
         disk_cache_dir: str | None,
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
         memory_max_entries: int = 1000000,
+        restrict_pickle: bool = False,
+        safe_types: list[type[Any]] | None = None,
     ):
         """
         Args:
@@ -55,6 +62,9 @@ class Cache:
             disk_cache_dir: The directory where the disk cache is stored.
             disk_size_limit_bytes: The maximum size of the disk cache (in bytes).
             memory_max_entries: The maximum size of the in-memory cache (in number of items).
+            restrict_pickle: When True, restrict pickle deserialization to a known-safe
+                set of types. When False (default), use unrestricted pickle.
+            safe_types: Additional types to allow when restrict_pickle is True.
         """
 
         self.enable_disk_cache = enable_disk_cache
@@ -69,12 +79,19 @@ class Cache:
         else:
             self.memory_cache = {}
         if self.enable_disk_cache:
-            self.disk_cache = FanoutCache(
+            fanout_kwargs = dict(
                 directory=self.disk_cache_dir,
                 shards=16,
                 timeout=10,
                 size_limit=disk_size_limit_bytes,
             )
+            if restrict_pickle:
+                for t in safe_types or []:
+                    if not isinstance(t, type):
+                        raise TypeError(f"safe_types entries must be types, got {t!r}")
+                allowed = frozenset((cls.__module__, cls.__qualname__) for cls in (safe_types or []))
+                fanout_kwargs["disk"] = restricted_disk(allowed)
+            self.disk_cache = FanoutCache(**fanout_kwargs)
         else:
             self.disk_cache = {}
 
@@ -112,7 +129,12 @@ class Cache:
                 return self._prepare_cached_response(response)
 
         if self.enable_disk_cache:
-            response = self.disk_cache.get(key)
+            try:
+                response = self.disk_cache.get(key)
+            except DeserializationError:
+                logger.debug("Failed to deserialize disk cache entry %s", key)
+                return None
+
             if response is None:
                 return None
 
