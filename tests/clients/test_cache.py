@@ -7,6 +7,7 @@ import pytest
 from cachetools import LRUCache
 from diskcache import FanoutCache
 
+import dspy
 from dspy.clients.cache import Cache
 
 
@@ -14,6 +15,12 @@ from dspy.clients.cache import Cache
 class DummyResponse:
     message: str
     usage: dict
+
+
+@dataclass
+class CacheValidationDataclass:
+    name: str
+    value: int
 
 
 @pytest.fixture
@@ -32,6 +39,19 @@ def cache_config(tmp_path):
 def cache(cache_config):
     """Create a cache instance with the default configuration."""
     return Cache(**cache_config)
+
+
+@pytest.fixture
+def restricted_cache(tmp_path):
+    """Create a cache instance with restricted pickle deserialization."""
+    return Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=True,
+        disk_cache_dir=str(tmp_path / "restricted"),
+        disk_size_limit_bytes=1024 * 1024,
+        memory_max_entries=100,
+        restrict_pickle=True,
+    )
 
 
 def test_initialization(tmp_path):
@@ -370,3 +390,146 @@ def test_cache_init_with_disk_disabled_and_none_dir():
     )
     assert cache.disk_cache_dir is None
     assert cache.enable_disk_cache is False
+
+
+# -- restrict_pickle tests --
+
+
+def test_model_response_roundtrip_in_restricted_mode(restricted_cache):
+    from litellm import ModelResponse
+
+    response = ModelResponse(
+        id="test-123",
+        choices=[{"message": {"content": "cached response"}, "index": 0, "finish_reason": "stop"}],
+        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    )
+    request = {"model": "openai/gpt-5-nano", "prompt": "test"}
+
+    restricted_cache.put(request, response)
+    restricted_cache.reset_memory_cache()
+
+    result = restricted_cache.get(request)
+    assert isinstance(result, ModelResponse)
+    assert result.choices[0].message.content == "cached response"
+
+
+def test_registered_dataclass_roundtrip_in_restricted_mode(tmp_path):
+    cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=str(tmp_path),
+        restrict_pickle=True,
+        safe_types=[CacheValidationDataclass],
+    )
+    request = {
+        "model": "test",
+        "prompt": "registered_dataclass_test",
+        "payload": CacheValidationDataclass(name="request", value=1),
+    }
+    response = CacheValidationDataclass(name="hello", value=3)
+
+    cache.put(request, response)
+    result = cache.get(request)
+
+    assert isinstance(result, CacheValidationDataclass)
+    assert result == response
+
+
+def test_configure_cache_registers_safe_types(tmp_path):
+    original_cache = dspy.cache
+    try:
+        dspy.configure_cache(
+            enable_disk_cache=True,
+            enable_memory_cache=False,
+            disk_cache_dir=str(tmp_path / "configured"),
+            restrict_pickle=True,
+            safe_types=[CacheValidationDataclass],
+        )
+        request = {"model": "test", "prompt": "configured_safe_type"}
+        response = CacheValidationDataclass(name="configured", value=7)
+
+        dspy.cache.put(request, response)
+        result = dspy.cache.get(request)
+
+        assert isinstance(result, CacheValidationDataclass)
+        assert result == response
+    finally:
+        dspy.cache = original_cache
+
+
+def test_corrupt_disk_entries_return_none(tmp_path):
+    """Real pickle corruption in a cache entry must return None, not raise."""
+    import sqlite3
+
+    cache = Cache(
+        enable_disk_cache=True,
+        enable_memory_cache=False,
+        disk_cache_dir=str(tmp_path),
+        restrict_pickle=True,
+    )
+    request = {"model": "test", "prompt": "will_be_corrupted"}
+    cache.put(request, {"value": "good"})
+    key = cache.cache_key(request)
+
+    # Corrupt the pickle blob in the SQLite database
+    for shard_id in range(16):
+        db_path = os.path.join(str(tmp_path), f"{shard_id:03d}", "cache.db")
+        if not os.path.exists(db_path):
+            continue
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("SELECT rowid, value FROM Cache WHERE key = ?", (key,)).fetchone()
+        if row:
+            conn.execute("UPDATE Cache SET value = X'DEADBEEF' WHERE rowid = ?", (row[0],))
+            conn.commit()
+        conn.close()
+
+    assert cache.get(request) is None
+
+
+def test_restricted_and_unrestricted_share_wire_format(tmp_path):
+    """Both modes use standard pickle, so entries written by one can be read by the other."""
+    shared_dir = tmp_path / "shared"
+    request = {"model": "test", "prompt": "shared"}
+
+    unrestricted = Cache(
+        enable_disk_cache=True, enable_memory_cache=False,
+        disk_cache_dir=shared_dir, disk_size_limit_bytes=1024 * 1024,
+    )
+    unrestricted.put(request, {"value": "hello"})
+    unrestricted.disk_cache.close()
+
+    restricted = Cache(
+        enable_disk_cache=True, enable_memory_cache=False,
+        disk_cache_dir=shared_dir, disk_size_limit_bytes=1024 * 1024,
+        restrict_pickle=True,
+    )
+    assert restricted.get(request) == {"value": "hello"}
+
+
+@dataclass
+class _UnlistedDataclass:
+    value: int
+
+
+def test_unlisted_type_rejected_on_read(restricted_cache):
+    request = {"model": "test", "prompt": "dataclass"}
+
+    restricted_cache.put(request, _UnlistedDataclass(value=1))
+
+    # Memory cache still works
+    assert restricted_cache.get(request) == _UnlistedDataclass(value=1)
+
+    # After clearing memory, restricted unpickler rejects the unlisted type
+    restricted_cache.reset_memory_cache()
+    assert restricted_cache.get(request) is None
+
+
+def test_safe_types_rejects_non_types(tmp_path):
+    with pytest.raises(TypeError, match="safe_types entries must be types"):
+        Cache(
+            enable_disk_cache=True,
+            enable_memory_cache=False,
+            disk_cache_dir=str(tmp_path),
+            restrict_pickle=True,
+            safe_types=["not_a_type"],
+        )
