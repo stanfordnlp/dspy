@@ -42,7 +42,7 @@ def _restricted_load(f: Any, allowed: set[tuple[str, str]]) -> Any:
                 return super().find_class(module, name)
             raise DeserializationError(
                 f"Type {module}.{name} is not in the safe_types allowlist. "
-                f"Register it via safe_types=[...] in configure_cache()."
+                f"Register it via dspy.configure_cache(safe_types=[...])."
             )
 
     return _Unpickler(f).load()
