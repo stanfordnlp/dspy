@@ -144,26 +144,17 @@ def test_put_and_get(cache):
 
 def test_cache_miss(cache):
     """Test getting a non-existent key."""
-    request = {"prompt": "Non-existent", "model": "gpt-4"}
-    result = cache.get(request)
-    assert result is None
+    assert cache.get({"prompt": "Non-existent", "model": "gpt-4"}) is None
 
 
-def test_cache_key_error_handling(cache):
-    """Test error handling for unserializable objects."""
-
-    # Test with a request that can't be serialized to JSON
+def test_unserializable_key(cache):
+    """Unserializable request key returns None without raising."""
     class UnserializableObject:
         pass
 
     request = {"data": UnserializableObject()}
-
-    # Should not raise an exception
-    result = cache.get(request)
-    assert result is None
-
-    # Should not raise an exception
-    cache.put(request, "value")
+    assert cache.get(request) is None
+    cache.put(request, "value")  # should not raise
 
 
 def test_reset_memory_cache(cache):
@@ -369,3 +360,13 @@ def test_cache_fallback_on_restricted_environment():
             os.environ.pop("DSPY_CACHEDIR", None)
         else:
             os.environ["DSPY_CACHEDIR"] = old_env
+
+
+def test_cache_init_with_disk_disabled_and_none_dir():
+    cache = Cache(
+        enable_disk_cache=False,
+        enable_memory_cache=True,
+        disk_cache_dir=None,
+    )
+    assert cache.disk_cache_dir is None
+    assert cache.enable_disk_cache is False
