@@ -148,7 +148,7 @@ class Tool(Type):
     def format(self):
         return str(self)
 
-    def format_as_litellm_function_call(self):
+    def format_as_function_call(self):
         return {
             "type": "function",
             "function": {

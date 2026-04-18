@@ -280,6 +280,10 @@ dspy.configure(
 Please note that not all models or providers support the Responses API, check [LiteLLM's documentation](https://docs.litellm.ai/docs/response_api) for more details.
 
 
+## Advanced: Custom backends.
+
+DSPy ships with built-in backends for OpenAI-compatible APIs, Anthropic, Google GenAI, and a litellm catch-all. If your provider isn't covered, you can supply your own backend — either by passing `backend=` directly to `dspy.LM` or by publishing an installable package. See the [Language Model Backends](../../deep-dive/language-model-backends.md) guide for the full protocol and examples.
+
 ## Advanced: Building custom LMs and writing your own Adapters.
 
 Though rarely needed, you can write custom LMs by inheriting from `dspy.BaseLM`. Another advanced layer in the DSPy ecosystem is that of _adapters_, which sit between DSPy signatures and LMs. A future version of this guide will discuss these advanced features, though you likely don't need them.
