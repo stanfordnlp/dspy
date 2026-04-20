@@ -133,6 +133,7 @@ class Cache:
                 response = self.disk_cache.get(key)
             except DeserializationError:
                 logger.debug("Failed to deserialize disk cache entry %s", key)
+                self.disk_cache.delete(key)
                 return None
 
             if response is None:
