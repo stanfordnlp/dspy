@@ -87,6 +87,7 @@ def _get_dspy_cache():
 
 DSPY_CACHE = _get_dspy_cache()
 
+
 def configure_litellm_logging(level: str = "ERROR"):
     """Configure LiteLLM logging to the specified level."""
     # Litellm uses a global logger called `verbose_logger` to control all loggings.
