@@ -25,11 +25,11 @@ Usage::
     export GOODMEM_BASE_URL="https://localhost:8080"
 
     # 2. Run the example
-    python -m dspy.utils.goodmem.example
+    python -m dspy.utils.goodmem.rag_pipeline_example
 
     # Or, to skip SSL verification (e.g. localhost with self-signed cert):
     export GOODMEM_VERIFY_SSL=false
-    python -m dspy.utils.goodmem.example
+    python -m dspy.utils.goodmem.rag_pipeline_example
 
 Note:
     This example uses ``openai/gpt-5-mini``, but any LiteLLM-supported provider
