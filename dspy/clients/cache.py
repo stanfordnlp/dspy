@@ -1,6 +1,7 @@
 import copy
 import inspect
 import logging
+import os
 import threading
 from functools import wraps
 from hashlib import sha256
@@ -15,6 +16,22 @@ from diskcache import FanoutCache
 logger = logging.getLogger(__name__)
 
 
+def _transform_value(value):
+    if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
+        return value.model_json_schema()
+    elif isinstance(value, pydantic.BaseModel):
+        return value.model_dump(mode="json")
+    elif callable(value):
+        try:
+            return f"<callable_source:{inspect.getsource(value)}>"
+        except (TypeError, OSError):
+            return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
+    elif isinstance(value, dict):
+        return {k: _transform_value(v) for k, v in value.items()}
+    else:
+        return value
+
+
 class Cache:
     """DSPy Cache
 
@@ -27,7 +44,7 @@ class Cache:
         self,
         enable_disk_cache: bool,
         enable_memory_cache: bool,
-        disk_cache_dir: str,
+        disk_cache_dir: str | None,
         disk_size_limit_bytes: int | None = 1024 * 1024 * 10,
         memory_max_entries: int = 1000000,
     ):
@@ -42,6 +59,7 @@ class Cache:
 
         self.enable_disk_cache = enable_disk_cache
         self.enable_memory_cache = enable_memory_cache
+        self.disk_cache_dir = os.fspath(disk_cache_dir) if disk_cache_dir is not None else None
         if self.enable_memory_cache:
             if memory_max_entries is None:
                 raise ValueError("`memory_max_entries` cannot be None. Use `math.inf` if you need an unbounded cache.")
@@ -52,9 +70,9 @@ class Cache:
             self.memory_cache = {}
         if self.enable_disk_cache:
             self.disk_cache = FanoutCache(
+                directory=self.disk_cache_dir,
                 shards=16,
                 timeout=10,
-                directory=disk_cache_dir,
                 size_limit=disk_size_limit_bytes,
             )
         else:
@@ -74,54 +92,38 @@ class Cache:
         """
 
         ignored_args_for_cache_key = ignored_args_for_cache_key or []
-
-        def transform_value(value):
-            if isinstance(value, type) and issubclass(value, pydantic.BaseModel):
-                return value.model_json_schema()
-            elif isinstance(value, pydantic.BaseModel):
-                return value.model_dump(mode="json")
-            elif callable(value):
-                # Try to get the source code of the callable if available
-                import inspect
-
-                try:
-                    # For regular functions, we can get the source code
-                    return f"<callable_source:{inspect.getsource(value)}>"
-                except (TypeError, OSError):
-                    # For lambda functions or other callables where source isn't available,
-                    # use a string representation
-                    return f"<callable:{value.__name__ if hasattr(value, '__name__') else 'lambda'}>"
-            elif isinstance(value, dict):
-                return {k: transform_value(v) for k, v in value.items()}
-            else:
-                return value
-
-        params = {k: transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
+        params = {k: _transform_value(v) for k, v in request.items() if k not in ignored_args_for_cache_key}
         return sha256(orjson.dumps(params, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
     def get(self, request: dict[str, Any], ignored_args_for_cache_key: list[str] | None = None) -> Any:
-
         if not self.enable_memory_cache and not self.enable_disk_cache:
             return None
 
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
+            logger.debug("Failed to generate cache key for request: %s", request)
             return None
 
-        if self.enable_memory_cache and key in self.memory_cache:
+        if self.enable_memory_cache:
             with self._lock:
-                response = self.memory_cache[key]
-        elif self.enable_disk_cache and key in self.disk_cache:
-            # Found on disk but not in memory cache, add to memory cache
-            response = self.disk_cache[key]
+                response = self.memory_cache.get(key)
+            if response is not None:
+                return self._prepare_cached_response(response)
+
+        if self.enable_disk_cache:
+            response = self.disk_cache.get(key)
+            if response is None:
+                return None
+
             if self.enable_memory_cache:
                 with self._lock:
                     self.memory_cache[key] = response
-        else:
-            return None
+            return self._prepare_cached_response(response)
 
+        return None
+
+    def _prepare_cached_response(self, response):
         response = copy.deepcopy(response)
         if hasattr(response, "usage"):
             # Clear the usage data when cache is hit, because no LM call is made
@@ -145,7 +147,7 @@ class Cache:
         try:
             key = self.cache_key(request, ignored_args_for_cache_key)
         except Exception:
-            logger.debug(f"Failed to generate cache key for request: {request}")
+            logger.debug("Failed to generate cache key for request: %s", request)
             return
 
         if enable_memory_cache:
@@ -154,10 +156,9 @@ class Cache:
 
         if self.enable_disk_cache:
             try:
-                self.disk_cache[key] = value
+                self.disk_cache.set(key, value)
             except Exception as e:
-                # Disk cache writing can fail for different reasons, e.g. disk full or the `value` is not picklable.
-                logger.debug(f"Failed to put value in disk cache: {value}, {e}")
+                logger.debug("Failed to put value in disk cache: %s, %s", value, e)
 
     def reset_memory_cache(self) -> None:
         if not self.enable_memory_cache:
@@ -176,8 +177,10 @@ class Cache:
 
     def load_memory_cache(self, filepath: str, allow_pickle: bool = False) -> None:
         if not allow_pickle:
-            raise ValueError("Loading untrusted .pkl files can run arbitrary code, which may be dangerous. \
-            Set `allow_pickle=True` to load if you are running in a trusted environment and the file is from a trusted source.")
+            raise ValueError(
+                "Loading untrusted .pkl files can run arbitrary code, which may be dangerous. "
+                "Set `allow_pickle=True` to load if you are running in a trusted environment and the file is from a trusted source."
+            )
 
         if not self.enable_memory_cache:
             return
