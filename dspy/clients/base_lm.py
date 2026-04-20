@@ -106,7 +106,7 @@ class BaseLM:
             "kwargs": kwargs,
             "response": response,
             "outputs": outputs,
-            "usage": dict(response.usage),
+            "usage": dict(response.usage) if hasattr(response, "usage") else {},
             "cost": getattr(response, "_hidden_params", {}).get("response_cost"),
             "timestamp": datetime.datetime.now().isoformat(),
             "uuid": str(uuid.uuid4()),
