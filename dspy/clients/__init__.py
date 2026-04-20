@@ -87,10 +87,6 @@ def _get_dspy_cache():
 
 DSPY_CACHE = _get_dspy_cache()
 
-if "LITELLM_LOCAL_MODEL_COST_MAP" not in os.environ:
-    # Accessed at run time by litellm; i.e., fine to keep after import
-    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-
 
 def configure_litellm_logging(level: str = "ERROR"):
     """Configure LiteLLM logging to the specified level."""
