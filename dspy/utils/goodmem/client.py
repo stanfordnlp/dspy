@@ -532,7 +532,13 @@ class GoodMemClient:
                     verify=self.verify_ssl,
                 )
                 self._raise_for_status(content_resp)
-                result["content"] = content_resp.json()
+                # The content endpoint may return JSON or raw text
+                # depending on the memory's content type.  Try JSON
+                # first and fall back to plain text on parse error.
+                try:
+                    result["content"] = content_resp.json()
+                except (ValueError, json.JSONDecodeError):
+                    result["content"] = content_resp.text
             except Exception as exc:
                 result["contentError"] = f"Failed to fetch content: {exc}"
 
