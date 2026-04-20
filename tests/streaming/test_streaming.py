@@ -950,6 +950,100 @@ async def test_stream_listener_allow_reuse():
 
 
 @pytest.mark.anyio
+async def test_stream_listener_reset_state_between_streamify_calls():
+    """Regression test for #8425: stream listeners must reset per-stream state
+    between successive calls to a streamified program so that each call yields
+    its own stream chunks, even without allow_reuse=True.
+    """
+
+    async def gpt_4o_mini_stream(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="Paris"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="!\n\n[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
+
+    async def completion_side_effect(*args, **kwargs):
+        return gpt_4o_mini_stream()
+
+    program = dspy.streamify(
+        dspy.Predict("question->answer"),
+        stream_listeners=[dspy.streaming.StreamListener(signature_field_name="answer")],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            call_1_chunks = []
+            async for value in program(question="What is the capital of France?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    call_1_chunks.append(value.chunk)
+
+            call_2_chunks = []
+            async for value in program(question="What is the capital of Germany?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    call_2_chunks.append(value.chunk)
+
+    # Both calls must receive the streamed answer chunks.
+    assert "".join(call_1_chunks) == "Paris!"
+    assert "".join(call_2_chunks) == "Paris!"
+
+
+@pytest.mark.anyio
+async def test_stream_listener_caller_reference_per_stream_state_not_mutated():
+    """Regression test for #8425: per-call listener cloning must keep the
+    caller's original StreamListener's per-stream state pristine (queues,
+    stream_start, stream_end, cache_hit). Previously the streamify loop
+    mutated these on the shared listener so concurrent invocations would
+    stomp on each other's state.
+
+    Note: `predict`/`predict_name` are still bound on the original listener
+    at streamify() construction time (see `find_predictor_for_stream_listeners`),
+    which is out of scope for this fix.
+    """
+
+    async def gpt_4o_mini_stream(*args, **kwargs):
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="[["))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" answer"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]\n\n"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="Paris"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content="!\n\n[[ ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" completed"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ##"))])
+        yield ModelResponseStream(model="gpt-4o-mini", choices=[StreamingChoices(delta=Delta(content=" ]]"))])
+
+    async def completion_side_effect(*args, **kwargs):
+        return gpt_4o_mini_stream()
+
+    original_listener = dspy.streaming.StreamListener(signature_field_name="answer")
+    program = dspy.streamify(
+        dspy.Predict("question->answer"),
+        stream_listeners=[original_listener],
+    )
+
+    with mock.patch("litellm.acompletion", side_effect=completion_side_effect):
+        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+            chunks = []
+            async for value in program(question="What is the capital of France?"):
+                if isinstance(value, dspy.streaming.StreamResponse):
+                    chunks.append(value.chunk)
+
+    assert "".join(chunks) == "Paris!"
+    # The caller's listener instance must not have been mutated by streamify.
+    assert original_listener.stream_start is False
+    assert original_listener.stream_end is False
+    assert original_listener.cache_hit is False
+    assert original_listener.field_start_queue == []
+    assert original_listener.field_end_queue.qsize() == 0
+
+
+@pytest.mark.anyio
 async def test_stream_listener_returns_correct_chunk_xml_adapter():
     class MyProgram(dspy.Module):
         def __init__(self):
