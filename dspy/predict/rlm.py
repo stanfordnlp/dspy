@@ -78,9 +78,20 @@ You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your o
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 
-def _strip_code_fences(code: str) -> str:
-    """Extract Python code from markdown fences, or return as-is if no fences."""
+def _strip_code_fences(code: str | None) -> str:
+    """Extract Python code from markdown fences, or return as-is if no fences.
+
+    Malformed model outputs can omit the `code` field entirely. Treat that as a
+    recoverable syntax-style error instead of crashing the whole RLM loop.
+    """
+    if code is None:
+        raise SyntaxError("No code returned by the model. Return Python code in the `code` field.")
+    if not isinstance(code, str):
+        raise TypeError(f"Expected `code` to be str or None, got {type(code).__name__}.")
+
     code = code.strip()
+    if not code:
+        raise SyntaxError("Empty code block returned by the model. Return Python code in the `code` field.")
     if "```" not in code:
         return code
 
@@ -613,25 +624,27 @@ class RLM(Module):
         Returns:
             Prediction if FINAL was called successfully, else updated REPLHistory
         """
+        reasoning = "" if pred.reasoning is None else pred.reasoning
+
         # Handle error strings from caught exceptions
         if isinstance(result, str) and result.startswith("[Error]"):
             output = self._format_output(result)
-            return history.append(reasoning=pred.reasoning, code=code, output=output)
+            return history.append(reasoning=reasoning, code=code, output=output)
 
         # Handle FINAL output
         if isinstance(result, FinalOutput):
             parsed_outputs, error = self._process_final_output(result, output_field_names)
 
             if error:
-                return history.append(reasoning=pred.reasoning, code=code, output=error)
+                return history.append(reasoning=reasoning, code=code, output=error)
 
             final_history = history.append(
-                reasoning=pred.reasoning, code=code, output=f"FINAL: {parsed_outputs}"
+                reasoning=reasoning, code=code, output=f"FINAL: {parsed_outputs}"
             )
             return Prediction(
                 **parsed_outputs,
                 trajectory=[e.model_dump() for e in final_history],
-                final_reasoning=pred.reasoning,
+                final_reasoning=reasoning,
             )
 
         # Format non-final result as output
@@ -643,7 +656,7 @@ class RLM(Module):
         output = self._format_output(output)
         if self.verbose:
             logger.info(REPLEntry.format_output(output, self.max_output_chars))
-        return history.append(reasoning=pred.reasoning, code=code, output=output)
+        return history.append(reasoning=reasoning, code=code, output=output)
 
     def _execute_code(
         self,
@@ -680,7 +693,7 @@ class RLM(Module):
         try:
             code = _strip_code_fences(action.code)
         except SyntaxError as e:
-            code = action.code
+            code = action.code if isinstance(action.code, str) else ""
             result = f"[Error] {e}"
             return self._process_execution_result(action, code, result, history, output_field_names)
         result = self._execute_code(repl, code)
@@ -772,7 +785,7 @@ class RLM(Module):
         try:
             code = _strip_code_fences(pred.code)
         except SyntaxError as e:
-            code = pred.code
+            code = pred.code if isinstance(pred.code, str) else ""
             result = f"[Error] {e}"
             return self._process_execution_result(pred, code, result, history, output_field_names)
         result = self._execute_code(repl, code)

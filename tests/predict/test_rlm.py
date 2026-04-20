@@ -613,6 +613,22 @@ class TestRLMCodeFenceParsing:
         with pytest.raises(SyntaxError, match="json"):
             _strip_code_fences('```json\n{"a": 1}\n```')
 
+    @pytest.mark.parametrize(
+        ("code", "message"),
+        [
+            (None, "No code returned"),
+            ("", "Empty code block returned"),
+            (" \n\t", "Empty code block returned"),
+        ],
+    )
+    def test_strip_code_fences_rejects_missing_or_empty_code(self, code, message):
+        with pytest.raises(SyntaxError, match=message):
+            _strip_code_fences(code)
+
+    def test_strip_code_fences_rejects_unexpected_type(self):
+        with pytest.raises(TypeError, match="Expected `code` to be str or None, got int"):
+            _strip_code_fences(42)
+
 
 class TestRLMFormatting:
     """Tests for RLM formatting helpers."""
@@ -968,6 +984,42 @@ class TestRLMToolExceptions:
         with pytest.raises(CodeInterpreterError, match="protocol corrupt"):
             await rlm.aforward(mock, query="test")
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("run_async", "malformed_code", "expected_error"),
+        [
+            (False, None, "[Error] No code returned by the model. Return Python code in the `code` field."),
+            (True, None, "[Error] No code returned by the model. Return Python code in the `code` field."),
+            (False, " \n\t", "[Error] Empty code block returned by the model. Return Python code in the `code` field."),
+            (True, " \n\t", "[Error] Empty code block returned by the model. Return Python code in the `code` field."),
+        ],
+    )
+    async def test_missing_or_blank_code_is_recoverable(self, run_async, malformed_code, expected_error):
+        mock = MockInterpreter(responses=[
+            "",
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iters=5)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": None, "code": malformed_code},
+            {"reasoning": None, "code": 'SUBMIT("recovered")'},
+        ])
+
+        if run_async:
+            result = await rlm.aforward(mock, query="test")
+        else:
+            result = rlm.forward(mock, query="test")
+
+        assert result.answer == "recovered"
+        assert result.final_reasoning == ""
+        assert result.trajectory[0]["reasoning"] == ""
+        assert result.trajectory[0]["code"] == (malformed_code or "")
+        assert result.trajectory[0]["output"] == expected_error
+        assert mock.call_history == [
+            ("pass", {"query": "test"}),
+            ('SUBMIT("recovered")', {}),
+        ]
+
 
 class TestRLMDynamicSignature:
     """Tests for the dynamically built RLM signatures."""
@@ -1258,7 +1310,6 @@ class TestRLMAsyncMock:
 
         result = await rlm.aforward(mock, query="test")
         assert result.answer == "done"
-
 
 class TestRLMTypeCoercionMock:
     """Unit tests for RLM type coercion using MockInterpreter (no Deno required)."""
