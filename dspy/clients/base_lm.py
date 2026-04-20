@@ -100,13 +100,14 @@ class BaseLM:
 
         # Logging, with removed api key & where `cost` is None on cache hit.
         kwargs = {k: v for k, v in kwargs.items() if not k.startswith("api_")}
+        response_usage = getattr(response, "usage", None)
         entry = {
             "prompt": prompt,
             "messages": messages,
             "kwargs": kwargs,
             "response": response,
             "outputs": outputs,
-            "usage": dict(response.usage) if hasattr(response, "usage") else {},
+            "usage": dict(response_usage) if response_usage is not None else {},
             "cost": getattr(response, "_hidden_params", {}).get("response_cost"),
             "timestamp": datetime.datetime.now().isoformat(),
             "uuid": str(uuid.uuid4()),
