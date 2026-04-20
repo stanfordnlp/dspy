@@ -70,22 +70,12 @@ class _RestrictedDisk(Disk):
 
     _allowed: frozenset[tuple[str, str]]
 
-    def _load(self, f: Any) -> Any:
-        unpickler = _RestrictedUnpickler(f)
-        unpickler._allowed = self._allowed
-        try:
-            return unpickler.load()
-        except DeserializationError:
-            raise
-        except Exception as e:
-            raise DeserializationError(f"Corrupt cache entry: {e}") from e
-
     def fetch(self, mode, filename, value, read):
         if mode == MODE_PICKLE:
             if value is None:
                 with open(os.path.join(self._directory, filename), "rb") as f:
-                    return self._load(f)
-            return self._load(io.BytesIO(value))
+                    return _restricted_load(f, self._allowed)
+            return _restricted_load(io.BytesIO(value), self._allowed)
         return super().fetch(mode, filename, value, read)
 
 
