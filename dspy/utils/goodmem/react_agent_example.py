@@ -244,10 +244,7 @@ def setup_space(client: GoodMemClient, space_name: str = SPACE_NAME) -> str:
         )
 
     if not embedders:
-        sys.exit(
-            "Error: No embedders found on the GoodMem server.\n"
-            "Register one first -- see https://docs.goodmem.ai"
-        )
+        sys.exit("Error: No embedders found on the GoodMem server.\nRegister one first -- see https://docs.goodmem.ai")
     embedder_id = embedders[0]["embedderId"]
     print(f"  Using embedder: {embedders[0].get('displayName', embedder_id)}")
 
@@ -337,9 +334,7 @@ def scenario_2_cross_agent_memory(tools: list, space_id: str) -> None:
     print(f"  Agent: {result.assistant_response}")
 
 
-def scenario_3_metadata_filtering(
-    client: GoodMemClient, tools: list
-) -> tuple[str, dspy.Prediction]:
+def scenario_3_metadata_filtering(client: GoodMemClient, tools: list) -> tuple[str, dspy.Prediction]:
     """Demonstrate metadata-tagged memories.
 
     Writes five memories with a 'category' metadata field directly via
