@@ -299,6 +299,12 @@ class TestRLMCodeFenceParsing:
         with pytest.raises(SyntaxError, match="json"):
             _strip_code_fences('```json\n{"a": 1}\n```')
 
+    def test_strip_code_fences_rejects_missing_or_empty_code(self):
+        with pytest.raises(SyntaxError, match="No code returned"):
+            _strip_code_fences(None)
+        with pytest.raises(SyntaxError, match="Empty code block returned"):
+            _strip_code_fences("")
+
 
 class TestRLMFormatting:
     """Tests for RLM formatting helpers."""
@@ -614,6 +620,22 @@ class TestRLMToolExceptions:
         assert result.answer == "recovered"
         assert result.trajectory[0]["output"].startswith("[Error]")
 
+    def test_missing_code_field_is_recoverable(self):
+        """Malformed actions with code=None should not crash the RLM loop."""
+        mock = MockInterpreter(responses=[
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Malformed action", "code": None},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "recovered"
+        assert result.trajectory[0]["code"] == ""
+        assert result.trajectory[0]["output"].startswith("[Error] No code returned by the model")
+
 
 class TestRLMDynamicSignature:
     """Tests for the dynamically built RLM signatures."""
@@ -890,6 +912,23 @@ class TestRLMAsyncMock:
 
         result = await rlm.aforward(query="test")
         assert result.answer == "done"
+
+    @pytest.mark.asyncio
+    async def test_aforward_missing_code_field_is_recoverable(self):
+        """Malformed actions with code=None should not crash the async RLM loop."""
+        mock = MockInterpreter(responses=[
+            FinalOutput({"answer": "recovered"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Malformed action", "code": None},
+            {"reasoning": "Recover", "code": 'SUBMIT("recovered")'},
+        ])
+
+        result = await rlm.aforward(query="test")
+        assert result.answer == "recovered"
+        assert result.trajectory[0]["code"] == ""
+        assert result.trajectory[0]["output"].startswith("[Error] No code returned by the model")
 
 
 class TestRLMTypeCoercionMock:
