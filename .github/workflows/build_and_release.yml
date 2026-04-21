@@ -22,7 +22,6 @@ jobs:
       name: pypi
     permissions:
       id-token: write # IMPORTANT: mandatory for trusted publishing
-      contents: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Set up Python 3.11
@@ -50,6 +49,8 @@ jobs:
         run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test-isaac"/;}' pyproject.toml
       - name: Build a binary wheel
         run: python3 -m build
+      - name: Validate built distributions
+        run: python3 -m twine check --strict dist/*
       # Test the locally built wheel
       - name: Create test environment
         run: python -m venv test_before_testpypi
@@ -101,6 +102,8 @@ jobs:
         run: sed -i '/#replace_package_name_marker/{n;s/__name__ *= *"[^"]*"/__name__="dspy"/;}' ./dspy/__metadata__.py
       - name: Build a binary wheel
         run: python3 -m build
+      - name: Validate built distributions
+        run: python3 -m twine check --strict dist/*
       # Test the locally built wheel before publishing to pypi
       - name: Create test environment
         run: python -m venv test_before_pypi
@@ -126,6 +129,8 @@ jobs:
           sed -i '/#replace_dspy_version_marker/{n;s/dspy>=[^"]*/dspy>=${{ needs.extract-tag.outputs.version }}/;}' .github/.internal_dspyai/pyproject.toml
       - name: Build a binary wheel (dspy-ai)
         run: python3 -m build .github/.internal_dspyai/
+      - name: Validate built distributions (dspy-ai)
+        run: python3 -m twine check --strict .github/.internal_dspyai/dist/*
       - name: Publish distribution 📦 to PyPI (dspy-ai)
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
