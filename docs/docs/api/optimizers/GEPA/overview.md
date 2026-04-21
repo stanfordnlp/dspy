@@ -83,7 +83,7 @@ Rather than evolving just the _best_ global candidate (which leads to local opti
 
 ### Algorithm Summary
 
-1. **Initialize** the candidate pool with the the unoptimized program.
+1. **Initialize** the candidate pool with the unoptimized program.
 2. **Iterate**:
    - **Sample a candidate** (from Pareto frontier).
    - **Sample a minibatch** from the train set.

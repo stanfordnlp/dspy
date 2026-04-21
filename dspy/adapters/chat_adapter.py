@@ -249,7 +249,7 @@ class ChatAdapter(Adapter):
         """
         Formats the values of the specified fields according to the field's DSPy type (input or output),
         annotation (e.g. str, int, etc.), and the type of the value itself. Joins the formatted values
-        into a single string, which is is a multiline string if there are multiple fields.
+        into a single string, which is a multiline string if there are multiple fields.
 
         Args:
             fields_with_values: A dictionary mapping information about a field to its corresponding
