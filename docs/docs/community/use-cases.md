@@ -84,6 +84,7 @@ This list is regularly updated with new research publications using DSPy.
 | **DSPy for Indian Languages**| [Github](https://github.com/saifulhaq95/DSPy-Indic) |
 | **Hurricane: Blog Posts with Generative Feedback Loops!**| [Github](https://github.com/weaviate-tutorials/Hurricane) |
 | **RAG example using DSPy, Gradio, FastAPI, and Ollama**| [Github](https://github.com/diicellman/dspy-gradio-rag) |
+| **AWX/Ansible Log Viewer Case Study**| [Tutorial](../tutorials/awx_ansible_log_viewer/index.md), [Github](https://github.com/zombat/AWX-Ansible-Log-Viewer) |
 | **Synthetic Data Generation**| [Github](https://colab.research.google.com/drive/1CweVOu0qhTC0yOfW5QkLDRIKuAuWJKEr?usp=sharing) |
 | **Self Discover**| [Github](https://colab.research.google.com/drive/1GkAQKmw1XQgg5UNzzy8OncRe79V6pADB?usp=sharing) |
 | **MedVAL**| [Github](https://github.com/StanfordMIMI/MedVAL) |

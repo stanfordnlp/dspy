@@ -67,6 +67,7 @@ Welcome to DSPy tutorials! We've organized our tutorials into three main categor
     - [Memory-Enabled ReAct Agents with Mem0](mem0_react_agent/index.md)
     - [Financial Analysis with Yahoo Finance](yahoo_finance_react/index.md)
     - [Automated Code Generation from Documentation](sample_code_generation/index.md)
+    - [AWX/Ansible Log Viewer Case Study](awx_ansible_log_viewer/index.md)
     - [Building a Creative Text-Based AI Game](ai_text_game/index.md)
 
 

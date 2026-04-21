@@ -29,6 +29,11 @@ Build a system that automatically fetches documentation from URLs and generates 
 
 **Key Concepts:** Web scraping, documentation parsing, automated learning, code generation
 
+### 🖥️ [AWX/Ansible Log Viewer Case Study](../awx_ansible_log_viewer/index.md)
+Explore a real open-source terminal application for AWX/Ansible log triage, with a focus on keyboard-first workflows, scalable filtering, and incident-debugging UX.
+
+**Key Concepts:** Developer tooling, terminal UX, log triage, production operations
+
 ### 🎮 [Building a Creative Text-Based AI Game](../ai_text_game/index.md)
 Create an interactive text-based adventure game with dynamic storytelling, AI-powered NPCs, and adaptive gameplay using DSPy's modular programming approach.
 
