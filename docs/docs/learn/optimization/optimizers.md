@@ -75,7 +75,7 @@ This optimizer is used to fine-tune the underlying LLM(s).
 
 ### Meta-Optimizers
 
-11. [**`BetterTogether`**](../../api/optimizers/BetterTogether.md): A meta-optimizer that combines prompt optimization and weight optimization (fine-tuning) in configurable sequences. Prompt optimization can discover effective task decompositions and reasoning strategies, while weight optimization can specialize the model to execute these patterns more efficiently. Using these approaches together in sequences (e.g., prompt → weight → prompt) may allow each to build on the improvements made by the other. Empirically, this approach often outperforms either strategy alone. Detailed tutorial available at [BetterTogether AIME Tutorial](../../tutorials/bettertogether_aime/index.ipynb).
+11. [**`BetterTogether`**](../../api/optimizers/BetterTogether.md): A meta-optimizer that combines prompt optimization and weight optimization (fine-tuning) in configurable sequences. Prompt optimization can discover effective task decompositions and reasoning strategies, while weight optimization can specialize the model to execute these patterns more efficiently. Using these approaches together in sequences (e.g., prompt → weight → prompt) may allow each to build on the improvements made by the other. Empirically, this approach often outperforms either strategy alone. 
 
 
 ## Which optimizer should I use?

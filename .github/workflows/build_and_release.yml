@@ -10,7 +10,7 @@ jobs:
     outputs:
       version: ${{ steps.extract_tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - id: extract_tag
         name: Extract tag name
         run: echo "tag=$(echo $GITHUB_REF | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
@@ -24,24 +24,22 @@ jobs:
       id-token: write # IMPORTANT: mandatory for trusted publishing
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Set up Python 3.11
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
           python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build semver packaging
       - name: Install Deno
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "${HOME}/.deno/bin" >> $GITHUB_PATH
-      - name: Verify Deno installation
-        run: deno --version
+        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        with:
+          deno-version: v2.7.7
       - name: Get correct version for TestPyPI release
         id: check_version
         run: |
           VERSION=${{ needs.extract-tag.outputs.version }}  
-          PACKAGE_NAME="dspy-ai-test"
+          PACKAGE_NAME="dspy-ai-test-isaac"
           echo "Checking if $VERSION for $PACKAGE_NAME exists on TestPyPI"  
           NEW_VERSION=$(python3 .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
@@ -49,7 +47,7 @@ jobs:
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml
       - name: Update package name in pyproject.toml
-        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test"/;}' pyproject.toml
+        run: sed -i '/#replace_package_name_marker/{n;s/name="[^"]*"/name="dspy-ai-test-isaac"/;}' pyproject.toml
       - name: Build a binary wheel
         run: python3 -m build
       # Test the locally built wheel
@@ -64,7 +62,7 @@ jobs:
           deactivate
       # Publish to test-PyPI
       - name: Publish distribution 📦 to test-PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1 # This requires a trusted publisher to be setup in pypi/testpypi
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -81,19 +79,17 @@ jobs:
       id-token: write # IMPORTANT: mandatory for trusted publishing
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Set up Python 3.11
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
           python-version: "3.11"
       - name: Install dependencies
         run: python3 -m pip install --upgrade setuptools wheel twine build
       - name: Install Deno
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "${HOME}/.deno/bin" >> $GITHUB_PATH
-      - name: Verify Deno installation
-        run: deno --version
+        uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
+        with:
+          deno-version: v2.7.7
       - name: Update version in pyproject.toml
         run: sed -i '/#replace_package_version_marker/{n;s/version *= *"[^"]*"/version="${{ needs.extract-tag.outputs.version }}"/;}' pyproject.toml
       - name: Update version in __metadata__.py
@@ -117,7 +113,7 @@ jobs:
           deactivate
           rm -r test_before_pypi
       - name: Publish distribution 📦 to PyPI (dspy)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           attestations: false
       # Publish to dspy-ai
@@ -131,11 +127,11 @@ jobs:
       - name: Build a binary wheel (dspy-ai)
         run: python3 -m build .github/.internal_dspyai/
       - name: Publish distribution 📦 to PyPI (dspy-ai)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           attestations: false
           packages-dir: .github/.internal_dspyai/dist/
-      - uses: stefanzweifel/git-auto-commit-action@v5 # auto commit changes to main
+      - uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v5 # auto commit changes to main
         with:
           commit_message: Update versions
           create_branch: true

@@ -1,6 +1,8 @@
+import pickle
 from types import UnionType
 from typing import Any, Optional, Union
 
+import cloudpickle
 import pydantic
 import pytest
 
@@ -578,3 +580,32 @@ def test_pep604_union_type_with_custom_types():
     custom_obj = CustomType(value="test")
     pred = dspy.Predict(sig)(input=custom_obj)
     assert pred.output == "processed"
+
+
+def test_signature_cloudpickle_roundtrip():
+    class MySignature(Signature):
+        """Answer the question."""
+        context: list[str] = InputField()
+        question: str = InputField()
+        answer: str = OutputField()
+
+    data = cloudpickle.dumps(MySignature)
+    loaded = pickle.loads(data)
+
+    assert loaded.__name__ == "MySignature"
+    assert list(loaded.input_fields.keys()) == ["context", "question"]
+    assert list(loaded.output_fields.keys()) == ["answer"]
+    assert loaded.instructions == "Answer the question."
+
+
+def test_predict_cloudpickle_roundtrip():
+    class QA(Signature):
+        """Answer the question."""
+        question: str = InputField()
+        answer: str = OutputField()
+
+    predict = dspy.Predict(QA)
+    data = cloudpickle.dumps(predict)
+    loaded = pickle.loads(data)
+
+    assert list(loaded.signature.fields.keys()) == ["question", "answer"]

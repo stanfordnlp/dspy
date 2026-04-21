@@ -9,6 +9,7 @@ import litellm
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 from asyncer import syncify
+from litellm import ContextWindowExceededError as LitellmContextWindowExceededError
 
 import dspy
 from dspy.clients.cache import request_cache
@@ -17,6 +18,7 @@ from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
 from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
+from dspy.utils.exceptions import ContextWindowExceededError
 
 from .base_lm import BaseLM
 
@@ -110,6 +112,30 @@ class LM(BaseLM):
 
         self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
+    @property
+    def _provider_name(self) -> str:
+        """Extract the provider name from the model string (e.g., 'openai' from 'openai/gpt-4o')."""
+        if "/" in self.model:
+            return self.model.split("/", 1)[0]
+        return "openai"
+
+    @property
+    def supports_function_calling(self) -> bool:
+        return litellm.supports_function_calling(model=self.model)
+
+    @property
+    def supports_reasoning(self) -> bool:
+        return litellm.supports_reasoning(self.model)
+
+    @property
+    def supports_response_schema(self) -> bool:
+        return litellm.supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
+
+    @property
+    def supported_params(self) -> set[str]:
+        params = litellm.get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
+        return set(params) if params else set()
+
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:
             warnings.warn(
@@ -156,16 +182,19 @@ class LM(BaseLM):
             completion = litellm_responses_completion
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
-        results = completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-            cache=litellm_cache_args,
-        )
+        try:
+            results = completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+                cache=litellm_cache_args,
+            )
+        except LitellmContextWindowExceededError as e:
+            raise ContextWindowExceededError(model=self.model) from e
 
         self._check_truncation(results)
 
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
-            settings.usage_tracker.add_usage(self.model, dict(results.usage))
+        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker:
+            settings.usage_tracker.add_usage(self.model, dict(getattr(results, "usage", {})))
         return results
 
     async def aforward(
@@ -194,16 +223,19 @@ class LM(BaseLM):
             completion = alitellm_responses_completion
         completion, litellm_cache_args = self._get_cached_completion_fn(completion, cache)
 
-        results = await completion(
-            request=dict(model=self.model, messages=messages, **kwargs),
-            num_retries=self.num_retries,
-            cache=litellm_cache_args,
-        )
+        try:
+            results = await completion(
+                request=dict(model=self.model, messages=messages, **kwargs),
+                num_retries=self.num_retries,
+                cache=litellm_cache_args,
+            )
+        except LitellmContextWindowExceededError as e:
+            raise ContextWindowExceededError(model=self.model) from e
 
         self._check_truncation(results)
 
-        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker and hasattr(results, "usage"):
-            settings.usage_tracker.add_usage(self.model, dict(results.usage))
+        if not getattr(results, "cache_hit", False) and dspy.settings.usage_tracker:
+            settings.usage_tracker.add_usage(self.model, dict(getattr(results, "usage", {})))
         return results
 
     def launch(self, launch_kwargs: dict[str, Any] | None = None):
@@ -484,8 +516,9 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     """
     request = dict(request)
     if "messages" in request:
-        content_blocks = []
+        input_items = []
         for msg in request.pop("messages"):
+            content_blocks = []
             c = msg.get("content")
             if isinstance(c, str):
                 content_blocks.append({"type": "input_text", "text": c})
@@ -493,7 +526,8 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
                 # Convert each content item from Chat API format to Responses API format
                 for item in c:
                     content_blocks.append(_convert_content_item_to_responses_format(item))
-        request["input"] = [{"role": msg.get("role", "user"), "content": content_blocks}]
+            input_items.append({"role": msg.get("role", "user"), "content": content_blocks})
+        request["input"] = input_items
     # Convert `reasoning_effort` to reasoning format supported by the Responses API
     if "reasoning_effort" in request:
         effort = request.pop("reasoning_effort")

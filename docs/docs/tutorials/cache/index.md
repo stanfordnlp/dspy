@@ -81,6 +81,51 @@ This is especially beneficial when:
 - Working with long system prompts that remain constant
 - Making multiple requests with similar context
 
+## Restricting Pickle Deserialization
+
+By default, DSPy's on-disk cache uses Python's `pickle` for serialization. While this handles arbitrary Python objects, `pickle.load` can execute arbitrary code -- meaning a corrupted or malicious cache file could be dangerous.
+
+DSPy provides an opt-in `restrict_pickle` mode that restricts which types the cache is allowed to deserialize:
+
+```python
+dspy.configure_cache(restrict_pickle=True)
+```
+
+When enabled, the cache only allows:
+
+- **LiteLLM and OpenAI response types** (`litellm.types.*`, `openai.types.*`) -- the pydantic data models that DSPy caches for LM calls, embeddings, and the Responses API.
+- **NumPy array reconstruction helpers** -- the specific internal functions needed to deserialize `numpy.ndarray` (used by embedding caches).
+- **User-registered types** via `safe_types` -- any additional types you explicitly trust.
+
+If you cache custom types (dataclasses, pydantic models, etc.), register them:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class MyResult:
+    score: float
+    label: str
+
+dspy.configure_cache(restrict_pickle=True, safe_types=[MyResult])
+```
+
+If a type is missing from the allowlist, the cache treats it as a miss and returns `None`. The log message will name the exact type that was rejected:
+
+```
+WARNING dspy.clients.cache: Failed to deserialize disk cache entry <key>
+```
+
+### Nested types
+
+If your registered type contains nested custom types, you must register all of them. For example, if `MyResult` contains a `Metadata` field, register both:
+
+```python
+dspy.configure_cache(restrict_pickle=True, safe_types=[MyResult, Metadata])
+```
+
+The error message will tell you exactly which nested type is missing.
+
 ## Disabling/Enabling DSPy Cache
 
 There are scenarios where you might need to disable caching, either entirely or selectively for in-memory or on-disk caches. For instance:

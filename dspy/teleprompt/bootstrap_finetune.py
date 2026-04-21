@@ -284,7 +284,7 @@ def assert_structural_equivalency(program1: object, program2: object):
 
     num1 = len(program1.predictors())
     num2 = len(program2.predictors())
-    err = f"Structurally equivalent programs must have the the number of predictors. The number of predictors for the two modules do not match: {num1} != {num2}"
+    err = f"Structurally equivalent programs must have the same number of predictors. The number of predictors for the two modules do not match: {num1} != {num2}"
     assert num1 == num2, err
 
     pzip = zip(program1.named_predictors(), program2.named_predictors(), strict=False)

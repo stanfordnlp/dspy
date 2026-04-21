@@ -19,10 +19,6 @@
         inherited_members: true
 <!-- END_API_REF -->
 
-## Usage Examples
-
-See BetterTogether usage tutorials in [BetterTogether Tutorials](../../../tutorials/bettertogether/index.md).
-
 ## How BetterTogether Works
 
 BetterTogether executes optimizers in a configurable sequence, evaluating each intermediate result and returning the best performing program. Here's how it works:
