@@ -554,6 +554,13 @@ class RLM(Module):
             repl_history=history,
             iteration=f"{iteration + 1}/{self.max_iterations}",
         )
+        # Coerce None fields to safe defaults so the loop can continue.
+        # Weaker models sometimes fail to produce reasoning or code.
+        if action.reasoning is None:
+            action.reasoning = ""
+        if action.code is None:
+            action.code = ""
+
         if self.verbose:
             logger.info(
                 f"RLM iteration {iteration + 1}/{self.max_iterations}\n"

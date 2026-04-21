@@ -545,6 +545,55 @@ class TestRLMMaxIterationsFallback:
         assert result.final_reasoning == "Extract forced final output"
 
 
+class TestRLMNoneCodeAndReasoning:
+    """Tests that RLM handles None code/reasoning from weaker models gracefully."""
+
+    def test_none_code_recovers(self):
+        """Test that None code is coerced and the loop continues."""
+        mock = MockInterpreter(responses=[
+            "no code error",
+            FinalOutput({"answer": "42"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": "Thinking...", "code": None},
+            {"reasoning": "Now I know", "code": 'SUBMIT("42")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "42"
+
+    def test_none_reasoning_recovers(self):
+        """Test that None reasoning is coerced and the loop continues."""
+        mock = MockInterpreter(responses=[
+            "exploring",
+            FinalOutput({"answer": "42"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": None, "code": "print('hello')"},
+            {"reasoning": "Got it", "code": 'SUBMIT("42")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "42"
+
+    def test_none_code_and_reasoning_recovers(self):
+        """Test that both None code and reasoning are handled."""
+        mock = MockInterpreter(responses=[
+            "error",
+            FinalOutput({"answer": "42"}),
+        ])
+        rlm = RLM("query -> answer", max_iterations=5, interpreter=mock)
+        rlm.generate_action = make_mock_predictor([
+            {"reasoning": None, "code": None},
+            {"reasoning": "Now working", "code": 'SUBMIT("42")'},
+        ])
+
+        result = rlm.forward(query="test")
+        assert result.answer == "42"
+
+
 class TestRLMToolExceptions:
     """Tests for tool exception handling."""
 
