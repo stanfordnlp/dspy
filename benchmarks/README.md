@@ -11,7 +11,10 @@ One-time environment setup from a fresh clone (or after a long break):
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -e ".[dev]"
+
+# Install with dev tooling AND test_extras (datasets, pandas, optuna, langchain_core).
+# test_extras is required — the benchmark data adapters import `datasets`.
+pip install -e ".[dev,test_extras]"
 
 # Optional: install pre-commit hooks for linting on commit
 pre-commit install
