@@ -73,3 +73,7 @@ test_before_pypi/
 
 # Benchmark run outputs
 /benchmarks/results/
+
+# Local virtualenv
+/.venv/
+/venv/

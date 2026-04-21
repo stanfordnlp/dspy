@@ -2,6 +2,31 @@
 
 A modular, config-driven framework for benchmarking DSPy prompt optimizers (GEPA, MIPROv2, COPRO, etc.) on various datasets.
 
+## Local Setup
+
+One-time environment setup from a fresh clone (or after a long break):
+
+```bash
+# From repo root. Requires Python >= 3.10, < 3.15 (3.12 recommended).
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e ".[dev]"
+
+# Optional: install pre-commit hooks for linting on commit
+pre-commit install
+```
+
+Sanity check:
+
+```bash
+python -c "import dspy; print(dspy.__version__)"
+```
+
+Every subsequent session, just `source .venv/bin/activate` before running experiments.
+
+**Need a model?** The default configs assume a local Ollama server with `qwen3:4b-instruct` at `http://localhost:11434`. Start it with `ollama serve` and `ollama pull qwen3:4b-instruct` before running experiments. Swap the `model_ref` in an experiment config to use a different model.
+
 ## Quick Start
 
 ```bash
