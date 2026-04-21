@@ -207,9 +207,9 @@ User calls module()
 - Use descriptive commit messages explaining what changed and why
 - Include "Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>" in commits when appropriate
 
-## Notebooks Directory
+## Benchmarks Directory
 
-The `/notebooks/` directory contains an optimizer benchmark framework with a modular, config-driven system:
+The `/benchmarks/` directory contains an optimizer benchmark framework with a modular, config-driven system:
 
 ```bash
 # Run baseline evaluation

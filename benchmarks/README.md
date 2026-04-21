@@ -13,7 +13,45 @@ python scripts/run_experiment.py configs/experiments/hotpotqa_gepa_v1.yaml
 
 # Run with detailed analysis and visualizations
 python scripts/run_experiment_with_analysis.py configs/experiments/hotpotqa_gepa_v1.yaml
+
+# Run AIME (math) baseline
+python scripts/run_experiment.py configs/experiments/aime_baseline.yaml
+
+# Run SBO (Semantic Bundle Optimization) with NaiveQA
+python scripts/run_experiment.py configs/experiments/hotpotqa_sbo_naive.yaml
 ```
+
+## Available Benchmarks
+
+### HotPotQA (multi-hop reasoning)
+Default benchmark. Uses the `mlflow_base_prompt` program with context. See configs under `configs/experiments/hotpotqa_*.yaml`.
+
+### AIME (math competition)
+Mathematical reasoning benchmark using `MathCoT` (ChainOfThought on `problem -> answer`).
+
+- **Dataset**: 90 problems from 2022–2024 (split 45/45 train/val) + 30 from 2025 as test (repeated 5× → 150 test examples for stability).
+  - Train/val: [`AI-MO/aimo-validation-aime`](https://huggingface.co/datasets/AI-MO/aimo-validation-aime)
+  - Test: [`MathArena/aime_2025`](https://huggingface.co/datasets/MathArena/aime_2025)
+- **Metric**: exact integer match. GEPA metric also returns the reference solution as feedback.
+- **Configs**:
+  - Dataset: `configs/datasets/aime_standard.yaml` (full) / `aime_fast.yaml` (5/3/5 for dev)
+  - Program: `configs/programs/math_cot.yaml`
+  - Experiments: `aime_baseline.yaml`, `aime_gepa_v1.yaml`, `aime_baseline_fast.yaml`, `aime_gepa_fast.yaml`
+
+**Expected performance** (from the GEPA AIME tutorial, GPT-4.1 Mini reference): baseline ~46.7%, GEPA-optimized ~56.7%. Qwen3:4B numbers will differ.
+
+### SBO with NaiveQA (fast iteration loop)
+**NaiveQA** is the simplest program (single `question -> answer` predictor, no context). Pair it with `sbo_light` for quick SBO experiments:
+
+```bash
+# Baseline
+python scripts/run_experiment.py configs/experiments/hotpotqa_naive_baseline.yaml
+
+# SBO optimization (~10–15 min with a local 4B model)
+python scripts/run_experiment.py configs/experiments/hotpotqa_sbo_naive.yaml
+```
+
+Watch for `✓ SERIOUS STEP` (real improvement) vs null steps (bundle refinement only) in the logs. The bundle grows every iteration; the serious/null ratio indicates whether SBO is still finding improvements.
 
 ## Architecture
 
@@ -304,7 +342,7 @@ SCORE DISTRIBUTION
 ## Project Structure
 
 ```
-notebooks/
+benchmarks/
 ├── configs/                      # Configuration files
 │   ├── base/                    # Base configs (logging, etc.)
 │   ├── datasets/                # Dataset configurations
@@ -361,4 +399,45 @@ notebooks/
    - `reflection_minibatch_size: 2-3`
    - `train_size: 200-500`
    - `dev_size: 50-100`
+
+## Performance & Timing
+
+Local models (especially on complex tasks like AIME) are slow. Know what to expect before assuming something is stuck.
+
+### AIME timing (Qwen3:4B via Ollama)
+
+| Task | Time |
+|---|---|
+| Simple question ("What is 2+2?") | ~1.8 s |
+| Real AIME problem (CoT) | ~33 s (~18× slower) |
+| Baseline eval on full val (10 ex) | ~5.5 min |
+| Baseline eval on full test (150 ex) | ~82 min |
+| GEPA full optimization | 45–60+ min |
+| GEPA fast config (5 train / 3 val) | ~10–15 min ✓ |
+
+For iteration, use `aime_baseline_fast.yaml` / `aime_gepa_fast.yaml` (dataset `aime_fast.yaml`, sizes 5/3/5).
+
+### SBO timing (why it feels "stuck")
+
+SBO is LM-call-intensive, not stuck. Each iteration does:
+
+1. Proposer → 1 call (generates candidates)
+2. Verifier → `num_candidates × bundle_size × num_judge_samples` calls
+3. Candidate evaluation on val set → `dev_size` calls (per candidate)
+4. Model value computation → `bundle_size × num_judge_samples` calls
+5. Critique generation → 1 call
+
+With defaults (3 candidates, 2 judge samples, dev_size=10) that's ~21 calls iter 1 and ~25 iter 2. At ~5–10 s/call on Qwen3:4B, budget ~2.5–3 min per iteration. 5 iterations ≈ 15 min.
+
+**Knobs that shrink it fastest:**
+- `dev_size` (biggest lever — every candidate is evaluated against it)
+- `num_judge_samples: 1` (halves verifier calls)
+- `num_candidates: 2`
+- Use `sbo_light.yaml` or `hotpotqa_sbo_ultralight.yaml` for fastest iteration.
+
+### General tips
+
+- **Parallel eval**: `num_threads: 4` in optimizer overrides speeds up baseline evaluation but does not help GEPA/SBO (inherently sequential).
+- **Disable cache during debugging** (`cache: false` in model config) to see true LM behavior.
+- Run full evaluations overnight; use fast configs during development.
 

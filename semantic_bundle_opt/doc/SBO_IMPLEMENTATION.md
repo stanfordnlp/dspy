@@ -72,15 +72,15 @@ Where ε_total = σ_bias·ρ + λ_max·√(2ln(1/δ)/J)
 
 ### File Structure
 ```
-dspy/teleprompt/sbo.py              # Core SBO teleprompter (~700 lines)
-notebooks/optimizers/sbo.py          # Adapter for benchmark framework
-notebooks/configs/optimizers/
+dspy/teleprompt/sbo.py               # Core SBO teleprompter (~700 lines)
+benchmarks/optimizers/sbo.py         # Adapter for benchmark framework
+benchmarks/configs/optimizers/
   ├── sbo.yaml                       # Standard configuration
   └── sbo_light.yaml                 # Lightweight for testing
-notebooks/configs/experiments/
-  ├── hotpotqa_sbo_v1.yaml          # Standard experiment
-  └── hotpotqa_sbo_light.yaml       # Quick testing
-notebooks/tests/test_sbo_basic.py   # Basic functionality test
+benchmarks/configs/experiments/
+  ├── hotpotqa_sbo_v1.yaml           # Standard experiment
+  └── hotpotqa_sbo_light.yaml        # Quick testing
+benchmarks/tests/test_sbo_basic.py   # Basic functionality test
 ```
 
 ### Key Parameters
@@ -143,7 +143,7 @@ python scripts/run_experiment.py configs/experiments/hotpotqa_sbo_light.yaml
 
 ## Test Results
 
-**Basic Test** (`notebooks/tests/test_sbo_basic.py`):
+**Basic Test** (`benchmarks/tests/test_sbo_basic.py`):
 - ✅ Successfully ran 1 iteration with 3 train, 2 val examples
 - ✅ Generated 2 candidates via Proposer
 - ✅ Filtered via Verifier with bundle scoring

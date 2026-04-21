@@ -67,3 +67,9 @@ docs/docs/**/*.json*
 
 test_before_pypi/
 .github/.internal_dspyai/dist/
+
+# Archived one-off fix/perf write-ups; kept locally, not committed
+/fix-log/
+
+# Benchmark run outputs
+/benchmarks/results/
