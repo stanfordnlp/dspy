@@ -109,6 +109,10 @@ class ReAct(Module):
             try:
                 trajectory[f"observation_{idx}"] = self.tools[pred.next_tool_name](**pred.next_tool_args)
             except Exception as err:
+                if pred.next_tool_name == "finish":
+                    # The model placed output fields in next_tool_args for the finish step.
+                    # This is not a real tool failure; the extraction pass handles the values.
+                    break
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 
             if pred.next_tool_name == "finish":
@@ -134,6 +138,10 @@ class ReAct(Module):
             try:
                 trajectory[f"observation_{idx}"] = await self.tools[pred.next_tool_name].acall(**pred.next_tool_args)
             except Exception as err:
+                if pred.next_tool_name == "finish":
+                    # The model placed output fields in next_tool_args for the finish step.
+                    # This is not a real tool failure; the extraction pass handles the values.
+                    break
                 trajectory[f"observation_{idx}"] = f"Execution error in {pred.next_tool_name}: {_fmt_exc(err)}"
 
             if pred.next_tool_name == "finish":
