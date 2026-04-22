@@ -284,10 +284,8 @@ def get_token_usage(model) -> tuple[int, int]:
         input_tokens.append(_input_tokens)
         output_tokens.append(_output_tokens)
 
-    np = require_numpy()
-    total_input_tokens = int(np.sum(input_tokens))
-    total_output_tokens = int(np.sum(output_tokens))
-
+    total_input_tokens = sum(input_tokens)
+    total_output_tokens = sum(output_tokens)
     return total_input_tokens, total_output_tokens
 
 
