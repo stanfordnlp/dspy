@@ -13,8 +13,8 @@ except ImportError:
     extract_symbols = None
 
 import dspy
-from dspy._numpy import require_numpy
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
+from dspy.utils._numpy import require_numpy
 
 """
 This file consists of helper functions for our variety of optimizers.

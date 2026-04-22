@@ -4,7 +4,6 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import dspy
-from dspy._numpy import require_numpy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.propose import GroundedProposer
 from dspy.teleprompt.teleprompt import Teleprompter
@@ -18,6 +17,7 @@ from dspy.teleprompt.utils import (
     save_candidate_program,
     set_signature,
 )
+from dspy.utils._numpy import require_numpy
 
 if TYPE_CHECKING:
     import optuna

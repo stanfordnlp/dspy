@@ -5,9 +5,9 @@ import random
 from typing import Any, Callable
 
 import dspy
-from dspy._numpy import require_numpy
 from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils._numpy import require_numpy
 
 logger = logging.getLogger(__name__)
 

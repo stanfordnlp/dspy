@@ -2,9 +2,9 @@ import logging
 import random
 
 import dspy
-from dspy._numpy import require_numpy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt import BootstrapFewShot
+from dspy.utils._numpy import require_numpy
 
 logger = logging.getLogger(__name__)
 
