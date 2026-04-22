@@ -907,10 +907,31 @@ def test_responses_api_preserves_multi_message_structure():
     assert result["input"][1]["content"] == [{"type": "input_text", "text": "What is 2+2?"}]
 
     assert result["input"][2]["role"] == "assistant"
-    assert result["input"][2]["content"] == [{"type": "input_text", "text": "4"}]
+    assert result["input"][2]["content"] == [{"type": "output_text", "text": "4"}]
 
     assert result["input"][3]["role"] == "user"
     assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
+
+
+def test_responses_api_types_assistant_list_content_as_output_text():
+    """Assistant messages with list-form content must be typed output_text,
+    not input_text. Regression guard for the Responses API rejecting
+    'input_text' on assistant input items."""
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": "What is 2+2?"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "4"}]},
+        ],
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert result["input"][0]["role"] == "user"
+    assert result["input"][0]["content"] == [{"type": "input_text", "text": "What is 2+2?"}]
+    assert result["input"][1]["role"] == "assistant"
+    assert result["input"][1]["content"] == [{"type": "output_text", "text": "4"}]
 
 
 def test_responses_api_with_image_input():
