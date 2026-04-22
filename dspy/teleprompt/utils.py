@@ -6,8 +6,6 @@ import random
 import shutil
 import sys
 
-import numpy as np
-
 try:
     from IPython.core.magics.code import extract_symbols
 except ImportError:
@@ -15,6 +13,7 @@ except ImportError:
     extract_symbols = None
 
 import dspy
+from dspy._numpy import require_numpy
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
 
 """
@@ -119,6 +118,7 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
     """Used as a helper function for bayesian + minibatching optimizers. Returns the program with the highest average score from the batches evaluated so far."""
 
     # Calculate the mean for each combination of categorical parameters, based on past trials
+    np = require_numpy()
     results = []
     for key, values in param_score_dict.items():
         scores = np.array([v[0] for v in values])
@@ -284,6 +284,7 @@ def get_token_usage(model) -> tuple[int, int]:
         input_tokens.append(_input_tokens)
         output_tokens.append(_output_tokens)
 
+    np = require_numpy()
     total_input_tokens = int(np.sum(input_tokens))
     total_output_tokens = int(np.sum(output_tokens))
 
