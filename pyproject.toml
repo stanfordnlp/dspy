@@ -56,6 +56,7 @@ dev = [
     "pillow>=10.1.0",
     "datamodel_code_generator>=0.26.3",
     "build>=1.0.3",
+    "numpy>=1.26.0",
     "litellm>=1.64.0; sys_platform == 'win32' or python_version == '3.14'",
     "litellm[proxy]>=1.64.0; sys_platform != 'win32' and python_version < '3.14'",  # Remove 3.14 condition once uvloop supports
 ]
@@ -65,6 +66,7 @@ test_extras = [
     "pandas>=2.1.1",
     "optuna>=3.4.0",
     "langchain_core",
+    "numpy>=1.26.0",
 ]
 
 [tool.setuptools.packages.find]
