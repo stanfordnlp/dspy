@@ -77,6 +77,30 @@ def test_bootstrap_effectiveness():
     assert prediction.output == trainset[0].output
 
 
+def test_bootstrap_with_output_field_marked_as_input():
+    # #9472: with_inputs() covering an output field used to crash bootstrap with
+    # TypeError: Example() got multiple values for keyword argument 'output'.
+    student = SimpleModule("input -> output")
+    teacher = SimpleModule("input -> output")
+    lm = DummyLM([{"output": "blue"}])
+    dspy.configure(lm=lm, trace=[])
+
+    bad_trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input", "output"),
+    ]
+
+    # max_errors=1 so the old bug would raise instead of being swallowed.
+    bootstrap = BootstrapFewShot(
+        metric=simple_metric, max_bootstrapped_demos=1, max_labeled_demos=0, max_errors=1
+    )
+    compiled_student = bootstrap.compile(student, teacher=teacher, trainset=bad_trainset)
+
+    assert bootstrap.error_count == 0
+    assert len(compiled_student.predictor.demos) == 1
+    assert compiled_student.predictor.demos[0].input == bad_trainset[0].input
+    assert compiled_student.predictor.demos[0].output == bad_trainset[0].output
+
+
 def test_error_handling_during_bootstrap():
     """
     Test to verify error handling during the bootstrapping process

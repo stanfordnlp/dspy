@@ -193,6 +193,8 @@ class Predict(Module, Parameter):
                 extra_fields,
                 list(signature.input_fields.keys()),
             )
+            for k in extra_fields:
+                kwargs.pop(k)
 
         # Validate input field types match signature
         if settings.warn_on_type_mismatch:

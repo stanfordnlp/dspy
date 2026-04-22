@@ -502,6 +502,38 @@ def test_forward_method2():
     assert result.answer2 == "my second answer"
 
 
+def test_extra_fields_not_in_signature_are_dropped_from_trace():
+    # #9472: extras passed to Predict used to leak into the trace and the LM payload.
+    program = Predict("question -> answer")
+    lm = DummyLM([{"answer": "ok"}])
+    dspy.configure(lm=lm)
+    with dspy.context(trace=[]):
+        with patch.object(lm, "forward", wraps=lm.forward) as spy:
+            program(question="q", answer="leaked", unused_meta=42)
+        trace = dspy.settings.trace
+
+    assert len(trace) == 1
+    _, recorded_inputs, _ = trace[0]
+    assert recorded_inputs == {"question": "q"}
+
+    rendered = orjson.dumps(spy.call_args.kwargs).decode()
+    assert "leaked" not in rendered
+    assert "unused_meta" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_extra_fields_dropped_on_async_path():
+    # aforward shares _forward_preprocess with forward, so the fix should cover both.
+    program = Predict("question -> answer")
+    dspy.configure(lm=DummyLM([{"answer": "ok"}]))
+    with dspy.context(trace=[]):
+        await program.acall(question="q", answer="leaked")
+        trace = dspy.settings.trace
+    assert len(trace) == 1
+    _, recorded_inputs, _ = trace[0]
+    assert recorded_inputs == {"question": "q"}
+
+
 def test_config_management():
     predict_instance = Predict("input -> output")
     predict_instance.update_config(new_key="value")
