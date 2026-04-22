@@ -159,7 +159,19 @@ class BaseModule:
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         from dspy.predict.predict import Predict
 
-        for name, param in self.named_parameters():
+        # Validate all keys exist before applying any state so the operation is
+        # atomic. Without this check a KeyError mid-loop would leave some
+        # predictors with saved demos and others at template defaults, silently
+        # corrupting the module (see #9589).
+        params = list(self.named_parameters())
+        missing = [name for name, _ in params if name not in state]
+        if missing:
+            raise KeyError(
+                f"load_state aborted: saved state is missing keys for {missing}. "
+                "No state has been applied. Check for signature drift or a truncated save file."
+            )
+
+        for name, param in params:
             if isinstance(param, Predict):
                 param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
             else:
