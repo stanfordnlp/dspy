@@ -1,6 +1,6 @@
-from dspy._numpy import require_numpy
 from dspy.clients import Embedder
 from dspy.primitives import Example
+from dspy.utils._numpy import require_numpy
 
 
 class KNN:

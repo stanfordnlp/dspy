@@ -4,7 +4,7 @@ import json
 import os
 from typing import TYPE_CHECKING, Any
 
-from dspy._numpy import require_numpy
+from dspy.utils._numpy import require_numpy
 from dspy.utils.unbatchify import Unbatchify
 
 if TYPE_CHECKING:

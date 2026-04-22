@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import litellm
 
-from dspy._numpy import require_numpy
 from dspy.clients.cache import request_cache
+from dspy.utils._numpy import require_numpy
 
 if TYPE_CHECKING:
     import numpy as np

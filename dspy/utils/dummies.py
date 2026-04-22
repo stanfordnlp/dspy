@@ -4,11 +4,11 @@ import random
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from dspy._numpy import require_numpy
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
+from dspy.utils._numpy import require_numpy
 
 if TYPE_CHECKING:
     import numpy as np
