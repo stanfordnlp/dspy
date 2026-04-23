@@ -7,6 +7,7 @@ import json_repair
 import pydantic
 import regex
 from pydantic.fields import FieldInfo
+from typing_extensions import is_typeddict
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.tool import ToolCalls
@@ -33,6 +34,8 @@ def _open_ended_mapping_field_names(signature: SignatureMeta) -> Generator[str, 
     """
     for name, field in signature.output_fields.items():
         origin = get_origin(field.annotation) or field.annotation
+        if is_typeddict(origin):
+            continue
         if isinstance(origin, type) and issubclass(origin, Mapping):
             yield name
 
@@ -81,6 +84,8 @@ class JSONAdapter(ChatAdapter):
                 try:
                     return _get_structured_outputs_response_format(signature, self.use_native_function_calling)
                 except Exception as e:
+                    if self.schema_enforcement_mode == "json_schema":
+                        raise
                     logger.warning(f"Failed to build structured output format, falling back to JSON mode: {e}")
                     return {"type": "json_object"}
             case unknown:
@@ -128,7 +133,7 @@ class JSONAdapter(ChatAdapter):
         try:
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            if not isinstance(rf, type):
+            if not isinstance(rf, type) or self.schema_enforcement_mode == "json_schema":
                 raise
             logger.error(f"Structured output call failed; automatically retrying with JSON mode. Reason: {e}")
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -148,7 +153,7 @@ class JSONAdapter(ChatAdapter):
         try:
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
         except Exception as e:
-            if not isinstance(rf, type):
+            if not isinstance(rf, type) or self.schema_enforcement_mode == "json_schema":
                 raise
             logger.error(f"Structured output call failed; automatically retrying with JSON mode. Reason: {e}")
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -276,12 +281,11 @@ def _get_structured_outputs_response_format(
     is raised so that the caller can fall back to using a plain "json_object" response_format.
     """
     # Although we've already performed an early check, we keep this here as a final guard.
-    for name, field in signature.output_fields.items():
-        annotation = field.annotation
-        if get_origin(annotation) is dict:
-            raise ValueError(
-                f"Field '{name}' has an open-ended mapping type which is not supported by Structured Outputs."
-            )
+    if open_ended_mapping_fields := list(_open_ended_mapping_field_names(signature)):
+        names = ", ".join(open_ended_mapping_fields)
+        raise ValueError(
+            f"Output field(s) {names} have open-ended mapping types which are not supported by Structured Outputs."
+        )
 
     fields = {}
     for name, field in signature.output_fields.items():
