@@ -95,8 +95,8 @@ class JSONAdapter(ChatAdapter):
             )
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception:
-            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+        except Exception as e:
+            logger.error(f"Failed to use structured output format; falling back to JSON mode. Reason: {e}")
             lm_kwargs["response_format"] = {"type": "json_object"}
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
@@ -118,8 +118,8 @@ class JSONAdapter(ChatAdapter):
             )
             lm_kwargs["response_format"] = structured_output_model
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-        except Exception:
-            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+        except Exception as e:
+            logger.error(f"Failed to use structured output format; falling back to JSON mode. Reason: {e}")
             lm_kwargs["response_format"] = {"type": "json_object"}
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 

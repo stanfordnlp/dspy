@@ -1112,3 +1112,53 @@ def test_json_adapter_does_not_warn_for_schema_compatible_signature(caplog, _pro
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING and r.name == _JSON_ADAPTER_LOGGER]
     assert warnings == [], f"expected no warnings, got: {[r.message for r in warnings]}"
+
+
+def test_json_adapter_logs_error_on_structured_output_failure(caplog, _propagate_dspy_logs):
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
+    program = dspy.Predict(TestSignature)
+
+    with (
+        caplog.at_level(logging.ERROR, logger=_JSON_ADAPTER_LOGGER),
+        mock.patch("litellm.completion") as mock_completion,
+    ):
+        mock_completion.side_effect = [
+            RuntimeError("Structured output rejected"),
+            ModelResponse(choices=[Choices(message=Message(content='{"answer": "ok"}'))]),
+        ]
+        program(question="x")
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR and r.name == _JSON_ADAPTER_LOGGER]
+    assert any("Failed to use structured output format" in r.message for r in errors), (
+        f"expected ERROR-level structured-output failure log, got: {[(r.levelname, r.message) for r in caplog.records]}"
+    )
+    assert any("Structured output rejected" in r.message for r in errors), (
+        "expected the underlying exception reason to appear in the error log"
+    )
+
+
+@pytest.mark.asyncio
+async def test_json_adapter_logs_error_on_structured_output_failure_async(caplog, _propagate_dspy_logs):
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    program = dspy.Predict(TestSignature)
+
+    with (
+        caplog.at_level(logging.ERROR, logger=_JSON_ADAPTER_LOGGER),
+        mock.patch("litellm.acompletion") as mock_acompletion,
+    ):
+        mock_acompletion.side_effect = [
+            RuntimeError("Structured output rejected"),
+            ModelResponse(choices=[Choices(message=Message(content='{"answer": "ok"}'))]),
+        ]
+        with dspy.context(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
+            await program.acall(question="x")
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR and r.name == _JSON_ADAPTER_LOGGER]
+    assert any("Failed to use structured output format" in r.message for r in errors)
