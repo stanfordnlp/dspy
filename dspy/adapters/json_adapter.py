@@ -26,20 +26,10 @@ logger = logging.getLogger(__name__)
 
 
 def _open_ended_mapping_field_names(signature: SignatureMeta) -> Generator[str, None, None]:
-    """Yield names of output fields with open-ended mapping annotations.
-
-    "Open-ended" here means the key-set is unbounded at the type level: an annotation
-    like ``dict[str, Any]`` declares "some string keys to values" without naming which
-    keys. A strict JSON Schema requires every property enumerated (``properties`` +
-    ``required`` + ``additionalProperties: false``) -- impossible without a known
-    key-set -- so these fields force the prompted fallback.
-
-    Covers any ``collections.abc.Mapping`` subclass: ``dict``, ``Mapping``,
-    ``MutableMapping``, ``OrderedDict``, ``defaultdict``, ``Counter``, ``ChainMap``,
-    and any user class inheriting from ``Mapping``. Correctly excludes ``TypedDict``
-    subclasses -- they declare a fixed named key-set at the type level and *are*
-    strict-schema-expressible; Python treats them as ``dict``-at-runtime but not as
-    ``Mapping`` subclasses, so ``issubclass`` returns False.
+    """Yield names of output fields typed as a ``collections.abc.Mapping`` subclass
+    (``dict``, ``Mapping``, ``MutableMapping``, ``OrderedDict``, ``defaultdict``,
+    ``Counter``, ``ChainMap``). Unbounded key-sets can't be expressed as a strict
+    JSON Schema. ``TypedDict`` has fixed keys and is correctly excluded.
     """
     for name, field in signature.output_fields.items():
         origin = get_origin(field.annotation) or field.annotation
