@@ -54,12 +54,14 @@ def _non_native_tool_call_field_names(signature: SignatureMeta) -> Generator[str
             yield name
 
 
-SchemaEnforcement = Literal["auto", "strict", "prompted"]
-"""Which ``response_format`` payload ``JSONAdapter`` ships.
+EffectiveEnforcement = Literal["json_schema", "json_object"]
+
+SchemaEnforcement = Literal["auto"] | EffectiveEnforcement
+"""Which ``response_format`` payload ``JSONAdapter`` ships. Values name the OpenAI-compatible ``response_format.type`` that reaches the wire.
 
 ``"auto"`` delegates to ``lm.supports_response_schema`` unless the signature has open-ended mapping fields or non-native tool calls.
-``"strict"`` forces a Pydantic class (serialized to strict ``json_schema``) -- use for known openai-compatible endpoints.
-``"prompted"`` forces ``{"type": "json_object"}`` with schema hints in the prompt.
+``"json_schema"`` forces the Pydantic-class response_format, shipped as ``{"type": "json_schema", "strict": true, "schema": {...}}``; use for known openai-compatible endpoints that can use structured outputs.
+``"json_object"`` forces ``{"type": "json_object"}`` with schema hints carried in the prompt; escape hatch for LM-known models whose strict-schema backend is broken.
 """
 
 
@@ -71,21 +73,30 @@ class JSONAdapter(ChatAdapter):
         schema_enforcement_mode: SchemaEnforcement = "auto",
     ):
         super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
-        assert schema_enforcement_mode in get_args(
-            SchemaEnforcement
-        ), f"schema_enforcement_mode must be one of {SchemaEnforcement}; got {schema_enforcement_mode!r}"
+        # typing.get_args doesn't flatten Literal | Literal unions, so build the flat tuple explicitly.
+        valid_modes = ("auto", *get_args(EffectiveEnforcement))
+        assert (
+            schema_enforcement_mode in valid_modes
+        ), f"schema_enforcement_mode must be one of {valid_modes}; got {schema_enforcement_mode!r}"
         self.schema_enforcement_mode: SchemaEnforcement = schema_enforcement_mode
 
-    def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
-        """Common call logic to be used for both sync and async calls."""
-        if "response_format" not in lm.supported_params:
-            return call_fn(lm, lm_kwargs, signature, demos, inputs)
+    def response_format(self, lm: BaseLM, signature: SignatureMeta) -> type[pydantic.BaseModel] | dict[str, str] | None:
+        """Returns the ``response_format`` value to set on this call, or ``None`` if no response_format is needed."""
+        if self.schema_enforcement_mode == "auto" and "response_format" not in lm.supported_params:
+            return None
+        match self._effective_enforcement_mode(lm, signature):
+            case "json_object":
+                return {"type": "json_object"}
+            case "json_schema":
+                try:
+                    return _get_structured_outputs_response_format(signature, self.use_native_function_calling)
+                except Exception as e:
+                    logger.warning(f"Failed to build structured output format, falling back to JSON mode: {e}")
+                    return {"type": "json_object"}
+            case _:
+                raise ValueError(f"Invalid schema enforcement mode: {self.schema_enforcement_mode}")
 
-        if self._effective_schema_enforcement_mode(lm, signature) == "prompted":
-            lm_kwargs["response_format"] = {"type": "json_object"}
-            return call_fn(lm, lm_kwargs, signature, demos, inputs)
-
-    def _effective_schema_enforcement_mode(self, lm: BaseLM, signature: SignatureMeta) -> SchemaEnforcement:
+    def _effective_enforcement_mode(self, lm: BaseLM, signature: SignatureMeta) -> EffectiveEnforcement:
         open_ended_mapping_fields = _open_ended_mapping_field_names(signature)
         has_non_native_tool_calls = not self.use_native_function_calling and any(
             _non_native_tool_call_field_names(signature)
@@ -93,23 +104,23 @@ class JSONAdapter(ChatAdapter):
         if self.schema_enforcement_mode == "auto":
             # open-ended dicts aren't JSON-Schema-expressible; ToolCalls + non-native fcall misbehaves (see warnings below).
             if has_non_native_tool_calls or any(open_ended_mapping_fields):
-                return "prompted"
-            return "strict" if lm.supports_response_schema else "prompted"
-        if self.schema_enforcement_mode == "strict":
+                return "json_object"
+            return "json_schema" if lm.supports_response_schema else "json_object"
+        if self.schema_enforcement_mode == "json_schema":
             if any(open_ended_mapping_fields):
                 names = ", ".join(_open_ended_mapping_field_names(signature))
                 logger.warning(
-                    f"Signature {signature.__name__} has open-ended output mapping field(s) {names}; most structured output inference engines"
-                    f" cannot express these, so the {self.__class__.__name__} will fall back to prompted mode. "
-                    f"Either consider using different Signature types or use {self.__class__.__name__}.schema_enforcement_mode='prompted'.",
+                    f"Signature {signature.__name__} has open-ended output mapping field(s) {names}; most structured output "
+                    f"inference engines cannot express these. Consider replacing the open-ended mapping with a typed schema "
+                    f"(e.g., a pydantic.BaseModel with explicit fields, or typing.TypedDict) for more reliable behavior from {signature.__name__} when using {self.__class__.__name__}.",
                 )
             if has_non_native_tool_calls:
                 names = ", ".join(_non_native_tool_call_field_names(signature))
                 logger.warning(
-                    f"Signature {signature.__name__} has dspy.ToolCalls output field(s) {names} but {self.__class__.__name__}.use_native_function_calling=False and {self.__class__.__name__}.schema_enforcement_mode='strict'; "
-                    "strict schema mode is known to compose poorly with JSON-mode tool calling and may produce "
-                    f"unreliable output. Consider {self.__class__.__name__}.use_native_function_calling=True or "
-                    f"{self.__class__.__name__}.schema_enforcement_mode='prompted' for more reliable behavior from {signature.__name__}.",
+                    f"Signature {signature.__name__} has dspy.ToolCalls output field(s) {names} but {self.__class__.__name__}.use_native_function_calling=False and {self.__class__.__name__}.schema_enforcement_mode='json_schema'; "
+                    "json_schema mode is known to compose poorly with JSON-mode tool calling and may produce unreliable output. "
+                    f" Consider {self.__class__.__name__}.use_native_function_calling=True or "
+                    f"{self.__class__.__name__}.schema_enforcement_mode='json_object' for more reliable behavior from {signature.__name__} when using {self.__class__.__name__}.",
                 )
         return self.schema_enforcement_mode
 
@@ -121,18 +132,15 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().__call__)
-        if result:
-            return result
-
+        rf = self.response_format(lm, signature)
+        if rf is not None:
+            lm_kwargs["response_format"] = rf
         try:
-            structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
-            )
-            lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception:
-            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+        except Exception as e:
+            if not isinstance(rf, type):
+                raise
+            logger.error(f"Structured output call failed; automatically retrying with JSON mode. Reason: {e}")
             lm_kwargs["response_format"] = {"type": "json_object"}
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
@@ -144,18 +152,15 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().acall)
-        if result:
-            return await result
-
+        rf = self.response_format(lm, signature)
+        if rf is not None:
+            lm_kwargs["response_format"] = rf
         try:
-            structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
-            )
-            lm_kwargs["response_format"] = structured_output_model
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-        except Exception:
-            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+        except Exception as e:
+            if not isinstance(rf, type):
+                raise
+            logger.error(f"Structured output call failed; automatically retrying with JSON mode. Reason: {e}")
             lm_kwargs["response_format"] = {"type": "json_object"}
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 

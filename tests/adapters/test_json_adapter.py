@@ -711,10 +711,10 @@ async def test_json_adapter_json_mode_no_structured_outputs_async():
         assert call_kwargs.get("response_format") == {"type": "json_object"}
 
 
-def test_json_adapter_schema_enforcement_strict_forces_schema_on_unsupported_lm():
+def test_json_adapter_schema_enforcement_json_schema_forces_schema_on_unsupported_lm():
     """For openai-compatible endpoints LiteLLM doesn't recognize by name (self-hosted vLLM,
     Ollama, etc.), users can opt into the strict-schema path by setting
-    ``JSONAdapter(schema_enforcement_mode="strict")`` even when
+    ``JSONAdapter(schema_enforcement_mode="json_schema")`` even when
     ``litellm.supports_response_schema`` reports False.
     """
 
@@ -724,7 +724,7 @@ def test_json_adapter_schema_enforcement_strict_forces_schema_on_unsupported_lm(
 
     dspy.configure(
         lm=dspy.LM(model="openai/some-unrecognized-model", cache=False),
-        adapter=dspy.JSONAdapter(schema_enforcement_mode="strict"),
+        adapter=dspy.JSONAdapter(schema_enforcement_mode="json_schema"),
     )
     program = dspy.Predict(TestSignature)
 
@@ -753,7 +753,7 @@ def test_json_adapter_schema_enforcement_strict_forces_schema_on_unsupported_lm(
 
 
 @pytest.mark.asyncio
-async def test_json_adapter_schema_enforcement_strict_forces_schema_on_unsupported_lm_async():
+async def test_json_adapter_schema_enforcement_json_schema_forces_schema_on_unsupported_lm_async():
     class TestSignature(dspy.Signature):
         question: str = dspy.InputField()
         answer: str = dspy.OutputField(desc="String output field")
@@ -772,7 +772,7 @@ async def test_json_adapter_schema_enforcement_strict_forces_schema_on_unsupport
         mock_supports_response_schema.return_value = False
 
         lm = dspy.LM(model="openai/some-unrecognized-model", cache=False)
-        adapter = dspy.JSONAdapter(schema_enforcement_mode="strict")
+        adapter = dspy.JSONAdapter(schema_enforcement_mode="json_schema")
         with dspy.context(lm=lm, adapter=adapter):
             result = await program.acall(question="Dummy question!")
 
@@ -786,9 +786,9 @@ async def test_json_adapter_schema_enforcement_strict_forces_schema_on_unsupport
         )
 
 
-def test_json_adapter_schema_enforcement_prompted_suppresses_schema_on_supported_lm():
+def test_json_adapter_schema_enforcement_json_object_suppresses_schema_on_supported_lm():
     """Escape hatch: even for LiteLLM-known models where supports_response_schema is True,
-    ``JSONAdapter(schema_enforcement_mode="prompted")`` forces the schemaless fallback.
+    ``JSONAdapter(schema_enforcement_mode="json_object")`` forces the schemaless fallback.
     """
 
     class TestSignature(dspy.Signature):
@@ -797,7 +797,7 @@ def test_json_adapter_schema_enforcement_prompted_suppresses_schema_on_supported
 
     dspy.configure(
         lm=dspy.LM(model="openai/gpt-4o", cache=False),
-        adapter=dspy.JSONAdapter(schema_enforcement_mode="prompted"),
+        adapter=dspy.JSONAdapter(schema_enforcement_mode="json_object"),
     )
     program = dspy.Predict(TestSignature)
 
@@ -831,8 +831,8 @@ def test_json_adapter_schema_enforcement_rejects_invalid_value():
         dspy.JSONAdapter(schema_enforcement_mode=True)  # wrong type entirely
 
 
-def test_json_adapter_schema_enforcement_strict_no_false_positive_warning(caplog):
-    """Regression: strict mode with use_native_function_calling=False must not emit
+def test_json_adapter_schema_enforcement_json_schema_no_false_positive_warning(caplog):
+    """Regression: json_schema mode with use_native_function_calling=False must not emit
     the ToolCalls warning for a signature that has no ToolCalls output field. An
     earlier refactor used the mapping-fields generator in place of the tool-calls
     check; a generator object is always truthy, which caused the warning to fire
@@ -845,19 +845,66 @@ def test_json_adapter_schema_enforcement_strict_no_false_positive_warning(caplog
         answer: str = dspy.OutputField()
 
     adapter = dspy.JSONAdapter(
-        schema_enforcement_mode="strict",
+        schema_enforcement_mode="json_schema",
         use_native_function_calling=False,
     )
 
     with caplog.at_level(logging.WARNING, logger="dspy.adapters.json_adapter"):
-        # lm is never accessed on the explicit-strict branch, so None is safe here.
-        resolved = adapter._effective_schema_enforcement_mode(lm=None, signature=PlainSignature)
+        # lm is never accessed on the explicit json_schema branch, so None is safe here.
+        resolved = adapter._effective_enforcement_mode(lm=None, signature=PlainSignature)
 
-    assert resolved == "strict"
+    assert resolved == "json_schema"
     assert not caplog.records, (
         f"Expected no warnings for a plain signature, got: "
         f"{[r.getMessage() for r in caplog.records]}"
     )
+
+
+def test_json_adapter_schema_enforcement_explicit_forwards_through_unsupported_provider():
+    """Explicit schema_enforcement_mode forcibly sets ``response_format`` on the
+    completion call even when ``lm.supported_params`` doesn't include it. If the
+    provider or LiteLLM rejects the payload, that error surfaces from the right
+    layer -- DSPy's job is to honor the caller's intent, not to pre-empt. ``"auto"``
+    still silently skips Tier 1 (prompt-only) since the user didn't specify.
+    """
+
+    class PlainSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    # json_object: should still set {"type":"json_object"} despite supported_params=[].
+    with (
+        mock.patch("litellm.completion") as mock_completion,
+        mock.patch("litellm.get_supported_openai_params", return_value=[]),
+    ):
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content='{"answer": "x"}'))]
+        )
+        with dspy.context(
+            lm=dspy.LM(model="openai/some-model", cache=False),
+            adapter=dspy.JSONAdapter(schema_enforcement_mode="json_object"),
+        ):
+            dspy.Predict(PlainSignature)(question="test")
+        _, call_kwargs = mock_completion.call_args_list[0]
+        assert call_kwargs.get("response_format") == {"type": "json_object"}
+
+    # json_schema: should still ship a Pydantic class despite supported_params=[].
+    with (
+        mock.patch("litellm.completion") as mock_completion,
+        mock.patch("litellm.get_supported_openai_params", return_value=[]),
+        mock.patch("litellm.supports_response_schema", return_value=False),
+    ):
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content='{"answer": "x"}'))]
+        )
+        with dspy.context(
+            lm=dspy.LM(model="openai/some-model", cache=False),
+            adapter=dspy.JSONAdapter(schema_enforcement_mode="json_schema"),
+        ):
+            dspy.Predict(PlainSignature)(question="test")
+        _, call_kwargs = mock_completion.call_args_list[0]
+        rf = call_kwargs.get("response_format")
+        assert isinstance(rf, type) and issubclass(rf, pydantic.BaseModel)
 
 
 def test_json_adapter_open_ended_mapping_check_covers_mapping_abcs():
