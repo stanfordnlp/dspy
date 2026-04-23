@@ -434,14 +434,14 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     cache = cache or {"no-cache": True, "no-store": True}
     request = dict(request)
     request.pop("rollout_id", None)
-    headers = request.pop("headers", None)
-    stream_completion = _get_stream_completion_fn(request, cache, sync=False)
+    headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
+    stream_completion = _get_stream_completion_fn(request, cache, sync=False, headers=headers)
     if stream_completion is None:
         return await litellm.acompletion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
-            headers=_add_dspy_identifier_to_headers(headers),
+            headers=headers,
             **request,
         )
 
