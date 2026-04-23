@@ -93,8 +93,8 @@ class JSONAdapter(ChatAdapter):
                 except Exception as e:
                     logger.warning(f"Failed to build structured output format, falling back to JSON mode: {e}")
                     return {"type": "json_object"}
-            case _:
-                raise ValueError(f"Invalid schema enforcement mode: {self.schema_enforcement_mode}")
+            case unknown:
+                raise ValueError(f"Invalid schema enforcement mode: {unknown}")
 
     def _effective_enforcement_mode(self, lm: BaseLM, signature: SignatureMeta) -> EffectiveEnforcement:
         open_ended_mapping_fields = _open_ended_mapping_field_names(signature)
