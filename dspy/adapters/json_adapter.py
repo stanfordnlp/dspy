@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import Any, get_origin
+from collections.abc import Mapping
+from typing import Any, Generator, Literal, get_args, get_origin
 
 import json_repair
 import pydantic
@@ -24,36 +25,93 @@ from dspy.utils.exceptions import AdapterParseError
 logger = logging.getLogger(__name__)
 
 
-def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
+def _open_ended_mapping_field_names(signature: SignatureMeta) -> Generator[str, None, None]:
+    """Yield names of output fields with open-ended mapping annotations.
+
+    "Open-ended" here means the key-set is unbounded at the type level: an annotation
+    like ``dict[str, Any]`` declares "some string keys to values" without naming which
+    keys. A strict JSON Schema requires every property enumerated (``properties`` +
+    ``required`` + ``additionalProperties: false``) -- impossible without a known
+    key-set -- so these fields force the prompted fallback.
+
+    Covers any ``collections.abc.Mapping`` subclass: ``dict``, ``Mapping``,
+    ``MutableMapping``, ``OrderedDict``, ``defaultdict``, ``Counter``, ``ChainMap``,
+    and any user class inheriting from ``Mapping``. Correctly excludes ``TypedDict``
+    subclasses -- they declare a fixed named key-set at the type level and *are*
+    strict-schema-expressible; Python treats them as ``dict``-at-runtime but not as
+    ``Mapping`` subclasses, so ``issubclass`` returns False.
     """
-    Check whether any output field in the signature has an open-ended mapping type,
-    such as dict[str, Any]. Structured Outputs require explicit properties, so such fields
-    are incompatible.
-    """
-    for field in signature.output_fields.values():
-        annotation = field.annotation
-        if get_origin(annotation) is dict:
-            return True
-    return False
+    for name, field in signature.output_fields.items():
+        origin = get_origin(field.annotation) or field.annotation
+        if isinstance(origin, type) and issubclass(origin, Mapping):
+            yield name
+
+
+def _non_native_tool_call_field_names(signature: SignatureMeta) -> Generator[str, None, None]:
+    """Yield names of output fields with ToolCalls annotations."""
+    for name, field in signature.output_fields.items():
+        if field.annotation == ToolCalls:
+            yield name
+
+
+SchemaEnforcement = Literal["auto", "strict", "prompted"]
+"""Which ``response_format`` payload ``JSONAdapter`` ships.
+
+``"auto"`` delegates to ``lm.supports_response_schema`` unless the signature has open-ended mapping fields or non-native tool calls.
+``"strict"`` forces a Pydantic class (serialized to strict ``json_schema``) -- use for known openai-compatible endpoints.
+``"prompted"`` forces ``{"type": "json_object"}`` with schema hints in the prompt.
+"""
 
 
 class JSONAdapter(ChatAdapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
-        # JSONAdapter uses native function calling by default.
+    def __init__(
+        self,
+        callbacks: list[BaseCallback] | None = None,
+        use_native_function_calling: bool = True,
+        schema_enforcement_mode: SchemaEnforcement = "auto",
+    ):
         super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
+        assert schema_enforcement_mode in get_args(
+            SchemaEnforcement
+        ), f"schema_enforcement_mode must be one of {SchemaEnforcement}; got {schema_enforcement_mode!r}"
+        self.schema_enforcement_mode: SchemaEnforcement = schema_enforcement_mode
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
         if "response_format" not in lm.supported_params:
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
-        has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
-
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
-            # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
-            # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
+        if self._effective_schema_enforcement_mode(lm, signature) == "prompted":
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
+
+    def _effective_schema_enforcement_mode(self, lm: BaseLM, signature: SignatureMeta) -> SchemaEnforcement:
+        open_ended_mapping_fields = _open_ended_mapping_field_names(signature)
+        has_non_native_tool_calls = not self.use_native_function_calling and any(
+            _non_native_tool_call_field_names(signature)
+        )
+        if self.schema_enforcement_mode == "auto":
+            # open-ended dicts aren't JSON-Schema-expressible; ToolCalls + non-native fcall misbehaves (see warnings below).
+            if has_non_native_tool_calls or any(open_ended_mapping_fields):
+                return "prompted"
+            return "strict" if lm.supports_response_schema else "prompted"
+        if self.schema_enforcement_mode == "strict":
+            if any(open_ended_mapping_fields):
+                names = ", ".join(_open_ended_mapping_field_names(signature))
+                logger.warning(
+                    f"Signature {signature.__name__} has open-ended output mapping field(s) {names}; most structured output inference engines"
+                    f" cannot express these, so the {self.__class__.__name__} will fall back to prompted mode. "
+                    f"Either consider using different Signature types or use {self.__class__.__name__}.schema_enforcement_mode='prompted'.",
+                )
+            if has_non_native_tool_calls:
+                names = ", ".join(_non_native_tool_call_field_names(signature))
+                logger.warning(
+                    f"Signature {signature.__name__} has dspy.ToolCalls output field(s) {names} but {self.__class__.__name__}.use_native_function_calling=False and {self.__class__.__name__}.schema_enforcement_mode='strict'; "
+                    "strict schema mode is known to compose poorly with JSON-mode tool calling and may produce "
+                    f"unreliable output. Consider {self.__class__.__name__}.use_native_function_calling=True or "
+                    f"{self.__class__.__name__}.schema_enforcement_mode='prompted' for more reliable behavior from {signature.__name__}.",
+                )
+        return self.schema_enforcement_mode
 
     def __call__(
         self,
