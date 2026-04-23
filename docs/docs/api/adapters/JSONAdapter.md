@@ -19,6 +19,7 @@
             - format_task_description
             - format_user_message_content
             - parse
+            - response_format
             - user_message_output_requirements
         show_source: true
         show_root_heading: true
