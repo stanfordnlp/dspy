@@ -3,8 +3,6 @@ import random
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
-import numpy as np
-
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.propose import GroundedProposer
@@ -19,6 +17,7 @@ from dspy.teleprompt.utils import (
     save_candidate_program,
     set_signature,
 )
+from dspy.utils._numpy import require_numpy
 
 if TYPE_CHECKING:
     import optuna
@@ -276,10 +275,12 @@ class MIPROv2(Teleprompter):
         return best_program
 
     def _set_random_seeds(self, seed):
+        np = require_numpy()
         self.rng = random.Random(seed)
         np.random.seed(seed)
 
     def _set_num_trials_from_num_candidates(self, program, zeroshot_opt, num_candidates):
+        np = require_numpy()
         num_vars = len(program.predictors())
         if not zeroshot_opt:
             num_vars *= 2  # Account for few-shot examples + instruction variables

@@ -1,7 +1,6 @@
-import numpy as np
-
 from dspy.clients import Embedder
 from dspy.primitives import Example
+from dspy.utils._numpy import require_numpy
 
 
 class KNN:
@@ -36,6 +35,7 @@ class KNN:
             similar_examples = knn(input="hello")
             ```
         """
+        np = require_numpy()
         self.k = k
         self.trainset = trainset
         self.embedding = vectorizer
@@ -46,6 +46,7 @@ class KNN:
         self.trainset_vectors = self.embedding(trainset_casted_to_vectorize).astype(np.float32)
 
     def __call__(self, **kwargs) -> list:
+        np = require_numpy()
         input_example_vector = self.embedding([" | ".join([f"{key}: {val}" for key, val in kwargs.items()])])
         scores = np.dot(self.trainset_vectors, input_example_vector.T).squeeze()
         nearest_samples_idxs = scores.argsort()[-self.k :][::-1]

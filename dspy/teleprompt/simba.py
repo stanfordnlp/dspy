@@ -4,11 +4,10 @@ import logging
 import random
 from typing import Any, Callable
 
-import numpy as np
-
 import dspy
 from dspy.teleprompt.simba_utils import append_a_demo, append_a_rule, prepare_models_for_resampling, wrap_program
 from dspy.teleprompt.teleprompt import Teleprompter
+from dspy.utils._numpy import require_numpy
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +102,7 @@ class SIMBA(Teleprompter):
         # Basic checks
         assert len(trainset) >= self.bsize, f"Trainset too small: {len(trainset)} < {self.bsize}"
 
+        np = require_numpy()
         # Initialize RNG
         rng = random.Random(seed)
         rng_np = np.random.default_rng(seed)
