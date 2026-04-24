@@ -1,5 +1,6 @@
 import asyncio
 import contextvars
+import copy
 import logging
 import threading
 from asyncio import iscoroutinefunction
@@ -166,26 +167,43 @@ def streamify(
     if not any(isinstance(c, StatusStreamingCallback) for c in callbacks):
         callbacks.append(status_streaming_callback)
 
-    async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
+    async def generator(args, kwargs, stream: MemoryObjectSendStream, call_listeners: list[StreamListener]):
+        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=call_listeners):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)
 
     async def async_streamer(*args, **kwargs):
+        # Per-call listener clones. Without this, two concurrent invocations
+        # of the streamified program would share the same listener instances
+        # and stomp on each other's mutable state (queues, stream_end,
+        # cache_hit). Cloning also gives us a clean state for serial reuse
+        # so a listener whose `stream_end` is still True from a previous
+        # call doesn't silently drop every chunk on the next call (#8425).
+        listener_to_clone: dict[int, StreamListener] = {
+            id(listener): copy.copy(listener) for listener in stream_listeners
+        }
+        for clone in listener_to_clone.values():
+            clone._reset_stream_state()
+        call_listeners = [listener_to_clone[id(listener)] for listener in stream_listeners]
+        call_predict_id_to_listener = {
+            predict_id: [listener_to_clone[id(listener)] for listener in listeners]
+            for predict_id, listeners in predict_id_to_listener.items()
+        }
+
         send_stream, receive_stream = create_memory_object_stream(16)
         async with create_task_group() as tg, send_stream, receive_stream:
-            tg.start_soon(generator, args, kwargs, send_stream)
+            tg.start_soon(generator, args, kwargs, send_stream, call_listeners)
 
             async for value in receive_stream:
                 if isinstance(value, ModelResponseStream):
-                    if len(predict_id_to_listener) == 0:
+                    if len(call_predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
                     else:
                         # We are receiving a chunk from the LM's response stream, delegate it to the listeners to
                         # determine if we should yield a value to the user.
-                        for listener in predict_id_to_listener[value.predict_id]:
+                        for listener in call_predict_id_to_listener[value.predict_id]:
                             # In some special cases such as Citation API, it is possible that multiple listeners
                             # return values at the same time due to the chunk buffer of the listener.
                             if output := listener.receive(value):
@@ -194,16 +212,16 @@ def streamify(
                     yield value
                 elif isinstance(value, Prediction):
                     # Flush remaining buffered tokens before yielding the Prediction instance
-                    for listener in stream_listeners:
+                    for listener in call_listeners:
                         if final_chunk := listener.finalize():
                             yield final_chunk
 
                     if include_final_prediction_in_output_stream:
                         yield value
                     elif (
-                        len(stream_listeners) == 0
-                        or any(listener.cache_hit for listener in stream_listeners)
-                        or not any(listener.stream_start for listener in stream_listeners)
+                        len(call_listeners) == 0
+                        or any(listener.cache_hit for listener in call_listeners)
+                        or not any(listener.stream_start for listener in call_listeners)
                     ):
                         yield value
                     return

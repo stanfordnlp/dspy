@@ -77,6 +77,18 @@ class StreamListener:
             },
         }
 
+    def _reset_stream_state(self) -> None:
+        """Reset per-stream state so the listener can be reused across successive calls
+        to a streamified program. This clears buffered tokens and start/end flags while
+        keeping configuration (signature_field_name, predict, allow_reuse, etc.) intact.
+        """
+        self.field_start_queue = []
+        self.field_end_queue = Queue()
+        self.stream_start = False
+        self.stream_end = False
+        self.cache_hit = False
+        self.json_adapter_state = {"field_accumulated_messages": ""}
+
     def _buffered_message_end_with_start_identifier(self, concat_message: str, start_identifier: str) -> str:
         for i in range(len(concat_message)):
             if start_identifier.startswith(concat_message[len(concat_message) - i - 1 :]):
