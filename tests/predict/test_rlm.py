@@ -17,7 +17,7 @@ from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
-from dspy.primitives.sandbox_serializable import SandboxSerializable
+from dspy.primitives.sandbox_serializable import SandboxSerializable, SandboxSerializableBase
 from tests.mock_interpreter import MockInterpreter
 
 # ============================================================================
@@ -1197,8 +1197,8 @@ class TestRLMIntegration:
 # ============================================================================
 
 
-class _StubSerializable(SandboxSerializable):
-    """Stub SandboxSerializable (inheriting) for testing RLM integration."""
+class _StubSerializable(SandboxSerializableBase):
+    """Stub serializable using the ergonomic base for testing RLM integration."""
 
     def __init__(self, data: str = "stub_data"):
         self.data = data
@@ -1216,10 +1216,10 @@ class _StubSerializable(SandboxSerializable):
         return f"StubData({self.data})"
 
 
-class _DuckTypedSerializable:
+class _StructuralSerializable:
     """Structurally conforming SandboxSerializable (no inheritance) for testing."""
 
-    def __init__(self, data: str = "duck_data"):
+    def __init__(self, data: str = "struct_data"):
         self.data = data
 
     def sandbox_setup(self) -> str:
@@ -1232,15 +1232,10 @@ class _DuckTypedSerializable:
         return f"{var_name} = {data_expr}"
 
     def rlm_preview(self, max_chars: int = 500) -> str:
-        return f"DuckData({self.data})"
-
-    def to_repl_variable(self, name: str, field_info=None):
-        preview = self.rlm_preview()
-        var = REPLVariable.from_value(name, self, field_info=field_info)
-        return var.model_copy(update={"preview": preview, "total_length": len(preview)})
+        return f"StructData({self.data})"
 
 
-class _BinarySerializable(SandboxSerializable):
+class _BinarySerializable(SandboxSerializableBase):
     """Serializable that emits non-UTF8 bytes to exercise binary payload path."""
 
     def sandbox_setup(self) -> str:
@@ -1259,8 +1254,8 @@ class _BinarySerializable(SandboxSerializable):
 class TestBuildVariablesWithSerializable:
     """Tests for _build_variables with SandboxSerializable inputs."""
 
-    def test_inheriting_serializable_uses_to_repl_variable(self):
-        """Inheriting SandboxSerializable should use to_repl_variable()."""
+    def test_base_serializable_uses_build_repl_variable(self):
+        """SandboxSerializableBase routes through build_repl_variable."""
         rlm = RLM("data, query -> answer")
         stub = _StubSerializable("my_data")
         variables = rlm._build_variables(data=stub, query="test query")
@@ -1271,14 +1266,17 @@ class TestBuildVariablesWithSerializable:
         assert "StubData(my_data)" in data_var.preview
         assert "test query" in query_var.preview
 
-    def test_duck_typed_serializable_uses_to_repl_variable(self):
-        """Structurally conforming protocol types should work without inheritance."""
+    def test_structural_serializable_routes_through_helper(self):
+        """Structurally conforming (non-subclass) types also route through
+        build_repl_variable via runtime_checkable isinstance."""
         rlm = RLM("data, query -> answer")
-        duck = _DuckTypedSerializable("my_data")
+        duck = _StructuralSerializable("my_data")
         variables = rlm._build_variables(data=duck, query="test query")
 
         data_var = next(v for v in variables if v.name == "data")
-        assert "DuckData(my_data)" in data_var.preview
+        assert "StructData(my_data)" in data_var.preview
+        # sandbox_setup imports should be surfaced in the description.
+        assert "import json" in data_var.desc
 
     def test_regular_values_unchanged(self):
         """Non-SandboxSerializable values should use default REPLVariable creation."""
@@ -1325,12 +1323,12 @@ class TestPrepareSerializableVars:
         assert regular == {"query": "hello"}
         assert mock.call_count == 0
 
-    def test_duck_typed_separates_serializable(self):
-        """Structurally conforming protocol types are also separated from regular args."""
+    def test_structural_conformance_separates_serializable(self):
+        """Structurally conforming (non-subclass) types are also separated."""
         mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
         rlm = RLM("data, query -> answer", max_iterations=3, interpreter=mock)
 
-        duck = _DuckTypedSerializable("payload")
+        duck = _StructuralSerializable("payload")
 
         rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
         regular = rlm._prepare_serializable_vars({"data": duck, "query": "hello"}, mock)
@@ -1353,6 +1351,41 @@ class TestPrepareSerializableVars:
         assert "_raw_data = base64.b64decode(_raw_data_base64)" in code
         assert variables["_raw_data_base64"] == base64.b64encode(b"\xff\xfe\xfd").decode("ascii")
 
+    def test_large_payload_not_inlined_in_code(self):
+        """Large payloads should ride in the variables kwarg, not the code string.
+
+        Inlining a multi-MB payload into the code text would balloon every
+        subsequent prompt and could blow past sandbox limits. The transport
+        contract is: code stays small, payload travels as a named variable.
+        """
+        mock = MockInterpreter(responses=[""])
+        rlm = RLM("data, query -> answer", interpreter=mock)
+
+        large_text = "x" * (2 * 1024 * 1024)  # 2 MB UTF-8 payload
+
+        class _LargeText(SandboxSerializableBase):
+            def sandbox_setup(self) -> str:
+                return ""
+
+            def to_sandbox(self) -> bytes:
+                return large_text.encode("utf-8")
+
+            def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+                return f"{var_name} = {data_expr}"
+
+            def rlm_preview(self, max_chars: int = 500) -> str:
+                return f"LargeText({len(large_text)} chars)"
+
+        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
+        rlm._prepare_serializable_vars({"data": _LargeText(), "query": "hi"}, mock)
+
+        assert mock.call_count == 1
+        code, variables = mock.call_history[0]
+        # Payload must be in variables, not the code string.
+        assert variables["_raw_data"] == large_text
+        assert large_text not in code
+        assert len(code) < 1000
+
     def test_forward_with_serializable(self):
         """Full forward() pass with a SandboxSerializable input."""
         mock = MockInterpreter(responses=[
@@ -1370,6 +1403,37 @@ class TestPrepareSerializableVars:
 
         # First call should be the serializable setup, second should be the iteration
         assert mock.call_count == 2
+
+
+@pytest.mark.deno
+class TestLargeSerializableRoundTrip:
+    """End-to-end test that large SandboxSerializable payloads survive the sandbox."""
+
+    def test_large_payload_round_trips_through_real_sandbox(self):
+        """A multi-MB payload should be reconstructable inside the real interpreter."""
+        large_text = "abc123" * (200 * 1024)  # ~1.2 MB UTF-8
+
+        class _LargeText(SandboxSerializableBase):
+            def sandbox_setup(self) -> str:
+                return ""
+
+            def to_sandbox(self) -> bytes:
+                return large_text.encode("utf-8")
+
+            def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+                return f"{var_name} = {data_expr}"
+
+            def rlm_preview(self, max_chars: int = 500) -> str:
+                return f"LargeText({len(large_text)} chars)"
+
+        with PythonInterpreter(tools={}) as interp:
+            rlm = RLM("data -> answer", interpreter=interp)
+            rlm._inject_execution_context(interp, rlm._prepare_execution_tools())
+            rlm._prepare_serializable_vars({"data": _LargeText()}, interp)
+            result = interp.execute("print(len(data)); print(data[:6])")
+
+        assert str(len(large_text)) in result
+        assert "abc123" in result
 
 
 if __name__ == "__main__":
