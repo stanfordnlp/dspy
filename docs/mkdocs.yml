@@ -78,6 +78,7 @@ nav:
             - Email Information Extraction: tutorials/email_extraction/index.md
             - Code Generation for Unfamiliar Libraries: tutorials/sample_code_generation/index.md
             - Building a Creative Text-Based AI Game: tutorials/ai_text_game/index.md
+            - AWX/Ansible Log Viewer Case Study: tutorials/awx_ansible_log_viewer/index.md
     - DSPy in Production: production/index.md
     - Community:
         - Community Resources: community/community-resources.md
@@ -107,6 +108,8 @@ nav:
             - Citations: api/experimental/Citations.md
             - Document: api/experimental/Document.md
         - Models:
+            - AppleFoundationLM: api/models/AppleFoundationLM.md
+            - AppleLocalLM: api/models/AppleLocalLM.md
             - Embedder: api/models/Embedder.md
             - LM: api/models/LM.md
         - Modules:

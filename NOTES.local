@@ -1,0 +1,9 @@
+# Local scratch notes — do not commit
+
+## configure_cache local variable rename (dspy/clients/__init__.py:37)
+
+The feature branch (feature/apple-foundation-models) renamed the local variable
+inside `configure_cache` from `DSPY_CACHE` to `dspy_cache` to suppress the
+"shadows outer scope" lint warning. This is a valid cleanup but unrelated to
+the Apple feature. Do as a separate commit on main (or a dedicated cleanup PR)
+once the feature branch is merged.
