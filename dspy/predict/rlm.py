@@ -27,7 +27,7 @@ from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
-from dspy.primitives.sandbox_serializable import SandboxSerializable
+from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
 
@@ -353,36 +353,13 @@ class RLM(Module):
             fields.append(field_info)
         return fields
 
-    @staticmethod
-    def _is_sandbox_serializable(value: Any) -> bool:
-        """Check if a value implements the SandboxSerializable protocol.
-
-        Checks isinstance first (for types that inherit from SandboxSerializable),
-        then falls back to duck-typing on the 4 core methods for structural conformance.
-        """
-        return (
-            isinstance(value, SandboxSerializable)
-            or (
-                hasattr(value, "to_sandbox") and callable(getattr(value, "to_sandbox", None))
-                and hasattr(value, "sandbox_setup") and callable(getattr(value, "sandbox_setup", None))
-                and hasattr(value, "sandbox_assignment") and callable(getattr(value, "sandbox_assignment", None))
-                and hasattr(value, "rlm_preview") and callable(getattr(value, "rlm_preview", None))
-            )
-        )
-
     def _build_variables(self, **input_args: Any) -> list[REPLVariable]:
         """Build REPLVariable list from input arguments with field metadata."""
         variables = []
         for name, value in input_args.items():
             field_info = self.signature.input_fields.get(name)
-            if self._is_sandbox_serializable(value):
-                if hasattr(value, "to_repl_variable"):
-                    var = value.to_repl_variable(name, field_info=field_info)
-                else:
-                    # Duck-typed: build REPLVariable with rlm_preview manually
-                    preview = value.rlm_preview()
-                    var = REPLVariable.from_value(name, value, field_info=field_info)
-                    var = var.model_copy(update={"preview": preview, "total_length": len(preview)})
+            if isinstance(value, SandboxSerializable):
+                var = build_repl_variable(value, name, field_info=field_info)
             else:
                 var = REPLVariable.from_value(name, value, field_info=field_info)
             variables.append(var)
@@ -411,7 +388,7 @@ class RLM(Module):
         repl.start()
         regular_args = {}
         for name, value in input_args.items():
-            if not self._is_sandbox_serializable(value):
+            if not isinstance(value, SandboxSerializable):
                 regular_args[name] = value
                 continue
 
