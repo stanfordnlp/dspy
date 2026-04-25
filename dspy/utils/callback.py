@@ -349,8 +349,22 @@ def with_callbacks(fn):
 
 
 def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
-    """Selects the appropriate on_start handler of the callback based on the instance and function name."""
-    if isinstance(instance, dspy.BaseLM):
+    """Selects the appropriate on_start handler of the callback based on the instance and function.
+
+    Args:
+        callback: The callback instance whose handler method will be returned.
+        instance: The instrumented object (LM, Adapter, Tool, Module, etc.).
+        fn: The decorated function being called, used to distinguish adapter methods.
+
+    Returns:
+        The bound callback method to invoke before the function executes.
+
+    Raises:
+        ValueError: If ``instance`` is a ``dspy.Adapter`` and ``fn.__name__`` is not
+            ``"format"`` or ``"parse"``.
+    """
+    from dspy.clients.base_lm import BaseLM
+    if isinstance(instance, BaseLM):
         return callback.on_lm_start
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_start
@@ -371,8 +385,22 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
 
 
 def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
-    """Selects the appropriate on_end handler of the callback based on the instance and function name."""
-    if isinstance(instance, dspy.BaseLM):
+    """Selects the appropriate on_end handler of the callback based on the instance and function.
+
+    Args:
+        callback: The callback instance whose handler method will be returned.
+        instance: The instrumented object (LM, Adapter, Tool, Module, etc.).
+        fn: The decorated function being called, used to distinguish adapter methods.
+
+    Returns:
+        The bound callback method to invoke after the function executes.
+
+    Raises:
+        ValueError: If ``instance`` is a ``dspy.Adapter`` and ``fn.__name__`` is not
+            ``"format"`` or ``"parse"``.
+    """
+    from dspy.clients.base_lm import BaseLM
+    if isinstance(instance, BaseLM):
         return callback.on_lm_end
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_end
