@@ -43,7 +43,7 @@ This template is automatically filled with:
     | `<curr_instructions>` | `<curr_param>` |
     | `<inputs_outputs_feedback>` | `<side_info>` |
 
-    **Note:** When using `dspy.GEPA` with `DspyAdapter` (the default), `reflection_prompt_template` passed via `gepa_kwargs` is silently ignored — `DspyAdapter` implements its own `propose_new_texts` and GEPA skips the template entirely. To customize reflection behavior, use `instruction_proposer` instead (see [Custom Instruction Proposers](#custom-instruction-proposers)).
+    **Note:** When using `dspy.GEPA` with `DspyAdapter` (the default), `reflection_prompt_template` passed via `gepa_kwargs` is not supported — `DspyAdapter` implements its own `propose_new_texts` and GEPA skips the template entirely. Passing it will raise a `ValueError` at startup with a message directing you to `instruction_proposer` instead. To customize reflection behavior, use `instruction_proposer` (see [Custom Instruction Proposers](#custom-instruction-proposers)).
 
     If you are using GEPA's lower-level API directly (without `DspyAdapter`), passing a template with the old placeholder names will raise a `ValueError` at startup. The error message reports what's *missing*, not what to rename:
 

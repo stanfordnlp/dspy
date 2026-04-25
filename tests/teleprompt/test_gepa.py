@@ -214,6 +214,18 @@ def test_metric_requires_feedback_signature():
         dspy.GEPA(metric=bad_metric, reflection_lm=reflection_lm, max_metric_calls=1)
 
 
+def test_reflection_prompt_template_in_gepa_kwargs_raises():
+    """reflection_prompt_template via gepa_kwargs is unsupported: DspyAdapter owns propose_new_texts."""
+    reflection_lm = DictDummyLM([])
+    with pytest.raises(ValueError, match="reflection_prompt_template"):
+        dspy.GEPA(
+            metric=simple_metric,
+            reflection_lm=reflection_lm,
+            max_metric_calls=1,
+            gepa_kwargs={"reflection_prompt_template": "Instructions: <curr_param>\n\nExamples: <side_info>"},
+        )
+
+
 def any_metric(
     gold: dspy.Example,
     pred: dspy.Prediction,

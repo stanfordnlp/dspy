@@ -433,6 +433,13 @@ class GEPA(Teleprompter):
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
 
+        if "reflection_prompt_template" in self.gepa_kwargs:
+            raise ValueError(
+                "reflection_prompt_template cannot be passed via gepa_kwargs when using dspy.GEPA. "
+                "DspyAdapter implements its own propose_new_texts, so reflection_prompt_template is unused. "
+                "To customize reflection behavior, pass a custom ProposalFn via the instruction_proposer parameter instead."
+            )
+
     def auto_budget(
         self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
     ) -> int:
