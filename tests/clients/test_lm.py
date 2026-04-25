@@ -1064,3 +1064,96 @@ async def test_streaming_passes_headers_correctly():
             mock_acompletion.assert_called_once()
             call_kwargs = mock_acompletion.call_args.kwargs
             assert call_kwargs["headers"]["Authorization"] == "Bearer my-custom-token"
+
+
+@pytest.fixture
+def mock_litellm_models_data(monkeypatch):
+    models_by_provider = {
+        "openai": ["openai/gpt-4o", "openai/gpt-4-vision", "openai/o1"],
+        "anthropic": ["anthropic/claude-3", "anthropic/claude-2"],
+    }
+    monkeypatch.setattr(litellm, "models_by_provider", models_by_provider)
+
+    def mock_supports_vision(model, **kwargs):
+        return "vision" in model or "claude-3" in model
+
+    def mock_supports_reasoning(model, **kwargs):
+        return "o1" in model
+
+    def mock_supports_function_calling(model, **kwargs):
+        return "gpt-4" in model
+
+    def mock_supports_response_schema(model, **kwargs):
+        return "gpt-4" in model
+
+    monkeypatch.setattr(litellm, "supports_vision", mock_supports_vision)
+    monkeypatch.setattr(litellm, "supports_reasoning", mock_supports_reasoning)
+    monkeypatch.setattr(litellm, "supports_function_calling", mock_supports_function_calling)
+    monkeypatch.setattr(litellm, "supports_response_schema", mock_supports_response_schema)
+
+    def mock_get_model_info(model):
+        info = {
+            "openai/gpt-4o": {"max_input_tokens": 128000, "input_cost_per_token": 0.000005},
+            "openai/gpt-4-vision": {"max_input_tokens": 128000, "input_cost_per_token": 0.00001},
+            "openai/o1": {"max_input_tokens": 200000, "input_cost_per_token": 0.000015},
+            "anthropic/claude-3": {"max_input_tokens": 200000, "input_cost_per_token": 0.000015},
+            "anthropic/claude-2": {"max_input_tokens": 100000, "input_cost_per_token": 0.000008},
+        }
+        if model not in info:
+            raise Exception("Model not found")
+        return info[model]
+
+    monkeypatch.setattr(litellm, "get_model_info", mock_get_model_info)
+
+
+def test_list_models_basic(mock_litellm_models_data):
+    from dspy.clients.lm import list_models
+
+    all_models = list_models()
+    assert len(all_models) == 5
+    assert "openai/gpt-4o" in all_models
+
+    openai_models = list_models(provider="openai")
+    assert len(openai_models) == 3
+    assert "anthropic/claude-3" not in openai_models
+
+
+def test_list_models_capabilities_filter(mock_litellm_models_data):
+    from dspy.clients.lm import list_models
+
+    vision_models = list_models(supports_vision=True)
+    assert len(vision_models) == 2
+    assert "openai/gpt-4-vision" in vision_models
+
+    reasoning_models = list_models(supports_reasoning=True)
+    assert len(reasoning_models) == 1
+    assert "openai/o1" in reasoning_models
+
+
+def test_list_models_context_cost_filter(mock_litellm_models_data):
+    from dspy.clients.lm import list_models
+
+    large_context = list_models(min_context_window=150000)
+    assert len(large_context) == 2
+    assert "openai/o1" in large_context
+
+    cheap_models = list_models(max_input_cost_per_token=0.000009)
+    assert len(cheap_models) == 2
+    assert "anthropic/claude-2" in cheap_models
+
+
+def test_list_models_enrich(mock_litellm_models_data):
+    from dspy.clients.lm import list_models
+
+    enriched = list_models(provider="anthropic", enrich=True)
+    assert len(enriched) == 2
+    assert isinstance(enriched[0], dict)
+
+    claude_3 = next(m for m in enriched if m["model"] == "anthropic/claude-3")
+    assert claude_3["provider"] == "anthropic"
+    assert claude_3["context_window"] == 200000
+
+    # Check provider extraction when `provider=None`
+    enriched_all = list_models(enrich=True)
+    gpt_4o = next(m for m in enriched_all if m["model"] == "openai/gpt-4o")
+    assert gpt_4o["provider"] == "openai"
