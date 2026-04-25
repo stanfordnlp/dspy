@@ -32,7 +32,7 @@ dependencies = [
     "json-repair>=0.54.2",
     "tenacity>=8.2.3",
     "anyio",
-    "asyncer==0.0.8",
+    "asyncer==0.0.17",
     "cachetools>=5.5.0",
     "cloudpickle>=3.1.2",
     "numpy>=1.26.0",
