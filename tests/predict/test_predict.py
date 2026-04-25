@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import enum
+import inspect
 import logging
 import time
 import types
@@ -804,12 +805,137 @@ async def test_lm_usage_with_async():
 
 def test_positional_arguments():
     program = Predict("question -> answer")
-    with pytest.raises(ValueError) as e:
-        program("What is the capital of France?")
-    assert str(e.value) == (
-        "Positional arguments are not allowed when calling `dspy.Predict`, must use keyword arguments that match "
-        "your signature input fields: 'question'. For example: `predict(question=input_value, ...)`."
-    )
+    dspy.configure(lm=DummyLM([{"answer": "Paris"}]))
+
+    result = program("What is the capital of France?")
+
+    assert result.answer == "Paris"
+
+
+def test_mixed_positional_and_keyword_arguments():
+    program = Predict("question, context -> answer")
+    dspy.configure(lm=DummyLM([{"answer": "Paris"}]))
+
+    result = program("What is the capital of France?", context="Use the provided context only.")
+
+    assert result.answer == "Paris"
+
+
+def test_too_many_positional_arguments():
+    program = Predict("question -> answer")
+
+    with pytest.raises(TypeError, match="Too many positional arguments"):
+        program("What is the capital of France?", "extra")
+
+
+def test_duplicate_positional_and_keyword_arguments():
+    program = Predict("question -> answer")
+
+    with pytest.raises(TypeError, match="Got multiple values"):
+        program("What is the capital of France?", question="What is the capital of France?")
+
+
+def test_call_signature_exposes_typed_inputs_and_reserved_kwargs():
+    class TypedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        count: int = dspy.InputField(default=1)
+        answer: str = dspy.OutputField()
+
+    program = Predict(TypedSignature)
+    sig = inspect.signature(program)
+    params = sig.parameters
+
+    assert params["question"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert params["question"].annotation is str
+    assert params["count"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert params["count"].annotation is int
+    assert params["count"].default == 1
+    assert params["config"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["signature_override"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["demos"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["lm"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert sig.return_annotation is dspy.Prediction
+
+
+def test_call_signature_leaves_untyped_string_signature_inputs_unannotated():
+    program = Predict("question -> answer")
+    sig = inspect.signature(program)
+
+    assert sig.parameters["question"].annotation is inspect.Parameter.empty
+
+
+def test_call_signature_updates_when_predictor_signature_changes():
+    program = Predict("question -> answer")
+    program.signature = dspy.Signature("question, context -> answer")
+    sig = inspect.signature(program)
+
+    assert list(sig.parameters)[:2] == ["question", "context"]
+
+
+def test_untyped_string_signature_does_not_warn_on_type_mismatch(caplog):
+    log_test_helper()
+    predict_instance = Predict("question -> answer")
+
+    with caplog.at_level(logging.WARNING, logger="dspy.predict.predict"):
+        predict_instance(question=123)
+
+    assert "Type mismatch" not in caplog.text
+
+
+def test_signature_override_for_one_call():
+    class SpyLM(dspy.LM):
+        def __init__(self):
+            super().__init__("dummy")
+            self.calls = []
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.calls.append({"messages": messages, "kwargs": kwargs})
+            return ["[[ ## answer ## ]]\nParis"]
+
+    program = Predict(dspy.Signature("question -> answer", "Answer normally."))
+    override_signature = program.signature.with_instructions("Answer in exactly one word.")
+    lm = SpyLM()
+    dspy.configure(lm=lm)
+
+    program(question="What is the capital of France?", signature_override=override_signature)
+
+    system_message = lm.calls[0]["messages"][0]["content"]
+    assert "Answer in exactly one word." in system_message
+    assert "Answer normally." not in system_message
+
+
+def test_legacy_signature_kwarg_still_works_when_not_an_input_field():
+    class SpyLM(dspy.LM):
+        def __init__(self):
+            super().__init__("dummy")
+            self.calls = []
+
+        def __call__(self, prompt=None, messages=None, **kwargs):
+            self.calls.append({"messages": messages, "kwargs": kwargs})
+            return ["[[ ## answer ## ]]\nParis"]
+
+    program = Predict(dspy.Signature("question -> answer", "Answer normally."))
+    override_signature = program.signature.with_instructions("Answer in exactly one word.")
+    lm = SpyLM()
+    dspy.configure(lm=lm)
+
+    program(question="What is the capital of France?", signature=override_signature)
+
+    system_message = lm.calls[0]["messages"][0]["content"]
+    assert "Answer in exactly one word." in system_message
+
+
+def test_signature_override_conflicts_with_legacy_signature_kwarg():
+    program = Predict("question -> answer")
+    override_signature = program.signature.with_instructions("Answer in exactly one word.")
+
+    with pytest.raises(TypeError, match="signature_override"):
+        program(
+            question="What is the capital of France?",
+            signature=override_signature,
+            signature_override=override_signature,
+        )
+
 
 def test_error_message_on_invalid_lm_setup():
     # No LM is loaded.
