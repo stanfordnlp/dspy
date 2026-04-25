@@ -42,6 +42,7 @@ def test_eval_candidate_program_minibatch():
     assert called_kwargs["callback_metadata"] == {"metric_key": "eval_minibatch"}
     assert result == 0
 
+
 def test_eval_candidate_program_failure():
     trainset = [1, 2, 3, 4, 5]
     candidate_program = DummyModule()
@@ -89,9 +90,5 @@ def test_create_n_fewshot_demo_sets_passes_metric_threshold_for_unshuffled():
         # Every BootstrapFewShot call should include metric_threshold
         for call in calls:
             _, kwargs = call
-            assert "metric_threshold" in kwargs, (
-                f"metric_threshold missing from BootstrapFewShot call: {kwargs}"
-            )
-            assert kwargs["metric_threshold"] == 0.9, (
-                f"metric_threshold={kwargs['metric_threshold']}, expected 0.9"
-            )
+            assert "metric_threshold" in kwargs, f"metric_threshold missing from BootstrapFewShot call: {kwargs}"
+            assert kwargs["metric_threshold"] == 0.9, f"metric_threshold={kwargs['metric_threshold']}, expected 0.9"
