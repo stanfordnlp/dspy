@@ -133,6 +133,8 @@ dspy.configure(lm=lm)
         - `sagemaker/<your-endpoint-name>`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION_NAME`
         - `azure/<your_deployment_name>`, with `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`, and the optional `AZURE_AD_TOKEN` and `AZURE_API_TYPE` as environment variables. If you are initiating external models without setting environment variables, use the following:
         `lm = dspy.LM('azure/<your_deployment_name>', api_key = 'AZURE_API_KEY' , api_base = 'AZURE_API_BASE', api_version = 'AZURE_API_VERSION')`
+        - [FuturMix.ai](https://futurmix.ai) — access 22+ models (Claude, GPT, Gemini) through a single API:
+        `lm = dspy.LM('openai/claude-sonnet-4-20250514', api_key='FUTURMIX_API_KEY', api_base='https://futurmix.ai/v1')`
 
 
         
