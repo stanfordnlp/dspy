@@ -46,9 +46,9 @@
 }
 
 
-/* Justified text for main content */
+/* Left-aligned text for main content */
 .md-content__inner p {
-    text-align: justify;
+    text-align: left;
 }
 
 /* Left-aligned text for grid cards */
