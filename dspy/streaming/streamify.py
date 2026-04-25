@@ -224,10 +224,23 @@ def streamify(
         return sync_streamer
 
 
+class _QueueException:
+    """Wrapper to ferry an exception from the producer thread to the consumer."""
+
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+
 def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
-    """Convert the async streaming generator to a sync generator."""
-    queue = Queue()  # Queue to hold items from the async generator
-    stop_sentinel = object()  # Sentinel to signal the generator is complete
+    """Convert the async streaming generator to a sync generator.
+
+    Exceptions raised inside *async_generator* are propagated to the caller of
+    the returned sync generator instead of being silently swallowed.
+    """
+    queue: Queue = Queue()
+    stop_sentinel = object()
 
     # To propagate prediction request ID context to the child thread
     context = contextvars.copy_context()
@@ -239,21 +252,22 @@ def apply_sync_streaming(async_generator: AsyncGenerator) -> Generator:
             try:
                 async for item in async_generator:
                     queue.put(item)
+            except Exception as exc:  # noqa: BLE001
+                queue.put(_QueueException(exc))
             finally:
-                # Signal completion
                 queue.put(stop_sentinel)
 
         context.run(asyncio.run, runner())
 
-    # Start the producer in a background thread
     thread = threading.Thread(target=producer, daemon=True)
     thread.start()
 
-    # Consume items from the queue
     while True:
-        item = queue.get()  # Block until an item is available
+        item = queue.get()
         if item is stop_sentinel:
             break
+        if isinstance(item, _QueueException):
+            raise item.exc
         yield item
 
 
