@@ -15,6 +15,7 @@ from dspy.teleprompt.teleprompt_optuna import BootstrapFewShotWithOptuna
 from dspy.teleprompt.vanilla import LabeledFewShot
 
 from .gepa.gepa import GEPA
+from .skydiscover import AdaEvolve, EvoX
 
 __all__ = [
     "AvatarOptimizer",
@@ -24,6 +25,8 @@ __all__ = [
     "COPRO",
     "Ensemble",
     "GEPA",
+    "AdaEvolve",
+    "EvoX",
     "KNNFewShot",
     "MIPROv2",
     "BootstrapFewShotWithRandomSearch",
