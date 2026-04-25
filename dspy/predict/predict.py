@@ -40,6 +40,35 @@ def _sanitize_lm_state(lm_state: dict, allow_unsafe_lm_state: bool) -> dict:
     return sanitized_lm_state
 
 
+def _normalize_lm_token_state(lm_state: dict) -> dict:
+    """Normalize serialized LM token fields before reconstructing `LM(...)`.
+
+    OpenAI reasoning models are configured with `max_tokens` at construction time, but
+    their persisted LM kwargs use `max_completion_tokens`. During `Predict.load_state()`,
+    this key mismatch or key conflict can produce ambiguous behavior if state includes
+    one or both keys.
+    This normalization maps `max_completion_tokens` into `max_tokens` and gives
+    `max_completion_tokens` precedence when both are present.
+    """
+    normalized_lm_state = dict(lm_state)
+    if "max_completion_tokens" not in normalized_lm_state:
+        return normalized_lm_state
+
+    max_completion_tokens = normalized_lm_state.pop("max_completion_tokens")
+    has_max_tokens_defined = "max_tokens" in normalized_lm_state
+    previous_max_tokens = normalized_lm_state.get("max_tokens")
+
+    if has_max_tokens_defined and previous_max_tokens != max_completion_tokens:
+        logger.debug(
+            "Overriding serialized LM token setting during state load: max_tokens=%s -> max_completion_tokens=%s.",
+            previous_max_tokens,
+            max_completion_tokens,
+        )
+
+    normalized_lm_state["max_tokens"] = max_completion_tokens
+    return normalized_lm_state
+
+
 class Predict(Module, Parameter):
     """Basic DSPy module that maps inputs to outputs using a language model.
 
@@ -108,7 +137,8 @@ class Predict(Module, Parameter):
 
         self.signature = self.signature.load_state(state["signature"])
         sanitized_lm_state = _sanitize_lm_state(state["lm"], allow_unsafe_lm_state) if state["lm"] else None
-        self.lm = LM(**sanitized_lm_state) if sanitized_lm_state else None
+        normalized_lm_state = _normalize_lm_token_state(sanitized_lm_state) if sanitized_lm_state else None
+        self.lm = LM(**normalized_lm_state) if normalized_lm_state else None
 
         if "extended_signature" in state:  # legacy, up to and including 2.5, for CoT.
             raise NotImplementedError("Loading extended_signature is no longer supported in DSPy 2.6+")

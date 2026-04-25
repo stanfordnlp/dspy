@@ -259,6 +259,76 @@ def test_lm_field_after_dump_and_load_state(tmp_path, filename):
     assert original_predict.dump_state() == loaded_predict.dump_state()
 
 
+def test_load_state_prefers_max_completion_tokens_for_openai_reasoning_models_with_debug_log():
+    """Regression for mixed and conflicting token keys in serialized OpenAI reasoning LM state.
+
+    Some saved states may include both `max_tokens` and `max_completion_tokens`. During
+    `Predict.load_state()`, `max_completion_tokens` intentionally takes precedence because
+    that is the key emitted by OpenAI reasoning-model LM state. This test also verifies
+    that a debug log is emitted when the loaded value overrides an existing `max_tokens` entry.
+    """
+    original_predict = dspy.Predict("q->a")
+    original_predict.lm = dspy.LM(
+        model="openai/gpt-5-nano",
+        temperature=1.0,
+        max_tokens=16_000,
+    )
+    saved_state = copy.deepcopy(original_predict.dump_state())
+    assert "max_completion_tokens" in saved_state["lm"]
+    assert "max_tokens" not in saved_state["lm"]
+
+    # Simulate a mixed-key payload with a token conflict from transitional or manually-edited state.
+    saved_state["lm"]["max_tokens"] = 16_000
+    saved_state["lm"]["max_completion_tokens"] = 32_000
+
+    with patch("dspy.predict.predict.logger.debug") as debug_mock:
+        loaded_predict = dspy.Predict("q->a")
+        loaded_predict.load_state(saved_state)
+
+    assert loaded_predict.lm is not None
+    assert loaded_predict.lm.kwargs["max_completion_tokens"] == 32_000
+
+    # `max_tokens` should not remain in final LM kwargs; `max_completion_tokens` takes precedence.
+    assert "max_tokens" not in loaded_predict.lm.kwargs
+
+    # The debug logger should record one override event with old and new token values.
+    debug_mock.assert_called_once()
+    assert debug_mock.call_args.args[1] == 16_000
+    assert debug_mock.call_args.args[2] == 32_000
+
+
+def test_load_state_normalizes_reasoning_token_keys_before_lm_construction():
+    """Ensure mixed and conflicting serialized token keys are normalized before calling `LM(...)`.
+
+    OpenAI reasoning LM state is persisted with `max_completion_tokens`, but
+    constructing `LM(...)` expects `max_tokens`. If saved state contains both
+    keys with conflicting values, `Predict.load_state()` should resolve
+    precedence first and call `LM(...)` with only `max_tokens`.
+    """
+    original_predict = dspy.Predict("q->a")
+    original_predict.lm = dspy.LM(
+        model="openai/gpt-5-nano",
+        temperature=1.0,
+        max_tokens=16_000,
+    )
+    saved_state = copy.deepcopy(original_predict.dump_state())
+
+    # Force mixed keys with conflicting values in serialized state.
+    saved_state["lm"]["max_tokens"] = 16_000
+    saved_state["lm"]["max_completion_tokens"] = 32_000
+
+    with patch("dspy.predict.predict.LM") as lm_mock:
+        loaded_predict = dspy.Predict("q->a")
+        loaded_predict.load_state(saved_state)
+
+    # Normalization should happen before constructor call.
+    assert loaded_predict.lm is lm_mock.return_value
+    assert lm_mock.call_count == 1
+    # The winning `max_completion_tokens` value is passed through `max_tokens`.
+    assert lm_mock.call_args.kwargs["max_tokens"] == 32_000
+    assert "max_completion_tokens" not in lm_mock.call_args.kwargs
+
+
 @pytest.mark.parametrize("endpoint_override_key", ["api_base", "base_url"])
 def test_load_ignores_serialized_endpoint_override_by_default(tmp_path, endpoint_override_key):
     file_path = tmp_path / "model.json"
