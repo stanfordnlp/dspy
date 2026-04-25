@@ -77,11 +77,35 @@ def _warn_deprecated_field_args(**kwargs):
 
 
 def InputField(**kwargs): # noqa: N802
+    """Declare an input field on a :class:`dspy.Signature`.
+
+    Accepts the same keyword arguments as :func:`pydantic.Field`, plus:
+
+    * ``desc`` – A natural-language description used in the prompt sent to the LM.
+    * ``prefix`` – Override the field label shown to the LM (defaults to the field name).
+
+    Example::
+
+        class QA(dspy.Signature):
+            question: str = dspy.InputField(desc="a factoid question")
+    """
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="input"))
 
 
 def OutputField(**kwargs): # noqa: N802
+    """Declare an output field on a :class:`dspy.Signature`.
+
+    Accepts the same keyword arguments as :func:`pydantic.Field`, plus:
+
+    * ``desc`` – A natural-language description used in the prompt sent to the LM.
+    * ``prefix`` – Override the field label shown to the LM (defaults to the field name).
+
+    Example::
+
+        class QA(dspy.Signature):
+            answer: str = dspy.OutputField(desc="a short factual answer")
+    """
     _warn_deprecated_field_args(**kwargs)
     return pydantic.Field(**move_kwargs(**kwargs, __dspy_field_type="output"))
 

@@ -517,6 +517,16 @@ class Signature(BaseModel, metaclass=SignatureMeta):
 
 
 def ensure_signature(signature: str | type[Signature], instructions=None) -> None | type[Signature]:
+    """Normalise a signature argument into a :class:`Signature` class.
+
+    If *signature* is a string (e.g. ``"question -> answer"``), it is parsed
+    into a new ``Signature`` class with the given *instructions*.  If it is
+    already a ``Signature`` subclass it is returned as-is.
+
+    Raises:
+        ValueError: If *instructions* is provided alongside a ``Signature``
+            class (instructions should be set on the class itself).
+    """
     if signature is None:
         return None
     if isinstance(signature, str):
