@@ -101,11 +101,29 @@ def configure_litellm_logging(level: str = "ERROR"):
 
 
 def enable_litellm_logging():
+    """Enable verbose LiteLLM logs for DSPy client calls.
+
+    This function disables LiteLLM's debug-info suppression and sets the
+    LiteLLM verbose logger level to ``DEBUG``.
+
+    Example:
+        >>> import dspy
+        >>> dspy.enable_litellm_logging()
+    """
     litellm.suppress_debug_info = False
     configure_litellm_logging("DEBUG")
 
 
 def disable_litellm_logging():
+    """Disable verbose LiteLLM logs for quieter DSPy output.
+
+    This function enables LiteLLM's debug-info suppression and sets the
+    LiteLLM verbose logger level to ``ERROR``.
+
+    Example:
+        >>> import dspy
+        >>> dspy.disable_litellm_logging()
+    """
     litellm.suppress_debug_info = True
     configure_litellm_logging("ERROR")
 
