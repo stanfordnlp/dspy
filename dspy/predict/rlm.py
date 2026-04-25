@@ -66,6 +66,8 @@ _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 def _strip_code_fences(code: str) -> str:
     """Extract Python code from markdown fences, or return as-is if no fences."""
+    if code is None:
+        raise ValueError("LM returned None for code field; the model may have failed to generate a response.")
     code = code.strip()
     if "```" not in code:
         return code
@@ -562,8 +564,8 @@ class RLM(Module):
 
         try:
             code = _strip_code_fences(action.code)
-        except SyntaxError as e:
-            code = action.code
+        except (SyntaxError, ValueError) as e:
+            code = action.code or ""
             result = f"[Error] {e}"
             return self._process_execution_result(action, code, result, history, output_field_names)
         result = self._execute_code(repl, code, input_args)
@@ -650,8 +652,8 @@ class RLM(Module):
 
         try:
             code = _strip_code_fences(pred.code)
-        except SyntaxError as e:
-            code = pred.code
+        except (SyntaxError, ValueError) as e:
+            code = pred.code or ""
             result = f"[Error] {e}"
             return self._process_execution_result(pred, code, result, history, output_field_names)
         result = self._execute_code(repl, code, input_args)
