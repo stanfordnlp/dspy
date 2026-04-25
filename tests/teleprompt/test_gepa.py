@@ -521,3 +521,103 @@ def test_alternating_half_component_selector():
             # Odd iteration should select second half: ["generator"]
             assert "generator" in selection["selected"], f"Odd iteration {selection['iteration']} should include generator"
             assert "classifier" not in selection["selected"], f"Odd iteration {selection['iteration']} should not include classifier"
+
+
+def test_track_stats_result_structure():
+    """
+    Verify DspyGEPAResult fields have the correct types from GEPA 0.1.1:
+    - val_subscores is list[dict[DataId, float]] (not list[list[float]])
+    - per_val_instance_best_candidates is dict[DataId, set[int]] (not list[set[int]])
+    - best_candidate returns a Module
+    - highest_score_achieved_per_val_task works without errors
+    - to_dict() serializes per_val_instance_best_candidates as a dict
+    """
+    from dspy.teleprompt.gepa.gepa import DspyGEPAResult
+
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+    prog = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    dr = prog.detailed_results
+    assert isinstance(dr, DspyGEPAResult)
+
+    # val_subscores: list[dict[DataId, float]]
+    assert isinstance(dr.val_subscores, list)
+    for subscores in dr.val_subscores:
+        assert isinstance(subscores, dict), f"Expected dict, got {type(subscores)}"
+        for val, score in subscores.items():
+            assert isinstance(score, (int, float))
+
+    # per_val_instance_best_candidates: dict[DataId, set[int]]
+    assert isinstance(dr.per_val_instance_best_candidates, dict), (
+        f"Expected dict, got {type(dr.per_val_instance_best_candidates)}"
+    )
+    for val_id, best_set in dr.per_val_instance_best_candidates.items():
+        assert isinstance(best_set, set)
+
+    # best_candidate returns a Module
+    assert isinstance(dr.best_candidate, dspy.Module), (
+        f"Expected Module, got {type(dr.best_candidate)}"
+    )
+
+    # highest_score_achieved_per_val_task works and returns one float per val instance
+    scores = dr.highest_score_achieved_per_val_task
+    assert isinstance(scores, list)
+    assert len(scores) == len(dr.per_val_instance_best_candidates)
+    for s in scores:
+        assert isinstance(s, (int, float))
+
+    # to_dict() serializes per_val_instance_best_candidates as a dict (not a list)
+    d = dr.to_dict()
+    assert isinstance(d["per_val_instance_best_candidates"], dict), (
+        f"Expected dict in to_dict output, got {type(d['per_val_instance_best_candidates'])}"
+    )
+    for val_id, best_list in d["per_val_instance_best_candidates"].items():
+        assert isinstance(best_list, list)
+
+
+def test_track_best_outputs_result_structure():
+    """
+    Verify best_outputs_valset has the correct type from GEPA 0.1.1:
+    dict[DataId, list[tuple[int, Prediction]]] (not list[list[tuple[...]]])
+    """
+    student = SimpleModule("input -> output")
+
+    with open("tests/teleprompt/gepa_dummy_lm.json") as f:
+        data = json.load(f)
+
+    dspy.configure(lm=DictDummyLM(data["lm"]))
+    optimizer = dspy.GEPA(
+        metric=simple_metric,
+        reflection_lm=DictDummyLM(data["reflection_lm"]),
+        max_metric_calls=5,
+        track_stats=True,
+        track_best_outputs=True,
+    )
+    trainset = [
+        Example(input="What is the color of the sky?", output="blue").with_inputs("input"),
+        Example(input="What does the fox say?", output="Ring-ding-ding-ding-dingeringeding!").with_inputs("input"),
+    ]
+    prog = optimizer.compile(student, trainset=trainset, valset=trainset)
+
+    best_outputs = prog.detailed_results.best_outputs_valset
+    assert best_outputs is not None
+    assert isinstance(best_outputs, dict), f"Expected dict, got {type(best_outputs)}"
+    for val_id, entries in best_outputs.items():
+        assert isinstance(entries, list)
+        for cand_idx, output in entries:
+            assert isinstance(cand_idx, int)
