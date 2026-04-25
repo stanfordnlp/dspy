@@ -1,6 +1,9 @@
+import json
 import logging
 import random
+import xml.etree.ElementTree as ET
 from typing import Any, Callable, Protocol, TypedDict
+from xml.sax.saxutils import escape as xml_escape
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
@@ -10,11 +13,81 @@ import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import History
 from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.tool import Tool
 from dspy.evaluate import Evaluate
-from dspy.primitives import Example, Prediction
+from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 logger = logging.getLogger(__name__)
+
+
+# Constants for module optimization
+TOOL_MODULE_PREFIX = "tool_module"
+
+# Constant for full trace reflection mode
+FULL_TRACE_CANDIDATE_KEY = "candidate_config"
+
+
+def candidate_dict_to_xml(d: dict[str, str]) -> str:
+    """Serialize a predictor-name → instruction mapping to XML.
+
+    Produces::
+
+        <candidate_config>
+          <predictor name="summarize1.predict">instruction text</predictor>
+          ...
+        </candidate_config>
+    """
+    parts = ["<candidate_config>"]
+    for name, instruction in d.items():
+        parts.append(f'  <predictor name="{xml_escape(name)}">{xml_escape(instruction)}</predictor>')
+    parts.append("</candidate_config>")
+    return "\n".join(parts)
+
+
+def xml_to_candidate_dict(xml_str: str) -> dict[str, str]:
+    """Deserialize an XML candidate config back to a dict.
+
+    Handles both the structured ``<predictor name="...">`` format produced by
+    :func:`candidate_dict_to_xml` **and** a fallback heuristic for free-form
+    LLM completions that may wrap the XML in markdown fences or include extra
+    text around it.
+    """
+    # Strip markdown code fences if present
+    import re
+    xml_str = xml_str.strip()
+    fence_pattern = re.compile(r"```(?:xml)?\s*\n?([\s\S]*?)\n?```", re.DOTALL)
+    fence_match = fence_pattern.search(xml_str)
+    if fence_match:
+        xml_str = fence_match.group(1).strip()
+
+    # Try to isolate the <candidate_config>...</candidate_config> block
+    start = xml_str.find("<candidate_config")
+    end = xml_str.rfind("</candidate_config>")
+    if start != -1 and end != -1:
+        xml_str = xml_str[start : end + len("</candidate_config>")]
+
+    try:
+        root = ET.fromstring(xml_str)
+    except ET.ParseError:
+        # Last resort: try to find individual <predictor> tags
+        result = {}
+        pred_pattern = re.compile(
+            r'<predictor\s+name="([^"]+)">(.*?)</predictor>', re.DOTALL
+        )
+        for m in pred_pattern.finditer(xml_str):
+            result[m.group(1)] = m.group(2).strip()
+        if result:
+            return result
+        raise
+
+    result = {}
+    for elem in root.findall("predictor"):
+        name = elem.get("name")
+        text = (elem.text or "").strip()
+        if name:
+            result[name] = text
+    return result
 
 
 class LoggerAdapter:
@@ -87,6 +160,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         reflection_lm=None,
         custom_instruction_proposer: "ProposalFn | None" = None,
         warn_on_score_mismatch: bool = True,
+        enable_tool_optimization: bool = False,
+        use_full_trace_reflection: bool = False,
+        use_full_trace_dataset: bool = False,
+        use_rlm: bool = False,
         reflection_minibatch_size: int | None = None,
     ):
         self.student = student_module
@@ -99,6 +176,10 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.reflection_lm = reflection_lm
         self.custom_instruction_proposer = custom_instruction_proposer
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.enable_tool_optimization = enable_tool_optimization
+        self.use_full_trace_reflection = use_full_trace_reflection
+        self.use_full_trace_dataset = use_full_trace_dataset
+        self.use_rlm = use_rlm
         self.reflection_minibatch_size = reflection_minibatch_size
 
     def propose_new_texts(
@@ -117,30 +198,168 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     components_to_update=components_to_update,
                 )
 
+        # Handle full trace reflection mode
+        if self.use_full_trace_reflection and FULL_TRACE_CANDIDATE_KEY in components_to_update:
+            return self._propose_full_trace_update(candidate, reflective_dataset, reflection_lm)
+
+        # Otherwise, route to appropriate proposers
+        # Separate into two categories: tool-using modules (ReAct) vs regular instructions
+        # TODO: Add generic tool module support when DSPy trace lineage is improved
+        tool_components = []
+        instruction_components = []
+
+        for c in components_to_update:
+            if c.startswith(TOOL_MODULE_PREFIX):
+                tool_components.append(c)
+            else:
+                instruction_components.append(c)
+
         results: dict[str, str] = {}
 
         with dspy.context(lm=reflection_lm):
-            for name in components_to_update:
-                base_instruction = candidate[name]
-                dataset_with_feedback = reflective_dataset[name]
-                results[name] = InstructionProposalSignature.run(
-                    lm=(lambda x: self.stripped_lm_call(x)[0]),
-                    input_dict={
-                        "current_instruction_doc": base_instruction,
-                        "dataset_with_feedback": dataset_with_feedback,
-                    },
-                )["new_instruction"]
+            # Handle regular instruction components
+            if instruction_components:
+                for name in instruction_components:
+                    base_instruction = candidate[name]
+                    dataset_with_feedback = reflective_dataset[name]
+                    results[name] = InstructionProposalSignature.run(
+                        lm=(lambda x: self.stripped_lm_call(x)[0]),
+                        input_dict={
+                            "current_instruction_doc": base_instruction,
+                            "dataset_with_feedback": dataset_with_feedback,
+                        },
+                    )["new_instruction"]
+
+            # Handle ReAct modules
+            if tool_components:
+                from dspy.teleprompt.gepa.instruction_proposal import ToolProposer
+
+                tool_proposer = ToolProposer()
+                results.update(
+                    tool_proposer(
+                        candidate=candidate,
+                        reflective_dataset=reflective_dataset,
+                        components_to_update=tool_components,
+                    )
+                )
 
         return results
+
+    def _propose_full_trace_update(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[dict[str, Any]]],
+        reflection_lm,
+    ) -> dict[str, str]:
+        """
+        Propose updates to all components at once based on full trace reflection.
+        This method is used when use_full_trace_reflection is enabled.
+
+        When use_rlm is enabled, uses dspy.RLM (Recursive Language Model) which
+        lets the LLM programmatically explore long traces via a sandboxed REPL.
+        """
+        from dspy.teleprompt.gepa.instruction_proposal import FullTraceInstructionProposer
+
+        current_config = candidate[FULL_TRACE_CANDIDATE_KEY]
+        dataset_with_feedback = reflective_dataset[FULL_TRACE_CANDIDATE_KEY]
+
+        proposer = FullTraceInstructionProposer(use_rlm=self.use_rlm)
+
+        with dspy.context(lm=reflection_lm):
+            new_config = proposer(
+                current_config=current_config,
+                dataset_with_feedback=dataset_with_feedback,
+            )
+
+        return {FULL_TRACE_CANDIDATE_KEY: new_config}
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
 
+        # Handle full trace reflection mode where candidate is serialized as XML
+        if self.use_full_trace_reflection and FULL_TRACE_CANDIDATE_KEY in candidate:
+            deserialized_candidate = xml_to_candidate_dict(candidate[FULL_TRACE_CANDIDATE_KEY])
+        else:
+            deserialized_candidate = candidate
+
+        # Start with plain string instructions from candidate
+        predictor_candidates = {
+            k: v for k, v in deserialized_candidate.items() if not k.startswith(TOOL_MODULE_PREFIX)
+        }
+
+        tool_candidates = {}
+        if self.enable_tool_optimization:
+            for key, value in deserialized_candidate.items():
+                if not key.startswith(TOOL_MODULE_PREFIX):
+                    continue
+
+                config = json.loads(value)
+
+                for pred_name, instruction in config.items():
+                    if isinstance(instruction, str):
+                        predictor_candidates[pred_name] = instruction
+
+                tool_candidates.update(config.get("tools", {}))
+
+        # Update predictor instructions
         for name, pred in new_prog.named_predictors():
-            if name in candidate:
-                pred.signature = pred.signature.with_instructions(candidate[name])
+            if name in predictor_candidates:
+                pred.signature = pred.signature.with_instructions(predictor_candidates[name])
+
+        # Update tool descriptions
+        if tool_candidates:
+            self._update_tool_descriptions(new_prog, tool_candidates)
 
         return new_prog
+
+    def _update_tool_descriptions(self, program: Module, tool_candidates: dict[str, Any]) -> None:
+        all_tools = self._collect_tools(program)
+
+        for tool_name, tool_config in tool_candidates.items():
+            if tool_name not in all_tools:
+                logger.warning(
+                    f"Skipping updates for tool:'{tool_name}' because it cannot be detected on the student program."
+                )
+                continue
+
+            tool = all_tools[tool_name]
+
+            # Update tool description if present.
+            if tool_config.get("desc"):
+                tool.desc = tool_config["desc"]
+
+            # Update arg descriptions if present.
+            args_schema = tool_config.get("args") or {}
+            for arg_name, arg_schema in args_schema.items():
+                if arg_schema.get("description") is not None:
+                    tool.args[arg_name]["description"] = arg_schema["description"]
+
+    def _collect_tools(self, module: Module) -> dict[str, Tool]:
+        """Recursively collect all Tool instances from a module and its sub-modules."""
+        all_tools = {}
+        visited = set()
+
+        def _collect_from_attribute(attr_value):
+            if isinstance(attr_value, Tool):
+                all_tools[attr_value.name] = attr_value
+            elif isinstance(attr_value, dspy.Module):
+                _traverse(attr_value)
+            elif isinstance(attr_value, list | dict):
+                items = attr_value if isinstance(attr_value, list) else attr_value.values()
+                for item in items:
+                    if isinstance(item, Tool):
+                        all_tools[item.name] = item
+
+        def _traverse(current_module):
+            if id(current_module) in visited or not hasattr(current_module, "__dict__"):
+                return
+            visited.add(id(current_module))
+
+            for attr_value in current_module.__dict__.values():
+                _collect_from_attribute(attr_value)
+
+        _traverse(module)
+        return all_tools
 
     def evaluate(self, batch, candidate, capture_traces=False):
         program = self.build_program(candidate)
@@ -198,18 +417,321 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def make_reflective_dataset(
         self, candidate, eval_batch, components_to_update
     ) -> dict[str, list[ReflectiveExample]]:
+        # Full-trace XML mode: single candidate key, full trace dataset
+        if self.use_full_trace_reflection:
+            return self._make_full_trace_reflective_dataset(candidate, eval_batch, components_to_update)
+
+        # Full-trace dataset mode: per-component candidates, but full trace in dataset
+        if self.use_full_trace_dataset:
+            return self._make_full_trace_dataset_for_components(candidate, eval_batch, components_to_update)
+
+        return self._make_component_reflective_dataset(candidate, eval_batch, components_to_update)
+
+    def _make_full_trace_reflective_dataset(
+        self, candidate, eval_batch, components_to_update
+    ) -> dict[str, list[ReflectiveExample]]:
+        """
+        Build a reflective dataset that includes the full program trace for each example.
+        This is inspired by the full_program_adapter approach where we reflect on the
+        entire agent trajectory instead of selecting specific parts of the trace.
+
+        The dataset structure for each example includes:
+        - Program Inputs: The inputs to the entire program
+        - Program Outputs: The outputs of the entire program
+        - Program Trace: All predictor calls with their inputs/outputs
+        - Feedback: Feedback from the metric
+        """
+        program = self.build_program(candidate)
+
+        # In full trace mode, we have a single component key: FULL_TRACE_CANDIDATE_KEY
+        assert len(components_to_update) == 1 and components_to_update[0] == FULL_TRACE_CANDIDATE_KEY, (
+            f"Full trace mode expects single component '{FULL_TRACE_CANDIDATE_KEY}', got: {components_to_update}"
+        )
+
+        items: list[dict[str, Any]] = []
+
+        for data in eval_batch.trajectories or []:
+            trace = data["trace"]
+            example = data["example"]
+            prediction = data["prediction"]
+            module_score = data["score"]
+
+            if hasattr(module_score, "feedback"):
+                feedback_text = module_score["feedback"]
+            else:
+                feedback_text = None
+
+            if hasattr(module_score, "score"):
+                module_score = module_score["score"]
+
+            if len(trace) == 0:
+                continue
+
+            example_data: dict[str, Any] = {}
+
+            # Program-level inputs and outputs
+            example_data["Program Inputs"] = {**example.inputs()}
+            example_data["Program Outputs"] = {**prediction} if not isinstance(prediction, FailedPrediction) else {
+                "error": "Failed to produce valid output"
+            }
+
+            # Build full trace with all predictor calls
+            trace_items: list[dict[str, Any]] = []
+            for trace_item in trace:
+                predictor, inputs, outputs = trace_item
+
+                # Find predictor name
+                pred_name = None
+                for name, pred in program.named_predictors():
+                    if pred.signature.equals(predictor.signature):
+                        pred_name = name
+                        break
+
+                if pred_name is None:
+                    pred_name = "unknown_predictor"
+
+                # Process inputs
+                new_inputs: dict[str, Any] = {}
+                contains_history = False
+                history_key_name = None
+
+                for input_key, input_val in inputs.items():
+                    if isinstance(input_val, History):
+                        contains_history = True
+                        history_key_name = input_key
+
+                if contains_history and history_key_name is not None:
+                    s = "```json\n"
+                    for i, message in enumerate(inputs[history_key_name].messages):
+                        s += f"  {i}: {message}\n"
+                    s += "```"
+                    new_inputs["Context"] = s
+
+                for input_key, input_val in inputs.items():
+                    if contains_history and input_key == history_key_name:
+                        continue
+                    new_inputs[input_key] = str(input_val)
+
+                # Process outputs
+                if isinstance(outputs, FailedPrediction):
+                    new_outputs = (
+                        "Couldn't parse the output as per the expected output format. "
+                        f"The model's raw response was:\n```\n{outputs.completion_text}\n```"
+                    )
+                else:
+                    new_outputs = {output_key: str(output_val) for output_key, output_val in outputs.items()}
+
+                # Per-component feedback for this predictor call
+                component_feedback = None
+                if not isinstance(outputs, FailedPrediction) and not isinstance(prediction, FailedPrediction):
+                    feedback_fn = self.feedback_map.get(pred_name)
+                    if feedback_fn is not None:
+                        try:
+                            fb = feedback_fn(
+                                predictor_output=outputs,
+                                predictor_inputs=inputs,
+                                module_inputs=example,
+                                module_outputs=prediction,
+                                captured_trace=trace,
+                            )
+                            component_feedback = fb["feedback"]
+                        except Exception:
+                            pass
+
+                trace_entry = {
+                    "Called Module": pred_name,
+                    "Inputs": new_inputs,
+                    "Generated Outputs": new_outputs,
+                }
+                if component_feedback is not None:
+                    trace_entry["Component Feedback"] = component_feedback
+
+                trace_items.append(trace_entry)
+
+            example_data["Program Trace"] = trace_items
+
+            # Add module-level feedback
+            if feedback_text is not None:
+                example_data["Feedback"] = feedback_text
+            else:
+                example_data["Feedback"] = f"This trajectory got a score of {module_score}."
+
+            items.append(example_data)
+
+        if len(items) == 0:
+            raise Exception("No valid predictions found for program.")
+
+        return {FULL_TRACE_CANDIDATE_KEY: items}
+
+    def _make_full_trace_dataset_for_components(
+        self, candidate, eval_batch, components_to_update
+    ) -> dict[str, list[dict[str, Any]]]:
+        """
+        Build a reflective dataset with the full program trace, but keyed by
+        the individual component(s) being updated (standard per-component
+        candidate structure).
+
+        This gives the reflection LM full context of the entire program execution
+        while still optimizing one component at a time via GEPA's round-robin.
+
+        Each example in the dataset contains:
+        - Program Inputs / Program Outputs
+        - Program Trace: all predictor calls with inputs, outputs, and per-component feedback
+        - Target Component: which component is being updated
+        - Feedback: module-level feedback
+        """
+        program = self.build_program(candidate)
+
+        # Build the full-trace examples once (shared across all target components)
+        trace_examples: list[dict[str, Any]] = []
+
+        for data in eval_batch.trajectories or []:
+            trace = data["trace"]
+            example = data["example"]
+            prediction = data["prediction"]
+            module_score = data["score"]
+
+            if hasattr(module_score, "feedback"):
+                feedback_text = module_score["feedback"]
+            else:
+                feedback_text = None
+
+            if hasattr(module_score, "score"):
+                module_score = module_score["score"]
+
+            if len(trace) == 0:
+                continue
+
+            example_data: dict[str, Any] = {}
+
+            # Program-level inputs and outputs
+            example_data["Program Inputs"] = {**example.inputs()}
+            example_data["Program Outputs"] = (
+                {**prediction}
+                if not isinstance(prediction, FailedPrediction)
+                else {"error": "Failed to produce valid output"}
+            )
+
+            # Build full trace with all predictor calls + per-component feedback
+            trace_items: list[dict[str, Any]] = []
+            for trace_item in trace:
+                predictor, inputs, outputs = trace_item
+
+                # Find predictor name
+                pred_name = None
+                for name, pred in program.named_predictors():
+                    if pred.signature.equals(predictor.signature):
+                        pred_name = name
+                        break
+                if pred_name is None:
+                    pred_name = "unknown_predictor"
+
+                # Process inputs
+                new_inputs: dict[str, Any] = {}
+                contains_history = False
+                history_key_name = None
+                for input_key, input_val in inputs.items():
+                    if isinstance(input_val, History):
+                        contains_history = True
+                        history_key_name = input_key
+                if contains_history and history_key_name is not None:
+                    s = "```json\n"
+                    for i, message in enumerate(inputs[history_key_name].messages):
+                        s += f"  {i}: {message}\n"
+                    s += "```"
+                    new_inputs["Context"] = s
+                for input_key, input_val in inputs.items():
+                    if contains_history and input_key == history_key_name:
+                        continue
+                    new_inputs[input_key] = str(input_val)
+
+                # Process outputs
+                if isinstance(outputs, FailedPrediction):
+                    new_outputs = (
+                        "Couldn't parse the output as per the expected output format. "
+                        f"The model's raw response was:\n```\n{outputs.completion_text}\n```"
+                    )
+                else:
+                    new_outputs = {output_key: str(output_val) for output_key, output_val in outputs.items()}
+
+                # Per-component feedback
+                component_feedback = None
+                if not isinstance(outputs, FailedPrediction) and not isinstance(prediction, FailedPrediction):
+                    feedback_fn = self.feedback_map.get(pred_name)
+                    if feedback_fn is not None:
+                        try:
+                            fb = feedback_fn(
+                                predictor_output=outputs,
+                                predictor_inputs=inputs,
+                                module_inputs=example,
+                                module_outputs=prediction,
+                                captured_trace=trace,
+                            )
+                            component_feedback = fb["feedback"]
+                        except Exception:
+                            pass
+
+                trace_entry = {
+                    "Called Module": pred_name,
+                    "Inputs": new_inputs,
+                    "Generated Outputs": new_outputs,
+                }
+                if component_feedback is not None:
+                    trace_entry["Component Feedback"] = component_feedback
+
+                trace_items.append(trace_entry)
+
+            example_data["Program Trace"] = trace_items
+
+            # Module-level feedback
+            if feedback_text is not None:
+                example_data["Feedback"] = feedback_text
+            else:
+                example_data["Feedback"] = f"This trajectory got a score of {module_score}."
+
+            trace_examples.append(example_data)
+
+        if len(trace_examples) == 0:
+            raise Exception("No valid predictions found for program.")
+
+        # Key the same full-trace examples by each component being updated
+        ret_d: dict[str, list[dict[str, Any]]] = {}
+        for comp_name in components_to_update:
+            # Add target component annotation to each example
+            annotated = []
+            for ex in trace_examples:
+                ex_copy = dict(ex)
+                ex_copy["Target Component"] = comp_name
+                annotated.append(ex_copy)
+            ret_d[comp_name] = annotated
+
+        return ret_d
+
+    def _make_component_reflective_dataset(
+        self, candidate, eval_batch, components_to_update
+    ) -> dict[str, list[ReflectiveExample]]:
+        """
+        Original component-level reflective dataset builder.
+        Selects specific parts of the trace for individual components.
+        """
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[ReflectiveExample]] = {}
 
         for pred_name in components_to_update:
+            # Extract predictor name from component key
+            if pred_name.startswith(TOOL_MODULE_PREFIX):
+                target_name = pred_name.removeprefix(f"{TOOL_MODULE_PREFIX}:")
+            else:
+                target_name = pred_name
+
             # Find the predictor object
             module = None
             for name, m in program.named_predictors():
-                if name == pred_name:
+                if name == target_name:
                     module = m
                     break
-            assert module is not None, f"Predictor not found: {pred_name}"
+            assert module is not None, f"Predictor not found: {target_name}"
 
             # Create reflective examples from traces
             items: list[ReflectiveExample] = []
@@ -288,7 +810,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     d["Feedback"] = "Your output failed to parse. Follow this structure:\n" + structure_instruction
                     # d['score'] = self.failure_score
                 else:
-                    feedback_fn = self.feedback_map[pred_name]
+                    # Use actual predictor name for feedback lookup
+                    feedback_fn = self.feedback_map[target_name]
                     fb = feedback_fn(
                         predictor_output=outputs,
                         predictor_inputs=inputs,
@@ -335,3 +858,36 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
         return outputs
 
+    # TODO: Generic tool module optimization - pending DSPy trace lineage improvements
+    # Currently only ReAct modules are supported for tool optimization.
+    # Re-enable _update_candidate_tools when DSPy provides better tool→trace lineage.
+    #
+    # def _update_candidate_tools(self, candidate, program, trajectories) -> None:
+    #     """Extract dspy.Tool objects from traces for tool modules and update candidate["tools"]."""
+    #     ...
+
+    # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.
+    # We can potentially override this, to use the instruction proposal similar to MIPROv2.
+
+    # def propose_new_texts(
+    #     self,
+    #     candidate: Dict[str, str],
+    #     reflective_dataset: Dict[str, List[Dict[str, Any]]],
+    #     components_to_update: List[str]
+    # ) -> Dict[str, str]:
+    #     if self.adapter.propose_new_texts is not None:
+    #         return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
+
+    #     from .instruction_proposal import InstructionProposalSignature
+    #     new_texts: Dict[str, str] = {}
+    #     for name in components_to_update:
+    #         base_instruction = candidate[name]
+    #         dataset_with_feedback = reflective_dataset[name]
+    #         new_texts[name] = InstructionProposalSignature.run(
+    #             lm=self.reflection_lm,
+    #             input_dict={
+    #                 "current_instruction_doc": base_instruction,
+    #                 "dataset_with_feedback": dataset_with_feedback
+    #             }
+    #         )['new_instruction']
+    #     return new_texts

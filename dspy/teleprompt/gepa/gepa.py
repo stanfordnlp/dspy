@@ -1,4 +1,5 @@
 import inspect
+import json
 import logging
 import random
 from dataclasses import dataclass
@@ -9,8 +10,15 @@ from gepa.core.adapter import ProposalFn
 from gepa.proposer.reflective_mutation.base import ReflectionComponentSelector
 
 from dspy.clients.lm import LM
+from dspy.predict.react import ReAct
 from dspy.primitives import Example, Module, Prediction
-from dspy.teleprompt.gepa.gepa_utils import DspyAdapter, DSPyTrace, PredictorFeedbackFn, ScoreWithFeedback
+from dspy.teleprompt.gepa.gepa_utils import (
+    TOOL_MODULE_PREFIX,
+    DspyAdapter,
+    DSPyTrace,
+    PredictorFeedbackFn,
+    ScoreWithFeedback,
+)
 from dspy.teleprompt.teleprompt import Teleprompter
 from dspy.utils.annotation import experimental
 
@@ -194,7 +202,7 @@ class GEPA(Teleprompter):
     GEPA can also be used as a batch inference-time search strategy, by passing `valset=trainset, track_stats=True, track_best_outputs=True`, and using the
     `detailed_results` attribute of the optimized program (returned by `compile`) to get the Pareto frontier of the batch. `optimized_program.detailed_results.best_outputs_valset` will contain the best outputs for each task in the batch.
 
-    Examples:
+    Example:
     ```
     gepa = GEPA(metric=metric, track_stats=True)
     batch_of_tasks = [dspy.Example(...) for task in tasks]
@@ -275,6 +283,16 @@ class GEPA(Teleprompter):
         warn_on_score_mismatch: GEPA (currently) expects the metric to return the same module-level score when
             called with and without the pred_name. This flag (defaults to True) determines whether a warning is
             raised if a mismatch in module-level and predictor-level score is detected.
+        enable_tool_optimization: Whether to enable joint optimization of dspy.ReAct modules.
+            When enabled, GEPA jointly optimizes predictor instructions and tool descriptions together
+            for dspy.ReAct modules. See the
+            [Tool Optimization guide](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/#tool-optimization)
+            for details on when to use this feature and how it works. Default is False.
+        use_full_trace_reflection: Whether to use full trace reflection mode. When enabled, GEPA reflects
+            on the entire agent trajectory (all predictor calls) instead of selecting specific parts of the
+            trace. The candidate is also serialized as a single JSON object, allowing the reflection model
+            to propose updates to all components at once based on the full execution context. This is inspired
+            by the full program adapter approach. Default is False (current behavior).
         seed: The random seed to use for reproducibility. Default is 0.
         gepa_kwargs: (Optional) Additional keyword arguments to pass directly to [gepa.optimize](https://github.com/gepa-ai/gepa/blob/main/src/gepa/api.py).
             Useful for accessing advanced GEPA features not directly exposed through DSPy's GEPA interface.
@@ -339,6 +357,7 @@ class GEPA(Teleprompter):
         reflection_minibatch_size: int = 3,
         candidate_selection_strategy: Literal["pareto", "current_best"] = "pareto",
         reflection_lm: LM | None = None,
+        use_rlm: bool = False,
         skip_perfect_score: bool = True,
         add_format_failure_as_feedback: bool = False,
         instruction_proposer: "ProposalFn | None" = None,
@@ -358,6 +377,9 @@ class GEPA(Teleprompter):
         wandb_init_kwargs: dict[str, Any] | None = None,
         track_best_outputs: bool = False,
         warn_on_score_mismatch: bool = True,
+        enable_tool_optimization: bool = False,
+        use_full_trace_reflection: bool = False,
+        use_full_trace_dataset: bool = False,
         use_mlflow: bool = False,
         # Reproducibility
         seed: int | None = 0,
@@ -393,9 +415,11 @@ class GEPA(Teleprompter):
             "GEPA requires a reflection language model, or custom instruction proposer to be provided. "
             "Typically, you can use `dspy.LM(model='gpt-5', temperature=1.0, max_tokens=32000)` to get a good reflection model. "
             "Reflection LM is used by GEPA to reflect on the behavior of the program and propose new instructions, and will benefit from a strong model. "
+            "For long traces, consider setting use_rlm=True to use dspy.RLM for programmatic trace analysis. "
         )
 
         self.reflection_lm = reflection_lm
+        self.use_rlm = use_rlm
         self.skip_perfect_score = skip_perfect_score
         self.add_format_failure_as_feedback = add_format_failure_as_feedback
 
@@ -415,7 +439,18 @@ class GEPA(Teleprompter):
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs
         self.warn_on_score_mismatch = warn_on_score_mismatch
+        self.enable_tool_optimization = enable_tool_optimization
+        self.use_full_trace_reflection = use_full_trace_reflection
+        self.use_full_trace_dataset = use_full_trace_dataset
         self.use_mlflow = use_mlflow
+
+        if use_full_trace_reflection and use_full_trace_dataset:
+            raise ValueError(
+                "use_full_trace_reflection and use_full_trace_dataset are mutually exclusive. "
+                "use_full_trace_reflection serializes the entire program as a single XML candidate. "
+                "use_full_trace_dataset keeps per-component candidates but provides the full "
+                "execution trace in the reflective dataset."
+            )
 
         if track_best_outputs:
             assert track_stats, "track_stats must be True if track_best_outputs is True."
@@ -427,6 +462,91 @@ class GEPA(Teleprompter):
         self.custom_instruction_proposer = instruction_proposer
         self.component_selector = component_selector
         self.gepa_kwargs = gepa_kwargs or {}
+
+    def _build_seed_candidate(self, student: Module) -> dict[str, str]:
+        """
+        Build the seed candidate configuration from the student module.
+
+        For ReAct modules (when tool optimization is enabled), creates a JSON config containing:
+        - react predictor instructions
+        - extract predictor instructions
+        - tool descriptions and argument descriptions
+
+        For regular predictors, uses their signature instructions directly.
+
+        When use_full_trace_reflection is enabled, the entire candidate is serialized as a single
+        JSON object under the key "candidate_config", allowing the reflection model to propose
+        updates to all components at once based on the full execution context.
+
+        Returns:
+            A dictionary mapping component names to their text representations (instructions or JSON configs).
+            In full trace mode, returns {"candidate_config": <json string of all components>}.
+        """
+        seed_candidate = {}
+        claimed_predictor_names = set()
+
+        # Process ReAct modules when tool optimization is enabled
+        if self.enable_tool_optimization:
+            for module_path, module in student.named_sub_modules():
+                if not isinstance(module, ReAct):
+                    continue
+
+                # Verify DSPy's two-predictor ReAct design
+                assert hasattr(module, "extract") and hasattr(module.extract, "predict"), (
+                    f"ReAct module '{module_path}' missing extract.predict - DSPy design may have changed"
+                )
+
+                # Get predictor names via object identity
+                extract_predictor = module.extract.predict
+                react_predictor = module.react
+                extract_predictor_name = None
+                react_predictor_name = None
+                for name, pred in student.named_predictors():
+                    if pred is extract_predictor:
+                        extract_predictor_name = name
+                    elif pred is react_predictor:
+                        react_predictor_name = name
+
+                # Use extract.predict as the key since it is the target predictor for feedback lookup
+                module_key = f"{TOOL_MODULE_PREFIX}:{extract_predictor_name}"
+
+                # Build JSON config with dynamic predictor names as keys
+                config = {
+                    react_predictor_name: react_predictor.signature.instructions,
+                    extract_predictor_name: extract_predictor.signature.instructions,
+                    "tools": {
+                        tool_name: {"desc": tool.desc, "args": tool.args}
+                        for tool_name, tool in module.tools.items()
+                        if tool_name != "finish"  # Skip the built-in finish tool
+                    },
+                }
+
+                seed_candidate[module_key] = json.dumps(config, indent=2)
+                # Track predictor names that are part of ReAct modules
+                claimed_predictor_names.add(react_predictor_name)
+                claimed_predictor_names.add(extract_predictor_name)
+        else:
+            # Warn if ReAct modules found but tool optimization disabled
+            for module_path, module in student.named_sub_modules():
+                if isinstance(module, ReAct):
+                    logger.info(
+                        f"Detected ReAct module at '{module_path}'. Consider using "
+                        "`enable_tool_optimization=True` to jointly optimize react instructions, "
+                        "extract instructions, tool descriptions, and tool argument descriptions."
+                    )
+
+        # Add individual predictors that aren't part of ReAct module configs
+        for name, pred in student.named_predictors():
+            if name not in claimed_predictor_names:
+                seed_candidate[name] = pred.signature.instructions
+
+        # In full trace reflection mode, serialize the entire candidate as XML
+        if self.use_full_trace_reflection:
+            from dspy.teleprompt.gepa.gepa_utils import FULL_TRACE_CANDIDATE_KEY, candidate_dict_to_xml
+
+            return {FULL_TRACE_CANDIDATE_KEY: candidate_dict_to_xml(seed_candidate)}
+
+        return seed_candidate
 
     def auto_budget(
         self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
@@ -506,15 +626,9 @@ class GEPA(Teleprompter):
                 "No valset provided; Using trainset as valset. This is useful as an inference-time scaling strategy where you want GEPA to find the best solutions for the provided tasks in the trainset, as it makes GEPA overfit prompts to the provided trainset. In order to ensure generalization and perform well on unseen tasks, please provide separate trainset and valset. Provide the smallest valset that is just large enough to match the downstream task distribution, while keeping trainset as large as possible."
             )
         valset = valset or trainset
-        # 35 matches the default minibatch_size in auto_budget(); when the valset is
-        # at or below this size, suggesting further reduction is unhelpful since GEPA
-        # would already evaluate the full valset per step.
-        if len(valset) > 35:
-            logger.info(
-                f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible."
-            )
-        else:
-            logger.info(f"Using {len(valset)} examples for tracking Pareto scores.")
+        logger.info(
+            f"Using {len(valset)} examples for tracking Pareto scores. You can consider using a smaller sample of the valset to allow GEPA to explore more diverse solutions within the same budget. GEPA requires you to provide the smallest valset that is just large enough to match your downstream task distribution, while providing as large trainset as possible."
+        )
 
         rng = random.Random(self.seed)
 
@@ -557,11 +671,15 @@ class GEPA(Teleprompter):
             reflection_lm=self.reflection_lm,
             custom_instruction_proposer=self.custom_instruction_proposer,
             warn_on_score_mismatch=self.warn_on_score_mismatch,
+            enable_tool_optimization=self.enable_tool_optimization,
+            use_full_trace_reflection=self.use_full_trace_reflection,
+            use_full_trace_dataset=self.use_full_trace_dataset,
+            use_rlm=self.use_rlm,
             reflection_minibatch_size=self.reflection_minibatch_size,
         )
 
-        # Build the seed candidate: map each predictor name to its current instruction
-        seed_candidate = {name: pred.signature.instructions for name, pred in student.named_predictors()}
+        # Build the seed candidate configuration
+        seed_candidate = self._build_seed_candidate(student)
 
         gepa_result: GEPAResult = optimize(
             seed_candidate=seed_candidate,
