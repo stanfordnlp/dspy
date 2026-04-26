@@ -11,6 +11,25 @@ from dspy.utils.callback import BaseCallback
 
 @dataclass
 class StreamResponse:
+    """Dataclass representing a single streaming chunk from a DSPy prediction.
+
+    Attributes:
+        predict_name: The name of the Predict module that produced this chunk.
+        signature_field_name: The output field name in the signature this chunk belongs to.
+        chunk: The text content of this streaming chunk.
+        is_last_chunk: Whether this is the final chunk for the given field.
+
+    Examples:
+        ```python
+        response = StreamResponse(
+            predict_name="my_predict",
+            signature_field_name="answer",
+            chunk="Hello",
+            is_last_chunk=False,
+        )
+        ```
+    """
+
     predict_name: str
     signature_field_name: str
     chunk: str
@@ -96,6 +115,32 @@ class StatusMessageProvider:
 
 
 class StatusStreamingCallback(BaseCallback):
+    """Callback that streams status messages to a DSPy send stream during program execution.
+
+    Hooks into DSPy's callback system to forward lifecycle events (tool start/end,
+    LM start/end, module start/end) as :class:`StatusMessage` objects to the active
+    stream, using a :class:`StatusMessageProvider` to generate the message text.
+
+    Args:
+        status_message_provider: Provider that generates status message strings for
+            each lifecycle event. Defaults to a base :class:`StatusMessageProvider`
+            which only implements tool-level messages.
+
+    Examples:
+        ```python
+        import dspy
+
+        class MyProvider(dspy.StatusMessageProvider):
+            def lm_start_status_message(self, instance, inputs):
+                return "Querying the LM..."
+
+        program = dspy.streamify(
+            dspy.Predict("q->a"),
+            status_message_provider=MyProvider(),
+        )
+        ```
+    """
+
     def __init__(self, status_message_provider: StatusMessageProvider | None = None):
         self.status_message_provider = status_message_provider or StatusMessageProvider()
 
@@ -105,6 +150,13 @@ class StatusStreamingCallback(BaseCallback):
         instance: Any,
         inputs: dict[str, Any],
     ):
+        """Send a status message when a tool is about to be called.
+
+        Args:
+            call_id: Unique identifier for this callback invocation.
+            instance: The :class:`dspy.Tool` instance being called.
+            inputs: Keyword arguments passed to the tool.
+        """
         stream = settings.send_stream
         if stream is None or instance.name == "finish":
             return
@@ -119,6 +171,13 @@ class StatusStreamingCallback(BaseCallback):
         outputs: dict[str, Any] | None,
         exception: Exception | None = None,
     ):
+        """Send a status message after a tool call completes.
+
+        Args:
+            call_id: Unique identifier for this callback invocation.
+            outputs: The outputs returned by the tool, or ``None`` if an error occurred.
+            exception: Exception raised during the tool call, or ``None`` on success.
+        """
         stream = settings.send_stream
         if stream is None or outputs == "Completed.":
             return
@@ -133,6 +192,13 @@ class StatusStreamingCallback(BaseCallback):
         instance: Any,
         inputs: dict[str, Any],
     ):
+        """Send a status message before an LM call is made.
+
+        Args:
+            call_id: Unique identifier for this callback invocation.
+            instance: The :class:`dspy.LM` instance being called.
+            inputs: Keyword arguments passed to the LM.
+        """
         stream = settings.send_stream
         if stream is None:
             return
@@ -147,6 +213,13 @@ class StatusStreamingCallback(BaseCallback):
         outputs: dict[str, Any] | None,
         exception: Exception | None = None,
     ):
+        """Send a status message after an LM call completes.
+
+        Args:
+            call_id: Unique identifier for this callback invocation.
+            outputs: The outputs returned by the LM, or ``None`` if an error occurred.
+            exception: Exception raised during the LM call, or ``None`` on success.
+        """
         stream = settings.send_stream
         if stream is None:
             return
@@ -161,6 +234,13 @@ class StatusStreamingCallback(BaseCallback):
         instance: Any,
         inputs: dict[str, Any],
     ):
+        """Send a status message before a module or Predict call.
+
+        Args:
+            call_id: Unique identifier for this callback invocation.
+            instance: The :class:`dspy.Module` or :class:`dspy.Predict` instance being called.
+            inputs: Keyword arguments passed to the module.
+        """
         stream = settings.send_stream
         if stream is None:
             return
@@ -175,6 +255,13 @@ class StatusStreamingCallback(BaseCallback):
         outputs: dict[str, Any] | None,
         exception: Exception | None = None,
     ):
+        """Send a status message after a module or Predict call completes.
+
+        Args:
+            call_id: Unique identifier for this callback invocation.
+            outputs: The outputs returned by the module, or ``None`` if an error occurred.
+            exception: Exception raised during the module call, or ``None`` on success.
+        """
         stream = settings.send_stream
         if stream is None:
             return
