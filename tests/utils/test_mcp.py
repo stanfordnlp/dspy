@@ -3,10 +3,52 @@ import importlib
 
 import pytest
 
-from dspy.utils.mcp import convert_mcp_tool
+from dspy.utils.mcp import _convert_mcp_tool_result, convert_mcp_tool
 
 if importlib.util.find_spec("mcp") is None:
     pytest.skip(reason="mcp is not installed", allow_module_level=True)
+
+
+class _MCPStyleResult:
+    """Mirrors mcp.types.CallToolResult: camelCase `isError` (JSON-RPC convention)."""
+
+    def __init__(self, content, isError):
+        self.content = content
+        self.isError = isError
+
+
+class _FastmcpStyleResult:
+    """Mirrors fastmcp.client.client.CallToolResult: snake_case `is_error` (PEP 8)."""
+
+    def __init__(self, content, is_error):
+        self.content = content
+        self.is_error = is_error
+
+
+def test_convert_mcp_tool_result_raises_on_camelcase_isError():
+    """Official MCP SDK result shape must surface tool errors as RuntimeError."""
+    from mcp.types import TextContent
+
+    result = _MCPStyleResult([TextContent(type="text", text="error message")], isError=True)
+    with pytest.raises(RuntimeError, match="Failed to call a MCP tool: error message"):
+        _convert_mcp_tool_result(result)
+
+
+def test_convert_mcp_tool_result_raises_on_snakecase_is_error():
+    """fastmcp's CallToolResult uses `is_error`; regression test for #8760."""
+    from mcp.types import TextContent
+
+    result = _FastmcpStyleResult([TextContent(type="text", text="fastmcp error")], is_error=True)
+    with pytest.raises(RuntimeError, match="Failed to call a MCP tool: fastmcp error"):
+        _convert_mcp_tool_result(result)
+
+
+def test_convert_mcp_tool_result_returns_content_when_not_error():
+    """Result with isError=False returns content unchanged."""
+    from mcp.types import TextContent
+
+    result = _MCPStyleResult([TextContent(type="text", text="ok")], isError=False)
+    assert _convert_mcp_tool_result(result) == "ok"
 
 
 @pytest.mark.asyncio
