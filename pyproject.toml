@@ -47,6 +47,7 @@ weaviate = ["weaviate-client~=4.5.4"]
 mcp = ["mcp; python_version >= '3.10'"]
 langchain = ["langchain_core"]
 optuna = ["optuna>=3.4.0"]
+trackio = ["trackio>=0.23.0"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
