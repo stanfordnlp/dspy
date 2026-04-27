@@ -1,5 +1,29 @@
 import dspy
-from dspy.utils.exceptions import AdapterParseError
+from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
+
+
+def test_context_window_exceeded_error_defaults():
+    error = ContextWindowExceededError()
+    assert error.model is None
+    assert str(error) == "Context window exceeded"
+
+
+def test_context_window_exceeded_error_with_model():
+    error = ContextWindowExceededError(model="openai/gpt-4o")
+    assert error.model == "openai/gpt-4o"
+    assert str(error) == "[openai/gpt-4o] Context window exceeded"
+
+
+def test_context_window_exceeded_error_with_message():
+    error = ContextWindowExceededError(model="openai/gpt-4o", message="Input is 200k tokens, limit is 128k")
+    assert error.model == "openai/gpt-4o"
+    assert str(error) == "[openai/gpt-4o] Input is 200k tokens, limit is 128k"
+
+
+def test_context_window_exceeded_error_message_without_model():
+    error = ContextWindowExceededError(message="Too many tokens")
+    assert error.model is None
+    assert str(error) == "Too many tokens"
 
 
 def test_adapter_parse_error_basic():

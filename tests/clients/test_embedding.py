@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -88,6 +88,36 @@ def test_callable_embedding(cache):
 
     result = embedding(inputs)
     # The second call should be cached.
+    assert embedding_fn.call_count == 1
+    np.testing.assert_allclose(result, expected_embeddings)
+
+
+def test_callable_numpy_embedding_persists_to_disk(cache, tmp_path):
+    dspy.configure_cache(disk_cache_dir=tmp_path / ".dspy_cache_safe", restrict_pickle=True)
+
+    inputs = ["hello", "world"]
+    expected_embeddings = np.array(
+        [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+        ],
+        dtype=np.float32,
+    )
+
+    embedding_fn = MagicMock(return_value=expected_embeddings)
+    embedding = Embedder(embedding_fn)
+
+    result = embedding(inputs)
+    assert embedding_fn.call_count == 1
+    np.testing.assert_allclose(result, expected_embeddings)
+
+    result = embedding(inputs)
+    assert embedding_fn.call_count == 1
+    np.testing.assert_allclose(result, expected_embeddings)
+
+    dspy.cache.reset_memory_cache()
+
+    result = embedding(inputs)
     assert embedding_fn.call_count == 1
     np.testing.assert_allclose(result, expected_embeddings)
 

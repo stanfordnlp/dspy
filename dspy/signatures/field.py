@@ -2,10 +2,12 @@ import warnings
 
 import pydantic
 
+from dspy.utils.constants import IS_TYPE_UNDEFINED
+
 # The following arguments can be used in DSPy InputField and OutputField in addition
 # to the standard pydantic.Field arguments. We just hope pydanitc doesn't add these,
 # as it would give a name clash.
-DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type"]
+DSPY_FIELD_ARG_NAMES = ["desc", "prefix", "format", "parser", "__dspy_field_type", IS_TYPE_UNDEFINED]
 
 _DEPRECATED_FIELD_ARGS = {
     "prefix": (

@@ -1,12 +1,11 @@
 from typing import TYPE_CHECKING, Any, Optional
 
-import litellm
 import pydantic
 
 from dspy.adapters.types.base_type import Type
+from dspy.clients.base_lm import BaseLM
 
 if TYPE_CHECKING:
-    from dspy.clients.lm import LM
     from dspy.signatures.signature import Signature
 
 
@@ -48,7 +47,7 @@ class Reasoning(Type):
         cls,
         signature: type["Signature"],
         field_name: str,
-        lm: "LM",
+        lm: BaseLM,
         lm_kwargs: dict[str, Any],
     ) -> type["Signature"]:
         if "reasoning_effort" in lm_kwargs:
@@ -61,7 +60,7 @@ class Reasoning(Type):
             # reasoning effort is set in `lm_kwargs` or `lm.kwargs`.
             reasoning_effort = "low"
 
-        if reasoning_effort is None or not litellm.supports_reasoning(lm.model):
+        if reasoning_effort is None or not lm.supports_reasoning:
             # If users explicitly set `reasoning_effort` to None or the LM doesn't support reasoning, we don't enable
             # native reasoning.
             return signature

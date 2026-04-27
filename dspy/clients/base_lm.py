@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from typing import Any
+from typing import Any, TextIO
 
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
@@ -18,7 +18,7 @@ class BaseLM:
     `forward` method and make sure the return format is identical to the
     [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
 
-    Example:
+    Examples:
 
     ```python
     from openai import OpenAI
@@ -27,6 +27,24 @@ class BaseLM:
 
 
     class MyLM(dspy.BaseLM):
+        @property
+        def supports_function_calling(self) -> bool:
+            return self.model.startswith("openai/gpt-4o")
+
+        @property
+        def supports_reasoning(self) -> bool:
+            return self.model.startswith("anthropic/claude-3-7")
+
+        @property
+        def supports_response_schema(self) -> bool:
+            return self.model.startswith("openai/gpt-4o")
+
+        @property
+        def supported_params(self) -> set[str]:
+            if self.model.startswith("openai/gpt-4o"):
+                return {"response_format"}  # accepts response_format=...
+            return set()
+
         def forward(self, prompt, messages=None, **kwargs):
             client = OpenAI()
             return client.chat.completions.create(
@@ -49,6 +67,26 @@ class BaseLM:
         self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
         self.history = []
 
+    @property
+    def supports_function_calling(self) -> bool:
+        """Whether the model supports function calling (tool use)."""
+        return False
+
+    @property
+    def supports_reasoning(self) -> bool:
+        """Whether the model supports native reasoning (extended thinking)."""
+        return False
+
+    @property
+    def supports_response_schema(self) -> bool:
+        """Whether the model supports structured output via response schema."""
+        return False
+
+    @property
+    def supported_params(self) -> set[str]:
+        """Set of supported OpenAI-style parameter names for the model."""
+        return set()
+
     def _process_lm_response(self, response, prompt, messages, **kwargs):
         merged_kwargs = {**self.kwargs, **kwargs}
 
@@ -68,7 +106,7 @@ class BaseLM:
             "kwargs": kwargs,
             "response": response,
             "outputs": outputs,
-            "usage": dict(response.usage),
+            "usage": dict(getattr(response, "usage", {})),
             "cost": getattr(response, "_hidden_params", {}).get("response_cost"),
             "timestamp": datetime.datetime.now().isoformat(),
             "uuid": str(uuid.uuid4()),
@@ -113,9 +151,18 @@ class BaseLM:
         """Forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to either of the following formats:
+
         - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
         - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
+
+        Raises:
+            dspy.ContextWindowExceededError: When the request fails because the
+                input exceeds the model's context window. DSPy adapters and
+                modules rely on this error to trigger fallback behavior (e.g.
+                truncating the prompt and retrying). Each subclass is
+                responsible for catching its provider's native error and
+                re-raising it as `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -128,9 +175,18 @@ class BaseLM:
         """Async forward pass for the language model.
 
         Subclasses must implement this method, and the response should be identical to either of the following formats:
+
         - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
         - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
         - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
+
+        Raises:
+            dspy.ContextWindowExceededError: When the request fails because the
+                input exceeds the model's context window. DSPy adapters and
+                modules rely on this error to trigger fallback behavior (e.g.
+                truncating the prompt and retrying). Each subclass is
+                responsible for catching its provider's native error and
+                re-raising it as `dspy.ContextWindowExceededError`.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -160,8 +216,8 @@ class BaseLM:
 
         return new_instance
 
-    def inspect_history(self, n: int = 1):
-        return pretty_print_history(self.history, n)
+    def inspect_history(self, n: int = 1, file: "TextIO | None" = None) -> None:
+        pretty_print_history(self.history, n, file=file)
 
     def update_history(self, entry):
         if settings.disable_history:
@@ -283,6 +339,13 @@ class BaseLM:
         return [result]
 
 
-def inspect_history(n: int = 1):
-    """The global history shared across all LMs."""
-    return pretty_print_history(GLOBAL_HISTORY, n)
+def inspect_history(n: int = 1, file: "TextIO | None" = None) -> None:
+    """The global history shared across all LMs.
+
+    Args:
+        n: Number of recent entries to display. Defaults to 1.
+        file: An optional file-like object to write output to. When
+            provided, ANSI color codes are automatically disabled.
+            Defaults to `None` (prints to stdout).
+    """
+    pretty_print_history(GLOBAL_HISTORY, n, file=file)

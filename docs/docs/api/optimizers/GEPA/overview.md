@@ -18,7 +18,6 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->
 
 One of the key insights behind GEPA is its ability to leverage domain-specific textual feedback. Users should provide a feedback function as the GEPA metric, which has the following call signature:
@@ -36,7 +35,6 @@ One of the key insights behind GEPA is its ability to leverage domain-specific t
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->
 
 When `track_stats=True`, GEPA returns detailed results about all of the proposed candidates, and metadata about the optimization run. The results are available in the `detailed_results` attribute of the optimized program returned by GEPA, and has the following type:
@@ -52,7 +50,6 @@ When `track_stats=True`, GEPA returns detailed results about all of the proposed
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->
 
 ## Usage Examples
@@ -86,7 +83,7 @@ Rather than evolving just the _best_ global candidate (which leads to local opti
 
 ### Algorithm Summary
 
-1. **Initialize** the candidate pool with the the unoptimized program.
+1. **Initialize** the candidate pool with the unoptimized program.
 2. **Iterate**:
    - **Sample a candidate** (from Pareto frontier).
    - **Sample a minibatch** from the train set.

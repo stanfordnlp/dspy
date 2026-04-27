@@ -1,12 +1,11 @@
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
-from litellm import ContextWindowExceededError
-
 import dspy
 from dspy.adapters.types.tool import Tool
 from dspy.primitives.module import Module
 from dspy.signatures.signature import ensure_signature
+from dspy.utils.exceptions import ContextWindowExceededError
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class ReAct(Module):
             tools (list[Callable]): A list of functions, callable objects, or `dspy.Tool` instances.
             max_iters (Optional[int]): The maximum number of iterations to run. Defaults to 10.
 
-        Example:
+        Examples:
 
         ```python
         def get_weather(city: str) -> str:

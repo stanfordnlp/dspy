@@ -17,12 +17,7 @@
         show_object_full_path: false
         separate_signature: false
         inherited_members: true
-:::
 <!-- END_API_REF -->
-
-## Usage Examples
-
-See BetterTogether usage tutorials in [BetterTogether Tutorials](../../../tutorials/bettertogether/index.md).
 
 ## How BetterTogether Works
 

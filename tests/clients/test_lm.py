@@ -882,6 +882,37 @@ def test_responses_api_converts_files_correctly():
     assert content[0]["filename"] == "report.pdf"
 
 
+def test_responses_api_preserves_multi_message_structure():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    request = {
+        "model": "openai/gpt-5-mini",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is 2+2?"},
+            {"role": "assistant", "content": "4"},
+            {"role": "user", "content": "And 3+3?"},
+        ],
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert "input" in result
+    assert len(result["input"]) == 4
+
+    assert result["input"][0]["role"] == "system"
+    assert result["input"][0]["content"] == [{"type": "input_text", "text": "You are a helpful assistant."}]
+
+    assert result["input"][1]["role"] == "user"
+    assert result["input"][1]["content"] == [{"type": "input_text", "text": "What is 2+2?"}]
+
+    assert result["input"][2]["role"] == "assistant"
+    assert result["input"][2]["content"] == [{"type": "input_text", "text": "4"}]
+
+    assert result["input"][3]["role"] == "user"
+    assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
+
+
 def test_responses_api_with_image_input():
     api_response = make_response(
         output_blocks=[

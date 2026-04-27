@@ -194,7 +194,7 @@ class GEPA(Teleprompter):
     GEPA can also be used as a batch inference-time search strategy, by passing `valset=trainset, track_stats=True, track_best_outputs=True`, and using the
     `detailed_results` attribute of the optimized program (returned by `compile`) to get the Pareto frontier of the batch. `optimized_program.detailed_results.best_outputs_valset` will contain the best outputs for each task in the batch.
 
-    Example:
+    Examples:
     ```
     gepa = GEPA(metric=metric, track_stats=True)
     batch_of_tasks = [dspy.Example(...) for task in tasks]

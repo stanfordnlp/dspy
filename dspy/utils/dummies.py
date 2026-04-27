@@ -5,12 +5,12 @@ from typing import Any
 import numpy as np
 
 from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
-from dspy.clients.lm import LM
+from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
 
 
-class DummyLM(LM):
+class DummyLM(BaseLM):
     """Dummy language model for unit testing purposes.
 
     Three modes of operation:
@@ -20,7 +20,7 @@ class DummyLM(LM):
     If a list of dictionaries is provided, the dummy model will return the next dictionary
     in the list for each request, formatted according to the `format_field_with_value` function.
 
-    Example:
+    Examples:
 
     ```
     lm = DummyLM([{"answer": "red"}, {"answer": "blue"}])
