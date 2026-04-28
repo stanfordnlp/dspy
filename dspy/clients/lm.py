@@ -518,15 +518,22 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     if "messages" in request:
         input_items = []
         for msg in request.pop("messages"):
+            role = msg.get("role", "user")
+            # Responses API requires assistant text to be typed "output_text";
+            # user/system/developer text must be "input_text". Using "input_text"
+            # for an assistant message causes OpenAI to reject the request with
+            # `Invalid value: 'input_text'. Supported values are: 'output_text'
+            # and 'refusal'.`
+            text_type = "output_text" if role == "assistant" else "input_text"
             content_blocks = []
             c = msg.get("content")
             if isinstance(c, str):
-                content_blocks.append({"type": "input_text", "text": c})
+                content_blocks.append({"type": text_type, "text": c})
             elif isinstance(c, list):
                 # Convert each content item from Chat API format to Responses API format
                 for item in c:
-                    content_blocks.append(_convert_content_item_to_responses_format(item))
-            input_items.append({"role": msg.get("role", "user"), "content": content_blocks})
+                    content_blocks.append(_convert_content_item_to_responses_format(item, role=role))
+            input_items.append({"role": role, "content": content_blocks})
         request["input"] = input_items
     # Convert `reasoning_effort` to reasoning format supported by the Responses API
     if "reasoning_effort" in request:
@@ -548,7 +555,7 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
     return request
 
 
-def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str, Any]:
+def _convert_content_item_to_responses_format(item: dict[str, Any], role: str = "user") -> dict[str, Any]:
     """
     Convert a content item from Chat API format to Responses API format.
 
@@ -560,7 +567,8 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
     For text, converts from:
         {"type": "text", "text": "..."}
     To:
-        {"type": "input_text", "text": "..."}
+        {"type": "input_text", "text": "..."} for user/system/developer/tool roles,
+        {"type": "output_text", "text": "..."} for assistant role.
 
     For other types, passes through as-is.
     """
@@ -571,8 +579,9 @@ def _convert_content_item_to_responses_format(item: dict[str, Any]) -> dict[str,
             "image_url": image_url,
         }
     elif item.get("type") == "text":
+        text_type = "output_text" if role == "assistant" else "input_text"
         return {
-            "type": "input_text",
+            "type": text_type,
             "text": item.get("text", ""),
         }
     elif item.get("type") == "file":
