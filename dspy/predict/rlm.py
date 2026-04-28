@@ -66,6 +66,8 @@ _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 def _strip_code_fences(code: str) -> str:
     """Extract Python code from markdown fences, or return as-is if no fences."""
+    if code is None:
+        return ""
     code = code.strip()
     if "```" not in code:
         return code
