@@ -149,11 +149,12 @@ Then we can define the DSPy program and log it to the MLflow server. "log" is an
 we store the program information along with environment requirements in the MLflow server. This is done via the `mlflow.dspy.log_model()`
 function, please see the code below:
 
-> [!NOTE]
-> As of MLflow 2.22.0, there is a caveat that you must wrap your DSPy program in a custom DSPy Module class when deploying with MLflow.
-> This is because MLflow requires positional arguments while DSPy pre-built modules disallow positional arguments, e.g., `dspy.Predict`
-> or `dspy.ChainOfThought`. To work around this, create a wrapper class that inherits from `dspy.Module` and implement your program's
-> logic in the `forward()` method, as shown in the example below.
+!!! note
+
+    As of MLflow 2.22.0, there is a caveat that you must wrap your DSPy program in a custom DSPy Module class when deploying with MLflow.
+    This is because MLflow requires positional arguments while DSPy pre-built modules disallow positional arguments, e.g., `dspy.Predict`
+    or `dspy.ChainOfThought`. To work around this, create a wrapper class that inherits from `dspy.Module` and implement your program's
+    logic in the `forward()` method, as shown in the example below.
 
 ```python
 import dspy
