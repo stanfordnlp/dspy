@@ -145,6 +145,31 @@ all_colors = [
 
 
 class Colors(Dataset):
+    """Toy color-name dataset used in DSPy examples and tutorials.
+
+    Wraps the matplotlib-derived ``all_colors`` list and splits it into
+    train/dev partitions. By default, names are sorted by their reversed
+    string so that visually similar colors (for example, the various ``blue``
+    suffixes) cluster together; the first 60% becomes the train split and the
+    rest becomes dev. Both splits are then deterministically shuffled with
+    seed ``0`` before being handed to the ``Dataset`` base class for further
+    seeded sampling.
+
+    Args:
+        sort_by_suffix: If ``True`` (the default), sort colors by reversed
+            name so that similar colors are not split between train and dev.
+            If ``False``, preserve the original ``all_colors`` ordering.
+        *args: Forwarded to ``Dataset.__init__``.
+        **kwargs: Forwarded to ``Dataset.__init__``.
+
+    Examples:
+        >>> from dspy.datasets.colors import Colors
+        >>> data = Colors(input_keys=["color"])
+        >>> example = data.train[0]
+        >>> "color" in example
+        True
+    """
+
     def __init__(self, sort_by_suffix=True, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
@@ -163,6 +188,22 @@ class Colors(Dataset):
         random.Random(0).shuffle(self._dev)
 
     def sorted_by_suffix(self, colors):
+        """Return ``colors`` sorted by reversed name when ``sort_by_suffix`` is set.
+
+        Sorting on the reversed string groups colors with the same suffix
+        (for example, ``"navy blue"`` and ``"sky blue"``) so a contiguous
+        train/dev split keeps related colors together rather than scattering
+        them across both partitions.
+
+        Args:
+            colors: Either a list of color-name strings, or a list of dicts
+                with a ``"color"`` key.
+
+        Returns:
+            The input list sorted by reversed color name when
+            ``self.sort_by_suffix`` is ``True``, otherwise the input
+            unchanged.
+        """
         if not self.sort_by_suffix:
             return colors
 

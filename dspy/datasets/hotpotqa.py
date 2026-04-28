@@ -4,6 +4,44 @@ from dspy.datasets.dataset import Dataset
 
 
 class HotPotQA(Dataset):
+    """Loader for the HotPotQA multi-hop question-answering benchmark.
+
+    Pulls the ``hotpot_qa`` dataset (``fullwiki`` config) from Hugging Face
+    and exposes its train/dev/test splits through the standard
+    ``dspy.Dataset`` interface. Only "hard" examples from the official train
+    split are kept; by default a 75/25 partition of those hard examples is
+    used as ``train``/``dev``, and the official validation split is exposed
+    as ``test``. Setting ``unofficial_dev=False`` disables the synthetic dev
+    split so that ``dev`` is ``None``.
+
+    Args:
+        *args: Forwarded to ``Dataset.__init__``.
+        only_hard_examples: Must be ``True`` (default). The flag exists so
+            that future support for easy examples can be added without
+            changing the call sites; passing ``False`` raises an
+            ``AssertionError`` because dev consistency with the official
+            HotPotQA dev split would be broken.
+        keep_details: Controls which fields are retained on training
+            examples. Accepts:
+
+            - ``True``: keep ``id``, ``question``, ``answer``, ``type``,
+              ``supporting_facts``, and ``context``.
+            - ``"dev_titles"`` (default): keep ``question``, ``answer``, and
+              the supporting-fact titles only on the synthetic dev split.
+            - any other value: keep only ``question`` and ``answer``.
+        unofficial_dev: If ``True`` (default), use the last 25% of the hard
+            train split as a synthetic dev set. If ``False``, leave ``dev``
+            as ``None`` and rely solely on the official test split.
+        **kwargs: Forwarded to ``Dataset.__init__`` (for example,
+            ``train_size``, ``dev_size``, ``input_keys``).
+
+    Examples:
+        >>> from dspy.datasets.hotpotqa import HotPotQA
+        >>> data = HotPotQA(train_size=16, dev_size=200, test_size=0)  # doctest: +SKIP
+        >>> example = data.train[0]  # doctest: +SKIP
+        >>> example.question  # doctest: +SKIP
+    """
+
     def __init__(
         self,
         *args,
@@ -78,16 +116,3 @@ if __name__ == "__main__":
     print(dataset.train[15].question)
 
     print(len(dataset.train), len(dataset.dev), len(dataset.test))
-
-    print(dataset.dev[0].question)
-    print(dataset.dev[340].question)
-    print(dataset.dev[937].question)
-
-"""
-What was the population of the city where Woodward Avenue ends in 2010?
-Where did the star , who is also an executive producer, of the Mick begin her carrer?
-16 1000 0
-Both London and German have seen attacks during war, there was one specific type of attack that Germany called the blitz, what did London call a similar attack?
-Pre-Madonna was a collection of demos by the singer who was a leading presence during the emergence of what network?
-Alan Mills composed the classic folk song that tells the story of what?
-"""
