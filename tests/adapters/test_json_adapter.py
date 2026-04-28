@@ -1,3 +1,5 @@
+import logging
+from typing import Any
 from unittest import mock
 
 import pydantic
@@ -1016,3 +1018,147 @@ Outputs will be a JSON object with the following fields.
 In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+_JSON_ADAPTER_LOGGER = "dspy.adapters.json_adapter"
+
+
+@pytest.fixture
+def _propagate_dspy_logs():
+    """Allow caplog (attached to root) to see dspy logs. dspy sets propagate=False by default."""
+    dspy_logger = logging.getLogger("dspy")
+    original = dspy_logger.propagate
+    dspy_logger.propagate = True
+    try:
+        yield
+    finally:
+        dspy_logger.propagate = original
+
+
+def test_json_adapter_warns_on_open_ended_mapping_fallback(caplog, _propagate_dspy_logs):
+    class OpenEndedSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        mapping: dict[str, Any] = dspy.OutputField()
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
+    program = dspy.Predict(OpenEndedSignature)
+
+    with (
+        caplog.at_level(logging.WARNING, logger=_JSON_ADAPTER_LOGGER),
+        mock.patch("litellm.completion") as mock_completion,
+    ):
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content='{"mapping": {"a": 1}}'))]
+        )
+        program(question="x")
+
+    _, call_kwargs = mock_completion.call_args
+    assert call_kwargs.get("response_format") == {"type": "json_object"}
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and r.name == _JSON_ADAPTER_LOGGER]
+    assert any("open-ended mapping output field(s) mapping" in r.message for r in warnings), (
+        f"expected open-ended mapping warning, got: {[r.message for r in warnings]}"
+    )
+
+
+def test_json_adapter_warns_on_non_native_toolcalls_fallback(caplog, _propagate_dspy_logs):
+    class ToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        answer: str = dspy.OutputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    adapter = dspy.JSONAdapter(use_native_function_calling=False)
+    lm = dspy.LM(model="openai/gpt-4o-mini", cache=False)
+
+    with (
+        caplog.at_level(logging.WARNING, logger=_JSON_ADAPTER_LOGGER),
+        mock.patch("litellm.completion") as mock_completion,
+    ):
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content='{"answer": "sunny", "tool_calls": {"tool_calls": []}}'))],
+            model="openai/gpt-4o-mini",
+        )
+        adapter(lm, {}, ToolSignature, [], {"question": "weather?", "tools": [dspy.Tool(get_weather)]})
+
+    _, call_kwargs = mock_completion.call_args
+    assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and r.name == _JSON_ADAPTER_LOGGER]
+    assert any("dspy.ToolCalls output field(s) tool_calls" in r.message for r in warnings), (
+        f"expected ToolCalls warning, got: {[r.message for r in warnings]}"
+    )
+
+
+def test_json_adapter_does_not_warn_for_schema_compatible_signature(caplog, _propagate_dspy_logs):
+    class CleanSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
+    program = dspy.Predict(CleanSignature)
+
+    with (
+        caplog.at_level(logging.WARNING, logger=_JSON_ADAPTER_LOGGER),
+        mock.patch("litellm.completion") as mock_completion,
+    ):
+        mock_completion.return_value = ModelResponse(
+            choices=[Choices(message=Message(content='{"answer": "ok"}'))]
+        )
+        program(question="x")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and r.name == _JSON_ADAPTER_LOGGER]
+    assert warnings == [], f"expected no warnings, got: {[r.message for r in warnings]}"
+
+
+def test_json_adapter_logs_error_on_structured_output_failure(caplog, _propagate_dspy_logs):
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    dspy.configure(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter())
+    program = dspy.Predict(TestSignature)
+
+    with (
+        caplog.at_level(logging.ERROR, logger=_JSON_ADAPTER_LOGGER),
+        mock.patch("litellm.completion") as mock_completion,
+    ):
+        mock_completion.side_effect = [
+            RuntimeError("Structured output rejected"),
+            ModelResponse(choices=[Choices(message=Message(content='{"answer": "ok"}'))]),
+        ]
+        program(question="x")
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR and r.name == _JSON_ADAPTER_LOGGER]
+    assert any("Failed to use structured output format" in r.message for r in errors), (
+        f"expected ERROR-level structured-output failure log, got: {[(r.levelname, r.message) for r in caplog.records]}"
+    )
+    assert any("Structured output rejected" in r.message for r in errors), (
+        "expected the underlying exception reason to appear in the error log"
+    )
+
+
+@pytest.mark.asyncio
+async def test_json_adapter_logs_error_on_structured_output_failure_async(caplog, _propagate_dspy_logs):
+    class TestSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    program = dspy.Predict(TestSignature)
+
+    with (
+        caplog.at_level(logging.ERROR, logger=_JSON_ADAPTER_LOGGER),
+        mock.patch("litellm.acompletion") as mock_acompletion,
+    ):
+        mock_acompletion.side_effect = [
+            RuntimeError("Structured output rejected"),
+            ModelResponse(choices=[Choices(message=Message(content='{"answer": "ok"}'))]),
+        ]
+        with dspy.context(lm=dspy.LM(model="openai/gpt-4o", cache=False), adapter=dspy.JSONAdapter()):
+            await program.acall(question="x")
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR and r.name == _JSON_ADAPTER_LOGGER]
+    assert any("Failed to use structured output format" in r.message for r in errors)

@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, get_origin
+from typing import Any, Generator, get_origin
 
 import json_repair
 import pydantic
@@ -24,17 +24,21 @@ from dspy.utils.exceptions import AdapterParseError
 logger = logging.getLogger(__name__)
 
 
-def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
+def _open_ended_mapping_field_names(signature: SignatureMeta) -> Generator[str, None, None]:
+    """Yield names of output fields typed as ``dict[...]``. Structured Outputs require
+    explicit properties, so such fields are incompatible and force a fallback to
+    ``{"type": "json_object"}``.
     """
-    Check whether any output field in the signature has an open-ended mapping type,
-    such as dict[str, Any]. Structured Outputs require explicit properties, so such fields
-    are incompatible.
-    """
-    for field in signature.output_fields.values():
-        annotation = field.annotation
-        if get_origin(annotation) is dict:
-            return True
-    return False
+    for name, field in signature.output_fields.items():
+        if get_origin(field.annotation) is dict:
+            yield name
+
+
+def _non_native_tool_call_field_names(signature: SignatureMeta) -> Generator[str, None, None]:
+    """Yield names of output fields with ``dspy.ToolCalls`` annotations."""
+    for name, field in signature.output_fields.items():
+        if field.annotation == ToolCalls:
+            yield name
 
 
 class JSONAdapter(ChatAdapter):
@@ -47,11 +51,29 @@ class JSONAdapter(ChatAdapter):
         if "response_format" not in lm.supported_params:
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
-        has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
+        open_ended_mappings = list(_open_ended_mapping_field_names(signature))
+        non_native_tool_calls = (
+            list(_non_native_tool_call_field_names(signature)) if not self.use_native_function_calling else []
+        )
 
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
-            # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
-            # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
+        # Warn on signature-level causes that force the fallback; the user can act on these.
+        # The supports_response_schema=False case is a model capability fact, not a fixable config, so it stays silent.
+        if open_ended_mappings:
+            logger.warning(
+                f"Signature {signature.__name__} has open-ended mapping output field(s) "
+                f"{', '.join(open_ended_mappings)}; falling back to json_object mode because unbounded "
+                "key-sets can't be expressed as a strict JSON Schema. Consider a pydantic.BaseModel or "
+                "typing.TypedDict with explicit fields for more reliable structured output."
+            )
+        if non_native_tool_calls:
+            logger.warning(
+                f"Signature {signature.__name__} has dspy.ToolCalls output field(s) "
+                f"{', '.join(non_native_tool_calls)} with use_native_function_calling=False; falling back "
+                "to json_object mode. Structured outputs compose poorly with JSON-mode tool calling; "
+                "consider use_native_function_calling=True for more reliable behavior."
+            )
+
+        if open_ended_mappings or non_native_tool_calls or not lm.supports_response_schema:
             lm_kwargs["response_format"] = {"type": "json_object"}
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
@@ -73,8 +95,8 @@ class JSONAdapter(ChatAdapter):
             )
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
-        except Exception:
-            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+        except Exception as e:
+            logger.error(f"Failed to use structured output format; falling back to JSON mode. Reason: {e}")
             lm_kwargs["response_format"] = {"type": "json_object"}
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
@@ -96,8 +118,8 @@ class JSONAdapter(ChatAdapter):
             )
             lm_kwargs["response_format"] = structured_output_model
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
-        except Exception:
-            logger.warning("Failed to use structured output format, falling back to JSON mode.")
+        except Exception as e:
+            logger.error(f"Failed to use structured output format; falling back to JSON mode. Reason: {e}")
             lm_kwargs["response_format"] = {"type": "json_object"}
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 
