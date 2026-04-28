@@ -35,31 +35,6 @@ This template is automatically filled with:
 - `<curr_param>`: The current instruction being optimized
 - `<side_info>`: Structured markdown containing predictor inputs, generated outputs, and evaluation feedback
 
-!!! warning "Breaking change: placeholder names changed in `gepa` 0.1.1"
-    If you pass a custom `reflection_prompt_template` via `gepa_kwargs`, the placeholder names changed in `gepa` 0.1.1:
-
-    | Old (≤ 0.0.27) | New (≥ 0.1.1) |
-    |---|---|
-    | `<curr_instructions>` | `<curr_param>` |
-    | `<inputs_outputs_feedback>` | `<side_info>` |
-
-    **Note:** When using `dspy.GEPA` with `DspyAdapter` (the default), `reflection_prompt_template` passed via `gepa_kwargs` is not supported — `DspyAdapter` implements its own `propose_new_texts` and GEPA skips the template entirely. Passing it will raise a `ValueError` at startup with a message directing you to `instruction_proposer` instead. To customize reflection behavior, use `instruction_proposer` (see [Custom Instruction Proposers](#custom-instruction-proposers)).
-
-    If you are using GEPA's lower-level API directly (without `DspyAdapter`), passing a template with the old placeholder names will raise a `ValueError` at startup. The error message reports what's *missing*, not what to rename:
-
-    ```
-    ValueError: Missing placeholder(s) in prompt template: <curr_param>, <side_info>
-    ```
-
-    This means you need to **rename** the placeholders, not add new ones:
-
-    ```python
-    # Old — raises ValueError (or is silently ignored) with gepa >= 0.1.1
-    gepa_kwargs={"reflection_prompt_template": "Instructions: <curr_instructions>\n\nExamples: <inputs_outputs_feedback>"}
-
-    # New — correct for gepa >= 0.1.1
-    gepa_kwargs={"reflection_prompt_template": "Instructions: <curr_param>\n\nExamples: <side_info>"}
-    ```
 
 Example of default behavior:
 
