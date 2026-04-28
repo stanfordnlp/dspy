@@ -248,6 +248,142 @@ h2.doc-heading {
     text-decoration: underline;
 }
 
+/* ---- Use Cases hero: lede + logo wall + spotlights ---- */
+.md-content__inner p.dspy-lede {
+    font-size: 1.2rem;
+    line-height: 1.5;
+    text-align: left;
+    margin: 1rem 0 0.75rem;
+    color: var(--md-default-fg-color);
+}
+
+
+.dspy-logo-wall {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    align-items: center;
+    justify-items: center;
+    gap: 1rem 1.5rem;
+    padding: 1.75rem 1rem;
+    border-top: 1px solid var(--md-default-fg-color--lightest);
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    margin: 1rem 0 1.5rem;
+}
+@media (max-width: 720px) {
+    .dspy-logo-wall {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+.dspy-logo-wall a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 40px;
+    opacity: 0.85;
+    transition: opacity 0.15s ease;
+}
+.dspy-logo-wall a:hover {
+    opacity: 1;
+}
+.dspy-logo-wall img {
+    width: auto;
+    object-fit: contain;
+}
+/* Per-logo sizing: tuned so each wordmark has similar visual presence */
+.dspy-logo-wall img.logo-shopify    { height: 30px; max-width: 130px; }
+.dspy-logo-wall img.logo-databricks { height: 26px; max-width: 150px; }
+.dspy-logo-wall img.logo-dropbox    { height: 26px; max-width: 150px; }
+.dspy-logo-wall img.logo-jetblue    { height: 22px; max-width: 100px; }
+.dspy-logo-wall img.logo-replit     { height: 28px; max-width: 32px; }
+.dspy-logo-wall img.logo-aws        { height: 26px; max-width: 60px; }
+[data-md-color-scheme="slate"] .dspy-logo-wall img {
+    filter: brightness(0) invert(1);
+}
+
+.dspy-spotlights {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0 2rem;
+}
+.dspy-spotlight {
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 6px;
+    padding: 1.25rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--md-default-bg-color);
+}
+.dspy-spotlight .dspy-spotlight-logo {
+    height: 36px;
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+}
+.dspy-spotlight .dspy-spotlight-logo img {
+    width: auto;
+    object-fit: contain;
+}
+.dspy-spotlight .dspy-spotlight-logo img.logo-shopify    { height: 34px; max-width: 150px; }
+.dspy-spotlight .dspy-spotlight-logo img.logo-databricks { height: 30px; max-width: 170px; }
+.dspy-spotlight .dspy-spotlight-logo img.logo-dropbox    { height: 30px; max-width: 170px; }
+[data-md-color-scheme="slate"] .dspy-spotlight .dspy-spotlight-logo img {
+    filter: brightness(0) invert(1);
+}
+.dspy-spotlight .dspy-spotlight-metric {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--md-default-fg-color);
+}
+.dspy-spotlight .dspy-spotlight-desc {
+    color: var(--md-default-fg-color--light);
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+.dspy-spotlight .dspy-spotlight-link {
+    margin-top: auto;
+    font-size: 0.85rem;
+}
+
+/* ---- Use Cases hero: alternating quote rows (Modal-style) ---- */
+.dspy-quote-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 1.5rem;
+    align-items: center;
+    padding: 1.25rem 0;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+.dspy-quote-row:first-of-type {
+    border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+.dspy-quote-row .dspy-quote-logo img {
+    height: 28px;
+    width: auto;
+    max-width: 130px;
+}
+.dspy-quote-row .dspy-quote-logo img.logo-mono {
+    filter: brightness(0);
+}
+[data-md-color-scheme="slate"] .dspy-quote-row .dspy-quote-logo img.logo-mono {
+    filter: brightness(0) invert(1);
+}
+.dspy-quote-row .dspy-quote-body {
+    font-size: 1rem;
+    line-height: 1.5;
+}
+.dspy-quote-row .dspy-quote-body strong {
+    font-weight: 700;
+}
+.dspy-quote-row .dspy-quote-link {
+    font-size: 0.85rem;
+    margin-top: 0.4rem;
+    display: inline-block;
+}
+
 /* Copy-page button – matches the native "Edit this page" action style */
 .copy-md-btn {
     cursor: pointer;
