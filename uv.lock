@@ -827,7 +827,7 @@ requires-dist = [
     { name = "json-repair", specifier = ">=0.54.2" },
     { name = "langchain-core", marker = "extra == 'langchain'" },
     { name = "langchain-core", marker = "extra == 'test-extras'" },
-    { name = "litellm", specifier = ">=1.64.0,<=1.82.6" },
+    { name = "litellm", specifier = ">=1.64.0" },
     { name = "litellm", marker = "(python_full_version == '3.14.*' and extra == 'dev') or (sys_platform == 'win32' and extra == 'dev')", specifier = ">=1.64.0" },
     { name = "litellm", extras = ["proxy"], marker = "python_full_version < '3.14' and sys_platform != 'win32' and extra == 'dev'", specifier = ">=1.64.0" },
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'mcp'" },
