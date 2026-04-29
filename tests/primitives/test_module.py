@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 import dspy
 from dspy.primitives.module import Module, set_attribute_by_name  # Adjust the import based on your file structure
 from dspy.utils import DummyLM
@@ -25,7 +27,7 @@ def test_named_predictors():
     module = HopModule()
     named_preds = module.named_predictors()
     assert len(named_preds) == 2, "Should identify correct number of Predict instances"
-    names, preds = zip(*named_preds, strict=False)
+    names, _preds = zip(*named_preds, strict=False)
     assert "predict1" in names and "predict2" in names, "Named predictors should include 'predict1' and 'predict2'"
 
 
@@ -176,6 +178,59 @@ def test_named_parameters_duplicate_references():
     # Only testing for whether exceptions are thrown or not
     # As Module.named_parameters() is recursive, this is mainly for catching infinite recursion
     module.named_parameters()
+
+
+def test_load_state_is_transactional_on_missing_key():
+    """
+    Regression test for: Module.load_state silently corrupts modules on partial failure.
+
+    When a saved state is missing a key (e.g. due to schema/signature drift), load_state
+    must raise BEFORE mutating any parameters. A module whose load fails should still have
+    all parameters at their original (pre-load) values.
+    """
+    import json
+    import tempfile
+    from pathlib import Path as _Path
+
+    from dspy.primitives.example import Example
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    class Prog(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.a = dspy.ChainOfThought(Sig)
+            self.b = dspy.ChainOfThought(Sig)
+
+    # 1. Save a program with non-default demo state on both predictors
+    source = Prog()
+    sentinel = Example(question="q1", answer="a1").with_inputs("question")
+    source.a.predict.demos = [sentinel]
+    source.b.predict.demos = [sentinel]
+
+    with tempfile.TemporaryDirectory() as d:
+        path = _Path(d) / "state.json"
+        source.save(str(path), save_program=False)
+
+        # 2. Corrupt the saved state by removing b.predict's entry (simulate signature drift)
+        raw = json.loads(path.read_text())
+        corrupted = {k: v for k, v in raw.items() if "b." not in k}
+        path.write_text(json.dumps(corrupted))
+
+        # 3. Load should raise before mutating any parameters
+        template = Prog()
+        assert template.a.predict.demos == [], "Pre-condition: a.predict.demos should be empty before load"
+
+        with pytest.raises(KeyError, match="missing required keys"):
+            template.load(str(path))
+
+        # 4. The critical assertion: a.predict.demos must still be empty (not corrupted)
+        assert template.a.predict.demos == [], (
+            "load_state must not partially mutate the module when it fails — "
+            "template.a.predict.demos was corrupted despite the load raising an exception"
+        )
 
 
 def test_load_dspy_program_cross_version():
