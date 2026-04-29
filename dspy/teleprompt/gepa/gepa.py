@@ -105,11 +105,11 @@ class DspyGEPAResult:
         return self.candidates[self.best_idx]
 
     @property
-    def highest_score_achieved_per_val_task(self) -> list[float]:
-        return [
-            self.val_subscores[list(self.per_val_instance_best_candidates[val_id])[0]][val_id]
+    def highest_score_achieved_per_val_task(self) -> dict[Any, float]:
+        return {
+            val_id: self.val_subscores[list(self.per_val_instance_best_candidates[val_id])[0]][val_id]
             for val_id in self.per_val_instance_best_candidates
-        ]
+        }
 
     def to_dict(self) -> dict[str, Any]:
         cands = [

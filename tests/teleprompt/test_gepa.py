@@ -588,9 +588,10 @@ def test_track_stats_result_structure():
 
     # highest_score_achieved_per_val_task works and returns one float per val instance
     scores = dr.highest_score_achieved_per_val_task
-    assert isinstance(scores, list)
+    assert isinstance(scores, dict)
     assert len(scores) == len(dr.per_val_instance_best_candidates)
-    for s in scores:
+    for val_id, s in scores.items():
+        assert val_id in dr.per_val_instance_best_candidates
         assert isinstance(s, (int, float))
 
     # to_dict() serializes per_val_instance_best_candidates as a dict (not a list)
