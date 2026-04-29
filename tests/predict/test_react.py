@@ -25,7 +25,6 @@ def test_tool_observation_preserves_custom_type():
     def make_images():
         return dspy.Image("https://example.com/test.png"), dspy.Image(Image.new("RGB", (100, 100), "red"))
 
-
     adapter = SpyChatAdapter()
     lm = DummyLM(
         [
@@ -424,6 +423,82 @@ async def test_async_tool_calling_with_pydantic_args():
         "observation_1": "Completed.",
     }
     assert outputs.trajectory == expected_trajectory
+
+
+def test_finish_with_extra_args_does_not_log_error():
+    """When the model passes output-field values as args to finish, no execution
+    error should appear in the trajectory (issue #9424)."""
+
+    def ask_time(prompt: str) -> str:
+        return "last week"
+
+    class MySig(dspy.Signature):
+        text: str = dspy.InputField()
+        time_type: str = dspy.OutputField()
+        confidence: float = dspy.OutputField()
+
+    react = dspy.ReAct(MySig, tools=[ask_time])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need to ask about the time.",
+                "next_tool_name": "ask_time",
+                "next_tool_args": {"prompt": "when?"},
+            },
+            {
+                # Model places output fields into finish's args — common with
+                # structured-output signatures.
+                "next_thought": "I have all the info.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"time_type": "relative", "confidence": 0.9},
+            },
+            {"reasoning": "done", "time_type": "relative", "confidence": 0.9},
+        ]
+    )
+    dspy.configure(lm=lm)
+
+    outputs = react(text="What happened last week?")
+    traj = outputs.trajectory
+
+    # The finish observation must be the normal success string, not an error.
+    assert traj["observation_1"] == "Completed.", f"Expected 'Completed.' but got: {traj['observation_1']!r}"
+    assert "Execution error" not in traj["observation_1"]
+
+
+@pytest.mark.asyncio
+async def test_async_finish_with_extra_args_does_not_log_error():
+    """Async version of test_finish_with_extra_args_does_not_log_error."""
+
+    async def ask_time(prompt: str) -> str:
+        return "last week"
+
+    class MySig(dspy.Signature):
+        text: str = dspy.InputField()
+        time_type: str = dspy.OutputField()
+        confidence: float = dspy.OutputField()
+
+    react = dspy.ReAct(MySig, tools=[ask_time])
+    lm = DummyLM(
+        [
+            {
+                "next_thought": "I need to ask about the time.",
+                "next_tool_name": "ask_time",
+                "next_tool_args": {"prompt": "when?"},
+            },
+            {
+                "next_thought": "I have all the info.",
+                "next_tool_name": "finish",
+                "next_tool_args": {"time_type": "relative", "confidence": 0.9},
+            },
+            {"reasoning": "done", "time_type": "relative", "confidence": 0.9},
+        ]
+    )
+    with dspy.context(lm=lm):
+        outputs = await react.acall(text="What happened last week?")
+
+    traj = outputs.trajectory
+    assert traj["observation_1"] == "Completed.", f"Expected 'Completed.' but got: {traj['observation_1']!r}"
+    assert "Execution error" not in traj["observation_1"]
 
 
 @pytest.mark.asyncio
