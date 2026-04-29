@@ -166,6 +166,82 @@ def test_multi_thread_evaluate_call_cancelled(monkeypatch):
         ev(program)
 
 
+def test_evaluate_timeout_params_passed_to_executor():
+    """Evaluate should pass timeout and straggler_limit to ParallelExecutor."""
+    dspy.configure(
+        lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}})
+    )
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    program = Predict("question -> answer")
+
+    with patch("dspy.evaluate.evaluate.ParallelExecutor") as MockExecutor:
+        mock_instance = MockExecutor.return_value
+        mock_instance.execute.return_value = [(dspy.Prediction(answer="2"), True), (dspy.Prediction(answer="4"), True)]
+
+        ev = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            num_threads=2,
+            timeout=0,
+            straggler_limit=5,
+        )
+        ev(program)
+
+        call_kwargs = MockExecutor.call_args[1]
+        assert call_kwargs["timeout"] == 0
+        assert call_kwargs["straggler_limit"] == 5
+
+
+def test_evaluate_timeout_defaults_omit_params():
+    """When timeout and straggler_limit are not set, they should not be passed to ParallelExecutor."""
+    dspy.configure(
+        lm=DummyLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}})
+    )
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    program = Predict("question -> answer")
+
+    with patch("dspy.evaluate.evaluate.ParallelExecutor") as MockExecutor:
+        mock_instance = MockExecutor.return_value
+        mock_instance.execute.return_value = [(dspy.Prediction(answer="2"), True), (dspy.Prediction(answer="4"), True)]
+
+        ev = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            num_threads=2,
+        )
+        ev(program)
+
+        call_kwargs = MockExecutor.call_args[1]
+        assert "timeout" not in call_kwargs
+        assert "straggler_limit" not in call_kwargs
+
+
+def test_evaluate_timeout_zero_disables_straggler_resubmission():
+    """Setting timeout=0 should disable straggler resubmission for long-running evaluations."""
+    import time
+
+    class SlowLM(DummyLM):
+        def __call__(self, *args, **kwargs):
+            time.sleep(0.5)
+            return super().__call__(*args, **kwargs)
+
+    dspy.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    program = Predict("question -> answer")
+
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        num_threads=2,
+        timeout=0,
+    )
+    result = ev(program)
+    assert result.score == 100.0
+
+
 def test_evaluate_call_wrong_answer():
     dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "0"}, "What is 2+2?": {"answer": "0"}}))
     devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
