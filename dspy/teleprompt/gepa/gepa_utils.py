@@ -266,6 +266,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     if isinstance(input_val, Type) and self.custom_instruction_proposer is not None:
                         # Keep original object - will be properly formatted when sent to reflection LM
                         new_inputs[input_key] = input_val
+                    elif isinstance(input_val, list) and len(input_val) > 0 and isinstance(input_val[0], Type) and self.custom_instruction_proposer is not None:
+                        new_inputs[input_key] = input_val
                     else:
                         new_inputs[input_key] = str(input_val)
 
