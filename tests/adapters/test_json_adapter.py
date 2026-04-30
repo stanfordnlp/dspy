@@ -1016,3 +1016,55 @@ Outputs will be a JSON object with the following fields.
 In adhering to this structure, your objective is: 
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
+
+
+def test_vendor_extensions_stripped_from_structured_output_schema():
+    """x-* keys from json_schema_extra must not leak into the schema sent to LM providers.
+
+    Pydantic 2.x merges json_schema_extra dict entries as sibling keys (e.g.
+    x-comparison) rather than nesting them under "json_schema_extra".  Strict-
+    schema providers like AWS Bedrock reject these unknown keys.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9686
+    """
+    from typing import Optional
+    from dspy.adapters.json_adapter import _get_structured_outputs_response_format
+
+    class Form(pydantic.BaseModel):
+        name: Optional[str] = pydantic.Field(
+            default=None,
+            json_schema_extra={"x-comparison": {"comparator": "exact"}},
+        )
+
+    class Extract(dspy.Signature):
+        text: str = dspy.InputField()
+        form: Form = dspy.OutputField()
+
+    model = _get_structured_outputs_response_format(
+        Extract, use_native_function_calling=True
+    )
+    schema = model.model_json_schema()
+    schema_str = str(schema)
+    assert "x-comparison" not in schema_str, f"vendor extension leaked into schema: {schema}"
+
+
+def test_vendor_extensions_stripped_from_prompt_schema():
+    """x-* keys must not appear in the schema snippet embedded in the prompt text.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9686
+    """
+    from typing import Optional
+    from dspy.adapters.utils import _get_json_schema
+
+    class Form(pydantic.BaseModel):
+        name: Optional[str] = pydantic.Field(
+            default=None,
+            json_schema_extra={"x-foo": "bar", "x-score": 42},
+        )
+
+    schema = _get_json_schema(Form)
+    schema_str = str(schema)
+    assert "x-foo" not in schema_str, f"vendor extension leaked: {schema}"
+    assert "x-score" not in schema_str, f"vendor extension leaked: {schema}"
+    # The non-x-* fields should still be present
+    assert "name" in schema_str

@@ -10,6 +10,7 @@ from pydantic.fields import FieldInfo
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.types.tool import ToolCalls
 from dspy.adapters.utils import (
+    _strip_vendor_extensions,
     format_field_value,
     get_annotation_name,
     parse_value,
@@ -249,9 +250,9 @@ def _get_structured_outputs_response_format(
     # Generate the initial schema.
     schema = pydantic_model.model_json_schema()
 
-    # Remove any DSPy-specific metadata.
-    for prop in schema.get("properties", {}).values():
-        prop.pop("json_schema_extra", None)
+    # Strip vendor-extension keys (x-*) that Pydantic 2.x merges from
+    # json_schema_extra.  Strict-schema providers (e.g. Bedrock) reject them.
+    schema = _strip_vendor_extensions(schema)
 
     def enforce_required(schema_part: dict):
         """

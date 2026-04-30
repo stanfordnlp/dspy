@@ -74,6 +74,22 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
         return {"type": "text", "text": string_value}
 
 
+def _strip_vendor_extensions(schema):
+    """Recursively remove ``x-*`` vendor-extension keys from a JSON schema.
+
+    Pydantic 2.x merges ``json_schema_extra`` dict entries as sibling keys
+    (e.g. ``x-comparison``) rather than nesting them under a
+    ``json_schema_extra`` key.  These vendor extensions are not part of the
+    JSON Schema standard that LM providers validate against, so strict-schema
+    providers (e.g. AWS Bedrock) reject them.
+    """
+    if isinstance(schema, dict):
+        return {k: _strip_vendor_extensions(v) for k, v in schema.items() if not (isinstance(k, str) and k.startswith("x-"))}
+    elif isinstance(schema, list):
+        return [_strip_vendor_extensions(item) for item in schema]
+    return schema
+
+
 def _get_json_schema(field_type):
     def move_type_to_front(d):
         # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
@@ -86,6 +102,7 @@ def _get_json_schema(field_type):
         return d
 
     schema = pydantic.TypeAdapter(field_type).json_schema()
+    schema = _strip_vendor_extensions(schema)
     schema = move_type_to_front(schema)
     return schema
 
