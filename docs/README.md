@@ -29,6 +29,13 @@ To build and test the documentation locally:
    pip install -r requirements.txt
    ```
 
+   `requirements.txt` is a lockfile generated from `requirements.in`. To
+   refresh the lockfile after changing `requirements.in`, run:
+   ```bash
+   uv pip compile requirements.in -o requirements.txt --python-version 3.10
+   ```
+   (or `pip-compile requirements.in -o requirements.txt` if using pip-tools).
+
 3. In docs/ directory, run the command below to generate the API docs and index them:
    ```bash
    python scripts/generate_api_docs.py
