@@ -10,6 +10,7 @@ Reference: "Recursive Language Models" (Zhang, Kraska, Khattab, 2025)
 
 from __future__ import annotations
 
+import base64
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,6 +27,7 @@ from dspy.primitives.module import Module
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
+from dspy.primitives.sandbox_serializable import SandboxSerializable, build_repl_variable
 from dspy.signatures.signature import ensure_signature
 from dspy.utils.annotation import experimental
 
@@ -356,7 +358,11 @@ class RLM(Module):
         variables = []
         for name, value in input_args.items():
             field_info = self.signature.input_fields.get(name)
-            variables.append(REPLVariable.from_value(name, value, field_info=field_info))
+            if isinstance(value, SandboxSerializable):
+                var = build_repl_variable(value, name, field_info=field_info)
+            else:
+                var = REPLVariable.from_value(name, value, field_info=field_info)
+            variables.append(var)
         return variables
 
     def _format_output(self, output: str) -> str:
@@ -369,6 +375,48 @@ class RLM(Module):
         missing = set(self.signature.input_fields.keys()) - set(input_args.keys())
         if missing:
             raise ValueError(f"Missing required inputs: {sorted(missing)}")
+
+    def _prepare_serializable_vars(
+        self, input_args: dict[str, Any], repl: CodeInterpreter,
+    ) -> dict[str, Any]:
+        """Inject SandboxSerializable values into the interpreter.
+
+        For each SandboxSerializable value in input_args, serializes it and
+        executes setup + assignment code in the interpreter. Returns the
+        remaining non-serializable args (for per-iteration use).
+        """
+        repl.start()
+        regular_args = {}
+        for name, value in input_args.items():
+            if not isinstance(value, SandboxSerializable):
+                regular_args[name] = value
+                continue
+
+            payload = value.to_sandbox()
+            setup = value.sandbox_setup()
+            raw_var_name = f"_raw_{name}"
+            assignment = value.sandbox_assignment(name, raw_var_name)
+            code_lines = []
+            payload_vars: dict[str, str] = {}
+            if isinstance(payload, bytes):
+                try:
+                    payload_vars[raw_var_name] = payload.decode("utf-8")
+                except UnicodeDecodeError:
+                    encoded_var_name = f"{raw_var_name}_base64"
+                    payload_vars[encoded_var_name] = base64.b64encode(payload).decode("ascii")
+                    code_lines.extend([
+                        "import base64",
+                        f"{raw_var_name} = base64.b64decode({encoded_var_name})",
+                    ])
+            else:
+                payload_vars[raw_var_name] = str(payload)
+
+            if setup:
+                code_lines.append(setup)
+            code_lines.append(assignment)
+            repl.execute("\n".join(code_lines), variables=payload_vars)
+
+        return regular_args
 
     # =========================================================================
     # CodeInterpreter Lifecycle
@@ -592,11 +640,12 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
+            regular_args = self._prepare_serializable_vars(input_args, repl)
             history: REPLHistory = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
                 result: Prediction | REPLHistory = self._execute_iteration(
-                    repl, variables, history, iteration, input_args, output_field_names
+                    repl, variables, history, iteration, regular_args, output_field_names
                 )
                 if isinstance(result, Prediction):
                     return result
@@ -676,11 +725,12 @@ class RLM(Module):
         variables = self._build_variables(**input_args)
 
         with self._interpreter_context(execution_tools) as repl:
+            regular_args = self._prepare_serializable_vars(input_args, repl)
             history = REPLHistory(max_output_chars=self.max_output_chars)
 
             for iteration in range(self.max_iterations):
                 result = await self._aexecute_iteration(
-                    repl, variables, history, iteration, input_args, output_field_names
+                    repl, variables, history, iteration, regular_args, output_field_names
                 )
                 if isinstance(result, Prediction):
                     return result
