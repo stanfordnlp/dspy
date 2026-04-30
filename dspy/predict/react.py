@@ -88,11 +88,38 @@ class ReAct(Module):
         self.extract = dspy.ChainOfThought(fallback_signature)
 
     def _format_trajectory(self, trajectory: dict[str, Any]):
+        """Formats the trajectory dictionary into a human-readable string for the adapter.
+
+        Args:
+            trajectory: A dictionary mapping trajectory keys (e.g. ``thought_0``,
+                ``tool_name_0``, ``observation_0``) to their values.
+
+        Returns:
+            A formatted string representation of the trajectory produced by the
+            current adapter.
+        """
         adapter = dspy.settings.adapter or dspy.ChatAdapter()
         trajectory_signature = dspy.Signature(f"{', '.join(trajectory.keys())} -> x")
         return adapter.format_user_message_content(trajectory_signature, trajectory)
 
     def forward(self, **input_args):
+        """Runs the ReAct agent loop synchronously.
+
+        Iteratively calls the react predict module, executes tool calls, and
+        appends observations to the trajectory until the ``finish`` tool is
+        selected or ``max_iters`` is reached.  Then extracts the final output
+        fields from the accumulated trajectory.
+
+        Args:
+            **input_args: Keyword arguments matching the input fields defined in
+                the module's signature.  An optional ``max_iters`` key overrides
+                the instance-level ``self.max_iters`` for this call only.
+
+        Returns:
+            A :class:`dspy.Prediction` containing the output fields from the
+            signature plus a ``trajectory`` key holding the full interaction
+            history.
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
@@ -118,6 +145,24 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     async def aforward(self, **input_args):
+        """Runs the ReAct agent loop asynchronously.
+
+        Async counterpart of :meth:`forward`.  Iteratively awaits the react
+        predict module, executes tool calls via ``acall``, and appends
+        observations to the trajectory until the ``finish`` tool is selected or
+        ``max_iters`` is reached.  Then extracts the final output fields from
+        the accumulated trajectory.
+
+        Args:
+            **input_args: Keyword arguments matching the input fields defined in
+                the module's signature.  An optional ``max_iters`` key overrides
+                the instance-level ``self.max_iters`` for this call only.
+
+        Returns:
+            A :class:`dspy.Prediction` containing the output fields from the
+            signature plus a ``trajectory`` key holding the full interaction
+            history.
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
         for idx in range(max_iters):
@@ -143,6 +188,21 @@ class ReAct(Module):
         return dspy.Prediction(trajectory=trajectory, **extract)
 
     def _call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
+        """Calls a module synchronously, retrying up to 3 times with trajectory truncation on context overflow.
+
+        Args:
+            module: The DSPy module to call.
+            trajectory: The current trajectory dictionary passed as the
+                ``trajectory`` input field after formatting.
+            **input_args: Additional keyword arguments forwarded to *module*.
+
+        Returns:
+            The prediction returned by *module*.
+
+        Raises:
+            ValueError: If the context window is still exceeded after 3
+                truncation attempts.
+        """
         for _ in range(3):
             try:
                 return module(
@@ -155,6 +215,23 @@ class ReAct(Module):
         raise ValueError("The context window was exceeded even after 3 attempts to truncate the trajectory.")
 
     async def _async_call_with_potential_trajectory_truncation(self, module, trajectory, **input_args):
+        """Calls a module asynchronously, retrying up to 3 times with trajectory truncation on context overflow.
+
+        Async counterpart of :meth:`_call_with_potential_trajectory_truncation`.
+
+        Args:
+            module: The DSPy module to call.
+            trajectory: The current trajectory dictionary passed as the
+                ``trajectory`` input field after formatting.
+            **input_args: Additional keyword arguments forwarded to *module*.
+
+        Returns:
+            The prediction returned by *module*.
+
+        Raises:
+            ValueError: If the context window is still exceeded after 3
+                truncation attempts.
+        """
         for _ in range(3):
             try:
                 return await module.acall(
