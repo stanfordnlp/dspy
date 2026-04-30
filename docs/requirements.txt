@@ -6,5 +6,5 @@ mkdocs-redirects
 mkdocstrings
 mkdocstrings-python
 mkdocs-llmstxt>=0.5.0
-urllib3==1.26.6
+urllib3==2.6.3
 mistune==3.2.0
