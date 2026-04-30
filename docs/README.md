@@ -29,12 +29,15 @@ To build and test the documentation locally:
    pip install -r requirements.txt
    ```
 
-   `requirements.txt` is a lockfile generated from `requirements.in`. To
-   refresh the lockfile after changing `requirements.in`, run:
+   `requirements.txt` is a lockfile generated from `requirements.in` by
+   `pip-compile` (from [pip-tools](https://github.com/jazzband/pip-tools)).
+   Dependabot recognises this layout and will refresh `requirements.txt`
+   automatically when it bumps a dep in `requirements.in`. To refresh the
+   lockfile manually after changing `requirements.in`, run:
    ```bash
-   uv pip compile requirements.in -o requirements.txt --python-version 3.10
+   pip install pip-tools
+   pip-compile requirements.in -o requirements.txt
    ```
-   (or `pip-compile requirements.in -o requirements.txt` if using pip-tools).
 
 3. In docs/ directory, run the command below to generate the API docs and index them:
    ```bash
