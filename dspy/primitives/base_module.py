@@ -159,11 +159,23 @@ class BaseModule:
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         from dspy.predict.predict import Predict
 
-        for name, param in self.named_parameters():
-            if isinstance(param, Predict):
-                param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
-            else:
-                param.load_state(state[name])
+        # Snapshot current state of every parameter so we can roll back
+        # atomically if any key is missing or any load_state call raises.
+        snapshots = {name: param.dump_state() for name, param in self.named_parameters()}
+
+        try:
+            for name, param in self.named_parameters():
+                if isinstance(param, Predict):
+                    param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
+                else:
+                    param.load_state(state[name])
+        except Exception:
+            # Roll back every parameter to its pre-load snapshot so the
+            # module is never left in a partially-updated (corrupted) state.
+            for name, param in self.named_parameters():
+                if name in snapshots:
+                    param.load_state(snapshots[name])
+            raise
 
     def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
