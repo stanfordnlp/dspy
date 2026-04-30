@@ -1,3 +1,4 @@
+import json
 from unittest import mock
 
 import pydantic
@@ -7,6 +8,7 @@ from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Mess
 from openai.types.responses import ResponseOutputMessage
 
 import dspy
+from dspy.adapters.json_adapter import _get_structured_outputs_response_format
 
 
 def test_json_adapter_passes_structured_output_when_supported_by_model():
@@ -44,6 +46,33 @@ def test_json_adapter_passes_structured_output_when_supported_by_model():
     assert response_format is not None
     assert issubclass(response_format, pydantic.BaseModel)
     assert response_format.model_fields.keys() == {"output1", "output2", "output3", "output4_unannotated"}
+
+
+def test_json_adapter_strips_vendor_extensions_from_schema():
+    class Address(pydantic.BaseModel):
+        street: str = pydantic.Field(
+            json_schema_extra={"x-comparison": {"comparator": "fuzzy"}},
+        )
+
+    class Form(pydantic.BaseModel):
+        name: str = pydantic.Field(
+            description="user name",
+            json_schema_extra={"x-comparison": {"comparator": "exact"}},
+        )
+        addresses: list[Address] = pydantic.Field(default_factory=list)
+
+    class Extract(dspy.Signature):
+        text: str = dspy.InputField()
+        form: Form = dspy.OutputField()
+
+    model = _get_structured_outputs_response_format(Extract, use_native_function_calling=True)
+    schema = model.model_json_schema()
+
+    # x-* vendor extensions from json_schema_extra must not reach the LM provider.
+    assert "x-comparison" not in json.dumps(schema)
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == ["form"]
+    assert schema["$defs"]["Form"]["properties"]["name"]["description"] == "user name"
 
 
 def test_json_adapter_not_using_structured_outputs_when_not_supported_by_model():
