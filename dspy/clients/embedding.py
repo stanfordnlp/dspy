@@ -93,7 +93,7 @@ class Embedder:
             raise ValueError("All inputs must be strings.")
 
         batch_size = batch_size or self.batch_size
-        caching = caching or self.caching
+        caching = caching if caching is not None else self.caching
         merged_kwargs = self.default_kwargs.copy()
         merged_kwargs.update(kwargs)
 
