@@ -81,6 +81,8 @@ class Evaluate:
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int = 120,
+        straggler_limit: int = 3,
         **kwargs,
     ):
         """
@@ -97,6 +99,10 @@ class Evaluate:
             failure_score (float): The default score to use if evaluation fails due to an exception.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
+            timeout (int): Seconds before a straggler task is resubmitted. Set to 0 to disable straggler
+                detection. Defaults to 120.
+            straggler_limit (int): Straggler detection only activates when at most this many tasks remain
+                outstanding. Defaults to 3.
 
         """
         self.devset = devset
@@ -109,6 +115,8 @@ class Evaluate:
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
 
         if "return_outputs" in kwargs:
             raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
@@ -165,6 +173,8 @@ class Evaluate:
             max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
             provide_traceback=self.provide_traceback,
             compare_results=True,
+            timeout=self.timeout,
+            straggler_limit=self.straggler_limit,
         )
 
         def process_item(example):

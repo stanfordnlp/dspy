@@ -33,6 +33,20 @@ def test_evaluate_initialization():
     assert ev.metric == answer_exact_match
     assert ev.num_threads is None
     assert not ev.display_progress
+    assert ev.timeout == 120
+    assert ev.straggler_limit == 3
+
+
+def test_evaluate_custom_timeout():
+    devset = [new_example("What is 1+1?", "2")]
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        timeout=0,
+        straggler_limit=1,
+    )
+    assert ev.timeout == 0
+    assert ev.straggler_limit == 1
 
 
 def test_evaluate_call():
