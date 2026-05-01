@@ -10,6 +10,17 @@ if TYPE_CHECKING:
 
 
 class DataLoader(Dataset):
+    """A utility class for loading datasets from various sources into DSPy Examples.
+
+    DataLoader provides methods to load data from HuggingFace datasets, CSV files,
+    pandas DataFrames, JSON files, Parquet files, and retrieval modules. It also
+    provides utilities for sampling and splitting datasets.
+
+    Example:
+        >>> loader = DataLoader()
+        >>> dataset = loader.from_csv("data.csv", input_keys=("question",))
+    """
+
     def __init__(self):
         pass
 
@@ -21,6 +32,37 @@ class DataLoader(Dataset):
         fields: tuple[str] | None = None,
         **kwargs,
     ) -> Mapping[str, list[dspy.Example]] | list[dspy.Example]:
+        """Load a dataset from HuggingFace Hub and convert it to DSPy Examples.
+
+        Args:
+            dataset_name: The name of the HuggingFace dataset to load
+                (e.g., "squad", "glue").
+            *args: Additional positional arguments passed to
+                `datasets.load_dataset`.
+            input_keys: A tuple of field names to designate as inputs
+                in each DSPy Example.
+            fields: A tuple of field names to include from the dataset.
+                If None, all fields are included.
+            **kwargs: Additional keyword arguments passed to
+                `datasets.load_dataset` (e.g., split="train").
+
+        Returns:
+            A dict mapping split names to lists of DSPy Examples if the
+            dataset has multiple splits, or a list of DSPy Examples if
+            a single split is loaded.
+
+        Raises:
+            ValueError: If fields is not a tuple or input_keys is not a tuple.
+
+        Example:
+            >>> loader = DataLoader()
+            >>> splits = loader.from_huggingface(
+            ...     "rajpurkar/squad",
+            ...     fields=("question", "context", "answers"),
+            ...     input_keys=("question", "context"),
+            ... )
+            >>> train_examples = splits["train"]
+        """
         if fields and not isinstance(fields, tuple):
             raise ValueError("Invalid fields provided. Please provide a tuple of fields.")
 
@@ -66,6 +108,26 @@ class DataLoader(Dataset):
         fields: list[str] | None = None,
         input_keys: tuple[str] = (),
     ) -> list[dspy.Example]:
+        """Load a dataset from a CSV file and convert it to DSPy Examples.
+
+        Args:
+            file_path: Path to the CSV file to load.
+            fields: A list of column names to include. If None, all
+                columns are included.
+            input_keys: A tuple of field names to designate as inputs
+                in each DSPy Example.
+
+        Returns:
+            A list of DSPy Examples, one per row in the CSV file.
+
+        Example:
+            >>> loader = DataLoader()
+            >>> examples = loader.from_csv(
+            ...     "data.csv",
+            ...     fields=["question", "answer"],
+            ...     input_keys=("question",),
+            ... )
+        """
         from datasets import load_dataset
 
         dataset = load_dataset("csv", data_files=file_path)["train"]
@@ -81,6 +143,24 @@ class DataLoader(Dataset):
         fields: list[str] | None = None,
         input_keys: tuple[str] = (),
     ) -> list[dspy.Example]:
+        """Load a dataset from a pandas DataFrame and convert it to DSPy Examples.
+
+        Args:
+            df: The pandas DataFrame to load examples from.
+            fields: A list of column names to include. If None, all
+                columns are included.
+            input_keys: A tuple of field names to designate as inputs
+                in each DSPy Example.
+
+        Returns:
+            A list of DSPy Examples, one per row in the DataFrame.
+
+        Example:
+            >>> import pandas as pd
+            >>> loader = DataLoader()
+            >>> df = pd.DataFrame({"question": ["What is AI?"], "answer": ["..."]})
+            >>> examples = loader.from_pandas(df, input_keys=("question",))
+        """
         if fields is None:
             fields = list(df.columns)
 
@@ -94,6 +174,26 @@ class DataLoader(Dataset):
         fields: list[str] | None = None,
         input_keys: tuple[str] = (),
     ) -> list[dspy.Example]:
+        """Load a dataset from a JSON file and convert it to DSPy Examples.
+
+        Args:
+            file_path: Path to the JSON file to load.
+            fields: A list of field names to include. If None, all
+                fields are included.
+            input_keys: A tuple of field names to designate as inputs
+                in each DSPy Example.
+
+        Returns:
+            A list of DSPy Examples, one per record in the JSON file.
+
+        Example:
+            >>> loader = DataLoader()
+            >>> examples = loader.from_json(
+            ...     "data.json",
+            ...     fields=["question", "answer"],
+            ...     input_keys=("question",),
+            ... )
+        """
         from datasets import load_dataset
 
         dataset = load_dataset("json", data_files=file_path)["train"]
@@ -109,6 +209,25 @@ class DataLoader(Dataset):
         fields: list[str] | None = None,
         input_keys: tuple[str] = (),
     ) -> list[dspy.Example]:
+        """Load a dataset from a Parquet file and convert it to DSPy Examples.
+
+        Args:
+            file_path: Path to the Parquet file to load.
+            fields: A list of field names to include. If None, all
+                fields are included.
+            input_keys: A tuple of field names to designate as inputs
+                in each DSPy Example.
+
+        Returns:
+            A list of DSPy Examples, one per record in the Parquet file.
+
+        Example:
+            >>> loader = DataLoader()
+            >>> examples = loader.from_parquet(
+            ...     "data.parquet",
+            ...     input_keys=("question",),
+            ... )
+        """
         from datasets import load_dataset
 
         dataset = load_dataset("parquet", data_files=file_path)["train"]
@@ -119,6 +238,32 @@ class DataLoader(Dataset):
         return [dspy.Example({field: row[field] for field in fields}).with_inputs(*input_keys) for row in dataset]
 
     def from_rm(self, num_samples: int, fields: list[str], input_keys: list[str]) -> list[dspy.Example]:
+        """Load examples from the configured DSPy retrieval module.
+
+        Args:
+            num_samples: Number of samples to retrieve.
+            fields: A list of field names to extract from each retrieved object.
+            input_keys: A list of field names to designate as inputs
+                in each DSPy Example.
+
+        Returns:
+            A list of DSPy Examples retrieved from the retrieval module.
+
+        Raises:
+            ValueError: If no retrieval module is configured via `dspy.configure`,
+                or if the configured retrieval module does not support
+                `get_objects`.
+
+        Example:
+            >>> import dspy
+            >>> dspy.configure(rm=my_retriever)
+            >>> loader = DataLoader()
+            >>> examples = loader.from_rm(
+            ...     num_samples=10,
+            ...     fields=["text", "label"],
+            ...     input_keys=["text"],
+            ... )
+        """
         try:
             rm = dspy.settings.rm
             try:
@@ -142,6 +287,25 @@ class DataLoader(Dataset):
         *args,
         **kwargs,
     ) -> list[dspy.Example]:
+        """Randomly sample n examples from a dataset.
+
+        Args:
+            dataset: A list of DSPy Examples to sample from.
+            n: The number of examples to sample.
+            *args: Additional positional arguments passed to `random.sample`.
+            **kwargs: Additional keyword arguments passed to `random.sample`.
+
+        Returns:
+            A list of n randomly sampled DSPy Examples.
+
+        Raises:
+            ValueError: If dataset is not a list of DSPy Examples.
+
+        Example:
+            >>> loader = DataLoader()
+            >>> examples = loader.from_csv("data.csv", input_keys=("question",))
+            >>> sample = loader.sample(examples, n=10)
+        """
         if not isinstance(dataset, list):
             raise ValueError(
                 f"Invalid dataset provided of type {type(dataset)}. Please provide a list of `dspy.Example`s."
@@ -156,6 +320,33 @@ class DataLoader(Dataset):
         test_size: int | float | None = None,
         random_state: int | None = None,
     ) -> Mapping[str, list[dspy.Example]]:
+        """Split a dataset into train and test sets.
+
+        Args:
+            dataset: A list of DSPy Examples to split.
+            train_size: The proportion (float between 0 and 1) or absolute
+                number (int) of examples to include in the train split.
+                Defaults to 0.75.
+            test_size: The proportion (float between 0 and 1) or absolute
+                number (int) of examples to include in the test split.
+                If None, the remainder after the train split is used.
+            random_state: Seed for the random number generator to ensure
+                reproducibility. If None, the split is not deterministic.
+
+        Returns:
+            A dict with keys "train" and "test", each mapping to a list
+            of DSPy Examples.
+
+        Raises:
+            ValueError: If train_size or test_size are invalid, or if
+                train_size + test_size exceeds the total dataset size.
+
+        Example:
+            >>> loader = DataLoader()
+            >>> examples = loader.from_csv("data.csv", input_keys=("question",))
+            >>> splits = loader.train_test_split(examples, train_size=0.8, random_state=42)
+            >>> train, test = splits["train"], splits["test"]
+        """
         if random_state is not None:
             random.seed(random_state)
 
