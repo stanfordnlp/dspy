@@ -64,8 +64,10 @@ You have max {max_llm_calls} sub-LLM calls. When done, call SUBMIT() with your o
 _PYTHON_FENCE_LANGS = {"python", "py", "python3", "py3", ""}
 
 
-def _strip_code_fences(code: str) -> str:
+def _strip_code_fences(code: str | None) -> str:
     """Extract Python code from markdown fences, or return as-is if no fences."""
+    if not code:
+        return ""
     code = code.strip()
     if "```" not in code:
         return code
