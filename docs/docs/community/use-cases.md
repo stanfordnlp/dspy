@@ -1,6 +1,6 @@
 # DSPy in Production
 
-<p class="dspy-lede">DSPy is in production at <strong>Shopify, Databricks, Dropbox, JetBlue, Moody's, Replit, AWS, Sephora, VMware</strong>, and dozens more.</p>
+<p class="dspy-lede">DSPy is in production at <strong>Shopify, Databricks, Dropbox, JetBlue, Moody's, AWS, Sephora, VMware</strong>, and dozens more.</p>
 
 This list represents companies that have publicly shared their use cases or have provided permission to be included. It reflects a selection of the many industry applications of DSPy currently in production. To add yours, please [open a PR](https://github.com/stanfordnlp/dspy/edit/main/docs/docs/community/use-cases.md).
 
