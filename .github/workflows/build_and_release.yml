@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - id: extract_tag
         name: Extract tag name
-        run: echo "tag=$(echo $GITHUB_REF | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
   build-and-publish-test-pypi:
     needs: extract-tag
@@ -136,22 +136,41 @@ jobs:
         with:
           attestations: false
           packages-dir: .github/.internal_dspyai/dist/
-      - uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v5 # auto commit changes to main
+      - uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v5 # auto commit changes to release branch
         with:
           commit_message: Update versions
           create_branch: true
           branch: release-${{ needs.extract-tag.outputs.version }}
-      - name: Checkout main branch
+
+  open-main-version-bump-pr:
+    needs: [extract-tag, build-and-publish-pypi]
+    if: github.repository_owner == 'stanfordnlp'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+      - name: Apply version bump for main
+        env:
+          VERSION: ${{ needs.extract-tag.outputs.version }}
         run: |
-          git fetch origin
-          git checkout main
-      - name: Configure git user
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "Github Actions"
-      - name: Merge release branch into main
-        run: |
-          git merge --no-ff release-${{ needs.extract-tag.outputs.version }}
-      - name: Push changes to main
-        run: |
-          git push origin main
+          sed -i "/#replace_package_version_marker/{n;s/version *= *\"[^\"]*\"/version=\"$VERSION\"/;}" pyproject.toml
+          sed -i "/#replace_package_version_marker/{n;s/__version__ *= *\"[^\"]*\"/__version__=\"$VERSION\"/;}" ./dspy/__metadata__.py
+          sed -i "/#replace_package_version_marker/{n;s/version *= *\"[^\"]*\"/version=\"$VERSION\"/;}" .github/.internal_dspyai/pyproject.toml
+          sed -i "/#replace_dspy_version_marker/{n;s/dspy>=[^\"]*/dspy>=$VERSION/;}" .github/.internal_dspyai/pyproject.toml
+      - name: Open version bump PR for main
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: release-${{ needs.extract-tag.outputs.version }}-main-version-bump
+          base: main
+          add-paths: |
+            pyproject.toml
+            dspy/__metadata__.py
+            .github/.internal_dspyai/pyproject.toml
+          commit-message: Update versions for ${{ needs.extract-tag.outputs.version }}
+          title: Update versions for ${{ needs.extract-tag.outputs.version }}
+          body: |
+            Updates main version metadata after publishing ${{ needs.extract-tag.outputs.version }}.
