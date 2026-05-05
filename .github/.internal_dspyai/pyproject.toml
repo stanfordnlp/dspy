@@ -4,7 +4,7 @@ name="dspy-ai"
 #replace_package_version_marker
 version="3.2.0"  
 description = "DSPy"  
-readme = "README.md"  
+readme = {text = "`dspy-ai` is a compatibility alias for the [dspy](https://pypi.org/project/dspy/) package. Install `dspy` instead: `pip install dspy`.", content-type = "text/markdown"}  
 authors = [  
     { name = "Omar Khattab", email = "okhattab@stanford.edu" }  
 ]  
