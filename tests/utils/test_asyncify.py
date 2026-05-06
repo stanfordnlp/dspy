@@ -50,3 +50,24 @@ async def test_asyncify():
     await verify_asyncify(4, 10)
     await verify_asyncify(8, 15)
     await verify_asyncify(8, 30)
+
+
+@pytest.mark.anyio
+async def test_asyncify_with_dspy_module():
+    """Test that asyncify works with DSPy modules and can be type-checked."""
+
+    class SimpleModule(dspy.Module):
+        def forward(self, x: int) -> int:
+            return x * 2
+
+    module = SimpleModule()
+    async_module = dspy.asyncify(module)
+
+    # Test with positional argument
+    result = await async_module(5)
+    assert result == 10, "Asyncified module should return correct result"
+
+    # Test with keyword argument
+    result = await async_module(x=7)
+    assert result == 14, "Asyncified module should work with keyword arguments"
+

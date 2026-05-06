@@ -1,10 +1,13 @@
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ParamSpec, TypeVar, Union, overload
 
 import asyncer
 from anyio import CapacityLimiter
 
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 _limiter = None
 
@@ -27,22 +30,30 @@ def get_limiter():
     return _limiter
 
 
-def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
+@overload
+def asyncify(program: Callable[P, T]) -> Callable[P, Awaitable[T]]: ...
+
+
+@overload
+def asyncify(program: "Module") -> Callable[..., Awaitable[Any]]: ...
+
+
+def asyncify(program: Union[Callable[P, T], "Module"]) -> Callable[P, Awaitable[T]] | Callable[..., Awaitable[Any]]:
     """
-    Wraps a DSPy program so that it can be called asynchronously. This is useful for running a
+    Wraps a DSPy program or callable so that it can be called asynchronously. This is useful for running a
     program in parallel with another task (e.g., another DSPy program).
 
     This implementation propagates the current thread's configuration context to the worker thread.
 
     Args:
-        program: The DSPy program to be wrapped for asynchronous execution.
+        program: The DSPy program or callable to be wrapped for asynchronous execution.
 
     Returns:
         An async function: An async function that, when awaited, runs the program in a worker thread.
             The current thread's configuration context is inherited for each call.
     """
 
-    async def async_program(*args, **kwargs) -> Any:
+    async def async_program(*args: P.args, **kwargs: P.kwargs) -> T:
         # Capture the current overrides at call-time.
         from dspy.dsp.utils.settings import thread_local_overrides
 
@@ -62,4 +73,4 @@ def asyncify(program: "Module") -> Callable[[Any, Any], Awaitable[Any]]:
         call_async = asyncer.asyncify(wrapped_program, abandon_on_cancel=True, limiter=get_limiter())
         return await call_async(*args, **kwargs)
 
-    return async_program
+    return async_program  # type: ignore[return-value]
