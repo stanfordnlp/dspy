@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import time
 import warnings
@@ -44,6 +45,11 @@ def make_response(output_blocks):
         usage=ResponseAPIUsage(input_tokens=1, output_tokens=1, total_tokens=2),
         user=None,
     )
+
+
+def test_lm_rejects_unsupported_model_type():
+    with pytest.raises(ValueError, match="Unsupported model_type='invalid'"):
+        dspy.LM(model="openai/dspy-test-model", model_type="invalid")
 
 
 def test_chat_lms_can_be_queried(litellm_test_server):
@@ -339,7 +345,9 @@ def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
         ValueError,
-        match="reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None",
+        match=re.escape(
+            "reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None"
+        ),
     ):
         dspy.LM(
             model=model_name,

@@ -71,6 +71,11 @@ class LM(BaseLM):
                 stripped before sending requests to the provider.
         """
         # Remember to update LM.copy() if you modify the constructor!
+        if model_type not in {"chat", "text", "responses"}:
+            raise ValueError(
+                f"Unsupported model_type={model_type!r}. Expected one of: 'chat', 'text', 'responses'."
+            )
+
         self.model = model
         self.model_type = model_type
         self.cache = cache
