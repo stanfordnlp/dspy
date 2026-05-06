@@ -10,6 +10,20 @@ on:
 permissions: {}
 
 jobs:
+  workflow-lint:
+    name: Lint GitHub Actions Workflows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+      - name: Run actionlint
+        uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2.1.2
+
   fix:
     name: Check Ruff Fix
     runs-on: ubuntu-latest
@@ -32,7 +46,7 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: uv sync --dev -p .venv --extra dev
       - name: Ruff Check
@@ -79,7 +93,7 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: |
           uv sync --dev -p .venv --extra dev
@@ -117,7 +131,7 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: |
           uv sync --dev -p .venv --extra dev
@@ -133,7 +147,7 @@ jobs:
           mkdir -p ollama-data
           docker run -d --name ollama \
             -p 11434:11434 \
-            -v ${{ github.workspace }}/ollama-data:/root/.ollama \
+            -v "$GITHUB_WORKSPACE/ollama-data:/root/.ollama" \
             ollama/ollama:latest
           timeout 60 bash -c 'until curl -f http://localhost:11434/api/version; do sleep 2; done'
       - name: Pull LLM
@@ -175,7 +189,7 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: uv sync --dev -p .venv --extra dev
       - name: Build
