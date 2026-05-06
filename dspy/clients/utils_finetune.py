@@ -46,13 +46,14 @@ class GRPOGroup(TypedDict):
     batch_id: int | None
     group: list[GRPOChatData]
 
+
 class GRPOStatus(TypedDict):
     job_id: str
     status: str | None = None
     current_model: str
     checkpoints: dict[str, str]
     last_checkpoint: str | None = None
-    pending_batch_ids: list[int] = []
+    pending_batch_ids: list[int]
 
 
 def infer_data_format(adapter: "Adapter") -> str:
@@ -101,8 +102,10 @@ def validate_data_format(
         TrainDataFormat.CHAT: find_data_error_chat,
         TrainDataFormat.COMPLETION: find_data_errors_completion,
     }
-    err = f"Data format {data_format} is not supported."
-    assert data_format in find_err_funcs, err
+    format_name = data_format.value if isinstance(data_format, TrainDataFormat) else data_format
+    err = f"Data format {format_name} is not supported."
+    if data_format not in find_err_funcs:
+        raise ValueError(err)
     find_err_func = find_err_funcs[data_format]
 
     if not isinstance(data, list):
@@ -131,7 +134,9 @@ def validate_data_format(
 def find_data_errors_completion(data_dict: dict[str, str]) -> str | None:
     keys = ["prompt", "completion"]
 
-    assert isinstance(data_dict, dict)
+    if not isinstance(data_dict, dict):
+        return f"Not a dictionary -- found data type: {type(data_dict)}"
+
     expected_keys = sorted(keys)
     found_keys = sorted(data_dict.keys())
     if set(expected_keys) != set(found_keys):
@@ -145,7 +150,8 @@ def find_data_errors_completion(data_dict: dict[str, str]) -> str | None:
 # Following functions are modified from the OpenAI cookbook:
 # https://cookbook.openai.com/examples/chat_finetuning_data_prep
 def find_data_error_chat(messages: dict[str, Any]) -> str | None:
-    assert isinstance(messages, dict)
+    if not isinstance(messages, dict):
+        return f"Not a dictionary -- found data type: {type(messages)}"
 
     expected_keys = ["messages"]
     found_keys = sorted(messages.keys())
@@ -162,7 +168,8 @@ def find_data_error_chat(messages: dict[str, Any]) -> str | None:
 
 
 def find_data_error_chat_message(message: dict[str, Any]) -> str | None:
-    assert isinstance(message, dict)
+    if not isinstance(message, dict):
+        return f"Not a dictionary -- found data type: {type(message)}"
 
     message_keys = sorted(["role", "content"])
     found_keys = sorted(message.keys())
