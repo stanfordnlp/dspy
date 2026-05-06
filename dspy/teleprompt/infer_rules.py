@@ -11,6 +11,34 @@ logger = logging.getLogger(__name__)
 
 
 class InferRules(BootstrapFewShot):
+    """An optimizer that improves a DSPy program by inducing natural language rules from training examples.
+
+    ``InferRules`` extends ``BootstrapFewShot`` by generating candidate rule sets from
+    bootstrapped demonstrations and selecting the best one via evaluation on a validation set.
+    For each candidate, it uses an LLM to extract concise, actionable rules from formatted
+    examples, then appends those rules to the predictor's instructions.
+
+    Args:
+        num_candidates: Number of candidate rule sets to generate and evaluate. Defaults to 10.
+        num_rules: Number of rules to extract per predictor. Defaults to 10.
+        num_threads: Number of threads for parallel evaluation. Defaults to None.
+        teacher_settings: Settings dict passed to the teacher LM during bootstrapping.
+        **kwargs: Additional keyword arguments forwarded to ``BootstrapFewShot.__init__``,
+            including ``metric``, ``max_bootstrapped_demos``, ``max_labeled_demos``,
+            ``max_rounds``, and ``max_errors``.
+
+    Example:
+        >>> import dspy
+        >>> dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+        >>> trainset = [
+        ...     dspy.Example(question="What is 2+2?", answer="4").with_inputs("question"),
+        ...     dspy.Example(question="What is 3+5?", answer="8").with_inputs("question"),
+        ... ]
+        >>> student = dspy.Predict("question -> answer")
+        >>> optimizer = InferRules(metric=dspy.evaluate.answer_exact_match, num_candidates=3, num_rules=5)
+        >>> optimized = optimizer.compile(student, trainset=trainset)
+    """
+
     def __init__(self, num_candidates=10, num_rules=10, num_threads=None, teacher_settings=None, **kwargs):
         super().__init__(teacher_settings=teacher_settings, **kwargs)
 
@@ -22,6 +50,23 @@ class InferRules(BootstrapFewShot):
         self.max_errors = kwargs.get("max_errors")
 
     def compile(self, student, *, teacher=None, trainset, valset=None):
+        """Compile a student program by inducing and applying the best natural language rules.
+
+        Bootstraps demonstrations from the training set, then generates ``num_candidates``
+        candidate rule sets. Each candidate is evaluated on the validation set, and the
+        highest-scoring program is returned.
+
+        Args:
+            student: The DSPy program to optimize.
+            teacher: An optional teacher program for bootstrapping. Defaults to None.
+            trainset: Training examples. If ``valset`` is not provided, the first half is
+                used for training and the second half for validation.
+            valset: Validation examples. Defaults to None.
+
+        Returns:
+            A copy of the student program with the best-performing induced rules appended
+            to each predictor's instructions.
+        """
         if valset is None:
             train_size = int(0.5 * len(trainset))
             trainset, valset = trainset[:train_size], trainset[train_size:]
@@ -60,6 +105,22 @@ class InferRules(BootstrapFewShot):
         return best_program
 
     def induce_natural_language_rules(self, predictor, trainset):
+        """Induce natural language rules from a predictor's demonstrations.
+
+        Formats the training examples and calls ``RulesInductionProgram`` to extract rules.
+        If the examples exceed the model's context window, they are progressively trimmed
+        until the call succeeds.
+
+        Args:
+            predictor: A DSPy predictor with a ``signature`` attribute.
+            trainset: Training examples to format and pass to the rules induction program.
+
+        Returns:
+            A string containing the induced natural language rules.
+
+        Raises:
+            RuntimeError: If even a single example cannot fit in the model's context window.
+        """
         demos = self.get_predictor_demos(trainset, predictor)
         signature = predictor.signature
         while True:
@@ -81,12 +142,29 @@ class InferRules(BootstrapFewShot):
                     ) from e
 
     def update_program_instructions(self, predictor, natural_language_rules):
+        """Append induced rules to a predictor's signature instructions.
+
+        Args:
+            predictor: A DSPy predictor whose ``signature.instructions`` will be updated.
+            natural_language_rules: The rules string to append.
+        """
         predictor.signature.instructions = (
             f"{predictor.signature.instructions}\n\n"
             f"Please adhere to the following rules when making your prediction:\n{natural_language_rules}"
         )
 
     def format_examples(self, demos, signature):
+        """Format demonstrations into a human-readable text block for rule induction.
+
+        Each example is rendered with its input and output fields separated by a divider.
+
+        Args:
+            demos: A list of example dicts to format.
+            signature: The predictor's signature, used to distinguish input vs. output fields.
+
+        Returns:
+            A formatted string containing all examples.
+        """
         examples_text = ""
         for demo in demos:
             input_fields = {k: v for k, v in demo.items() if k in signature.input_fields}
@@ -97,6 +175,16 @@ class InferRules(BootstrapFewShot):
         return examples_text
 
     def get_predictor_demos(self, trainset, predictor):
+        """Extract demonstration dicts from the training set, filtered to the predictor's fields.
+
+        Args:
+            trainset: The full training set of examples.
+            predictor: A DSPy predictor whose signature determines which fields to keep.
+
+        Returns:
+            A list of dicts, each containing only the input and output fields relevant
+            to the predictor's signature.
+        """
         # TODO: Consider how this handled "incomplete" demos.
         signature = predictor.signature
         return [
@@ -109,6 +197,15 @@ class InferRules(BootstrapFewShot):
         ]
 
     def evaluate_program(self, program, dataset):
+        """Evaluate a compiled program on a dataset using the configured metric.
+
+        Args:
+            program: The DSPy program to evaluate.
+            dataset: The evaluation dataset.
+
+        Returns:
+            The evaluation score as a float.
+        """
         effective_max_errors = (
             self.max_errors if self.max_errors is not None else dspy.settings.max_errors
         )
@@ -125,6 +222,22 @@ class InferRules(BootstrapFewShot):
 
 
 class RulesInductionProgram(dspy.Module):
+    """A DSPy module that extracts natural language rules from a set of formatted examples.
+
+    Uses ``dspy.ChainOfThought`` to reason over example input-output pairs and produce
+    a list of concise, actionable rules that generalize the demonstrated behavior.
+
+    Args:
+        num_rules: The number of rules to extract.
+        teacher_settings: Optional settings dict for the teacher LM context.
+
+    Example:
+        >>> import dspy
+        >>> dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+        >>> program = RulesInductionProgram(num_rules=5)
+        >>> rules = program("Input Fields:\\nquestion: What is 2+2?\\n\\n=========\\nOutput Fields:\\nanswer: 4")
+    """
+
     def __init__(self, num_rules, teacher_settings=None):
         super().__init__()
 
@@ -142,6 +255,17 @@ class RulesInductionProgram(dspy.Module):
         self.rng = random.Random(0)
 
     def forward(self, examples_text):
+        """Run rules induction on the given examples text.
+
+        Generates rules using ``ChainOfThought`` with a fresh rollout ID and
+        ``temperature=1.0`` under the configured teacher settings.
+
+        Args:
+            examples_text: A formatted string of input-output example pairs.
+
+        Returns:
+            A string containing the induced natural language rules.
+        """
         with dspy.context(**self.teacher_settings):
             # Generate rules with a fresh rollout and non-zero temperature.
             lm = dspy.settings.lm.copy(
