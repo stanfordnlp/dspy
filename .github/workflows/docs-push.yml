@@ -10,13 +10,19 @@ on:
     paths:
       - "docs/**"
 
+permissions: {}
+
 jobs:
   build-test:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Install dependencies and build
         run: |
           cd docs
@@ -26,14 +32,17 @@ jobs:
   update-docs-subtree:
     if: github.event_name == 'push' && github.repository == 'stanfordnlp/dspy'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Push docs to separate repo
         uses: cpina/github-action-push-to-another-repository@55306faa4ed53b815ae49e564af8cfb359d32ae2 # main
         env:
-          API_TOKEN_GITHUB: ${{ secrets.GH_PAT }}
+          API_TOKEN_GITHUB: ${{ secrets.GH_PAT }} # zizmor: ignore[secrets-outside-env]
         with:
           source-directory: "docs"
           destination-github-username: "krypticmouse"

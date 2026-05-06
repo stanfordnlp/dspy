@@ -7,6 +7,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions: {}
+
 jobs:
   fix:
     name: Check Ruff Fix
@@ -15,6 +17,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.11"
@@ -28,7 +32,7 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: uv sync --dev -p .venv --extra dev
       - name: Ruff Check
@@ -47,11 +51,15 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -71,7 +79,7 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: |
           uv sync --dev -p .venv --extra dev
@@ -90,8 +98,12 @@ jobs:
   llm_call_test:
     name: Run Tests with Real LM
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: 3.11
@@ -105,7 +117,7 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: |
           uv sync --dev -p .venv --extra dev
@@ -128,12 +140,12 @@ jobs:
         if: steps.cache-ollama.outputs.cache-hit != 'true'
         run: docker exec ollama ollama pull llama3.2:3b
       - name: Set LM environment variable
-        run: echo "LM_FOR_TEST=ollama/llama3.2:3b" >> $GITHUB_ENV
+        run: echo "LM_FOR_TEST=ollama/llama3.2:3b" >> "$GITHUB_ENV"
       - name: Run tests
         run: uv run -p .venv pytest -m llm_call --llm_call -vv --durations=5 tests/
       - name: Fix permissions for cache
         if: always()
-        run: sudo chown -R $USER:$USER ollama-data || true
+        run: sudo chown -R "$USER":"$USER" ollama-data || true
       - name: Stop Ollama service
         if: always()
         run: docker stop ollama && docker rm ollama
@@ -141,11 +153,15 @@ jobs:
   build_package:
     name: Build Package
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -159,7 +175,7 @@ jobs:
       - name: Create and activate virtual environment
         run: |
           uv venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
         run: uv sync --dev -p .venv --extra dev
       - name: Build
