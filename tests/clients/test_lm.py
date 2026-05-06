@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import time
 import warnings
@@ -339,7 +340,9 @@ def test_reasoning_model_requirements(model_name):
     # Should raise assertion error if temperature or max_tokens requirements not met
     with pytest.raises(
         ValueError,
-        match="reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None",
+        match=re.escape(
+            "reasoning models require passing temperature=1.0 or None and max_tokens >= 16000 or None"
+        ),
     ):
         dspy.LM(
             model=model_name,
@@ -911,6 +914,25 @@ def test_responses_api_preserves_multi_message_structure():
 
     assert result["input"][3]["role"] == "user"
     assert result["input"][3]["content"] == [{"type": "input_text", "text": "And 3+3?"}]
+
+
+def test_responses_api_response_format_handles_none_text_settings():
+    from dspy.clients.lm import _convert_chat_request_to_responses_request
+
+    class TestModel(pydantic.BaseModel):
+        answer: str
+
+    request = {
+        "model": "openai/gpt-5-mini",
+        "messages": [{"role": "user", "content": "Return JSON"}],
+        "response_format": TestModel,
+        "text": None,
+    }
+
+    result = _convert_chat_request_to_responses_request(request)
+
+    assert result["text"]["format"]["name"] == "TestModel"
+    assert result["text"]["format"]["type"] == "json_schema"
 
 
 def test_responses_api_with_image_input():

@@ -542,7 +542,7 @@ def _convert_chat_request_to_responses_request(request: dict[str, Any]):
                 "type": "json_schema",
                 "schema": response_format.model_json_schema(),
             }
-        text = request.pop("text", {})
+        text = request.pop("text", None) or {}
         request["text"] = {**text, "format": response_format}
 
     return request
