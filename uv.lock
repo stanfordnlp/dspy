@@ -757,7 +757,6 @@ dependencies = [
     { name = "requests" },
     { name = "tenacity" },
     { name = "tqdm" },
-    { name = "typeguard" },
 ]
 
 [package.optional-dependencies]
@@ -834,7 +833,6 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "tenacity", specifier = ">=8.2.3" },
     { name = "tqdm", specifier = ">=4.66.1" },
-    { name = "typeguard", specifier = "==4.5.1" },
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = "~=4.5.4" },
 ]
 provides-extras = ["anthropic", "weaviate", "mcp", "langchain", "optuna", "dev", "test-extras"]

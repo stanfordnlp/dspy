@@ -36,7 +36,6 @@ dependencies = [
     "cloudpickle>=3.1.2",
     "numpy>=1.26.0",
     "gepa[dspy]==0.1.1",
-    "typeguard==4.5.1",
 ]
 
 [project.optional-dependencies]
