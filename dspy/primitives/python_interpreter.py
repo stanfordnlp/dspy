@@ -386,10 +386,16 @@ class PythonInterpreter:
                 skipped += 1
                 continue
 
-            if response.get("id") != request_id:
-                raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
             if "error" in response:
+                if response.get("id") is not None and response.get("id") != request_id:
+                    raise CodeInterpreterError(
+                        f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}"
+                    )
                 raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
+            if response.get("id") != request_id:
+                raise CodeInterpreterError(
+                    f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}"
+                )
             return response
 
         raise CodeInterpreterError(f"Too many non-JSON lines ({skipped}) {context}")
