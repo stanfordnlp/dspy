@@ -36,7 +36,6 @@ dependencies = [
     "cachetools>=5.5.0",
     "cloudpickle>=3.1.2",
     "numpy>=1.26.0",
-    "xxhash>=3.5.0",
     "gepa[dspy]==0.1.1",
     "typeguard==4.4.3",
 ]

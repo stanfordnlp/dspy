@@ -772,7 +772,6 @@ dependencies = [
     { name = "tenacity" },
     { name = "tqdm" },
     { name = "typeguard" },
-    { name = "xxhash" },
 ]
 
 [package.optional-dependencies]
@@ -852,7 +851,6 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.66.1" },
     { name = "typeguard", specifier = "==4.4.3" },
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = "~=4.5.4" },
-    { name = "xxhash", specifier = ">=3.5.0" },
 ]
 provides-extras = ["anthropic", "weaviate", "mcp", "langchain", "optuna", "dev", "test-extras"]
 
