@@ -1,6 +1,6 @@
 from typing import Any
 
-import requests
+import httpx
 
 from dspy.clients.cache import request_cache
 from dspy.dsp.utils import dotdict
@@ -42,7 +42,7 @@ def colbertv2_get_request_v2(url: str, query: str, k: int):
     assert k <= 100, "Only k <= 100 is supported for the hosted ColBERTv2 server at the moment."
 
     payload = {"query": query, "k": k}
-    res = requests.get(url, params=payload, timeout=10)
+    res = httpx.get(url, params=payload, timeout=10, follow_redirects=True)
     res.raise_for_status()
 
     res_json = res.json()
@@ -69,7 +69,7 @@ colbertv2_get_request = colbertv2_get_request_v2_wrapped
 def colbertv2_post_request_v2(url: str, query: str, k: int):
     headers = {"Content-Type": "application/json; charset=utf-8"}
     payload = {"query": query, "k": k}
-    res = requests.post(url, json=payload, headers=headers, timeout=10)
+    res = httpx.post(url, json=payload, headers=headers, timeout=10, follow_redirects=True)
     res.raise_for_status()
 
     res_json = res.json()
