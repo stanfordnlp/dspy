@@ -1,3 +1,4 @@
+import functools
 import logging
 import os
 import re
@@ -5,10 +6,10 @@ import threading
 import warnings
 from typing import Any, Literal, cast
 
+import anyio.from_thread
 import litellm
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
-from asyncer import syncify
 from litellm import ContextWindowExceededError as LitellmContextWindowExceededError
 
 import dspy
@@ -370,8 +371,7 @@ def _get_stream_completion_fn(
         return litellm.stream_chunk_builder(chunks)
 
     def sync_stream_completion():
-        syncified_stream_completion = syncify(stream_completion)
-        return syncified_stream_completion(request, cache_kwargs)
+        return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
 
     async def async_stream_completion():
         return await stream_completion(request, cache_kwargs)
