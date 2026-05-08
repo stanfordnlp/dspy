@@ -223,6 +223,7 @@ os.environ[${JSON.stringify(key)}] = ${JSON.stringify(val)}
 while (true) {
   const { value: line, done } = await stdinReader.next();
   if (done) break;
+  if (line.trim() === "") continue;
 
   let input;
   try {

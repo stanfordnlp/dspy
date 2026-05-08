@@ -45,6 +45,8 @@ JSONRPC_APP_ERRORS = {
     "Unknown": -32099,
 }
 
+JSONRPC_PARSE_ERROR = -32700
+
 
 def _jsonrpc_request(method: str, params: dict, id: int | str) -> str:
     """Create a JSON-RPC 2.0 request (expects response)."""
@@ -366,6 +368,10 @@ class PythonInterpreter:
             logger.debug("Skipping malformed JSON during %s: %s", context, response_line[:100])
             return None
 
+    def _is_unsolicited_parse_error(self, response: dict) -> bool:
+        """Return whether the response is a stale JSON-RPC parse error."""
+        return response.get("id") is None and response.get("error", {}).get("code") == JSONRPC_PARSE_ERROR
+
     def _send_request(self, method: str, params: dict, context: str) -> dict:
         """Send a JSON-RPC request and return the parsed response.
 
@@ -386,8 +392,15 @@ class PythonInterpreter:
                 skipped += 1
                 continue
 
+            if self._is_unsolicited_parse_error(response):
+                logger.debug("Skipping unsolicited JSON-RPC parse error during %s: %s", context, response)
+                skipped += 1
+                continue
+
             if response.get("id") != request_id:
-                raise CodeInterpreterError(f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}")
+                raise CodeInterpreterError(
+                    f"Response ID mismatch {context}: expected {request_id}, got {response.get('id')}"
+                )
             if "error" in response:
                 raise CodeInterpreterError(f"Error {context}: {response['error'].get('message', 'Unknown error')}")
             return response
