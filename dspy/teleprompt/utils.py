@@ -14,7 +14,7 @@ except ImportError:
 
 import dspy
 from dspy.teleprompt.bootstrap import BootstrapFewShot, LabeledFewShot
-from dspy.utils._numpy import require_numpy
+from dspy.utils._optional import require_optional
 
 """
 This file consists of helper functions for our variety of optimizers.
@@ -118,7 +118,7 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
     """Used as a helper function for bayesian + minibatching optimizers. Returns the program with the highest average score from the batches evaluated so far."""
 
     # Calculate the mean for each combination of categorical parameters, based on past trials
-    np = require_numpy()
+    np = require_optional("numpy")
     results = []
     for key, values in param_score_dict.items():
         scores = np.array([v[0] for v in values])

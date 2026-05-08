@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import litellm
 
 from dspy.clients.cache import request_cache
-from dspy.utils._numpy import require_numpy
+from dspy.utils._optional import require_optional
 
 if TYPE_CHECKING:
     import numpy as np
@@ -109,7 +109,7 @@ class Embedder:
         return input_batches, caching, merged_kwargs, is_single_input
 
     def _postprocess(self, embeddings_list, is_single_input):
-        np = require_numpy()
+        np = require_optional("numpy")
         embeddings = np.array(embeddings_list, dtype=np.float32)
         if is_single_input:
             return embeddings[0]

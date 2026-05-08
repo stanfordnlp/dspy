@@ -4,7 +4,7 @@ import random
 import dspy
 from dspy.evaluate.evaluate import Evaluate
 from dspy.teleprompt import BootstrapFewShot
-from dspy.utils._numpy import require_numpy
+from dspy.utils._optional import require_optional
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class InferRules(BootstrapFewShot):
 
         super().compile(student, teacher=teacher, trainset=trainset)
 
-        np = require_numpy()
+        np = require_optional("numpy")
         original_program = self.student.deepcopy()
         all_predictors = [p for p in original_program.predictors() if hasattr(p, "signature")]
         instructions_list = [p.signature.instructions for p in all_predictors]
