@@ -109,7 +109,7 @@ class Embedder:
         return input_batches, caching, merged_kwargs, is_single_input
 
     def _postprocess(self, embeddings_list, is_single_input):
-        np = require_optional("numpy")
+        np = require_optional("numpy", extra="numpy")
         embeddings = np.array(embeddings_list, dtype=np.float32)
         if is_single_input:
             return embeddings[0]

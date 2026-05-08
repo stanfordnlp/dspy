@@ -118,7 +118,7 @@ def get_program_with_highest_avg_score(param_score_dict, fully_evaled_param_comb
     """Used as a helper function for bayesian + minibatching optimizers. Returns the program with the highest average score from the batches evaluated so far."""
 
     # Calculate the mean for each combination of categorical parameters, based on past trials
-    np = require_optional("numpy")
+    np = require_optional("numpy", extra="numpy")
     results = []
     for key, values in param_score_dict.items():
         scores = np.array([v[0] for v in values])

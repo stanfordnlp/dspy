@@ -11,21 +11,26 @@ from types import ModuleType
 
 
 def require_optional(module: str, *, extra: str | None = None) -> ModuleType:
-    """Import ``module`` or raise :class:`ImportError` pointing to a dspy extra.
+    """Import ``module`` or raise :class:`ImportError`.
 
     Args:
         module: Top-level package name to import (e.g. ``"numpy"``).
-        extra: Name of the dspy install extra that provides ``module``. Defaults
-            to ``module``.
+        extra: Name of a dspy install extra that pulls in ``module``. When
+            provided, the error message points users at
+            ``pip install dspy[<extra>]`` in addition to ``pip install <module>``.
+            Only pass a value here when the extra is actually declared in
+            ``pyproject.toml``.
 
     Returns:
         The imported module.
     """
-    extra = extra or module
     try:
         return importlib.import_module(module)
     except ImportError as e:
+        if extra:
+            install_hint = f"`pip install dspy[{extra}]` (or `pip install {module}`)"
+        else:
+            install_hint = f"`pip install {module}`"
         raise ImportError(
-            f"{module} is required for this feature of dspy. "
-            f"Install it with `pip install dspy[{extra}]` (or `pip install {module}`)."
+            f"{module} is required for this feature of dspy. Install it with {install_hint}."
         ) from e
