@@ -199,7 +199,7 @@ class DummyVectorizer:
         return h % self.max_length
 
     def __call__(self, texts: list[str]) -> np.ndarray:
-        np = require_optional("numpy", extra="numpy")
+        np = require_optional("numpy")
         vecs = []
         for text in texts:
             grams = [text[i : i + self.n_gram] for i in range(len(text) - self.n_gram + 1)]

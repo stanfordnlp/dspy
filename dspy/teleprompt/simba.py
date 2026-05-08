@@ -102,7 +102,7 @@ class SIMBA(Teleprompter):
         # Basic checks
         assert len(trainset) >= self.bsize, f"Trainset too small: {len(trainset)} < {self.bsize}"
 
-        np = require_optional("numpy", extra="numpy")
+        np = require_optional("numpy")
         # Initialize RNG
         rng = random.Random(seed)
         rng_np = np.random.default_rng(seed)
