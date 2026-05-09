@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from unittest import mock
 from unittest.mock import AsyncMock
 
+import anyio.from_thread
 import pydantic
 import pytest
-from asyncer import syncify
 from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 import dspy
@@ -1035,8 +1035,7 @@ async def test_streaming_allows_custom_chunk_types():
                 chunk = CustomChunk(text="hello")
                 await dspy.settings.send_stream.send(chunk)
 
-            syncified_send_to_stream = syncify(send_to_stream)
-            syncified_send_to_stream()
+            anyio.from_thread.run(send_to_stream)
             return dspy.Prediction(answer="dummy output")
 
     program = dspy.streamify(MyProgram())

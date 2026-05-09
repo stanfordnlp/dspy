@@ -188,7 +188,7 @@ the [MLflow Tracing Guide](https://mlflow.org/docs/3.0.0rc0/tracing).
 
 
 
-!!! info Learn more about MLflow
+!!! info "Learn more about MLflow"
 
     MLflow is an end-to-end LLMOps platform that offers extensive features like experiment tracking, evaluation, and deployment. To learn more about DSPy and MLflow integration, visit [this tutorial](../deployment/index.md#deploying-with-mlflow).
 
@@ -242,6 +242,6 @@ dspy.configure(callbacks=[AgentLoggingCallback()])
 ...
 ```
 
-!!! info Handling Inputs and Outputs in Callbacks
+!!! info "Handling Inputs and Outputs in Callbacks"
 
     Be cautious when working with input or output data in callbacks. Mutating them in-place can modify the original data passed to the program, potentially leading to unexpected behavior. To avoid this, it's strongly recommended to create a copy of the data before performing any operations that may alter it.

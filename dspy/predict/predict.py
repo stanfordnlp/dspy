@@ -1,10 +1,10 @@
 import logging
 import random
-from typing import Any, Literal, get_args, get_origin
+import types
+from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
-from typeguard import TypeCheckError, check_type
 
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.base_lm import BaseLM
@@ -304,16 +304,72 @@ def _get_type_name(type_annotation) -> str:
 
 def _is_value_compatible_with_type(value: Any, expected: type) -> bool:
     """Return True if the value matches the expected type hint."""
-    try:
-        # Special handle list[str] because we allow setting input type to str, however, invoking with a list thereof.
-        if expected is str and isinstance(value, list):
-            if all(isinstance(item, str) for item in value):
-                return True
+    # Special handle list[str] because we allow setting input type to str, however, invoking with a list thereof.
+    if expected is str and isinstance(value, list):
+        if all(isinstance(item, str) for item in value):
+            return True
 
-        check_type(value, expected)
+    return _check_type(value, expected)
+
+
+def _check_type(value: Any, expected: type) -> bool:
+    """Stdlib replacement for typeguard.check_type."""
+    if expected is Any:
         return True
-    except TypeCheckError:
-        return False
+
+    origin = get_origin(expected)
+    args = get_args(expected)
+
+    # Union / Optional (X | None)
+    if origin is Union or origin is types.UnionType:
+        return any(_check_type(value, arg) for arg in args)
+
+    # Literal
+    if origin is Literal:
+        return value in args
+
+    # list
+    if origin is list:
+        if not isinstance(value, list):
+            return False
+        if args:
+            return all(_check_type(item, args[0]) for item in value)
+        return True
+
+    # dict
+    if origin is dict:
+        if not isinstance(value, dict):
+            return False
+        if args:
+            key_type, val_type = args
+            return all(_check_type(k, key_type) and _check_type(v, val_type) for k, v in value.items())
+        return True
+
+    # tuple
+    if origin is tuple:
+        if not isinstance(value, tuple):
+            return False
+        if args:
+            if len(args) == 2 and args[1] is Ellipsis:
+                return all(_check_type(item, args[0]) for item in value)
+            if len(value) != len(args):
+                return False
+            return all(_check_type(item, arg) for item, arg in zip(value, args))
+        return True
+
+    # set / frozenset
+    if origin is set or origin is frozenset:
+        if not isinstance(value, origin):
+            return False
+        if args:
+            return all(_check_type(item, args[0]) for item in value)
+        return True
+
+    # Plain type (int, str, BaseModel subclass, etc.)
+    if isinstance(expected, type):
+        return isinstance(value, expected)
+
+    return False
 
 def serialize_object(obj):
     """

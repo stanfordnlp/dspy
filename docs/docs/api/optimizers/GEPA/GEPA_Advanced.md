@@ -13,12 +13,12 @@ By default, GEPA uses the built-in instruction proposer from the [GEPA library](
 ````
 I provided an assistant with the following instructions to perform a task for me:
 ```
-<curr_instructions>
+<curr_param>
 ```
 
 The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
 ```
-<inputs_outputs_feedback>
+<side_info>
 ```
 
 Your task is to write a new instruction for the assistant.
@@ -32,8 +32,9 @@ Provide the new instructions within ``` blocks.
 
 This template is automatically filled with:
 
-- `<curr_instructions>`: The current instruction being optimized
-- `<inputs_outputs_feedback>`: Structured markdown containing predictor inputs, generated outputs, and evaluation feedback
+- `<curr_param>`: The current instruction being optimized
+- `<side_info>`: Structured markdown containing predictor inputs, generated outputs, and evaluation feedback
+
 
 Example of default behavior:
 

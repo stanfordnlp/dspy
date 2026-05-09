@@ -269,7 +269,7 @@ def prepare_teacher(student: Module, teacher: Module | None = None) -> Module:
     if teacher is None:
         return student
 
-    # Ensuring that the student and teacher are are structurally equivalent
+    # Ensuring that the student and teacher are structurally equivalent
     assert_structural_equivalency(student, teacher)
 
     # Ensuring that the student and teacher programs do not share predictors

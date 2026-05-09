@@ -1029,6 +1029,119 @@ def test_responses_api_with_pydantic_model_input():
     }
 
 
+def test_responses_api_with_none_usage():
+    """Responses API returns usage=None for incomplete/truncated responses (e.g. max_output_tokens hit)."""
+    api_response = ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details={"reason": "max_output_tokens"},
+        instructions=None,
+        model="openai/gpt-5-mini",
+        object="response",
+        output=[
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "incomplete",
+                    "content": [
+                        {"type": "output_text", "text": "Partial response that was truncated", "annotations": []}
+                    ],
+                },
+            ),
+        ],
+        metadata={},
+        parallel_tool_calls=False,
+        temperature=1.0,
+        tool_choice="auto",
+        tools=[],
+        top_p=1.0,
+        max_output_tokens=100,
+        previous_response_id=None,
+        reasoning=None,
+        status="incomplete",
+        text=None,
+        truncation="disabled",
+        usage=None,
+        user=None,
+    )
+
+    with mock.patch("litellm.responses", autospec=True, return_value=api_response):
+        lm = dspy.LM(
+            model="openai/gpt-5-mini",
+            model_type="responses",
+            cache=False,
+            temperature=1.0,
+            max_tokens=16000,
+        )
+
+        with track_usage() as tracker:
+            result = lm("test query")
+
+        assert result == [{"text": "Partial response that was truncated"}]
+        assert lm.history[-1]["usage"] == {}
+        assert tracker.get_total_tokens() == {}
+
+
+@pytest.mark.asyncio
+async def test_responses_api_with_none_usage_async():
+    """Async path: Responses API returns usage=None for incomplete/truncated responses."""
+    api_response = ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0.0,
+        error=None,
+        incomplete_details={"reason": "max_output_tokens"},
+        instructions=None,
+        model="openai/gpt-5-mini",
+        object="response",
+        output=[
+            ResponseOutputMessage(
+                **{
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "incomplete",
+                    "content": [
+                        {"type": "output_text", "text": "Partial async response", "annotations": []}
+                    ],
+                },
+            ),
+        ],
+        metadata={},
+        parallel_tool_calls=False,
+        temperature=1.0,
+        tool_choice="auto",
+        tools=[],
+        top_p=1.0,
+        max_output_tokens=100,
+        previous_response_id=None,
+        reasoning=None,
+        status="incomplete",
+        text=None,
+        truncation="disabled",
+        usage=None,
+        user=None,
+    )
+
+    with mock.patch("litellm.aresponses", autospec=True, return_value=api_response):
+        lm = dspy.LM(
+            model="openai/gpt-5-mini",
+            model_type="responses",
+            cache=False,
+            temperature=1.0,
+            max_tokens=16000,
+        )
+
+        with track_usage() as tracker:
+            result = await lm.acall("test query")
+
+        assert result == [{"text": "Partial async response"}]
+        assert lm.history[-1]["usage"] == {}
+        assert tracker.get_total_tokens() == {}
+
+
 @pytest.mark.asyncio
 async def test_streaming_passes_headers_correctly():
     from dspy.clients.lm import _get_stream_completion_fn
