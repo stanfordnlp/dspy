@@ -17,7 +17,7 @@ from dspy.primitives.code_interpreter import CodeInterpreterError, FinalOutput
 from dspy.primitives.prediction import Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
 from dspy.primitives.repl_types import REPLEntry, REPLHistory, REPLVariable
-from dspy.primitives.sandbox_serializable import SandboxSerializable, SandboxSerializableBase
+from dspy.primitives.sandbox_serializable import SandboxSerializable
 from tests.mock_interpreter import MockInterpreter
 
 # ============================================================================
@@ -1197,8 +1197,8 @@ class TestRLMIntegration:
 # ============================================================================
 
 
-class _StubSerializable(SandboxSerializableBase):
-    """Stub serializable using the ergonomic base for testing RLM integration."""
+class _StubSerializable(SandboxSerializable):
+    """Stub serializable used to exercise RLM integration."""
 
     def __init__(self, data: str = "stub_data"):
         self.data = data
@@ -1216,26 +1216,7 @@ class _StubSerializable(SandboxSerializableBase):
         return f"StubData({self.data})"
 
 
-class _StructuralSerializable:
-    """Structurally conforming SandboxSerializable (no inheritance) for testing."""
-
-    def __init__(self, data: str = "struct_data"):
-        self.data = data
-
-    def sandbox_setup(self) -> str:
-        return "import json"
-
-    def to_sandbox(self) -> bytes:
-        return self.data.encode("utf-8")
-
-    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
-        return f"{var_name} = {data_expr}"
-
-    def rlm_preview(self, max_chars: int = 500) -> str:
-        return f"StructData({self.data})"
-
-
-class _BinarySerializable(SandboxSerializableBase):
+class _BinarySerializable(SandboxSerializable):
     """Serializable that emits non-UTF8 bytes to exercise binary payload path."""
 
     def sandbox_setup(self) -> str:
@@ -1254,8 +1235,8 @@ class _BinarySerializable(SandboxSerializableBase):
 class TestBuildVariablesWithSerializable:
     """Tests for _build_variables with SandboxSerializable inputs."""
 
-    def test_base_serializable_uses_build_repl_variable(self):
-        """SandboxSerializableBase routes through build_repl_variable."""
+    def test_serializable_uses_build_repl_variable(self):
+        """SandboxSerializable subclasses route through build_repl_variable."""
         rlm = RLM("data, query -> answer")
         stub = _StubSerializable("my_data")
         variables = rlm._build_variables(data=stub, query="test query")
@@ -1266,15 +1247,6 @@ class TestBuildVariablesWithSerializable:
         assert "StubData(my_data)" in data_var.preview
         assert "test query" in query_var.preview
 
-    def test_structural_serializable_routes_through_helper(self):
-        """Structurally conforming (non-subclass) types also route through
-        build_repl_variable via runtime_checkable isinstance."""
-        rlm = RLM("data, query -> answer")
-        duck = _StructuralSerializable("my_data")
-        variables = rlm._build_variables(data=duck, query="test query")
-
-        data_var = next(v for v in variables if v.name == "data")
-        assert "StructData(my_data)" in data_var.preview
         # sandbox_setup imports should be surfaced in the description.
         assert "import json" in data_var.desc
 
@@ -1323,20 +1295,6 @@ class TestPrepareSerializableVars:
         assert regular == {"query": "hello"}
         assert mock.call_count == 0
 
-    def test_structural_conformance_separates_serializable(self):
-        """Structurally conforming (non-subclass) types are also separated."""
-        mock = MockInterpreter(responses=["", FinalOutput({"answer": "42"})])
-        rlm = RLM("data, query -> answer", max_iterations=3, interpreter=mock)
-
-        duck = _StructuralSerializable("payload")
-
-        rlm._inject_execution_context(mock, rlm._prepare_execution_tools())
-        regular = rlm._prepare_serializable_vars({"data": duck, "query": "hello"}, mock)
-
-        assert "query" in regular
-        assert "data" not in regular
-        assert mock.call_count == 1
-
     def test_binary_payload_uses_base64_transport(self):
         """Non-UTF8 bytes should be transported via base64 and decoded in sandbox code."""
         mock = MockInterpreter(responses=[""])
@@ -1363,7 +1321,7 @@ class TestPrepareSerializableVars:
 
         large_text = "x" * (2 * 1024 * 1024)  # 2 MB UTF-8 payload
 
-        class _LargeText(SandboxSerializableBase):
+        class _LargeText(SandboxSerializable):
             def sandbox_setup(self) -> str:
                 return ""
 
@@ -1413,7 +1371,7 @@ class TestLargeSerializableRoundTrip:
         """A multi-MB payload should be reconstructable inside the real interpreter."""
         large_text = "abc123" * (200 * 1024)  # ~1.2 MB UTF-8
 
-        class _LargeText(SandboxSerializableBase):
+        class _LargeText(SandboxSerializable):
             def sandbox_setup(self) -> str:
                 return ""
 

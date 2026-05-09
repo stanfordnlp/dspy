@@ -4,6 +4,7 @@ from dspy.primitives.example import Example
 from dspy.primitives.module import Module
 from dspy.primitives.prediction import Completions, Prediction
 from dspy.primitives.python_interpreter import PythonInterpreter
+from dspy.primitives.sandbox_serializable import SandboxSerializable
 
 __all__ = [
     "BaseModule",
@@ -15,4 +16,5 @@ __all__ = [
     "Module",
     "Prediction",
     "PythonInterpreter",
+    "SandboxSerializable",
 ]

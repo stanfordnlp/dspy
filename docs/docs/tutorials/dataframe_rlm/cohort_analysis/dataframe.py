@@ -1,6 +1,6 @@
 """Standalone DataFrame wrapper with RLM sandbox support.
 
-This module provides a DataFrame class that subclasses dspy.SandboxSerializableBase,
+This module provides a DataFrame class that subclasses dspy.SandboxSerializable,
 allowing pandas DataFrames to be injected into the RLM sandbox for code execution.
 
 Usage with RLM:
@@ -18,7 +18,7 @@ transfer into the Deno/Pyodide sandbox.
 import base64
 from typing import Any
 
-from dspy import SandboxSerializableBase
+from dspy import SandboxSerializable
 
 
 def _is_dataframe(value: Any) -> bool:
@@ -28,10 +28,10 @@ def _is_dataframe(value: Any) -> bool:
     return type_module.startswith("pandas") and type_name == "DataFrame"
 
 
-class DataFrame(SandboxSerializableBase):
+class DataFrame(SandboxSerializable):
     """DataFrame wrapper with RLM sandbox support.
 
-    Wraps a pandas DataFrame and implements the SandboxSerializable protocol
+    Wraps a pandas DataFrame and implements the SandboxSerializable contract
     so it can be injected into the RLM sandbox for code execution.
 
     Example:
@@ -62,7 +62,7 @@ class DataFrame(SandboxSerializableBase):
             raise AttributeError(name)
         return getattr(self.data, name)
 
-    # SandboxSerializable protocol
+    # SandboxSerializable methods
 
     def sandbox_setup(self) -> str:
         return "import pandas as pd\nimport pyarrow\nimport base64\nimport io"

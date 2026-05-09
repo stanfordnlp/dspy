@@ -1,38 +1,47 @@
-"""Protocol and ergonomic base class for RLM sandbox-serializable types.
+"""Abstract base class for RLM sandbox-serializable types.
 
-Types implementing :class:`SandboxSerializable` can be injected into the REPL
-environment used by :class:`dspy.RLM`. The protocol is intentionally minimal:
-four methods describing how a value enters and appears inside the sandbox.
-No inheritance is required — because the protocol is ``@runtime_checkable``,
-``isinstance(obj, SandboxSerializable)`` returns True as soon as the four
-methods are present.
+Types that subclass :class:`SandboxSerializable` can be injected into the
+REPL environment used by :class:`dspy.RLM`. Subclasses implement four
+abstract methods describing how a value enters and appears inside the
+sandbox, and inherit:
 
-For users who want the ergonomic path of "subclass one thing and it works",
-:class:`SandboxSerializableBase` provides the Pydantic hook needed for direct
-``dspy.Signature`` annotations plus a default ``to_repl_variable()`` helper.
+- ``__get_pydantic_core_schema__`` so the type can be used directly as a
+  :class:`dspy.Signature` field annotation (see "The pydantic hook" below).
+- ``to_repl_variable()`` as a default helper that delegates to the free
+  :func:`build_repl_variable` function.
+
+The free function :func:`build_repl_variable` is also exported for the rare
+case where you need to wrap a value without subclassing.
+
+The pydantic hook
+-----------------
+
+``__get_pydantic_core_schema__`` lets subclasses be used as
+``dspy.Signature`` field annotations. It is a pass-through (no validation,
+``str()`` serialization) — RLM owns real serialization via ``to_sandbox()``
+and ``sandbox_assignment()``.
 """
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING, cast, runtime_checkable
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any
 
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import core_schema
-from typing_extensions import Protocol
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
 
     from dspy.primitives.repl_types import REPLVariable
 
-__all__ = ["SandboxSerializable", "SandboxSerializableBase", "build_repl_variable"]
+__all__ = ["SandboxSerializable", "build_repl_variable"]
 
 
-@runtime_checkable
-class SandboxSerializable(Protocol):
-    """Protocol for types that support RLM sandbox injection.
+class SandboxSerializable(ABC):
+    """Abstract base for types that support RLM sandbox injection.
 
-    Implementors define four things:
+    Subclasses implement four methods:
 
     - ``sandbox_setup``: Python statements (usually imports) executed once
       in the sandbox. The returned text is also surfaced to the LLM in the
@@ -45,7 +54,10 @@ class SandboxSerializable(Protocol):
 
     Example::
 
-        class DataFrame:
+        class DataFrame(SandboxSerializable):
+            def __init__(self, df):
+                self.data = df
+
             def sandbox_setup(self) -> str:
                 return "import pandas as pd\\nimport base64\\nimport io"
 
@@ -58,57 +70,50 @@ class SandboxSerializable(Protocol):
             def rlm_preview(self, max_chars: int = 500) -> str:
                 return f"DataFrame: {self.data.shape[0]} rows x {self.data.shape[1]} columns"
 
-        assert isinstance(DataFrame(...), SandboxSerializable)  # structural
-
-    To use your type directly as a :class:`dspy.Signature` input annotation
-    (e.g. ``df: MyType = dspy.InputField(...)``), also define a
-    ``__get_pydantic_core_schema__`` classmethod on your type, or subclass
-    :class:`SandboxSerializableBase` for the default implementation.
+    Subclasses can be used directly as :class:`dspy.Signature` field
+    annotations because of the inherited ``__get_pydantic_core_schema__``
+    hook (see the module docstring for what that hook does and why it is
+    needed).
     """
 
+    @abstractmethod
     def sandbox_setup(self) -> str: ...
+
+    @abstractmethod
     def to_sandbox(self) -> bytes: ...
+
+    @abstractmethod
     def sandbox_assignment(self, var_name: str, data_expr: str) -> str: ...
+
+    @abstractmethod
     def rlm_preview(self, max_chars: int = 500) -> str: ...
-
-
-class SandboxSerializableBase:
-    """Optional base class for ergonomic SandboxSerializable implementations.
-
-    Subclass this when you want three things together:
-    - structural conformance to :class:`SandboxSerializable`
-    - direct use as a :class:`dspy.Signature` field annotation
-    - a default ``to_repl_variable()`` implementation
-
-    Users who prefer duck typing can skip this base class entirely and just
-    implement the four protocol methods.
-    """
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source_type: Any, handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
-        """Allow subclasses to be used as Pydantic type annotations."""
+        """Pass-through schema so subclasses work as ``dspy.Signature`` annotations."""
         return core_schema.no_info_plain_validator_function(
             lambda v: v,
             serialization=core_schema.plain_serializer_function_ser_schema(lambda v: str(v)),
         )
 
-    def to_repl_variable(self, name: str, field_info: "FieldInfo | None" = None) -> "REPLVariable":
+    def to_repl_variable(self, name: str, field_info: FieldInfo | None = None) -> REPLVariable:
         """Build a REPLVariable using the default RLM helper."""
-        return build_repl_variable(cast(SandboxSerializable, self), name, field_info=field_info)
+        return build_repl_variable(self, name, field_info=field_info)
 
 
 def build_repl_variable(
     obj: SandboxSerializable,
     name: str,
-    field_info: "FieldInfo | None" = None,
-) -> "REPLVariable":
+    field_info: FieldInfo | None = None,
+) -> REPLVariable:
     """Build a :class:`REPLVariable` for a SandboxSerializable value.
 
-    This is a free function, not a protocol method, so users never have to
-    subclass just to get default behavior. The resulting variable's preview
-    comes from ``rlm_preview()``; ``sandbox_setup()`` imports are appended
-    to the description so the model learns which names are bound in the
-    sandbox before it writes code.
+    Free function form of :meth:`SandboxSerializable.to_repl_variable`. Use
+    it when you need to wrap a value imperatively without going through the
+    method on the instance. The resulting variable's preview comes from
+    ``rlm_preview()``; ``sandbox_setup()`` imports are appended to the
+    description so the model learns which names are bound in the sandbox
+    before it writes code.
     """
     from dspy.primitives.repl_types import REPLVariable
 

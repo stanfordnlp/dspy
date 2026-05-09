@@ -185,6 +185,27 @@ rlm = dspy.RLM(
 )
 ```
 
+### Custom Sandbox-Serializable Inputs
+
+For inputs that should be loaded into the sandbox differently from normal Python values, subclass `dspy.SandboxSerializable`. RLM detects these inputs, sends their serialized payload into the interpreter, runs their setup code, and exposes the reconstructed value under the original input name.
+
+```python
+class DataFrame(dspy.SandboxSerializable):
+    def sandbox_setup(self) -> str:
+        return "import pandas as pd\nimport base64\nimport io"
+
+    def to_sandbox(self) -> bytes:
+        return base64.b64encode(self.data.to_parquet(index=False))
+
+    def sandbox_assignment(self, var_name: str, data_expr: str) -> str:
+        return f"{var_name} = pd.read_parquet(io.BytesIO(base64.b64decode({data_expr})))"
+
+    def rlm_preview(self, max_chars: int = 500) -> str:
+        return f"DataFrame: {self.data.shape[0]} rows x {self.data.shape[1]} columns"
+```
+
+`SandboxSerializable` also defines a Pydantic schema hook so subclasses can be used directly in DSPy signatures, for example `data: DataFrame = dspy.InputField()`. The hook is intentionally pass-through: Pydantic accepts the object as-is and serializes it with `str(value)` for schema/metadata purposes. RLM's real sandbox transport still comes from `to_sandbox()` and `sandbox_assignment()`.
+
 ### Async Execution
 
 ```python
