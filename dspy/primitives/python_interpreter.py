@@ -15,6 +15,7 @@ import os
 import subprocess
 import threading
 from os import PathLike
+from pathlib import Path
 from typing import Any, Callable
 
 from dspy.primitives.code_interpreter import SIMPLE_TYPES, CodeInterpreterError, FinalOutput
@@ -44,6 +45,14 @@ JSONRPC_APP_ERRORS = {
     "CodeInterpreterError": -32008,
     "Unknown": -32099,
 }
+
+
+def _append_deno_permission_path(paths: list[str], path: PathLike | str) -> None:
+    raw_path = os.fspath(path)
+    resolved_path = str(Path(raw_path).expanduser().resolve(strict=False))
+    for candidate in (raw_path, resolved_path):
+        if candidate and candidate not in paths:
+            paths.append(candidate)
 
 
 def _jsonrpc_request(method: str, params: dict, id: int | str) -> str:
@@ -147,12 +156,14 @@ class PythonInterpreter:
             # Also allow reading Deno's cache directory so Pyodide can load its files
             deno_dir = self._get_deno_dir()
             if deno_dir:
-                allowed_read_paths.append(deno_dir)
+                _append_deno_permission_path(allowed_read_paths, deno_dir)
 
             if self.enable_read_paths:
-                allowed_read_paths.extend(str(p) for p in self.enable_read_paths)
+                for path in self.enable_read_paths:
+                    _append_deno_permission_path(allowed_read_paths, path)
             if self.enable_write_paths:
-                allowed_read_paths.extend(str(p) for p in self.enable_write_paths)
+                for path in self.enable_write_paths:
+                    _append_deno_permission_path(allowed_read_paths, path)
             args.append(f"--allow-read={','.join(allowed_read_paths)}")
 
             self._env_arg = ""
