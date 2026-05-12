@@ -58,14 +58,25 @@ def test_optional_returns_attr_when_present():
 
 def test_install_hints_match_pyproject_extras():
     import pathlib
-
-    import tomllib
+    import re
 
     pyproject = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
     if not pyproject.exists():
         pytest.skip("pyproject.toml not present")
-    data = tomllib.loads(pyproject.read_text())
-    extras = set(data.get("project", {}).get("optional-dependencies", {}).keys())
+    text = pyproject.read_text()
+    # Extract extra names from lines like: numpy = ["numpy>=1.26.0"]
+    in_section = False
+    extras: set[str] = set()
+    for line in text.splitlines():
+        if line.strip() == "[project.optional-dependencies]":
+            in_section = True
+            continue
+        if in_section:
+            if line.startswith("["):
+                break
+            m = re.match(r"^(\w[\w-]*)\s*=", line)
+            if m:
+                extras.add(m.group(1))
     for module, hint in _INSTALL_HINTS.items():
         assert hint in extras, (
             f"_INSTALL_HINTS[{module!r}] = {hint!r} is not a declared extra in "
