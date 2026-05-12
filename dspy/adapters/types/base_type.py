@@ -5,11 +5,10 @@ from typing import TYPE_CHECKING, Any, Optional, get_args, get_origin
 import json_repair
 import pydantic
 
-from dspy.clients.base_lm import BaseLM
-
 if TYPE_CHECKING:
     from litellm import ModelResponseStream
 
+    from dspy.clients.base_lm import BaseLM
     from dspy.signatures.signature import Signature
 
 CUSTOM_TYPE_START_IDENTIFIER = "<<CUSTOM-TYPE-START-IDENTIFIER>>"
@@ -81,7 +80,7 @@ class Type(pydantic.BaseModel):
         cls,
         signature: type["Signature"],
         field_name: str,
-        lm: BaseLM,
+        lm: "BaseLM",
         lm_kwargs: dict[str, Any],
     ) -> type["Signature"]:
         """Adapt the custom type to the native LM feature if possible.

@@ -2,6 +2,7 @@ import datetime
 import uuid
 from typing import Any, TextIO
 
+from dspy.adapters.types.tool import to_tool_call
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
@@ -267,7 +268,6 @@ class BaseLM:
             if merged_kwargs.get("logprobs"):
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
-                from dspy.adapters.types.tool import to_tool_call  # avoid circular import
                 output["tool_calls"] = [to_tool_call(tc) for tc in c.message.tool_calls]
 
             # Extract citations from LiteLLM response if available
@@ -320,7 +320,6 @@ class BaseLM:
                 for content_item in output_item.content:
                     text_outputs.append(content_item.text)
             elif output_item_type == "function_call":
-                from dspy.adapters.types.tool import to_tool_call  # avoid circular import
                 tool_calls.append(to_tool_call(output_item))
             elif output_item_type == "reasoning":
                 if getattr(output_item, "content", None) and len(output_item.content) > 0:
