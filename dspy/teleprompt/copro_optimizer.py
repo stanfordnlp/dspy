@@ -1,4 +1,5 @@
 import logging
+import statistics
 from collections import defaultdict
 
 import dspy
@@ -142,9 +143,6 @@ class COPRO(Teleprompter):
             id(p): {"depth": [], "max": [], "average": [], "min": [], "std": []} for p in module.predictors()
         }
 
-        if self.track_stats:
-            import numpy as np
-
         candidates = {}
         evaluated_candidates = defaultdict(dict)
 
@@ -254,7 +252,7 @@ class COPRO(Teleprompter):
                     results_latest[id(p_old)]["max"].append(max(latest_scores))
                     results_latest[id(p_old)]["average"].append(sum(latest_scores) / len(latest_scores))
                     results_latest[id(p_old)]["min"].append(min(latest_scores))
-                    results_latest[id(p_old)]["std"].append(np.std(latest_scores))
+                    results_latest[id(p_old)]["std"].append(statistics.pstdev(latest_scores))
 
                 # Now that we've evaluated the candidates, set this predictor to the best performing version
                 # to ensure the next round of scores reflect the best possible version
@@ -296,7 +294,7 @@ class COPRO(Teleprompter):
                     results_best[id(p_base)]["max"].append(max(scores))
                     results_best[id(p_base)]["average"].append(sum(scores) / len(scores))
                     results_best[id(p_base)]["min"].append(min(scores))
-                    results_best[id(p_base)]["std"].append(np.std(scores))
+                    results_best[id(p_base)]["std"].append(statistics.pstdev(scores))
 
                 for i in range(shortest_len - 1, -1, -1):
                     # breakpoint()
@@ -341,7 +339,7 @@ class COPRO(Teleprompter):
                 results_best[id(predictor)]["max"].append(max(scores))
                 results_best[id(predictor)]["average"].append(sum(scores) / len(scores))
                 results_best[id(predictor)]["min"].append(min(scores))
-                results_best[id(predictor)]["std"].append(np.std(scores))
+                results_best[id(predictor)]["std"].append(statistics.pstdev(scores))
 
         candidates.sort(key=lambda x: x["score"], reverse=True)
 
