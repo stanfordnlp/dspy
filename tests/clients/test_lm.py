@@ -610,7 +610,7 @@ def test_lm_replaces_system_with_developer_role():
 
 def test_responses_api_tool_calls(litellm_test_server):
     api_base, _ = litellm_test_server
-    expected_tool_call = {
+    wire_tool_call = {
         "type": "function_call",
         "name": "get_weather",
         "arguments": json.dumps({"city": "Paris"}),
@@ -618,10 +618,19 @@ def test_responses_api_tool_calls(litellm_test_server):
         "status": "completed",
         "id": "call_1",
     }
-    expected_response = [{"tool_calls": [expected_tool_call]}]
+    # `lm()` returns canonical `ToolCalls.ToolCall` objects regardless of which
+    # wire shape (Chat Completions vs Responses API) the provider used. The
+    # boundary that does this normalization is `dspy.adapters.types.tool.to_tool_call`.
+    expected_response = [
+        {
+            "tool_calls": [
+                dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"}, id="call_1")
+            ]
+        }
+    ]
 
     api_response = make_response(
-        output_blocks=[expected_tool_call],
+        output_blocks=[wire_tool_call],
     )
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
