@@ -562,7 +562,13 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    name="get_weather",
+                    args={"city": "Paris"},
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
@@ -782,13 +788,22 @@ def test_empty_string_content_raises_adapter_parse_error():
 
 def test_tool_call_with_null_content_does_not_raise():
     """Tool-call-only responses legitimately have content=None.
-    _call_postprocess must NOT raise when tool_calls are present."""
+    _call_postprocess must NOT raise when tool_calls are present.
+
+    NOTE: tool_calls are passed as `list[ToolCalls.ToolCall]` because
+    `BaseLM` normalizes the wire shape at the LiteLLM boundary via
+    `to_tool_call`; postprocess never sees raw OpenAI dicts."""
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
     sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
 
-    outputs = [{"text": None, "tool_calls": [
-        {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
-    ]}]
+    outputs = [
+        {
+            "text": None,
+            "tool_calls": [
+                dspy.ToolCalls.ToolCall(name="search", args={"query": "test"}, id="call_1")
+            ],
+        }
+    ]
 
     result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
     assert result is not None

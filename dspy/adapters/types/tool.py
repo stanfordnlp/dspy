@@ -2,6 +2,7 @@ import asyncio
 import inspect
 from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
+import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -259,10 +260,58 @@ class Tool(Type):
         return f"{self.name}{desc} {arg_desc}"
 
 
+def to_tool_call(item: Any) -> "ToolCalls.ToolCall":
+    """Normalize a LiteLLM tool-call into a canonical ``ToolCall``.
+
+    Single boundary for wire-shape coercion. Falls back to attribute
+    access when ``model_dump()`` raises ``TypeError`` because of the
+    MockValSer/SchemaSerializer bug (pydantic#7713, litellm#9345).
+    """
+    if not isinstance(item, dict) and hasattr(item, "model_dump"):
+        try:
+            item = item.model_dump()
+        except TypeError:
+            fn = getattr(item, "function", None)
+            if fn is not None:
+                return ToolCalls.ToolCall(
+                    name=fn.name, args=_parse_args(fn.arguments), id=getattr(item, "id", None)
+                )
+            if getattr(item, "name", None) is None:
+                raise
+            return ToolCalls.ToolCall(
+                name=item.name,
+                args=_parse_args(getattr(item, "arguments", None)),
+                id=getattr(item, "call_id", None) or getattr(item, "id", None),
+            )
+
+    if not isinstance(item, dict):
+        raise TypeError(f"Cannot normalize tool call from {type(item).__name__}: {item!r}")
+
+    if item.get("type") == "function" and isinstance(item.get("function"), dict):
+        fn = item["function"]
+        return ToolCalls.ToolCall(name=fn["name"], args=_parse_args(fn.get("arguments")), id=item.get("id"))
+
+    if item.get("type") == "function_call" and item.get("name"):
+        return ToolCalls.ToolCall(
+            name=item["name"],
+            args=_parse_args(item.get("arguments")),
+            id=item.get("call_id") or item.get("id"),
+        )
+
+    raise ValueError(f"Unknown tool-call shape: {item!r}")
+
+
+def _parse_args(args: Any) -> dict[str, Any]:
+    if args is None or args == "":
+        return {}
+    return json_repair.loads(args) if isinstance(args, str) else args
+
+
 class ToolCalls(Type):
     class ToolCall(Type):
         name: str
         args: dict[str, Any]
+        id: str | None = None
 
         def format(self):
             return {
@@ -359,30 +408,19 @@ class ToolCalls(Type):
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, data: Any):
+        def coerce(items):
+            return [it if isinstance(it, cls.ToolCall) else cls.ToolCall(**it) for it in items]
+
         if isinstance(data, cls):
             return data
-
-        # Handle case where data is a list of dicts with "name" and "args" keys
-        if isinstance(data, list) and all(
-            isinstance(item, dict) and "name" in item and "args" in item for item in data
-        ):
-            return {"tool_calls": [cls.ToolCall(**item) for item in data]}
-        # Handle case where data is a dict
-        elif isinstance(data, dict):
+        if isinstance(data, list):
+            return {"tool_calls": coerce(data)}
+        if isinstance(data, dict):
             if "tool_calls" in data:
-                # Handle case where data is a dict with "tool_calls" key
-                tool_calls_data = data["tool_calls"]
-                if isinstance(tool_calls_data, list):
-                    return {
-                        "tool_calls": [
-                            cls.ToolCall(**item) if isinstance(item, dict) else item for item in tool_calls_data
-                        ]
-                    }
-            elif "name" in data and "args" in data:
-                # Handle case where data is a dict with "name" and "args" keys
+                return {"tool_calls": coerce(data["tool_calls"])}
+            if "name" in data and "args" in data:
                 return {"tool_calls": [cls.ToolCall(**data)]}
-
-        raise ValueError(f"Received invalid value for `dspy.ToolCalls`: {data}")
+        raise ValueError(f"Invalid value for `dspy.ToolCalls`: {data!r}")
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:

@@ -267,7 +267,8 @@ class BaseLM:
             if merged_kwargs.get("logprobs"):
                 output["logprobs"] = c.logprobs if hasattr(c, "logprobs") else c["logprobs"]
             if hasattr(c, "message") and getattr(c.message, "tool_calls", None):
-                output["tool_calls"] = c.message.tool_calls
+                from dspy.adapters.types.tool import to_tool_call  # avoid circular import
+                output["tool_calls"] = [to_tool_call(tc) for tc in c.message.tool_calls]
 
             # Extract citations from LiteLLM response if available
             citations = self._extract_citations_from_response(c)
@@ -319,7 +320,8 @@ class BaseLM:
                 for content_item in output_item.content:
                     text_outputs.append(content_item.text)
             elif output_item_type == "function_call":
-                tool_calls.append(output_item.model_dump())
+                from dspy.adapters.types.tool import to_tool_call  # avoid circular import
+                tool_calls.append(to_tool_call(output_item))
             elif output_item_type == "reasoning":
                 if getattr(output_item, "content", None) and len(output_item.content) > 0:
                     for content_item in output_item.content:

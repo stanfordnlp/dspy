@@ -85,7 +85,7 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
             if outputs[0].get("tool_calls"):
                 print(_red("Tool calls:", use_colors=use_colors), file=out)
                 for tool_call in outputs[0]["tool_calls"]:
-                    print(_green(f"{tool_call['function']['name']}: {tool_call['function']['arguments']}", use_colors=use_colors), file=out)
+                    print(_green(f"{tool_call.name}: {tool_call.args}", use_colors=use_colors), file=out)
         else:
             print(_red("Response:", use_colors=use_colors), file=out)
             print(_green(outputs[0].strip(), use_colors=use_colors), file=out)

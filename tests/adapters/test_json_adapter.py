@@ -833,7 +833,13 @@ def test_json_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    name="get_weather",
+                    args={"city": "Paris"},
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
