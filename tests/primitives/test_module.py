@@ -197,3 +197,64 @@ def test_load_dspy_program_cross_version():
 
     assert len(loaded_react.react.demos) == 2
     assert len(loaded_react.extract.predict.demos) == 2
+
+
+def test_get_prompt_templates_single_predictor():
+    program = dspy.Predict("question -> answer")
+    templates = program.get_prompt_templates()
+
+    assert "self" in templates
+    messages = templates["self"]
+    assert len(messages) >= 2
+    assert messages[0]["role"] == "system"
+    assert messages[-1]["role"] == "user"
+    # Placeholder should appear in the user message
+    assert "{question}" in messages[-1]["content"]
+
+
+def test_get_prompt_templates_multi_predictor():
+    module = HopModule()
+    templates = module.get_prompt_templates()
+
+    assert len(templates) == 2
+    assert "predict1" in templates
+    assert "predict2" in templates
+    # Each should have system + user messages at minimum
+    for _name, messages in templates.items():
+        assert len(messages) >= 2
+        assert messages[0]["role"] == "system"
+
+
+def test_get_prompt_templates_nested_module():
+    class Hop2Module(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.hop = HopModule()
+
+    module = Hop2Module()
+    templates = module.get_prompt_templates()
+
+    assert len(templates) == 2
+    assert "hop.predict1" in templates
+    assert "hop.predict2" in templates
+
+
+def test_get_prompt_templates_with_demos():
+    program = dspy.Predict("question -> answer")
+    program.demos = [
+        {"question": "Is the sky blue?", "answer": "Yes"},
+    ]
+    templates = program.get_prompt_templates()
+
+    messages = templates["self"]
+    # With one demo, expect: system, demo user, demo assistant, user
+    assert len(messages) >= 4
+    demo_content = " ".join(m["content"] for m in messages if m["role"] == "assistant")
+    assert "Yes" in demo_content
+
+
+def test_get_prompt_templates_empty_module():
+    module = Module()
+    templates = module.get_prompt_templates()
+
+    assert templates == {}

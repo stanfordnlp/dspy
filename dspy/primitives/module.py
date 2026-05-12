@@ -176,6 +176,44 @@ class Module(BaseModule, metaclass=ProgramMeta):
         """
         return [param for _, param in self.named_predictors()]
 
+    def get_prompt_templates(self, adapter=None):
+        """Get the formatted prompt templates for all predictors in this module.
+
+        Returns the system and user message templates that each predictor would
+        send to the LM, with placeholder values (e.g. ``{question}``) in place
+        of actual inputs. Useful for exporting DSPy programs as standard prompts
+        that can be used without DSPy.
+
+        Args:
+            adapter: The adapter to use for formatting. If ``None``, uses the
+                adapter from ``dspy.settings`` or falls back to ``ChatAdapter()``.
+
+        Returns:
+            dict[str, list[dict[str, str]]]: A dict mapping predictor names to
+                their formatted message lists. Each message is a dict with
+                ``"role"`` and ``"content"`` keys.
+
+        Examples:
+            >>> import dspy
+            >>> program = dspy.Predict("question -> answer")
+            >>> templates = program.get_prompt_templates()
+            >>> templates["self"]  # doctest: +SKIP
+            [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]
+        """
+        from dspy.adapters.chat_adapter import ChatAdapter
+
+        if adapter is None:
+            adapter = settings.adapter or ChatAdapter()
+
+        return {
+            name: adapter.format(
+                p.signature,
+                demos=p.demos,
+                inputs={k: f"{{{k}}}" for k in p.signature.input_fields},
+            )
+            for name, p in self.named_predictors()
+        }
+
     def set_lm(self, lm):
         """Set the language model for all predictors in this module.
 
@@ -329,8 +367,9 @@ class Module(BaseModule, metaclass=ProgramMeta):
         if prediction_in_output:
             prediction_in_output.set_lm_usage(tokens)
         else:
-            logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
-
+            logger.warning(
+                "Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking."
+            )
 
     def __getattribute__(self, name):
         attr = super().__getattribute__(name)
