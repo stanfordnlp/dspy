@@ -155,16 +155,38 @@ class BaseModule:
 
     def dump_state(self, json_mode=True):
         return {name: param.dump_state(json_mode=json_mode) for name, param in self.named_parameters()}
-
+    
     def load_state(self, state, *, allow_unsafe_lm_state=False):
         from dspy.predict.predict import Predict
 
-        for name, param in self.named_parameters():
+        # Collect params upfront so we iterate the same list in all three passes
+        param_items = list(self.named_parameters())
+
+        # Reject early if any key is absent — nothing has been touched yet
+        missing = [name for name, _ in param_items if name not in state]
+        if missing:
+            raise KeyError(
+                f"load_state aborted — saved state is missing keys: {missing}. "
+                "No parameters were modified. This usually indicates signature "
+                "drift between the saved state and the current module."
+            )
+
+        # Try the whole load on a throwaway copy first.
+        # If param.load_state() blows up on a malformed value,
+        # self is still in its original state.
+        trial_copy = copy.deepcopy(self)
+        for name, param in trial_copy.named_parameters():
             if isinstance(param, Predict):
                 param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
             else:
                 param.load_state(state[name])
 
+        # Trial copy completed without error — now apply to self
+        for name, param in self.named_parameters():
+            if isinstance(param, Predict):
+                param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
+            else:
+                param.load_state(state[name])
     def save(self, path, save_program=False, modules_to_serialize=None):
         """Save the module.
 
