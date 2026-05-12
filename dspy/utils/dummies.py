@@ -8,7 +8,7 @@ from dspy.adapters.chat_adapter import FieldInfoWithName, field_header_pattern
 from dspy.clients.base_lm import BaseLM
 from dspy.dsp.utils.utils import dotdict
 from dspy.signatures.field import OutputField
-from dspy.utils._optional import require_optional
+from dspy.utils.lazy_import import require
 
 if TYPE_CHECKING:
     import numpy as np
@@ -199,7 +199,7 @@ class DummyVectorizer:
         return h % self.max_length
 
     def __call__(self, texts: list[str]) -> np.ndarray:
-        np = require_optional("numpy")
+        np = require("numpy")
         vecs = []
         for text in texts:
             grams = [text[i : i + self.n_gram] for i in range(len(text) - self.n_gram + 1)]
