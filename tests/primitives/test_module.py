@@ -1,7 +1,11 @@
 from pathlib import Path
 
+import json
+import pytest
+import tempfile
 import dspy
-from dspy.primitives.module import Module, set_attribute_by_name  # Adjust the import based on your file structure
+from dspy.primitives.example import Example
+from dspy.primitives.module import Module, set_attribute_by_name
 from dspy.utils import DummyLM
 
 
@@ -205,11 +209,6 @@ def test_load_state_is_transactional():
     load_state must be all-or-nothing. If it fails mid-load (missing key
     or malformed value), the module must be completely unchanged.
     """
-    import json
-    import pytest
-    import tempfile
-    from pathlib import Path
-    from dspy.primitives.example import Example
 
     class Sig(dspy.Signature):
         question: str = dspy.InputField()
