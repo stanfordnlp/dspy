@@ -8,7 +8,8 @@ and what it produces.
 
 import pytest
 
-from dspy.adapters.types.tool import ToolCalls, to_tool_call
+from dspy.adapters.types.tool import ToolCalls
+from dspy.clients.tool_call import ToolCall, to_tool_call
 
 # ---------- Shape 1: OpenAI Chat Completions ----------
 
@@ -19,7 +20,8 @@ def test_chat_completions_dict_shape():
         "function": {"name": "search", "arguments": '{"q":"hello"}'},
     }
     tc = to_tool_call(item)
-    assert isinstance(tc, ToolCalls.ToolCall)
+    assert isinstance(tc, ToolCall)
+    assert ToolCalls.ToolCall is ToolCall  # backward-compat alias
     assert tc.name == "search"
     assert tc.args == {"q": "hello"}
     assert tc.id == "call_abc"
@@ -160,3 +162,37 @@ def test_toolcall_id_field_optional():
 def test_toolcall_id_round_trips():
     tc = ToolCalls.ToolCall(name="f", args={"a": 1}, id="call_zzz")
     assert tc.id == "call_zzz"
+
+
+# ---------- Outbound boundary: Tool -> LiteLLM wire shape ----------
+
+def test_tool_format_chat_completions_shape():
+    import dspy
+
+    tool = dspy.Tool(lambda city: city, name="get_weather", desc="weather")
+    payload = tool.format_as_litellm_function_call(model_type="chat")
+    assert payload["type"] == "function"
+    assert "function" in payload
+    assert payload["function"]["name"] == "get_weather"
+    assert payload["function"]["description"] == "weather"
+    assert "parameters" in payload["function"]
+
+
+def test_tool_format_responses_api_shape():
+    import dspy
+
+    tool = dspy.Tool(lambda city: city, name="get_weather", desc="weather")
+    payload = tool.format_as_litellm_function_call(model_type="responses")
+    assert payload["type"] == "function"
+    # Responses API flattens: name/description/parameters at top level, no `function` wrapper.
+    assert "function" not in payload
+    assert payload["name"] == "get_weather"
+    assert payload["description"] == "weather"
+    assert "parameters" in payload
+
+
+def test_tool_format_default_is_chat():
+    import dspy
+
+    tool = dspy.Tool(lambda city: city, name="x", desc="d")
+    assert tool.format_as_litellm_function_call() == tool.format_as_litellm_function_call(model_type="chat")

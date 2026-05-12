@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import Any, TextIO
 
-from dspy.adapters.types.tool import to_tool_call
+from dspy.clients.tool_call import to_tool_call
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history

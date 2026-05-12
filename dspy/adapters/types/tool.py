@@ -1,13 +1,13 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, get_origin, get_type_hints
 
-import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
 from dspy.adapters.types.base_type import Type
+from dspy.clients.tool_call import ToolCall
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import with_callbacks
 
@@ -149,19 +149,26 @@ class Tool(Type):
     def format(self):
         return str(self)
 
-    def format_as_litellm_function_call(self):
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.desc,
-                "parameters": {
-                    "type": "object",
-                    "properties": self.args,
-                    "required": list(self.args.keys()),
-                },
+    def format_as_litellm_function_call(self, model_type: str = "chat") -> dict[str, Any]:
+        """Single outbound boundary for serializing this tool to a LiteLLM payload.
+
+        Chat / text completions expect the OpenAI Chat Completions wrapper
+        (``{type: "function", function: {name, description, parameters}}``);
+        the Responses API expects the flattened shape
+        (``{type: "function", name, description, parameters}``).
+        """
+        fn = {
+            "name": self.name,
+            "description": self.desc,
+            "parameters": {
+                "type": "object",
+                "properties": self.args,
+                "required": list(self.args.keys()),
             },
         }
+        if model_type == "responses":
+            return {"type": "function", **fn}
+        return {"type": "function", "function": fn}
 
     def _run_async_in_sync(self, coroutine):
         try:
@@ -260,112 +267,10 @@ class Tool(Type):
         return f"{self.name}{desc} {arg_desc}"
 
 
-def to_tool_call(item: Any) -> "ToolCalls.ToolCall":
-    """Normalize a LiteLLM tool-call into a canonical ``ToolCall``.
-
-    Single boundary for wire-shape coercion. Falls back to attribute
-    access when ``model_dump()`` raises ``TypeError`` because of the
-    MockValSer/SchemaSerializer bug (pydantic#7713, litellm#9345).
-    """
-    if not isinstance(item, dict) and hasattr(item, "model_dump"):
-        try:
-            item = item.model_dump()
-        except TypeError:
-            fn = getattr(item, "function", None)
-            if fn is not None:
-                return ToolCalls.ToolCall(
-                    name=fn.name, args=_parse_args(fn.arguments), id=getattr(item, "id", None)
-                )
-            if getattr(item, "name", None) is None:
-                raise
-            return ToolCalls.ToolCall(
-                name=item.name,
-                args=_parse_args(getattr(item, "arguments", None)),
-                id=getattr(item, "call_id", None) or getattr(item, "id", None),
-            )
-
-    if not isinstance(item, dict):
-        raise TypeError(f"Cannot normalize tool call from {type(item).__name__}: {item!r}")
-
-    if item.get("type") == "function" and isinstance(item.get("function"), dict):
-        fn = item["function"]
-        return ToolCalls.ToolCall(name=fn["name"], args=_parse_args(fn.get("arguments")), id=item.get("id"))
-
-    if item.get("type") == "function_call" and item.get("name"):
-        return ToolCalls.ToolCall(
-            name=item["name"],
-            args=_parse_args(item.get("arguments")),
-            id=item.get("call_id") or item.get("id"),
-        )
-
-    raise ValueError(f"Unknown tool-call shape: {item!r}")
-
-
-def _parse_args(args: Any) -> dict[str, Any]:
-    if args is None or args == "":
-        return {}
-    return json_repair.loads(args) if isinstance(args, str) else args
-
-
 class ToolCalls(Type):
-    class ToolCall(Type):
-        name: str
-        args: dict[str, Any]
-        id: str | None = None
-
-        def format(self):
-            return {
-                "type": "function",
-                "function": {
-                    "name": self.name,
-                    "arguments": self.args,
-                },
-            }
-
-        def execute(self, functions: dict[str, Any] | list[Tool] | None = None) -> Any:
-            """Execute this individual tool call and return its result.
-
-            Args:
-                functions: Functions to search for the tool. Can be:
-                          - Dict mapping tool names to functions: {"tool_name": function}
-                          - List of Tool objects: [Tool(function), ...]
-                          - None: Will search in caller's locals and globals (automatic lookup)
-
-            Returns:
-                The result from executing this tool call.
-
-            Raises:
-                ValueError: If the tool function cannot be found.
-                Exception: Any exception raised by the tool function.
-            """
-            func = None
-
-            if functions is None:
-                # Automatic lookup in caller's globals and locals
-                frame = inspect.currentframe().f_back
-                try:
-                    caller_globals = frame.f_globals
-                    caller_locals = frame.f_locals
-                    func = caller_locals.get(self.name) or caller_globals.get(self.name)
-                finally:
-                    del frame
-
-            elif isinstance(functions, dict):
-                func = functions.get(self.name)
-            elif isinstance(functions, list):
-                for tool in functions:
-                    if tool.name == self.name:
-                        func = tool.func
-                        break
-
-            if func is None:
-                raise ValueError(f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method.")
-
-            try:
-                args = self.args or {}
-                return func(**args)
-            except Exception as e:
-                raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
+    # Backwards-compat alias: keep `dspy.ToolCalls.ToolCall(...)` working.
+    # The canonical data type lives in `dspy.clients.tool_call`.
+    ToolCall: ClassVar[type[ToolCall]] = ToolCall
 
     tool_calls: list[ToolCall]
 

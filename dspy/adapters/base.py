@@ -83,7 +83,7 @@ class Adapter:
                 tools = inputs[tool_call_input_field_name]
                 tools = tools if isinstance(tools, list) else [tools]
 
-                lm_tools = [tool.format_as_litellm_function_call() for tool in tools]
+                lm_tools = [tool.format_as_litellm_function_call(model_type=lm.model_type) for tool in tools]
 
                 lm_kwargs["tools"] = lm_tools
 
@@ -123,7 +123,10 @@ class Adapter:
             text = output
 
             if isinstance(output, dict):
-                text = output["text"]
+                # The Responses API path can produce tool-calls-only outputs
+                # with no `text` key; the Chat Completions path always sets `text`
+                # (possibly to None). Use .get() so both surface uniformly.
+                text = output.get("text")
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
 
