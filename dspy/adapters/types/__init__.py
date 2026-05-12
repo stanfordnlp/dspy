@@ -5,7 +5,6 @@ from dspy.adapters.types.file import File
 from dspy.adapters.types.history import History
 from dspy.adapters.types.image import Image
 from dspy.adapters.types.reasoning import Reasoning
-from dspy.adapters.types.tool import Tool, ToolCalls
-from dspy.clients.tool_call import ToolCall
+from dspy.adapters.types.tool import Tool, ToolCall, ToolCalls
 
 __all__ = ["History", "Image", "Audio", "File", "Type", "Tool", "ToolCall", "ToolCalls", "Code", "Reasoning"]

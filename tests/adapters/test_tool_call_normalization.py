@@ -8,8 +8,7 @@ and what it produces.
 
 import pytest
 
-from dspy.adapters.types.tool import ToolCalls
-from dspy.clients.tool_call import ToolCall, to_tool_call
+from dspy.adapters.types.tool import ToolCall, ToolCalls, to_tool_call
 
 # ---------- Shape 1: OpenAI Chat Completions ----------
 
