@@ -164,6 +164,19 @@ def test_toolcall_id_round_trips():
     assert tc.id == "call_zzz"
 
 
+def test_toolcall_format_preserves_id_for_round_trip():
+    original = ToolCall(name="search", args={"q": "hello"}, id="call_xyz")
+    restored = to_tool_call(original.format())
+    assert restored == original
+
+
+def test_toolcall_format_omits_id_when_absent():
+    """A ToolCall constructed without an id should serialize without an `id` key
+    so we don't fabricate one on the wire."""
+    payload = ToolCall(name="search", args={"q": "x"}).format()
+    assert "id" not in payload
+
+
 # ---------- Outbound boundary: Tool -> LiteLLM wire shape ----------
 
 def test_tool_format_chat_completions_shape():

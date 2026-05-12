@@ -19,10 +19,13 @@ class ToolCall(pydantic.BaseModel):
     id: str | None = None
 
     def format(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "type": "function",
             "function": {"name": self.name, "arguments": self.args},
         }
+        if self.id is not None:
+            payload["id"] = self.id
+        return payload
 
     def execute(self, functions: Any = None) -> Any:
         """Execute this tool call.
