@@ -7,6 +7,7 @@
       ```
     * This will trigger the github action to build and release the package.
 * [ ] Confirm the tests pass and the package has been published to pypi.
+* [ ] Merge the auto-generated version bump PR that is opened against `main`.
     * If the tests fail, you can remove the tag from your local and github repo using:
     ```bash
     git push origin --delete X.Y.Z # Delete on GitHub
