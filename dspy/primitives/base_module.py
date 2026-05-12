@@ -174,7 +174,7 @@ class BaseModule:
         # Try the whole load on a throwaway copy first.
         # If param.load_state() blows up on a malformed value,
         # self is still in its original state.
-        trial_copy = copy.deepcopy(self)
+        trial_copy = self.deepcopy()
         for name, param in trial_copy.named_parameters():
             if isinstance(param, Predict):
                 param.load_state(state[name], allow_unsafe_lm_state=allow_unsafe_lm_state)
