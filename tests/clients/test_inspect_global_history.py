@@ -75,3 +75,27 @@ def test_inspect_history_n_larger_than_history(capsys):
     dspy.inspect_history(n=5)
     history = GLOBAL_HISTORY
     assert len(history) == 2  # Should return all available entries
+
+
+def test_pretty_print_history_handles_tool_calls_only_output(capsys):
+    """Responses API can return an output with `tool_calls` but no `text` key.
+    `pretty_print_history` must not KeyError on those entries."""
+    from dspy.utils.inspect_history import pretty_print_history
+
+    entry = {
+        "messages": [{"role": "user", "content": "What's the weather in Paris?"}],
+        "outputs": [
+            {
+                "tool_calls": [
+                    dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"}, id="call_1")
+                ]
+            }
+        ],
+        "timestamp": "now",
+    }
+
+    pretty_print_history([entry], n=1)
+    out, _ = capsys.readouterr()
+    assert "Tool calls:" in out
+    assert "get_weather" in out
+    assert "Response:" not in out  # no text key => no Response section

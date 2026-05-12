@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import json
 from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
 import json_repair
@@ -275,9 +276,13 @@ class ToolCalls(Type):
         id: str | None = None
 
         def format(self) -> dict[str, Any]:
+            # OpenAI Chat Completions requires `function.arguments` to be a
+            # JSON-encoded string when this payload is replayed as an assistant
+            # tool-call message. `to_tool_call` accepts both shapes on inbound,
+            # so the round-trip is preserved.
             payload: dict[str, Any] = {
                 "type": "function",
-                "function": {"name": self.name, "arguments": self.args},
+                "function": {"name": self.name, "arguments": json.dumps(self.args)},
             }
             if self.id is not None:
                 payload["id"] = self.id

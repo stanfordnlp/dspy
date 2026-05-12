@@ -398,7 +398,9 @@ TOOL_CALL_TEST_CASES = [
     (
         [{"name": "search", "args": {"query": "hello"}}],
         {
-            "tool_calls": [{"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}}],
+            "tool_calls": [
+                {"type": "function", "function": {"name": "search", "arguments": '{"query": "hello"}'}}
+            ],
         },
     ),
     (
@@ -408,10 +410,10 @@ TOOL_CALL_TEST_CASES = [
         ],
         {
             "tool_calls": [
-                {"type": "function", "function": {"name": "search", "arguments": {"query": "hello"}}},
+                {"type": "function", "function": {"name": "search", "arguments": '{"query": "hello"}'}},
                 {
                     "type": "function",
-                    "function": {"name": "translate", "arguments": {"text": "world", "lang": "fr"}},
+                    "function": {"name": "translate", "arguments": '{"text": "world", "lang": "fr"}'},
                 },
             ],
         },
@@ -419,7 +421,7 @@ TOOL_CALL_TEST_CASES = [
     (
         [{"name": "get_time", "args": {}}],
         {
-            "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": {}}}],
+            "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": "{}"}}],
         },
     ),
 ]
@@ -756,6 +758,24 @@ def test_toolcall_format_omits_id_when_absent():
     so we don't fabricate one on the wire."""
     payload = ToolCalls.ToolCall(name="search", args={"q": "x"}).format()
     assert "id" not in payload
+
+
+def test_toolcall_format_arguments_is_json_string_for_openai_assistant_message():
+    """OpenAI Chat Completions requires `function.arguments` to be a
+    JSON-encoded **string** when this payload is replayed as an assistant
+    tool-call message (i.e. dropped into `{"role":"assistant","tool_calls":[...]}` ).
+    Serializing `arguments` as a Python dict makes the API reject the request.
+    """
+    import json as _json
+
+    payload = ToolCalls.ToolCall(name="search", args={"q": "hello", "n": 3}, id="call_1").format()
+    assert isinstance(payload["function"]["arguments"], str)
+    assert _json.loads(payload["function"]["arguments"]) == {"q": "hello", "n": 3}
+
+
+def test_toolcall_format_empty_args_is_json_object_string():
+    payload = ToolCalls.ToolCall(name="ping", args={}).format()
+    assert payload["function"]["arguments"] == "{}"
 
 
 def test_tool_format_chat_completions_shape():
