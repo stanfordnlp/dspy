@@ -435,21 +435,6 @@ def test_tool_calls_format_basic(tool_calls_data, expected):
     assert result == expected
 
 
-def test_tool_calls_format_from_dict_list():
-    """Test format works with ToolCalls created from from_dict_list."""
-    tool_calls_dicts = [
-        {"name": "search", "args": {"query": "hello"}},
-        {"name": "translate", "args": {"text": "world", "lang": "fr"}},
-    ]
-
-    tool_calls = ToolCalls.from_dict_list(tool_calls_dicts)
-    result = tool_calls.format()
-
-    assert len(result["tool_calls"]) == 2
-    assert result["tool_calls"][0]["function"]["name"] == "search"
-    assert result["tool_calls"][1]["function"]["name"] == "translate"
-
-
 def test_toolcalls_vague_match():
     """
     Test that ToolCalls can parse the data with slightly off format:

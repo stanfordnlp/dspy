@@ -275,29 +275,6 @@ class ToolCalls(Type):
     tool_calls: list[ToolCall]
 
     @classmethod
-    def from_dict_list(cls, tool_calls_dicts: list[dict[str, Any]]) -> "ToolCalls":
-        """Convert a list of dictionaries to a ToolCalls instance.
-
-        Args:
-            dict_list: A list of dictionaries, where each dictionary should have 'name' and 'args' keys.
-
-        Returns:
-            A ToolCalls instance.
-
-        Examples:
-
-            ```python
-            tool_calls_dict = [
-                {"name": "search", "args": {"query": "hello"}},
-                {"name": "translate", "args": {"text": "world"}}
-            ]
-            tool_calls = ToolCalls.from_dict_list(tool_calls_dict)
-            ```
-        """
-        tool_calls = [cls.ToolCall(**item) for item in tool_calls_dicts]
-        return cls(tool_calls=tool_calls)
-
-    @classmethod
     def description(cls) -> str:
         return (
             "Tool calls information, including the name of the tools and the arguments to be passed to it. "
