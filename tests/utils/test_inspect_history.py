@@ -43,3 +43,71 @@ def test_pretty_print_history_renders_dspy_native_tool_call():
     output = buf.getvalue()
     assert "lookup" in output
     assert "val" in output
+
+
+def test_pretty_print_history_renders_assistant_message_tool_calls():
+    """An assistant message in the messages list with `tool_calls` (and typically
+    `content=None`) must render the calls under a `Tool calls:` header. Without
+    coverage here, a regression in the messages-loop tool_calls rendering branch
+    would go undetected."""
+    history = [
+        {
+            "timestamp": "now",
+            "messages": [
+                {"role": "user", "content": "search for it"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_abc",
+                            "type": "function",
+                            "function": {"name": "web_search", "arguments": '{"q":"dspy"}'},
+                        }
+                    ],
+                },
+            ],
+            "outputs": [{"text": "done", "tool_calls": None}],
+        }
+    ]
+    buf = io.StringIO()
+    pretty_print_history(history, n=1, file=buf)
+    output = buf.getvalue()
+    assert "Tool calls:" in output
+    assert "web_search" in output
+    assert '{"q":"dspy"}' in output
+
+
+def test_pretty_print_history_renders_tool_role_message_with_tool_call_id():
+    """A `tool` role message must render with its `tool_call_id` in the role label
+    so the user can match each tool result back to the call that produced it."""
+    history = [
+        {
+            "timestamp": "now",
+            "messages": [
+                {"role": "user", "content": "search"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_xyz",
+                            "type": "function",
+                            "function": {"name": "web_search", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_xyz",
+                    "content": "search result body",
+                },
+            ],
+            "outputs": [{"text": "final answer", "tool_calls": None}],
+        }
+    ]
+    buf = io.StringIO()
+    pretty_print_history(history, n=1, file=buf)
+    output = buf.getvalue()
+    assert "tool_call_id=call_xyz" in output
+    assert "search result body" in output
