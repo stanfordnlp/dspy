@@ -78,12 +78,9 @@ def pretty_print_history(history: list[dict[str, Any]], n: int = 1, file: TextIO
             print("\n", file=out)
 
         if isinstance(outputs[0], dict):
-            # The Responses API can produce tool-calls-only outputs that omit
-            # the `text` key entirely, so use `.get` rather than direct lookup.
-            text = outputs[0].get("text")
-            if text:
+            if outputs[0]["text"]:
                 print(_red("Response:", use_colors=use_colors), file=out)
-                print(_green(text.strip(), use_colors=use_colors), file=out)
+                print(_green(outputs[0]["text"].strip(), use_colors=use_colors), file=out)
 
             if outputs[0].get("tool_calls"):
                 print(_red("Tool calls:", use_colors=use_colors), file=out)

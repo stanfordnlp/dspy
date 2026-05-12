@@ -78,17 +78,20 @@ def test_inspect_history_n_larger_than_history(capsys):
 
 
 def test_pretty_print_history_handles_tool_calls_only_output(capsys):
-    """Responses API can return an output with `tool_calls` but no `text` key.
-    `pretty_print_history` must not KeyError on those entries."""
+    """LM outputs that carry only tool calls have `text` set to None
+    (the normalized shape produced by both `_process_completion` and
+    `_process_response`). `pretty_print_history` must skip the Response
+    section in that case and still print the tool calls."""
     from dspy.utils.inspect_history import pretty_print_history
 
     entry = {
         "messages": [{"role": "user", "content": "What's the weather in Paris?"}],
         "outputs": [
             {
+                "text": None,
                 "tool_calls": [
                     dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"}, id="call_1")
-                ]
+                ],
             }
         ],
         "timestamp": "now",
@@ -98,4 +101,4 @@ def test_pretty_print_history_handles_tool_calls_only_output(capsys):
     out, _ = capsys.readouterr()
     assert "Tool calls:" in out
     assert "get_weather" in out
-    assert "Response:" not in out  # no text key => no Response section
+    assert "Response:" not in out  # text is None => no Response section

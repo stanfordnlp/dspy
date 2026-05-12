@@ -619,13 +619,16 @@ def test_responses_api_tool_calls(litellm_test_server):
         "id": "call_1",
     }
     # `lm()` returns canonical `ToolCalls.ToolCall` objects regardless of which
-    # wire shape (Chat Completions vs Responses API) the provider used. The
-    # boundary that does this normalization is `dspy.adapters.types.tool.to_tool_call`.
+    # wire shape (Chat Completions vs Responses API) the provider used, and the
+    # output dict is normalized so `text` is always present (None when the
+    # response carried no message content). Boundary lives in
+    # `dspy.adapters.types.tool.to_tool_call`.
     expected_response = [
         {
+            "text": None,
             "tool_calls": [
                 dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"}, id="call_1")
-            ]
+            ],
         }
     ]
 

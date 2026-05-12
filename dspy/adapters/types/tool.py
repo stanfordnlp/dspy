@@ -270,7 +270,7 @@ class Tool(Type):
 
 
 class ToolCalls(Type):
-    class ToolCall(pydantic.BaseModel):
+    class ToolCall(Type):
         name: str
         args: dict[str, Any]
         id: str | None = None

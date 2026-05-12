@@ -334,9 +334,12 @@ class BaseLM:
                     for summary_item in output_item.summary:
                         reasoning_contents.append(summary_item.text)
 
-        result = {}
-        if len(text_outputs) > 0:
-            result["text"] = "".join(text_outputs)
+        # Normalize the output shape to match `_process_completion`: `text` is
+        # always present (None when the response carried no message content),
+        # and the optional keys (`tool_calls`, `reasoning_content`) are only
+        # included when non-empty. This lets downstream code use direct key
+        # access on `text` without special-casing the Responses API.
+        result: dict[str, Any] = {"text": "".join(text_outputs) if text_outputs else None}
         if len(tool_calls) > 0:
             result["tool_calls"] = tool_calls
         if len(reasoning_contents) > 0:

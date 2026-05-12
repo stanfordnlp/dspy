@@ -123,10 +123,7 @@ class Adapter:
             text = output
 
             if isinstance(output, dict):
-                # The Responses API path can produce tool-calls-only outputs
-                # with no `text` key; the Chat Completions path always sets `text`
-                # (possibly to None). Use .get() so both surface uniformly.
-                text = output.get("text")
+                text = output["text"]
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
 

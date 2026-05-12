@@ -124,7 +124,7 @@ class TwoStepAdapter(Adapter):
             text = output
 
             if isinstance(output, dict):
-                text = output.get("text")
+                text = output["text"]
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
 
