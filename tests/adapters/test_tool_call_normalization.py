@@ -8,7 +8,9 @@ and what it produces.
 
 import pytest
 
-from dspy.adapters.types.tool import ToolCall, ToolCalls, to_tool_call
+from dspy.adapters.types.tool import ToolCalls, to_tool_call
+
+ToolCall = ToolCalls.ToolCall
 
 # ---------- Shape 1: OpenAI Chat Completions ----------
 
@@ -20,7 +22,6 @@ def test_chat_completions_dict_shape():
     }
     tc = to_tool_call(item)
     assert isinstance(tc, ToolCall)
-    assert ToolCalls.ToolCall is ToolCall  # backward-compat alias
     assert tc.name == "search"
     assert tc.args == {"q": "hello"}
     assert tc.id == "call_abc"

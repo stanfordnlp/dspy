@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
 import json_repair
 import pydantic
@@ -149,6 +149,7 @@ class Tool(Type):
     def format(self):
         return str(self)
 
+    # TODO(MaximeRivest): Change to be to_LMToolCallPart
     def format_as_litellm_function_call(self, model_type: str = "chat") -> dict[str, Any]:
         """Single outbound boundary for serializing this tool to a LiteLLM payload.
 
@@ -267,71 +268,98 @@ class Tool(Type):
         return f"{self.name}{desc} {arg_desc}"
 
 
-# TODO(MaximeRivest): Change this interface to use ToolPart.
-class ToolCall(pydantic.BaseModel):
-    """Canonical in-process representation of a single tool call.
+class ToolCalls(Type):
+    class ToolCall(pydantic.BaseModel):
+        name: str
+        args: dict[str, Any]
+        id: str | None = None
 
-    Lives here (alongside ``ToolCalls`` and ``Tool``) so all tool-call
-    types are co-located. ``dspy.clients.base_lm`` imports
-    ``to_tool_call`` lazily inside its hot paths to avoid the
-    ``base_lm → tool → base_type → base_lm`` import cycle.
-    """
+        def format(self) -> dict[str, Any]:
+            payload: dict[str, Any] = {
+                "type": "function",
+                "function": {"name": self.name, "arguments": self.args},
+            }
+            if self.id is not None:
+                payload["id"] = self.id
+            return payload
 
-    name: str
-    args: dict[str, Any]
-    id: str | None = None
+        def execute(self, functions: Any = None) -> Any:
+            """Execute this tool call.
 
-    def format(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "type": "function",
-            "function": {"name": self.name, "arguments": self.args},
-        }
-        if self.id is not None:
-            payload["id"] = self.id
-        return payload
+            ``functions`` may be a ``{name: callable}`` dict, a list of objects
+            with ``.name`` and ``.func`` attributes (e.g. ``dspy.Tool``), or
+            ``None`` to look the name up in the caller's locals/globals.
+            """
+            func = None
 
-    def execute(self, functions: Any = None) -> Any:
-        """Execute this tool call.
+            if functions is None:
+                frame = inspect.currentframe().f_back
+                try:
+                    func = frame.f_locals.get(self.name) or frame.f_globals.get(self.name)
+                finally:
+                    del frame
+            elif isinstance(functions, dict):
+                func = functions.get(self.name)
+            elif isinstance(functions, list):
+                for tool in functions:
+                    if tool.name == self.name:
+                        func = tool.func
+                        break
 
-        ``functions`` may be a ``{name: callable}`` dict, a list of objects
-        with ``.name`` and ``.func`` attributes (e.g. ``dspy.Tool``), or
-        ``None`` to look the name up in the caller's locals/globals.
-        """
-        func = None
+            if func is None:
+                raise ValueError(
+                    f"Tool function '{self.name}' not found. "
+                    "Please pass the tool functions to the `execute` method."
+                )
 
-        if functions is None:
-            frame = inspect.currentframe().f_back
             try:
-                func = frame.f_locals.get(self.name) or frame.f_globals.get(self.name)
-            finally:
-                del frame
-        elif isinstance(functions, dict):
-            func = functions.get(self.name)
-        elif isinstance(functions, list):
-            for tool in functions:
-                if tool.name == self.name:
-                    func = tool.func
-                    break
+                return func(**(self.args or {}))
+            except Exception as e:
+                raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
 
-        if func is None:
-            raise ValueError(
-                f"Tool function '{self.name}' not found. "
-                "Please pass the tool functions to the `execute` method."
-            )
+    tool_calls: list[ToolCall]
 
-        try:
-            return func(**(self.args or {}))
-        except Exception as e:
-            raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
+    @classmethod
+    def description(cls) -> str:
+        return (
+            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
+            "Arguments must be provided in JSON format."
+        )
+
+    def format(self) -> list[dict[str, Any]]:
+        # The tool_call field is compatible with OpenAI's tool calls schema.
+        return {
+            "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
+        }
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_input(cls, data: Any):
+        def coerce(items):
+            return [it if isinstance(it, cls.ToolCall) else cls.ToolCall(**it) for it in items]
+
+        if isinstance(data, cls):
+            return data
+        if isinstance(data, list):
+            return {"tool_calls": coerce(data)}
+        if isinstance(data, dict):
+            if "tool_calls" in data:
+                return {"tool_calls": coerce(data["tool_calls"])}
+            if "name" in data and "args" in data:
+                return {"tool_calls": [cls.ToolCall(**data)]}
+        raise ValueError(f"Invalid value for `dspy.ToolCalls`: {data!r}")
 
 
-def to_tool_call(item: Any) -> ToolCall:
-    """Normalize a LiteLLM tool-call into a canonical ``ToolCall``.
+# TODO(MaximeRivest): Change this interface to be from_LMToolResultPart.
+def to_tool_call(item: Any) -> ToolCalls.ToolCall:
+    """Normalize a LiteLLM tool-call into a canonical ``ToolCalls.ToolCall``.
 
     Single inbound boundary for wire-shape coercion. Falls back to attribute
     access when ``model_dump()`` raises ``TypeError`` because of the
     MockValSer/SchemaSerializer bug (pydantic#7713, litellm#9345).
     """
+    ToolCall = ToolCalls.ToolCall
+
     if not isinstance(item, dict) and hasattr(item, "model_dump"):
         try:
             item = item.model_dump()
@@ -368,43 +396,6 @@ def _parse_args(args: Any) -> dict[str, Any]:
     if args is None or args == "":
         return {}
     return json_repair.loads(args) if isinstance(args, str) else args
-
-
-class ToolCalls(Type):
-    # Backwards-compat alias: keep `dspy.ToolCalls.ToolCall(...)` working.
-    ToolCall: ClassVar[type[ToolCall]] = ToolCall
-
-    tool_calls: list[ToolCall]
-
-    @classmethod
-    def description(cls) -> str:
-        return (
-            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
-            "Arguments must be provided in JSON format."
-        )
-
-    def format(self) -> list[dict[str, Any]]:
-        # The tool_call field is compatible with OpenAI's tool calls schema.
-        return {
-            "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
-        }
-
-    @pydantic.model_validator(mode="before")
-    @classmethod
-    def validate_input(cls, data: Any):
-        def coerce(items):
-            return [it if isinstance(it, cls.ToolCall) else cls.ToolCall(**it) for it in items]
-
-        if isinstance(data, cls):
-            return data
-        if isinstance(data, list):
-            return {"tool_calls": coerce(data)}
-        if isinstance(data, dict):
-            if "tool_calls" in data:
-                return {"tool_calls": coerce(data["tool_calls"])}
-            if "name" in data and "args" in data:
-                return {"tool_calls": [cls.ToolCall(**data)]}
-        raise ValueError(f"Invalid value for `dspy.ToolCalls`: {data!r}")
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
