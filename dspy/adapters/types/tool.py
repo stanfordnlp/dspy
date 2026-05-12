@@ -283,12 +283,21 @@ class ToolCalls(Type):
                 payload["id"] = self.id
             return payload
 
-        def execute(self, functions: Any = None) -> Any:
-            """Execute this tool call.
+        def execute(self, functions: "dict[str, Any] | list[Tool] | None" = None) -> Any:
+            """Execute this individual tool call and return its result.
 
-            ``functions`` may be a ``{name: callable}`` dict, a list of objects
-            with ``.name`` and ``.func`` attributes (e.g. ``dspy.Tool``), or
-            ``None`` to look the name up in the caller's locals/globals.
+            Args:
+                functions: Functions to search for the tool. Can be:
+                          - Dict mapping tool names to functions: {"tool_name": function}
+                          - List of Tool objects: [Tool(function), ...]
+                          - None: Will search in caller's locals and globals (automatic lookup)
+
+            Returns:
+                The result from executing this tool call.
+
+            Raises:
+                ValueError: If the tool function cannot be found.
+                Exception: Any exception raised by the tool function.
             """
             func = None
 
@@ -358,18 +367,16 @@ def to_tool_call(item: Any) -> ToolCalls.ToolCall:
     access when ``model_dump()`` raises ``TypeError`` because of the
     MockValSer/SchemaSerializer bug (pydantic#7713, litellm#9345).
     """
-    ToolCall = ToolCalls.ToolCall
-
     if not isinstance(item, dict) and hasattr(item, "model_dump"):
         try:
             item = item.model_dump()
         except TypeError:
             fn = getattr(item, "function", None)
             if fn is not None:
-                return ToolCall(name=fn.name, args=_parse_args(fn.arguments), id=getattr(item, "id", None))
+                return ToolCalls.ToolCall(name=fn.name, args=_parse_args(fn.arguments), id=getattr(item, "id", None))
             if getattr(item, "name", None) is None:
                 raise
-            return ToolCall(
+            return ToolCalls.ToolCall(
                 name=item.name,
                 args=_parse_args(getattr(item, "arguments", None)),
                 id=getattr(item, "call_id", None) or getattr(item, "id", None),
@@ -380,10 +387,10 @@ def to_tool_call(item: Any) -> ToolCalls.ToolCall:
 
     if item.get("type") == "function" and isinstance(item.get("function"), dict):
         fn = item["function"]
-        return ToolCall(name=fn["name"], args=_parse_args(fn.get("arguments")), id=item.get("id"))
+        return ToolCalls.ToolCall(name=fn["name"], args=_parse_args(fn.get("arguments")), id=item.get("id"))
 
     if item.get("type") == "function_call" and item.get("name"):
-        return ToolCall(
+        return ToolCalls.ToolCall(
             name=item["name"],
             args=_parse_args(item.get("arguments")),
             id=item.get("call_id") or item.get("id"),
