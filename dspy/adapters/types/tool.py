@@ -155,10 +155,37 @@ class Tool(Type):
         """Outbound boundary: serialize this tool *definition* for the LiteLLM
         ``tools=`` request payload.
 
-        ``model_type="chat"`` — OpenAI Chat Completions wrapper:
-            ``{type: "function", function: {name, description, parameters}}``.
-        ``model_type="responses"`` — OpenAI Responses API flattened shape:
-            ``{type: "function", name, description, parameters}``.
+        Contract:
+
+        * ``model_type`` is required. Valid values are exactly ``"chat"`` and
+          ``"responses"``. Any other value raises ``ValueError``.
+        * Returns a plain ``dict``. Its concrete shape is determined entirely
+          by ``model_type``:
+
+          ``model_type="chat"`` — OpenAI Chat Completions wrapper::
+
+              {
+                  "type": "function",
+                  "function": {
+                      "name": <str>,
+                      "description": <str>,
+                      "parameters": <JSON Schema object>,
+                  },
+              }
+
+          ``model_type="responses"`` — OpenAI Responses API flattened shape::
+
+              {
+                  "type": "function",
+                  "name": <str>,
+                  "description": <str>,
+                  "parameters": <JSON Schema object>,
+              }
+
+        These two dialects are the only ones the boundary speaks; this is the
+        same set accepted by ``ToolCalls.ToolCall.format_as_litellm_tool_call``
+        and ``to_tool_call``. Keep all three in sync if a new dialect is
+        ever added.
         """
         fn = {
             "name": self.name,
@@ -284,13 +311,39 @@ class ToolCalls(Type):
             LiteLLM assistant message (multi-turn tool loops).
 
             Symmetric with ``Tool.format_as_litellm_tool_definition``: same
-            ``model_type`` parameter, same two dialects. ``function.arguments``
-            is JSON-encoded as required by both APIs.
+            two-dialect contract, same required ``model_type`` argument.
 
-            ``model_type="chat"`` — OpenAI Chat Completions:
-                ``{type:"function", function:{name, arguments}, id?}``.
-            ``model_type="responses"`` — OpenAI Responses API:
-                ``{type:"function_call", name, arguments, call_id?}``.
+            Contract:
+
+            * ``model_type`` is required and must be ``"chat"`` or
+              ``"responses"`` (anything else raises ``ValueError``).
+            * ``arguments`` is always emitted as a **JSON-encoded string**, as
+              required by both OpenAI APIs when this payload is dropped into
+              an ``assistant.tool_calls[...]`` entry. (Sending a Python dict
+              instead causes a 400 at request time.)
+            * The optional ``id`` field is included only when ``self.id`` is
+              set, and is named per the dialect: ``id`` for Chat Completions,
+              ``call_id`` for the Responses API.
+
+            Returned shapes::
+
+                model_type="chat":
+                    {
+                        "type": "function",
+                        "function": {"name": <str>, "arguments": <JSON str>},
+                        "id": <str>,            # only when self.id is set
+                    }
+
+                model_type="responses":
+                    {
+                        "type": "function_call",
+                        "name": <str>,
+                        "arguments": <JSON str>,
+                        "call_id": <str>,       # only when self.id is set
+                    }
+
+            Round-trip: ``to_tool_call(tc.format_as_litellm_tool_call(d), d)``
+            equals ``tc`` for any supported ``d``.
             """
             args_str = json.dumps(self.args)
             if model_type == "responses":
@@ -399,17 +452,31 @@ def to_tool_call(item: Any, model_type: str) -> ToolCalls.ToolCall:
     """Inbound boundary: normalize one LiteLLM tool-call into a canonical
     ``ToolCalls.ToolCall``.
 
-    ``model_type`` is required — it declares which provider dialect ``item``
-    came from. Callers always know this (``base_lm._process_completion`` is
-    always ``"chat"``; ``_process_response`` is always ``"responses"``), so
-    threading it through the boundary keeps dispatch explicit instead of
-    sniffing wire-shape keys.
+    Contract:
 
-    Each branch tolerates two surface shapes: a plain ``dict`` and a pydantic
-    object exposing ``model_dump``. When ``model_dump`` raises ``TypeError``
-    (pydantic#7713 / litellm#9345 — the MockValSer/SchemaSerializer bug), we
-    fall back to attribute access for the same fields. That fallback is the
-    one and only fallback in this boundary; everything else is a hard error.
+    * ``model_type`` is required and must be ``"chat"`` or ``"responses"`` —
+      the same two dialects served by ``Tool.format_as_litellm_tool_definition``
+      and ``ToolCalls.ToolCall.format_as_litellm_tool_call``. Any other value
+      raises ``ValueError``. Callers always know this:
+      ``base_lm._process_completion`` is always ``"chat"`` and
+      ``_process_response`` is always ``"responses"``.
+    * ``item`` may be either a ``dict`` in the dialect's wire shape (see
+      ``format_as_litellm_tool_call`` for the exact key sets) or a pydantic
+      object exposing ``model_dump`` that returns such a dict. Anything else
+      raises ``TypeError``.
+    * Wrong-dialect payloads (e.g. a Responses-API shape passed with
+      ``model_type="chat"``) raise ``ValueError`` with a precise message
+      instead of silently falling through to the other branch.
+    * Returns a fully-populated ``ToolCalls.ToolCall``. ``args`` is always a
+      ``dict`` (parsed from JSON when the wire side supplies a string);
+      ``id`` reflects ``id`` (chat) or ``call_id`` (responses) and is
+      ``None`` when the provider omitted it.
+
+    Fallback policy: when ``item.model_dump()`` raises ``TypeError`` because
+    of the MockValSer/SchemaSerializer bug (pydantic#7713 / litellm#9345),
+    we reach through to attribute access for the *same* fields the dict path
+    would have read. This is the only fallback in this boundary; everything
+    else is a hard error.
     """
     if model_type == "chat":
         return _to_tool_call_chat(item)
