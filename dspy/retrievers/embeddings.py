@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from dspy.utils.lazy_import import require
 from dspy.utils.unbatchify import Unbatchify
 
-if TYPE_CHECKING:
-    import numpy as np
+np = require("numpy")
 
 
 class Embeddings:
@@ -60,7 +59,6 @@ class Embeddings:
         return dspy.Prediction(passages=passages, indices=indices)
 
     def _batch_forward(self, queries: list[str]):
-        np = require("numpy")
         q_embeds = self.embedder(queries)
         q_embeds = self._normalize(q_embeds) if self.normalize else q_embeds
 
@@ -70,7 +68,6 @@ class Embeddings:
         return self._rerank_and_predict(q_embeds, pids)
 
     def _build_faiss(self):
-        np = require("numpy")
         nbytes = 32
         partitions = int(2 * np.sqrt(len(self.corpus)))
         dim = self.corpus_embeddings.shape[1]
@@ -97,7 +94,6 @@ class Embeddings:
         return self.index.search(query_embeddings, num_candidates)[1]
 
     def _rerank_and_predict(self, q_embeds: np.ndarray, candidate_indices: np.ndarray):
-        np = require("numpy")
         candidate_embeddings = self.corpus_embeddings[candidate_indices]
         scores = np.einsum("qd,qkd->qk", q_embeds, candidate_embeddings)
 
@@ -112,7 +108,6 @@ class Embeddings:
         return results
 
     def _normalize(self, embeddings: np.ndarray):
-        np = require("numpy")
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         return embeddings / np.maximum(norms, 1e-10)
 
@@ -140,7 +135,6 @@ class Embeddings:
             json.dump(config, f, indent=2)
 
         # Save embeddings
-        np = require("numpy")
         np.save(os.path.join(path, "corpus_embeddings.npy"), self.corpus_embeddings)
 
         # Save FAISS index if it exists
@@ -196,7 +190,6 @@ class Embeddings:
         self.embedder = embedder
 
         # Load embeddings
-        np = require("numpy")
         self.corpus_embeddings = np.load(embeddings_path)
 
         # Load FAISS index if it was saved and FAISS is available

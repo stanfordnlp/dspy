@@ -1,14 +1,27 @@
 """Lazy-import helpers for optional dependencies.
 
-Dspy ships in two flavors with different hard-dependency sets (`dspy` and
-`dspy-runtime`). Optional deps must be importable lazily so that `import dspy`
-succeeds even when they are absent, and call sites must raise a clear,
-actionable ImportError when the dep really is needed.
+Optional deps must be importable lazily so that ``import dspy`` succeeds even
+when they are absent. Call sites get a module-level binding that defers the
+real import until first attribute access::
+
+    from dspy.utils.lazy_import import require
+
+    np = require("numpy")          # zero cost -- no import happens here
+    np.array([1, 2, 3])            # numpy is loaded on first use
+
+If the package is not installed, the first attribute access raises
+``ImportError`` with an install hint.
+
+The lazy-load machinery is vendored from *lazy_loader* (BSD-3, Scientific
+Python team) and uses ``importlib.util.LazyLoader`` under the hood.
 """
 
 import functools
 import importlib
 import importlib.util
+import inspect
+import sys
+import types
 from typing import Any
 
 _INSTALL_HINTS: dict[str, str] = {
@@ -21,14 +34,31 @@ _INSTALL_HINTS: dict[str, str] = {
 }
 
 
+class _MissingModule(types.ModuleType):
+    """Stand-in returned by ``require()`` when a package is not installed.
+
+    Raises ``ImportError`` with an install hint on any attribute access.
+    Records the original call site so the traceback is actionable.
+    """
+
+    def __init__(self, module: str, message: str, frame_data: dict):
+        super().__init__(module)
+        self._message = message
+        self._frame_data = frame_data
+
+    def __getattr__(self, attr: str):
+        fd = self._frame_data
+        raise ImportError(
+            f"{self._message}\n\n"
+            "This error is lazily reported, having originally occurred in\n"
+            f"  File {fd['filename']}, line {fd['lineno']}, in {fd['function']}\n\n"
+            f"----> {''.join(fd['code_context'] or '').strip()}"
+        )
+
+
 @functools.cache
 def is_available(module: str) -> bool:
-    """Return True if ``module`` can be imported, without importing it.
-
-    Uses ``importlib.util.find_spec`` so calling this does not execute the
-    module's top-level code. Safe for cheap branching ("if the optional dep
-    is installed, register the hook; otherwise skip").
-    """
+    """Return True if *module* can be imported, without actually importing it."""
     try:
         return importlib.util.find_spec(module) is not None
     except (ImportError, ValueError):
@@ -36,45 +66,49 @@ def is_available(module: str) -> bool:
 
 
 def require(module: str, *, extra: str | None = None, feature: str | None = None) -> Any:
-    """Import a module by dotted path; raise a friendly ImportError if missing.
+    """Return a lazily-loaded module, or a stub that raises on access.
 
-    Use at call sites where an optional dependency is needed to perform an action.
+    Safe to call at module level::
+
+        np = require("numpy")
+
+    **Installed** -- returns a ``LazyLoader``-wrapped module. The real import
+    happens on first attribute access; afterwards the object is a plain module.
+
+    **Not installed** -- returns a ``_MissingModule`` stub. The first attribute
+    access raises ``ImportError`` with a ``pip install dspy[…]`` hint and the
+    file/line where ``require()`` was originally called.
 
     Args:
-        module: Dotted module path (e.g. ``"litellm"`` or ``"gepa.core.adapter"``).
-            The top-level segment is shown to the user.
-        extra: Name of the dspy extra that pulls in this dep. Defaults to the
-            entry in ``_INSTALL_HINTS`` for the top-level module, falling back
-            to the top-level module name.
-        feature: Short feature label included in the error (e.g. ``"dspy.LM"``).
-            Defaults to ``"this feature"``.
-
-    Returns:
-        The imported module.
+        module: Dotted module path (e.g. ``"numpy"``).
+        extra: Name of the dspy extra that provides this dep.
+        feature: Label shown in the error (e.g. ``"dspy.Embeddings"``).
     """
-    try:
-        return importlib.import_module(module)
-    except ImportError as e:
+    if module in sys.modules:
+        return sys.modules[module]
+
+    spec = importlib.util.find_spec(module)
+    if spec is None or spec.loader is None:
         top = module.split(".", 1)[0]
         feat = feature or "this feature"
         ext = extra or _INSTALL_HINTS.get(top, top)
-        raise ImportError(
+        message = (
             f"{top} is required to use {feat}. "
             f"Install with `pip install dspy[{ext}]` or `pip install {top}`."
-        ) from e
+        )
+        parent = inspect.stack()[1]
+        frame_data = {
+            "filename": parent.filename,
+            "lineno": parent.lineno,
+            "function": parent.function,
+            "code_context": parent.code_context,
+        }
+        del parent
+        return _MissingModule(module, message, frame_data)
 
-
-def optional(module: str, attr: str | None = None, default: Any = None) -> Any:
-    """Try to import a module (and optionally one attribute). Return ``default`` if missing.
-
-    Use at module load time when a class needs to inherit from a base provided by
-    an optional dep: returning a sentinel (typically ``object``) lets the class be
-    defined even when the dep is absent. Gate actual use behind ``require()``.
-    """
-    try:
-        mod = importlib.import_module(module)
-    except ImportError:
-        return default
-    if attr is None:
-        return mod
-    return getattr(mod, attr, default)
+    loader = importlib.util.LazyLoader(spec.loader)
+    spec.loader = loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module] = mod
+    loader.exec_module(mod)
+    return mod

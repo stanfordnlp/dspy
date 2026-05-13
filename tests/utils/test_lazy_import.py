@@ -1,6 +1,6 @@
 import pytest
 
-from dspy.utils.lazy_import import _INSTALL_HINTS, is_available, optional, require
+from dspy.utils.lazy_import import _INSTALL_HINTS, _MissingModule, is_available, require
 
 
 def test_is_available_true_for_stdlib():
@@ -22,38 +22,44 @@ def test_is_available_does_not_import_module(monkeypatch):
     assert "dspy.utils.lazy_import" not in (after - before)
 
 
-def test_require_returns_module_when_present():
-    mod = require("json", extra="json", feature="test")
+def test_require_returns_lazy_module_when_present():
+    mod = require("json")
     assert mod.dumps({"a": 1}) == '{"a": 1}'
 
 
-def test_require_error_uses_install_hint_when_extra_omitted():
+def test_require_returns_cached_module():
+    import sys
+
+    mod = require("json")
+    assert mod is sys.modules["json"]
+
+
+def test_require_returns_stub_when_missing():
+    stub = require("definitely_not_a_real_module_xyz", feature="dspy.X")
+    assert isinstance(stub, _MissingModule)
+
+
+def test_require_stub_raises_on_access_with_install_hint():
+    stub = require("nonexistent_abc", feature="dspy.Test")
     with pytest.raises(ImportError) as exc_info:
-        require("langchain_core.zzz_missing_submodule", feature="dspy.LangChain")
+        stub.something
     msg = str(exc_info.value)
-    assert "dspy[langchain]" in msg, msg
-    assert "dspy.LangChain" in msg
+    assert "dspy[nonexistent_abc]" in msg, msg
+    assert "dspy.Test" in msg
 
 
-def test_require_error_uses_explicit_extra_over_registry():
+def test_require_stub_uses_explicit_extra():
+    stub = require("nonexistent_xyz", extra="custom", feature="dspy.X")
     with pytest.raises(ImportError) as exc_info:
-        require("langchain_core.zzz_missing_submodule", extra="custom", feature="dspy.X")
+        stub.something
     assert "dspy[custom]" in str(exc_info.value)
 
 
-def test_require_error_falls_back_to_module_name_when_unmapped():
+def test_require_stub_falls_back_to_module_name():
+    stub = require("nonexistent_xyz", feature="dspy.X")
     with pytest.raises(ImportError) as exc_info:
-        require("nonexistent_xyz", feature="dspy.X")
+        stub.something
     assert "dspy[nonexistent_xyz]" in str(exc_info.value)
-
-
-def test_optional_returns_default_when_missing():
-    sentinel = object()
-    assert optional("definitely_not_a_real_module_xyz", default=sentinel) is sentinel
-
-
-def test_optional_returns_attr_when_present():
-    assert optional("json", "dumps") is __import__("json").dumps
 
 
 def test_install_hints_match_pyproject_extras():

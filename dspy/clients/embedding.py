@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 import litellm
 
 from dspy.clients.cache import request_cache
 from dspy.utils.lazy_import import require
 
-if TYPE_CHECKING:
-    import numpy as np
-
+np = require("numpy")
 
 class Embedder:
     """DSPy embedding class.
@@ -109,7 +107,6 @@ class Embedder:
         return input_batches, caching, merged_kwargs, is_single_input
 
     def _postprocess(self, embeddings_list, is_single_input):
-        np = require("numpy")
         embeddings = np.array(embeddings_list, dtype=np.float32)
         if is_single_input:
             return embeddings[0]
