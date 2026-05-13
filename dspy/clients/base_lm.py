@@ -270,7 +270,7 @@ class BaseLM:
                 # TODO(MaximeRivest): Change this interface to use ToolPart.
                 # Lazy import avoids `base_lm → adapters/tool → base_type → base_lm`.
                 from dspy.adapters.types.tool import to_tool_call
-                output["tool_calls"] = [to_tool_call(tc) for tc in c.message.tool_calls]
+                output["tool_calls"] = [to_tool_call(tc, model_type="chat") for tc in c.message.tool_calls]
 
             # Extract citations from LiteLLM response if available
             citations = self._extract_citations_from_response(c)
@@ -325,7 +325,7 @@ class BaseLM:
                 # TODO(MaximeRivest): Change this interface to use ToolPart.
                 # Lazy import avoids `base_lm → adapters/tool → base_type → base_lm`.
                 from dspy.adapters.types.tool import to_tool_call
-                tool_calls.append(to_tool_call(output_item))
+                tool_calls.append(to_tool_call(output_item, model_type="responses"))
             elif output_item_type == "reasoning":
                 if getattr(output_item, "content", None) and len(output_item.content) > 0:
                     for content_item in output_item.content:
