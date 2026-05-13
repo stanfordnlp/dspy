@@ -1,0 +1,10 @@
+git+https://github.com/stanfordnlp/dspy.git
+mkdocs-material
+mkdocs-jupyter
+mkdocs-material[imaging]
+mkdocs-redirects
+mkdocstrings
+mkdocstrings-python
+mkdocs-llmstxt>=0.5.0
+urllib3==2.6.3
+mistune==3.2.0

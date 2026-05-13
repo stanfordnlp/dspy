@@ -29,6 +29,15 @@ To build and test the documentation locally:
    pip install -r requirements.txt
    ```
 
+   `requirements.txt` is a lockfile generated from `requirements.in` by
+   [`uv`](https://github.com/astral-sh/uv). Dependabot's `uv` ecosystem
+   recognises this layout and will refresh `requirements.txt` automatically
+   when it bumps a dep in `requirements.in`. To refresh the lockfile
+   manually after changing `requirements.in`, run:
+   ```bash
+   uv pip compile requirements.in -o requirements.txt --python-version 3.10
+   ```
+
 3. In docs/ directory, run the command below to generate the API docs and index them:
    ```bash
    python scripts/generate_api_docs.py
