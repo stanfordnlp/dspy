@@ -602,6 +602,29 @@ def test_large_variable_threshold_boundary():
     assert "x" in interpreter._pending_large_vars, "Serialized size over threshold should use filesystem"
 
 
+def test_enable_read_paths_symlink(tmp_path):
+    """Regression test for #9501: symlinked enable_read_paths must resolve so Deno
+    can read through them (denoland/deno#9607 — Deno prefix-matches against the
+    realpath of the file being read). The sandbox virtual path keeps the user's
+    original basename so user code refers to the file by the name passed in.
+    """
+    real_file = tmp_path / "real_name.txt"
+    real_file.write_text("through symlink")
+    link_file = tmp_path / "link_name.txt"
+    try:
+        link_file.symlink_to(real_file)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    with PythonInterpreter(enable_read_paths=[str(link_file)]) as interp:
+        allow_read = next(a for a in interp.deno_command if a.startswith("--allow-read=")).split(",")
+        assert os.path.realpath(str(real_file)) in allow_read
+        assert str(link_file) not in allow_read
+
+        result = interp.execute("with open('/sandbox/link_name.txt') as f:\n    data = f.read()\ndata")
+        assert result == "through symlink"
+
+
 def test_enable_read_paths_multiple_files(tmp_path):
     """Test that enable_read_paths works with multiple files in the same directory.
 

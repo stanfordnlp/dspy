@@ -46,6 +46,16 @@ JSONRPC_APP_ERRORS = {
 }
 
 
+def _canonicalize_path(path: PathLike | str) -> str:
+    """Resolve symlinks so the path matches what Deno's permission check sees.
+
+    Deno does string-prefix matching against the realpath of the accessed file
+    (denoland/deno#9607), so --allow-read / --allow-write entries must be
+    realpath'd or reads through a symlink (including DENO_DIR) are denied.
+    """
+    return os.path.realpath(os.path.expanduser(os.fspath(path)))
+
+
 def _jsonrpc_request(method: str, params: dict, id: int | str) -> str:
     """Create a JSON-RPC 2.0 request (expects response)."""
     return json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": id})
@@ -141,18 +151,15 @@ class PythonInterpreter:
         else:
             args = ["deno", "run"]
 
-            # Allow reading runner.js and explicitly enabled paths
-            allowed_read_paths = [self._get_runner_path()]
+            allowed_read_paths = [_canonicalize_path(self._get_runner_path())]
 
             # Also allow reading Deno's cache directory so Pyodide can load its files
             deno_dir = self._get_deno_dir()
             if deno_dir:
-                allowed_read_paths.append(deno_dir)
+                allowed_read_paths.append(_canonicalize_path(deno_dir))
 
-            if self.enable_read_paths:
-                allowed_read_paths.extend(str(p) for p in self.enable_read_paths)
-            if self.enable_write_paths:
-                allowed_read_paths.extend(str(p) for p in self.enable_write_paths)
+            allowed_read_paths.extend(_canonicalize_path(p) for p in self.enable_read_paths)
+            allowed_read_paths.extend(_canonicalize_path(p) for p in self.enable_write_paths)
             args.append(f"--allow-read={','.join(allowed_read_paths)}")
 
             self._env_arg = ""
@@ -163,9 +170,9 @@ class PythonInterpreter:
             if self.enable_network_access:
                 args.append(f"--allow-net={','.join(str(x) for x in self.enable_network_access)}")
             if self.enable_write_paths:
-                args.append(f"--allow-write={','.join(str(x) for x in self.enable_write_paths)}")
+                args.append(f"--allow-write={','.join(_canonicalize_path(x) for x in self.enable_write_paths)}")
 
-            args.append(self._get_runner_path())
+            args.append(_canonicalize_path(self._get_runner_path()))
 
             # For runner.js to load in env vars
             if self._env_arg:
@@ -232,16 +239,21 @@ class PythonInterpreter:
                     open(path, "a").close()
                 else:
                     raise FileNotFoundError(f"Cannot mount non-existent file: {path}")
-            virtual_path = f"/sandbox/{os.path.basename(path)}"
-            self._send_request("mount_file", {"host_path": str(path), "virtual_path": virtual_path}, f"mounting {path}")
+            # Virtual path keeps the user's basename so sandbox code refers to the
+            # file by the name passed in; host_path is realpath'd so Deno's
+            # permission check matches the canonical entries in --allow-read.
+            virtual_path = f"/sandbox/{os.path.basename(str(path))}"
+            host_path = _canonicalize_path(path)
+            self._send_request("mount_file", {"host_path": host_path, "virtual_path": virtual_path}, f"mounting {path}")
         self._mounted_files = True
 
     def _sync_files(self):
         if not self.enable_write_paths or not self.sync_files:
             return
         for path in self.enable_write_paths:
-            virtual_path = f"/sandbox/{os.path.basename(path)}"
-            sync_msg = _jsonrpc_notification("sync_file", {"virtual_path": virtual_path, "host_path": str(path)})
+            virtual_path = f"/sandbox/{os.path.basename(str(path))}"
+            host_path = _canonicalize_path(path)
+            sync_msg = _jsonrpc_notification("sync_file", {"virtual_path": virtual_path, "host_path": host_path})
             self.deno_process.stdin.write(sync_msg + "\n")
             self.deno_process.stdin.flush()
 
