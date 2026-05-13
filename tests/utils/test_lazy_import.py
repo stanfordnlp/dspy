@@ -14,12 +14,15 @@ def test_is_available_false_for_missing():
 def test_is_available_does_not_import_module(monkeypatch):
     import sys
 
-    sys.modules.pop("dspy.utils.lazy_import", None)
+    # Use a stdlib module that dspy never imports, so we can deterministically
+    # observe whether is_available() triggers an import as a side effect.
+    target = "mailbox"
+    monkeypatch.delitem(sys.modules, target, raising=False)
+    # is_available is @functools.cache'd; clear so we actually exercise find_spec.
     is_available.cache_clear()
-    before = set(sys.modules)
-    assert is_available("dspy.utils.lazy_import") is True
-    after = set(sys.modules)
-    assert "dspy.utils.lazy_import" not in (after - before)
+
+    assert is_available(target) is True
+    assert target not in sys.modules
 
 
 def test_require_returns_lazy_module_when_present():
@@ -65,27 +68,16 @@ def test_require_stub_falls_back_to_module_name():
     assert f"{dist}[nonexistent_xyz]" in str(exc_info.value)
 
 
-def test_install_hints_match_pyproject_extras():
-    import pathlib
-    import re
+def test_install_hints_match_pyproject_extras(pytestconfig):
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # Python 3.10
+        import tomli as tomllib
 
-    pyproject = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
-    if not pyproject.exists():
-        pytest.skip("pyproject.toml not present")
-    text = pyproject.read_text()
-    # Extract extra names from lines like: numpy = ["numpy>=1.26.0"]
-    in_section = False
-    extras: set[str] = set()
-    for line in text.splitlines():
-        if line.strip() == "[project.optional-dependencies]":
-            in_section = True
-            continue
-        if in_section:
-            if line.startswith("["):
-                break
-            m = re.match(r"^(\w[\w-]*)\s*=", line)
-            if m:
-                extras.add(m.group(1))
+    pyproject = pytestconfig.rootpath / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text())
+    extras = set(data["project"]["optional-dependencies"])
+
     for module, hint in _INSTALL_HINTS.items():
         assert hint in extras, (
             f"_INSTALL_HINTS[{module!r}] = {hint!r} is not a declared extra in "
