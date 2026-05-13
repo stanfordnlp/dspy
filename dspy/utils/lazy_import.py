@@ -1,8 +1,8 @@
 """Lazy-import helpers for optional dependencies.
 
-Optional deps must be importable lazily so that ``import dspy`` succeeds even
+Optional deps must be importable lazily so that `import dspy` succeeds even
 when they are absent. Call sites get a module-level binding that defers the
-real import until first attribute access::
+real import until first attribute access:
 
     from dspy.utils.lazy_import import require
 
@@ -10,10 +10,10 @@ real import until first attribute access::
     np.array([1, 2, 3])            # numpy is loaded on first use
 
 If the package is not installed, the first attribute access raises
-``ImportError`` with an install hint.
+`ImportError` with an install hint.
 
 The lazy-load machinery is vendored from *lazy_loader* (BSD-3, Scientific
-Python team) and uses ``importlib.util.LazyLoader`` under the hood.
+Python team) and uses `importlib.util.LazyLoader` under the hood.
 """
 
 import functools
@@ -46,9 +46,9 @@ _INSTALL_HINTS: dict[str, str] = {
 
 
 class _MissingModule(types.ModuleType):
-    """Stand-in returned by ``require()`` when a package is not installed.
+    """Stand-in returned by `require()` when a package is not installed.
 
-    Raises ``ImportError`` with an install hint on any attribute access.
+    Raises `ImportError` with an install hint on any attribute access.
     Records the original call site so the traceback is actionable.
     """
 
@@ -79,21 +79,21 @@ def is_available(module: str) -> bool:
 def require(module: str, *, extra: str | None = None, feature: str | None = None) -> Any:
     """Return a lazily-loaded module, or a stub that raises on access.
 
-    Safe to call at module level::
+    Safe to call at module level:
 
         np = require("numpy")
 
-    **Installed** -- returns a ``LazyLoader``-wrapped module. The real import
+    **Installed** -- returns a `LazyLoader`-wrapped module. The real import
     happens on first attribute access; afterwards the object is a plain module.
 
-    **Not installed** -- returns a ``_MissingModule`` stub. The first attribute
-    access raises ``ImportError`` with a ``pip install dspy[…]`` hint and the
-    file/line where ``require()`` was originally called.
+    **Not installed** -- returns a `_MissingModule` stub. The first attribute
+    access raises `ImportError` with a `pip install dspy[…]` hint and the
+    file/line where `require()` was originally called.
 
     Args:
-        module: Dotted module path (e.g. ``"numpy"``).
+        module: Dotted module path (e.g. `"numpy"`).
         extra: Name of the dspy extra that provides this dep.
-        feature: Label shown in the error (e.g. ``"dspy.Embeddings"``).
+        feature: Label shown in the error (e.g. `"dspy.Embeddings"`).
     """
     if module in sys.modules:
         return sys.modules[module]
