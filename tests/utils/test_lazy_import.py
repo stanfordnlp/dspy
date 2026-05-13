@@ -1,6 +1,6 @@
 import pytest
 
-from dspy.utils.lazy_import import _INSTALL_HINTS, _MissingModule, is_available, require
+from dspy.utils.lazy_import import _INSTALL_HINTS, _detect_dspy_dist, _MissingModule, is_available, require
 
 
 def test_is_available_true_for_stdlib():
@@ -40,26 +40,29 @@ def test_require_returns_stub_when_missing():
 
 
 def test_require_stub_raises_on_access_with_install_hint():
+    dist = _detect_dspy_dist()
     stub = require("nonexistent_abc", feature="dspy.Test")
     with pytest.raises(ImportError) as exc_info:
         stub.something
     msg = str(exc_info.value)
-    assert "dspy[nonexistent_abc]" in msg, msg
+    assert f"{dist}[nonexistent_abc]" in msg, msg
     assert "dspy.Test" in msg
 
 
 def test_require_stub_uses_explicit_extra():
+    dist = _detect_dspy_dist()
     stub = require("nonexistent_xyz", extra="custom", feature="dspy.X")
     with pytest.raises(ImportError) as exc_info:
         stub.something
-    assert "dspy[custom]" in str(exc_info.value)
+    assert f"{dist}[custom]" in str(exc_info.value)
 
 
 def test_require_stub_falls_back_to_module_name():
+    dist = _detect_dspy_dist()
     stub = require("nonexistent_xyz", feature="dspy.X")
     with pytest.raises(ImportError) as exc_info:
         stub.something
-    assert "dspy[nonexistent_xyz]" in str(exc_info.value)
+    assert f"{dist}[nonexistent_xyz]" in str(exc_info.value)
 
 
 def test_install_hints_match_pyproject_extras():

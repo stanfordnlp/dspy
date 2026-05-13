@@ -18,11 +18,22 @@ Python team) and uses ``importlib.util.LazyLoader`` under the hood.
 
 import functools
 import importlib
+import importlib.metadata
 import importlib.util
 import inspect
 import sys
 import types
 from typing import Any
+
+
+def _detect_dspy_dist() -> str:
+    for dist in ("dspy", "dspy-ai"):
+        try:
+            importlib.metadata.version(dist)
+            return dist
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return "dspy"
 
 _INSTALL_HINTS: dict[str, str] = {
     "optuna": "optuna",
@@ -92,9 +103,10 @@ def require(module: str, *, extra: str | None = None, feature: str | None = None
         top = module.split(".", 1)[0]
         feat = feature or "this feature"
         ext = extra or _INSTALL_HINTS.get(top, top)
+        dist = _detect_dspy_dist()
         message = (
             f"{top} is required to use {feat}. "
-            f"Install with `pip install dspy[{ext}]` or `pip install {top}`."
+            f"Install with `pip install {dist}[{ext}]` or `pip install {top}`."
         )
         parent = inspect.stack()[1]
         frame_data = {

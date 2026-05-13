@@ -1,5 +1,6 @@
 import inspect
 import logging
+import math
 import random
 from dataclasses import dataclass
 from typing import Any, Literal, Optional, Protocol, Union
@@ -443,8 +444,6 @@ class GEPA(Teleprompter):
     def auto_budget(
         self, num_preds, num_candidates, valset_size: int, minibatch_size: int = 35, full_eval_steps: int = 5
     ) -> int:
-        import math
-
         num_trials = int(max(2 * (num_preds * 2) * math.log2(num_candidates), 1.5 * num_candidates))
         if num_trials < 0 or valset_size < 0 or minibatch_size < 0:
             raise ValueError("num_trials, valset_size, and minibatch_size must be >= 0.")
