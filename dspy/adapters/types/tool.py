@@ -150,8 +150,7 @@ class Tool(Type):
     def format(self):
         return str(self)
 
-    # TODO(MaximeRivest): Change to be to_LMToolDefinitionPart
-    def format_as_litellm_tool_definition(self, model_type: str) -> dict[str, Any]:
+    def to_lm_tool_definition(self, model_type: str) -> dict[str, Any]:
         """Serialize this tool definition for the LiteLLM ``tools=`` payload.
 
         ``model_type`` must be ``"chat"`` or ``"responses"``.
@@ -274,8 +273,7 @@ class ToolCalls(Type):
         args: dict[str, Any]
         id: str | None = None
 
-        # TODO(MaximeRivest): Change to be to_LMToolCallPart
-        def format_as_litellm_tool_call(self, model_type: str) -> dict[str, Any]:
+        def to_lm_tool_call(self, model_type: str) -> dict[str, Any]:
             """Serialize this tool call for a LiteLLM assistant message.
 
             ``model_type`` must be ``"chat"`` or ``"responses"``.
@@ -390,8 +388,7 @@ class ToolCalls(Type):
         raise ValueError(f"Invalid value for `dspy.ToolCalls`: {data!r}")
 
 
-# TODO(MaximeRivest): Change to be from_LMToolResultPart.
-def to_tool_call(item: Any, model_type: str) -> ToolCalls.ToolCall:
+def from_lm_tool_call(item: Any, model_type: str) -> ToolCalls.ToolCall:
     """Normalize one LiteLLM tool-call (dict or pydantic object) into a
     canonical ``ToolCalls.ToolCall``.
 

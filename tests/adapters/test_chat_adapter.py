@@ -792,7 +792,7 @@ def test_tool_call_with_null_content_does_not_raise():
 
     NOTE: tool_calls are passed as `list[ToolCalls.ToolCall]` because
     `BaseLM` normalizes the wire shape at the LiteLLM boundary via
-    `to_tool_call`; postprocess never sees raw OpenAI dicts."""
+    `from_lm_tool_call`; postprocess never sees raw OpenAI dicts."""
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
     sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
 

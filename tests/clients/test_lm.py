@@ -622,7 +622,7 @@ def test_responses_api_tool_calls(litellm_test_server):
     # wire shape (Chat Completions vs Responses API) the provider used, and the
     # output dict is normalized so `text` is always present (None when the
     # response carried no message content). Boundary lives in
-    # `dspy.adapters.types.tool.to_tool_call`.
+    # `dspy.adapters.types.tool.from_lm_tool_call`.
     expected_response = [
         {
             "text": None,
