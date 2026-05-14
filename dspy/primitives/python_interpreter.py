@@ -151,15 +151,15 @@ class PythonInterpreter:
         else:
             args = ["deno", "run"]
 
-            allowed_read_paths = [_canonicalize_path(self._get_runner_path())]
-
             # Also allow reading Deno's cache directory so Pyodide can load its files
             deno_dir = self._get_deno_dir()
-            if deno_dir:
-                allowed_read_paths.append(_canonicalize_path(deno_dir))
-
-            allowed_read_paths.extend(_canonicalize_path(p) for p in self.enable_read_paths)
-            allowed_read_paths.extend(_canonicalize_path(p) for p in self.enable_write_paths)
+            raw_read_paths = [
+                self._get_runner_path(),
+                *([deno_dir] if deno_dir else []),
+                *self.enable_read_paths,
+                *self.enable_write_paths,
+            ]
+            allowed_read_paths = [_canonicalize_path(p) for p in raw_read_paths]
             args.append(f"--allow-read={','.join(allowed_read_paths)}")
 
             self._env_arg = ""
