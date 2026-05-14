@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-import litellm
-
 from dspy.clients.cache import request_cache
 from dspy.utils.lazy_import import require
 
 np = require("numpy")
+
+
+def _configure_litellm_defaults(litellm):
+    litellm.telemetry = False
+    litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
+    if not getattr(litellm, "_dspy_logging_configured", False):
+        litellm.suppress_debug_info = True
+        litellm._dspy_logging_configured = True
+
+
+litellm = require("litellm", extra="litellm", feature="dspy.Embedder", on_load=_configure_litellm_defaults)
+
 
 class Embedder:
     """DSPy embedding class.

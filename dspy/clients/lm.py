@@ -7,10 +7,8 @@ import warnings
 from typing import Any, Literal, cast
 
 import anyio.from_thread
-import litellm
 import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
-from litellm import ContextWindowExceededError as LitellmContextWindowExceededError
 
 import dspy
 from dspy.clients.cache import request_cache
@@ -20,10 +18,27 @@ from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import ContextWindowExceededError
+from dspy.utils.lazy_import import require
 
 from .base_lm import BaseLM
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_litellm_defaults(litellm):
+    litellm.telemetry = False
+    litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
+    if not getattr(litellm, "_dspy_logging_configured", False):
+        litellm.suppress_debug_info = True
+        litellm._dspy_logging_configured = True
+
+
+litellm = require("litellm", extra="litellm", feature="dspy.LM", on_load=_configure_litellm_defaults)
+
+
+def _is_litellm_context_window_error(error: Exception) -> bool:
+    error_type = type(error)
+    return error_type.__module__.startswith("litellm") and "ContextWindowExceeded" in error_type.__name__
 
 
 class LM(BaseLM):
@@ -189,8 +204,10 @@ class LM(BaseLM):
                 num_retries=self.num_retries,
                 cache=litellm_cache_args,
             )
-        except LitellmContextWindowExceededError as e:
-            raise ContextWindowExceededError(model=self.model) from e
+        except Exception as e:
+            if _is_litellm_context_window_error(e):
+                raise ContextWindowExceededError(model=self.model) from e
+            raise
 
         self._check_truncation(results)
 
@@ -230,8 +247,10 @@ class LM(BaseLM):
                 num_retries=self.num_retries,
                 cache=litellm_cache_args,
             )
-        except LitellmContextWindowExceededError as e:
-            raise ContextWindowExceededError(model=self.model) from e
+        except Exception as e:
+            if _is_litellm_context_window_error(e):
+                raise ContextWindowExceededError(model=self.model) from e
+            raise
 
         self._check_truncation(results)
 

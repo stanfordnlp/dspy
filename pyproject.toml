@@ -44,6 +44,7 @@ mcp = ["mcp; python_version >= '3.10'"]
 langchain = ["langchain_core"]
 optuna = ["optuna>=3.4.0"]
 numpy = ["numpy>=1.26.0"]
+litellm = ["litellm>=1.64.0"]
 dev = [
     "pytest>=6.2.5",
     "pytest-mock>=3.12.0",
