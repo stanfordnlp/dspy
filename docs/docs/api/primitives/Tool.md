@@ -11,7 +11,7 @@
             - description
             - extract_custom_type_from_annotation
             - format
-            - to_lm_tool_definition
+            - to_lm_tool_spec
             - from_langchain
             - from_mcp_tool
             - is_streamable

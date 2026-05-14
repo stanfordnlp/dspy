@@ -83,7 +83,7 @@ class Adapter:
                 tools = inputs[tool_call_input_field_name]
                 tools = tools if isinstance(tools, list) else [tools]
 
-                lm_tools = [tool.to_lm_tool_definition(model_type=lm.model_type) for tool in tools]
+                lm_tools = [tool.to_lm_tool_spec(model_type=lm.model_type) for tool in tools]
 
                 lm_kwargs["tools"] = lm_tools
 

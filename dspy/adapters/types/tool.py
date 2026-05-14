@@ -151,7 +151,7 @@ class Tool(Type):
         return str(self)
 
     # TODO: return LMToolSpec instead of dict; wire-format serialization moves to the LM.
-    def to_lm_tool_definition(self, model_type: str) -> dict[str, Any]:
+    def to_lm_tool_spec(self, model_type: str) -> dict[str, Any]:
         """Serialize this tool definition for the LiteLLM `tools=` payload.
 
         `model_type` must be `"chat"` or `"responses"`.

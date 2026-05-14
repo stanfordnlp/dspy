@@ -831,7 +831,7 @@ def test_toolcall_format_rejects_unknown_model_type():
 
 def test_tool_definition_chat_completions_shape():
     tool = dspy.Tool(lambda city: city, name="get_weather", desc="weather")
-    payload = tool.to_lm_tool_definition(model_type="chat")
+    payload = tool.to_lm_tool_spec(model_type="chat")
     assert payload["type"] == "function"
     assert "function" in payload
     assert payload["function"]["name"] == "get_weather"
@@ -841,7 +841,7 @@ def test_tool_definition_chat_completions_shape():
 
 def test_tool_definition_responses_api_shape():
     tool = dspy.Tool(lambda city: city, name="get_weather", desc="weather")
-    payload = tool.to_lm_tool_definition(model_type="responses")
+    payload = tool.to_lm_tool_spec(model_type="responses")
     assert payload["type"] == "function"
     # Responses API flattens: name/description/parameters at top level, no `function` wrapper.
     assert "function" not in payload
@@ -853,4 +853,4 @@ def test_tool_definition_responses_api_shape():
 def test_tool_definition_rejects_unknown_model_type():
     tool = dspy.Tool(lambda city: city, name="x", desc="d")
     with pytest.raises(ValueError, match="Unknown model_type"):
-        tool.to_lm_tool_definition(model_type="gemini")
+        tool.to_lm_tool_spec(model_type="gemini")
