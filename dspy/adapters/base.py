@@ -79,7 +79,7 @@ class Adapter:
                     "input field with type `list[dspy.Tool]`."
                 )
 
-            if tool_call_output_field_name and lm.supports_function_calling:
+            if tool_call_output_field_name and lm.supports_function_calling and lm.model_type != "text":
                 tools = inputs[tool_call_input_field_name]
                 tools = tools if isinstance(tools, list) else [tools]
 
