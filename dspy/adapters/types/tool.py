@@ -74,6 +74,7 @@ class Tool(Type):
         """
         super().__init__(func=func, name=name, desc=desc, args=args, arg_types=arg_types, arg_desc=arg_desc)
         self._parse_function(func, arg_desc)
+        self.name = _sanitize_tool_name(self.name)
 
     def _parse_function(self, func: Callable, arg_desc: dict[str, str] | None = None):
         """Helper method that parses a function to extract the name, description, and args.
@@ -152,15 +153,13 @@ class Tool(Type):
         return str(self)
 
     # TODO: return LMToolSpec instead of dict; wire-format serialization moves to the LM.
-    # TODO: _sanitize_tool_name should move into the LM layer with the rest of
-    # the provider-specific wire-format logic.
     def to_lm_tool_spec(self, model_type: str) -> dict[str, Any]:
         """Serialize this tool definition for the LiteLLM `tools=` payload.
 
         `model_type` must be `"chat"` or `"responses"`.
         """
         fn = {
-            "name": _sanitize_tool_name(self.name),
+            "name": self.name,
             "description": self.desc,
             "parameters": {
                 "type": "object",
