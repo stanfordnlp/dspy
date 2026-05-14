@@ -389,13 +389,9 @@ class ToolCalls(Type):
 
 
 def from_lm_tool_call(item: Any) -> ToolCalls.ToolCall:
-    """Normalize one LiteLLM tool-call (dict or pydantic object) into a
-    canonical ``ToolCalls.ToolCall``.
+    """Normalize a LiteLLM tool-call into a canonical ``ToolCalls.ToolCall``.
 
-    Auto-detects Chat Completions (``type="function"``) vs Responses API
-    (``type="function_call"``) from the item's shape.
-    Falls back to attribute access when ``model_dump()`` raises TypeError
-    (cached pydantic MockValSer bug).
+    Auto-detects Chat Completions vs Responses API from the item's shape.
     """
     if not isinstance(item, dict) and hasattr(item, "model_dump"):
         try:
