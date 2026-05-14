@@ -610,7 +610,7 @@ def test_from_lm_tool_call_chat_completions_dict_shape():
         "type": "function",
         "function": {"name": "search", "arguments": '{"q":"hello"}'},
     }
-    tc = from_lm_tool_call(item, model_type="chat")
+    tc = from_lm_tool_call(item)
     assert isinstance(tc, ToolCalls.ToolCall)
     assert tc.name == "search"
     assert tc.args == {"q": "hello"}
@@ -636,7 +636,7 @@ def test_from_lm_tool_call_chat_completions_pydantic_shape():
                 "function": {"name": self.function.name, "arguments": self.function.arguments},
             }
 
-    tc = from_lm_tool_call(CCMToolCall(), model_type="chat")
+    tc = from_lm_tool_call(CCMToolCall())
     assert tc.name == "search"
     assert tc.args == {"q": "x"}
     assert tc.id == "call_123"
@@ -645,14 +645,14 @@ def test_from_lm_tool_call_chat_completions_pydantic_shape():
 def test_from_lm_tool_call_chat_completions_arguments_as_dict():
     """Some providers (and our own round-trips) put `arguments` as a dict."""
     item = {"type": "function", "function": {"name": "lookup", "arguments": {"k": "v"}}}
-    tc = from_lm_tool_call(item, model_type="chat")
+    tc = from_lm_tool_call(item)
     assert tc.args == {"k": "v"}
 
 
 def test_from_lm_tool_call_chat_completions_empty_arguments_string():
     """`arguments=""` should normalize to `{}`, not crash."""
     item = {"type": "function", "function": {"name": "ping", "arguments": ""}}
-    assert from_lm_tool_call(item, model_type="chat").args == {}
+    assert from_lm_tool_call(item).args == {}
 
 
 def test_from_lm_tool_call_responses_api_dict_shape():
@@ -662,7 +662,7 @@ def test_from_lm_tool_call_responses_api_dict_shape():
         "arguments": '{"q":"y"}',
         "call_id": "call_xyz",
     }
-    tc = from_lm_tool_call(item, model_type="responses")
+    tc = from_lm_tool_call(item)
     assert tc.name == "search"
     assert tc.args == {"q": "y"}
     assert tc.id == "call_xyz"
@@ -683,7 +683,7 @@ def test_from_lm_tool_call_responses_api_pydantic_shape():
                 "call_id": self.call_id,
             }
 
-    tc = from_lm_tool_call(FunctionCallItem(), model_type="responses")
+    tc = from_lm_tool_call(FunctionCallItem())
     assert tc.name == "search"
     assert tc.args == {"q": "z"}
     assert tc.id == "call_99"
@@ -691,11 +691,7 @@ def test_from_lm_tool_call_responses_api_pydantic_shape():
 
 def test_from_lm_tool_call_mockvalser_fallback_chat_completions_shape():
     """Cached LiteLLM pydantic whose model_dump raises TypeError — must fall
-    back to attribute access via the `function` attribute.
-
-    See https://github.com/pydantic/pydantic/issues/7713
-    and https://github.com/BerriAI/litellm/issues/9345
-    """
+    back to attribute access via the `function` attribute."""
     class Fn:
         name = "search"
         arguments = '{"q":"cached"}'
@@ -708,49 +704,48 @@ def test_from_lm_tool_call_mockvalser_fallback_chat_completions_shape():
         def model_dump(self):
             raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
 
-    tc = from_lm_tool_call(CachedToolCall(), model_type="chat")
+    tc = from_lm_tool_call(CachedToolCall())
     assert tc.name == "search"
     assert tc.args == {"q": "cached"}
     assert tc.id == "call_cached"
 
 
+def test_from_lm_tool_call_mockvalser_fallback_responses_shape():
+    """Cached Responses API pydantic object — falls back to attribute access
+    via the `name` attribute."""
+    class CachedFunctionCall:
+        name = "search"
+        arguments = '{"q":"cached"}'
+        call_id = "call_resp"
+
+        def model_dump(self):
+            raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
+
+    tc = from_lm_tool_call(CachedFunctionCall())
+    assert tc.name == "search"
+    assert tc.args == {"q": "cached"}
+    assert tc.id == "call_resp"
+
+
 def test_from_lm_tool_call_mockvalser_fallback_no_recoverable_attrs_raises():
-    """If model_dump fails AND there's no `function` (chat) or `name` (responses)
-    attribute, re-raise the original MockValSer TypeError instead of returning garbage."""
+    """If model_dump fails AND there's no `function` or `name` attribute,
+    raise TypeError."""
     class Unsalvageable:
         def model_dump(self):
             raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
 
-    with pytest.raises(TypeError, match="MockValSer"):
-        from_lm_tool_call(Unsalvageable(), model_type="chat")
-    with pytest.raises(TypeError, match="MockValSer"):
-        from_lm_tool_call(Unsalvageable(), model_type="responses")
+    with pytest.raises(TypeError):
+        from_lm_tool_call(Unsalvageable())
 
 
-def test_from_lm_tool_call_chat_rejects_responses_shape():
-    """Declaring model_type='chat' but passing a Responses API payload must
-    raise — no silent fall-through to the other dialect."""
-    item = {"type": "function_call", "name": "search", "arguments": "{}", "call_id": "c1"}
-    with pytest.raises(ValueError, match="Expected Chat Completions tool-call shape"):
-        from_lm_tool_call(item, model_type="chat")
+def test_from_lm_tool_call_unrecognized_shape_raises():
+    with pytest.raises(ValueError, match="Unrecognized tool-call shape"):
+        from_lm_tool_call({"type": "unknown", "name": "x"})
 
 
-def test_from_lm_tool_call_responses_rejects_chat_shape():
-    item = {"type": "function", "function": {"name": "search", "arguments": "{}"}}
-    with pytest.raises(ValueError, match="Expected Responses API function_call shape"):
-        from_lm_tool_call(item, model_type="responses")
-
-
-def test_from_lm_tool_call_rejects_unknown_model_type():
-    with pytest.raises(ValueError, match="Unknown model_type"):
-        from_lm_tool_call({"type": "function", "function": {"name": "x", "arguments": "{}"}}, model_type="gemini")
-
-
-def test_from_lm_tool_call_non_dict_non_pydantic_raises_with_type_info():
-    with pytest.raises(TypeError, match="Cannot normalize Chat Completions tool call from int"):
-        from_lm_tool_call(42, model_type="chat")
-    with pytest.raises(TypeError, match="Cannot normalize Responses API tool call from int"):
-        from_lm_tool_call(42, model_type="responses")
+def test_from_lm_tool_call_non_dict_non_pydantic_raises():
+    with pytest.raises(TypeError, match="Cannot normalize tool call from int"):
+        from_lm_tool_call(42)
 
 
 def test_toolcall_id_field_optional():
@@ -766,15 +761,15 @@ def test_toolcall_id_round_trips():
 
 def test_toolcall_format_preserves_id_chat_round_trip():
     original = ToolCalls.ToolCall(name="search", args={"q": "hello"}, id="call_xyz")
-    restored = from_lm_tool_call(original.to_lm_tool_call("chat"), model_type="chat")
+    restored = from_lm_tool_call(original.to_lm_tool_call("chat"))
     assert restored == original
 
 
 def test_toolcall_format_preserves_id_responses_round_trip():
     """Outbound symmetry: a tool call serialized for the Responses API must
-    round-trip back through `from_lm_tool_call(..., model_type='responses')`."""
+    round-trip back through `from_lm_tool_call`."""
     original = ToolCalls.ToolCall(name="search", args={"q": "hello"}, id="call_xyz")
-    restored = from_lm_tool_call(original.to_lm_tool_call("responses"), model_type="responses")
+    restored = from_lm_tool_call(original.to_lm_tool_call("responses"))
     assert restored == original
 
 

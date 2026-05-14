@@ -388,71 +388,58 @@ class ToolCalls(Type):
         raise ValueError(f"Invalid value for `dspy.ToolCalls`: {data!r}")
 
 
-def from_lm_tool_call(item: Any, model_type: str) -> ToolCalls.ToolCall:
+def from_lm_tool_call(item: Any) -> ToolCalls.ToolCall:
     """Normalize one LiteLLM tool-call (dict or pydantic object) into a
     canonical ``ToolCalls.ToolCall``.
 
-    ``model_type`` must be ``"chat"`` or ``"responses"``.
+    Auto-detects Chat Completions (``type="function"``) vs Responses API
+    (``type="function_call"``) from the item's shape.
     Falls back to attribute access when ``model_dump()`` raises TypeError
     (cached pydantic MockValSer bug).
     """
-    if model_type == "chat":
-        return _to_tool_call_chat(item)
-    if model_type == "responses":
-        return _to_tool_call_responses(item)
-    raise ValueError(f"Unknown model_type: {model_type!r}. Expected 'chat' or 'responses'.")
-
-
-def _to_tool_call_chat(item: Any) -> "ToolCalls.ToolCall":
     if not isinstance(item, dict) and hasattr(item, "model_dump"):
         try:
             item = item.model_dump()
         except TypeError:
-            fn = getattr(item, "function", None)
-            if fn is None:
-                raise
-            return ToolCalls.ToolCall(
-                name=fn.name,
-                args=_parse_args(fn.arguments),
-                id=getattr(item, "id", None),
-            )
+            return _from_lm_tool_call_attrs(item)
 
     if not isinstance(item, dict):
-        raise TypeError(f"Cannot normalize Chat Completions tool call from {type(item).__name__}: {item!r}")
-    if item.get("type") != "function" or not isinstance(item.get("function"), dict):
-        raise ValueError(f"Expected Chat Completions tool-call shape, got: {item!r}")
+        raise TypeError(f"Cannot normalize tool call from {type(item).__name__}: {item!r}")
 
-    fn = item["function"]
-    return ToolCalls.ToolCall(
-        name=fn["name"],
-        args=_parse_args(fn.get("arguments")),
-        id=item.get("id"),
-    )
+    item_type = item.get("type")
+    if item_type == "function" and isinstance(item.get("function"), dict):
+        fn = item["function"]
+        return ToolCalls.ToolCall(
+            name=fn["name"],
+            args=_parse_args(fn.get("arguments")),
+            id=item.get("id"),
+        )
+    if item_type == "function_call" and item.get("name"):
+        return ToolCalls.ToolCall(
+            name=item["name"],
+            args=_parse_args(item.get("arguments")),
+            id=item.get("call_id") or item.get("id"),
+        )
+    raise ValueError(f"Unrecognized tool-call shape: {item!r}")
 
 
-def _to_tool_call_responses(item: Any) -> "ToolCalls.ToolCall":
-    if not isinstance(item, dict) and hasattr(item, "model_dump"):
-        try:
-            item = item.model_dump()
-        except TypeError:
-            if getattr(item, "name", None) is None:
-                raise
-            return ToolCalls.ToolCall(
-                name=item.name,
-                args=_parse_args(getattr(item, "arguments", None)),
-                id=getattr(item, "call_id", None) or getattr(item, "id", None),
-            )
-
-    if not isinstance(item, dict):
-        raise TypeError(f"Cannot normalize Responses API tool call from {type(item).__name__}: {item!r}")
-    if item.get("type") != "function_call" or not item.get("name"):
-        raise ValueError(f"Expected Responses API function_call shape, got: {item!r}")
-
-    return ToolCalls.ToolCall(
-        name=item["name"],
-        args=_parse_args(item.get("arguments")),
-        id=item.get("call_id") or item.get("id"),
-    )
+def _from_lm_tool_call_attrs(item: Any) -> ToolCalls.ToolCall:
+    """MockValSer fallback: extract fields via attribute access."""
+    fn = getattr(item, "function", None)
+    if fn is not None:
+        return ToolCalls.ToolCall(
+            name=fn.name,
+            args=_parse_args(fn.arguments),
+            id=getattr(item, "id", None),
+        )
+    name = getattr(item, "name", None)
+    if name is not None:
+        return ToolCalls.ToolCall(
+            name=name,
+            args=_parse_args(getattr(item, "arguments", None)),
+            id=getattr(item, "call_id", None) or getattr(item, "id", None),
+        )
+    raise TypeError(f"Cannot normalize tool call from {type(item).__name__}: {item!r}")
 
 
 def _parse_args(args: Any) -> dict[str, Any]:
