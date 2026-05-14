@@ -38,6 +38,7 @@ class Adapter:
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[Type]] | None = None,
+        allow_parallel_tool_calls: bool | None = None,
     ):
         """
         Args:
@@ -49,10 +50,13 @@ class Adapter:
             native_response_types: List of output field types that should be handled by native LM features rather than
                 adapter parsing. For example, `dspy.Citations` can be populated directly by citation APIs
                 (e.g., Anthropic's citation feature). Defaults to `[Citations]`.
+            allow_parallel_tool_calls: Whether to request provider-side parallel tool calls when native function calling
+                is active. If `None`, leaves the provider default unchanged. Defaults to None.
         """
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
+        self.allow_parallel_tool_calls = allow_parallel_tool_calls
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -86,6 +90,8 @@ class Adapter:
                 lm_tools = [tool.to_lm_tool_spec(model_type=lm.model_type) for tool in tools]
 
                 lm_kwargs["tools"] = lm_tools
+                if self.allow_parallel_tool_calls is not None:
+                    lm_kwargs["parallel_tool_calls"] = self.allow_parallel_tool_calls
 
                 signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
                 signature_for_native_function_calling = signature_for_native_function_calling.delete(

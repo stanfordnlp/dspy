@@ -459,6 +459,17 @@ def test_toolcalls_vague_match():
     assert tc.tool_calls[0].name == "search"
     assert tc.tool_calls[1].name == "translate"
 
+    # List of ToolCall objects should parse as multiple ToolCalls
+    data_tool_call_objects = [
+        ToolCalls.ToolCall(name="search", args={"query": "hello"}),
+        ToolCalls.ToolCall(name="translate", args={"text": "world", "lang": "fr"}),
+    ]
+    tc = ToolCalls.model_validate(data_tool_call_objects)
+    assert isinstance(tc, ToolCalls)
+    assert len(tc.tool_calls) == 2
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[1].name == "translate"
+
     # Dict with "tool_calls" key containing a list of dicts
     data_tool_calls = {
         "tool_calls": [
@@ -481,6 +492,10 @@ def test_toolcalls_vague_match():
     # Raw wire-format dicts should raise a clear ValueError, not a deep pydantic error
     with pytest.raises(ValueError, match="each item must be a ToolCall"):
         ToolCalls.model_validate([{"type": "function", "function": {"name": "search", "arguments": '{"q": "hi"}'}}])
+
+
+def test_toolcalls_description_describes_batch():
+    assert "One or more tool calls" in ToolCalls.description()
 
 
 def test_tool_convert_input_schema_to_tool_args_no_input_params():
@@ -561,11 +576,8 @@ def test_tool_call_execute():
 
     # Test error case
     tool_call4 = dspy.ToolCalls.ToolCall(name="nonexistent", args={})
-    try:
+    with pytest.raises(ValueError, match="not found"):
         tool_call4.execute(functions=tools)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "not found" in str(e)
 
 
 def test_tool_call_execute_with_local_functions():

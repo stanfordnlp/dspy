@@ -38,9 +38,18 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
 
 
 class JSONAdapter(ChatAdapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
+    def __init__(
+        self,
+        callbacks: list[BaseCallback] | None = None,
+        use_native_function_calling: bool = True,
+        allow_parallel_tool_calls: bool | None = None,
+    ):
         # JSONAdapter uses native function calling by default.
-        super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
+        super().__init__(
+            callbacks=callbacks,
+            use_native_function_calling=use_native_function_calling,
+            allow_parallel_tool_calls=allow_parallel_tool_calls,
+        )
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""

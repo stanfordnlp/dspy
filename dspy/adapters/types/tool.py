@@ -354,7 +354,7 @@ class ToolCalls(Type):
     @classmethod
     def description(cls) -> str:
         return (
-            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
+            "One or more tool calls, including the name of each tool and the arguments to be passed to it. "
             "Arguments must be provided in JSON format."
         )
 
@@ -464,7 +464,7 @@ def _resolve_json_schema_reference(schema: dict) -> dict:
         return schema
 
     def resolve_refs(obj: Any) -> Any:
-        if not isinstance(obj, (dict, list)):
+        if not isinstance(obj, dict | list):
             return obj
         if isinstance(obj, dict):
             if "$ref" in obj:

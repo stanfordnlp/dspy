@@ -527,7 +527,10 @@ def test_chat_adapter_toolcalls_native_function_calling():
     def get_weather(city: str) -> str:
         return f"The weather in {city} is sunny"
 
-    tools = [dspy.Tool(get_weather)]
+    def get_timezone(city: str) -> str:
+        return f"The timezone in {city} is CET"
+
+    tools = [dspy.Tool(get_weather), dspy.Tool(get_timezone)]
 
     adapter = dspy.JSONAdapter(use_native_function_calling=True)
 
@@ -546,7 +549,12 @@ def test_chat_adapter_toolcalls_native_function_calling():
                                 function=Function(arguments='{"city":"Paris"}', name="get_weather"),
                                 id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
                                 type="function",
-                            )
+                            ),
+                            ChatCompletionMessageToolCall(
+                                function=Function(arguments='{"city":"Paris"}', name="get_timezone"),
+                                id="call_timezone",
+                                type="function",
+                            ),
                         ],
                     ),
                 ),
@@ -567,7 +575,8 @@ def test_chat_adapter_toolcalls_native_function_calling():
                     name="get_weather",
                     args={"city": "Paris"},
                     id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
-                )
+                ),
+                dspy.ToolCalls.ToolCall(name="get_timezone", args={"city": "Paris"}, id="call_timezone"),
             ]
         )
         # `answer` is not present, so we set it to None
@@ -588,6 +597,62 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
         assert result[0]["answer"] == "Paris"
         assert result[0]["tool_calls"] is None
+
+
+@pytest.mark.parametrize(
+    "adapter_cls, allow_parallel_tool_calls, expected",
+    [
+        (dspy.ChatAdapter, None, None),
+        (dspy.ChatAdapter, True, True),
+        (dspy.ChatAdapter, False, False),
+        (dspy.JSONAdapter, None, None),
+        (dspy.JSONAdapter, True, True),
+        (dspy.JSONAdapter, False, False),
+    ],
+)
+def test_adapter_parallel_tool_calls_config_only_on_native_path(adapter_cls, allow_parallel_tool_calls, expected):
+    class MySignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    def get_weather(city: str) -> str:
+        return f"The weather in {city} is sunny"
+
+    class FakeLM:
+        supports_function_calling = True
+        model_type = "chat"
+
+    adapter = adapter_cls(
+        use_native_function_calling=True,
+        allow_parallel_tool_calls=allow_parallel_tool_calls,
+    )
+    lm_kwargs = {}
+
+    adapter._call_preprocess(
+        FakeLM(),
+        lm_kwargs,
+        MySignature,
+        {"question": "What is the weather in Paris?", "tools": [dspy.Tool(get_weather)]},
+    )
+
+    if expected is None:
+        assert "parallel_tool_calls" not in lm_kwargs
+    else:
+        assert lm_kwargs["parallel_tool_calls"] is expected
+
+    lm_kwargs = {}
+    adapter = adapter_cls(
+        use_native_function_calling=False,
+        allow_parallel_tool_calls=allow_parallel_tool_calls,
+    )
+    adapter._call_preprocess(
+        FakeLM(),
+        lm_kwargs,
+        MySignature,
+        {"question": "What is the weather in Paris?", "tools": [dspy.Tool(get_weather)]},
+    )
+    assert "parallel_tool_calls" not in lm_kwargs
 
 
 def test_chat_adapter_toolcalls_vague_match():
@@ -729,25 +794,27 @@ def test_format_system_message():
 
     adapter = dspy.ChatAdapter()
     system_message = adapter.format_system_message(MySignature)
-    expected_system_message = """Your input fields are:
-1. `question` (str):
-Your output fields are:
-1. `answers` (list[str]): 
-2. `scores` (list[float]):
-All interactions will be structured in the following way, with the appropriate values filled in.
-
-[[ ## question ## ]]
-{question}
-
-[[ ## answers ## ]]
-{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
-
-[[ ## scores ## ]]
-{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
-
-[[ ## completed ## ]]
-In adhering to this structure, your objective is: 
-        Answer the question with multiple answers and scores"""
+    expected_system_message = (
+        "Your input fields are:\n"
+        "1. `question` (str):\n"
+        "Your output fields are:\n"
+        "1. `answers` (list[str]): \n"
+        "2. `scores` (list[float]):\n"
+        "All interactions will be structured in the following way, with the appropriate values filled in.\n"
+        "\n"
+        "[[ ## question ## ]]\n"
+        "{question}\n"
+        "\n"
+        "[[ ## answers ## ]]\n"
+        '{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}\n'
+        "\n"
+        "[[ ## scores ## ]]\n"
+        '{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}\n'
+        "\n"
+        "[[ ## completed ## ]]\n"
+        "In adhering to this structure, your objective is: \n"
+        "        Answer the question with multiple answers and scores"
+    )
     assert system_message == expected_system_message
 
 

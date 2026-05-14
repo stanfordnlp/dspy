@@ -618,6 +618,14 @@ def test_responses_api_tool_calls(litellm_test_server):
         "status": "completed",
         "id": "call_1",
     }
+    wire_tool_call_2 = {
+        "type": "function_call",
+        "name": "get_timezone",
+        "arguments": json.dumps({"city": "Paris"}),
+        "call_id": "call_2",
+        "status": "completed",
+        "id": "call_2",
+    }
     # `lm()` returns canonical `ToolCalls.ToolCall` objects regardless of which
     # wire shape (Chat Completions vs Responses API) the provider used, and the
     # output dict is normalized so `text` is always present (None when the
@@ -627,13 +635,14 @@ def test_responses_api_tool_calls(litellm_test_server):
         {
             "text": None,
             "tool_calls": [
-                dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"}, id="call_1")
+                dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"}, id="call_1"),
+                dspy.ToolCalls.ToolCall(name="get_timezone", args={"city": "Paris"}, id="call_2"),
             ],
         }
     ]
 
     api_response = make_response(
-        output_blocks=[wire_tool_call],
+        output_blocks=[wire_tool_call, wire_tool_call_2],
     )
 
     with mock.patch("litellm.responses", autospec=True, return_value=api_response) as dspy_responses:
