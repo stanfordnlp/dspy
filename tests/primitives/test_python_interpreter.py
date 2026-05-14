@@ -617,7 +617,8 @@ def test_enable_read_paths_symlink(tmp_path):
         pytest.skip(f"symlink creation unavailable: {exc}")
 
     with PythonInterpreter(enable_read_paths=[str(link_file)]) as interp:
-        allow_read = next(a for a in interp.deno_command if a.startswith("--allow-read=")).split(",")
+        allow_read_arg = next(a for a in interp.deno_command if a.startswith("--allow-read="))
+        allow_read = allow_read_arg[len("--allow-read="):].split(",")
         assert os.path.realpath(str(real_file)) in allow_read
         assert str(link_file) not in allow_read
 
