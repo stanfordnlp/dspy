@@ -124,8 +124,14 @@ class PythonInterpreter:
         Args:
             deno_command: command list to launch Deno.
             enable_read_paths: Files or directories to allow reading from in the sandbox.
+                Files are mounted under ``/sandbox/<basename>``; directories are accessible at
+                their host path via Deno's ``--allow-read=<dir>`` and are not mounted under
+                ``/sandbox/``.
             enable_write_paths: Files or directories to allow writing to in the sandbox.
-                All write paths will also be able to be read from for mounting.
+                All write paths are also readable for mounting. Files are mounted under
+                ``/sandbox/<basename>`` and synced back to the host on exit; directories are
+                accessible at the host path via ``--allow-write=<dir>`` and are not mounted
+                under ``/sandbox/`` (no write-back sync).
             enable_env_vars: Environment variable names to allow in the sandbox.
             enable_network_access: Domains or IPs to allow network access in the sandbox.
             sync_files: If set, syncs changes within the sandbox back to original files after execution.
@@ -238,6 +244,13 @@ class PythonInterpreter:
             return
         for path in paths_to_mount:
             if not path:
+                continue
+            if os.path.isdir(path):
+                logger.debug(
+                    "Skipping mount_file for directory %s; sandbox access is granted via "
+                    "--allow-read/--allow-write at the host path.",
+                    path,
+                )
                 continue
             if not os.path.exists(path):
                 if self.enable_write_paths and path in self.enable_write_paths:
