@@ -152,40 +152,9 @@ class Tool(Type):
 
     # TODO(MaximeRivest): Change to be to_LMToolDefinitionPart
     def format_as_litellm_tool_definition(self, model_type: str) -> dict[str, Any]:
-        """Outbound boundary: serialize this tool *definition* for the LiteLLM
-        ``tools=`` request payload.
+        """Serialize this tool definition for the LiteLLM ``tools=`` payload.
 
-        Contract:
-
-        * ``model_type`` is required. Valid values are exactly ``"chat"`` and
-          ``"responses"``. Any other value raises ``ValueError``.
-        * Returns a plain ``dict``. Its concrete shape is determined entirely
-          by ``model_type``:
-
-          ``model_type="chat"`` — OpenAI Chat Completions wrapper::
-
-              {
-                  "type": "function",
-                  "function": {
-                      "name": <str>,
-                      "description": <str>,
-                      "parameters": <JSON Schema object>,
-                  },
-              }
-
-          ``model_type="responses"`` — OpenAI Responses API flattened shape::
-
-              {
-                  "type": "function",
-                  "name": <str>,
-                  "description": <str>,
-                  "parameters": <JSON Schema object>,
-              }
-
-        These two dialects are the only ones the boundary speaks; this is the
-        same set accepted by ``ToolCalls.ToolCall.format_as_litellm_tool_call``
-        and ``to_tool_call``. Keep all three in sync if a new dialect is
-        ever added.
+        ``model_type`` must be ``"chat"`` or ``"responses"``.
         """
         fn = {
             "name": self.name,
@@ -307,43 +276,10 @@ class ToolCalls(Type):
 
         # TODO(MaximeRivest): Change to be to_LMToolCallPart
         def format_as_litellm_tool_call(self, model_type: str) -> dict[str, Any]:
-            """Outbound boundary: serialize this tool *call* for replay in a
-            LiteLLM assistant message (multi-turn tool loops).
+            """Serialize this tool call for a LiteLLM assistant message.
 
-            Symmetric with ``Tool.format_as_litellm_tool_definition``: same
-            two-dialect contract, same required ``model_type`` argument.
-
-            Contract:
-
-            * ``model_type`` is required and must be ``"chat"`` or
-              ``"responses"`` (anything else raises ``ValueError``).
-            * ``arguments`` is always emitted as a **JSON-encoded string**, as
-              required by both OpenAI APIs when this payload is dropped into
-              an ``assistant.tool_calls[...]`` entry. (Sending a Python dict
-              instead causes a 400 at request time.)
-            * The optional ``id`` field is included only when ``self.id`` is
-              set, and is named per the dialect: ``id`` for Chat Completions,
-              ``call_id`` for the Responses API.
-
-            Returned shapes::
-
-                model_type="chat":
-                    {
-                        "type": "function",
-                        "function": {"name": <str>, "arguments": <JSON str>},
-                        "id": <str>,            # only when self.id is set
-                    }
-
-                model_type="responses":
-                    {
-                        "type": "function_call",
-                        "name": <str>,
-                        "arguments": <JSON str>,
-                        "call_id": <str>,       # only when self.id is set
-                    }
-
-            Round-trip: ``to_tool_call(tc.format_as_litellm_tool_call(d), d)``
-            equals ``tc`` for any supported ``d``.
+            ``model_type`` must be ``"chat"`` or ``"responses"``.
+            ``arguments`` is always JSON-encoded as required by both APIs.
             """
             args_str = json.dumps(self.args)
             if model_type == "responses":
@@ -366,10 +302,7 @@ class ToolCalls(Type):
             raise ValueError(f"Unknown model_type: {model_type!r}. Expected 'chat' or 'responses'.")
 
         def format(self) -> dict[str, Any]:
-            # `Type` contract — used by `Type.serialize_model` to embed this
-            # tool call inline in prompt text. Defaults to the Chat Completions
-            # dialect; switch dialects via `format_as_litellm_tool_call`.
-            return self.format_as_litellm_tool_call("chat")
+            return {"name": self.name, "args": self.args}
 
         def execute(self, functions: "dict[str, Any] | list[Tool] | None" = None) -> Any:
             """Execute this individual tool call and return its result.
@@ -424,7 +357,6 @@ class ToolCalls(Type):
         )
 
     def format(self) -> list[dict[str, Any]]:
-        # The tool_call field is compatible with OpenAI's tool calls schema.
         return {
             "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
         }
@@ -460,34 +392,12 @@ class ToolCalls(Type):
 
 # TODO(MaximeRivest): Change to be from_LMToolResultPart.
 def to_tool_call(item: Any, model_type: str) -> ToolCalls.ToolCall:
-    """Inbound boundary: normalize one LiteLLM tool-call into a canonical
-    ``ToolCalls.ToolCall``.
+    """Normalize one LiteLLM tool-call (dict or pydantic object) into a
+    canonical ``ToolCalls.ToolCall``.
 
-    Contract:
-
-    * ``model_type`` is required and must be ``"chat"`` or ``"responses"`` —
-      the same two dialects served by ``Tool.format_as_litellm_tool_definition``
-      and ``ToolCalls.ToolCall.format_as_litellm_tool_call``. Any other value
-      raises ``ValueError``. Callers always know this:
-      ``base_lm._process_completion`` is always ``"chat"`` and
-      ``_process_response`` is always ``"responses"``.
-    * ``item`` may be either a ``dict`` in the dialect's wire shape (see
-      ``format_as_litellm_tool_call`` for the exact key sets) or a pydantic
-      object exposing ``model_dump`` that returns such a dict. Anything else
-      raises ``TypeError``.
-    * Wrong-dialect payloads (e.g. a Responses-API shape passed with
-      ``model_type="chat"``) raise ``ValueError`` with a precise message
-      instead of silently falling through to the other branch.
-    * Returns a fully-populated ``ToolCalls.ToolCall``. ``args`` is always a
-      ``dict`` (parsed from JSON when the wire side supplies a string);
-      ``id`` reflects ``id`` (chat) or ``call_id`` (responses) and is
-      ``None`` when the provider omitted it.
-
-    Fallback policy: when ``item.model_dump()`` raises ``TypeError`` because
-    of the MockValSer/SchemaSerializer bug (pydantic#7713 / litellm#9345),
-    we reach through to attribute access for the *same* fields the dict path
-    would have read. This is the only fallback in this boundary; everything
-    else is a hard error.
+    ``model_type`` must be ``"chat"`` or ``"responses"``.
+    Falls back to attribute access when ``model_dump()`` raises TypeError
+    (cached pydantic MockValSer bug).
     """
     if model_type == "chat":
         return _to_tool_call_chat(item)

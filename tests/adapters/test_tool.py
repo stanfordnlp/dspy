@@ -398,9 +398,7 @@ TOOL_CALL_TEST_CASES = [
     (
         [{"name": "search", "args": {"query": "hello"}}],
         {
-            "tool_calls": [
-                {"type": "function", "function": {"name": "search", "arguments": '{"query": "hello"}'}}
-            ],
+            "tool_calls": [{"name": "search", "args": {"query": "hello"}}],
         },
     ),
     (
@@ -410,18 +408,15 @@ TOOL_CALL_TEST_CASES = [
         ],
         {
             "tool_calls": [
-                {"type": "function", "function": {"name": "search", "arguments": '{"query": "hello"}'}},
-                {
-                    "type": "function",
-                    "function": {"name": "translate", "arguments": '{"text": "world", "lang": "fr"}'},
-                },
+                {"name": "search", "args": {"query": "hello"}},
+                {"name": "translate", "args": {"text": "world", "lang": "fr"}},
             ],
         },
     ),
     (
         [{"name": "get_time", "args": {}}],
         {
-            "tool_calls": [{"type": "function", "function": {"name": "get_time", "arguments": "{}"}}],
+            "tool_calls": [{"name": "get_time", "args": {}}],
         },
     ),
 ]
@@ -783,12 +778,10 @@ def test_toolcall_format_preserves_id_responses_round_trip():
     assert restored == original
 
 
-def test_toolcall_format_default_alias_uses_chat_dialect():
-    """`format()` (the Type contract) is a thin alias for the Chat Completions
-    dialect — kept so this type still plugs into `Type.serialize_model` for
-    prompt rendering."""
+def test_toolcall_format_returns_canonical_shape():
+    """`format()` returns the model-agnostic canonical shape, not a wire dialect."""
     tc = ToolCalls.ToolCall(name="search", args={"q": "x"}, id="c1")
-    assert tc.format() == tc.format_as_litellm_tool_call("chat")
+    assert tc.format() == {"name": "search", "args": {"q": "x"}}
 
 
 def test_toolcall_format_omits_id_when_absent():
