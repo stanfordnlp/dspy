@@ -151,9 +151,9 @@ class Tool(Type):
         return str(self)
 
     def to_lm_tool_definition(self, model_type: str) -> dict[str, Any]:
-        """Serialize this tool definition for the LiteLLM ``tools=`` payload.
+        """Serialize this tool definition for the LiteLLM `tools=` payload.
 
-        ``model_type`` must be ``"chat"`` or ``"responses"``.
+        `model_type` must be `"chat"` or `"responses"`.
         """
         fn = {
             "name": self.name,
@@ -276,8 +276,8 @@ class ToolCalls(Type):
         def to_lm_tool_call(self, model_type: str) -> dict[str, Any]:
             """Serialize this tool call for a LiteLLM assistant message.
 
-            ``model_type`` must be ``"chat"`` or ``"responses"``.
-            ``arguments`` is always JSON-encoded as required by both APIs.
+            `model_type` must be `"chat"` or `"responses"`.
+            `arguments` is always JSON-encoded as required by both APIs.
             """
             args_str = json.dumps(self.args)
             if model_type == "responses":
@@ -390,7 +390,7 @@ class ToolCalls(Type):
 
 # TODO: item should become LMToolCallResultPart, owned by clients.
 def from_lm_tool_call(item: Any) -> ToolCalls.ToolCall:
-    """Normalize a LiteLLM tool-call into a canonical ``ToolCalls.ToolCall``.
+    """Normalize a LiteLLM tool-call into a canonical `ToolCalls.ToolCall`.
 
     Auto-detects Chat Completions vs Responses API from the item's shape.
     """
