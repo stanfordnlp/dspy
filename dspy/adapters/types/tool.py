@@ -433,7 +433,18 @@ class ToolCalls(Type):
     @classmethod
     def validate_input(cls, data: Any):
         def coerce(items):
-            return [it if isinstance(it, cls.ToolCall) else cls.ToolCall(**it) for it in items]
+            result = []
+            for it in items:
+                if isinstance(it, cls.ToolCall):
+                    result.append(it)
+                elif isinstance(it, dict) and "name" in it and "args" in it:
+                    result.append(cls.ToolCall(**it))
+                else:
+                    raise ValueError(
+                        f"Invalid value for `dspy.ToolCalls`: each item must be a ToolCall "
+                        f"or a dict with 'name' and 'args' keys, got {it!r}"
+                    )
+            return result
 
         if isinstance(data, cls):
             return data

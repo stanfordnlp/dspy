@@ -483,6 +483,10 @@ def test_toolcalls_vague_match():
     with pytest.raises(ValueError):
         ToolCalls.model_validate([{"foo": "bar"}])
 
+    # Raw wire-format dicts should raise a clear ValueError, not a deep pydantic error
+    with pytest.raises(ValueError, match="each item must be a ToolCall"):
+        ToolCalls.model_validate([{"type": "function", "function": {"name": "search", "arguments": '{"q": "hi"}'}}])
+
 
 def test_tool_convert_input_schema_to_tool_args_no_input_params():
     args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema={"properties": {}})
