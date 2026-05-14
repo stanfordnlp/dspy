@@ -50,6 +50,7 @@ This list is regularly updated with new research publications using DSPy.
 | **Synthetic Data Generation**| [Github](https://colab.research.google.com/drive/1CweVOu0qhTC0yOfW5QkLDRIKuAuWJKEr?usp=sharing) |
 | **Self Discover**| [Github](https://colab.research.google.com/drive/1GkAQKmw1XQgg5UNzzy8OncRe79V6pADB?usp=sharing) |
 | **MedVAL**| [Github](https://github.com/StanfordMIMI/MedVAL) |
+| **Dynamic Model Router for DSPy** | Pre-call task classifier that picks the cheapest model tier per `dspy.LM` call using a 3-layer cascade (keywords → frozen MiniLM → LLM fallback), classifying in <15ms. [Github](https://github.com/manthan9891994/agents-multi-model-support) |
 
 This list showcases some of the open-source projects and repositories using DSPy, with many more examples available in the community.
 
