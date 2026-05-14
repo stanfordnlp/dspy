@@ -6,6 +6,7 @@ WASM environment using Deno and Pyodide. It implements the Interpreter
 protocol defined in interpreter.py.
 """
 
+import asyncio
 import functools
 import inspect
 import json
@@ -70,6 +71,17 @@ def _jsonrpc_error(code: int, message: str, id: int | str, data: dict | None = N
     if data:
         err["data"] = data
     return json.dumps({"jsonrpc": "2.0", "error": err, "id": id})
+
+
+def _await_in_sync(coroutine: Any) -> Any:
+    """Run a coroutine to completion from a sync caller."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is None:
+        return asyncio.run(coroutine)
+    return loop.run_until_complete(coroutine)
 
 
 class PythonInterpreter:
@@ -300,6 +312,8 @@ class PythonInterpreter:
             if tool_name not in self.tools:
                 raise CodeInterpreterError(f"Unknown tool: {tool_name}")
             result = self.tools[tool_name](**kwargs)
+            if asyncio.iscoroutine(result):
+                result = _await_in_sync(result)
             is_json = isinstance(result, (list, dict))
             response = _jsonrpc_result(
                 {"value": json.dumps(result) if is_json else (str(result) if result is not None else ""), "type": "json" if is_json else "string"},

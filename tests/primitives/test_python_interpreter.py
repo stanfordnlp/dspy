@@ -1,3 +1,4 @@
+import asyncio
 import os
 import random
 
@@ -374,6 +375,38 @@ def test_tool_error_surfaces_as_runtime_error():
         )
         assert "ValueError" in result
         assert "bad value: 42" in result
+
+
+def test_tool_async_def_function():
+    """async def tools should be awaited so the sandbox sees the resolved value."""
+
+    async def slow_search(query: str) -> str:
+        await asyncio.sleep(0)
+        return f"answer:{query}"
+
+    with PythonInterpreter(tools={"slow_search": slow_search}) as sandbox:
+        result = sandbox.execute("slow_search(query='hello')")
+        assert result == "answer:hello"
+
+
+def test_tool_async_def_raises_propagates():
+    """Exceptions raised inside an async tool should surface as RuntimeError in the sandbox."""
+
+    async def failing_async(x: int) -> str:
+        await asyncio.sleep(0)
+        raise ValueError(f"boom:{x}")
+
+    with PythonInterpreter(tools={"failing_async": failing_async}) as sandbox:
+        result = sandbox.execute(
+            "try:\n"
+            "    failing_async(7)\n"
+            "    output = 'no error'\n"
+            "except RuntimeError as e:\n"
+            "    output = str(e)\n"
+            "output"
+        )
+        assert "ValueError" in result
+        assert "boom:7" in result
 
 
 
