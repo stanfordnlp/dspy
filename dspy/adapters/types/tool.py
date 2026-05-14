@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import re
 from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
 
 import json_repair
@@ -151,13 +152,15 @@ class Tool(Type):
         return str(self)
 
     # TODO: return LMToolSpec instead of dict; wire-format serialization moves to the LM.
+    # TODO: _sanitize_tool_name should move into the LM layer with the rest of
+    # the provider-specific wire-format logic.
     def to_lm_tool_spec(self, model_type: str) -> dict[str, Any]:
         """Serialize this tool definition for the LiteLLM `tools=` payload.
 
         `model_type` must be `"chat"` or `"responses"`.
         """
         fn = {
-            "name": self.name,
+            "name": _sanitize_tool_name(self.name),
             "description": self.desc,
             "parameters": {
                 "type": "object",
@@ -445,6 +448,13 @@ def _parse_args(args: Any) -> dict[str, Any]:
     if args is None or args == "":
         return {}
     return json_repair.loads(args) if isinstance(args, str) else args
+
+
+_TOOL_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def _sanitize_tool_name(name: str) -> str:
+    return _TOOL_NAME_RE.sub("_", name)
 
 
 def _resolve_json_schema_reference(schema: dict) -> dict:
