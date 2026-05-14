@@ -388,6 +388,7 @@ class ToolCalls(Type):
         raise ValueError(f"Invalid value for `dspy.ToolCalls`: {data!r}")
 
 
+# TODO: item should become LMToolCallResultPart, owned by clients.
 def from_lm_tool_call(item: Any) -> ToolCalls.ToolCall:
     """Normalize a LiteLLM tool-call into a canonical ``ToolCalls.ToolCall``.
 
