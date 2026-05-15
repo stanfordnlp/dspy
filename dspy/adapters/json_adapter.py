@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Generator, get_origin
+from typing import Any, get_origin
 
 import json_repair
 import pydantic
@@ -24,21 +24,17 @@ from dspy.utils.exceptions import AdapterParseError
 logger = logging.getLogger(__name__)
 
 
-def _open_ended_mapping_field_names(signature: SignatureMeta) -> Generator[str, None, None]:
-    """Yield names of output fields typed as ``dict[...]``. Structured Outputs require
+def _get_open_ended_mapping_field_names(signature: SignatureMeta) -> list[str]:
+    """Return names of output fields typed as `dict[...]`. Structured Outputs require
     explicit properties, so such fields are incompatible and force a fallback to
-    ``{"type": "json_object"}``.
+    `{"type": "json_object"}`.
     """
-    for name, field in signature.output_fields.items():
-        if get_origin(field.annotation) is dict:
-            yield name
+    return [name for name, field in signature.output_fields.items() if get_origin(field.annotation) is dict]
 
 
-def _non_native_tool_call_field_names(signature: SignatureMeta) -> Generator[str, None, None]:
-    """Yield names of output fields with ``dspy.ToolCalls`` annotations."""
-    for name, field in signature.output_fields.items():
-        if field.annotation == ToolCalls:
-            yield name
+def _get_non_native_tool_call_field_names(signature: SignatureMeta) -> list[str]:
+    """Return names of output fields with `dspy.ToolCalls` annotations."""
+    return [name for name, field in signature.output_fields.items() if field.annotation == ToolCalls]
 
 
 class JSONAdapter(ChatAdapter):
@@ -51,9 +47,9 @@ class JSONAdapter(ChatAdapter):
         if "response_format" not in lm.supported_params:
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
-        open_ended_mappings = list(_open_ended_mapping_field_names(signature))
+        open_ended_mappings = _get_open_ended_mapping_field_names(signature)
         non_native_tool_calls = (
-            list(_non_native_tool_call_field_names(signature)) if not self.use_native_function_calling else []
+            _get_non_native_tool_call_field_names(signature) if not self.use_native_function_calling else []
         )
 
         # Warn on signature-level causes that force the fallback; the user can act on these.
