@@ -778,6 +778,10 @@ dev = [
 langchain = [
     { name = "langchain-core" },
 ]
+litellm = [
+    { name = "litellm", version = "1.68.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "litellm", version = "1.72.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+]
 mcp = [
     { name = "mcp", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
     { name = "mcp", version = "1.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
@@ -819,6 +823,7 @@ requires-dist = [
     { name = "langchain-core", marker = "extra == 'test-extras'" },
     { name = "litellm", specifier = ">=1.64.0" },
     { name = "litellm", marker = "(python_full_version == '3.14.*' and extra == 'dev') or (sys_platform == 'win32' and extra == 'dev')", specifier = ">=1.64.0" },
+    { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.64.0" },
     { name = "litellm", extras = ["proxy"], marker = "python_full_version < '3.14' and sys_platform != 'win32' and extra == 'dev'", specifier = ">=1.64.0" },
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'mcp'" },
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'test-extras'" },
@@ -843,7 +848,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.66.1" },
     { name = "weaviate-client", marker = "extra == 'weaviate'", specifier = "~=4.5.4" },
 ]
-provides-extras = ["anthropic", "weaviate", "mcp", "langchain", "optuna", "numpy", "dev", "test-extras"]
+provides-extras = ["anthropic", "weaviate", "mcp", "langchain", "optuna", "numpy", "litellm", "dev", "test-extras"]
 
 [[package]]
 name = "email-validator"

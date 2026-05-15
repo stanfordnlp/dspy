@@ -23,7 +23,6 @@ import importlib.util
 import inspect
 import sys
 import types
-from collections.abc import Callable
 from typing import Any
 
 
@@ -45,28 +44,6 @@ _INSTALL_HINTS: dict[str, str] = {
     "numpy": "numpy",
     "litellm": "litellm",
 }
-_ON_LOAD_CALLBACKS: dict[str, list[Callable[[types.ModuleType], None]]] = {}
-_LAZY_MODULES: set[str] = set()
-
-
-class _OnLoadLoader:
-    def __init__(self, module: str, loader):
-        self.module = module
-        self.loader = loader
-
-    def create_module(self, spec):
-        if hasattr(self.loader, "create_module"):
-            return self.loader.create_module(spec)
-        return None
-
-    def exec_module(self, module: types.ModuleType):
-        self.loader.exec_module(module)
-        _LAZY_MODULES.discard(self.module)
-        for callback in _ON_LOAD_CALLBACKS.pop(self.module, []):
-            callback(module)
-
-    def __getattr__(self, name: str):
-        return getattr(self.loader, name)
 
 
 class _MissingModule(types.ModuleType):
@@ -100,13 +77,7 @@ def is_available(module: str) -> bool:
         return False
 
 
-def require(
-    module: str,
-    *,
-    extra: str | None = None,
-    feature: str | None = None,
-    on_load: Callable[[types.ModuleType], None] | None = None,
-) -> Any:
+def require(module: str, *, extra: str | None = None, feature: str | None = None) -> Any:
     """Return a lazily-loaded module, or a stub that raises on access.
 
     Safe to call at module level:
@@ -124,16 +95,9 @@ def require(
         module: Dotted module path (e.g. `"numpy"`).
         extra: Name of the dspy extra that provides this dep.
         feature: Label shown in the error (e.g. `"dspy.Embeddings"`).
-        on_load: Optional callback run once with the real module after it is loaded.
     """
     if module in sys.modules:
-        mod = sys.modules[module]
-        if on_load is not None:
-            if module in _LAZY_MODULES:
-                _ON_LOAD_CALLBACKS.setdefault(module, []).append(on_load)
-            else:
-                on_load(mod)
-        return mod
+        return sys.modules[module]
 
     spec = importlib.util.find_spec(module)
     if spec is None or spec.loader is None:
@@ -155,14 +119,9 @@ def require(
         del parent
         return _MissingModule(module, message, frame_data)
 
-    if on_load is not None:
-        _ON_LOAD_CALLBACKS.setdefault(module, []).append(on_load)
-    spec.loader = _OnLoadLoader(module, spec.loader)
-
     loader = importlib.util.LazyLoader(spec.loader)
     spec.loader = loader
     mod = importlib.util.module_from_spec(spec)
     sys.modules[module] = mod
-    _LAZY_MODULES.add(module)
     loader.exec_module(mod)
     return mod

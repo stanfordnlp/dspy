@@ -11,6 +11,7 @@ import pydantic
 from anyio.streams.memory import MemoryObjectSendStream
 
 import dspy
+from dspy.clients._litellm import get_litellm, is_litellm_context_window_error
 from dspy.clients.cache import request_cache
 from dspy.clients.openai import OpenAIProvider
 from dspy.clients.provider import Provider, ReinforceJob, TrainingJob
@@ -18,27 +19,14 @@ from dspy.clients.utils_finetune import TrainDataFormat
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import ContextWindowExceededError
-from dspy.utils.lazy_import import require
 
 from .base_lm import BaseLM
 
 logger = logging.getLogger(__name__)
 
 
-def _configure_litellm_defaults(litellm):
-    litellm.telemetry = False
-    litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
-    if not getattr(litellm, "_dspy_logging_configured", False):
-        litellm.suppress_debug_info = True
-        litellm._dspy_logging_configured = True
-
-
-litellm = require("litellm", extra="litellm", feature="dspy.LM", on_load=_configure_litellm_defaults)
-
-
-def _is_litellm_context_window_error(error: Exception) -> bool:
-    error_type = type(error)
-    return error_type.__module__.startswith("litellm") and "ContextWindowExceeded" in error_type.__name__
+def _get_litellm():
+    return get_litellm(feature="dspy.LM")
 
 
 class LM(BaseLM):
@@ -137,19 +125,19 @@ class LM(BaseLM):
 
     @property
     def supports_function_calling(self) -> bool:
-        return litellm.supports_function_calling(model=self.model)
+        return _get_litellm().supports_function_calling(model=self.model)
 
     @property
     def supports_reasoning(self) -> bool:
-        return litellm.supports_reasoning(self.model)
+        return _get_litellm().supports_reasoning(self.model)
 
     @property
     def supports_response_schema(self) -> bool:
-        return litellm.supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
+        return _get_litellm().supports_response_schema(model=self.model, custom_llm_provider=self._provider_name)
 
     @property
     def supported_params(self) -> set[str]:
-        params = litellm.get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
+        params = _get_litellm().get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
         return set(params) if params else set()
 
     def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
@@ -205,7 +193,7 @@ class LM(BaseLM):
                 cache=litellm_cache_args,
             )
         except Exception as e:
-            if _is_litellm_context_window_error(e):
+            if is_litellm_context_window_error(e):
                 raise ContextWindowExceededError(model=self.model) from e
             raise
 
@@ -248,7 +236,7 @@ class LM(BaseLM):
                 cache=litellm_cache_args,
             )
         except Exception as e:
-            if _is_litellm_context_window_error(e):
+            if is_litellm_context_window_error(e):
                 raise ContextWindowExceededError(model=self.model) from e
             raise
 
@@ -374,7 +362,7 @@ def _get_stream_completion_fn(
         request["stream_options"] = {"include_usage": True}
 
     async def stream_completion(request: dict[str, Any], cache_kwargs: dict[str, Any]):
-        response = await litellm.acompletion(
+        response = await _get_litellm().acompletion(
             cache=cache_kwargs,
             stream=True,
             headers=headers,
@@ -387,7 +375,7 @@ def _get_stream_completion_fn(
                 chunk.predict_id = caller_predict_id
             chunks.append(chunk)
             await stream.send(chunk)
-        return litellm.stream_chunk_builder(chunks)
+        return _get_litellm().stream_chunk_builder(chunks)
 
     def sync_stream_completion():
         return anyio.from_thread.run(functools.partial(stream_completion, request, cache_kwargs))
@@ -408,7 +396,7 @@ def litellm_completion(request: dict[str, Any], num_retries: int, cache: dict[st
     headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
     stream_completion = _get_stream_completion_fn(request, cache, sync=True, headers=headers)
     if stream_completion is None:
-        return litellm.completion(
+        return _get_litellm().completion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
@@ -436,7 +424,7 @@ def litellm_text_completion(request: dict[str, Any], num_retries: int, cache: di
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
-    return litellm.text_completion(
+    return _get_litellm().text_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,
@@ -456,7 +444,7 @@ async def alitellm_completion(request: dict[str, Any], num_retries: int, cache: 
     headers = _add_dspy_identifier_to_headers(request.pop("headers", None))
     stream_completion = _get_stream_completion_fn(request, cache, sync=False, headers=headers)
     if stream_completion is None:
-        return await litellm.acompletion(
+        return await _get_litellm().acompletion(
             cache=cache,
             num_retries=num_retries,
             retry_strategy="exponential_backoff_retry",
@@ -482,7 +470,7 @@ async def alitellm_text_completion(request: dict[str, Any], num_retries: int, ca
     # Build the prompt from the messages.
     prompt = "\n\n".join([x["content"] for x in request.pop("messages")] + ["BEGIN RESPONSE:"])
 
-    return await litellm.atext_completion(
+    return await _get_litellm().atext_completion(
         cache=cache,
         model=f"text-completion-openai/{model}",
         api_key=api_key,
@@ -502,7 +490,7 @@ def litellm_responses_completion(request: dict[str, Any], num_retries: int, cach
     headers = request.pop("headers", None)
     request = _convert_chat_request_to_responses_request(request)
 
-    return litellm.responses(
+    return _get_litellm().responses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",
@@ -518,7 +506,7 @@ async def alitellm_responses_completion(request: dict[str, Any], num_retries: in
     headers = request.pop("headers", None)
     request = _convert_chat_request_to_responses_request(request)
 
-    return await litellm.aresponses(
+    return await _get_litellm().aresponses(
         cache=cache,
         num_retries=num_retries,
         retry_strategy="exponential_backoff_retry",

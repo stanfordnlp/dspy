@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import inspect
 import re
 from collections import defaultdict
@@ -113,7 +115,7 @@ class StreamListener:
 
         return False
 
-    def receive(self, chunk: "ModelResponseStream"):
+    def receive(self, chunk: ModelResponseStream):
         adapter_name = settings.adapter.__class__.__name__ if settings.adapter else "ChatAdapter"
         if adapter_name not in self.adapter_identifiers:
             raise ValueError(
@@ -369,7 +371,7 @@ class StreamListener:
 
 
 def find_predictor_for_stream_listeners(
-    program: "Module", stream_listeners: list[StreamListener]
+    program: Module, stream_listeners: list[StreamListener]
 ) -> dict[int, list[StreamListener]]:
     """Find the predictor for each stream listener.
 
@@ -386,7 +388,7 @@ def find_predictor_for_stream_listeners(
         field_name_to_named_predictor[listener.signature_field_name] = None
 
     for name, predictor in predictors:
-        for field_name, field_info in predictor.signature.output_fields.items():
+        for field_name in predictor.signature.output_fields:
             if field_name not in field_name_to_named_predictor:
                 continue
 

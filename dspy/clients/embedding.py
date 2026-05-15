@@ -2,21 +2,15 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from dspy.clients._litellm import get_litellm
 from dspy.clients.cache import request_cache
 from dspy.utils.lazy_import import require
 
 np = require("numpy")
 
 
-def _configure_litellm_defaults(litellm):
-    litellm.telemetry = False
-    litellm.cache = None  # By default we disable LiteLLM cache and use DSPy on-disk cache.
-    if not getattr(litellm, "_dspy_logging_configured", False):
-        litellm.suppress_debug_info = True
-        litellm._dspy_logging_configured = True
-
-
-litellm = require("litellm", extra="litellm", feature="dspy.Embedder", on_load=_configure_litellm_defaults)
+def _get_litellm():
+    return get_litellm(feature="dspy.Embedder")
 
 
 class Embedder:
@@ -162,8 +156,8 @@ class Embedder:
 
 def _compute_embeddings(model, batch_inputs, caching=False, **kwargs):
     if isinstance(model, str):
-        caching = caching and litellm.cache is not None
-        embedding_response = litellm.embedding(model=model, input=batch_inputs, caching=caching, **kwargs)
+        caching = caching and _get_litellm().cache is not None
+        embedding_response = _get_litellm().embedding(model=model, input=batch_inputs, caching=caching, **kwargs)
         return [data["embedding"] for data in embedding_response.data]
     elif callable(model):
         return model(batch_inputs, **kwargs)
@@ -178,8 +172,8 @@ def _cached_compute_embeddings(model, batch_inputs, caching=True, **kwargs):
 
 async def _acompute_embeddings(model, batch_inputs, caching=False, **kwargs):
     if isinstance(model, str):
-        caching = caching and litellm.cache is not None
-        embedding_response = await litellm.aembedding(model=model, input=batch_inputs, caching=caching, **kwargs)
+        caching = caching and _get_litellm().cache is not None
+        embedding_response = await _get_litellm().aembedding(model=model, input=batch_inputs, caching=caching, **kwargs)
         return [data["embedding"] for data in embedding_response.data]
     elif callable(model):
         return model(batch_inputs, **kwargs)

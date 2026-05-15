@@ -42,50 +42,6 @@ def test_require_returns_stub_when_missing():
     assert isinstance(stub, _MissingModule)
 
 
-def test_require_on_load_runs_once_on_first_access(tmp_path, monkeypatch):
-    import importlib
-    import sys
-
-    module = "lazy_import_test_module"
-    (tmp_path / f"{module}.py").write_text("VALUE = 41\n")
-    monkeypatch.syspath_prepend(str(tmp_path))
-    monkeypatch.delitem(sys.modules, module, raising=False)
-    importlib.invalidate_caches()
-
-    calls = []
-
-    def configure(mod):
-        calls.append(mod.__name__)
-        mod.CONFIGURED = True
-
-    mod = require(module, on_load=configure)
-    assert calls == []
-
-    assert mod.VALUE == 41
-    assert mod.CONFIGURED is True
-    assert calls == [module]
-
-
-def test_require_collects_on_load_callbacks_before_first_access(tmp_path, monkeypatch):
-    import importlib
-    import sys
-
-    module = "lazy_import_test_module_multi"
-    (tmp_path / f"{module}.py").write_text("VALUE = 42\n")
-    monkeypatch.syspath_prepend(str(tmp_path))
-    monkeypatch.delitem(sys.modules, module, raising=False)
-    importlib.invalidate_caches()
-
-    calls = []
-    mod = require(module, on_load=lambda _: calls.append("first"))
-    same_mod = require(module, on_load=lambda _: calls.append("second"))
-
-    assert same_mod is mod
-    assert calls == []
-    assert mod.VALUE == 42
-    assert calls == ["first", "second"]
-
-
 def test_require_stub_raises_on_access_with_install_hint():
     dist = _detect_dspy_dist()
     stub = require("nonexistent_abc", feature="dspy.Test")

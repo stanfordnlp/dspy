@@ -1,97 +1,58 @@
-import subprocess
+import importlib.util
 import sys
-import textwrap
+
+import pytest
 
 
-def run_python(code: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-c", textwrap.dedent(code)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+def _hide_litellm(monkeypatch):
+    real_find_spec = importlib.util.find_spec
+
+    def find_spec(name, *args, **kwargs):
+        if name == "litellm" or name.startswith("litellm."):
+            return None
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    monkeypatch.delitem(sys.modules, "litellm", raising=False)
+
+    from dspy.clients._litellm import get_litellm
+
+    get_litellm.cache_clear()
 
 
-def test_import_dspy_succeeds_without_litellm():
-    run_python(
-        """
-        import importlib.util
-        import sys
+def test_import_dspy_does_not_import_litellm(monkeypatch):
+    monkeypatch.delitem(sys.modules, "litellm", raising=False)
 
-        real_find_spec = importlib.util.find_spec
+    import dspy
 
-        def find_spec(name, *args, **kwargs):
-            if name == "litellm" or name.startswith("litellm."):
-                return None
-            return real_find_spec(name, *args, **kwargs)
+    _ = dspy.LM
+    _ = dspy.Embedder
+    _ = dspy.streamify
 
-        importlib.util.find_spec = find_spec
-        sys.modules.pop("litellm", None)
-
-        import dspy
-
-        _ = dspy.LM
-        _ = dspy.Embedder
-        _ = dspy.streamify
-        """
-    )
+    assert "litellm" not in sys.modules
 
 
-def test_lm_litellm_use_raises_helpful_error_without_litellm():
-    run_python(
-        """
-        import importlib.util
-        import sys
+def test_lm_litellm_use_raises_helpful_error_without_litellm(monkeypatch):
+    import dspy
 
-        real_find_spec = importlib.util.find_spec
+    _hide_litellm(monkeypatch)
 
-        def find_spec(name, *args, **kwargs):
-            if name == "litellm" or name.startswith("litellm."):
-                return None
-            return real_find_spec(name, *args, **kwargs)
+    with pytest.raises(ImportError) as exc_info:
+        _ = dspy.LM("openai/gpt-4o-mini").supports_function_calling
 
-        importlib.util.find_spec = find_spec
-        sys.modules.pop("litellm", None)
-
-        import dspy
-
-        try:
-            _ = dspy.LM("openai/gpt-4o-mini").supports_function_calling
-        except ImportError as e:
-            msg = str(e)
-            assert "[litellm]" in msg
-            assert "dspy.LM" in msg
-        else:
-            raise AssertionError("Expected ImportError")
-        """
-    )
+    msg = str(exc_info.value)
+    assert "[litellm]" in msg
+    assert "dspy.LM" in msg
 
 
-def test_embedder_litellm_use_raises_helpful_error_without_litellm():
-    run_python(
-        """
-        import importlib.util
-        import sys
+def test_embedder_litellm_use_raises_helpful_error_without_litellm(monkeypatch):
+    import dspy
 
-        real_find_spec = importlib.util.find_spec
+    _hide_litellm(monkeypatch)
 
-        def find_spec(name, *args, **kwargs):
-            if name == "litellm" or name.startswith("litellm."):
-                return None
-            return real_find_spec(name, *args, **kwargs)
+    with pytest.raises(ImportError) as exc_info:
+        dspy.Embedder("openai/text-embedding-3-small")(["hello"])
 
-        importlib.util.find_spec = find_spec
-        sys.modules.pop("litellm", None)
-
-        import dspy
-
-        try:
-            dspy.Embedder("openai/text-embedding-3-small")(["hello"])
-        except ImportError as e:
-            msg = str(e)
-            assert "[litellm]" in msg
-            assert "dspy.Embedder" in msg
-        else:
-            raise AssertionError("Expected ImportError")
-        """
-    )
+    msg = str(exc_info.value)
+    assert "[litellm]" in msg
+    assert "dspy.Embedder" in msg
