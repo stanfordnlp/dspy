@@ -1162,3 +1162,6 @@ async def test_json_adapter_logs_error_on_structured_output_failure_async(caplog
 
     errors = [r for r in caplog.records if r.levelno == logging.ERROR and r.name == _JSON_ADAPTER_LOGGER]
     assert any("Failed to use structured output format" in r.message for r in errors)
+    assert any("Structured output rejected" in r.message for r in errors), (
+        "expected the underlying exception reason to appear in the async error log"
+    )
