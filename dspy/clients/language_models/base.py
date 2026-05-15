@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator
 
 import anyio
-
 from typing_extensions import Self
 
 from dspy.dsp.utils import settings

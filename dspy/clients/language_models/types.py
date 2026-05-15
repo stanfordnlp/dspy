@@ -41,7 +41,7 @@ class LMImagePart(LMBasePart):
     detail: Literal["low", "high", "auto"] | None = None
 
     @model_validator(mode="after")
-    def validate_one_source(self) -> "LMImagePart":
+    def validate_one_source(self) -> LMImagePart:
         _validate_one_source(self, "LMImagePart")
         return self
 
@@ -57,7 +57,7 @@ class LMAudioPart(LMBasePart):
     path: str | None = None
 
     @model_validator(mode="after")
-    def validate_one_source(self) -> "LMAudioPart":
+    def validate_one_source(self) -> LMAudioPart:
         _validate_one_source(self, "LMAudioPart")
         return self
 
@@ -74,7 +74,7 @@ class LMFilePart(LMBasePart):
     filename: str | None = None
 
     @model_validator(mode="after")
-    def validate_one_source(self) -> "LMFilePart":
+    def validate_one_source(self) -> LMFilePart:
         _validate_one_source(self, "LMFilePart")
         return self
 
@@ -118,7 +118,7 @@ class LMToolResultPart(LMBasePart):
     type: Literal["tool_result"] = "tool_result"
     call_id: str | None = None
     name: str | None = None
-    content: list["LMPart"] = Field(default_factory=list)
+    content: list[LMPart] = Field(default_factory=list)
     is_error: bool = False
     provider_data: dict[str, Any] = Field(default_factory=dict)
 
@@ -153,7 +153,7 @@ class LMCitationPart(LMBasePart):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_has_content(self) -> "LMCitationPart":
+    def validate_has_content(self) -> LMCitationPart:
         if self.text is None and self.title is None and self.url is None:
             raise ValueError("LMCitationPart requires at least one of text, title, or url.")
         return self
@@ -301,7 +301,7 @@ class LMConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> "LMConfig":
+    def from_kwargs(cls, **kwargs: Any) -> LMConfig:
         data: dict[str, Any] = {}
         extensions = dict(kwargs.pop("extensions", {}) or {})
 
@@ -463,7 +463,7 @@ class LMRequest(BaseModel):
         messages: list[dict[str, Any] | LMMessage] | None = None,
         tools: list[Any] | None = None,
         **kwargs: Any,
-    ) -> "LMRequest":
+    ) -> LMRequest:
         if messages is not None and (items or prompt is not None):
             raise ValueError("Pass messages or direct-call inputs, not both.")
 
@@ -490,10 +490,10 @@ class LMRequest(BaseModel):
         prompt: str | None = None,
         messages: list[dict[str, Any] | LMMessage] | None = None,
         **kwargs: Any,
-    ) -> "LMRequest":
+    ) -> LMRequest:
         return cls.from_call(model=model, prompt=prompt, messages=messages, **kwargs)
 
-    def with_config_overrides(self, **kwargs: Any) -> "LMRequest":
+    def with_config_overrides(self, **kwargs: Any) -> LMRequest:
         """Return a copy with explicit request config overrides applied.
 
         Only fields implied by the supplied keyword arguments are changed. This
@@ -525,7 +525,7 @@ class LMUsage(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     @model_validator(mode="after")
-    def fill_aliases(self) -> "LMUsage":
+    def fill_aliases(self) -> LMUsage:
         if self.input_tokens is None and self.prompt_tokens is not None:
             self.input_tokens = self.prompt_tokens
         if self.output_tokens is None and self.completion_tokens is not None:
@@ -648,7 +648,7 @@ class LMResponse(BaseModel):
         cost: float | None = None,
         cache_hit: bool = False,
         **kwargs: Any,
-    ) -> "LMResponse":
+    ) -> LMResponse:
         return cls(
             model=model,
             outputs=[LMOutput(parts=[LMTextPart(text=text)])],
@@ -1057,7 +1057,8 @@ class AsyncLMStream:
         return self._result
 
 
-def System(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
+def System(  # noqa: N802
+    *parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
     """Create a system message for a direct LM call.
 
     A system message gives model-level instructions, such as tone, scope, or
@@ -1095,7 +1096,8 @@ def System(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None
     return LMMessage(role="system", parts=[_coerce_part(part) for part in parts], name=name, metadata=metadata or {})
 
 
-def Developer(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
+def Developer(  # noqa: N802
+    *parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
     """Create a developer message for a direct LM call.
 
     A developer message carries instructions that sit between system guidance
@@ -1134,7 +1136,8 @@ def Developer(*parts: Any, name: str | None = None, metadata: dict[str, Any] | N
     return LMMessage(role="developer", parts=[_coerce_part(part) for part in parts], name=name, metadata=metadata or {})
 
 
-def User(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
+def User(  # noqa: N802
+    *parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
     """Create a user message for a direct LM call.
 
     A user message contains the request or data you want the model to answer.
@@ -1214,7 +1217,8 @@ def User(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None =
     return LMMessage(role="user", parts=[_coerce_part(part) for part in parts], name=name, metadata=metadata or {})
 
 
-def Assistant(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
+def Assistant(  # noqa: N802
+    *parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
     """Create an assistant message for a direct LM call.
 
     An assistant message represents a previous model response. Use it when you
@@ -1263,7 +1267,8 @@ conversation.
 """
 
 
-def ToolResult(
+def ToolResult(  # noqa: N802
+
     *parts: Any,
     call_id: str | None = None,
     name: str | None = None,
@@ -1489,7 +1494,7 @@ def _messages_from_response(response: LMResponse) -> list[LMMessage]:
 
 
 def _is_message_sequence(value: Any) -> bool:
-    return isinstance(value, (list, tuple)) and all(
+    return isinstance(value, list | tuple) and all(
         isinstance(item, LMMessage) or isinstance(item, LMResponse) for item in value
     )
 
@@ -1497,17 +1502,15 @@ def _is_message_sequence(value: Any) -> bool:
 def _coerce_part(value: Any) -> LMPart:
     if isinstance(
         value,
-        (
-            LMTextPart,
-            LMImagePart,
-            LMAudioPart,
-            LMFilePart,
-            LMToolCallPart,
-            LMToolResultPart,
-            LMThinkingPart,
-            LMCitationPart,
-            LMRefusalPart,
-        ),
+        LMTextPart
+        | LMImagePart
+        | LMAudioPart
+        | LMFilePart
+        | LMToolCallPart
+        | LMToolResultPart
+        | LMThinkingPart
+        | LMCitationPart
+        | LMRefusalPart,
     ):
         return value
     if isinstance(value, str):

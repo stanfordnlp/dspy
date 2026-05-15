@@ -2,6 +2,7 @@ import pytest
 
 import dspy
 
+
 class TextOnlyLM(dspy.LanguageModel):
     def __init__(self):
         super().__init__(model="test/text-only", cache=False)
