@@ -263,6 +263,16 @@ def test_serialize_pydantic_nested_in_dict():
         assert result == [11, "nested"]
 
 
+def test_serialize_pydantic_in_list_variable():
+    """A list variable whose elements are Pydantic instances should be coerced too."""
+    with PythonInterpreter() as interpreter:
+        result = interpreter.execute(
+            "sum(h['document_id'] for h in hits)",
+            variables={"hits": [_Hit(document_id=1, title="a"), _Hit(document_id=2, title="b")]},
+        )
+        assert result == 3
+
+
 def test_deno_command_dict_raises_type_error():
     """Test that passing a dict as deno_command raises TypeError."""
     with pytest.raises(TypeError, match="deno_command must be a list"):
