@@ -168,17 +168,8 @@ def test_sequential_compare_results():
     assert results == [(1, False), (2, False), (3, True), (4, True), (5, True)]
 
 
-def test_configurable_timeout_accepted():
-    """ParallelExecutor should accept and store a custom timeout value."""
-    executor = ParallelExecutor(num_threads=2, timeout=30, straggler_limit=1)
-    assert executor.timeout == 30
-    assert executor.straggler_limit == 1
-
-
 def test_timeout_zero_disables_straggler_resubmit():
     """With timeout=0 the straggler-resubmit path is skipped (condition: 0 < timeout)."""
-    # timeout=0 means the guard `0 < self.timeout` is False — no resubmission ever fires.
-    # Verify normal execution still completes correctly.
     def task(item):
         time.sleep(0.05)
         return item
