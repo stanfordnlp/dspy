@@ -350,7 +350,9 @@ def with_callbacks(fn):
 
 def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
     """Selects the appropriate on_start handler of the callback based on the instance and function name."""
-    if isinstance(instance, dspy.BaseLM):
+    language_model_cls = getattr(dspy, "LanguageModel", None)
+    lm_classes = (dspy.BaseLM,) if language_model_cls is None else (dspy.BaseLM, language_model_cls)
+    if isinstance(instance, lm_classes):
         return callback.on_lm_start
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_start
@@ -372,7 +374,9 @@ def _get_on_start_handler(callback: BaseCallback, instance: Any, fn: Callable) -
 
 def _get_on_end_handler(callback: BaseCallback, instance: Any, fn: Callable) -> Callable:
     """Selects the appropriate on_end handler of the callback based on the instance and function name."""
-    if isinstance(instance, dspy.BaseLM):
+    language_model_cls = getattr(dspy, "LanguageModel", None)
+    lm_classes = (dspy.BaseLM,) if language_model_cls is None else (dspy.BaseLM, language_model_cls)
+    if isinstance(instance, lm_classes):
         return callback.on_lm_end
     elif isinstance(instance, dspy.Evaluate):
         return callback.on_evaluate_end
