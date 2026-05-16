@@ -10,14 +10,11 @@ class Actor(dspy.Signature):
     Note: You can opt to use no tools and provide the final answer directly. You can also one tool multiple times with different input queries if applicable."""
 
     goal: str = dspy.InputField(
-        prefix="Goal:",
         desc="Task to be accomplished.",
     )
     tools: list[str] = dspy.InputField(
-        prefix="Tools:",
         desc="list of tools to use",
     )
     action_1: Action = dspy.OutputField(
-        prefix="Action 1:",
         desc="1st action to take.",
     )
