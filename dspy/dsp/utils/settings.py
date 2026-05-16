@@ -45,7 +45,20 @@ config_owner_async_task = None
 # Global lock for settings configuration
 global_lock = threading.Lock()
 
-thread_local_overrides = contextvars.ContextVar("context_overrides", default=dotdict())
+thread_local_overrides = contextvars.ContextVar("context_overrides", default=dotdict())  # noqa: B039
+_CONTEXT_ACTIVE_ATTR = "__dspy_context_active__"
+_CONTEXT_PARENT_ATTR = "__dspy_context_parent__"
+
+
+def _active_overrides(overrides):
+    # Async generator finalization can happen in a different contextvars.Context from entry.
+    # In that case the original token cannot be reset there, so readers skip deactivated override snapshots.
+    if overrides is None:
+        return dotdict()
+
+    while getattr(overrides, _CONTEXT_ACTIVE_ATTR, True) is False:
+        overrides = getattr(overrides, _CONTEXT_PARENT_ATTR, dotdict())
+    return overrides
 
 
 class Settings:
@@ -76,7 +89,7 @@ class Settings:
         return global_lock
 
     def __getattr__(self, name):
-        overrides = thread_local_overrides.get()
+        overrides = _active_overrides(thread_local_overrides.get())
         if name in overrides:
             return overrides[name]
         elif name in main_thread_config:
@@ -97,7 +110,7 @@ class Settings:
         self.__setattr__(key, value)
 
     def __contains__(self, key):
-        overrides = thread_local_overrides.get()
+        overrides = _active_overrides(thread_local_overrides.get())
         return key in overrides or key in main_thread_config
 
     def get(self, key, default=None):
@@ -107,7 +120,7 @@ class Settings:
             return default
 
     def copy(self):
-        overrides = thread_local_overrides.get()
+        overrides = _active_overrides(thread_local_overrides.get())
         return dotdict({**main_thread_config, **overrides})
 
     @property
@@ -247,17 +260,24 @@ class Settings:
         """
         # `dspy.context` is documented manually in docs/docs/api/utils/context.md
         # changes here should be reflected there as well.
-        original_overrides = thread_local_overrides.get().copy()
+        parent_overrides = _active_overrides(thread_local_overrides.get())
+        original_overrides = parent_overrides.copy()
         new_overrides = dotdict({**main_thread_config, **original_overrides, **kwargs})
+        setattr(new_overrides, _CONTEXT_ACTIVE_ATTR, True)
+        setattr(new_overrides, _CONTEXT_PARENT_ATTR, parent_overrides)
         token = thread_local_overrides.set(new_overrides)
 
         try:
             yield
         finally:
-            thread_local_overrides.reset(token)
+            setattr(new_overrides, _CONTEXT_ACTIVE_ATTR, False)
+            try:
+                thread_local_overrides.reset(token)
+            except ValueError:
+                thread_local_overrides.set(parent_overrides)
 
     def __repr__(self):
-        overrides = thread_local_overrides.get()
+        overrides = _active_overrides(thread_local_overrides.get())
         combined_config = {**main_thread_config, **overrides}
         return repr(combined_config)
 

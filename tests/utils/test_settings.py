@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -21,7 +22,7 @@ def test_forbid_configure_call_in_child_thread():
     dspy.configure(lm=dspy.LM("openai/gpt-4o"), adapter=dspy.JSONAdapter(), callbacks=[lambda x: x])
 
     def worker():
-        with pytest.raises(RuntimeError, match="Cannot call dspy.configure"):
+        with pytest.raises(RuntimeError, match=r"dspy\.settings can only be changed"):
             dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"), callbacks=[])
 
     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -36,6 +37,22 @@ def test_dspy_context():
 
     assert dspy.settings.lm.model == "openai/gpt-4o"
     assert len(dspy.settings.callbacks) == 1
+
+
+@pytest.mark.asyncio
+async def test_dspy_context_closes_async_generator_in_different_context():
+    with dspy.context(lm="outer"):
+        async def stream():
+            with dspy.context(lm="inner"):
+                yield dspy.settings.lm
+
+        generator = stream()
+        assert await generator.__anext__() == "inner"
+
+        close_task = contextvars.Context().run(asyncio.create_task, generator.aclose())
+        await close_task
+
+        assert dspy.settings.lm == "outer"
 
 
 def test_dspy_context_parallel():
