@@ -223,7 +223,7 @@ class BootstrapFewShot(Teleprompter):
         if success:
             for step in trace:
                 predictor, inputs, outputs = step
-                demo = dspy.Example(augmented=True, **inputs, **outputs)
+                demo = dspy.Example(augmented=True, **{**inputs, **outputs})
 
                 try:
                     predictor_name = self.predictor2name[id(predictor)]
