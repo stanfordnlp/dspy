@@ -50,6 +50,10 @@ _CONTEXT_ACTIVE_ATTR = "__dspy_context_active__"
 _CONTEXT_PARENT_ATTR = "__dspy_context_parent__"
 
 
+def _copy_overrides(overrides):
+    return dotdict(overrides.copy())
+
+
 def _active_overrides(overrides):
     # Async generator finalization can happen in a different contextvars.Context from entry.
     # In that case the original token cannot be reset there, so readers skip deactivated override snapshots.
@@ -59,6 +63,10 @@ def _active_overrides(overrides):
     while getattr(overrides, _CONTEXT_ACTIVE_ATTR, True) is False:
         overrides = getattr(overrides, _CONTEXT_PARENT_ATTR, dotdict())
     return overrides
+
+
+def _is_token_from_different_context_error(error):
+    return "was created in a different Context" in str(error)
 
 
 class Settings:
@@ -261,10 +269,10 @@ class Settings:
         # `dspy.context` is documented manually in docs/docs/api/utils/context.md
         # changes here should be reflected there as well.
         parent_overrides = _active_overrides(thread_local_overrides.get())
-        original_overrides = parent_overrides.copy()
+        original_overrides = _copy_overrides(parent_overrides)
         new_overrides = dotdict({**main_thread_config, **original_overrides, **kwargs})
         setattr(new_overrides, _CONTEXT_ACTIVE_ATTR, True)
-        setattr(new_overrides, _CONTEXT_PARENT_ATTR, parent_overrides)
+        setattr(new_overrides, _CONTEXT_PARENT_ATTR, _copy_overrides(parent_overrides))
         token = thread_local_overrides.set(new_overrides)
 
         try:
@@ -273,8 +281,9 @@ class Settings:
             setattr(new_overrides, _CONTEXT_ACTIVE_ATTR, False)
             try:
                 thread_local_overrides.reset(token)
-            except ValueError:
-                thread_local_overrides.set(parent_overrides)
+            except ValueError as exc:
+                if not _is_token_from_different_context_error(exc):
+                    raise
 
     def __repr__(self):
         overrides = _active_overrides(thread_local_overrides.get())
@@ -282,7 +291,8 @@ class Settings:
         return repr(combined_config)
 
     def save(
-        self, path: str,
+        self,
+        path: str,
         modules_to_serialize: list[str] | None = None,
         exclude_keys: list[str] | None = None,
     ):
