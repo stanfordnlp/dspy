@@ -239,6 +239,45 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
     )
 
 
+def test_json_adapter_parse_wraps_field_type_cast_errors():
+    # Per-field type-cast failures should surface as AdapterParseError,
+    # matching ChatAdapter's behavior (test_chat_adapter_exception_raised_on_failure).
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        count: int = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Failed to parse field count"):
+        adapter.parse(Sig, '{"count": "not_a_number"}')
+
+
+def test_json_adapter_parse_wraps_literal_validation_errors():
+    from typing import Literal
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        sentiment: Literal["pos", "neg"] = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Failed to parse field sentiment"):
+        adapter.parse(Sig, '{"sentiment": "happy"}')
+
+
+def test_json_adapter_parse_wraps_pydantic_validation_errors():
+    class Person(pydantic.BaseModel):
+        name: str
+        age: int
+
+    class Sig(dspy.Signature):
+        question: str = dspy.InputField()
+        person: Person = dspy.OutputField()
+
+    adapter = dspy.JSONAdapter()
+    # Missing required nested field "age" must surface as AdapterParseError, not pydantic.ValidationError.
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Failed to parse field person"):
+        adapter.parse(Sig, '{"person": {"name": "Alice"}}')
+
+
 def test_json_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")
