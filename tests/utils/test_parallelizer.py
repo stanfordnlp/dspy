@@ -166,3 +166,25 @@ def test_sequential_compare_results():
     results = executor.execute(task, data)
 
     assert results == [(1, False), (2, False), (3, True), (4, True), (5, True)]
+
+
+def test_timeout_disables_straggler_resubmission():
+    """timeout=None should skip straggler resubmission entirely."""
+    def task(item):
+        return item
+
+    data = [1, 2, 3]
+    executor = ParallelExecutor(num_threads=3, timeout=None)
+    results = executor.execute(task, data)
+    assert results == [1, 2, 3]
+
+
+def test_zero_timeout_disables_straggler_resubmission():
+    """timeout=0 should skip straggler resubmission."""
+    def task(item):
+        return item
+
+    data = [1, 2, 3]
+    executor = ParallelExecutor(num_threads=3, timeout=0)
+    results = executor.execute(task, data)
+    assert results == [1, 2, 3]

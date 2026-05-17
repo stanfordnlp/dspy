@@ -81,6 +81,7 @@ class Evaluate:
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int | None = None,
         **kwargs,
     ):
         """
@@ -97,6 +98,9 @@ class Evaluate:
             failure_score (float): The default score to use if evaluation fails due to an exception.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
+            timeout (Optional[int]): Straggler timeout in seconds. A task running longer than this
+                is resubmitted on a separate thread to guard against indefinite hangs.
+                If ``None`` (default), ParallelExecutor's built-in 120s timeout is used.
 
         """
         self.devset = devset
@@ -109,6 +113,7 @@ class Evaluate:
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
+        self.timeout = timeout
 
         if "return_outputs" in kwargs:
             raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
@@ -125,6 +130,7 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: int | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -138,6 +144,8 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            timeout (Optional[int]): Straggler timeout in seconds. Overrides the value set at
+                construction time. ``None`` falls back to ``self.timeout``.
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
@@ -153,19 +161,23 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
+        timeout = timeout if timeout is not None else self.timeout
 
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
 
         tqdm.tqdm._instances.clear()
 
-        executor = ParallelExecutor(
-            num_threads=num_threads,
-            disable_progress_bar=not display_progress,
-            max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
-            provide_traceback=self.provide_traceback,
-            compare_results=True,
-        )
+        executor_kwargs: dict[str, Any] = {
+            "num_threads": num_threads,
+            "disable_progress_bar": not display_progress,
+            "max_errors": (self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
+            "provide_traceback": self.provide_traceback,
+            "compare_results": True,
+        }
+        if timeout is not None:
+            executor_kwargs["timeout"] = timeout
+        executor = ParallelExecutor(**executor_kwargs)
 
         def process_item(example):
             prediction = program(**example.inputs())
