@@ -83,6 +83,8 @@ class Type(pydantic.BaseModel):
         field_name: str,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
+        inputs: dict[str, Any] | None = None,
+        adapter_options: dict[str, Any] | None = None,
     ) -> type["Signature"]:
         """Adapt the custom type to the native LM feature if possible.
 
@@ -94,6 +96,8 @@ class Type(pydantic.BaseModel):
             field_name: The name of the field in the signature to adapt to the native LM feature.
             lm: The LM instance.
             lm_kwargs: The keyword arguments for the LM call, subject to in-place updates if adaptation if required.
+            inputs: The input values for this LM call.
+            adapter_options: Adapter configuration relevant to native LM feature adaptation.
 
         Returns:
             The adapted signature. If the custom type is not natively supported by the LM, return the original
@@ -105,6 +109,11 @@ class Type(pydantic.BaseModel):
     def is_streamable(cls) -> bool:
         """Whether the custom type is streamable."""
         return False
+
+    @classmethod
+    def supports_structured_output_schema(cls) -> bool:
+        """Whether this type should be included in provider structured output schemas."""
+        return True
 
     @classmethod
     def parse_stream_chunk(cls, chunk: "ModelResponseStream") -> Optional["Type"]:

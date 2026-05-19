@@ -497,6 +497,140 @@ def test_toolcalls_vague_match():
         ToolCalls.model_validate([{"foo": "bar"}])
 
 
+def test_toolcalls_normalizes_native_tool_call_shapes():
+    data = [
+        {
+            "id": "call_chat",
+            "type": "function",
+            "function": {"name": "search", "arguments": '{"query": "hello", "k": 5}'},
+        },
+        {
+            "type": "function_call",
+            "call_id": "call_responses",
+            "name": "lookup",
+            "arguments": '{"key": "value"}',
+        },
+        {"id": "call_dspy", "name": "translate", "args": {"text": "world", "lang": "fr"}},
+    ]
+
+    tc = ToolCalls.model_validate(data)
+
+    assert [(call.name, call.args, call.id) for call in tc.tool_calls] == [
+        ("search", {"query": "hello", "k": 5}, "call_chat"),
+        ("lookup", {"key": "value"}, "call_responses"),
+        ("translate", {"text": "world", "lang": "fr"}, "call_dspy"),
+    ]
+    assert tc.tool_calls[0].format()["id"] == "call_chat"
+
+
+def test_toolcalls_preserves_falsy_native_tool_call_ids():
+    data = [
+        {
+            "id": "",
+            "type": "function",
+            "function": {"name": "search", "arguments": '{"query": "hello"}'},
+        },
+        {
+            "type": "function_call",
+            "call_id": "",
+            "id": "fallback_id",
+            "name": "lookup",
+            "arguments": '{"key": "value"}',
+        },
+    ]
+
+    tc = ToolCalls.model_validate(data)
+
+    assert [call.id for call in tc.tool_calls] == ["", ""]
+    assert tc.tool_calls[0].format()["id"] == ""
+
+
+def test_toolcalls_normalizes_cached_litellm_tool_call_object():
+    class Function:
+        name = "search"
+        arguments = '{"query": "hello", "k": 5}'
+
+    class CachedToolCall:
+        id = "call_123"
+        type = "function"
+        function = Function()
+
+        def model_dump(self):
+            raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
+
+    tc = ToolCalls.model_validate([CachedToolCall()])
+
+    assert len(tc.tool_calls) == 1
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[0].args == {"query": "hello", "k": 5}
+    assert tc.tool_calls[0].id == "call_123"
+
+
+def test_toolcalls_parse_lm_response():
+    response = {
+        "text": None,
+        "tool_calls": [
+            {
+                "id": "call_123",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"query": "hello"}'},
+            }
+        ],
+    }
+
+    parsed = ToolCalls.parse_lm_response(response)
+
+    assert parsed == ToolCalls(tool_calls=[ToolCalls.ToolCall(name="search", args={"query": "hello"}, id="call_123")])
+    assert ToolCalls.parse_lm_response("[[ ## answer ## ]]") is None
+    assert ToolCalls.parse_lm_response({"text": "done"}) is None
+
+
+def test_toolcalls_native_adapt_configures_tools_without_adapter():
+    class ToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    class NativeLM:
+        supports_function_calling = True
+
+    lm_kwargs = {}
+    processed = ToolCalls.adapt_to_native_lm_feature(
+        ToolSignature,
+        "tool_calls",
+        NativeLM(),
+        lm_kwargs,
+        inputs={"question": "hi", "tools": [dspy.Tool(dummy_function)]},
+        adapter_options={"use_native_function_calling": True, "allow_parallel_tool_calls": False},
+    )
+
+    assert "tools" not in processed.input_fields
+    assert "tool_calls" not in processed.output_fields
+    assert len(lm_kwargs["tools"]) == 1
+    assert lm_kwargs["parallel_tool_calls"] is False
+    assert ToolCalls.supports_structured_output_schema() is False
+
+
+def test_toolcalls_native_adapt_requires_tool_input_values():
+    class ToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    class NativeLM:
+        supports_function_calling = True
+
+    with pytest.raises(ValueError, match="did not provide a value for the tools input field `tools`"):
+        ToolCalls.adapt_to_native_lm_feature(
+            ToolSignature,
+            "tool_calls",
+            NativeLM(),
+            {},
+            inputs=None,
+            adapter_options={"use_native_function_calling": True},
+        )
+
+
 def test_tool_convert_input_schema_to_tool_args_no_input_params():
     args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema={"properties": {}})
     assert args == {}
@@ -542,8 +676,6 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
     }
 
 
-
-
 def test_tool_call_execute():
     def get_weather(city: str) -> str:
         return f"The weather in {city} is sunny"
@@ -551,10 +683,7 @@ def test_tool_call_execute():
     def add_numbers(a: int, b: int) -> int:
         return a + b
 
-    tools = [
-        dspy.Tool(get_weather),
-        dspy.Tool(add_numbers)
-    ]
+    tools = [dspy.Tool(get_weather), dspy.Tool(add_numbers)]
 
     tool_call = dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Berlin"})
     result = tool_call.execute(functions=tools)
@@ -577,7 +706,7 @@ def test_tool_call_execute():
     tool_call4 = dspy.ToolCalls.ToolCall(name="nonexistent", args={})
     try:
         tool_call4.execute(functions=tools)
-        assert False, "Should have raised ValueError"
+        raise AssertionError("Should have raised ValueError")
     except ValueError as e:
         assert "not found" in str(e)
 

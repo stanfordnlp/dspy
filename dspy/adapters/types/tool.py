@@ -1,7 +1,8 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, get_args, get_origin, get_type_hints
 
+import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -263,15 +264,20 @@ class ToolCalls(Type):
     class ToolCall(Type):
         name: str
         args: dict[str, Any]
+        id: str | None = None
 
         def format(self):
-            return {
+            """Format this tool call using the OpenAI-compatible native tool-call schema."""
+            formatted = {
                 "type": "function",
                 "function": {
                     "name": self.name,
                     "arguments": self.args,
                 },
             }
+            if self.id is not None:
+                formatted["id"] = self.id
+            return formatted
 
         def execute(self, functions: dict[str, Any] | list[Tool] | None = None) -> Any:
             """Execute this individual tool call and return its result.
@@ -310,7 +316,9 @@ class ToolCalls(Type):
                         break
 
             if func is None:
-                raise ValueError(f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method.")
+                raise ValueError(
+                    f"Tool function '{self.name}' not found. Please pass the tool functions to the `execute` method."
+                )
 
             try:
                 args = self.args or {}
@@ -319,6 +327,74 @@ class ToolCalls(Type):
                 raise RuntimeError(f"Error executing tool '{self.name}': {e}") from e
 
     tool_calls: list[ToolCall]
+
+    @classmethod
+    def _get_tool_call_input_field_name(cls, signature: type[Any]) -> str | None:
+        for name, field in signature.input_fields.items():
+            origin = get_origin(field.annotation)
+            args = get_args(field.annotation)
+            if origin is list and args and args[0] == Tool:
+                return name
+            if field.annotation == Tool:
+                return name
+        return None
+
+    @classmethod
+    def adapt_to_native_lm_feature(
+        cls,
+        signature: type[Any],
+        field_name: str,
+        lm,
+        lm_kwargs: dict[str, Any],
+        inputs: dict[str, Any] | None = None,
+        adapter_options: dict[str, Any] | None = None,
+    ) -> type[Any]:
+        """Adapt a ToolCalls output field to native function-calling parameters when enabled."""
+        adapter_options = adapter_options or {}
+        if not adapter_options.get("use_native_function_calling"):
+            return signature
+
+        tool_call_input_field_name = cls._get_tool_call_input_field_name(signature)
+        if tool_call_input_field_name is None:
+            raise ValueError(
+                f"You provided an output field {field_name} to receive the tool calls information, "
+                "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
+                "input field with type `list[dspy.Tool]`."
+            )
+
+        if not lm.supports_function_calling:
+            return signature
+
+        if inputs is None or tool_call_input_field_name not in inputs or inputs[tool_call_input_field_name] is None:
+            raise ValueError(
+                f"You provided an output field {field_name} to receive the tool calls information, "
+                f"but did not provide a value for the tools input field `{tool_call_input_field_name}`."
+            )
+
+        tools = inputs[tool_call_input_field_name]
+        tools = tools if isinstance(tools, list) else [tools]
+        lm_kwargs["tools"] = [tool.format_as_litellm_function_call() for tool in tools]
+
+        allow_parallel_tool_calls = adapter_options.get("allow_parallel_tool_calls")
+        if allow_parallel_tool_calls is not None:
+            lm_kwargs["parallel_tool_calls"] = allow_parallel_tool_calls
+
+        return signature.delete(field_name).delete(tool_call_input_field_name)
+
+    @classmethod
+    def parse_lm_response(cls, response: str | dict[str, Any]) -> "ToolCalls | None":
+        """Parse native LM tool-call payloads into a ToolCalls value."""
+        if not isinstance(response, dict):
+            return None
+        tool_calls = response.get("tool_calls")
+        if not tool_calls:
+            return None
+        return cls.model_validate(tool_calls)
+
+    @classmethod
+    def supports_structured_output_schema(cls) -> bool:
+        """Return whether ToolCalls can be represented in provider structured-output schemas."""
+        return False
 
     @classmethod
     def from_dict_list(cls, tool_calls_dicts: list[dict[str, Any]]) -> "ToolCalls":
@@ -340,47 +416,105 @@ class ToolCalls(Type):
             tool_calls = ToolCalls.from_dict_list(tool_calls_dict)
             ```
         """
-        tool_calls = [cls.ToolCall(**item) for item in tool_calls_dicts]
-        return cls(tool_calls=tool_calls)
+        return cls.model_validate(tool_calls_dicts)
 
     @classmethod
     def description(cls) -> str:
+        """Describe the expected tool-call payload for prompt-based formatting."""
         return (
-            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
+            "One or more tool calls, including the name of each tool and the arguments to be passed to it. "
             "Arguments must be provided in JSON format."
         )
 
-    def format(self) -> list[dict[str, Any]]:
+    def format(self) -> dict[str, list[dict[str, Any]]]:
+        """Format this collection using the OpenAI-compatible native tool-call schema."""
         # The tool_call field is compatible with OpenAI's tool calls schema.
         return {
             "tool_calls": [tool_call.format() for tool_call in self.tool_calls],
         }
 
+    @staticmethod
+    def _get_tool_call_value(item: Any, key: str, default: Any = None) -> Any:
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
+
+    @staticmethod
+    def _parse_tool_call_args(args: Any) -> Any:
+        if isinstance(args, str):
+            return json_repair.loads(args)
+        return args
+
+    @classmethod
+    def _normalized_tool_call(cls, name: Any, args: Any, tool_call_id: Any = None) -> dict[str, Any] | None:
+        if name is None:
+            return None
+        normalized = {"name": name, "args": cls._parse_tool_call_args(args)}
+        if tool_call_id is not None:
+            normalized["id"] = tool_call_id
+        return normalized
+
+    @classmethod
+    def _normalize_native_tool_call(cls, item: Any) -> Any:
+        if not isinstance(item, dict) and hasattr(item, "model_dump"):
+            try:
+                dumped_item = item.model_dump()
+            except TypeError:
+                dumped_item = None
+            if isinstance(dumped_item, dict):
+                item = dumped_item
+
+        function = cls._get_tool_call_value(item, "function")
+        if function is not None:
+            name = cls._get_tool_call_value(function, "name")
+            arguments = cls._get_tool_call_value(function, "arguments", {})
+            normalized = cls._normalized_tool_call(name, arguments, cls._get_tool_call_value(item, "id"))
+            if normalized is not None:
+                return normalized
+
+        name = cls._get_tool_call_value(item, "name")
+        if cls._get_tool_call_value(item, "type") == "function_call" and name is not None:
+            arguments = cls._get_tool_call_value(item, "arguments", {})
+            call_id = cls._get_tool_call_value(item, "call_id")
+            tool_call_id = call_id if call_id is not None else cls._get_tool_call_value(item, "id")
+            normalized = cls._normalized_tool_call(
+                name,
+                arguments,
+                tool_call_id,
+            )
+            if normalized is not None:
+                return normalized
+
+        args = cls._get_tool_call_value(item, "args")
+        if args is not None:
+            normalized = cls._normalized_tool_call(name, args, cls._get_tool_call_value(item, "id"))
+            if normalized is not None:
+                return normalized
+
+        return item
+
     @pydantic.model_validator(mode="before")
     @classmethod
     def validate_input(cls, data: Any):
+        """Normalize supported DSPy and provider-native tool-call shapes before validation."""
         if isinstance(data, cls):
             return data
 
-        # Handle case where data is a list of dicts with "name" and "args" keys
-        if isinstance(data, list) and all(
-            isinstance(item, dict) and "name" in item and "args" in item for item in data
-        ):
-            return {"tool_calls": [cls.ToolCall(**item) for item in data]}
-        # Handle case where data is a dict
+        tool_calls_data = None
+        if isinstance(data, list):
+            tool_calls_data = data
         elif isinstance(data, dict):
             if "tool_calls" in data:
-                # Handle case where data is a dict with "tool_calls" key
                 tool_calls_data = data["tool_calls"]
-                if isinstance(tool_calls_data, list):
-                    return {
-                        "tool_calls": [
-                            cls.ToolCall(**item) if isinstance(item, dict) else item for item in tool_calls_data
-                        ]
-                    }
-            elif "name" in data and "args" in data:
-                # Handle case where data is a dict with "name" and "args" keys
-                return {"tool_calls": [cls.ToolCall(**data)]}
+            else:
+                normalized = cls._normalize_native_tool_call(data)
+                if isinstance(normalized, dict) and "name" in normalized and "args" in normalized:
+                    return {"tool_calls": [normalized]}
+
+        if isinstance(tool_calls_data, list):
+            normalized = [cls._normalize_native_tool_call(item) for item in tool_calls_data]
+            if all(isinstance(item, dict) and "name" in item and "args" in item for item in normalized):
+                return {"tool_calls": normalized}
 
         raise ValueError(f"Received invalid value for `dspy.ToolCalls`: {data}")
 
