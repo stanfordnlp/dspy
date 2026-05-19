@@ -56,6 +56,9 @@ from dspy.clients.language_models.types import (
 # `LanguageModel` is internal scaffolding — users subclass `BaseLM`).
 TOP_LEVEL_EXPORTS = [
     "LMCapabilities",
+    "OpenAIChatLM",
+    "OpenAITextLM",
+    "OpenAIResponsesLM",
     "LMRequest",
     "LMResponse",
     "LMMessage",
@@ -73,6 +76,10 @@ TOP_LEVEL_EXPORTS = [
 __all__ = [
     "LanguageModel",
     "LMCapabilities",
+    "OpenAIChatLM",
+    "OpenAITextLM",
+    "OpenAIResponsesLM",
+    "TOP_LEVEL_EXPORTS",
     "LMBasePart",
     "LMTextPart",
     "LMImagePart",
@@ -119,3 +126,24 @@ __all__ = [
     "LMToolCall",
     "ToolResult",
 ]
+
+
+# Lazy-load backend subclasses to avoid a circular import with `dspy.clients.base_lm`
+# (backends subclass `BaseLM`, which itself imports from this package).
+_LAZY_ATTRS = {
+    "OpenAIChatLM": ("dspy.clients.language_models.openai", "OpenAIChatLM"),
+    "OpenAITextLM": ("dspy.clients.language_models.openai", "OpenAITextLM"),
+    "OpenAIResponsesLM": ("dspy.clients.language_models.openai", "OpenAIResponsesLM"),
+}
+
+
+def __getattr__(name):
+    if name in _LAZY_ATTRS:
+        import importlib
+
+        module_path, attr = _LAZY_ATTRS[name]
+        module = importlib.import_module(module_path)
+        value = getattr(module, attr)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

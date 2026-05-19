@@ -1,6 +1,8 @@
 import pytest
 
 import dspy
+from dspy.clients.language_models.openai_format import provider_tool_call_to_part, to_openai_responses_request
+
 
 
 class TextOnlyLM(dspy.BaseLM):
@@ -81,6 +83,40 @@ def test_stream_allowed_when_forward_stream_is_overridden():
     assert stream.result().text == "ok"
 
 
+def test_responses_request_preserves_tool_continuation_items():
+    request = dspy.LMRequest.from_call(
+        model="openai/gpt-4o-mini",
+        items=(
+            dspy.User("What is the weather?"),
+            dspy.Assistant(dspy.LMToolCall(id="call_1", name="weather", args={"city": "Paris"})),
+            dspy.ToolResult('{"temp": 22}', call_id="call_1", name="weather"),
+            dspy.User("Summarize it."),
+        ),
+    )
+
+    openai_request = to_openai_responses_request(request)
+
+    assert openai_request["input"][0] == {
+        "role": "user",
+        "content": [{"type": "input_text", "text": "What is the weather?"}],
+    }
+    assert openai_request["input"][1] == {
+        "type": "function_call",
+        "name": "weather",
+        "arguments": '{"city": "Paris"}',
+        "call_id": "call_1",
+    }
+    assert openai_request["input"][2] == {
+        "type": "function_call_output",
+        "output": '{"temp": 22}',
+        "call_id": "call_1",
+    }
+    assert openai_request["input"][3] == {
+        "role": "user",
+        "content": [{"type": "input_text", "text": "Summarize it."}],
+    }
+
+
 def test_prompt_cache_is_separate_from_dspy_cache_config():
     lm = TextOnlyLM()
     request = lm.normalize_request("hello", cache=False, prompt_cache=True, prompt_cache_key="prefix-1")
@@ -89,3 +125,18 @@ def test_prompt_cache_is_separate_from_dspy_cache_config():
     assert request.config.prompt_cache.enabled is True
     assert request.config.prompt_cache.key == "prefix-1"
 
+
+def test_malformed_tool_call_arguments_preserve_raw_provider_data():
+    part = provider_tool_call_to_part(
+        {
+            "id": "call_1",
+            "function": {
+                "name": "search",
+                "arguments": "{not json",
+            },
+        }
+    )
+
+    assert part.args == {}
+    assert part.provider_data["raw_arguments"] == "{not json"
+    assert "arguments_parse_error" in part.provider_data
