@@ -59,6 +59,7 @@ TOP_LEVEL_EXPORTS = [
     "OpenAIChatLM",
     "OpenAITextLM",
     "OpenAIResponsesLM",
+    "LiteLLMLM",
     "LMRequest",
     "LMResponse",
     "LMMessage",
@@ -80,6 +81,9 @@ __all__ = [
     "OpenAITextLM",
     "OpenAIResponsesLM",
     "TOP_LEVEL_EXPORTS",
+    "LiteLLMLM",
+    "LMRouter",
+    "register_lm_backend",
     "LMBasePart",
     "LMTextPart",
     "LMImagePart",
@@ -134,6 +138,9 @@ _LAZY_ATTRS = {
     "OpenAIChatLM": ("dspy.clients.language_models.openai", "OpenAIChatLM"),
     "OpenAITextLM": ("dspy.clients.language_models.openai", "OpenAITextLM"),
     "OpenAIResponsesLM": ("dspy.clients.language_models.openai", "OpenAIResponsesLM"),
+    "LiteLLMLM": ("dspy.clients.language_models.litellm", "LiteLLMLM"),
+    "LMRouter": ("dspy.clients.language_models.router", "LMRouter"),
+    "register_lm_backend": ("dspy.clients.language_models.router", "register_lm_backend"),
 }
 
 

@@ -29,7 +29,13 @@ def _detect_contract_version(cls: type) -> int:
       - Anything else (e.g. `*args, **kwargs` passthrough) → v1 (legacy is the
         safer default during the deprecation cycle).
     """
-    fwd = cls.__dict__.get("forward")
+    fwd = None
+    for klass in cls.__mro__:
+        if klass is BaseLM:
+            break
+        if "forward" in klass.__dict__:
+            fwd = klass.__dict__["forward"]
+            break
     if fwd is None:
         # Subclass didn't override `forward`; treat as v2 (BaseLM default raises).
         return 2
@@ -119,6 +125,7 @@ class BaseLM(LanguageModel):
         temperature: Any = _UNSET,
         max_tokens: Any = _UNSET,
         cache: bool = True,
+        callbacks: Any = None,
         **kwargs,
     ):
         """Unified BaseLM constructor.
@@ -128,7 +135,6 @@ class BaseLM(LanguageModel):
         (typed `forward(request)`), omitted values stay omitted from
         `self.kwargs` (matching `LanguageModel.__init__` semantics).
         """
-        callbacks = kwargs.pop("callbacks", None)
         num_retries = kwargs.pop("num_retries", 0)
 
         is_v1 = type(self)._lm_contract_version == 1

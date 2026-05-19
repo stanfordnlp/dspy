@@ -27,6 +27,7 @@ DEFAULT_CONFIG = dotdict(
     caller_predict=None,
     caller_modules=None,
     stream_listeners=[],
+    stream_include_lm_events=False,
     provide_traceback=False,  # Whether to include traceback information in error logs.
     num_threads=8,  # Number of threads to use for parallel processing.
     max_errors=10,  # Maximum errors before halting operations.
@@ -35,6 +36,7 @@ DEFAULT_CONFIG = dotdict(
     max_history_size=10000,
     max_trace_size=10000,
     warn_on_type_mismatch=True,  # Whether to log warnings when a module's input type doesn't match the signature type.
+    experimental=False,  # Whether to enable experimental DSPy behavior.
 )
 
 # Global base configuration and owner tracking

@@ -114,7 +114,7 @@ class LM(BaseLM):
             if self.kwargs.get("rollout_id") is None:
                 self.kwargs.pop("rollout_id", None)
 
-        self._warn_zero_temp_rollout(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
+        self._warn_zero_temp_rollout_v1(self.kwargs.get("temperature"), self.kwargs.get("rollout_id"))
 
     @property
     def _provider_name(self) -> str:
@@ -140,7 +140,7 @@ class LM(BaseLM):
         params = _get_litellm().get_supported_openai_params(model=self.model, custom_llm_provider=self._provider_name)
         return set(params) if params else set()
 
-    def _warn_zero_temp_rollout(self, temperature: float | None, rollout_id):
+    def _warn_zero_temp_rollout_v1(self, temperature: float | None, rollout_id):
         if not self._warned_zero_temp_rollout and rollout_id is not None and temperature == 0:
             warnings.warn(
                 "rollout_id has no effect when temperature=0; set temperature>0 to bypass the cache.",
@@ -174,7 +174,7 @@ class LM(BaseLM):
         if self.use_developer_role and self.model_type == "responses":
             messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
-        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
+        self._warn_zero_temp_rollout_v1(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
             kwargs.pop("rollout_id", None)
 
@@ -217,7 +217,7 @@ class LM(BaseLM):
         if self.use_developer_role and self.model_type == "responses":
             messages = [{**m, "role": "developer"} if m.get("role") == "system" else m for m in messages]
         kwargs = {**self.kwargs, **kwargs}
-        self._warn_zero_temp_rollout(kwargs.get("temperature"), kwargs.get("rollout_id"))
+        self._warn_zero_temp_rollout_v1(kwargs.get("temperature"), kwargs.get("rollout_id"))
         if kwargs.get("rollout_id") is None:
             kwargs.pop("rollout_id", None)
 

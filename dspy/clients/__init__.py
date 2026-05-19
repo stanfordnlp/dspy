@@ -1,5 +1,6 @@
 import logging
 import os
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -9,10 +10,42 @@ from dspy.clients.cache import Cache
 from dspy.clients.embedding import Embedder
 from dspy.clients.language_models import *
 from dspy.clients.language_models import TOP_LEVEL_EXPORTS as _language_model_top_level
-from dspy.clients.lm import LM
+from dspy.clients.language_models.router import LMRouter, register_lm_backend
+from dspy.clients.lm import LM as _legacy_lm_cls  # noqa: N811
 from dspy.clients.provider import Provider, TrainingJob
 
 logger = logging.getLogger(__name__)
+
+_WARNED_EXPERIMENTAL_LM_ROUTER = False
+
+
+class LM(_legacy_lm_cls):
+    """Create DSPy's public language model.
+
+    By default this is the existing LiteLLM-backed legacy LM class and remains
+    subclassable for existing custom LMs. Set `dspy.configure(experimental=True)`
+    or use `dspy.context(experimental=True)` to route direct `dspy.LM(...)`
+    construction to a normalized `LanguageModel` backend.
+    """
+
+    def __new__(cls, *args: Any, **kwargs: Any):
+        from dspy.dsp.utils import settings
+
+        if cls is LM and settings.get("experimental", False):
+            global _WARNED_EXPERIMENTAL_LM_ROUTER
+            if not _WARNED_EXPERIMENTAL_LM_ROUTER:
+                warnings.warn(
+                    "`dspy.LM(...)` is using the experimental normalized LM router because "
+                    "`dspy.settings.experimental=True`. It returns a provider-specific "
+                    "`LanguageModel`, not the legacy LiteLLM-backed `dspy.clients.lm.LM`.",
+                    FutureWarning,
+                    stacklevel=2,
+                )
+                _WARNED_EXPERIMENTAL_LM_ROUTER = True
+            return LMRouter(*args, **kwargs)
+
+        return super().__new__(cls)
+
 
 DISK_CACHE_DIR = os.environ.get("DSPY_CACHEDIR") or os.path.join(Path.home(), ".dspy_cache")
 DISK_CACHE_LIMIT = int(os.environ.get("DSPY_CACHE_LIMIT", 3e10))  # 30 GB default
@@ -122,5 +155,7 @@ __all__ = [
     "enable_litellm_logging",
     "disable_litellm_logging",
     "configure_cache",
+    "LMRouter",
+    "register_lm_backend",
     *_language_model_top_level,
 ]
