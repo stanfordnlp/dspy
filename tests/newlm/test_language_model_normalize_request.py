@@ -4,7 +4,7 @@ import dspy
 
 
 def make_lm():
-    return dspy.LanguageModel(model="test/model", cache=True, temperature=0.1)
+    return dspy.BaseLM(model="test/model", cache=True, temperature=0.1)
 
 
 def test_normalize_simple_text_positional_call():

@@ -6,7 +6,7 @@ import pytest
 import dspy
 
 
-class CountingLM(dspy.LanguageModel):
+class CountingLM(dspy.BaseLM):
     def __init__(self, *, cache: bool = True):
         super().__init__(model=f"test/counting-{uuid.uuid4()}", cache=cache)
         self.forward_calls = 0

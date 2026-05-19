@@ -26,7 +26,7 @@ class RecordingCallback(BaseCallback):
         self.calls.append(("end", call_id, outputs, exception))
 
 
-class CallbackLM(dspy.LanguageModel):
+class CallbackLM(dspy.BaseLM):
     def __init__(self, *, cache=False, callbacks=None):
         super().__init__(model=f"test/callback-{uuid.uuid4()}", cache=cache, callbacks=callbacks, temperature=0.1)
         self.forward_calls = 0

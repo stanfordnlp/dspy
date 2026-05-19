@@ -52,9 +52,9 @@ from dspy.clients.language_models.types import (
 # Curated set of names promoted to the top-level `dspy.*` namespace.
 # Everything in `__all__` (below) remains importable from `dspy.clients.language_models`
 # (and via the `dspy.lm` re-export shim), but only this subset becomes `dspy.X`.
-# Hybrid policy decision from the migration plan (commit 1).
+# Hybrid policy decision from the migration plan (commit 1, refined commit 2:
+# `LanguageModel` is internal scaffolding — users subclass `BaseLM`).
 TOP_LEVEL_EXPORTS = [
-    "LanguageModel",
     "LMCapabilities",
     "LMRequest",
     "LMResponse",

@@ -1,7 +1,10 @@
 import datetime
+import inspect
 import uuid
+import warnings
 from typing import Any, TextIO
 
+from dspy.clients.language_models.base import LanguageModel
 from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
@@ -9,63 +12,142 @@ from dspy.utils.inspect_history import pretty_print_history
 MAX_HISTORY_SIZE = 10_000
 GLOBAL_HISTORY = []
 
+# Sentinel class attribute. Set in __init_subclass__ from the subclass's
+# `forward` signature. v1: legacy `forward(prompt, messages, **kwargs)` returning
+# an OpenAI-shaped object. v2: typed `forward(request: LMRequest) -> LMResponse`.
+_LM_MIGRATION_URL = "https://dspy.ai/migration/baselm"
 
-class BaseLM:
+
+def _detect_contract_version(cls: type) -> int:
+    """Return 1 for legacy forward(prompt, messages) and 2 for typed forward(request).
+
+    Heuristic:
+      - Subclass defines a `forward` parameter named `prompt` or `messages` → v1.
+      - Subclass defines a single non-self positional parameter (optionally
+        annotated `LMRequest`) → v2.
+      - Subclass does not override `forward` (BaseLM default) → v2.
+      - Anything else (e.g. `*args, **kwargs` passthrough) → v1 (legacy is the
+        safer default during the deprecation cycle).
+    """
+    fwd = cls.__dict__.get("forward")
+    if fwd is None:
+        # Subclass didn't override `forward`; treat as v2 (BaseLM default raises).
+        return 2
+    try:
+        sig = inspect.signature(fwd)
+    except (TypeError, ValueError):
+        return 1
+    params = [p for p in sig.parameters.values() if p.name != "self"]
+    names = {p.name for p in params}
+    if "prompt" in names or "messages" in names:
+        return 1
+    positional = [
+        p for p in params
+        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    if len(positional) == 1:
+        return 2
+    return 1
+
+
+class BaseLM(LanguageModel):
     """Base class for handling LLM calls.
 
-    Most users can directly use the `dspy.LM` class, which is a subclass of `BaseLM`. Users can also implement their
-    own subclasses of `BaseLM` to support custom LLM providers and inject custom logic. To do so, simply override the
-    `forward` method and make sure the return format is identical to the
-    [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object).
+    `BaseLM` is the single normalized base class for DSPy language models. New
+    implementations override **typed** `forward(self, request: LMRequest) -> LMResponse`
+    (plus optionally `aforward`, `forward_stream`, `aforward_stream`,
+    `normalize_error`, `dump_state`, `load_state`).
+
+    Legacy subclasses that override `forward(self, prompt, messages=None, **kwargs)`
+    and return an OpenAI-shaped response continue to work during the
+    deprecation cycle. The base class detects the legacy signature at
+    class-definition time, emits a one-shot `DeprecationWarning` pointing at
+    the migration guide, and routes calls through a translation shim.
+
+    The legacy `forward(prompt, messages)` signature is removed in DSPy 4.0.
 
     Examples:
 
+    Legacy v1 subclass (deprecated, will warn at class definition):
+
     ```python
-    from openai import OpenAI
-
-    import dspy
-
-
     class MyLM(dspy.BaseLM):
-        @property
-        def supports_function_calling(self) -> bool:
-            return self.model.startswith("openai/gpt-4o")
-
-        @property
-        def supports_reasoning(self) -> bool:
-            return self.model.startswith("anthropic/claude-3-7")
-
-        @property
-        def supports_response_schema(self) -> bool:
-            return self.model.startswith("openai/gpt-4o")
-
-        @property
-        def supported_params(self) -> set[str]:
-            if self.model.startswith("openai/gpt-4o"):
-                return {"response_format"}  # accepts response_format=...
-            return set()
-
         def forward(self, prompt, messages=None, **kwargs):
-            client = OpenAI()
-            return client.chat.completions.create(
-                model=self.model,
-                messages=messages or [{"role": "user", "content": prompt}],
-                **self.kwargs,
-            )
+            ...  # returns OpenAI-shaped response
+    ```
 
+    New v2 subclass (recommended):
 
-    lm = MyLM(model="gpt-4o-mini")
-    dspy.configure(lm=lm)
-    print(dspy.Predict("q->a")(q="Why did the chicken cross the kitchen?"))
+    ```python
+    class MyLM(dspy.BaseLM):
+        def forward(self, request: dspy.LMRequest) -> dspy.LMResponse:
+            ...  # returns a typed LMResponse
+
+        @property
+        def capabilities(self) -> dspy.LMCapabilities:
+            return dspy.LMCapabilities(function_calling=True, streaming=True)
     ```
     """
 
-    def __init__(self, model, model_type="chat", temperature=0.0, max_tokens=1000, cache=True, **kwargs):
-        self.model = model
+    # The base class itself is v2 (its `forward` is the typed NotImplementedError).
+    _lm_contract_version: int = 2
+
+    def __init_subclass__(cls, *, _internal: bool = False, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._lm_contract_version = _detect_contract_version(cls)
+        if _internal or cls.__module__.startswith("dspy."):
+            return
+        if cls._lm_contract_version == 1:
+            warnings.warn(
+                "Subclassing dspy.BaseLM with `forward(self, prompt, messages, ...)` is "
+                "the legacy LM contract. The legacy signature is deprecated and will be "
+                "removed in DSPy 4.0. Override "
+                "`forward(self, request: LMRequest) -> LMResponse` instead. "
+                f"See {_LM_MIGRATION_URL}.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+    _V1_DEFAULT_TEMPERATURE = 0.0
+    _V1_DEFAULT_MAX_TOKENS = 1000
+    _UNSET: Any = object()
+
+    def __init__(
+        self,
+        model,
+        model_type="chat",
+        temperature: Any = _UNSET,
+        max_tokens: Any = _UNSET,
+        cache: bool = True,
+        **kwargs,
+    ):
+        """Unified BaseLM constructor.
+
+        For v1 subclasses (legacy `forward(prompt, messages)`), historical
+        defaults apply: `temperature=0.0`, `max_tokens=1000`. For v2 subclasses
+        (typed `forward(request)`), omitted values stay omitted from
+        `self.kwargs` (matching `LanguageModel.__init__` semantics).
+        """
+        callbacks = kwargs.pop("callbacks", None)
+        num_retries = kwargs.pop("num_retries", 0)
+
+        is_v1 = type(self)._lm_contract_version == 1
+        if temperature is BaseLM._UNSET:
+            temperature = self._V1_DEFAULT_TEMPERATURE if is_v1 else None
+        if max_tokens is BaseLM._UNSET:
+            max_tokens = self._V1_DEFAULT_MAX_TOKENS if is_v1 else None
+
+        LanguageModel.__init__(
+            self,
+            model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            cache=cache,
+            callbacks=callbacks,
+            num_retries=num_retries,
+            **kwargs,
+        )
         self.model_type = model_type
-        self.cache = cache
-        self.kwargs = dict(temperature=temperature, max_tokens=max_tokens, **kwargs)
-        self.history = []
 
     @property
     def supports_function_calling(self) -> bool:
@@ -119,84 +201,94 @@ class BaseLM:
 
         return outputs
 
-    @with_callbacks
     def __call__(
         self,
+        *items: Any,
         prompt: str | None = None,
         messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ) -> list[dict[str, Any] | str]:
-        response = self.forward(prompt=prompt, messages=messages, **kwargs)
-        outputs = self._process_lm_response(response, prompt, messages, **kwargs)
+        request: Any = None,
+        **kwargs,
+    ):
+        """Dispatch on the subclass's `_lm_contract_version`.
 
-        return outputs
+        - v2 subclass (typed `forward(request)`), or `request=` passed: route through
+          `LanguageModel.__call__` (which fires its own callbacks) and return `LMResponse`.
+        - v1 subclass (legacy `forward(prompt, messages)`) called without `request=`:
+          preserve the historical `list[str | dict]` return via `_v1_call`.
+        """
+        if request is not None or self._lm_contract_version == 2:
+            return LanguageModel.__call__(
+                self,
+                *items,
+                prompt=prompt,
+                messages=messages,
+                request=request,
+                **kwargs,
+            )
+        # v1 backward-compat: `lm("text")` historically meant prompt="text".
+        if items and len(items) == 1 and isinstance(items[0], str) and prompt is None:
+            prompt = items[0]
+            items = ()
+        if items:
+            raise TypeError(
+                f"{type(self).__name__} uses the legacy v1 LM contract; positional "
+                "content items require a v2 subclass. Use prompt= or messages=."
+            )
+        return self._v1_call(prompt=prompt, messages=messages, **kwargs)
 
-    @with_callbacks
     async def acall(
         self,
+        *items: Any,
         prompt: str | None = None,
         messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ) -> list[dict[str, Any] | str]:
+        request: Any = None,
+        **kwargs,
+    ):
+        if request is not None or self._lm_contract_version == 2:
+            return await LanguageModel.acall(
+                self,
+                *items,
+                prompt=prompt,
+                messages=messages,
+                request=request,
+                **kwargs,
+            )
+        if items and len(items) == 1 and isinstance(items[0], str) and prompt is None:
+            prompt = items[0]
+            items = ()
+        if items:
+            raise TypeError(
+                f"{type(self).__name__} uses the legacy v1 LM contract; positional "
+                "content items require a v2 subclass. Use prompt= or messages=."
+            )
+        return await self._v1_acall(prompt=prompt, messages=messages, **kwargs)
+
+    @with_callbacks
+    def _v1_call(self, prompt=None, messages=None, **kwargs):
+        response = self.forward(prompt=prompt, messages=messages, **kwargs)
+        return self._process_lm_response(response, prompt, messages, **kwargs)
+
+    @with_callbacks
+    async def _v1_acall(self, prompt=None, messages=None, **kwargs):
         response = await self.aforward(prompt=prompt, messages=messages, **kwargs)
-        outputs = self._process_lm_response(response, prompt, messages, **kwargs)
-        return outputs
+        return self._process_lm_response(response, prompt, messages, **kwargs)
 
-    def forward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
-        """Forward pass for the language model.
-
-        Subclasses must implement this method, and the response should be identical to either of the following formats:
-
-        - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
-        - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
-        - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
-
-        Raises:
-            dspy.ContextWindowExceededError: When the request fails because the
-                input exceeds the model's context window. DSPy adapters and
-                modules rely on this error to trigger fallback behavior (e.g.
-                truncating the prompt and retrying). Each subclass is
-                responsible for catching its provider's native error and
-                re-raising it as `dspy.ContextWindowExceededError`.
-        """
-        raise NotImplementedError("Subclasses must implement this method.")
-
-    async def aforward(
-        self,
-        prompt: str | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        **kwargs
-    ):
-        """Async forward pass for the language model.
-
-        Subclasses must implement this method, and the response should be identical to either of the following formats:
-
-        - [OpenAI response format](https://platform.openai.com/docs/api-reference/responses/object)
-        - [OpenAI chat completion format](https://platform.openai.com/docs/api-reference/chat/object)
-        - [OpenAI text completion format](https://platform.openai.com/docs/api-reference/completions/object)
-
-        Raises:
-            dspy.ContextWindowExceededError: When the request fails because the
-                input exceeds the model's context window. DSPy adapters and
-                modules rely on this error to trigger fallback behavior (e.g.
-                truncating the prompt and retrying). Each subclass is
-                responsible for catching its provider's native error and
-                re-raising it as `dspy.ContextWindowExceededError`.
-        """
-        raise NotImplementedError("Subclasses must implement this method.")
+    # `forward` and `aforward` are inherited from LanguageModel with the typed
+    # signature `forward(self, request: LMRequest) -> LMResponse`. Legacy
+    # subclasses that override `forward(self, prompt, messages, **kwargs)` are
+    # detected at class-definition time by `__init_subclass__` (see
+    # `_lm_contract_version`) and routed through `__call__`'s v1 dispatch arm
+    # until DSPy 4.0.
 
     def copy(self, **kwargs):
         """Returns a copy of the language model with possibly updated parameters.
 
-        Any provided keyword arguments update the corresponding attributes or LM kwargs of
-        the copy. For example, ``lm.copy(rollout_id=1, temperature=1.0)`` returns an LM whose
-        requests use a different rollout ID at non-zero temperature to bypass cache collisions.
+        v2 subclasses use the typed `LanguageModel.copy` (shallow copy of provider
+        resources, isolated DSPy state). v1 subclasses preserve historical
+        `copy.deepcopy` behavior.
         """
+        if self._lm_contract_version == 2:
+            return LanguageModel.copy(self, **kwargs)
 
         import copy
 

@@ -3,7 +3,7 @@ import pytest
 import dspy
 
 
-class TextOnlyLM(dspy.LanguageModel):
+class TextOnlyLM(dspy.BaseLM):
     def __init__(self):
         super().__init__(model="test/text-only", cache=False)
         self.forward_called = False
@@ -25,7 +25,7 @@ class NonDeepcopyableClient:
         raise RuntimeError("Provider clients should not be deep-copied")
 
 
-class ClientBackedLM(dspy.LanguageModel):
+class ClientBackedLM(dspy.BaseLM):
     def __init__(self, client):
         super().__init__(model="test/client-backed", cache=False, temperature=0.1)
         self.client = client

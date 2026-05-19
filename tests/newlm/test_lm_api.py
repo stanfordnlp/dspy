@@ -1,7 +1,7 @@
 import dspy
 
 
-class EchoLM(dspy.LanguageModel):
+class EchoLM(dspy.BaseLM):
     """Tiny normalized LM used to specify the public LanguageModel API."""
 
     def __init__(self):
@@ -18,7 +18,7 @@ class EchoLM(dspy.LanguageModel):
         )
 
 
-class ToolCallingLM(dspy.LanguageModel):
+class ToolCallingLM(dspy.BaseLM):
     def __init__(self):
         super().__init__(model="test/tools", cache=False)
         self.requests = []

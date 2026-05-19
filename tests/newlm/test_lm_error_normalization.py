@@ -8,7 +8,7 @@ class NativeContextError(Exception):
     pass
 
 
-class NormalizingLM(dspy.LanguageModel):
+class NormalizingLM(dspy.BaseLM):
     def __init__(self):
         super().__init__(model="test/context", cache=False)
 
@@ -25,7 +25,7 @@ class NormalizingLM(dspy.LanguageModel):
         return error
 
 
-class UnnormalizedLM(dspy.LanguageModel):
+class UnnormalizedLM(dspy.BaseLM):
     def __init__(self):
         super().__init__(model="test/raw", cache=False)
 
