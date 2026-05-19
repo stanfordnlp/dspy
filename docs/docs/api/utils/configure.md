@@ -31,6 +31,7 @@ Every DSPy module will use these defaults unless you override them with
 | `allow_tool_async_sync_conversion` | `False` | Let async tools run in synchronous code. See [Async](../../tutorials/async/index.md). |
 | `provide_traceback` | `False` | Include Python tracebacks in error logs. |
 | `warn_on_type_mismatch` | `True` | Warn when a module input type does not match the signature. |
+| `experimental` | `False` | Enable experimental DSPy behavior, including routing `dspy.LM(...)` to the normalized `dspy.BaseLM` backends. |
 
 ## Examples
 
@@ -67,6 +68,16 @@ dspy.configure(
     track_usage=True,
     async_max_workers=4,
 )
+```
+
+### Enable experimental behavior
+
+```python
+import dspy
+
+dspy.configure(experimental=True)
+
+lm = dspy.LM("openai/gpt-4o-mini")  # Uses the normalized BaseLM path.
 ```
 
 ## When to use `dspy.configure`
