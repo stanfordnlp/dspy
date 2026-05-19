@@ -88,7 +88,7 @@ class JSONAdapter(ChatAdapter):
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().__call__)
-        if result:
+        if result is not None:
             return result
 
         try:
@@ -112,7 +112,7 @@ class JSONAdapter(ChatAdapter):
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
         result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().acall)
-        if result:
+        if result is not None:
             return await result
 
         try:
