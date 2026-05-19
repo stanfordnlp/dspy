@@ -215,12 +215,19 @@ def _default_builtin_backend(
     model: str,
     **kwargs: Any
 ) -> BaseLM:
+    from dspy.clients.language_models.anthropic import AnthropicLM
+    from dspy.clients.language_models.gemini import GenAILM
     from dspy.clients.language_models.litellm import LiteLLMLM
     from dspy.clients.language_models.openai import OpenAIChatLM, OpenAIResponsesLM, OpenAITextLM
 
     endpoint_model_type = _model_type_from_endpoint_url(kwargs.get("endpoint_url"))
 
     provider = model.split("/", 1)[0] if "/" in model else "openai"
+    if provider == "anthropic":
+        return AnthropicLM(model=model, **kwargs)
+    if provider in {"gemini", "google", "genai"}:
+        return GenAILM(model=model, **kwargs)
+
     routed = _known_openai_compatible_backend(
         model,
         provider=provider,

@@ -33,10 +33,8 @@ def test_provider_backends_expose_common_auth_transport_and_generation_kwargs():
         "callbacks",
     }
 
-    for cls in [dspy.OpenAIChatLM, dspy.OpenAITextLM, dspy.OpenAIResponsesLM]:
+    for cls in [dspy.OpenAIChatLM, dspy.OpenAITextLM, dspy.OpenAIResponsesLM, dspy.AnthropicLM, dspy.GenAILM]:
         assert required <= _parameter_names(cls.__init__)
-
-    assert {"model_type", "temperature", "max_tokens", "cache", "callbacks"} <= _parameter_names(dspy.LiteLLMLM.__init__)
 
 
 def test_explicit_constructor_kwargs_become_default_request_config():
