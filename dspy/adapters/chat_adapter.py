@@ -86,7 +86,12 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
-            return JSONAdapter()(lm, lm_kwargs, signature, demos, inputs)
+            return JSONAdapter(
+                callbacks=self.callbacks,
+                use_native_function_calling=self.use_native_function_calling,
+                native_response_types=self.native_response_types,
+                allow_parallel_tool_calls=self.allow_parallel_tool_calls,
+            )(lm, lm_kwargs, signature, demos, inputs)
 
     async def acall(
         self,
@@ -110,7 +115,12 @@ class ChatAdapter(Adapter):
                 # On context window exceeded error, already using JSONAdapter, or use_json_adapter_fallback is False
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
-            return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
+            return await JSONAdapter(
+                callbacks=self.callbacks,
+                use_native_function_calling=self.use_native_function_calling,
+                native_response_types=self.native_response_types,
+                allow_parallel_tool_calls=self.allow_parallel_tool_calls,
+            ).acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_description(self, signature: type[Signature]) -> str:
         return (

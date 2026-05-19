@@ -7,6 +7,7 @@ from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Mess
 
 import dspy
 from dspy.experimental import Citations
+from dspy.utils.callback import BaseCallback
 
 
 @pytest.mark.parametrize(
@@ -492,6 +493,87 @@ def test_chat_adapter_respects_use_json_adapter_fallback_flag():
             with pytest.raises(dspy.utils.exceptions.AdapterParseError):
                 adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
         mock_json_adapter_call.assert_not_called()
+
+
+def test_chat_adapter_fallback_preserves_adapter_configuration():
+    class CustomType(dspy.Type):
+        value: str
+
+    callback = BaseCallback()
+    adapter = dspy.ChatAdapter(
+        callbacks=[callback],
+        use_native_function_calling=True,
+        native_response_types=[CustomType],
+        allow_parallel_tool_calls=False,
+    )
+    signature = dspy.make_signature("question->answer")
+
+    with (
+        mock.patch.object(dspy.ChatAdapter, "parse", side_effect=ValueError("bad")),
+        mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.__call__",
+            autospec=True,
+            return_value=[{"answer": "Paris"}],
+        ) as mock_json_adapter_call,
+    ):
+        result = adapter(
+            lm=mock.Mock(return_value=["bad"]),
+            lm_kwargs={},
+            signature=signature,
+            demos=[],
+            inputs={"question": "What is the capital of France?"},
+        )
+
+    assert result == [{"answer": "Paris"}]
+    fallback_adapter = mock_json_adapter_call.call_args.args[0]
+    assert fallback_adapter.callbacks == [callback]
+    assert fallback_adapter.use_native_function_calling is True
+    assert CustomType in fallback_adapter.native_response_types
+    assert dspy.ToolCalls in fallback_adapter.native_response_types
+    assert fallback_adapter.allow_parallel_tool_calls is False
+
+
+@pytest.mark.asyncio
+async def test_chat_adapter_async_fallback_preserves_adapter_configuration():
+    class CustomType(dspy.Type):
+        value: str
+
+    callback = BaseCallback()
+    adapter = dspy.ChatAdapter(
+        callbacks=[callback],
+        use_native_function_calling=True,
+        native_response_types=[CustomType],
+        allow_parallel_tool_calls=False,
+    )
+    signature = dspy.make_signature("question->answer")
+
+    class FakeLM:
+        async def acall(self, messages, **kwargs):
+            return ["bad"]
+
+    with (
+        mock.patch.object(dspy.ChatAdapter, "parse", side_effect=ValueError("bad")),
+        mock.patch(
+            "dspy.adapters.json_adapter.JSONAdapter.acall",
+            autospec=True,
+            return_value=[{"answer": "Paris"}],
+        ) as mock_json_adapter_acall,
+    ):
+        result = await adapter.acall(
+            lm=FakeLM(),
+            lm_kwargs={},
+            signature=signature,
+            demos=[],
+            inputs={"question": "What is the capital of France?"},
+        )
+
+    assert result == [{"answer": "Paris"}]
+    fallback_adapter = mock_json_adapter_acall.call_args.args[0]
+    assert fallback_adapter.callbacks == [callback]
+    assert fallback_adapter.use_native_function_calling is True
+    assert CustomType in fallback_adapter.native_response_types
+    assert dspy.ToolCalls in fallback_adapter.native_response_types
+    assert fallback_adapter.allow_parallel_tool_calls is False
 
 
 @pytest.mark.asyncio
