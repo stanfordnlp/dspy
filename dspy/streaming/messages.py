@@ -3,8 +3,6 @@ import concurrent.futures
 from dataclasses import dataclass
 from typing import Any
 
-import anyio.from_thread
-
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import BaseCallback
 
@@ -46,8 +44,9 @@ def sync_send_to_stream(stream, message):
             future = executor.submit(run_in_new_loop)
             return future.result()
     except RuntimeError:
-        # Not in an event loop, safe to use a new event loop in this thread
-        return anyio.from_thread.run(_send)
+        # Not in an event loop. anyio.from_thread.run() only works from an
+        # AnyIO worker thread, so use a standalone event-loop runner here.
+        return asyncio.run(_send())
 
 
 class StatusMessageProvider:

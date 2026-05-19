@@ -6,23 +6,20 @@ from asyncio import iscoroutinefunction
 from queue import Queue
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Callable, Generator
 
+import litellm
 import orjson
 from anyio import create_memory_object_stream, create_task_group
 from anyio.streams.memory import MemoryObjectSendStream
+from litellm import ModelResponseStream
 
+from dspy.clients.language_models.types import LMStreamEvent
 from dspy.dsp.utils.settings import settings
 from dspy.primitives.prediction import Prediction
-from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback
+from dspy.streaming.messages import StatusMessage, StatusMessageProvider, StatusStreamingCallback, StreamResponse
 from dspy.streaming.streaming_listener import StreamListener, find_predictor_for_stream_listeners
 from dspy.utils.asyncify import asyncify
 
 logger = logging.getLogger(__name__)
-
-
-def _is_litellm_model_response_stream(value: Any) -> bool:
-    cls = type(value)
-    return cls.__name__ == "ModelResponseStream" and cls.__module__.startswith("litellm")
-
 
 if TYPE_CHECKING:
     from dspy.primitives.module import Module
@@ -35,6 +32,7 @@ def streamify(
     include_final_prediction_in_output_stream: bool = True,
     is_async_program: bool = False,
     async_streaming: bool = True,
+    include_lm_events: bool = False,
 ) -> Callable[[Any, Any], Awaitable[Any]]:
     """
     Wrap a DSPy program so that it streams its outputs incrementally, rather than returning them
@@ -57,6 +55,9 @@ def streamify(
             otherwise the program will be called with `acall`.
         async_streaming: Whether to return an async generator or a sync generator. If `False`, the streaming will be
             converted to a sync generator.
+        include_lm_events: When using a normalized `dspy.LanguageModel`, whether to yield raw `LMStreamEvent`s even
+            when `stream_listeners` are configured. This is useful when you want field-level `StreamResponse`s for the
+            UI and raw normalized LM events for tracing or custom clients. Legacy `BaseLM` streaming is unchanged.
 
     Returns:
         A function that takes the same arguments as the original program, but returns an async
@@ -171,7 +172,12 @@ def streamify(
         callbacks.append(status_streaming_callback)
 
     async def generator(args, kwargs, stream: MemoryObjectSendStream):
-        with settings.context(send_stream=stream, callbacks=callbacks, stream_listeners=stream_listeners):
+        with settings.context(
+            send_stream=stream,
+            callbacks=callbacks,
+            stream_listeners=stream_listeners,
+            stream_include_lm_events=include_lm_events,
+        ):
             prediction = await program(*args, **kwargs)
 
         await stream.send(prediction)
@@ -182,7 +188,7 @@ def streamify(
             tg.start_soon(generator, args, kwargs, send_stream)
 
             async for value in receive_stream:
-                if _is_litellm_model_response_stream(value):
+                if isinstance(value, ModelResponseStream):
                     if len(predict_id_to_listener) == 0:
                         # No listeners are configured, yield the chunk directly for backwards compatibility.
                         yield value
@@ -275,7 +281,23 @@ async def streaming_response(streamer: AsyncGenerator) -> AsyncGenerator:
         if isinstance(value, Prediction):
             data = {"prediction": dict(value.items(include_dspy=False))}
             yield f"data: {orjson.dumps(data).decode()}\n\n"
-        elif _is_litellm_model_response_stream(value):
+        elif isinstance(value, LMStreamEvent):
+            data = {"event": value.model_dump(mode="json")}
+            yield f"data: {orjson.dumps(data).decode()}\n\n"
+        elif isinstance(value, StreamResponse):
+            data = {
+                "stream_response": {
+                    "predict_name": value.predict_name,
+                    "signature_field_name": value.signature_field_name,
+                    "chunk": value.chunk,
+                    "is_last_chunk": value.is_last_chunk,
+                }
+            }
+            yield f"data: {orjson.dumps(data).decode()}\n\n"
+        elif isinstance(value, StatusMessage):
+            data = {"status": {"message": value.message}}
+            yield f"data: {orjson.dumps(data).decode()}\n\n"
+        elif isinstance(value, litellm.ModelResponseStream):
             data = {"chunk": value.json()}
             yield f"data: {orjson.dumps(data).decode()}\n\n"
         elif isinstance(value, str) and value.startswith("data:"):
