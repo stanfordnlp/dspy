@@ -49,6 +49,8 @@ class Reasoning(Type):
         field_name: str,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
+        inputs: dict[str, Any] | None = None,
+        adapter_options: dict[str, Any] | None = None,
     ) -> type["Signature"]:
         if "reasoning_effort" in lm_kwargs:
             # `lm_kwargs` overrides `lm.kwargs`.

@@ -8,7 +8,7 @@ import regex
 from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
-from dspy.adapters.types.tool import ToolCalls
+from dspy.adapters.types import Type
 from dspy.adapters.utils import (
     format_field_value,
     get_annotation_name,
@@ -37,19 +37,43 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     return False
 
 
+def _has_output_type_without_structured_output_schema(signature: SignatureMeta) -> bool:
+    for field in signature.output_fields.values():
+        annotation = field.annotation
+        if isinstance(annotation, type) and issubclass(annotation, Type):
+            if not annotation.supports_structured_output_schema():
+                return True
+    return False
+
+
 class JSONAdapter(ChatAdapter):
-    def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
+    def __init__(
+        self,
+        callbacks: list[BaseCallback] | None = None,
+        use_native_function_calling: bool = True,
+        native_response_types: list[type[type]] | None = None,
+        allow_parallel_tool_calls: bool | None = None,
+    ):
         # JSONAdapter uses native function calling by default.
-        super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
+        super().__init__(
+            callbacks=callbacks,
+            use_native_function_calling=use_native_function_calling,
+            native_response_types=native_response_types,
+            allow_parallel_tool_calls=allow_parallel_tool_calls,
+        )
 
     def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
         """Common call logic to be used for both sync and async calls."""
         if "response_format" not in lm.supported_params:
             return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
-        has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
-
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
+        effective_native_function_calling = self.use_native_function_calling and lm.supports_function_calling
+        has_unsupported_structured_output_type = _has_output_type_without_structured_output_schema(signature)
+        if (
+            _has_open_ended_mapping(signature)
+            or (not effective_native_function_calling and has_unsupported_structured_output_type)
+            or not lm.supports_response_schema
+        ):
             # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
             # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -68,11 +92,12 @@ class JSONAdapter(ChatAdapter):
             return result
 
         try:
-            structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
-            )
+            processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+            structured_output_model = _get_structured_outputs_response_format(processed_signature)
             lm_kwargs["response_format"] = structured_output_model
-            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+            messages = self.format(processed_signature, demos, inputs)
+            outputs = lm(messages=messages, **lm_kwargs)
+            return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
         except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -91,11 +116,12 @@ class JSONAdapter(ChatAdapter):
             return await result
 
         try:
-            structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
-            )
+            processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
+            structured_output_model = _get_structured_outputs_response_format(processed_signature)
             lm_kwargs["response_format"] = structured_output_model
-            return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+            messages = self.format(processed_signature, demos, inputs)
+            outputs = await lm.acall(messages=messages, **lm_kwargs)
+            return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
         except Exception:
             logger.warning("Failed to use structured output format, falling back to JSON mode.")
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -211,7 +237,6 @@ class JSONAdapter(ChatAdapter):
 
 def _get_structured_outputs_response_format(
     signature: SignatureMeta,
-    use_native_function_calling: bool = True,
 ) -> type[pydantic.BaseModel]:
     """
     Builds a Pydantic model from a DSPy signature's output_fields and ensures the generated JSON schema
@@ -233,9 +258,9 @@ def _get_structured_outputs_response_format(
     fields = {}
     for name, field in signature.output_fields.items():
         annotation = field.annotation
-        if use_native_function_calling and annotation == ToolCalls:
-            # Skip ToolCalls field if native function calling is enabled.
-            continue
+        if isinstance(annotation, type) and issubclass(annotation, Type):
+            if not annotation.supports_structured_output_schema():
+                raise ValueError(f"Field '{name}' does not support Structured Outputs.")
         default = field.default if hasattr(field, "default") else ...
         fields[name] = (annotation, default)
 

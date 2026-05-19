@@ -195,7 +195,7 @@ def test_chat_adapter_exception_raised_on_failure():
     signature = dspy.make_signature("question->answer")
     adapter = dspy.ChatAdapter()
     invalid_completion = "{'output':'mismatched value'}"
-    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Adapter ChatAdapter failed to parse*"):
+    with pytest.raises(dspy.utils.exceptions.AdapterParseError, match="Adapter ChatAdapter failed to parse"):
         adapter.parse(signature, invalid_completion)
 
 
@@ -401,8 +401,10 @@ def test_chat_adapter_with_code():
 
 def test_code_output_field_omits_json_schema_in_prompt():
     """Regression test for #9251: dspy.Code should avoid duplicating large JSON schema text."""
+
     class CodeGeneration(dspy.Signature):
         """Generate code to answer the question"""
+
         question: str = dspy.InputField()
         code: dspy.Code = dspy.OutputField()
 
@@ -562,7 +564,13 @@ def test_chat_adapter_toolcalls_native_function_calling():
         )
 
         assert result[0]["tool_calls"] == dspy.ToolCalls(
-            tool_calls=[dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Paris"})]
+            tool_calls=[
+                dspy.ToolCalls.ToolCall(
+                    name="get_weather",
+                    args={"city": "Paris"},
+                    id="call_pQm8ajtSMxgA0nrzK2ivFmxG",
+                )
+            ]
         )
         # `answer` is not present, so we set it to None
         assert result[0]["answer"] is None
@@ -723,25 +731,23 @@ def test_format_system_message():
 
     adapter = dspy.ChatAdapter()
     system_message = adapter.format_system_message(MySignature)
-    expected_system_message = """Your input fields are:
-1. `question` (str):
-Your output fields are:
-1. `answers` (list[str]): 
-2. `scores` (list[float]):
-All interactions will be structured in the following way, with the appropriate values filled in.
-
-[[ ## question ## ]]
-{question}
-
-[[ ## answers ## ]]
-{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
-
-[[ ## scores ## ]]
-{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
-
-[[ ## completed ## ]]
-In adhering to this structure, your objective is: 
-        Answer the question with multiple answers and scores"""
+    expected_system_message = (
+        "Your input fields are:\n"
+        "1. `question` (str):\n"
+        "Your output fields are:\n"
+        "1. `answers` (list[str]): \n"
+        "2. `scores` (list[float]):\n"
+        "All interactions will be structured in the following way, with the appropriate values filled in.\n\n"
+        "[[ ## question ## ]]\n"
+        "{question}\n\n"
+        "[[ ## answers ## ]]\n"
+        '{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}\n\n'
+        "[[ ## scores ## ]]\n"
+        '{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}\n\n'
+        "[[ ## completed ## ]]\n"
+        "In adhering to this structure, your objective is: \n"
+        "        Answer the question with multiple answers and scores"
+    )
     assert system_message == expected_system_message
 
 
@@ -786,9 +792,14 @@ def test_tool_call_with_null_content_does_not_raise():
     adapter = dspy.ChatAdapter(use_native_function_calling=True)
     sig_cls = dspy.Signature("question, tools: list[dspy.Tool] -> answer, tool_calls: dspy.ToolCalls")
 
-    outputs = [{"text": None, "tool_calls": [
-        {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
-    ]}]
+    outputs = [
+        {
+            "text": None,
+            "tool_calls": [
+                {"function": {"name": "search", "arguments": '{"query": "test"}'}, "id": "call_1", "type": "function"}
+            ],
+        }
+    ]
 
     result = adapter._call_postprocess(sig_cls, sig_cls, outputs, None, {})
     assert result is not None
