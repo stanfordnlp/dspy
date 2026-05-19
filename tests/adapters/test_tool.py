@@ -497,6 +497,27 @@ def test_toolcalls_vague_match():
         ToolCalls.model_validate([{"foo": "bar"}])
 
 
+def test_toolcalls_normalizes_cached_litellm_tool_call_object():
+    class Function:
+        name = "search"
+        arguments = '{"query": "hello", "k": 5}'
+
+    class CachedToolCall:
+        id = "call_123"
+        type = "function"
+        function = Function()
+
+        def model_dump(self):
+            raise TypeError("'MockValSer' object cannot be converted to 'SchemaSerializer'")
+
+    tc = ToolCalls.model_validate([CachedToolCall()])
+
+    assert len(tc.tool_calls) == 1
+    assert tc.tool_calls[0].name == "search"
+    assert tc.tool_calls[0].args == {"query": "hello", "k": 5}
+    assert tc.tool_calls[0].id == "call_123"
+
+
 def test_tool_convert_input_schema_to_tool_args_no_input_params():
     args, arg_types, arg_desc = convert_input_schema_to_tool_args(schema={"properties": {}})
     assert args == {}
@@ -542,8 +563,6 @@ def test_tool_convert_input_schema_to_tool_args_lang_chain():
     }
 
 
-
-
 def test_tool_call_execute():
     def get_weather(city: str) -> str:
         return f"The weather in {city} is sunny"
@@ -551,10 +570,7 @@ def test_tool_call_execute():
     def add_numbers(a: int, b: int) -> int:
         return a + b
 
-    tools = [
-        dspy.Tool(get_weather),
-        dspy.Tool(add_numbers)
-    ]
+    tools = [dspy.Tool(get_weather), dspy.Tool(add_numbers)]
 
     tool_call = dspy.ToolCalls.ToolCall(name="get_weather", args={"city": "Berlin"})
     result = tool_call.execute(functions=tools)
@@ -577,7 +593,7 @@ def test_tool_call_execute():
     tool_call4 = dspy.ToolCalls.ToolCall(name="nonexistent", args={})
     try:
         tool_call4.execute(functions=tools)
-        assert False, "Should have raised ValueError"
+        raise AssertionError("Should have raised ValueError")
     except ValueError as e:
         assert "not found" in str(e)
 
