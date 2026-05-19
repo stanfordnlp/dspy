@@ -5,6 +5,8 @@ from pydantic.fields import FieldInfo
 
 from dspy.adapters.chat_adapter import ChatAdapter, FieldInfoWithName
 from dspy.adapters.utils import format_field_value, translate_field_type
+from dspy.clients.base_lm import BaseLM
+from dspy.clients.language_models.base import LanguageModel
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 
@@ -13,6 +15,40 @@ class XMLAdapter(ChatAdapter):
     def __init__(self, callbacks: list[BaseCallback] | None = None):
         super().__init__(callbacks)
         self.field_pattern = re.compile(r"<(?P<name>\w+)>((?P<content>.*?))</\1>", re.DOTALL)
+
+    def stream_start_identifier(self, field_name: str) -> str:
+        return f"<{field_name}>"
+
+    def consume_stream_field_buffer(self, field_name: str, buffer: str, *, final: bool) -> tuple[str, str, bool]:
+        close_tag = f"</{field_name}>"
+        boundary = buffer.find(close_tag)
+        if boundary != -1:
+            return buffer[:boundary].rstrip(), "", True
+        if final:
+            return buffer, "", False
+        if buffer.endswith("<") or "</" in buffer:
+            return "", buffer, False
+        return buffer, "", False
+
+    def __call__(
+        self,
+        lm: BaseLM | LanguageModel,
+        lm_kwargs: dict[str, Any],
+        signature: type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+
+    async def acall(
+        self,
+        lm: BaseLM | LanguageModel,
+        lm_kwargs: dict[str, Any],
+        signature: type[Signature],
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 
     def format_field_with_value(self, fields_with_values: dict[FieldInfoWithName, Any]) -> str:
         output = []

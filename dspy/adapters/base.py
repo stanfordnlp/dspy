@@ -8,14 +8,135 @@ from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.language_models.base import LanguageModel
+from dspy.clients.language_models.types import LMRequest, LMResponse
+from dspy.dsp.utils.settings import settings
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
+from dspy.utils.asyncify import asyncify
 from dspy.utils.callback import BaseCallback, with_callbacks
 from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
+
+
+def _uses_language_model_contract(lm: Any) -> bool:
+    """Whether an LM should be treated as using the typed v2 LM contract.
+
+    Every LM is a `BaseLM` (which itself subclasses `LanguageModel`). The
+    dispatch decision is contract version: v2 LMs accept `LMRequest` and
+    return `LMResponse`; v1 LMs use the legacy `prompt`/`messages` shim.
+    """
+    return getattr(lm, "_lm_contract_version", None) == 2
+
+
+def _lm_supports_function_calling(lm: Any) -> bool:
+    if isinstance(lm, BaseLM):
+        return lm.supports_function_calling
+    return bool(getattr(lm, "capabilities", None) and lm.capabilities.function_calling)
+
+
+def _lm_supports_reasoning(lm: Any) -> bool:
+    if isinstance(lm, BaseLM):
+        return lm.supports_reasoning
+    return bool(getattr(lm, "capabilities", None) and lm.capabilities.reasoning)
+
+
+def _lm_supports_response_schema(lm: Any) -> bool:
+    if isinstance(lm, BaseLM):
+        return lm.supports_response_schema
+    return bool(getattr(lm, "capabilities", None) and lm.capabilities.response_schema)
+
+
+def _lm_output_response_dict(output: Any) -> dict[str, Any]:
+    data: dict[str, Any] = {"text": output.text}
+    if output.reasoning_content is not None:
+        data["reasoning_content"] = output.reasoning_content
+    if output.tool_calls:
+        data["tool_calls"] = output.tool_calls
+    if output.citations:
+        data["citations"] = [citation.model_dump(exclude_none=True) for citation in output.citations]
+    if output.logprobs is not None:
+        data["logprobs"] = output.logprobs
+    return data
+
+
+def _lm_streaming_enabled(lm: LanguageModel) -> bool:
+    try:
+        lm._require_stream_support(async_=False)
+    except NotImplementedError:
+        return False
+    return True
+
+
+def _lm_async_streaming_enabled(lm: LanguageModel) -> bool:
+    try:
+        lm._require_stream_support(async_=True)
+    except NotImplementedError:
+        return False
+    return True
+
+
+def _text_from_lm_stream_event(event: Any) -> str | None:
+    from dspy.clients.language_models.types import LMStreamDeltaEvent, LMTextDelta
+
+    if isinstance(event, LMStreamDeltaEvent) and isinstance(event.delta, LMTextDelta):
+        return event.delta.text
+    return None
+
+
+class _FieldStreamParser:
+    def __init__(self, adapter: "Adapter", listener: Any):
+        self.adapter = adapter
+        self.listener = listener
+        self.field_name = listener.signature_field_name
+        self.start_identifier = adapter.stream_start_identifier(self.field_name)
+        self.search_buffer = ""
+        self.content_buffer = ""
+
+    def receive(self, text: str):
+        if self.listener.stream_end:
+            return None
+
+        if not self.listener.stream_start:
+            self.search_buffer += text
+            start_index = self.search_buffer.find(self.start_identifier)
+            if start_index == -1:
+                self.search_buffer = self.adapter.trim_stream_start_buffer(self.search_buffer, self.start_identifier)
+                return None
+            self.listener.stream_start = True
+            text = self.search_buffer[start_index + len(self.start_identifier) :].lstrip()
+            self.search_buffer = ""
+
+        if not text:
+            return None
+
+        self.content_buffer += text
+        token, self.content_buffer, ended = self.adapter.consume_stream_field_buffer(
+            self.field_name,
+            self.content_buffer,
+            final=False,
+        )
+        if ended:
+            self.listener.stream_end = True
+        if token or ended:
+            return self.adapter.make_stream_response(self.listener, token, is_last_chunk=ended)
+        return None
+
+    def finalize(self):
+        if self.listener.stream_end or not self.listener.stream_start:
+            return None
+        self.listener.stream_end = True
+        token, self.content_buffer, _ = self.adapter.consume_stream_field_buffer(
+            self.field_name,
+            self.content_buffer,
+            final=True,
+        )
+        if token:
+            return self.adapter.make_stream_response(self.listener, token, is_last_chunk=True)
+        return None
 
 
 class Adapter:
@@ -56,6 +177,102 @@ class Adapter:
         self.use_native_function_calling = use_native_function_calling
         self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
 
+    # ------------------------------------------------------------------
+    # Normalized LanguageModel streaming.
+    #
+    # Adapters own field-level parsing because they own the response format.
+    # The streaming package only transports `StreamResponse`, raw normalized
+    # `LMStreamEvent`s, status messages, and final predictions.
+    # ------------------------------------------------------------------
+
+    def stream_start_identifier(self, field_name: str) -> str:
+        raise NotImplementedError(f"{type(self).__name__} does not support field-level streaming.")
+
+    def trim_stream_start_buffer(self, buffer: str, start_identifier: str) -> str:
+        max_suffix = min(len(buffer), len(start_identifier) - 1)
+        for length in range(max_suffix, 0, -1):
+            if start_identifier.startswith(buffer[-length:]):
+                return buffer[-length:]
+        return ""
+
+    def consume_stream_field_buffer(self, field_name: str, buffer: str, *, final: bool) -> tuple[str, str, bool]:
+        raise NotImplementedError(f"{type(self).__name__} does not support field-level streaming.")
+
+    def make_stream_response(self, listener: Any, token: str, *, is_last_chunk: bool):
+        from dspy.streaming.messages import StreamResponse
+
+        return StreamResponse(
+            listener.predict_name,
+            listener.signature_field_name,
+            token,
+            is_last_chunk=is_last_chunk,
+        )
+
+    def _stream_listeners_for_current_predict(self) -> list[Any]:
+        listeners = settings.stream_listeners or []
+        caller_predict = settings.caller_predict
+        return [listener for listener in listeners if listener.predict == caller_predict]
+
+    def _emit_lm_stream_event(self, event: Any, parsers: list[_FieldStreamParser], send) -> None:
+        if not parsers or settings.stream_include_lm_events:
+            send(event)
+        if not parsers:
+            return
+        text = _text_from_lm_stream_event(event)
+        if text is None:
+            return
+        for parser in parsers:
+            response = parser.receive(text)
+            if response is not None:
+                send(response)
+
+    def _stream_language_model_response(self, lm: LanguageModel, request: LMRequest) -> LMResponse:
+        from dspy.streaming.messages import sync_send_to_stream
+
+        send_stream = settings.send_stream
+        parsers = [_FieldStreamParser(self, listener) for listener in self._stream_listeners_for_current_predict()]
+        stream = lm.stream(request=request)
+
+        def send(value: Any) -> None:
+            if send_stream is not None:
+                sync_send_to_stream(send_stream, value)
+
+        for event in stream:
+            self._emit_lm_stream_event(event, parsers, send)
+        for parser in parsers:
+            response = parser.finalize()
+            if response is not None:
+                send(response)
+        return stream.result()
+
+    async def _astream_language_model_response(self, lm: LanguageModel, request: LMRequest) -> LMResponse:
+        send_stream = settings.send_stream
+        parsers = [_FieldStreamParser(self, listener) for listener in self._stream_listeners_for_current_predict()]
+        stream = lm.astream(request=request)
+
+        async def send(value: Any) -> None:
+            if send_stream is not None:
+                await send_stream.send(value)
+
+        async for event in stream:
+            emitted = []
+            if not parsers or settings.stream_include_lm_events:
+                emitted.append(event)
+            if parsers:
+                text = _text_from_lm_stream_event(event)
+                if text is not None:
+                    for parser in parsers:
+                        response = parser.receive(text)
+                        if response is not None:
+                            emitted.append(response)
+            for value in emitted:
+                await send(value)
+        for parser in parsers:
+            response = parser.finalize()
+            if response is not None:
+                await send(response)
+        return stream.result()
+
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
 
@@ -65,7 +282,7 @@ class Adapter:
 
     def _call_preprocess(
         self,
-        lm: BaseLM,
+        lm: BaseLM | LanguageModel,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         inputs: dict[str, Any],
@@ -81,13 +298,15 @@ class Adapter:
                     "input field with type `list[dspy.Tool]`."
                 )
 
-            if tool_call_output_field_name and lm.supports_function_calling:
+            if tool_call_output_field_name and _lm_supports_function_calling(lm):
                 tools = inputs[tool_call_input_field_name]
                 tools = tools if isinstance(tools, list) else [tools]
 
-                lm_tools = [tool.format_as_litellm_function_call() for tool in tools]
-
-                lm_kwargs["tools"] = lm_tools
+                lm_kwargs["tools"] = (
+                    [tool.format_as_litellm_function_call() for tool in tools]
+                    if isinstance(lm, BaseLM)
+                    else tools
+                )
 
                 signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
                 signature_for_native_function_calling = signature_for_native_function_calling.delete(
@@ -175,9 +394,74 @@ class Adapter:
 
         return values
 
+    def _call_postprocess_language_model(
+        self,
+        processed_signature: type[Signature],
+        original_signature: type[Signature],
+        response: LMResponse,
+        lm: LanguageModel,
+        lm_kwargs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        values = []
+        tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
+
+        for output in response.outputs:
+            text = output.text
+            tool_calls = output.tool_calls
+
+            if text:
+                value = self.parse(processed_signature, text)
+                for field_name in original_signature.output_fields.keys():
+                    if field_name not in value:
+                        value[field_name] = None
+            elif tool_calls and tool_call_output_field_name:
+                value = dict.fromkeys(original_signature.output_fields.keys())
+            else:
+                raise AdapterParseError(
+                    adapter_name=type(self).__name__,
+                    signature=original_signature,
+                    lm_response=str(output),
+                    message="The LM returned an empty or null response.",
+                )
+
+            if tool_calls and tool_call_output_field_name:
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(
+                    [{"name": call.name, "args": call.args} for call in tool_calls]
+                )
+
+            for name, field in original_signature.output_fields.items():
+                if (
+                    isinstance(field.annotation, type)
+                    and field.annotation in self.native_response_types
+                    and issubclass(field.annotation, Type)
+                ):
+                    parsed_value = field.annotation.parse_lm_response(_lm_output_response_dict(output))
+                    if parsed_value is not None:
+                        value[name] = parsed_value
+
+            if output.logprobs is not None:
+                value["logprobs"] = output.logprobs
+
+            values.append(value)
+
+        return values
+
+    def _language_model_request(
+        self,
+        lm: LanguageModel,
+        messages: list[dict[str, Any]],
+        lm_kwargs: dict[str, Any],
+    ) -> LMRequest:
+        # Delegate request construction to the LM so module calls preserve the
+        # same constructor defaults as direct calls (temperature, max_tokens,
+        # provider extensions, cache defaults, etc.). Constructing LMRequest
+        # directly here would bypass lm.kwargs because lm(request=...) treats
+        # the request as already normalized.
+        return lm.normalize_request(messages=messages, **lm_kwargs)
+
     def __call__(
         self,
-        lm: BaseLM,
+        lm: BaseLM | LanguageModel,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -202,12 +486,20 @@ class Adapter:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
 
+        if _uses_language_model_contract(lm):
+            request = self._language_model_request(lm, inputs, lm_kwargs)
+            if settings.send_stream is not None and _lm_streaming_enabled(lm):
+                response = self._stream_language_model_response(lm, request)
+            else:
+                response = lm(request=request)
+            return self._call_postprocess_language_model(processed_signature, signature, response, lm, lm_kwargs)
+
         outputs = lm(messages=inputs, **lm_kwargs)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
 
     async def acall(
         self,
-        lm: BaseLM,
+        lm: BaseLM | LanguageModel,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -215,6 +507,16 @@ class Adapter:
     ) -> list[dict[str, Any]]:
         processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
         inputs = self.format(processed_signature, demos, inputs)
+
+        if _uses_language_model_contract(lm):
+            request = self._language_model_request(lm, inputs, lm_kwargs)
+            if settings.send_stream is not None and _lm_async_streaming_enabled(lm):
+                response = await self._astream_language_model_response(lm, request)
+            elif settings.send_stream is not None and _lm_streaming_enabled(lm):
+                response = await asyncify(self._stream_language_model_response)(lm, request)
+            else:
+                response = await lm.acall(request=request)
+            return self._call_postprocess_language_model(processed_signature, signature, response, lm, lm_kwargs)
 
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
         return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)

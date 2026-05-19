@@ -9,8 +9,7 @@ from dspy.dsp.utils import settings
 from dspy.utils.callback import with_callbacks
 from dspy.utils.inspect_history import pretty_print_history
 
-MAX_HISTORY_SIZE = 10_000
-GLOBAL_HISTORY = []
+from dspy.clients._history import GLOBAL_HISTORY, MAX_HISTORY_SIZE
 
 # Sentinel class attribute. Set in __init_subclass__ from the subclass's
 # `forward` signature. v1: legacy `forward(prompt, messages, **kwargs)` returning
@@ -158,17 +157,20 @@ class BaseLM(LanguageModel):
     @property
     def supports_function_calling(self) -> bool:
         """Whether the model supports function calling (tool use)."""
-        return False
+        caps = getattr(self, "capabilities", None)
+        return bool(caps and caps.function_calling)
 
     @property
     def supports_reasoning(self) -> bool:
         """Whether the model supports native reasoning (extended thinking)."""
-        return False
+        caps = getattr(self, "capabilities", None)
+        return bool(caps and caps.reasoning)
 
     @property
     def supports_response_schema(self) -> bool:
         """Whether the model supports structured output via response schema."""
-        return False
+        caps = getattr(self, "capabilities", None)
+        return bool(caps and caps.response_schema)
 
     @property
     def supported_params(self) -> set[str]:

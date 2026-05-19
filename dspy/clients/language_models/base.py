@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from dspy.utils.callback import BaseCallback
 
 
-MAX_HISTORY_SIZE = 10_000
-GLOBAL_LANGUAGE_MODEL_HISTORY: list[Mapping[str, Any]] = []
+from dspy.clients._history import GLOBAL_HISTORY as GLOBAL_LANGUAGE_MODEL_HISTORY  # noqa: E402
+from dspy.clients._history import MAX_HISTORY_SIZE  # noqa: E402, F401
 
 logger = logging.getLogger(__name__)
 

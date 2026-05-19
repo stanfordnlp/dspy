@@ -2,11 +2,13 @@ from typing import Any
 
 import json_repair
 
-from dspy.adapters.base import Adapter
+from dspy.adapters.base import Adapter, _uses_language_model_contract
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.adapters.types import ToolCalls
 from dspy.adapters.utils import get_field_description_string
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.language_models.base import LanguageModel
+from dspy.clients.language_models.types import LMOutput
 from dspy.signatures.field import InputField
 from dspy.signatures.signature import Signature, make_signature
 
@@ -39,10 +41,10 @@ class TwoStepAdapter(Adapter):
     ```
     """
 
-    def __init__(self, extraction_model: BaseLM, **kwargs):
+    def __init__(self, extraction_model: BaseLM | LanguageModel, **kwargs):
         super().__init__(**kwargs)
-        if not isinstance(extraction_model, BaseLM):
-            raise ValueError("extraction_model must be an instance of dspy.BaseLM")
+        if not isinstance(extraction_model, (BaseLM, LanguageModel)) and not callable(extraction_model):
+            raise ValueError("extraction_model must be an instance of dspy.BaseLM, dspy.LanguageModel, or a callable LM")
         self.extraction_model = extraction_model
 
     def format(
@@ -105,7 +107,7 @@ class TwoStepAdapter(Adapter):
 
     async def acall(
         self,
-        lm: BaseLM,
+        lm: BaseLM | LanguageModel,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -113,12 +115,46 @@ class TwoStepAdapter(Adapter):
     ) -> list[dict[str, Any]]:
         inputs = self.format(signature, demos, inputs)
 
+        if _uses_language_model_contract(lm):
+            request = self._language_model_request(lm, inputs, lm_kwargs)
+            response = await lm.acall(request=request)
+            return await self._acall_postprocess_language_model(signature, response.outputs)
+
         outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        # The signature is supposed to be "text -> {original output fields}"
-        extractor_signature = self._create_extractor_signature(signature)
+        return await self._acall_postprocess_legacy(signature, outputs)
 
+    async def _acall_postprocess_language_model(
+        self,
+        signature: type[Signature],
+        outputs: list[LMOutput],
+    ) -> list[dict[str, Any]]:
         values = []
+        tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
+        for output in outputs:
+            extraction_signature = (
+                signature.delete(tool_call_output_field_name)
+                if output.tool_calls and tool_call_output_field_name
+                else signature
+            )
+            value = await self._aextract_structured_fields(extraction_signature, output.text or "")
 
+            if output.tool_calls and tool_call_output_field_name:
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(
+                    [{"name": call.name, "args": call.args} for call in output.tool_calls]
+                )
+
+            if output.logprobs is not None:
+                value["logprobs"] = output.logprobs
+
+            values.append(value)
+        return values
+
+    async def _acall_postprocess_legacy(
+        self,
+        signature: type[Signature],
+        outputs: list[dict[str, Any] | str],
+    ) -> list[dict[str, Any]]:
+        values = []
         tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
         for output in outputs:
             output_logprobs = None
@@ -130,35 +166,39 @@ class TwoStepAdapter(Adapter):
                 output_logprobs = output.get("logprobs")
                 tool_calls = output.get("tool_calls")
 
-            try:
-                # Call the smaller LM to extract structured data from the raw completion text with ChatAdapter
-                value = await ChatAdapter().acall(
-                    lm=self.extraction_model,
-                    lm_kwargs={},
-                    signature=extractor_signature,
-                    demos=[],
-                    inputs={"text": text},
-                )
-                value = value[0]
-
-            except Exception as e:
-                raise ValueError(f"Failed to parse response from the original completion: {output}") from e
+            extraction_signature = signature.delete(tool_call_output_field_name) if tool_calls and tool_call_output_field_name else signature
+            value = await self._aextract_structured_fields(extraction_signature, text or "")
 
             if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(
+                    [
+                        {
+                            "name": call["function"]["name"],
+                            "args": json_repair.loads(call["function"]["arguments"]),
+                        }
+                        for call in tool_calls
+                    ]
+                )
 
             if output_logprobs is not None:
                 value["logprobs"] = output_logprobs
 
             values.append(value)
         return values
+
+    async def _aextract_structured_fields(self, signature: type[Signature], text: str) -> dict[str, Any]:
+        extractor_signature = self._create_extractor_signature(signature)
+        try:
+            value = await ChatAdapter().acall(
+                lm=self.extraction_model,
+                lm_kwargs={},
+                signature=extractor_signature,
+                demos=[],
+                inputs={"text": text},
+            )
+            return value[0]
+        except Exception as e:
+            raise ValueError(f"Failed to parse response from the original completion: {text}") from e
 
     def format_task_description(self, signature: Signature) -> str:
         """Create a description of the task based on the signature"""

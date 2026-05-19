@@ -13,6 +13,7 @@ from dspy.adapters.utils import (
     translate_field_type,
 )
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.language_models.base import LanguageModel
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback
 from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
@@ -62,7 +63,7 @@ class ChatAdapter(Adapter):
 
     def __call__(
         self,
-        lm: BaseLM,
+        lm: BaseLM | LanguageModel,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -86,7 +87,7 @@ class ChatAdapter(Adapter):
 
     async def acall(
         self,
-        lm: BaseLM,
+        lm: BaseLM | LanguageModel,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         demos: list[dict[str, Any]],
@@ -107,6 +108,21 @@ class ChatAdapter(Adapter):
                 # we don't want to retry with a different adapter. Raise the original error instead of the fallback error.
                 raise e
             return await JSONAdapter().acall(lm, lm_kwargs, signature, demos, inputs)
+
+    def stream_start_identifier(self, field_name: str) -> str:
+        return f"[[ ## {field_name} ## ]]"
+
+    def consume_stream_field_buffer(self, field_name: str, buffer: str, *, final: bool) -> tuple[str, str, bool]:
+        match = field_header_pattern.search(buffer)
+        if match:
+            return buffer[: match.start()].rstrip(), "", True
+        if final or not self._could_form_field_header(buffer):
+            return buffer, "", False
+        return "", buffer, False
+
+    def _could_form_field_header(self, buffer: str) -> bool:
+        prefixes = ("[", "[[", "[[ ", "[[ #", "[[ ##")
+        return any(buffer.endswith(prefix) for prefix in prefixes) or "[[ ##" in buffer
 
     def format_field_description(self, signature: type[Signature]) -> str:
         return (
