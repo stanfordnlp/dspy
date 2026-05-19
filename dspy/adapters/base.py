@@ -1,8 +1,6 @@
 import logging
 from typing import Any, get_origin
 
-import json_repair
-
 from dspy.adapters.types import History, Type
 from dspy.adapters.types.base_type import split_message_content_for_custom_types
 from dspy.adapters.types.reasoning import Reasoning
@@ -16,6 +14,13 @@ from dspy.utils.exceptions import AdapterParseError
 logger = logging.getLogger(__name__)
 
 _DEFAULT_NATIVE_RESPONSE_TYPES = [Citations, Reasoning]
+
+
+def _native_tool_call_instruction(field_name: str) -> str:
+    return (
+        "When tool use is needed, call the available tools through the native tool-call interface. "
+        f"Do not emit `{field_name}` as a text or JSON output field."
+    )
 
 
 class Adapter:
@@ -40,6 +45,7 @@ class Adapter:
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[Type]] | None = None,
+        allow_parallel_tool_calls: bool | None = None,
     ):
         """
         Args:
@@ -51,10 +57,15 @@ class Adapter:
             native_response_types: List of output field types that should be handled by native LM features rather than
                 adapter parsing. For example, `dspy.Citations` can be populated directly by citation APIs
                 (e.g., Anthropic's citation feature). Defaults to `[Citations]`.
+            allow_parallel_tool_calls: Whether to request provider-side parallel tool calls when native function calling
+                is active. If `None`, leaves the provider default unchanged. Defaults to None.
         """
         self.callbacks = callbacks or []
         self.use_native_function_calling = use_native_function_calling
-        self.native_response_types = native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES
+        self.native_response_types = list(native_response_types or _DEFAULT_NATIVE_RESPONSE_TYPES)
+        if ToolCalls not in self.native_response_types:
+            self.native_response_types.append(ToolCalls)
+        self.allow_parallel_tool_calls = allow_parallel_tool_calls
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -70,42 +81,52 @@ class Adapter:
         signature: type[Signature],
         inputs: dict[str, Any],
     ) -> type[Signature]:
-        if self.use_native_function_calling:
-            tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
-            tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
-
-            if tool_call_output_field_name and tool_call_input_field_name is None:
-                raise ValueError(
-                    f"You provided an output field {tool_call_output_field_name} to receive the tool calls information, "
-                    "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
-                    "input field with type `list[dspy.Tool]`."
-                )
-
-            if tool_call_output_field_name and lm.supports_function_calling:
-                tools = inputs[tool_call_input_field_name]
-                tools = tools if isinstance(tools, list) else [tools]
-
-                lm_tools = [tool.format_as_litellm_function_call() for tool in tools]
-
-                lm_kwargs["tools"] = lm_tools
-
-                signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
-                signature_for_native_function_calling = signature_for_native_function_calling.delete(
-                    tool_call_input_field_name
-                )
-
-                return signature_for_native_function_calling
-
-        # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
-        for name, field in signature.output_fields.items():
+        adapter_options = {
+            "use_native_function_calling": self.use_native_function_calling,
+            "allow_parallel_tool_calls": self.allow_parallel_tool_calls,
+        }
+        original_signature = signature
+        native_feature_instructions = []
+        for name, field in list(signature.output_fields.items()):
             if (
                 isinstance(field.annotation, type)
                 and field.annotation in self.native_response_types
                 and issubclass(field.annotation, Type)
             ):
-                signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
+                signature_before_adaptation = signature
+                signature = field.annotation._call_adapt_to_native_lm_feature(
+                    signature,
+                    name,
+                    lm,
+                    lm_kwargs,
+                    inputs=inputs,
+                    adapter_options=adapter_options,
+                )
+                if signature is not signature_before_adaptation:
+                    if field.annotation is ToolCalls:
+                        native_feature_instructions.append(_native_tool_call_instruction(name))
 
+        if native_feature_instructions:
+            signature = self._with_native_feature_instructions(
+                original_signature,
+                signature,
+                native_feature_instructions,
+            )
         return signature
+
+    def _with_native_feature_instructions(
+        self,
+        original_signature: type[Signature],
+        processed_signature: type[Signature],
+        native_feature_instructions: list[str],
+    ) -> type[Signature]:
+        original_default_instructions = Signature(original_signature.fields).instructions
+        processed_default_instructions = Signature(processed_signature.fields).instructions
+        if original_signature.instructions == original_default_instructions:
+            instructions = processed_default_instructions
+        else:
+            instructions = processed_signature.instructions
+        return processed_signature.with_instructions("\n".join([instructions, *native_feature_instructions]))
 
     def _call_postprocess(
         self,
@@ -117,17 +138,15 @@ class Adapter:
     ) -> list[dict[str, Any]]:
         values = []
 
-        tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
-
         for output in outputs:
             output_logprobs = None
-            tool_calls = None
             text = output
 
             if isinstance(output, dict):
-                text = output["text"]
+                text = output.get("text")
                 output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
+
+            parsed_native_values = self._parse_native_lm_response(original_signature, output)
 
             if text:
                 value = self.parse(processed_signature, text)
@@ -135,10 +154,8 @@ class Adapter:
                     if field_name not in value:
                         # We need to set the field not present in the processed signature to None for consistency.
                         value[field_name] = None
-            elif tool_calls and tool_call_output_field_name:
-                value = {}
-                for field_name in original_signature.output_fields.keys():
-                    value[field_name] = None
+            elif parsed_native_values:
+                value = dict.fromkeys(original_signature.output_fields.keys())
             else:
                 raise AdapterParseError(
                     adapter_name=type(self).__name__,
@@ -147,26 +164,7 @@ class Adapter:
                     message="The LM returned an empty or null response.",
                 )
 
-            if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
-
-            # Parse custom types that does not rely on the `Adapter.parse()` method
-            for name, field in original_signature.output_fields.items():
-                if (
-                    isinstance(field.annotation, type)
-                    and field.annotation in self.native_response_types
-                    and issubclass(field.annotation, Type)
-                ):
-                    parsed_value = field.annotation.parse_lm_response(output)
-                    if parsed_value is not None:
-                        value[name] = parsed_value
+            value.update(parsed_native_values)
 
             if output_logprobs:
                 value["logprobs"] = output_logprobs
@@ -174,6 +172,19 @@ class Adapter:
             values.append(value)
 
         return values
+
+    def _parse_native_lm_response(self, signature: type[Signature], output: dict[str, Any] | str) -> dict[str, Any]:
+        value = {}
+        for name, field in signature.output_fields.items():
+            if (
+                isinstance(field.annotation, type)
+                and field.annotation in self.native_response_types
+                and issubclass(field.annotation, Type)
+            ):
+                parsed_value = field.annotation.parse_lm_response(output)
+                if parsed_value is not None:
+                    value[name] = parsed_value
+        return value
 
     def __call__(
         self,

@@ -1,7 +1,8 @@
 import asyncio
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, get_args, get_origin, get_type_hints
 
+import json_repair
 import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
@@ -321,6 +322,83 @@ class ToolCalls(Type):
     tool_calls: list[ToolCall]
 
     @classmethod
+    def _get_tool_call_input_field_name(cls, signature: type[Any]) -> str | None:
+        for name, field in signature.input_fields.items():
+            origin = get_origin(field.annotation)
+            args = get_args(field.annotation)
+            if origin is list and args and args[0] == Tool:
+                return name
+            if field.annotation == Tool:
+                return name
+        return None
+
+    @classmethod
+    def adapt_to_native_lm_feature(
+        cls,
+        signature: type[Any],
+        field_name: str,
+        lm,
+        lm_kwargs: dict[str, Any],
+        inputs: dict[str, Any] | None = None,
+        adapter_options: dict[str, Any] | None = None,
+    ) -> type[Any]:
+        adapter_options = adapter_options or {}
+        if not adapter_options.get("use_native_function_calling"):
+            return signature
+
+        tool_call_input_field_name = cls._get_tool_call_input_field_name(signature)
+        if tool_call_input_field_name is None:
+            raise ValueError(
+                f"You provided an output field {field_name} to receive the tool calls information, "
+                "but did not provide any tools as the input. Please provide a list of tools as the input by adding an "
+                "input field with type `list[dspy.Tool]`."
+            )
+
+        if not lm.supports_function_calling:
+            return signature
+
+        tools = (inputs or {})[tool_call_input_field_name]
+        tools = tools if isinstance(tools, list) else [tools]
+        lm_kwargs["tools"] = [tool.format_as_litellm_function_call() for tool in tools]
+
+        allow_parallel_tool_calls = adapter_options.get("allow_parallel_tool_calls")
+        if allow_parallel_tool_calls is not None:
+            lm_kwargs["parallel_tool_calls"] = allow_parallel_tool_calls
+
+        return signature.delete(field_name).delete(tool_call_input_field_name)
+
+    @classmethod
+    def parse_lm_response(cls, response: str | dict[str, Any]) -> "ToolCalls | None":
+        if not isinstance(response, dict):
+            return None
+        tool_calls = response.get("tool_calls")
+        if not tool_calls:
+            return None
+        return cls(tool_calls=[cls._parse_native_tool_call(tool_call) for tool_call in tool_calls])
+
+    @classmethod
+    def _parse_native_tool_call(cls, tool_call: Any) -> ToolCall:
+        if hasattr(tool_call, "model_dump"):
+            tool_call = tool_call.model_dump()
+
+        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+        if function is not None:
+            if hasattr(function, "model_dump"):
+                function = function.model_dump()
+            name = function["name"]
+            arguments = function["arguments"]
+        else:
+            name = tool_call["name"]
+            arguments = tool_call["arguments"]
+
+        args = json_repair.loads(arguments) if isinstance(arguments, str) else arguments
+        return cls.ToolCall(name=name, args=args)
+
+    @classmethod
+    def supports_structured_output_schema(cls) -> bool:
+        return False
+
+    @classmethod
     def from_dict_list(cls, tool_calls_dicts: list[dict[str, Any]]) -> "ToolCalls":
         """Convert a list of dictionaries to a ToolCalls instance.
 
@@ -346,7 +424,7 @@ class ToolCalls(Type):
     @classmethod
     def description(cls) -> str:
         return (
-            "Tool calls information, including the name of the tools and the arguments to be passed to it. "
+            "One or more tool calls, including the name of each tool and the arguments to be passed to it. "
             "Arguments must be provided in JSON format."
         )
 

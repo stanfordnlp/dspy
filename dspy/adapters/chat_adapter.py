@@ -42,6 +42,7 @@ class ChatAdapter(Adapter):
         callbacks: list[BaseCallback] | None = None,
         use_native_function_calling: bool = False,
         native_response_types: list[type[type]] | None = None,
+        allow_parallel_tool_calls: bool | None = None,
         use_json_adapter_fallback: bool = True,
     ):
         """
@@ -49,6 +50,8 @@ class ChatAdapter(Adapter):
             callbacks: List of callback functions to execute during adapter methods.
             use_native_function_calling: Whether to enable native function calling capabilities.
             native_response_types: List of output field types handled by native LM features.
+            allow_parallel_tool_calls: Whether to request provider-side parallel tool calls when native function calling
+                is active. If `None`, leaves the provider default unchanged.
             use_json_adapter_fallback: Whether to automatically fallback to JSONAdapter if the ChatAdapter fails.
                 If True, when an error occurs (except ContextWindowExceededError), the adapter will retry using
                 JSONAdapter. Defaults to True.
@@ -57,6 +60,7 @@ class ChatAdapter(Adapter):
             callbacks=callbacks,
             use_native_function_calling=use_native_function_calling,
             native_response_types=native_response_types,
+            allow_parallel_tool_calls=allow_parallel_tool_calls,
         )
         self.use_json_adapter_fallback = use_json_adapter_fallback
 

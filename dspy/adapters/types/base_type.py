@@ -1,3 +1,4 @@
+import inspect
 import json
 import re
 from typing import TYPE_CHECKING, Any, Optional, get_args, get_origin
@@ -83,6 +84,8 @@ class Type(pydantic.BaseModel):
         field_name: str,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
+        inputs: dict[str, Any] | None = None,
+        adapter_options: dict[str, Any] | None = None,
     ) -> type["Signature"]:
         """Adapt the custom type to the native LM feature if possible.
 
@@ -94,6 +97,8 @@ class Type(pydantic.BaseModel):
             field_name: The name of the field in the signature to adapt to the native LM feature.
             lm: The LM instance.
             lm_kwargs: The keyword arguments for the LM call, subject to in-place updates if adaptation if required.
+            inputs: The input values for this LM call.
+            adapter_options: Adapter configuration relevant to native LM feature adaptation.
 
         Returns:
             The adapted signature. If the custom type is not natively supported by the LM, return the original
@@ -102,9 +107,34 @@ class Type(pydantic.BaseModel):
         return signature
 
     @classmethod
+    def _call_adapt_to_native_lm_feature(
+        cls,
+        signature: type["Signature"],
+        field_name: str,
+        lm: BaseLM,
+        lm_kwargs: dict[str, Any],
+        inputs: dict[str, Any] | None = None,
+        adapter_options: dict[str, Any] | None = None,
+    ) -> type["Signature"]:
+        """Call `adapt_to_native_lm_feature` while preserving compatibility with old custom type hooks."""
+        method = cls.adapt_to_native_lm_feature
+        params = inspect.signature(method).parameters
+        kwargs = {}
+        if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()) or "inputs" in params:
+            kwargs["inputs"] = inputs
+        if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()) or "adapter_options" in params:
+            kwargs["adapter_options"] = adapter_options
+        return method(signature, field_name, lm, lm_kwargs, **kwargs)
+
+    @classmethod
     def is_streamable(cls) -> bool:
         """Whether the custom type is streamable."""
         return False
+
+    @classmethod
+    def supports_structured_output_schema(cls) -> bool:
+        """Whether this type should be included in provider structured output schemas."""
+        return True
 
     @classmethod
     def parse_stream_chunk(cls, chunk: "ModelResponseStream") -> Optional["Type"]:
