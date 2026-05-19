@@ -6,9 +6,26 @@ from dspy.teleprompt import *
 
 from dspy.evaluate import Evaluate  # isort: skip
 from dspy.clients import *  # isort: skip
+from dspy import lm  # isort: skip  # noqa: F401  exposes `dspy.lm.*` namespace
 from dspy.adapters import Adapter, ChatAdapter, JSONAdapter, XMLAdapter, TwoStepAdapter, Image, Audio, File, History, Type, Tool, ToolCalls, Code, Reasoning  # isort: skip
 from dspy.primitives.sandbox_serializable import SandboxSerializable  # isort: skip
-from dspy.utils.exceptions import ContextWindowExceededError
+from dspy.utils.exceptions import (
+    ContextWindowExceededError,
+    DSPyError,
+    LMAuthError,
+    LMBillingError,
+    LMConfigurationError,
+    LMError,
+    LMInvalidRequestError,
+    LMNotConfiguredError,
+    LMProviderError,
+    LMRateLimitError,
+    LMServerError,
+    LMTimeoutError,
+    LMTransportError,
+    LMUnsupportedFeatureError,
+    LMUnsupportedModelError,
+)
 from dspy.utils.logging_utils import configure_dspy_loggers, disable_logging, enable_logging
 from dspy.utils.asyncify import asyncify
 from dspy.utils.syncify import syncify

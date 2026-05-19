@@ -21,6 +21,13 @@ class Reasoning(Type):
 
     content: str
 
+    def __init__(self, content: str | None = None, **data: Any):
+        if content is not None:
+            if "content" in data:
+                raise TypeError("Pass `content` either positionally or by keyword, not both.")
+            data["content"] = content
+        super().__init__(**data)
+
     def format(self):
         return f"{self.content}"
 
@@ -60,12 +67,13 @@ class Reasoning(Type):
             # reasoning effort is set in `lm_kwargs` or `lm.kwargs`.
             reasoning_effort = "low"
 
-        if reasoning_effort is None or not lm.supports_reasoning:
+        supports_reasoning = lm.supports_reasoning if isinstance(lm, BaseLM) else lm.capabilities.reasoning
+        if reasoning_effort is None or not supports_reasoning:
             # If users explicitly set `reasoning_effort` to None or the LM doesn't support reasoning, we don't enable
             # native reasoning.
             return signature
 
-        if "gpt-5" in lm.model and lm.model_type == "chat":
+        if "gpt-5" in lm.model and getattr(lm, "model_type", None) == "chat":
             # There is a caveat of Litellm as 1.79.0 that when using the chat completion API on GPT-5 family models,
             # the reasoning content is not available in the response. As a workaround, we don't enable the native
             # reasoning feature for GPT-5 family models when using the chat completion API.
