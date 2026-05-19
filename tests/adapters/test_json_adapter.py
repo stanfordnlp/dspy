@@ -115,6 +115,27 @@ def test_json_adapter_sync_call():
     assert result == [{"answer": "Paris"}]
 
 
+def test_json_adapter_empty_early_fallback_result_does_not_call_lm_again():
+    class EmptyResultLM:
+        def __init__(self):
+            self.supported_params = set()
+            self.calls = []
+
+        def __call__(self, messages, **kwargs):
+            self.calls.append({"messages": messages, "kwargs": kwargs})
+            return []
+
+    signature = dspy.make_signature("question->answer")
+    adapter = dspy.JSONAdapter()
+    lm = EmptyResultLM()
+
+    result = adapter(lm, {}, signature, [], {"question": "What is the capital of France?"})
+
+    assert result == []
+    assert len(lm.calls) == 1
+    assert "response_format" not in lm.calls[0]["kwargs"]
+
+
 @pytest.mark.asyncio
 async def test_json_adapter_async_call():
     signature = dspy.make_signature("question->answer")
