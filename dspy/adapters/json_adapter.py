@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, get_origin
+from typing import Any, Literal, get_origin
 
 import json_repair
 import pydantic
@@ -23,6 +23,8 @@ from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
 
+_ResponseFormatMode = Literal["unsupported", "json_object", "structured_outputs"]
+
 
 def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     """
@@ -37,23 +39,31 @@ def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     return False
 
 
+def _get_response_format_mode(
+    lm: BaseLM,
+    signature: SignatureMeta,
+    use_native_function_calling: bool,
+) -> _ResponseFormatMode:
+    if "response_format" not in lm.supported_params:
+        return "unsupported"
+
+    if _has_open_ended_mapping(signature):
+        return "json_object"
+
+    if not lm.supports_response_schema:
+        return "json_object"
+
+    has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
+    if has_tool_calls and not use_native_function_calling:
+        return "json_object"
+
+    return "structured_outputs"
+
+
 class JSONAdapter(ChatAdapter):
     def __init__(self, callbacks: list[BaseCallback] | None = None, use_native_function_calling: bool = True):
         # JSONAdapter uses native function calling by default.
         super().__init__(callbacks=callbacks, use_native_function_calling=use_native_function_calling)
-
-    def _json_adapter_call_common(self, lm, lm_kwargs, signature, demos, inputs, call_fn):
-        """Common call logic to be used for both sync and async calls."""
-        if "response_format" not in lm.supported_params:
-            return call_fn(lm, lm_kwargs, signature, demos, inputs)
-
-        has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
-
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
-            # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
-            # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
-            lm_kwargs["response_format"] = {"type": "json_object"}
-            return call_fn(lm, lm_kwargs, signature, demos, inputs)
 
     def __call__(
         self,
@@ -63,9 +73,12 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().__call__)
-        if result:
-            return result
+        response_format_mode = _get_response_format_mode(lm, signature, self.use_native_function_calling)
+        if response_format_mode == "unsupported":
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
+        if response_format_mode == "json_object":
+            lm_kwargs["response_format"] = {"type": "json_object"}
+            return super().__call__(lm, lm_kwargs, signature, demos, inputs)
 
         try:
             structured_output_model = _get_structured_outputs_response_format(
@@ -86,9 +99,12 @@ class JSONAdapter(ChatAdapter):
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        result = self._json_adapter_call_common(lm, lm_kwargs, signature, demos, inputs, super().acall)
-        if result:
-            return await result
+        response_format_mode = _get_response_format_mode(lm, signature, self.use_native_function_calling)
+        if response_format_mode == "unsupported":
+            return await super().acall(lm, lm_kwargs, signature, demos, inputs)
+        if response_format_mode == "json_object":
+            lm_kwargs["response_format"] = {"type": "json_object"}
+            return await super().acall(lm, lm_kwargs, signature, demos, inputs)
 
         try:
             structured_output_model = _get_structured_outputs_response_format(
