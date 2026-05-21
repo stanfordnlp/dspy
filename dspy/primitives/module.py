@@ -325,6 +325,15 @@ class Module(BaseModule, metaclass=ProgramMeta):
         #   - A list of Predictions, e.g. when ``forward`` returns the
         #     result of ``dspy.Parallel``.
         #   - Dicts whose values contain any of the above.
+        #
+        # NOTE on aggregate-vs-per-prediction semantics: when ``forward``
+        # returns N Predictions (e.g. from ``dspy.Parallel``), each one
+        # receives a reference to the same ``tokens`` dict, which holds
+        # the *aggregate* usage across all LM calls made during this
+        # outer module invocation, not the per-call usage. Callers that
+        # need a per-call breakdown should track usage inside each
+        # sub-call rather than summing ``p.get_lm_usage()`` over the
+        # returned list (that would over-count by a factor of N).
         predictions = _collect_predictions(output)
         if predictions:
             for prediction in predictions:
