@@ -227,10 +227,26 @@ class LMMessage(BaseModel):
             return data
         if isinstance(data, dict):
             data = dict(data)
-            if "parts" not in data and "content" in data:
-                data["parts"] = _parts_from_openai_content(data.pop("content"))
-            elif "parts" in data:
+            if data.get("role") == "tool" and "parts" not in data:
+                content = data.pop("content", None)
+                call_id = data.pop("tool_call_id", None)
+                name = data.pop("name", None)
+                data["parts"] = [
+                    LMToolResultPart(
+                        call_id=call_id,
+                        name=name,
+                        content=_parts_from_openai_content(content),
+                    )
+                ]
+            elif "parts" not in data:
+                parts = _parts_from_openai_content(data.pop("content", None)) if "content" in data else []
+                if "tool_calls" in data:
+                    parts.extend(_tool_calls_from_openai(data.pop("tool_calls") or []))
+                data["parts"] = parts
+            else:
                 data["parts"] = [_coerce_part(part) for part in data["parts"]]
+                if "tool_calls" in data:
+                    data["parts"].extend(_tool_calls_from_openai(data.pop("tool_calls") or []))
         return data
 
     @property
@@ -368,6 +384,47 @@ _KNOWN_CONFIG_KEYS = {
 }
 
 
+def _split_config_kwargs(kwargs: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    data: dict[str, Any] = {}
+    extensions = dict(kwargs.get("extensions", {}) or {})
+
+    for key, value in kwargs.items():
+        if key == "extensions":
+            continue
+        if key in _KNOWN_CONFIG_KEYS:
+            data[key] = value
+        else:
+            extensions[key] = value
+    return data, extensions
+
+
+def _normalize_reasoning_config(data: dict[str, Any]) -> None:
+    if "reasoning_effort" in data:
+        effort = data.pop("reasoning_effort")
+        if data.get("reasoning") is not None or effort is not None:
+            data["reasoning"] = LMReasoningConfig.from_value(data.get("reasoning"), effort=effort)
+    elif "reasoning" in data and data["reasoning"] is not None:
+        data["reasoning"] = LMReasoningConfig.from_value(data["reasoning"])
+
+
+def _normalize_tool_choice_config(data: dict[str, Any]) -> None:
+    parallel = data.pop("parallel_tool_calls", _MISSING)
+    if data.get("tool_choice") is not None or parallel not in (_MISSING, None):
+        data["tool_choice"] = LMToolChoice.from_value(data.get("tool_choice"), parallel=parallel)
+
+
+def _normalize_cache_config(data: dict[str, Any]) -> None:
+    rollout_id = data.pop("rollout_id", _MISSING)
+    if data.get("cache") is not None or rollout_id not in (_MISSING, None):
+        data["cache"] = LMCacheConfig.from_value(data.get("cache"), rollout_id=rollout_id)
+
+
+def _normalize_prompt_cache_config(data: dict[str, Any]) -> None:
+    prompt_cache_key = data.pop("prompt_cache_key", _MISSING)
+    if data.get("prompt_cache") is not None or prompt_cache_key not in (_MISSING, None):
+        data["prompt_cache"] = LMPromptCacheConfig.from_value(data.get("prompt_cache"), key=prompt_cache_key)
+
+
 class LMConfig(BaseModel):
     """Common generation controls for an LM request."""
 
@@ -388,35 +445,11 @@ class LMConfig(BaseModel):
 
     @classmethod
     def from_kwargs(cls, **kwargs: Any) -> LMConfig:
-        data: dict[str, Any] = {}
-        extensions = dict(kwargs.pop("extensions", {}) or {})
-
-        for key, value in kwargs.items():
-            if key in _KNOWN_CONFIG_KEYS:
-                data[key] = value
-            else:
-                extensions[key] = value
-
-        if "reasoning_effort" in data:
-            effort = data.pop("reasoning_effort")
-            if data.get("reasoning") is not None or effort is not None:
-                data["reasoning"] = LMReasoningConfig.from_value(data.get("reasoning"), effort=effort)
-        elif "reasoning" in data:
-            if data["reasoning"] is not None:
-                data["reasoning"] = LMReasoningConfig.from_value(data["reasoning"])
-
-        parallel = data.pop("parallel_tool_calls", _MISSING)
-        if data.get("tool_choice") is not None or parallel not in (_MISSING, None):
-            data["tool_choice"] = LMToolChoice.from_value(data.get("tool_choice"), parallel=parallel)
-
-        rollout_id = data.pop("rollout_id", _MISSING)
-        if data.get("cache") is not None or rollout_id not in (_MISSING, None):
-            data["cache"] = LMCacheConfig.from_value(data.get("cache"), rollout_id=rollout_id)
-
-        prompt_cache_key = data.pop("prompt_cache_key", _MISSING)
-        if data.get("prompt_cache") is not None or prompt_cache_key not in (_MISSING, None):
-            data["prompt_cache"] = LMPromptCacheConfig.from_value(data.get("prompt_cache"), key=prompt_cache_key)
-
+        data, extensions = _split_config_kwargs(kwargs)
+        _normalize_reasoning_config(data)
+        _normalize_tool_choice_config(data)
+        _normalize_cache_config(data)
+        _normalize_prompt_cache_config(data)
         data["extensions"] = extensions
         return cls(**data)
 
@@ -1669,6 +1702,8 @@ def _coerce_part(value: Any) -> LMPart:
 
 
 def _parts_from_openai_content(content: Any) -> list[LMPart]:
+    if content is None:
+        return []
     if isinstance(content, str):
         return [LMTextPart(text=content)]
     if not isinstance(content, list):
@@ -1695,6 +1730,36 @@ def _parts_from_openai_content(content: Any) -> list[LMPart]:
         else:
             parts.append(_coerce_part(item))
     return parts
+
+
+def _tool_calls_from_openai(tool_calls: list[Any]) -> list[LMToolCallPart]:
+    return [_tool_call_from_openai(tool_call) for tool_call in tool_calls]
+
+
+def _tool_call_from_openai(tool_call: Any) -> LMToolCallPart:
+    if not isinstance(tool_call, Mapping):
+        part = _coerce_part(tool_call)
+        if isinstance(part, LMToolCallPart):
+            return part
+        raise TypeError(f"Cannot convert {type(tool_call)!r} to an LMToolCallPart.")
+
+    function = tool_call.get("function", {})
+    if not isinstance(function, Mapping):
+        function = {}
+
+    args = function.get("arguments", {})
+    if isinstance(args, str):
+        args = _parse_json_object(args)
+    elif isinstance(args, Mapping):
+        args = dict(args)
+    else:
+        args = {}
+
+    return LMToolCallPart(
+        id=tool_call.get("id"),
+        name=function.get("name") or tool_call.get("name") or "",
+        args=args,
+    )
 
 
 def _image_to_part(image: Any) -> LMImagePart:

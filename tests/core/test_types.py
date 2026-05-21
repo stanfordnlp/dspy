@@ -9,6 +9,8 @@ from dspy.core.types import (
     LMOutput,
     LMRequest,
     LMThinkingPart,
+    LMToolCallPart,
+    LMToolResultPart,
     _document_dict_to_part,
 )
 
@@ -36,10 +38,48 @@ def test_lm_config_normalizes_grouped_config_values():
     assert parallel_only.tool_choice.model_dump(exclude_none=True) == {"parallel": False}
 
 
+def test_none_companion_config_keys_do_not_create_nested_configs():
+    config = LMConfig.from_kwargs(
+        reasoning_effort=None,
+        parallel_tool_calls=None,
+        rollout_id=None,
+        prompt_cache_key=None,
+    )
+
+    assert config.reasoning is None
+    assert config.tool_choice is None
+    assert config.cache is None
+    assert config.prompt_cache is None
+
+
 def test_public_type_constructors_are_exported():
     assert dspy.LMConfig is LMConfig
     assert dspy.System("system").role == "system"
     assert dspy.User("hello").parts[0].text == "hello"
+
+
+def test_openai_assistant_tool_calls_without_content_normalize_to_parts():
+    message = LMMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"query": "DSPy"}'},
+            }
+        ],
+    )
+
+    assert message.parts == [LMToolCallPart(id="call_1", name="search", args={"query": "DSPy"})]
+
+
+def test_openai_tool_result_message_normalizes_tool_call_id():
+    message = LMMessage(role="tool", content="result", tool_call_id="call_1", name="search")
+
+    assert message.parts == [
+        LMToolResultPart(call_id="call_1", name="search", content=["result"]),
+    ]
 
 
 def test_lm_request_config_overrides_preserve_nested_config():
