@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import mimetypes
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pprint import pformat
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
@@ -23,6 +24,21 @@ class LMBasePart(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class LMSourcePart(LMBasePart):
+    """Content from exactly one provider-addressable source."""
+
+    media_type: str
+    data: str | None = None
+    url: str | None = None
+    file_id: str | None = None
+    path: str | None = None
+
+    @model_validator(mode="after")
+    def validate_one_source(self) -> LMSourcePart:
+        _validate_one_source(self)
+        return self
+
+
 class LMTextPart(LMBasePart):
     """Text content."""
 
@@ -30,53 +46,26 @@ class LMTextPart(LMBasePart):
     text: str
 
 
-class LMImagePart(LMBasePart):
+class LMImagePart(LMSourcePart):
     """Image content from data, a URL, a file ID, or a local path."""
 
     type: Literal["image"] = "image"
     media_type: str = "image/png"
-    data: str | None = None
-    url: str | None = None
-    file_id: str | None = None
-    path: str | None = None
     detail: Literal["low", "high", "auto"] | None = None
 
-    @model_validator(mode="after")
-    def validate_one_source(self) -> "LMImagePart":
-        _validate_one_source(self, "LMImagePart")
-        return self
 
-
-class LMAudioPart(LMBasePart):
+class LMAudioPart(LMSourcePart):
     """Audio content from data, a URL, a file ID, or a local path."""
 
     type: Literal["audio"] = "audio"
     media_type: str = "audio/wav"
-    data: str | None = None
-    url: str | None = None
-    file_id: str | None = None
-    path: str | None = None
-
-    @model_validator(mode="after")
-    def validate_one_source(self) -> "LMAudioPart":
-        _validate_one_source(self, "LMAudioPart")
-        return self
 
 
-class LMVideoPart(LMBasePart):
+class LMVideoPart(LMSourcePart):
     """Video content from data, a URL, a file ID, or a local path."""
 
     type: Literal["video"] = "video"
     media_type: str = "video/mp4"
-    data: str | None = None
-    url: str | None = None
-    file_id: str | None = None
-    path: str | None = None
-
-    @model_validator(mode="after")
-    def validate_one_source(self) -> "LMVideoPart":
-        _validate_one_source(self, "LMVideoPart")
-        return self
 
 
 class LMDocumentPart(LMBasePart):
@@ -99,32 +88,23 @@ class LMDocumentPart(LMBasePart):
     context: str | None = None
 
     @model_validator(mode="after")
-    def validate_source(self) -> "LMDocumentPart":
+    def validate_source(self) -> LMDocumentPart:
         has_media_source = any(value is not None for value in (self.data, self.url, self.file_id, self.path))
         if self.source is not None and has_media_source:
             raise ValueError("LMDocumentPart accepts either source or one of data, url, file_id, or path, not both.")
         if self.source is None:
-            _validate_one_source(self, "LMDocumentPart")
+            _validate_one_source(self)
         elif not self.source:
             raise ValueError("LMDocumentPart.source must be non-empty when provided.")
         return self
 
 
-class LMBinaryPart(LMBasePart):
+class LMBinaryPart(LMSourcePart):
     """Opaque binary content from data, a URL, a file ID, or a local path."""
 
     type: Literal["binary"] = "binary"
     media_type: str = "application/octet-stream"
-    data: str | None = None
-    url: str | None = None
-    file_id: str | None = None
-    path: str | None = None
     filename: str | None = None
-
-    @model_validator(mode="after")
-    def validate_one_source(self) -> "LMBinaryPart":
-        _validate_one_source(self, "LMBinaryPart")
-        return self
 
 
 class LMToolCallPart(LMBasePart):
@@ -166,7 +146,7 @@ class LMToolResultPart(LMBasePart):
     type: Literal["tool_result"] = "tool_result"
     call_id: str | None = None
     name: str | None = None
-    content: list["LMPart"] = Field(default_factory=list)
+    content: list[LMPart] = Field(default_factory=list)
     is_error: bool = False
     provider_data: dict[str, Any] = Field(default_factory=dict)
 
@@ -201,7 +181,7 @@ class LMCitationPart(LMBasePart):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_has_content(self) -> "LMCitationPart":
+    def validate_has_content(self) -> LMCitationPart:
         if self.text is None and self.title is None and self.url is None:
             raise ValueError("LMCitationPart requires at least one of text, title, or url.")
         return self
@@ -279,13 +259,34 @@ class LMReasoningConfig(BaseModel):
     max_tokens: int | None = None
     summary: str | None = None
 
+    model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_value(cls, value: Any = None, **overrides: Any) -> LMReasoningConfig:
+        data = _config_data(value, str_field="effort")
+        if "reasoning_effort" in data and "effort" not in data:
+            data["effort"] = data.pop("reasoning_effort")
+        data.update({key: value for key, value in overrides.items() if value is not _MISSING})
+        return cls(**data)
+
 
 class LMToolChoice(BaseModel):
     """Tool-choice controls for native tool-capable models."""
 
-    mode: Literal["auto", "required", "none"] = "auto"
-    allowed: list[str] = Field(default_factory=list)
+    mode: Literal["auto", "required", "none"] | None = None
+    # Tool names that are allowed for a model request.
+    allowed: list[str] | None = None
     parallel: bool | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_value(cls, value: Any = None, **overrides: Any) -> LMToolChoice:
+        data = _config_data(value, str_field="mode")
+        if "parallel_tool_calls" in data and "parallel" not in data:
+            data["parallel"] = data.pop("parallel_tool_calls")
+        data.update({key: value for key, value in overrides.items() if value is not _MISSING})
+        return cls(**data)
 
 
 class LMCacheConfig(BaseModel):
@@ -299,6 +300,14 @@ class LMCacheConfig(BaseModel):
     enabled: bool | None = None
     rollout_id: int | str | None = None
 
+    model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_value(cls, value: Any = None, **overrides: Any) -> LMCacheConfig:
+        data = _config_data(value, bool_field="enabled")
+        data.update({key: value for key, value in overrides.items() if value is not _MISSING})
+        return cls(**data)
+
 
 class LMPromptCacheConfig(BaseModel):
     """Provider-side prompt/token cache controls.
@@ -310,6 +319,33 @@ class LMPromptCacheConfig(BaseModel):
 
     enabled: bool | None = None
     key: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_value(cls, value: Any = None, **overrides: Any) -> LMPromptCacheConfig:
+        data = _config_data(value, bool_field="enabled")
+        if "prompt_cache_key" in data and "key" not in data:
+            data["key"] = data.pop("prompt_cache_key")
+        data.update({key: value for key, value in overrides.items() if value is not _MISSING})
+        return cls(**data)
+
+
+_MISSING = object()
+
+
+def _config_data(value: Any, *, str_field: str | None = None, bool_field: str | None = None) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, BaseModel):
+        return value.model_dump(exclude_none=True)
+    if isinstance(value, Mapping):
+        return dict(value)
+    if str_field is not None and isinstance(value, str):
+        return {str_field: value}
+    if bool_field is not None and isinstance(value, bool):
+        return {bool_field: value}
+    raise TypeError(f"Cannot convert {type(value)!r} to a config object.")
 
 
 _KNOWN_CONFIG_KEYS = {
@@ -338,7 +374,7 @@ class LMConfig(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     top_p: float | None = None
-    stop: list[str] | None = Field(default_factory=list)
+    stop: list[str] | None = None
     n: int | None = None
     logprobs: bool | int | None = None
     response_format: Any | None = None
@@ -351,7 +387,7 @@ class LMConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @classmethod
-    def from_kwargs(cls, **kwargs: Any) -> "LMConfig":
+    def from_kwargs(cls, **kwargs: Any) -> LMConfig:
         data: dict[str, Any] = {}
         extensions = dict(kwargs.pop("extensions", {}) or {})
 
@@ -363,39 +399,23 @@ class LMConfig(BaseModel):
 
         if "reasoning_effort" in data:
             effort = data.pop("reasoning_effort")
-            data["reasoning"] = data.get("reasoning") or LMReasoningConfig(effort=effort)
-        if isinstance(data.get("reasoning"), dict):
-            data["reasoning"] = LMReasoningConfig(**data["reasoning"])
+            if data.get("reasoning") is not None or effort is not None:
+                data["reasoning"] = LMReasoningConfig.from_value(data.get("reasoning"), effort=effort)
+        elif "reasoning" in data:
+            if data["reasoning"] is not None:
+                data["reasoning"] = LMReasoningConfig.from_value(data["reasoning"])
 
-        parallel = data.pop("parallel_tool_calls", None)
-        if "tool_choice" in data:
-            choice = data["tool_choice"]
-            if isinstance(choice, str):
-                data["tool_choice"] = LMToolChoice(mode=choice, parallel=parallel)
-            elif isinstance(choice, dict):
-                data["tool_choice"] = LMToolChoice(**({"parallel": parallel} | choice))
-            elif isinstance(choice, LMToolChoice) and parallel is not None:
-                data["tool_choice"] = choice.model_copy(update={"parallel": parallel})
-        elif parallel is not None:
-            data["tool_choice"] = LMToolChoice(parallel=parallel)
+        parallel = data.pop("parallel_tool_calls", _MISSING)
+        if data.get("tool_choice") is not None or parallel not in (_MISSING, None):
+            data["tool_choice"] = LMToolChoice.from_value(data.get("tool_choice"), parallel=parallel)
 
-        cache = data.pop("cache", None) if "cache" in data else None
-        rollout_id = data.pop("rollout_id", None) if "rollout_id" in data else None
-        if cache is not None or rollout_id is not None:
-            if isinstance(cache, LMCacheConfig):
-                data["cache"] = cache.model_copy(update={"rollout_id": rollout_id}) if rollout_id is not None else cache
-            else:
-                data["cache"] = LMCacheConfig(enabled=cache, rollout_id=rollout_id)
+        rollout_id = data.pop("rollout_id", _MISSING)
+        if data.get("cache") is not None or rollout_id not in (_MISSING, None):
+            data["cache"] = LMCacheConfig.from_value(data.get("cache"), rollout_id=rollout_id)
 
-        prompt_cache = data.pop("prompt_cache", None) if "prompt_cache" in data else None
-        prompt_cache_key = data.pop("prompt_cache_key", None) if "prompt_cache_key" in data else None
-        if prompt_cache is not None or prompt_cache_key is not None:
-            if isinstance(prompt_cache, LMPromptCacheConfig):
-                if prompt_cache_key is not None:
-                    prompt_cache = prompt_cache.model_copy(update={"key": prompt_cache_key})
-                data["prompt_cache"] = prompt_cache
-            else:
-                data["prompt_cache"] = LMPromptCacheConfig(enabled=prompt_cache, key=prompt_cache_key)
+        prompt_cache_key = data.pop("prompt_cache_key", _MISSING)
+        if data.get("prompt_cache") is not None or prompt_cache_key not in (_MISSING, None):
+            data["prompt_cache"] = LMPromptCacheConfig.from_value(data.get("prompt_cache"), key=prompt_cache_key)
 
         data["extensions"] = extensions
         return cls(**data)
@@ -409,6 +429,9 @@ def _merge_lm_config(left: LMConfig | None, right: LMConfig | None) -> LMConfig 
 
     data = left.model_dump()
     right_data = right.model_dump(exclude_none=True)
+    for key in ("reasoning", "tool_choice", "cache", "prompt_cache"):
+        if key in right_data and isinstance(data.get(key), dict) and isinstance(right_data[key], dict):
+            right_data[key] = {**data[key], **right_data[key]}
     extensions = {**left.extensions, **right.extensions}
     data.update(right_data)
     data["extensions"] = extensions
@@ -431,63 +454,29 @@ def _merge_config_overrides(config: LMConfig, kwargs: dict[str, Any]) -> LMConfi
     for key in direct_keys & kwargs.keys():
         data[key] = kwargs[key]
 
-    if "reasoning" in kwargs:
-        reasoning = kwargs["reasoning"]
-        if isinstance(reasoning, dict):
-            reasoning = LMReasoningConfig(**reasoning)
-        data["reasoning"] = reasoning
-    if "reasoning_effort" in kwargs:
-        reasoning = data.get("reasoning")
-        if isinstance(reasoning, dict):
-            reasoning = LMReasoningConfig(**reasoning)
-        reasoning = reasoning or LMReasoningConfig()
-        data["reasoning"] = reasoning.model_copy(update={"effort": kwargs["reasoning_effort"]})
+    if "reasoning" in kwargs or "reasoning_effort" in kwargs:
+        data["reasoning"] = LMReasoningConfig.from_value(
+            kwargs.get("reasoning", data.get("reasoning")),
+            effort=kwargs.get("reasoning_effort", _MISSING),
+        )
 
-    if "tool_choice" in kwargs:
-        choice = kwargs["tool_choice"]
-        if isinstance(choice, str):
-            choice = LMToolChoice(mode=choice)
-        elif isinstance(choice, dict):
-            choice = LMToolChoice(**choice)
-        data["tool_choice"] = choice
-    if "parallel_tool_calls" in kwargs:
-        choice = data.get("tool_choice")
-        if isinstance(choice, dict):
-            choice = LMToolChoice(**choice)
-        choice = choice or LMToolChoice()
-        data["tool_choice"] = choice.model_copy(update={"parallel": kwargs["parallel_tool_calls"]})
+    if "tool_choice" in kwargs or "parallel_tool_calls" in kwargs:
+        data["tool_choice"] = LMToolChoice.from_value(
+            kwargs.get("tool_choice", data.get("tool_choice")),
+            parallel=kwargs.get("parallel_tool_calls", _MISSING),
+        )
 
     if "cache" in kwargs or "rollout_id" in kwargs:
-        cache = data.get("cache")
-        if isinstance(cache, dict):
-            cache = LMCacheConfig(**cache)
-        if isinstance(kwargs.get("cache"), LMCacheConfig):
-            cache = kwargs["cache"]
-        else:
-            cache = cache or LMCacheConfig()
-            update = {}
-            if "cache" in kwargs:
-                update["enabled"] = kwargs["cache"]
-            if "rollout_id" in kwargs:
-                update["rollout_id"] = kwargs["rollout_id"]
-            cache = cache.model_copy(update=update)
-        data["cache"] = cache
+        data["cache"] = LMCacheConfig.from_value(
+            kwargs.get("cache", data.get("cache")),
+            rollout_id=kwargs.get("rollout_id", _MISSING),
+        )
 
     if "prompt_cache" in kwargs or "prompt_cache_key" in kwargs:
-        prompt_cache = data.get("prompt_cache")
-        if isinstance(prompt_cache, dict):
-            prompt_cache = LMPromptCacheConfig(**prompt_cache)
-        if isinstance(kwargs.get("prompt_cache"), LMPromptCacheConfig):
-            prompt_cache = kwargs["prompt_cache"]
-        else:
-            prompt_cache = prompt_cache or LMPromptCacheConfig()
-            update = {}
-            if "prompt_cache" in kwargs:
-                update["enabled"] = kwargs["prompt_cache"]
-            if "prompt_cache_key" in kwargs:
-                update["key"] = kwargs["prompt_cache_key"]
-            prompt_cache = prompt_cache.model_copy(update=update)
-        data["prompt_cache"] = prompt_cache
+        data["prompt_cache"] = LMPromptCacheConfig.from_value(
+            kwargs.get("prompt_cache", data.get("prompt_cache")),
+            key=kwargs.get("prompt_cache_key", _MISSING),
+        )
 
     if "extensions" in kwargs:
         extra = kwargs["extensions"]
@@ -527,7 +516,7 @@ class LMRequestPatch:
     delete_output_fields: tuple[str, ...] = ()
     metadata: dict[str, Any] = dataclass_field(default_factory=dict)
 
-    def merge(self, other: "LMRequestPatch") -> "LMRequestPatch":
+    def merge(self, other: LMRequestPatch) -> LMRequestPatch:
         """Return a new patch containing this patch followed by `other`."""
         return LMRequestPatch(
             messages=[*self.messages, *other.messages],
@@ -576,7 +565,7 @@ class LMRequest(BaseModel):
         messages: list[dict[str, Any] | LMMessage] | None = None,
         tools: list[Any] | None = None,
         **kwargs: Any,
-    ) -> "LMRequest":
+    ) -> LMRequest:
         if messages is not None and (items or prompt is not None):
             raise ValueError("Pass messages or direct-call inputs, not both.")
 
@@ -603,10 +592,10 @@ class LMRequest(BaseModel):
         prompt: str | None = None,
         messages: list[dict[str, Any] | LMMessage] | None = None,
         **kwargs: Any,
-    ) -> "LMRequest":
+    ) -> LMRequest:
         return cls.from_call(model=model, prompt=prompt, messages=messages, **kwargs)
 
-    def with_config_overrides(self, **kwargs: Any) -> "LMRequest":
+    def with_config_overrides(self, **kwargs: Any) -> LMRequest:
         """Return a copy with explicit request config overrides applied.
 
         Only fields implied by the supplied keyword arguments are changed. This
@@ -638,7 +627,7 @@ class LMUsage(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     @model_validator(mode="after")
-    def fill_aliases(self) -> "LMUsage":
+    def fill_aliases(self) -> LMUsage:
         if self.input_tokens is None and self.prompt_tokens is not None:
             self.input_tokens = self.prompt_tokens
         if self.output_tokens is None and self.completion_tokens is not None:
@@ -769,7 +758,7 @@ class LMResponse(BaseModel):
         cost: float | None = None,
         cache_hit: bool = False,
         **kwargs: Any,
-    ) -> "LMResponse":
+    ) -> LMResponse:
         return cls(
             model=model,
             outputs=[LMOutput(parts=[LMTextPart(text=text)])],
@@ -1186,7 +1175,7 @@ class AsyncLMStream:
         return self._result
 
 
-def System(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
+def System(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:  # noqa: N802
     """Create a system message for a direct LM call.
 
     A system message gives model-level instructions, such as tone, scope, or
@@ -1224,7 +1213,7 @@ def System(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None
     return LMMessage(role="system", parts=[_coerce_part(part) for part in parts], name=name, metadata=metadata or {})
 
 
-def Developer(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
+def Developer(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:  # noqa: N802
     """Create a developer message for a direct LM call.
 
     A developer message carries instructions that sit between system guidance
@@ -1263,7 +1252,7 @@ def Developer(*parts: Any, name: str | None = None, metadata: dict[str, Any] | N
     return LMMessage(role="developer", parts=[_coerce_part(part) for part in parts], name=name, metadata=metadata or {})
 
 
-def User(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
+def User(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:  # noqa: N802
     """Create a user message for a direct LM call.
 
     A user message contains the request or data you want the model to answer.
@@ -1343,7 +1332,7 @@ def User(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None =
     return LMMessage(role="user", parts=[_coerce_part(part) for part in parts], name=name, metadata=metadata or {})
 
 
-def Assistant(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:
+def Assistant(*parts: Any, name: str | None = None, metadata: dict[str, Any] | None = None) -> LMMessage:  # noqa: N802
     """Create an assistant message for a direct LM call.
 
     An assistant message represents a previous model response. Use it when you
@@ -1392,7 +1381,7 @@ conversation.
 """
 
 
-def ToolResult(
+def ToolResult(  # noqa: N802
     *parts: Any,
     call_id: str | None = None,
     name: str | None = None,
@@ -1590,10 +1579,14 @@ def _history_request_kwargs(request: LMRequest) -> dict[str, Any]:
     return request.config.model_dump(exclude_none=True)
 
 
-def _validate_one_source(part: Any, class_name: str) -> None:
-    sources = [part.data, part.url, part.file_id, part.path]
-    if sum(source is not None for source in sources) != 1:
+def _validate_one_source(part: Any) -> None:
+    sources = {name: getattr(part, name) for name in ("data", "url", "file_id", "path") if getattr(part, name) is not None}
+    class_name = type(part).__name__
+    if len(sources) != 1:
         raise ValueError(f"{class_name} requires exactly one of data, url, file_id, or path.")
+    name, value = next(iter(sources.items()))
+    if isinstance(value, str) and not value:
+        raise ValueError(f"{class_name}.{name} must be non-empty.")
 
 
 def _coerce_message(value: dict[str, Any] | LMMessage) -> LMMessage:
@@ -1738,17 +1731,22 @@ def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
 
 
 def _document_dict_to_part(item: dict[str, Any]) -> LMDocumentPart:
+    common = {"title": item.get("title"), "context": item.get("context")}
+    media_type = item.get("media_type") or "application/pdf"
+    for source_key in ("data", "url", "file_id", "path"):
+        if item.get(source_key) is not None:
+            return LMDocumentPart(**{source_key: item[source_key]}, media_type=media_type, **common)
+
     source = item.get("source")
     if isinstance(source, dict):
         return LMDocumentPart(
             source=source,
             citations=item.get("citations") or {},
-            title=item.get("title"),
-            context=item.get("context"),
+            **common,
         )
     if isinstance(source, str):
-        media_type, data = _split_data_uri(source)
-        return LMDocumentPart(data=data, media_type=media_type, title=item.get("title"), context=item.get("context"))
+        kwargs = _media_source_kwargs(source, default_media_type=media_type)
+        return LMDocumentPart(**kwargs, **common)
     raise ValueError("Document content block requires source.")
 
 
@@ -1769,6 +1767,19 @@ def _split_data_uri(value: str) -> tuple[str, str]:
     header, data = value.split(",", 1)
     media_type = header.removeprefix("data:").split(";", 1)[0]
     return media_type, data
+
+
+def _media_source_kwargs(source: str, *, default_media_type: str) -> dict[str, str]:
+    if source.startswith("data:"):
+        media_type, data = _split_data_uri(source)
+        return {"data": data, "media_type": media_type}
+
+    parsed = urlparse(source)
+    if parsed.scheme in {"http", "https"}:
+        media_type = mimetypes.guess_type(parsed.path)[0] or default_media_type
+        return {"url": source, "media_type": media_type}
+
+    return {"file_id": source, "media_type": default_media_type}
 
 
 def _coerce_tool_spec(tool: Any) -> LMToolSpec:
@@ -1833,12 +1844,7 @@ def _part_to_value(part: LMPart) -> Any:
 
 
 def _reasoning_value(text: str) -> Any:
-    try:
-        from dspy.adapters.types.reasoning import Reasoning
-
-        return Reasoning(text)
-    except Exception:
-        return LMThinkingPart(text=text)
+    return LMThinkingPart(text=text)
 
 
 def _tool_call_to_provider_dict(call: LMToolCallPart) -> dict[str, Any]:
