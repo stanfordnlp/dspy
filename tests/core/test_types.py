@@ -3,15 +3,18 @@ from pydantic import ValidationError
 
 import dspy
 from dspy.core.types import (
+    LMAudioPart,
     LMConfig,
     LMImagePart,
     LMMessage,
     LMOutput,
     LMRequest,
+    LMResponse,
     LMThinkingPart,
     LMToolCallPart,
     LMToolResultPart,
     _document_dict_to_part,
+    _history_part_as_openai_content,
 )
 
 
@@ -128,6 +131,21 @@ def test_document_string_source_preserves_url():
 
 
 def test_thinking_part_value_stays_core_type():
-    output = LMOutput(parts=[LMThinkingPart(text="reasoning")])
+    part = LMThinkingPart(text="reasoning", redacted=True)
+    output = LMOutput(parts=[part])
 
-    assert output.to_value() == [LMThinkingPart(text="reasoning")]
+    assert output.to_value() == [part]
+
+
+def test_lm_response_requires_at_least_one_output():
+    with pytest.raises(ValidationError, match="at least 1 item"):
+        LMResponse(outputs=[])
+
+
+def test_audio_history_uses_available_source():
+    content = _history_part_as_openai_content(LMAudioPart(url="https://example.com/audio.wav"))
+
+    assert content == {
+        "type": "input_audio",
+        "input_audio": {"data": "https://example.com/audio.wav", "format": "wav"},
+    }

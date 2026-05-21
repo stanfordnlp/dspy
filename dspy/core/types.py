@@ -762,7 +762,7 @@ class LMResponse(BaseModel):
     """The normalized result of one LM request."""
 
     model: str | None = None
-    outputs: list[LMOutput]
+    outputs: list[LMOutput] = Field(min_length=1)
     usage: LMUsage | dict[str, Any] | None = None
     cost: float | None = None
     cache_hit: bool = False
@@ -1563,7 +1563,7 @@ def _history_part_as_openai_content(part: LMPart) -> dict[str, Any]:
     if isinstance(part, LMAudioPart):
         return {
             "type": "input_audio",
-            "input_audio": {"data": part.data, "format": _history_media_format(part.media_type)},
+            "input_audio": {"data": _history_part_source(part), "format": _history_media_format(part.media_type)},
         }
     if isinstance(part, LMVideoPart):
         return {"type": "video", "video": {"url": _history_part_source(part), "media_type": part.media_type}}
@@ -1846,7 +1846,7 @@ def _part_to_value(part: LMPart) -> Any:
     if isinstance(part, LMTextPart):
         return part.text
     if isinstance(part, LMThinkingPart):
-        return LMThinkingPart(text=part.text)
+        return part
     if isinstance(part, LMToolCallPart):
         return part
     if isinstance(part, LMRefusalPart):
