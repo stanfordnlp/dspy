@@ -250,6 +250,19 @@ lm.history[-1].keys()  # access the last call to the LM, with all metadata
 dict_keys(['prompt', 'messages', 'kwargs', 'response', 'outputs', 'usage', 'cost', 'timestamp', 'uuid', 'model', 'response_model', 'model_type])
 ```
 
+To get the full chat-format trace of any individual call, pull the `messages`
+entry from that history record:
+
+```python linenums="1"
+# The list of {"role": ..., "content": ...} messages sent to the LM
+lm.history[-1]["messages"]
+```
+
+This is the same shape DSPy passes to the underlying provider, so it is
+convenient for replaying a call against a different model, building eval
+harnesses, or comparing prompts across rollouts. For richer per-span tracing
+across module calls, see the [observability tutorial](../../tutorials/observability/index.md).
+
 ## Using the Responses API
 
 By default, DSPy calls language models (LMs) using LiteLLM's [Chat Completions API](https://docs.litellm.ai/docs/completion), which is suitable for most standard models and tasks. However, some advanced models, such as OpenAI's reasoning models (e.g., `gpt-5` or other future models), may offer improved quality or additional features when accessed via the [Responses API](https://docs.litellm.ai/docs/response_api), which is supported in DSPy.
