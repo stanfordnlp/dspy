@@ -325,3 +325,18 @@ print(output.get_lm_usage())  # Shows token usage
 output = program(question="What is the capital of Zambia?")
 print(output.get_lm_usage())  # Shows empty dict: {}
 ```
+
+### "Failed to set LM usage" warning
+
+Usage tracking attaches its results to the `dspy.Prediction` object that your
+module returns from `forward`. If `forward` returns something other than a
+`dspy.Prediction` (for example a raw dict, a list, or a scalar), DSPy cannot
+attach the token counts and emits the warning:
+
+> Failed to set LM usage. Please return `dspy.Prediction` object from
+> dspy.Module to enable usage tracking.
+
+The most common causes are a custom `Module` whose `forward` returns the raw
+LM output, or a metric/evaluator built as a `dspy.Module` that returns a plain
+score. Wrap the return value in `dspy.Prediction(...)` and the warning will
+go away while preserving usage tracking on the wrapped fields.
