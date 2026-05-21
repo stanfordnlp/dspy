@@ -16,7 +16,7 @@ Better yet: when a new model launches next week, we can rerun the optimizer agai
 
 ## GEPA uses reflection to improve instructions
 
-DSPy ships with several prompt optimizers, but today we're going to focus on GEPA.
+DSPy ships with [several prompt optimizers](../diving-deeper/choosing-an-optimizer.md), but today we're going to focus on GEPA.
 
 There are many reasons to like GEPA, but a key feature is it allows our metric to provide text feedback which the LM uses to inform subsequent instructions. Let's update our original metric to demonstrate how this works:
 

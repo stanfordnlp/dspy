@@ -119,7 +119,7 @@ class HaikuEnsemble(dspy.Module):
         )
 ```
 
-The `with dspy.context()` statement allows us to define a new context that sets a new model for the judge call.
+The [`with dspy.context()`](../diving-deeper/settings-and-context.md) statement allows us to define a new context that sets a new model for the judge call.
 
 ## Decompose to isolate, reuse, govern, and optimize
 
@@ -133,5 +133,7 @@ Reasons to decompose appear as our AI programs grow in complexity and we learn t
 - **Design custom control flow:** We could run the final haiku through a syllable-count check with an NLP library, and call the writer again if the meter is off.  
 - **Govern independently inspect steps:** Each submodule is its own object, and each call lands in `inspect_history` separately. When the agent does something surprising, we can call one submodule on its own to see exactly what it returned. For haiku writing this is less of a concern, but for high-risk tasks this ability to audit is critical.  
 - **More easily evaluate and optimize:** Scoring a single haiku in isolation is hard; "good" cuts across too many dimensions to grade cleanly. Picking the best of three is much easier. Decomposing isolates subtasks we can actually score, which enables evaluation and optimization.
+
+See [Modules: composing your own](../diving-deeper/modules.md) for control-flow patterns (branching, retry loops, parallel calls) and composition beyond this example.
 
 Speaking of evaluation and optimization, it's time for the next section.

@@ -30,6 +30,8 @@ nav:
         - "Tools, ReAct, and MCP": diving-deeper/tools-react-and-mcp.md
         - Metrics and evaluation: diving-deeper/metrics-and-evaluation.md
         - "Optimizers: choosing one": diving-deeper/choosing-an-optimizer.md
+        - GEPA in depth: diving-deeper/gepa-in-depth.md
+        - BootstrapFewShot family: diving-deeper/bootstrap-fewshot-family.md
         - "Adapters: how signatures become prompts": diving-deeper/adapters.md
         - "Settings and context()": diving-deeper/settings-and-context.md
         - Saving and loading: diving-deeper/saving-and-loading.md

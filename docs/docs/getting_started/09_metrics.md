@@ -75,3 +75,5 @@ print(baseline_score)
 ```
 
 Our `dspy.ReAct` haiku writer, powered by `gpt-5.4-nano`, scores only 30% on this metric. And that makes sense. Our rule isn't a hard and fast rule of haikus, so our model won't adhere to it driven only by its weights. And our signatures gave no clues this was our objective.
+
+See [Metrics and evaluation](../diving-deeper/metrics-and-evaluation.md) for composite scoring, LLM judges, and test-set hygiene.

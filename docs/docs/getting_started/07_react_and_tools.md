@@ -91,3 +91,5 @@ We can print it like so:
 for step, value in result.trajectory.items():
     print(f"{step}: {value}")
 ```
+
+For tool authoring patterns, MCP integration, and trajectory debugging, see [Tools, ReAct, and MCP](../diving-deeper/tools-react-and-mcp.md).

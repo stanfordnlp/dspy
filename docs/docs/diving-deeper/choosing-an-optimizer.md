@@ -90,7 +90,7 @@ When the prompt wording — not the examples — is what's holding you back.
 A breadth-first proposer. At each of `depth` levels, COPRO uses `prompt_model` to generate `breadth` candidate instructions per predictor, scores them against the trainset, and keeps the best. Total LM cost is roughly `breadth × depth × num_predictors`. Lightweight; especially good when demos are already strong and you only need to fix wording.
 
 **`dspy.GEPA(metric, auto=None, max_full_evals=None, max_metric_calls=None, reflection_lm=None, skip_perfect_score=True, instruction_proposer=None, use_merge=True, num_threads=None)`**
-Evolutionary instruction search guided by reflection. GEPA maintains a population of programs, runs each on the trainset, reads the per-predictor `feedback` from the metric, and uses `reflection_lm` to propose edits informed by that feedback. It returns the best candidate from a Pareto frontier. Wins on prompt-only optimization when you have a strong reflection LM and a feedback-shaped metric; deep dive on its own page.
+Evolutionary instruction search guided by reflection. GEPA maintains a population of programs, runs each on the trainset, reads the per-predictor `feedback` from the metric, and uses `reflection_lm` to propose edits informed by that feedback. It returns the best candidate from a Pareto frontier. Wins on prompt-only optimization when you have a strong reflection LM and a feedback-shaped metric; see [GEPA in depth](gepa-in-depth.md) for the full mechanics.
 
 ### Optimize instructions and demos together
 
@@ -139,6 +139,6 @@ Built for agent-style programs. Partitions the trainset by metric into positive 
 ## Cross-links
 
 - [Metrics and evaluation](metrics-and-evaluation.md) — every optimizer compiles against a metric defined there; the `Prediction(score, feedback)` shape GEPA expects is documented there.
-- GEPA in depth — the deep dive on the optimizer above.
-- BootstrapFewShot family — the deep dive on `BootstrapFewShot` and its random-search variants.
+- [GEPA in depth](gepa-in-depth.md) — the deep dive on the optimizer above.
+- [BootstrapFewShot family](bootstrap-fewshot-family.md) — the deep dive on `BootstrapFewShot` and its random-search variants.
 - Fine-tuning with `BootstrapFinetune` — the deep dive on weight tuning.

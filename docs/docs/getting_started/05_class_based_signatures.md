@@ -96,3 +96,5 @@ But if we pass `season="fall"`, we get a warning explaining the mismatch:
 ```
 WARNING dspy.predict.predict: Type mismatch for field 'season': expected Literal['spring', 'summer', 'autumn', 'winter'] based on given Signature, but the provided value is incompatible: fall.
 ```
+
+See [Signatures in depth](../diving-deeper/signatures-in-depth.md) for the rest of the surface — output validators, multi-output composition, and richer Pydantic patterns.
