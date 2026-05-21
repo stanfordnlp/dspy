@@ -1,6 +1,6 @@
 {
   "framework": null,
-  "buildCommand": "pip install -r requirements.txt && mkdocs build",
+  "buildCommand": "uv venv && uv pip install -r requirements.txt && .venv/bin/mkdocs build",
   "outputDirectory": "site",
   "trailingSlash": true,
   "headers": [
