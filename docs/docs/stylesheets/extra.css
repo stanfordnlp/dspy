@@ -10,9 +10,28 @@
     object-fit: contain !important;
 }
 
-/* Adjust header to accommodate logo */
+/* Header: comfortable vertical breathing room with horizontal padding
+   matching Material's default content gutter. */
 .md-header__inner {
-    padding: 0.5rem !important;
+    padding: 0.65rem 1rem !important;
+}
+
+/* Subtle bottom divider so the header doesn't bleed into the content area. */
+.md-header {
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    box-shadow: none;
+}
+
+/* Tighten the gap between the logo glyph and the "DSPy" wordmark.
+   The SVG canvas is square (2000×2000) with internal whitespace, so without
+   this the title sits noticeably far from the icon. */
+.md-header__title {
+    margin-left: 0.25rem;
+}
+
+/* Breathing room between the tabs row and the first content element. */
+.md-main__inner {
+    margin-top: 2rem;
 }
 
 /* Responsive adjustments */
@@ -46,12 +65,13 @@
 }
 
 
-/* Justified text for main content */
+/* Main content: left-align (ragged right) for screen readability.
+   Justified text causes uneven word spacing without proper hyphenation. */
 .md-content__inner p {
-    text-align: justify;
+    text-align: left;
 }
 
-/* Left-aligned text for grid cards */
+/* Grid cards already left-aligned (kept for clarity) */
 .md-content__inner .grid.cards p {
     text-align: left;
 }
@@ -218,12 +238,13 @@ h2.doc-heading {
 
 /* Ensure code is readable */
 .highlight code {
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-    font-size: 0.75em;
+    font-family: "Fira Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.82em;
+    line-height: 1.55;
 }
 
 .highlight .linenos {
-    font-size: 0.75em;
+    font-size: 0.82em;
 }
 
 /* Copy button styling */
@@ -384,26 +405,117 @@ h2.doc-heading {
     display: inline-block;
 }
 
-/* Copy-page button – matches the native "Edit this page" action style */
-.copy-md-btn {
-    cursor: pointer;
+/* =========================================================================
+   Readability tuning (applies site-wide)
+   - Cap prose at ~70 characters per line (Bringhurst: 45–75 ideal)
+   - Slight line-height bump for body text
+   - Breathing room before the prev/next footer
+   - Wrap plain (non-language) code blocks so long output lines don't scroll
+   - Higher-contrast Pygments tokens for Python in light mode
+   - Darker body text and heavier headings for stronger hierarchy
+   ========================================================================= */
+
+/* Stronger body text contrast (light mode).
+   Material's default is hsla(0, 0%, 0%, 0.87) which renders softer than a
+   solid near-black. */
+[data-md-color-scheme="default"] {
+    --md-default-fg-color:        #1f2328;
+    --md-default-fg-color--light:  #424950;
+    --md-default-fg-color--lighter:#6e7681;
+    --md-typeset-color:            #1f2328;
 }
 
-.copy-md-btn svg {
-    fill: currentColor;
-    vertical-align: text-bottom;
+/* Heavier, more solid headings. Plex Sans at 600 has presence without
+   shouting; 700 for h1 sets a clear top of hierarchy. */
+.md-typeset h1 { font-weight: 700; letter-spacing: -0.01em; }
+.md-typeset h2 { font-weight: 600; letter-spacing: -0.005em; }
+.md-typeset h3 { font-weight: 600; }
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6 { font-weight: 600; }
+
+/* Cap prose line-length for comfortable reading. Code blocks, tables, and
+   admonitions keep the full content width. */
+.md-content__inner > p,
+.md-content__inner > ul,
+.md-content__inner > ol,
+.md-content__inner > blockquote,
+.md-content__inner > h1,
+.md-content__inner > h2,
+.md-content__inner > h3,
+.md-content__inner > h4,
+.md-content__inner > h5,
+.md-content__inner > h6 {
+    max-width: 44rem;
 }
 
-.copy-md-btn--loading {
-    opacity: 0.5;
-    pointer-events: none;
+/* Body text typography (Butterick: line-height 120–145%, body 15–25px).
+   1.5 sits just above the upper bound for screen comfort; 17px sits a tick
+   above Material's 16px default. */
+.md-typeset {
+    font-size: 17px;
+    font-kerning: normal;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern", "liga";
+    letter-spacing: -0.005em;
 }
 
-.copy-md-btn--success {
-    color: #4caf50 !important;
+.md-typeset p,
+.md-typeset li {
+    line-height: 1.5;
 }
 
-.copy-md-btn--error {
-    color: #f44336 !important;
+/* Paragraph spacing ~12pt at 17px body — inside Butterick's "4–10pt + indent
+   OR 4–10pt space, not both" guidance (we use space, no indent). */
+.md-typeset p {
+    margin-bottom: 0.7em;
 }
+
+/* Breathing room between the last paragraph and the dark prev/next footer */
+.md-content {
+    padding-bottom: 3.5rem;
+}
+
+/* Wrap plain text / output blocks (no language tag).
+   Python and other language-tagged blocks keep horizontal scroll. */
+.md-typeset pre > code:not([class*="language-"]),
+.md-typeset pre > code.language-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* ----- Higher-contrast Python syntax (light mode) -----
+   Inspired by GitHub Primer; all colors pass WCAG AA on white. */
+[data-md-color-scheme="default"] .highlight .k,
+[data-md-color-scheme="default"] .highlight .kn,
+[data-md-color-scheme="default"] .highlight .kd,
+[data-md-color-scheme="default"] .highlight .kr      { color: #cf222e; }              /* keyword */
+[data-md-color-scheme="default"] .highlight .kc      { color: #0550ae; font-weight: 600; }  /* True / False / None */
+[data-md-color-scheme="default"] .highlight .nb      { color: #6639ba; }              /* builtin (print, len) */
+[data-md-color-scheme="default"] .highlight .nf,
+[data-md-color-scheme="default"] .highlight .fm      { color: #8250df; }              /* function name */
+[data-md-color-scheme="default"] .highlight .nc      { color: #953800; }              /* class name */
+[data-md-color-scheme="default"] .highlight .nd      { color: #8250df; }              /* decorator */
+[data-md-color-scheme="default"] .highlight .s,
+[data-md-color-scheme="default"] .highlight .s1,
+[data-md-color-scheme="default"] .highlight .s2,
+[data-md-color-scheme="default"] .highlight .sb,
+[data-md-color-scheme="default"] .highlight .sa      { color: #0a3069; }              /* strings */
+[data-md-color-scheme="default"] .highlight .sd      { color: #57606a; font-style: italic; }  /* docstring */
+[data-md-color-scheme="default"] .highlight .se      { color: #cf222e; }              /* string escape */
+[data-md-color-scheme="default"] .highlight .si      { color: #0a3069; font-weight: 600; }    /* string interp */
+[data-md-color-scheme="default"] .highlight .mi,
+[data-md-color-scheme="default"] .highlight .mf,
+[data-md-color-scheme="default"] .highlight .mh,
+[data-md-color-scheme="default"] .highlight .mo      { color: #0550ae; }              /* numbers */
+[data-md-color-scheme="default"] .highlight .c,
+[data-md-color-scheme="default"] .highlight .c1,
+[data-md-color-scheme="default"] .highlight .cm,
+[data-md-color-scheme="default"] .highlight .ch      { color: #57606a; font-style: italic; }  /* comments */
+[data-md-color-scheme="default"] .highlight .o,
+[data-md-color-scheme="default"] .highlight .ow      { color: #24292f; }              /* operators */
+[data-md-color-scheme="default"] .highlight .p       { color: #24292f; }              /* punctuation */
+[data-md-color-scheme="default"] .highlight .bp      { color: #6639ba; }              /* self */
+[data-md-color-scheme="default"] .highlight .n       { color: #1f2328; }              /* default identifier */
 

@@ -9,24 +9,30 @@ edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
 
 nav:
-    - Get Started: index.md
-    - Learn DSPy:
-        - Learning DSPy: learn/index.md
-        - DSPy Programming:
-            - Programming Overview: learn/programming/overview.md
-            - Language Models: learn/programming/language_models.md
-            - Signatures: learn/programming/signatures.md
-            - Modules: learn/programming/modules.md
-            - Adapters: learn/programming/adapters.md
-            - Tools: learn/programming/tools.md
-            - MCP: learn/programming/mcp.md
-        - DSPy Evaluation:
-            - Evaluation Overview: learn/evaluation/overview.md
-            - Data Handling: learn/evaluation/data.md
-            - Metrics: learn/evaluation/metrics.md
-        - DSPy Optimization:
-            - Optimization Overview: learn/optimization/overview.md
-            - Optimizers: learn/optimization/optimizers.md
+    - Overview: index.md
+    - Getting Started:
+        - Program, don't prompt: getting_started/01_program_dont_prompt.md
+        - Setting up DSPy: getting_started/02_installation.md
+        - Your first program: getting_started/03_first_program.md
+        - Expanding signatures: getting_started/04_expanding_signatures.md
+        - Class-based signatures: getting_started/05_class_based_signatures.md
+        - Changing modules: getting_started/06_changing_modules.md
+        - Tools with ReAct: getting_started/07_react_and_tools.md
+        - Composing modules: getting_started/08_composing_modules.md
+        - Metrics: getting_started/09_metrics.md
+        - GEPA optimization: getting_started/10_gepa_optimization.md
+        - Saving and loading: getting_started/11_saving_and_loading.md
+        - Where to go next: getting_started/12_where_to_go_next.md
+    - Diving Deeper:
+        - Signatures in depth: diving-deeper/signatures-in-depth.md
+        - "Modules: composing your own": diving-deeper/modules.md
+        - Built-in module variants: diving-deeper/built-in-module-variants.md
+        - "Tools, ReAct, and MCP": diving-deeper/tools-react-and-mcp.md
+        - Metrics and evaluation: diving-deeper/metrics-and-evaluation.md
+        - "Optimizers: choosing one": diving-deeper/choosing-an-optimizer.md
+        - "Adapters: how signatures become prompts": diving-deeper/adapters.md
+        - "Settings and context()": diving-deeper/settings-and-context.md
+        - Saving and loading: diving-deeper/saving-and-loading.md
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
         - Build AI Programs with DSPy:
@@ -78,8 +84,6 @@ nav:
             - Email Information Extraction: tutorials/email_extraction/index.md
             - Code Generation for Unfamiliar Libraries: tutorials/sample_code_generation/index.md
             - Building a Creative Text-Based AI Game: tutorials/ai_text_game/index.md
-    - Deployment:
-        - Deploying DSPy: production/index.md
     - Community:
         - Use Cases: community/use-cases.md
         - Built with DSPy: community/built-with-dspy.md
@@ -175,13 +179,15 @@ nav:
 theme:
     name: material
     custom_dir: overrides
+    font:
+        text: Inter
+        code: Fira Mono
     features:
         - navigation.tabs
         - navigation.path
         - navigation.indexes
         - navigation.expand
         - toc.follow
-        - toc.integrate
         - navigation.top
         - search.suggest
         - search.highlight
@@ -189,7 +195,6 @@ theme:
         - content.code.annotation
         - content.code.copy
         - navigation.footer
-        - content.action.edit
     language: en
     palette:
         - scheme: default
@@ -208,7 +213,7 @@ theme:
         repo: fontawesome/brands/git-alt
         edit: material/pencil
         view: material/eye
-    logo: static/img/dspy_logo.png
+    logo: static/dspy-logo.svg
     favicon: static/img/logo.png
 
 extra_css:
@@ -266,6 +271,21 @@ plugins:
 
             "community/community-ports.md": "community/built-with-dspy.md"
             "production/companies.md": "community/use-cases.md"
+
+            # Redirect old learn/ pages to the new Getting Started tutorial
+            "learn/index.md": "getting_started/01_program_dont_prompt.md"
+            "learn/programming/overview.md": "getting_started/03_first_program.md"
+            "learn/programming/language_models.md": "getting_started/02_installation.md"
+            "learn/programming/signatures.md": "getting_started/04_expanding_signatures.md"
+            "learn/programming/modules.md": "getting_started/06_changing_modules.md"
+            "learn/programming/adapters.md": "getting_started/03_first_program.md"
+            "learn/programming/tools.md": "getting_started/07_react_and_tools.md"
+            "learn/programming/mcp.md": "getting_started/07_react_and_tools.md"
+            "learn/evaluation/overview.md": "getting_started/09_metrics.md"
+            "learn/evaluation/data.md": "getting_started/09_metrics.md"
+            "learn/evaluation/metrics.md": "getting_started/09_metrics.md"
+            "learn/optimization/overview.md": "getting_started/10_gepa_optimization.md"
+            "learn/optimization/optimizers.md": "getting_started/10_gepa_optimization.md"
     - llmstxt:
         markdown_description: >
           DSPy is the framework for programming—rather than prompting—language models.
@@ -275,16 +295,10 @@ plugins:
         sections:
           Get Started:
             - index.md: DSPy overview and quick start guide
-          Learn DSPy - Learning DSPy:
-            - learn/index.md: Three stages of building AI systems - programming, evaluation, and optimization
-          Learn DSPy - DSPy Programming:
-            - learn/programming/**.md
-          Learn DSPy - DSPy Evaluation:
-            - learn/evaluation/**.md
-          Learn DSPy - DSPy Optimization:
-            - learn/optimization/**.md
-          # Since we don't have a learn/**.md, future sections within learn/ should be added here
-          # to ensure they show up in the llms.txt navigation
+          Getting Started:
+            - getting_started/**.md
+          Diving Deeper:
+            - diving-deeper/**.md
           Tutorials - Docs:
             - tutorials/**.md
           Tutorials - Notebooks:
@@ -307,9 +321,9 @@ extra:
 extra_javascript:
     - "js/runllm-widget.js"
     - "js/tutorial-nav.js"
-    - "js/copy-as-markdown.js"
 
 markdown_extensions:
+    - smarty
     - toc:
         permalink: true
         toc_depth: 3
@@ -333,4 +347,4 @@ markdown_extensions:
         emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 copyright: |
-    &copy; 2025 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>
+    &copy; 2026 <a href="https://github.com/stanfordnlp"  target="_blank" rel="noopener">DSPy</a>
