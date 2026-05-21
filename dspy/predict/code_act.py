@@ -11,12 +11,19 @@ from dspy.signatures.signature import Signature, ensure_signature
 
 logger = logging.getLogger(__name__)
 
+
 class CodeAct(ReAct, ProgramOfThought):
     """
     CodeAct is a module that utilizes the Code Interpreter and predefined tools to solve the problem.
     """
 
-    def __init__(self, signature: str | type[Signature], tools: list[Callable], max_iters: int = 5, interpreter: PythonInterpreter | None = None):
+    def __init__(
+        self,
+        signature: str | type[Signature],
+        tools: list[Callable],
+        max_iters: int = 5,
+        interpreter: PythonInterpreter | None = None,
+    ):
         """
         Initializes the CodeAct class with the specified model, temperature, and max tokens.
 
@@ -42,9 +49,7 @@ class CodeAct(ReAct, ProgramOfThought):
         self.history = []
 
         tools = [t if isinstance(t, Tool) else Tool(t) for t in tools]
-        if any(
-            not inspect.isfunction(tool.func) for tool in tools
-        ):
+        if any(not inspect.isfunction(tool.func) for tool in tools):
             raise ValueError("CodeAct only accepts functions and not callable objects.")
         tools = {tool.name: tool for tool in tools}
 
@@ -53,7 +58,13 @@ class CodeAct(ReAct, ProgramOfThought):
         codeact_signature = (
             dspy.Signature({**self.signature.input_fields}, "\n".join(instructions))
             .append("trajectory", dspy.InputField(), type_=str)
-            .append("generated_code", dspy.OutputField(desc="Python code that when executed, produces output relevant to answering the question"), type_=str)
+            .append(
+                "generated_code",
+                dspy.OutputField(
+                    desc="Python code that when executed, produces output relevant to answering the question"
+                ),
+                type_=str,
+            )
             .append("finished", dspy.OutputField(desc="a boolean flag to determine if the process is done"), type_=bool)
         )
 
@@ -65,8 +76,10 @@ class CodeAct(ReAct, ProgramOfThought):
         self.tools: dict[str, Tool] = tools
         self.codeact = dspy.Predict(codeact_signature)
         self.extractor = dspy.ChainOfThought(extract_signature)
-        # It will raises exception when dspy cannot find available deno instance by now.
-        self.interpreter = interpreter or PythonInterpreter()
+        # Store user-provided interpreter; if None, a fresh one is created per forward() call
+        # to avoid sharing a single interpreter across concurrent threads.
+        self._user_interpreter = interpreter
+        self.interpreter = interpreter
 
     def _build_instructions(self, signature, tools):
         instructions = [f"{signature.instructions}\n"] if signature.instructions else []
@@ -88,32 +101,37 @@ class CodeAct(ReAct, ProgramOfThought):
         return instructions
 
     def forward(self, **kwargs):
-        # Define the tool functions in the interpreter
-        for tool in self.tools.values():
-            self.interpreter(inspect.getsource(tool.func))
+        interp = self._get_fresh_interpreter()
+        try:
+            # Define the tool functions in the interpreter
+            for tool in self.tools.values():
+                interp(inspect.getsource(tool.func))
 
-        trajectory = {}
-        max_iters = kwargs.pop("max_iters", self.max_iters)
-        for idx in range(max_iters):
-            code_data = self.codeact(trajectory=trajectory, **kwargs)
-            output = None
-            code, error = self._parse_code(code_data)
+            trajectory = {}
+            max_iters = kwargs.pop("max_iters", self.max_iters)
+            for idx in range(max_iters):
+                code_data = self.codeact(trajectory=trajectory, **kwargs)
+                output = None
+                code, error = self._parse_code(code_data)
 
-            if error:
-                trajectory[f"observation_{idx}"] = f"Failed to parse the generated code: {error}"
-                continue
+                if error:
+                    trajectory[f"observation_{idx}"] = f"Failed to parse the generated code: {error}"
+                    continue
 
-            trajectory[f"generated_code_{idx}"] = code
-            output, error = self._execute_code(code)
+                trajectory[f"generated_code_{idx}"] = code
+                output, error = self._execute_code(code, interp)
 
-            if not error:
-                trajectory[f"code_output_{idx}"] = output
-            else:
-                trajectory[f"observation_{idx}"] = f"Failed to execute the generated code: {error}"
+                if not error:
+                    trajectory[f"code_output_{idx}"] = output
+                else:
+                    trajectory[f"observation_{idx}"] = f"Failed to execute the generated code: {error}"
 
-            if code_data.finished:
-                break
+                if code_data.finished:
+                    break
 
-        extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
-        self.interpreter.shutdown()
-        return dspy.Prediction(trajectory=trajectory, **extract)
+            extract = self._call_with_potential_trajectory_truncation(self.extractor, trajectory, **kwargs)
+            return dspy.Prediction(trajectory=trajectory, **extract)
+        finally:
+            if self._user_interpreter is None:
+                interp.shutdown()
+            self.interpreter = interp  # expose for post-call inspection (e.g., tests)
