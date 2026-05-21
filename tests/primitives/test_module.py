@@ -6,7 +6,8 @@ import pytest
 
 import dspy
 from dspy.primitives.example import Example
-from dspy.primitives.module import Module, set_attribute_by_name
+from dspy.primitives.module import Module, _collect_predictions, set_attribute_by_name
+from dspy.primitives.prediction import Prediction
 from dspy.utils import DummyLM
 
 
@@ -243,3 +244,144 @@ def test_load_state_is_transactional():
         assert template.a.predict.demos == [], (
             "load_state partially mutated module before failing"
         )
+
+
+def test_collect_predictions_single():
+    pred = Prediction(answer="hi")
+    assert _collect_predictions(pred) == [pred]
+
+
+def test_collect_predictions_tuple_with_trace():
+    # Mirrors the (prediction, trace) shape used by GEPA bootstrap tracing.
+    pred = Prediction(answer="hi")
+    assert _collect_predictions((pred, {"trace": "data"})) == [pred]
+
+
+def test_collect_predictions_list():
+    p1 = Prediction(answer="a")
+    p2 = Prediction(answer="b")
+    assert _collect_predictions([p1, p2]) == [p1, p2]
+
+
+def test_collect_predictions_nested_dict_and_list():
+    p1 = Prediction(answer="a")
+    p2 = Prediction(answer="b")
+    p3 = Prediction(answer="c")
+    output = {"main": p1, "others": [p2, [p3]]}
+    collected = _collect_predictions(output)
+    assert set(map(id, collected)) == {id(p1), id(p2), id(p3)}
+
+
+def test_collect_predictions_no_predictions():
+    assert _collect_predictions("just a string") == []
+    assert _collect_predictions({"a": 1, "b": [2, 3]}) == []
+    assert _collect_predictions(None) == []
+
+
+def test_set_lm_usage_attaches_to_list_of_predictions():
+    # Regression test for the dspy.Parallel-inside-Module case from #9201.
+    # The forward returns a list of Predictions (as dspy.Parallel does) and
+    # usage must be attached to every Prediction in the list.
+    class ParallelModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.pred = dspy.Predict("q -> a")
+
+        def forward(self, qs):
+            return dspy.Parallel(num_threads=2).forward(
+                [(self.pred, dspy.Example(q=q).with_inputs("q")) for q in qs]
+            )
+
+    lm = DummyLM([{"a": "1"}, {"a": "2"}])
+    with dspy.context(lm=lm, track_usage=True):
+        results = ParallelModule()(["x", "y"])
+
+    assert len(results) == 2
+    assert all(isinstance(r, Prediction) for r in results)
+    assert all(r.get_lm_usage() is not None for r in results)
+
+
+def test_set_lm_usage_attaches_to_nested_structure():
+    class NestedModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.pred = dspy.Predict("q -> a")
+
+        def forward(self):
+            return {
+                "main": self.pred(q="x"),
+                "others": [self.pred(q="y"), self.pred(q="z")],
+            }
+
+    lm = DummyLM([{"a": "1"}, {"a": "2"}, {"a": "3"}])
+    with dspy.context(lm=lm, track_usage=True):
+        result = NestedModule()()
+
+    assert isinstance(result, dict)
+    predictions = [result["main"], *result["others"]]
+    assert all(isinstance(p, Prediction) for p in predictions)
+    assert all(p.get_lm_usage() is not None for p in predictions)
+
+
+def test_set_lm_usage_preserves_single_prediction_behavior():
+    # The most common case must continue to work unchanged.
+    class SimpleModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.pred = dspy.Predict("q -> a")
+
+        def forward(self, q):
+            return self.pred(q=q)
+
+    lm = DummyLM([{"a": "1"}])
+    with dspy.context(lm=lm, track_usage=True):
+        result = SimpleModule()(q="x")
+
+    assert isinstance(result, Prediction)
+    assert result.get_lm_usage() is not None
+
+
+def test_set_lm_usage_no_warning_for_non_prediction_when_track_usage_disabled(monkeypatch):
+    # When the user does not enable track_usage, _set_lm_usage is never
+    # invoked and modules can return any type without warnings.
+    warnings = []
+    import dspy.primitives.module as module_mod
+
+    monkeypatch.setattr(module_mod.logger, "warning", lambda msg, *a, **kw: warnings.append(msg))
+
+    class StringModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.pred = dspy.Predict("q -> a")
+
+        def forward(self, q):
+            return self.pred(q=q).a
+
+    with dspy.context(lm=DummyLM([{"a": "ok"}])):
+        result = StringModule()(q="x")
+
+    assert result == "ok"
+    assert not any("Failed to set LM usage" in w for w in warnings)
+
+
+def test_set_lm_usage_warns_when_no_prediction_found_with_track_usage(monkeypatch):
+    # When track_usage is on but the module returns a container with no
+    # Predictions, the warning must still fire so users notice the misuse.
+    warnings = []
+    import dspy.primitives.module as module_mod
+
+    monkeypatch.setattr(module_mod.logger, "warning", lambda msg, *a, **kw: warnings.append(msg))
+
+    class NoPredictionModule(dspy.Module):
+        def __init__(self):
+            super().__init__()
+            self.pred = dspy.Predict("q -> a")
+
+        def forward(self, q):
+            return {"answer": self.pred(q=q).a}  # plain dict, no Prediction
+
+    with dspy.context(lm=DummyLM([{"a": "ok"}]), track_usage=True):
+        result = NoPredictionModule()(q="x")
+
+    assert result == {"answer": "ok"}
+    assert any("Failed to set LM usage" in w for w in warnings)

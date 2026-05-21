@@ -317,17 +317,18 @@ class Module(BaseModule, metaclass=ProgramMeta):
             return results
 
     def _set_lm_usage(self, tokens: dict[str, Any], output: Any):
-        # Some optimizers (e.g., GEPA bootstrap tracing) temporarily patch
-        # module.forward to return a tuple: (prediction, trace).
-        # When usage tracking is enabled, ensure we attach usage to the
-        # prediction object if present.
-        prediction_in_output = None
-        if isinstance(output, Prediction):
-            prediction_in_output = output
-        elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], Prediction):
-            prediction_in_output = output[0]
-        if prediction_in_output:
-            prediction_in_output.set_lm_usage(tokens)
+        # Walk the output structure and attach usage to every Prediction
+        # found. This handles common containers used by modules:
+        #   - A single Prediction (the typical case).
+        #   - A tuple, e.g. (prediction, trace) from optimizers such as
+        #     GEPA bootstrap tracing.
+        #   - A list of Predictions, e.g. when ``forward`` returns the
+        #     result of ``dspy.Parallel``.
+        #   - Dicts whose values contain any of the above.
+        predictions = _collect_predictions(output)
+        if predictions:
+            for prediction in predictions:
+                prediction.set_lm_usage(tokens)
         else:
             logger.warning("Failed to set LM usage. Please return `dspy.Prediction` object from dspy.Module to enable usage tracking.")
 
@@ -347,6 +348,29 @@ class Module(BaseModule, metaclass=ProgramMeta):
                 )
 
         return attr
+
+
+def _collect_predictions(output: Any) -> list[Prediction]:
+    """Recursively collect ``Prediction`` objects from a module's output.
+
+    Walks lists, tuples, and dicts so that usage can be attached to every
+    ``Prediction`` returned by ``Module.forward``, regardless of how the
+    user nests them in the return value.
+    """
+    predictions: list[Prediction] = []
+
+    def _walk(obj: Any) -> None:
+        if isinstance(obj, Prediction):
+            predictions.append(obj)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+        elif isinstance(obj, dict):
+            for value in obj.values():
+                _walk(value)
+
+    _walk(output)
+    return predictions
 
 
 def set_attribute_by_name(obj, name, value):
