@@ -1629,6 +1629,7 @@ def _coerce_message(value: dict[str, Any] | LMMessage) -> LMMessage:
 
 
 def _messages_from_items(items: tuple[Any, ...], *, prompt: str | None = None) -> tuple[list[LMMessage], list[Any]]:
+    # TODO: Normalize DSPy-specific LM(...) objects in the LM call layer before building LMRequest.
     if prompt is not None:
         items = (prompt, *items)
     if not items:
@@ -1646,14 +1647,8 @@ def _messages_from_items(items: tuple[Any, ...], *, prompt: str | None = None) -
                 messages.extend(_messages_from_response(item))
         return messages, []
 
-    parts: list[LMPart] = []
-    tools: list[Any] = []
-    for item in items:
-        if _is_dspy_tool(item):
-            tools.append(item)
-        else:
-            parts.append(_coerce_part(item))
-    return [LMMessage(role="user", parts=parts)], tools
+    parts = [_coerce_part(item) for item in items]
+    return [LMMessage(role="user", parts=parts)], []
 
 
 def _messages_from_response(response: LMResponse) -> list[LMMessage]:
@@ -1688,16 +1683,6 @@ def _coerce_part(value: Any) -> LMPart:
         return LMTextPart(text=value)
     if isinstance(value, dict) and "type" in value:
         return pydantic.TypeAdapter(LMPart).validate_python(value)
-    if _is_dspy_image(value):
-        return _image_to_part(value)
-    if _is_dspy_audio(value):
-        return LMAudioPart(data=value.data, media_type=f"audio/{value.audio_format}")
-    if _is_dspy_file(value):
-        return _file_to_part(value)
-    if _is_dspy_reasoning(value):
-        return LMThinkingPart(text=value.content)
-    if _is_dspy_tool_call(value):
-        return LMToolCallPart(id=getattr(value, "id", None), name=value.name, args=value.args)
     raise TypeError(f"Cannot convert {type(value)!r} to an LMPart.")
 
 
@@ -1762,25 +1747,12 @@ def _tool_call_from_openai(tool_call: Any) -> LMToolCallPart:
     )
 
 
-def _image_to_part(image: Any) -> LMImagePart:
-    return _image_source_to_part(image.url)
-
-
 def _image_source_to_part(source: str) -> LMImagePart:
     if source.startswith("data:"):
         media_type, data = _split_data_uri(source)
         return LMImagePart(data=data, media_type=media_type)
     media_type = mimetypes.guess_type(urlparse(source).path)[0] or "image/png"
     return LMImagePart(url=source, media_type=media_type)
-
-
-def _file_to_part(file: Any) -> LMBinaryPart:
-    if file.file_data is not None:
-        media_type, data = _split_data_uri(file.file_data)
-        return LMBinaryPart(data=data, media_type=media_type, filename=file.filename)
-    if file.file_id is not None:
-        return LMBinaryPart(file_id=file.file_id, filename=file.filename)
-    raise ValueError("File must have file_data or file_id.")
 
 
 def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
@@ -1864,32 +1836,6 @@ def _coerce_tool_spec(tool: Any) -> LMToolSpec:
     raise TypeError(f"Cannot convert {type(tool)!r} to LMToolSpec.")
 
 
-def _is_dspy_image(value: Any) -> bool:
-    return value.__class__.__name__ == "Image" and hasattr(value, "url")
-
-
-def _is_dspy_audio(value: Any) -> bool:
-    return value.__class__.__name__ == "Audio" and hasattr(value, "data") and hasattr(value, "audio_format")
-
-
-def _is_dspy_file(value: Any) -> bool:
-    return value.__class__.__name__ == "File" and any(hasattr(value, attr) for attr in ("file_data", "file_id"))
-
-
-def _is_dspy_reasoning(value: Any) -> bool:
-    return value.__class__.__name__ == "Reasoning" and hasattr(value, "content")
-
-
-def _is_dspy_tool(value: Any) -> bool:
-    return value.__class__.__name__ == "Tool" and hasattr(value, "func")
-
-
-def _is_dspy_tool_call(value: Any) -> bool:
-    return (
-        value.__class__.__name__ in {"ToolCall", "LMToolCallPart"} and hasattr(value, "name") and hasattr(value, "args")
-    )
-
-
 def _requires_output_dict(output: LMOutput) -> bool:
     return bool(
         output.logprobs is not None or output.reasoning_content is not None or output.tool_calls or output.citations
@@ -1900,16 +1846,12 @@ def _part_to_value(part: LMPart) -> Any:
     if isinstance(part, LMTextPart):
         return part.text
     if isinstance(part, LMThinkingPart):
-        return _reasoning_value(part.text)
+        return LMThinkingPart(text=part.text)
     if isinstance(part, LMToolCallPart):
         return part
     if isinstance(part, LMRefusalPart):
         return part.text
     return part
-
-
-def _reasoning_value(text: str) -> Any:
-    return LMThinkingPart(text=text)
 
 
 def _tool_call_to_provider_dict(call: LMToolCallPart) -> dict[str, Any]:

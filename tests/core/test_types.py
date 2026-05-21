@@ -82,6 +82,14 @@ def test_openai_tool_result_message_normalizes_tool_call_id():
     ]
 
 
+def test_lm_request_from_call_does_not_coerce_dspy_specific_objects():
+    class Image:
+        url = "https://example.com/image.png"
+
+    with pytest.raises(TypeError, match="Cannot convert"):
+        LMRequest.from_call(model="openai/gpt-5-nano", items=(Image(),))
+
+
 def test_lm_request_config_overrides_preserve_nested_config():
     request = LMRequest(
         model="openai/gpt-5-nano",
