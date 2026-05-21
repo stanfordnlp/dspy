@@ -47,7 +47,14 @@ logger = logging.getLogger(__name__)
 # Sentinel used to distinguish "caller did not pass a value" from "caller passed None" for the
 # call-time ``timeout`` override, since ``None`` is itself a meaningful value (disables straggler
 # resubmission).
-_UNSET = object()
+class _UnsetType:
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "_UNSET"
+
+
+_UNSET: _UnsetType = _UnsetType()
 
 
 class EvaluationResult(Prediction):
@@ -140,7 +147,7 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
-        timeout: float | None = _UNSET,
+        timeout: float | None | _UnsetType = _UNSET,
         straggler_limit: int | None = None,
     ) -> EvaluationResult:
         """

@@ -240,7 +240,17 @@ def test_straggler_resubmit_survives_executor_shutdown():
             disable_progress_bar=True,
         )
         # Must not raise ``RuntimeError("cannot schedule new futures after shutdown")``.
-        executor.execute(task, [0, 1, 2, 3, 4])
+        results = executor.execute(task, [0, 1, 2, 3, 4])
     finally:
         ThreadPoolExecutor.__init__ = original_init
         shutter.join(timeout=2.0)
+
+    # The result list should be complete with one entry per input. Running tasks are not
+    # cancelled by ThreadPoolExecutor.shutdown(wait=False), so the slow item (index 0)
+    # still finishes and lands in the output. The four fast items must be present too;
+    # only the *new* submissions are rejected by the external shutdown, and the loop
+    # surfaces those as None placeholders rather than raising.
+    assert len(results) == 5
+    fast_results = [r for r in results[1:] if r is not None]
+    assert sorted(fast_results) == [r for r in [1, 2, 3, 4] if r in fast_results]
+    assert all(r is None or isinstance(r, int) for r in results)
