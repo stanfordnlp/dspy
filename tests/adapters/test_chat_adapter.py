@@ -99,6 +99,104 @@ async def test_chat_adapter_async_call():
     assert result == [{"answer": "Paris"}]
 
 
+def test_chat_adapter_format_exact_messages_for_simple_signature():
+    class QA(dspy.Signature):
+        """Answer the question."""
+
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages = dspy.ChatAdapter().format(QA, [], {"question": "What is the capital of France?"})
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answer` (str):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+[[ ## question ## ]]
+{question}
+
+[[ ## answer ## ]]
+{answer}
+
+[[ ## completed ## ]]
+In adhering to this structure, your objective is:\x20
+        Answer the question.""",
+        },
+        {
+            "role": "user",
+            "content": """[[ ## question ## ]]
+What is the capital of France?
+
+Respond with the corresponding output fields, starting with the field `[[ ## answer ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`.""",
+        },
+    ]
+
+
+def test_chat_adapter_format_exact_messages_with_demo_and_typed_outputs():
+    class MultiAnswer(dspy.Signature):
+        """Answer the question with multiple answers and scores"""
+
+        question: str = dspy.InputField()
+        answers: list[str] = dspy.OutputField()
+        scores: list[float] = dspy.OutputField()
+
+    messages = dspy.ChatAdapter().format(
+        MultiAnswer,
+        demos=[{"question": "Q1", "answers": ["A1", "A2"], "scores": [0.1, 0.9]}],
+        inputs={"question": "Q2"},
+    )
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answers` (list[str]):\x20
+2. `scores` (list[float]):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+[[ ## question ## ]]
+{question}
+
+[[ ## answers ## ]]
+{answers}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "string"}}
+
+[[ ## scores ## ]]
+{scores}        # note: the value you produce must adhere to the JSON schema: {"type": "array", "items": {"type": "number"}}
+
+[[ ## completed ## ]]
+In adhering to this structure, your objective is:\x20
+        Answer the question with multiple answers and scores""",
+        },
+        {"role": "user", "content": """[[ ## question ## ]]
+Q1"""},
+        {
+            "role": "assistant",
+            "content": """[[ ## answers ## ]]
+["A1", "A2"]
+
+[[ ## scores ## ]]
+[0.1, 0.9]
+
+[[ ## completed ## ]]
+""",
+        },
+        {
+            "role": "user",
+            "content": """[[ ## question ## ]]
+Q2
+
+Respond with the corresponding output fields, starting with the field `[[ ## answers ## ]]` (must be formatted as a valid Python list[str]), then `[[ ## scores ## ]]` (must be formatted as a valid Python list[float]), and then ending with the marker for `[[ ## completed ## ]]`.""",
+        },
+    ]
+
+
 def test_chat_adapter_with_pydantic_models():
     """
     This test verifies that ChatAdapter can handle different input and output field types, both basic and nested.

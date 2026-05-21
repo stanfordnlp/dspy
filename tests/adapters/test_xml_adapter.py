@@ -302,6 +302,158 @@ def test_xml_adapter_full_prompt():
     assert messages[1]["content"] == expected_user
 
 
+def test_xml_adapter_format_exact_messages_for_simple_signature():
+    class StringSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages = dspy.XMLAdapter().format(
+        StringSignature,
+        demos=[],
+        inputs={"question": "why did a chicken cross the kitchen?"},
+    )
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answer` (str):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+<question>
+{question}
+</question>
+
+<answer>
+{answer}
+</answer>
+In adhering to this structure, your objective is:\x20
+        Given the fields `question`, produce the fields `answer`.""",
+        },
+        {
+            "role": "user",
+            "content": """<question>
+why did a chicken cross the kitchen?
+</question>
+
+Respond with the corresponding output fields wrapped in XML tags `<answer>`.""",
+        },
+    ]
+
+
+def test_xml_adapter_format_exact_messages_for_two_input_signature():
+    class StringSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.InputField()
+        judgement: str = dspy.OutputField()
+
+    messages = dspy.XMLAdapter().format(
+        StringSignature,
+        demos=[],
+        inputs={"question": "why did a chicken cross the kitchen?", "answer": "To get to the other side!"},
+    )
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):\x20
+2. `answer` (str):
+Your output fields are:
+1. `judgement` (str):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+<question>
+{question}
+</question>
+
+<answer>
+{answer}
+</answer>
+
+<judgement>
+{judgement}
+</judgement>
+In adhering to this structure, your objective is:\x20
+        Given the fields `question`, `answer`, produce the fields `judgement`.""",
+        },
+        {
+            "role": "user",
+            "content": """<question>
+why did a chicken cross the kitchen?
+</question>
+
+<answer>
+To get to the other side!
+</answer>
+
+Respond with the corresponding output fields wrapped in XML tags `<judgement>`.""",
+        },
+    ]
+
+
+def test_xml_adapter_format_exact_messages_with_demo_and_typed_output():
+    class MultiAnswer(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        score: float = dspy.OutputField()
+
+    messages = dspy.XMLAdapter().format(
+        MultiAnswer,
+        demos=[{"question": "Q1", "answer": "A1", "score": 0.9}],
+        inputs={"question": "Q2"},
+    )
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answer` (str):\x20
+2. `score` (float):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+<question>
+{question}
+</question>
+
+<answer>
+{answer}
+</answer>
+
+<score>
+{score}        # note: the value you produce must be a single float value
+</score>
+In adhering to this structure, your objective is:\x20
+        Given the fields `question`, produce the fields `answer`, `score`.""",
+        },
+        {"role": "user", "content": """<question>
+Q1
+</question>"""},
+        {
+            "role": "assistant",
+            "content": """<answer>
+A1
+</answer>
+
+<score>
+0.9
+</score>""",
+        },
+        {
+            "role": "user",
+            "content": """<question>
+Q2
+</question>
+
+Respond with the corresponding output fields wrapped in XML tags `<answer>`, then `<score>`.""",
+        },
+    ]
+
+
 def test_format_system_message():
     class MySignature(dspy.Signature):
         """Answer the question with multiple answers and scores"""

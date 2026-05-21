@@ -9,6 +9,146 @@ from openai.types.responses import ResponseOutputMessage
 import dspy
 
 
+def test_json_adapter_format_exact_messages_for_simple_signature():
+    class StringSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+
+    messages = dspy.JSONAdapter().format(
+        StringSignature,
+        demos=[],
+        inputs={"question": "What is the capital of France?"},
+    )
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answer` (str):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+Inputs will have the following structure:
+
+[[ ## question ## ]]
+{question}
+
+Outputs will be a JSON object with the following fields.
+
+{
+  "answer": "{answer}"
+}
+In adhering to this structure, your objective is:\x20
+        Given the fields `question`, produce the fields `answer`.""",
+        },
+        {
+            "role": "user",
+            "content": """[[ ## question ## ]]
+What is the capital of France?
+
+Respond with a JSON object in the following order of fields: `answer`.""",
+        },
+    ]
+
+
+def test_json_adapter_format_exact_messages_with_demo_and_typed_output():
+    class MultiAnswer(dspy.Signature):
+        question: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        confidence: float = dspy.OutputField()
+
+    messages = dspy.JSONAdapter().format(
+        MultiAnswer,
+        demos=[{"question": "Q1", "answer": "A1", "confidence": 0.9}],
+        inputs={"question": "Q2"},
+    )
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `question` (str):
+Your output fields are:
+1. `answer` (str):\x20
+2. `confidence` (float):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+Inputs will have the following structure:
+
+[[ ## question ## ]]
+{question}
+
+Outputs will be a JSON object with the following fields.
+
+{
+  "answer": "{answer}",
+  "confidence": "{confidence}        # note: the value you produce must be a single float value"
+}
+In adhering to this structure, your objective is:\x20
+        Given the fields `question`, produce the fields `answer`, `confidence`.""",
+        },
+        {"role": "user", "content": """[[ ## question ## ]]
+Q1"""},
+        {
+            "role": "assistant",
+            "content": """{
+  "answer": "A1",
+  "confidence": 0.9
+}""",
+        },
+        {
+            "role": "user",
+            "content": """[[ ## question ## ]]
+Q2
+
+Respond with a JSON object in the following order of fields: `answer`, then `confidence` (must be formatted as a valid Python float).""",
+        },
+    ]
+
+
+def test_json_adapter_format_exact_messages_with_described_and_bool_outputs():
+    class TestSignature(dspy.Signature):
+        input1: str = dspy.InputField()
+        output1: str = dspy.OutputField(desc="String output field")
+        output2: bool = dspy.OutputField()
+
+    messages = dspy.JSONAdapter().format(TestSignature, [], {"input1": "Test input"})
+
+    assert messages == [
+        {
+            "role": "system",
+            "content": """Your input fields are:
+1. `input1` (str):
+Your output fields are:
+1. `output1` (str): String output field
+2. `output2` (bool):
+All interactions will be structured in the following way, with the appropriate values filled in.
+
+Inputs will have the following structure:
+
+[[ ## input1 ## ]]
+{input1}
+
+Outputs will be a JSON object with the following fields.
+
+{
+  "output1": "{output1}",
+  "output2": "{output2}        # note: the value you produce must be True or False"
+}
+In adhering to this structure, your objective is:\x20
+        Given the fields `input1`, produce the fields `output1`, `output2`.""",
+        },
+        {
+            "role": "user",
+            "content": """[[ ## input1 ## ]]
+Test input
+
+Respond with a JSON object in the following order of fields: `output1`, then `output2` (must be formatted as a valid Python bool).""",
+        },
+    ]
+
+
 def test_json_adapter_passes_structured_output_when_supported_by_model():
     class OutputField3(pydantic.BaseModel):
         subfield1: int = pydantic.Field(description="Int subfield 1", ge=0, le=10)
