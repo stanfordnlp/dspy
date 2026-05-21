@@ -27,6 +27,13 @@ class ParallelExecutor:
         """
         Offers isolation between the tasks (dspy.settings) irrespective of whether num_threads == 1 or > 1.
         Handles also straggler timeouts.
+
+        Args:
+            timeout: Seconds after which an unfinished task is treated as a straggler and a duplicate is
+                resubmitted. Set to ``None`` or ``0`` to disable straggler resubmission entirely, which is
+                useful for workloads whose individual tasks legitimately take longer than the default
+                threshold.
+            straggler_limit: Resubmission is only attempted once at most ``straggler_limit`` tasks remain.
         """
         from dspy.dsp.utils.settings import settings
 
@@ -200,7 +207,7 @@ class ParallelExecutor:
                         break
 
                     # Check stragglers if few remain
-                    if 0 < self.timeout and len(not_done) <= self.straggler_limit:
+                    if self.timeout is not None and 0 < self.timeout and len(not_done) <= self.straggler_limit:
                         now = time.time()
                         for f in list(not_done):
                             if f not in resubmitted:
@@ -209,13 +216,28 @@ class ParallelExecutor:
                                     st = start_time_map.get(sid, None)
                                 if st and (now - st) >= self.timeout:
                                     resubmitted.add(f)
-                                    nf = executor.submit(
-                                        worker,
-                                        parent_overrides,
-                                        submission_counter,
-                                        idx,
-                                        item,
-                                    )
+                                    try:
+                                        nf = executor.submit(
+                                            worker,
+                                            parent_overrides,
+                                            submission_counter,
+                                            idx,
+                                            item,
+                                        )
+                                    except RuntimeError as e:
+                                        # The underlying ThreadPoolExecutor can be shut down
+                                        # mid-loop (e.g. by an atexit handler at interpreter
+                                        # shutdown), which makes submit() raise
+                                        # "cannot schedule new futures after shutdown".
+                                        # Skip the resubmit cleanly; the original future is
+                                        # still tracked in futures_set so its result (or
+                                        # cancellation) will be picked up by wait() above.
+                                        logger.debug(
+                                            "Skipping straggler resubmit for index %d: %s",
+                                            idx,
+                                            e,
+                                        )
+                                        break
                                     futures_map[nf] = (submission_counter, idx, item)
                                     futures_set.add(nf)
                                     submission_counter += 1

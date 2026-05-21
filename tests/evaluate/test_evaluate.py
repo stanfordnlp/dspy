@@ -33,6 +33,93 @@ def test_evaluate_initialization():
     assert ev.metric == answer_exact_match
     assert ev.num_threads is None
     assert not ev.display_progress
+    # Straggler defaults match ParallelExecutor's defaults so existing callers see no behaviour change.
+    assert ev.timeout == 120
+    assert ev.straggler_limit == 3
+
+
+def test_evaluate_timeout_passed_to_executor():
+    """Custom timeout / straggler_limit on ``Evaluate.__init__`` must reach ``ParallelExecutor``."""
+    captured = {}
+
+    from dspy.utils import parallelizer as parallelizer_module
+    original_cls = parallelizer_module.ParallelExecutor
+
+    class CapturingExecutor(original_cls):
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+            super().__init__(*args, **kwargs)
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+
+    with patch("dspy.evaluate.evaluate.ParallelExecutor", CapturingExecutor):
+        ev = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            timeout=300,
+            straggler_limit=5,
+        )
+        ev(Predict("question -> answer"))
+
+    assert captured["timeout"] == 300
+    assert captured["straggler_limit"] == 5
+
+
+def test_evaluate_timeout_call_override():
+    """Per-call ``timeout`` / ``straggler_limit`` overrides the instance values."""
+    captured = {}
+
+    from dspy.utils import parallelizer as parallelizer_module
+    original_cls = parallelizer_module.ParallelExecutor
+
+    class CapturingExecutor(original_cls):
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+            super().__init__(*args, **kwargs)
+
+    dspy.configure(lm=DummyLM({"What is 1+1?": {"answer": "2"}}))
+    devset = [new_example("What is 1+1?", "2")]
+
+    with patch("dspy.evaluate.evaluate.ParallelExecutor", CapturingExecutor):
+        ev = Evaluate(
+            devset=devset,
+            metric=answer_exact_match,
+            display_progress=False,
+            timeout=300,
+        )
+        # ``timeout=None`` must be honored as "disable straggler resubmission" rather than
+        # "fall back to self.timeout"; using a sentinel for that distinction is part of the fix.
+        ev(Predict("question -> answer"), timeout=None, straggler_limit=7)
+
+    assert captured["timeout"] is None
+    assert captured["straggler_limit"] == 7
+
+
+def test_evaluate_timeout_none_completes_long_evals():
+    """``timeout=None`` runs to completion without the ``cannot schedule new futures after shutdown``
+    error, even when individual examples take longer than the straggler default would have allowed."""
+    import time
+
+    class SlowLM(DummyLM):
+        def __call__(self, *args, **kwargs):
+            time.sleep(0.2)
+            return super().__call__(*args, **kwargs)
+
+    dspy.configure(lm=SlowLM({"What is 1+1?": {"answer": "2"}, "What is 2+2?": {"answer": "4"}}))
+    devset = [new_example("What is 1+1?", "2"), new_example("What is 2+2?", "4")]
+    program = Predict("question -> answer")
+
+    ev = Evaluate(
+        devset=devset,
+        metric=answer_exact_match,
+        display_progress=False,
+        num_threads=2,
+        timeout=None,
+    )
+    result = ev(program)
+    assert result.score == 100.0
 
 
 def test_evaluate_call():

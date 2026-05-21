@@ -166,3 +166,81 @@ def test_sequential_compare_results():
     results = executor.execute(task, data)
 
     assert results == [(1, False), (2, False), (3, True), (4, True), (5, True)]
+
+
+def test_timeout_none_disables_straggler_resubmission():
+    """Passing ``timeout=None`` should skip the straggler resubmission path entirely."""
+    def task(item):
+        time.sleep(0.05)
+        return item
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=2, timeout=None, disable_progress_bar=True)
+    results = executor.execute(task, data)
+    assert results == [1, 2, 3, 4, 5]
+
+
+def test_timeout_zero_disables_straggler_resubmission():
+    """``timeout=0`` should also skip the straggler resubmission path (legacy behaviour)."""
+    def task(item):
+        time.sleep(0.05)
+        return item
+
+    data = [1, 2, 3, 4, 5]
+    executor = ParallelExecutor(num_threads=2, timeout=0, disable_progress_bar=True)
+    results = executor.execute(task, data)
+    assert results == [1, 2, 3, 4, 5]
+
+
+def test_straggler_resubmit_survives_executor_shutdown():
+    """The straggler resubmit path must not crash when the underlying ThreadPoolExecutor is shut
+    down out from under the parallel loop.
+
+    Regression test for https://github.com/stanfordnlp/dspy/issues/9574: at interpreter shutdown
+    (or any other path that triggers the executor's internal shutdown flag) ``submit`` raises
+    ``RuntimeError: cannot schedule new futures after shutdown``. The parallel loop should catch
+    this cleanly instead of letting the bare ``RuntimeError`` escape.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    captured = []
+    original_init = ThreadPoolExecutor.__init__
+
+    def capturing_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        captured.append(self)
+
+    def task(item):
+        # The first item is deliberately slow so the straggler path will fire for it.
+        if item == 0:
+            time.sleep(2.0)
+        else:
+            time.sleep(0.05)
+        return item
+
+    def shut_down_externally():
+        # Wait for the loop to start and submit work, then yank the executor out from under it.
+        for _ in range(50):
+            if captured:
+                break
+            time.sleep(0.02)
+        time.sleep(0.2)
+        if captured:
+            captured[0].shutdown(wait=False)
+
+    shutter = threading.Thread(target=shut_down_externally, daemon=True)
+    shutter.start()
+
+    try:
+        ThreadPoolExecutor.__init__ = capturing_init
+        executor = ParallelExecutor(
+            num_threads=3,
+            timeout=0.1,
+            straggler_limit=3,
+            disable_progress_bar=True,
+        )
+        # Must not raise ``RuntimeError("cannot schedule new futures after shutdown")``.
+        executor.execute(task, [0, 1, 2, 3, 4])
+    finally:
+        ThreadPoolExecutor.__init__ = original_init
+        shutter.join(timeout=2.0)

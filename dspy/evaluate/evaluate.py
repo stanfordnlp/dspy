@@ -44,6 +44,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Sentinel used to distinguish "caller did not pass a value" from "caller passed None" for the
+# call-time ``timeout`` override, since ``None`` is itself a meaningful value (disables straggler
+# resubmission).
+_UNSET = object()
+
 
 class EvaluationResult(Prediction):
     """
@@ -81,6 +86,8 @@ class Evaluate:
         failure_score: float = 0.0,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: float | None = 120,
+        straggler_limit: int = 3,
         **kwargs,
     ):
         """
@@ -97,6 +104,12 @@ class Evaluate:
             failure_score (float): The default score to use if evaluation fails due to an exception.
             save_as_csv (Optional[str]): The file name where the csv will be saved.
             save_as_json (Optional[str]): The file name where the json will be saved.
+            timeout (Optional[float]): Seconds after which an unfinished example is treated as a straggler
+                and a duplicate is submitted. Defaults to ``120``. Pass ``None`` or ``0`` to disable
+                straggler resubmission, which is useful when individual examples legitimately take longer
+                than the default threshold (e.g. slow LLM-as-judge metrics or large-context programs).
+            straggler_limit (int): Straggler resubmission is only attempted once at most this many
+                examples remain in flight. Defaults to ``3``.
 
         """
         self.devset = devset
@@ -109,6 +122,8 @@ class Evaluate:
         self.failure_score = failure_score
         self.save_as_csv = save_as_csv
         self.save_as_json = save_as_json
+        self.timeout = timeout
+        self.straggler_limit = straggler_limit
 
         if "return_outputs" in kwargs:
             raise ValueError("`return_outputs` is no longer supported. Results are always returned inside the `results` field of the `EvaluationResult` object.")
@@ -125,6 +140,8 @@ class Evaluate:
         callback_metadata: dict[str, Any] | None = None,
         save_as_csv: str | None = None,
         save_as_json: str | None = None,
+        timeout: float | None = _UNSET,
+        straggler_limit: int | None = None,
     ) -> EvaluationResult:
         """
         Args:
@@ -138,6 +155,10 @@ class Evaluate:
             display_table (Union[bool, int]): Whether to display the evaluation results in a table. if not provided, use
                 `self.display_table`. If a number is passed, the evaluation results will be truncated to that number before displayed.
             callback_metadata (dict): Metadata to be used for evaluate callback handlers.
+            timeout (Optional[float]): Per-call override for the straggler timeout. Pass ``None`` or ``0``
+                to disable straggler resubmission. If not provided, uses ``self.timeout``.
+            straggler_limit (Optional[int]): Per-call override for the straggler limit. If not provided,
+                uses ``self.straggler_limit``.
 
         Returns:
             The evaluation results are returned as a dspy.EvaluationResult object containing the following attributes:
@@ -153,6 +174,10 @@ class Evaluate:
         display_table = display_table if display_table is not None else self.display_table
         save_as_csv = save_as_csv if save_as_csv is not None else self.save_as_csv
         save_as_json = save_as_json if save_as_json is not None else self.save_as_json
+        # ``timeout=None`` is a legitimate value (it disables straggler resubmission), so we use a
+        # sentinel to distinguish "caller did not pass timeout" from "caller passed timeout=None".
+        timeout = self.timeout if timeout is _UNSET else timeout
+        straggler_limit = straggler_limit if straggler_limit is not None else self.straggler_limit
 
         if callback_metadata:
             logger.debug(f"Evaluate is called with callback metadata: {callback_metadata}")
@@ -165,6 +190,8 @@ class Evaluate:
             max_errors=(self.max_errors if self.max_errors is not None else dspy.settings.max_errors),
             provide_traceback=self.provide_traceback,
             compare_results=True,
+            timeout=timeout,
+            straggler_limit=straggler_limit,
         )
 
         def process_item(example):
