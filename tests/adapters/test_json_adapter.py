@@ -1,3 +1,5 @@
+import enum
+from typing import Literal
 from unittest import mock
 
 import pydantic
@@ -7,6 +9,7 @@ from litellm.utils import ChatCompletionMessageToolCall, Choices, Function, Mess
 from openai.types.responses import ResponseOutputMessage
 
 import dspy
+from tests.adapters.conftest import format_messages_and_lm_kwargs
 
 
 def test_json_adapter_format_exact_messages_for_simple_signature():
@@ -14,11 +17,14 @@ def test_json_adapter_format_exact_messages_for_simple_signature():
         question: str = dspy.InputField()
         answer: str = dspy.OutputField()
 
-    messages = dspy.JSONAdapter().format(
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(),
         StringSignature,
         demos=[],
         inputs={"question": "What is the capital of France?"},
     )
+
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
 
     assert messages == [
         {
@@ -58,11 +64,14 @@ def test_json_adapter_format_exact_messages_with_demo_and_typed_output():
         answer: str = dspy.OutputField()
         confidence: float = dspy.OutputField()
 
-    messages = dspy.JSONAdapter().format(
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(),
         MultiAnswer,
         demos=[{"question": "Q1", "answer": "A1", "confidence": 0.9}],
         inputs={"question": "Q2"},
     )
+
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
 
     assert messages == [
         {
@@ -113,7 +122,10 @@ def test_json_adapter_format_exact_messages_with_described_and_bool_outputs():
         output1: str = dspy.OutputField(desc="String output field")
         output2: bool = dspy.OutputField()
 
-    messages = dspy.JSONAdapter().format(TestSignature, [], {"input1": "Test input"})
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(), TestSignature, [], {"input1": "Test input"})
+
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
 
     assert messages == [
         {
@@ -147,6 +159,521 @@ Test input
 Respond with a JSON object in the following order of fields: `output1`, then `output2` (must be formatted as a valid Python bool).""",
         },
     ]
+
+
+def test_json_adapter_format_exact_messages_with_history_demo_pydantic_tools_and_image():
+    def search(query: str, k: int = 3) -> str:
+        """Search for documents."""
+        return query
+
+    class Location(pydantic.BaseModel):
+        city: str
+        country: str
+
+    class Profile(pydantic.BaseModel):
+        name: str
+        location: Location
+        interests: list[str]
+
+    class AnswerCard(pydantic.BaseModel):
+        answer: str
+        sources: list[str]
+
+    class RichRenderingSignature(dspy.Signature):
+        """Answer using all supplied context."""
+
+        history: dspy.History = dspy.InputField()
+        image: dspy.Image = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        profile: Profile = dspy.InputField()
+        question: str = dspy.InputField()
+        answer: AnswerCard = dspy.OutputField()
+
+    tool = dspy.Tool(search)
+    demo_profile = Profile(
+        name="Ada",
+        location=Location(city="London", country="UK"),
+        interests=["math", "machines"],
+    )
+    current_profile = Profile(
+        name="Grace",
+        location=Location(city="Arlington", country="USA"),
+        interests=["compilers", "navy"],
+    )
+    history = dspy.History(
+        messages=[
+            {
+                "profile": demo_profile,
+                "question": "Who is Ada?",
+                "answer": AnswerCard(answer="Ada is a mathematician.", sources=["memory"]),
+            }
+        ]
+    )
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(),
+        RichRenderingSignature,
+        demos=[
+            {
+                "image": dspy.Image("https://example.com/demo.png"),
+                "tools": [tool],
+                "profile": demo_profile,
+                "question": "What should we mention?",
+                "answer": AnswerCard(answer="Mention analytical engines.", sources=["demo"]),
+            }
+        ],
+        inputs={
+            "history": history,
+            "image": dspy.Image("https://example.com/current.png"),
+            "tools": [tool],
+            "profile": current_profile,
+            "question": "What should the answer include?",
+        },
+    )
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `history` (History): \n'
+                 '2. `image` (Image): \n'
+                 '3. `tools` (list[Tool]): \n'
+                 '4. `profile` (Profile): \n'
+                 '5. `question` (str):\n'
+                 'Your output fields are:\n'
+                 '1. `answer` (AnswerCard):\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 'Inputs will have the following structure:\n'
+                 '\n'
+                 '[[ ## history ## ]]\n'
+                 '{history}\n'
+                 '\n'
+                 '[[ ## image ## ]]\n'
+                 '{image}\n'
+                 '\n'
+                 '[[ ## tools ## ]]\n'
+                 '{tools}\n'
+                 '\n'
+                 '[[ ## profile ## ]]\n'
+                 '{profile}\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 '{question}\n'
+                 '\n'
+                 'Outputs will be a JSON object with the following fields.\n'
+                 '\n'
+                 '{\n'
+                 '  "answer": "{answer}        # note: the value you produce must adhere to the JSON '
+                 'schema: {\\"type\\": \\"object\\", \\"properties\\": {\\"answer\\": {\\"type\\": '
+                 '\\"string\\", \\"title\\": \\"Answer\\"}, \\"sources\\": {\\"type\\": \\"array\\", '
+                 '\\"items\\": {\\"type\\": \\"string\\"}, \\"title\\": \\"Sources\\"}}, '
+                 '\\"required\\": [\\"answer\\", \\"sources\\"], \\"title\\": \\"AnswerCard\\"}"\n'
+                 '}\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Answer using all supplied context.'},
+     {"role": "user",
+      "content": [{"type": "text",
+                   "text": "This is an example of the task, though some input or output fields are not "
+                           "supplied.\n"
+                           "\n"
+                           "[[ ## image ## ]]\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/demo.png"}},
+                  {"type": "text",
+                   "text": '\n'
+                           '\n'
+                           '[[ ## tools ## ]]\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It '
+                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                           '\'default\': 3}}."]\n'
+                           '\n'
+                           '[[ ## profile ## ]]\n'
+                           '{"name": "Ada", "location": {"city": "London", "country": "UK"}, '
+                           '"interests": ["math", "machines"]}\n'
+                           '\n'
+                           '[[ ## question ## ]]\n'
+                           'What should we mention?'}]},
+     {"role": "assistant",
+      "content": '{\n'
+                 '  "answer": {\n'
+                 '    "answer": "Mention analytical engines.",\n'
+                 '    "sources": [\n'
+                 '      "demo"\n'
+                 '    ]\n'
+                 '  }\n'
+                 '}'},
+     {"role": "user",
+      "content": '[[ ## profile ## ]]\n'
+                 '{"name": "Ada", "location": {"city": "London", "country": "UK"}, "interests": '
+                 '["math", "machines"]}\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 'Who is Ada?'},
+     {"role": "assistant",
+      "content": '{\n'
+                 '  "answer": {\n'
+                 '    "answer": "Ada is a mathematician.",\n'
+                 '    "sources": [\n'
+                 '      "memory"\n'
+                 '    ]\n'
+                 '  }\n'
+                 '}'},
+     {"role": "user",
+      "content": [{"type": "text", "text": "[[ ## image ## ]]\n"},
+                  {"type": "image_url", "image_url": {"url": "https://example.com/current.png"}},
+                  {"type": "text",
+                   "text": '\n'
+                           '\n'
+                           '[[ ## tools ## ]]\n'
+                           '["search, whose description is <desc>Search for documents.</desc>. It '
+                           "takes arguments {'query': {'type': 'string'}, 'k': {'type': 'integer', "
+                           '\'default\': 3}}."]\n'
+                           '\n'
+                           '[[ ## profile ## ]]\n'
+                           '{"name": "Grace", "location": {"city": "Arlington", "country": "USA"}, '
+                           '"interests": ["compilers", "navy"]}\n'
+                           '\n'
+                           '[[ ## question ## ]]\n'
+                           'What should the answer include?\n'
+                           '\n'
+                           'Respond with a JSON object in the following order of fields: `answer` '
+                           '(must be formatted as a valid Python AnswerCard).'}]}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+def test_json_adapter_format_exact_messages_with_int_and_mapping_outputs():
+    class IntDictSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        count: int = dspy.OutputField()
+        metadata: dict[str, int] = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(), IntDictSignature, [], {"question": "Count things"})
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `question` (str):\n'
+                 'Your output fields are:\n'
+                 '1. `count` (int): \n'
+                 '2. `metadata` (dict[str, int]):\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 'Inputs will have the following structure:\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 '{question}\n'
+                 '\n'
+                 'Outputs will be a JSON object with the following fields.\n'
+                 '\n'
+                 '{\n'
+                 '  "count": "{count}        # note: the value you produce must be a single int '
+                 'value",\n'
+                 '  "metadata": "{metadata}        # note: the value you produce must adhere to the '
+                 'JSON schema: {\\"type\\": \\"object\\", \\"additionalProperties\\": {\\"type\\": '
+                 '\\"integer\\"}}"\n'
+                 '}\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Given the fields `question`, produce the fields `count`, `metadata`.'},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Count things\n"
+                 "\n"
+                 "Respond with a JSON object in the following order of fields: `count` (must be "
+                 "formatted as a valid Python int), then `metadata` (must be formatted as a valid "
+                 "Python dict[str, int])."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_json_adapter_format_exact_messages_with_literal_and_enum_outputs():
+    class Label(enum.Enum):
+        POSITIVE = "positive"
+        NEGATIVE = "negative"
+
+    class LiteralEnumSignature(dspy.Signature):
+        text: str = dspy.InputField()
+        decision: Literal["accept", "reject"] = dspy.OutputField()
+        label: Label = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(), LiteralEnumSignature, [], {"text": "Looks good"})
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `text` (str):\n'
+                 'Your output fields are:\n'
+                 "1. `decision` (Literal['accept', 'reject']): \n"
+                 '2. `label` (Label):\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 'Inputs will have the following structure:\n'
+                 '\n'
+                 '[[ ## text ## ]]\n'
+                 '{text}\n'
+                 '\n'
+                 'Outputs will be a JSON object with the following fields.\n'
+                 '\n'
+                 '{\n'
+                 '  "decision": "{decision}        # note: the value you produce must exactly match '
+                 '(no extra characters) one of: accept; reject",\n'
+                 '  "label": "{label}        # note: the value you produce must be one of: positive; '
+                 'negative"\n'
+                 '}\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Given the fields `text`, produce the fields `decision`, `label`.'},
+     {"role": "user",
+      "content": "[[ ## text ## ]]\n"
+                 "Looks good\n"
+                 "\n"
+                 "Respond with a JSON object in the following order of fields: `decision` (must be "
+                 "formatted as a valid Python Literal['accept', 'reject']), then `label` (must be "
+                 "formatted as a valid Python Label)."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_json_adapter_format_exact_messages_with_nested_pydantic_output():
+    class JsonNestedAddress(pydantic.BaseModel):
+        city: str
+        country: str
+
+    class JsonNestedSummary(pydantic.BaseModel):
+        title: str
+        address: JsonNestedAddress
+        scores: list[float]
+
+    class PydanticSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        summary: JsonNestedSummary = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(), PydanticSignature, [], {"question": "Summarize"})
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `question` (str):\n'
+                 'Your output fields are:\n'
+                 '1. `summary` (JsonNestedSummary):\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 'Inputs will have the following structure:\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 '{question}\n'
+                 '\n'
+                 'Outputs will be a JSON object with the following fields.\n'
+                 '\n'
+                 '{\n'
+                 '  "summary": "{summary}        # note: the value you produce must adhere to the JSON '
+                 'schema: {\\"type\\": \\"object\\", \\"$defs\\": {\\"JsonNestedAddress\\": '
+                 '{\\"type\\": \\"object\\", \\"properties\\": {\\"city\\": {\\"type\\": \\"string\\", '
+                 '\\"title\\": \\"City\\"}, \\"country\\": {\\"type\\": \\"string\\", \\"title\\": '
+                 '\\"Country\\"}}, \\"required\\": [\\"city\\", \\"country\\"], \\"title\\": '
+                 '\\"JsonNestedAddress\\"}}, \\"properties\\": {\\"address\\": {\\"$ref\\": '
+                 '\\"#/$defs/JsonNestedAddress\\"}, \\"scores\\": {\\"type\\": \\"array\\", '
+                 '\\"items\\": {\\"type\\": \\"number\\"}, \\"title\\": \\"Scores\\"}, \\"title\\": '
+                 '{\\"type\\": \\"string\\", \\"title\\": \\"Title\\"}}, \\"required\\": [\\"title\\", '
+                 '\\"address\\", \\"scores\\"], \\"title\\": \\"JsonNestedSummary\\"}"\n'
+                 '}\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Given the fields `question`, produce the fields `summary`.'},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Summarize\n"
+                 "\n"
+                 "Respond with a JSON object in the following order of fields: `summary` (must be "
+                 "formatted as a valid Python JsonNestedSummary)."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_json_adapter_format_exact_messages_with_incomplete_demo():
+    class IncompleteDemoSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        context: str = dspy.InputField()
+        answer: str = dspy.OutputField()
+        score: float = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(),
+        IncompleteDemoSignature,
+        [{"question": "Q1", "answer": "A1"}],
+        {"question": "Q2", "context": "C2"},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `question` (str): \n'
+                 '2. `context` (str):\n'
+                 'Your output fields are:\n'
+                 '1. `answer` (str): \n'
+                 '2. `score` (float):\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 'Inputs will have the following structure:\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 '{question}\n'
+                 '\n'
+                 '[[ ## context ## ]]\n'
+                 '{context}\n'
+                 '\n'
+                 'Outputs will be a JSON object with the following fields.\n'
+                 '\n'
+                 '{\n'
+                 '  "answer": "{answer}",\n'
+                 '  "score": "{score}        # note: the value you produce must be a single float '
+                 'value"\n'
+                 '}\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Given the fields `question`, `context`, produce the fields `answer`, '
+                 '`score`.'},
+     {"role": "user",
+      "content": "This is an example of the task, though some input or output fields are not "
+                 "supplied.\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "Q1"},
+     {"role": "assistant",
+      "content": '{\n  "answer": "A1",\n  "score": "Not supplied for this particular example. "\n}'},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q2\n"
+                 "\n"
+                 "[[ ## context ## ]]\n"
+                 "C2\n"
+                 "\n"
+                 "Respond with a JSON object in the following order of fields: `answer`, then `score` "
+                 "(must be formatted as a valid Python float)."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
+
+
+def test_json_adapter_format_exact_messages_and_lm_kwargs_with_native_tool_calling():
+    class FunctionCallingLM(dspy.utils.DummyLM):
+        @property
+        def supports_function_calling(self):
+            return True
+
+    def search(query: str, k: int = 3) -> str:
+        """Search for documents."""
+        return query
+
+    class NativeToolSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tools: list[dspy.Tool] = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(
+        dspy.JSONAdapter(use_native_function_calling=True),
+        NativeToolSignature,
+        [],
+        {"question": "Q?", "tools": [dspy.Tool(search)]},
+        lm=FunctionCallingLM([{}]),
+    )
+
+    expected_messages = [{"role": "system",
+      "content": "Your input fields are:\n"
+                 "1. `question` (str):\n"
+                 "Your output fields are:\n"
+                 "\n"
+                 "All interactions will be structured in the following way, with the appropriate "
+                 "values filled in.\n"
+                 "\n"
+                 "Inputs will have the following structure:\n"
+                 "\n"
+                 "[[ ## question ## ]]\n"
+                 "{question}\n"
+                 "\n"
+                 "Outputs will be a JSON object with the following fields.\n"
+                 "\n"
+                 "{}\n"
+                 "In adhering to this structure, your objective is: \n"
+                 "        Given the fields `question`, `tools`, produce the fields `tool_calls`."},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q?\n"
+                 "\n"
+                 "Respond with a JSON object in the following order of fields: ."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {"tools": [{"type": "function",
+                "function": {"name": "search",
+                             "description": "Search for documents.",
+                             "parameters": {"type": "object",
+                                            "properties": {"query": {"type": "string"},
+                                                           "k": {"type": "integer", "default": 3}},
+                                            "required": ["query", "k"]}}}]}
+    assert lm_kwargs == expected_lm_kwargs
+
+def test_json_adapter_format_exact_messages_with_tool_calls_output_demo():
+    class ToolCallsSignature(dspy.Signature):
+        question: str = dspy.InputField()
+        tool_calls: dspy.ToolCalls = dspy.OutputField()
+
+    messages, lm_kwargs = format_messages_and_lm_kwargs(dspy.JSONAdapter(use_native_function_calling=False),
+        ToolCallsSignature,
+        [{"question": "Q1", "tool_calls": dspy.ToolCalls.from_dict_list([{"name": "search", "args": {"query": "cats"}}])}],
+        {"question": "Q2"},
+    )
+
+    expected_messages = [{"role": "system",
+      "content": 'Your input fields are:\n'
+                 '1. `question` (str):\n'
+                 'Your output fields are:\n'
+                 '1. `tool_calls` (ToolCalls): \n'
+                 '    Type description of ToolCalls: Tool calls information, including the name of the '
+                 'tools and the arguments to be passed to it. Arguments must be provided in JSON '
+                 'format.\n'
+                 'All interactions will be structured in the following way, with the appropriate '
+                 'values filled in.\n'
+                 '\n'
+                 'Inputs will have the following structure:\n'
+                 '\n'
+                 '[[ ## question ## ]]\n'
+                 '{question}\n'
+                 '\n'
+                 'Outputs will be a JSON object with the following fields.\n'
+                 '\n'
+                 '{\n'
+                 '  "tool_calls": "{tool_calls}        # note: the value you produce must adhere to '
+                 'the JSON schema: {\\"type\\": \\"object\\", \\"$defs\\": {\\"ToolCall\\": '
+                 '{\\"type\\": \\"object\\", \\"properties\\": {\\"args\\": {\\"type\\": \\"object\\", '
+                 '\\"additionalProperties\\": true, \\"title\\": \\"Args\\"}, \\"name\\": {\\"type\\": '
+                 '\\"string\\", \\"title\\": \\"Name\\"}}, \\"required\\": [\\"name\\", \\"args\\"], '
+                 '\\"title\\": \\"ToolCall\\"}}, \\"properties\\": {\\"tool_calls\\": {\\"type\\": '
+                 '\\"array\\", \\"items\\": {\\"$ref\\": \\"#/$defs/ToolCall\\"}, \\"title\\": \\"Tool '
+                 'Calls\\"}}, \\"required\\": [\\"tool_calls\\"], \\"title\\": \\"ToolCalls\\"}"\n'
+                 '}\n'
+                 'In adhering to this structure, your objective is: \n'
+                 '        Given the fields `question`, produce the fields `tool_calls`.'},
+     {"role": "user", "content": "[[ ## question ## ]]\nQ1"},
+     {"role": "assistant",
+      "content": '{\n'
+                 '  "tool_calls": {\n'
+                 '    "tool_calls": [\n'
+                 '      {\n'
+                 '        "type": "function",\n'
+                 '        "function": {\n'
+                 '          "name": "search",\n'
+                 '          "arguments": {\n'
+                 '            "query": "cats"\n'
+                 '          }\n'
+                 '        }\n'
+                 '      }\n'
+                 '    ]\n'
+                 '  }\n'
+                 '}'},
+     {"role": "user",
+      "content": "[[ ## question ## ]]\n"
+                 "Q2\n"
+                 "\n"
+                 "Respond with a JSON object in the following order of fields: `tool_calls` (must be "
+                 "formatted as a valid Python ToolCalls)."}]
+    assert messages == expected_messages
+    expected_lm_kwargs = {}
+    assert lm_kwargs == expected_lm_kwargs
 
 
 def test_json_adapter_passes_structured_output_when_supported_by_model():
@@ -1138,7 +1665,7 @@ def test_format_system_message():
     expected_system_message = """Your input fields are:
 1. `question` (str):
 Your output fields are:
-1. `answers` (list[str]): 
+1. `answers` (list[str]):\x20
 2. `scores` (list[float]):
 All interactions will be structured in the following way, with the appropriate values filled in.
 
@@ -1153,6 +1680,6 @@ Outputs will be a JSON object with the following fields.
   "answers": "{answers}        # note: the value you produce must adhere to the JSON schema: {\\"type\\": \\"array\\", \\"items\\": {\\"type\\": \\"string\\"}}",
   "scores": "{scores}        # note: the value you produce must adhere to the JSON schema: {\\"type\\": \\"array\\", \\"items\\": {\\"type\\": \\"number\\"}}"
 }
-In adhering to this structure, your objective is: 
+In adhering to this structure, your objective is:\x20
         Answer the question with multiple answers and scores"""
     assert system_message == expected_system_message
