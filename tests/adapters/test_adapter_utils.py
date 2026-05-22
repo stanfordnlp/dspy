@@ -1,11 +1,13 @@
 # ruff: noqa: UP007
 
+import json
 from typing import Literal, Optional, Union
 
+import pydantic
 import pytest
 from pydantic import BaseModel
 
-from dspy.adapters.utils import parse_value
+from dspy.adapters.utils import _get_json_schema, parse_value
 
 
 class Profile(BaseModel):
@@ -105,3 +107,24 @@ def test_parse_value_json_repair():
     malformed = "not json or literal"
     with pytest.raises(Exception):
         parse_value(malformed, dict)
+
+
+def test_get_json_schema_strips_vendor_extensions():
+    class Inner(pydantic.BaseModel):
+        b: str = pydantic.Field(
+            json_schema_extra={"x-nested": {"note": "keep out"}},
+        )
+
+    class M(pydantic.BaseModel):
+        a: str = pydantic.Field(
+            description="keep me",
+            json_schema_extra={"x-probe": True},
+        )
+        children: list[Inner] = pydantic.Field(default_factory=list)
+
+    schema = _get_json_schema(M)
+    serialized = json.dumps(schema)
+    assert "x-probe" not in serialized
+    assert "x-nested" not in serialized
+    # Non-x- annotations such as description must be preserved.
+    assert schema["properties"]["a"]["description"] == "keep me"

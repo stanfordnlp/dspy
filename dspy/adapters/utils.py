@@ -74,6 +74,21 @@ def format_field_value(field_info: FieldInfo, value: Any, assume_text=True) -> s
         return {"type": "text", "text": string_value}
 
 
+def _strip_vendor_extensions(node):
+    # Pydantic merges json_schema_extra entries into the generated schema as peer keys, and x-*
+    # is the OpenAPI / JSON Schema convention for vendor-only extensions. Strict-schema providers
+    # (AWS Bedrock, OpenAI structured outputs) reject these unknown keys, so drop them before send.
+    if isinstance(node, Mapping):
+        return {
+            k: _strip_vendor_extensions(v)
+            for k, v in node.items()
+            if not (isinstance(k, str) and k.startswith("x-"))
+        }
+    elif isinstance(node, list):
+        return [_strip_vendor_extensions(item) for item in node]
+    return node
+
+
 def _get_json_schema(field_type):
     def move_type_to_front(d):
         # Move the 'type' key to the front of the dictionary, recursively, for LLM readability/adherence.
@@ -87,6 +102,7 @@ def _get_json_schema(field_type):
 
     schema = pydantic.TypeAdapter(field_type).json_schema()
     schema = move_type_to_front(schema)
+    schema = _strip_vendor_extensions(schema)
     return schema
 
 
