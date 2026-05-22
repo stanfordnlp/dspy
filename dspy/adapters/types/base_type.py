@@ -69,6 +69,9 @@ class Type(pydantic.BaseModel):
         Subclasses should override this to participate in the marker-free
         adapter pipeline. Returning ``None`` keeps the legacy marker-based
         serializer as a compatibility fallback.
+
+        TODO(DSPy 3.5): make this the only adapter type rendering hook and
+        remove the marker serializer fallback.
         """
         return None
 

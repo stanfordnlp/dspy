@@ -259,6 +259,8 @@ class Adapter:
         # `dspy.LM` converts those messages to text-completion or Responses requests internally.
         data = to_openai_chat_request(request)
         data.pop("model", None)
+        # TODO(DSPy 3.5): remove this legacy marker splitter once all adapter
+        # type rendering goes through Type.to_lm_parts().
         data["messages"] = split_message_content_for_custom_types(data["messages"])
         if request.config.cache is not None:
             if request.config.cache.enabled is not None:
@@ -353,7 +355,11 @@ class Adapter:
         signature: type[Signature],
         inputs: dict[str, Any],
     ) -> type[Signature]:
-        """Compatibility wrapper for the legacy adapter preprocessing hook."""
+        """Deprecated compatibility wrapper for the legacy adapter preprocessing hook.
+
+        TODO(DSPy 3.5): remove this method. Use ``plan_fields()`` and read
+        ``plan["prompt_signature"]`` instead.
+        """
         return self.plan_fields(lm, lm_kwargs, signature, inputs)["prompt_signature"]
 
     def _call_postprocess(
@@ -364,7 +370,11 @@ class Adapter:
         lm: BaseLM | None,
         lm_kwargs: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        """Compatibility wrapper for the legacy adapter postprocessing hook."""
+        """Deprecated compatibility wrapper for the legacy adapter postprocessing hook.
+
+        TODO(DSPy 3.5): remove this method. Use ``normalize_legacy_outputs()``
+        and ``parse_response()`` instead.
+        """
         request = LMRequest.from_call(
             model=getattr(lm, "model", ""),
             messages=[LMMessage(role="user", parts=[LMTextPart(text="")])],
