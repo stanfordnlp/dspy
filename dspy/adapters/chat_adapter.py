@@ -279,12 +279,11 @@ class ChatAdapter(Adapter):
         with a "role" and "content" key. The role can be "system", "user", or "assistant". Then, the messages are
         wrapped in a dictionary with a "messages" key.
         """
-        system_user_messages = self.format(  # returns a list of dicts with the keys "role" and "content"
-            signature=signature, demos=demos, inputs=inputs
-        )
-        assistant_message_content = self.format_assistant_message_content(  # returns a string, without the role
-            signature=signature, outputs=outputs
-        )
-        assistant_message = {"role": "assistant", "content": assistant_message_content}
-        messages = system_user_messages + [assistant_message]
+        from dspy.clients.openai_format import message_to_openai_chat
+        from dspy.core.types import LMMessage, LMTextPart
+
+        system_user_messages = self.format(signature=signature, demos=demos, inputs=inputs)
+        assistant_message_content = self.format_assistant_message_content(signature=signature, outputs=outputs)
+        assistant_message = LMMessage(role="assistant", parts=[LMTextPart(text=assistant_message_content)])
+        messages = [message_to_openai_chat(message) for message in [*system_user_messages, assistant_message]]
         return {"messages": messages}

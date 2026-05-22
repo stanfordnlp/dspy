@@ -1,13 +1,24 @@
 import logging
 from typing import Any, get_origin
 
-import json_repair
-
-from dspy.adapters.types import History, Type
-from dspy.adapters.types.base_type import split_message_content_for_custom_types
+from dspy.adapters.types import Audio, File, History, Image, Type
 from dspy.adapters.types.reasoning import Reasoning
 from dspy.adapters.types.tool import Tool, ToolCalls
 from dspy.clients.base_lm import BaseLM
+from dspy.clients.openai_format import provider_tool_call_to_part, to_openai_chat_request
+from dspy.core.types import (
+    LMAudioPart,
+    LMBinaryPart,
+    LMImagePart,
+    LMMessage,
+    LMOutput,
+    LMPart,
+    LMRequest,
+    LMResponse,
+    LMTextPart,
+    LMThinkingPart,
+    LMToolSpec,
+)
 from dspy.experimental import Citations
 from dspy.signatures.signature import Signature
 from dspy.utils.callback import BaseCallback, with_callbacks
@@ -63,16 +74,45 @@ class Adapter:
         cls.format = with_callbacks(cls.format)
         cls.parse = with_callbacks(cls.parse)
 
-    def _call_preprocess(
+    def plan_fields(
         self,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
         signature: type[Signature],
         inputs: dict[str, Any],
-    ) -> type[Signature]:
+    ) -> dict[str, Any]:
+        """Plan which fields are rendered by the prompt adapter and which use native LM features."""
+        lm_kwargs = dict(lm_kwargs)
+        prompt_signature = signature
+        inputs = dict(inputs)
+        messages: list[LMMessage] = []
+        user_parts: list[LMPart] = []
+        tools: list[LMToolSpec] = []
+
+        for name, field in list(prompt_signature.input_fields.items()):
+            if name not in inputs:
+                continue
+            value = inputs[name]
+            if field.annotation == History:
+                prompt_signature = prompt_signature.delete(name)
+                messages.extend(self._history_to_lm_messages(prompt_signature, value))
+                inputs.pop(name, None)
+            elif field.annotation == Image:
+                prompt_signature = prompt_signature.delete(name)
+                user_parts.extend([LMTextPart(text=f"\n\n[[ ## {name} ## ]]\n"), self._image_to_lm_part(value)])
+                inputs.pop(name, None)
+            elif field.annotation == Audio:
+                prompt_signature = prompt_signature.delete(name)
+                user_parts.extend([LMTextPart(text=f"\n\n[[ ## {name} ## ]]\n"), self._audio_to_lm_part(value)])
+                inputs.pop(name, None)
+            elif field.annotation == File:
+                prompt_signature = prompt_signature.delete(name)
+                user_parts.extend([LMTextPart(text=f"\n\n[[ ## {name} ## ]]\n"), self._file_to_lm_part(value)])
+                inputs.pop(name, None)
+
         if self.use_native_function_calling:
-            tool_call_input_field_name = self._get_tool_call_input_field_name(signature)
-            tool_call_output_field_name = self._get_tool_call_output_field_name(signature)
+            tool_call_input_field_name = self._get_tool_call_input_field_name(prompt_signature)
+            tool_call_output_field_name = self._get_tool_call_output_field_name(prompt_signature)
 
             if tool_call_output_field_name and tool_call_input_field_name is None:
                 raise ValueError(
@@ -82,63 +122,186 @@ class Adapter:
                 )
 
             if tool_call_output_field_name and lm.supports_function_calling:
-                tools = inputs[tool_call_input_field_name]
-                tools = tools if isinstance(tools, list) else [tools]
+                tool_values = inputs[tool_call_input_field_name]
+                tool_values = tool_values if isinstance(tool_values, list) else [tool_values]
+                tools.extend(self._tool_to_lm_tool_spec(tool) for tool in tool_values)
+                prompt_signature = prompt_signature.delete(tool_call_output_field_name).delete(tool_call_input_field_name)
+                inputs.pop(tool_call_input_field_name, None)
 
-                lm_tools = [tool.format_as_litellm_function_call() for tool in tools]
+        for name, field in list(prompt_signature.output_fields.items()):
+            if field.annotation == Reasoning and Reasoning in self.native_response_types:
+                reasoning_signature = self._plan_native_reasoning(prompt_signature, name, lm, lm_kwargs)
+                if reasoning_signature is not prompt_signature:
+                    prompt_signature = reasoning_signature
+            elif field.annotation in self.native_response_types and field.annotation is Citations:
+                if getattr(lm, "model", "").startswith("anthropic/"):
+                    prompt_signature = prompt_signature.delete(name)
 
-                lm_kwargs["tools"] = lm_tools
+        return {
+            "original_signature": signature,
+            "prompt_signature": prompt_signature,
+            "inputs": inputs,
+            "lm_kwargs": lm_kwargs,
+            "messages": messages,
+            "user_parts": user_parts,
+            "tools": tools,
+        }
 
-                signature_for_native_function_calling = signature.delete(tool_call_output_field_name)
-                signature_for_native_function_calling = signature_for_native_function_calling.delete(
-                    tool_call_input_field_name
-                )
-
-                return signature_for_native_function_calling
-
-        # Handle custom types that use native LM features, e.g., reasoning, citations, etc.
-        for name, field in signature.output_fields.items():
-            if (
-                isinstance(field.annotation, type)
-                and field.annotation in self.native_response_types
-                and issubclass(field.annotation, Type)
-            ):
-                signature = field.annotation.adapt_to_native_lm_feature(signature, name, lm, lm_kwargs)
-
-        return signature
-
-    def _call_postprocess(
+    def render_request(
         self,
-        processed_signature: type[Signature],
-        original_signature: type[Signature],
-        outputs: list[dict[str, Any] | str],
+        plan: dict[str, Any],
+        lm: BaseLM,
+        demos: list[dict[str, Any]],
+        inputs: dict[str, Any],
+    ) -> LMRequest:
+        """Render the prompt-facing signature into a normalized LM request."""
+        messages = self.format(plan["prompt_signature"], demos, plan["inputs"])
+        messages = self._apply_planned_messages(messages, plan)
+        request_kwargs = dict(plan["lm_kwargs"])
+        tools = list(plan.get("tools", []))
+        return LMRequest.from_call(model=lm.model, messages=messages, tools=tools, **request_kwargs)
+
+    def call_lm(self, lm: BaseLM, request: LMRequest) -> LMResponse:
+        """Call a legacy `BaseLM` through a normalized request/response boundary."""
+        data = self._legacy_call_kwargs(request)
+        outputs = lm(messages=data.pop("messages"), **data)
+        return self.normalize_legacy_outputs(outputs, request)
+
+    async def acall_lm(self, lm: BaseLM, request: LMRequest) -> LMResponse:
+        """Async variant of `call_lm`."""
+        data = self._legacy_call_kwargs(request)
+        outputs = await lm.acall(messages=data.pop("messages"), **data)
+        return self.normalize_legacy_outputs(outputs, request)
+
+    def _legacy_call_kwargs(self, request: LMRequest) -> dict[str, Any]:
+        # Legacy `BaseLM` currently accepts OpenAI-chat-shaped `messages` for all model types;
+        # `dspy.LM` converts those messages to text-completion or Responses requests internally.
+        data = to_openai_chat_request(request)
+        data.pop("model", None)
+        if request.config.cache is not None:
+            if request.config.cache.enabled is not None:
+                data["cache"] = request.config.cache.enabled
+            if request.config.cache.rollout_id is not None:
+                data["rollout_id"] = request.config.cache.rollout_id
+        return data
+
+    def _apply_planned_messages(self, messages: list[LMMessage], plan: dict[str, Any]) -> list[LMMessage]:
+        planned_messages = list(plan.get("messages", []))
+        user_parts = list(plan.get("user_parts", []))
+        if planned_messages:
+            insert_at = self._last_user_message_index(messages)
+            if insert_at is None:
+                insert_at = len(messages)
+            messages[insert_at:insert_at] = planned_messages
+        if user_parts:
+            user_index = self._last_user_message_index(messages)
+            if user_index is None:
+                messages.append(LMMessage(role="user", parts=user_parts))
+            else:
+                messages[user_index].parts.extend(user_parts)
+        return messages
+
+    def _last_user_message_index(self, messages: list[LMMessage]) -> int | None:
+        for index in range(len(messages) - 1, -1, -1):
+            if messages[index].role == "user":
+                return index
+        return None
+
+    def _history_to_lm_messages(self, signature: type[Signature], history: History) -> list[LMMessage]:
+        messages: list[LMMessage] = []
+        for turn in history.messages:
+            messages.append(LMMessage(role="user", parts=[LMTextPart(text=self.format_user_message_content(signature, turn))]))
+            messages.append(
+                LMMessage(role="assistant", parts=[LMTextPart(text=self.format_assistant_message_content(signature, turn))])
+            )
+        return messages
+
+    def _image_to_lm_part(self, image: Image) -> LMImagePart:
+        source = image.url
+        if source.startswith("data:") and "," in source:
+            header, data = source.split(",", 1)
+            media_type = header.removeprefix("data:").split(";", 1)[0]
+            return LMImagePart(data=data, media_type=media_type)
+        return LMImagePart(url=source)
+
+    def _audio_to_lm_part(self, audio: Audio) -> LMAudioPart:
+        return LMAudioPart(data=audio.data, media_type=f"audio/{audio.audio_format}")
+
+    def _file_to_lm_part(self, file: File) -> LMBinaryPart:
+        if file.file_data is not None:
+            media_type, data = self._split_data_uri(file.file_data)
+            return LMBinaryPart(data=data, media_type=media_type, filename=file.filename)
+        if file.file_id is not None:
+            return LMBinaryPart(file_id=file.file_id, filename=file.filename)
+        raise ValueError("File must have file_data or file_id.")
+
+    def _split_data_uri(self, value: str) -> tuple[str, str]:
+        if value.startswith("data:") and "," in value:
+            header, data = value.split(",", 1)
+            return header.removeprefix("data:").split(";", 1)[0], data
+        return "application/octet-stream", value
+
+    def _tool_to_lm_tool_spec(self, tool: Tool) -> LMToolSpec:
+        args = tool.args or {}
+        return LMToolSpec(
+            name=tool.name or "",
+            description=tool.desc,
+            parameters={"type": "object", "properties": args, "required": list(args.keys())},
+        )
+
+    def _plan_native_reasoning(
+        self,
+        signature: type[Signature],
+        field_name: str,
         lm: BaseLM,
         lm_kwargs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        values = []
+    ) -> type[Signature]:
+        reasoning_effort = lm_kwargs.get("reasoning_effort", lm.kwargs.get("reasoning_effort", "low"))
+        if reasoning_effort is None or not lm.supports_reasoning:
+            return signature
+        if "gpt-5" in lm.model and getattr(lm, "model_type", None) == "chat":
+            return signature
+        lm_kwargs["reasoning_effort"] = reasoning_effort
+        return signature.delete(field_name)
 
+    def normalize_legacy_outputs(self, outputs: list[dict[str, Any] | str], request: LMRequest) -> LMResponse:
+        """Convert legacy adapter outputs into a normalized `LMResponse` immediately after the LM call."""
+        return LMResponse(model=request.model, outputs=[self._legacy_output_to_lm_output(output) for output in outputs])
+
+    def _legacy_output_to_lm_output(self, output: dict[str, Any] | str) -> LMOutput:
+        if isinstance(output, str):
+            return LMOutput(parts=[LMTextPart(text=output)])
+
+        parts = []
+        text = output.get("text")
+        if text:
+            parts.append(LMTextPart(text=text))
+        reasoning = output.get("reasoning_content")
+        if reasoning:
+            parts.append(LMThinkingPart(text=str(reasoning)))
+        for tool_call in output.get("tool_calls") or []:
+            parts.append(provider_tool_call_to_part(tool_call))
+        for citation in output.get("citations") or []:
+            from dspy.clients.openai_format import citation_to_part
+
+            parts.append(citation_to_part(citation))
+        return LMOutput(parts=parts, logprobs=output.get("logprobs"))
+
+    def parse_response(self, plan: dict[str, Any], response: LMResponse, lm: BaseLM) -> list[dict[str, Any]]:
+        """Parse a normalized LM response into dictionaries matching the original signature."""
+        values = []
+        original_signature = plan["original_signature"]
+        prompt_signature = plan["prompt_signature"]
         tool_call_output_field_name = self._get_tool_call_output_field_name(original_signature)
 
-        for output in outputs:
-            output_logprobs = None
-            tool_calls = None
-            text = output
-
-            if isinstance(output, dict):
-                text = output["text"]
-                output_logprobs = output.get("logprobs")
-                tool_calls = output.get("tool_calls")
-
-            if text:
-                value = self.parse(processed_signature, text)
+        for output in response.outputs:
+            if output.text:
+                value = self.parse(prompt_signature, output.text)
                 for field_name in original_signature.output_fields.keys():
                     if field_name not in value:
-                        # We need to set the field not present in the processed signature to None for consistency.
                         value[field_name] = None
-            elif tool_calls and tool_call_output_field_name:
-                value = {}
-                for field_name in original_signature.output_fields.keys():
-                    value[field_name] = None
+            elif output.tool_calls and tool_call_output_field_name:
+                value = {field_name: None for field_name in original_signature.output_fields.keys()}
             else:
                 raise AdapterParseError(
                     adapter_name=type(self).__name__,
@@ -147,29 +310,25 @@ class Adapter:
                     message="The LM returned an empty or null response.",
                 )
 
-            if tool_calls and tool_call_output_field_name:
-                tool_calls = [
-                    {
-                        "name": v["function"]["name"],
-                        "args": json_repair.loads(v["function"]["arguments"]),
-                    }
-                    for v in tool_calls
-                ]
-                value[tool_call_output_field_name] = ToolCalls.from_dict_list(tool_calls)
+            if output.tool_calls and tool_call_output_field_name:
+                value[tool_call_output_field_name] = ToolCalls.from_dict_list(
+                    [{"name": call.name, "args": call.args} for call in output.tool_calls]
+                )
 
-            # Parse custom types that does not rely on the `Adapter.parse()` method
+            # Parse custom types that do not rely on the `Adapter.parse()` text parser.
+            output_dict = output.to_output_dict()
             for name, field in original_signature.output_fields.items():
                 if (
                     isinstance(field.annotation, type)
                     and field.annotation in self.native_response_types
                     and issubclass(field.annotation, Type)
                 ):
-                    parsed_value = field.annotation.parse_lm_response(output)
+                    parsed_value = field.annotation.parse_lm_response(output_dict)
                     if parsed_value is not None:
                         value[name] = parsed_value
 
-            if output_logprobs:
-                value["logprobs"] = output_logprobs
+            if output.logprobs is not None:
+                value["logprobs"] = output.logprobs
 
             values.append(value)
 
@@ -199,11 +358,10 @@ class Adapter:
             List of dictionaries representing parsed LM responses. Each dictionary contains keys matching the
             signature's output field names. For multiple generations (n > 1), returns multiple dictionaries.
         """
-        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        inputs = self.format(processed_signature, demos, inputs)
-
-        outputs = lm(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        plan = self.plan_fields(lm, lm_kwargs, signature, inputs)
+        request = self.render_request(plan, lm, demos, inputs)
+        response = self.call_lm(lm, request)
+        return self.parse_response(plan, response, lm)
 
     async def acall(
         self,
@@ -213,18 +371,17 @@ class Adapter:
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        processed_signature = self._call_preprocess(lm, lm_kwargs, signature, inputs)
-        inputs = self.format(processed_signature, demos, inputs)
-
-        outputs = await lm.acall(messages=inputs, **lm_kwargs)
-        return self._call_postprocess(processed_signature, signature, outputs, lm, lm_kwargs)
+        plan = self.plan_fields(lm, lm_kwargs, signature, inputs)
+        request = self.render_request(plan, lm, demos, inputs)
+        response = await self.acall_lm(lm, request)
+        return self.parse_response(plan, response, lm)
 
     def format(
         self,
         signature: type[Signature],
         demos: list[dict[str, Any]],
         inputs: dict[str, Any],
-    ) -> list[dict[str, Any]]:
+    ) -> list[LMMessage]:
         """Format the input messages for the LM call.
 
         This method converts the DSPy structured input along with few-shot examples and conversation history into
@@ -292,8 +449,7 @@ class Adapter:
             content = self.format_user_message_content(signature, inputs_copy, main_request=True)
             messages.append({"role": "user", "content": content})
 
-        messages = split_message_content_for_custom_types(messages)
-        return messages
+        return [message if isinstance(message, LMMessage) else LMMessage(**message) for message in messages]
 
     def format_system_message(self, signature: type[Signature]) -> str:
         """Format the system message for the LM call.

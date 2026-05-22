@@ -6,7 +6,7 @@ import pydantic
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, TypeAdapter, create_model
 
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import Type, warn_legacy_type_method
 from dspy.dsp.utils.settings import settings
 from dspy.utils.callback import with_callbacks
 
@@ -146,9 +146,11 @@ class Tool(Type):
         return parsed_kwargs
 
     def format(self):
+        warn_legacy_type_method("Tool.format()")
         return str(self)
 
     def format_as_litellm_function_call(self):
+        warn_legacy_type_method("Tool.format_as_litellm_function_call()")
         return {
             "type": "function",
             "function": {
@@ -265,6 +267,7 @@ class ToolCalls(Type):
         args: dict[str, Any]
 
         def format(self):
+            warn_legacy_type_method("ToolCalls.ToolCall.format()")
             return {
                 "type": "function",
                 "function": {
@@ -351,6 +354,7 @@ class ToolCalls(Type):
         )
 
     def format(self) -> list[dict[str, Any]]:
+        warn_legacy_type_method("ToolCalls.format()")
         # The tool_call field is compatible with OpenAI's tool calls schema.
         return {
             "tool_calls": [tool_call.format() for tool_call in self.tool_calls],

@@ -68,8 +68,9 @@ class JSONAdapter(ChatAdapter):
             return result
 
         try:
+            plan = self.plan_fields(lm, dict(lm_kwargs), signature, inputs)
             structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
+                plan["prompt_signature"], self.use_native_function_calling
             )
             lm_kwargs["response_format"] = structured_output_model
             return super().__call__(lm, lm_kwargs, signature, demos, inputs)
@@ -91,8 +92,9 @@ class JSONAdapter(ChatAdapter):
             return await result
 
         try:
+            plan = self.plan_fields(lm, dict(lm_kwargs), signature, inputs)
             structured_output_model = _get_structured_outputs_response_format(
-                signature, self.use_native_function_calling
+                plan["prompt_signature"], self.use_native_function_calling
             )
             lm_kwargs["response_format"] = structured_output_model
             return await super().acall(lm, lm_kwargs, signature, demos, inputs)

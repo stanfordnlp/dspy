@@ -5,7 +5,7 @@ from typing import Any
 
 import pydantic
 
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import Type, warn_legacy_type_method
 
 
 class File(Type):
@@ -57,6 +57,7 @@ class File(Type):
         return encode_file_to_dict(values)
 
     def format(self) -> list[dict[str, Any]]:
+        warn_legacy_type_method("File.format()")
         try:
             file_dict = {}
             if self.file_data:
@@ -71,6 +72,7 @@ class File(Type):
             raise ValueError(f"Failed to format file for DSPy: {e}")
 
     def __str__(self):
+        warn_legacy_type_method("File.__str__() legacy serialization")
         return self.serialize_model()
 
     def __repr__(self):

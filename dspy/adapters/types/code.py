@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 import pydantic
 from pydantic import create_model
 
-from dspy.adapters.types.base_type import Type
+from dspy.adapters.types.base_type import Type, warn_legacy_type_method
 
 
 class Code(Type):
@@ -68,11 +68,13 @@ class Code(Type):
     language: ClassVar[str] = "python"
 
     def format(self):
+        warn_legacy_type_method("Code.format()")
         return f"{self.code}"
 
     @pydantic.model_serializer()
     def serialize_model(self):
         """Override to bypass the <<CUSTOM-TYPE-START-IDENTIFIER>> and <<CUSTOM-TYPE-END-IDENTIFIER>> tags."""
+        warn_legacy_type_method("Code.serialize_model()")
         return self.format()
 
     @classmethod
