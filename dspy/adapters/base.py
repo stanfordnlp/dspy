@@ -346,11 +346,58 @@ class Adapter:
         lm_kwargs["reasoning_effort"] = reasoning_effort
         return signature.delete(field_name)
 
+    def _call_preprocess(
+        self,
+        lm: BaseLM,
+        lm_kwargs: dict[str, Any],
+        signature: type[Signature],
+        inputs: dict[str, Any],
+    ) -> type[Signature]:
+        """Compatibility wrapper for the legacy adapter preprocessing hook."""
+        return self.plan_fields(lm, lm_kwargs, signature, inputs)["prompt_signature"]
+
+    def _call_postprocess(
+        self,
+        prompt_signature: type[Signature],
+        original_signature: type[Signature],
+        outputs: list[dict[str, Any] | str],
+        lm: BaseLM | None,
+        lm_kwargs: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Compatibility wrapper for the legacy adapter postprocessing hook."""
+        request = LMRequest.from_call(
+            model=getattr(lm, "model", ""),
+            messages=[LMMessage(role="user", parts=[LMTextPart(text="")])],
+            **(lm_kwargs or {}),
+        )
+        response = self.normalize_legacy_outputs(outputs, request)
+        parse_original_signature = prompt_signature
+        for name, field in original_signature.output_fields.items():
+            if field.annotation is not Citations and name not in parse_original_signature.output_fields:
+                parse_original_signature = parse_original_signature.append(name, field, type_=field.annotation)
+
+        plan = {
+            "original_signature": parse_original_signature,
+            "prompt_signature": prompt_signature,
+            "output_parsers": {},
+        }
+        values = self.parse_response(plan, response, lm)
+
+        for value, raw_output in zip(values, outputs):
+            if not isinstance(raw_output, dict):
+                continue
+            for name, field in original_signature.output_fields.items():
+                if field.annotation is Citations and raw_output.get("citations"):
+                    value[name] = Citations.from_dict_list(raw_output["citations"])
+        return values
+
     def normalize_legacy_outputs(self, outputs: list[dict[str, Any] | str], request: LMRequest) -> LMResponse:
         """Convert legacy adapter outputs into a normalized `LMResponse` immediately after the LM call."""
         return LMResponse(model=request.model, outputs=[self._legacy_output_to_lm_output(output) for output in outputs])
 
-    def _legacy_output_to_lm_output(self, output: dict[str, Any] | str) -> LMOutput:
+    def _legacy_output_to_lm_output(self, output: dict[str, Any] | str | None) -> LMOutput:
+        if output is None:
+            return LMOutput(parts=[])
         if isinstance(output, str):
             return LMOutput(parts=[LMTextPart(text=output)])
 

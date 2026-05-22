@@ -70,16 +70,10 @@ def test_chat_adapter_quotes_literals_as_expected(
         input_text: input_literal = dspy.InputField()
         output_text: output_literal = dspy.OutputField()
 
-    program = dspy.Predict(TestSignature)
-
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
-
-    with mock.patch("litellm.completion") as mock_completion:
-        program(input_text=input_value)
-
-    mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
-    content = call_kwargs["messages"][0]["content"]
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(), TestSignature, [], {"input_text": input_value}, lm=dspy.LM(model="openai/gpt-4o")
+    )
+    content = messages[0]["content"]
 
     assert expected_input_str in content
     assert expected_output_str in content
@@ -1548,20 +1542,21 @@ def test_chat_adapter_with_pydantic_models():
         question: str = dspy.InputField()
         output: Answer = dspy.OutputField()
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
-    program = dspy.Predict(TestSignature)
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(),
+        TestSignature,
+        [],
+        {
+            "owner": PetOwner(
+                name="John", num_pets=5, dogs=DogClass(dog_breeds=["labrador", "chihuahua"], num_dogs=2)
+            ),
+            "question": "How many non-dog pets does John have?",
+        },
+        lm=dspy.LM(model="openai/gpt-4o"),
+    )
 
-    with mock.patch("litellm.completion") as mock_completion:
-        program(
-            owner=PetOwner(name="John", num_pets=5, dogs=DogClass(dog_breeds=["labrador", "chihuahua"], num_dogs=2)),
-            question="How many non-dog pets does John have?",
-        )
-
-    mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
-
-    system_content = call_kwargs["messages"][0]["content"]
-    user_content = call_kwargs["messages"][1]["content"]
+    system_content = messages[0]["content"]
+    user_content = messages[1]["content"]
     assert "1. `owner` (PetOwner)" in system_content
     assert "2. `question` (str)" in system_content
     assert "1. `output` (Answer)" in system_content
@@ -1584,21 +1579,16 @@ def test_chat_adapter_signature_information():
         input2: int = dspy.InputField(desc="Integer Input")
         output: str = dspy.OutputField(desc="String Output")
 
-    dspy.configure(lm=dspy.LM(model="openai/gpt-4o"), adapter=dspy.ChatAdapter())
-    program = dspy.Predict(TestSignature)
+    messages, _ = format_messages_and_lm_kwargs(
+        dspy.ChatAdapter(), TestSignature, [], {"input1": "Test", "input2": 11}, lm=dspy.LM(model="openai/gpt-4o")
+    )
 
-    with mock.patch("litellm.completion") as mock_completion:
-        program(input1="Test", input2=11)
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
 
-    mock_completion.assert_called_once()
-    _, call_kwargs = mock_completion.call_args
-
-    assert len(call_kwargs["messages"]) == 2
-    assert call_kwargs["messages"][0]["role"] == "system"
-    assert call_kwargs["messages"][1]["role"] == "user"
-
-    system_content = call_kwargs["messages"][0]["content"]
-    user_content = call_kwargs["messages"][1]["content"]
+    system_content = messages[0]["content"]
+    user_content = messages[1]["content"]
 
     assert "1. `input1` (str)" in system_content
     assert "2. `input2` (int)" in system_content
