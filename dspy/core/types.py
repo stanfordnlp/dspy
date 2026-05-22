@@ -156,7 +156,9 @@ class LMToolResultPart(LMBasePart):
         if isinstance(data, dict) and "content" in data:
             data = dict(data)
             content = data["content"]
-            if isinstance(content, list):
+            if content is None:
+                data["content"] = []
+            elif isinstance(content, list):
                 data["content"] = [_coerce_part(item) for item in content]
             else:
                 data["content"] = [_coerce_part(content)]
@@ -364,6 +366,7 @@ def _config_data(value: Any, *, str_field: str | None = None, bool_field: str | 
     raise TypeError(f"Cannot convert {type(value)!r} to a config object.")
 
 
+# Keep existing `dspy.LM(...)` / `lm(...)` keyword aliases in the call compatibility path.
 _KNOWN_CONFIG_KEYS = {
     "temperature",
     "max_tokens",
@@ -572,6 +575,8 @@ class LMRequestPatch:
         here; they require the next adapter-call refactor.
         """
         kwargs = self.config.model_dump(exclude_none=True) if self.config is not None else {}
+        extensions = kwargs.pop("extensions", {}) or {}
+        kwargs = {**extensions, **kwargs}
         if self.tools:
             kwargs["tools"] = list(self.tools)
         return kwargs
@@ -643,7 +648,11 @@ class LMRequest(BaseModel):
 
 
 class LMUsage(BaseModel):
-    """Token and timing usage for one LM request."""
+    """Token and timing usage for one LM request.
+
+    Both DSPy token names and provider token names are populated because both
+    are existing user-visible history/usage interfaces.
+    """
 
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -1049,14 +1058,14 @@ class LMStreamStartEvent(LMStreamEvent):
 
 class LMStreamDeltaEvent(LMStreamEvent):
     type: Literal["delta"] = "delta"
-    output_index: int = 0
-    part_index: int
+    output_index: int = Field(default=0, ge=0)
+    part_index: int = Field(ge=0)
     delta: LMAnyDelta
 
 
 class LMStreamOutputEndEvent(LMStreamEvent):
     type: Literal["output_end"] = "output_end"
-    output_index: int = 0
+    output_index: int = Field(default=0, ge=0)
     finish_reason: str | None = None
     truncated: bool = False
 
@@ -1104,10 +1113,25 @@ class LMOutputBuilder:
         return None
 
     def to_response(self, *, usage: LMUsage | dict[str, Any] | None = None, cost: float | None = None) -> LMResponse:
-        max_index = max(self._parts.keys(), default=0)
+        output_indices = set(self._parts) | set(self._finish_reasons) | set(self._truncated)
+        if not output_indices:
+            output_indices = {0}
+        max_index = max(output_indices)
+        expected_indices = set(range(max_index + 1))
+        if output_indices != expected_indices:
+            missing = sorted(expected_indices - output_indices)
+            raise ValueError(f"Stream output indices must be contiguous from 0; missing indices: {missing}.")
+
         outputs = []
         for output_index in range(max_index + 1):
-            parts = [part for part in self._parts.get(output_index, []) if part is not None]
+            part_buffer = self._parts.get(output_index, [])
+            missing_part_indices = [index for index, part in enumerate(part_buffer) if part is None]
+            if missing_part_indices:
+                raise ValueError(
+                    f"Stream part indices for output {output_index} must be contiguous; "
+                    f"missing indices: {missing_part_indices}."
+                )
+            parts = [_finalize_stream_part(part) for part in part_buffer]
             outputs.append(
                 LMOutput(
                     parts=parts,
@@ -1125,12 +1149,18 @@ class LMOutputBuilder:
         current = parts[event.part_index]
         delta = event.delta
         if isinstance(delta, LMThinkingDelta):
+            if current is not None and not isinstance(current, LMThinkingPart):
+                raise ValueError("Cannot apply thinking delta to a non-thinking stream part.")
             text = (current.text if isinstance(current, LMThinkingPart) else "") + delta.text
             parts[event.part_index] = LMThinkingPart(text=text)
         elif isinstance(delta, LMTextDelta):
+            if current is not None and not isinstance(current, LMTextPart):
+                raise ValueError("Cannot apply text delta to a non-text stream part.")
             text = (current.text if isinstance(current, LMTextPart) else "") + delta.text
             parts[event.part_index] = LMTextPart(text=text)
         elif isinstance(delta, LMToolCallDelta):
+            if current is not None and not isinstance(current, LMToolCallPart):
+                raise ValueError("Cannot apply tool-call delta to a non-tool-call stream part.")
             buffer = ""
             if isinstance(current, LMToolCallPart):
                 buffer = current.provider_data.get("args_buffer", "")
@@ -1143,10 +1173,16 @@ class LMOutputBuilder:
                 provider_data={"args_buffer": buffer},
             )
         elif isinstance(delta, LMCitationDelta):
+            if current is not None and not isinstance(current, LMCitationPart):
+                raise ValueError("Cannot apply citation delta to a different stream part type.")
             parts[event.part_index] = delta.citation
         elif isinstance(delta, LMImageDelta):
+            if current is not None and not isinstance(current, LMImagePart):
+                raise ValueError("Cannot apply image delta to a different stream part type.")
             parts[event.part_index] = delta.image
         elif isinstance(delta, LMAudioDelta):
+            if current is not None and not isinstance(current, LMAudioPart):
+                raise ValueError("Cannot apply audio delta to a different stream part type.")
             parts[event.part_index] = delta.audio
 
 
@@ -1561,12 +1597,35 @@ def _history_part_as_openai_content(part: LMPart) -> dict[str, Any]:
     if isinstance(part, LMImagePart):
         return {"type": "image_url", "image_url": {"url": _history_part_source(part)}}
     if isinstance(part, LMAudioPart):
+        input_audio = {"format": _history_media_format(part.media_type)}
+        if part.data is not None:
+            if part.data.startswith("data:"):
+                media_type, data = _split_data_uri(part.data)
+                input_audio["format"] = _history_media_format(media_type)
+                input_audio["data"] = data
+            else:
+                input_audio["data"] = part.data
+        elif part.url is not None:
+            input_audio["url"] = part.url
+        elif part.file_id is not None:
+            input_audio["file_id"] = part.file_id
+        elif part.path is not None:
+            input_audio["path"] = part.path
         return {
             "type": "input_audio",
-            "input_audio": {"data": _history_part_source(part), "format": _history_media_format(part.media_type)},
+            "input_audio": input_audio,
         }
     if isinstance(part, LMVideoPart):
-        return {"type": "video", "video": {"url": _history_part_source(part), "media_type": part.media_type}}
+        video = {"media_type": part.media_type}
+        if part.data is not None:
+            video["data"] = _history_part_source(part)
+        elif part.url is not None:
+            video["url"] = part.url
+        elif part.file_id is not None:
+            video["file_id"] = part.file_id
+        elif part.path is not None:
+            video["path"] = part.path
+        return {"type": "video", "video": video}
     if isinstance(part, LMDocumentPart):
         data = {"type": "document"}
         if part.source is not None:
@@ -1609,7 +1668,9 @@ def _history_media_format(media_type: str) -> str:
 
 
 def _history_request_kwargs(request: LMRequest) -> dict[str, Any]:
-    return request.config.model_dump(exclude_none=True)
+    data = request.config.model_dump(exclude_none=True)
+    extensions = data.pop("extensions", {}) or {}
+    return {**extensions, **data}
 
 
 def _validate_one_source(part: Any) -> None:
@@ -1700,11 +1761,16 @@ def _parts_from_openai_content(content: Any) -> list[LMPart]:
         if item_type == "text":
             parts.append(LMTextPart(text=item.get("text", "")))
         elif item_type == "image_url":
-            url = item.get("image_url", {}).get("url", "")
+            image = item.get("image_url", {})
+            if not isinstance(image, dict):
+                raise TypeError("Image content block must be a mapping.")
+            url = image.get("url")
+            if url is None:
+                raise ValueError("Image content block requires url.")
             parts.append(_image_source_to_part(url))
         elif item_type == "input_audio":
             audio = item.get("input_audio", {})
-            parts.append(LMAudioPart(data=audio.get("data"), media_type=f"audio/{audio.get('format', 'wav')}"))
+            parts.append(_audio_dict_to_part(audio))
         elif item_type == "file":
             parts.append(_binary_dict_to_part(item.get("file", {})))
         elif item_type == "document":
@@ -1748,11 +1814,36 @@ def _tool_call_from_openai(tool_call: Any) -> LMToolCallPart:
 
 
 def _image_source_to_part(source: str) -> LMImagePart:
+    if not isinstance(source, str):
+        raise TypeError("Image URL must be a string.")
     if source.startswith("data:"):
         media_type, data = _split_data_uri(source)
         return LMImagePart(data=data, media_type=media_type)
     media_type = mimetypes.guess_type(urlparse(source).path)[0] or "image/png"
     return LMImagePart(url=source, media_type=media_type)
+
+
+def _audio_dict_to_part(audio: dict[str, Any]) -> LMAudioPart:
+    if not isinstance(audio, dict):
+        raise TypeError("Audio content block must be a mapping.")
+
+    audio_format = audio.get("format") or "wav"
+    if not isinstance(audio_format, str):
+        raise TypeError("Audio format must be a string.")
+    media_type = audio_format if "/" in audio_format else f"audio/{audio_format}"
+
+    if audio.get("data") is not None:
+        data = audio["data"]
+        if isinstance(data, str) and data.startswith("data:"):
+            media_type, data = _split_data_uri(data)
+        return LMAudioPart(data=data, media_type=media_type)
+    if audio.get("url") is not None:
+        return LMAudioPart(url=audio["url"], media_type=media_type)
+    if audio.get("file_id") is not None:
+        return LMAudioPart(file_id=audio["file_id"], media_type=media_type)
+    if audio.get("path") is not None:
+        return LMAudioPart(path=audio["path"], media_type=media_type)
+    raise ValueError("Audio content block requires data, url, file_id, or path.")
 
 
 def _binary_dict_to_part(file: dict[str, Any]) -> LMBinaryPart:
@@ -1789,13 +1880,19 @@ def _document_dict_to_part(item: dict[str, Any]) -> LMDocumentPart:
 
 def _media_dict_to_video_part(video: dict[str, Any]) -> LMVideoPart:
     if video.get("data") is not None:
-        media_type, data = _split_data_uri(video["data"])
+        data = video["data"]
+        if isinstance(data, str) and data.startswith("data:"):
+            media_type, data = _split_data_uri(data)
+        else:
+            media_type = video.get("media_type") or "video/mp4"
         return LMVideoPart(data=data, media_type=media_type)
     if video.get("url") is not None:
         return LMVideoPart(url=video["url"], media_type=video.get("media_type") or "video/mp4")
     if video.get("file_id") is not None:
         return LMVideoPart(file_id=video["file_id"], media_type=video.get("media_type") or "video/mp4")
-    raise ValueError("Video content block requires data, url, or file_id.")
+    if video.get("path") is not None:
+        return LMVideoPart(path=video["path"], media_type=video.get("media_type") or "video/mp4")
+    raise ValueError("Video content block requires data, url, file_id, or path.")
 
 
 def _split_data_uri(value: str) -> tuple[str, str]:
@@ -1854,6 +1951,12 @@ def _part_to_value(part: LMPart) -> Any:
     return part
 
 
+def _finalize_stream_part(part: LMPart) -> LMPart:
+    if isinstance(part, LMToolCallPart) and "args_buffer" in part.provider_data:
+        return part.model_copy(update={"args": _parse_json_object_strict(part.provider_data["args_buffer"])})
+    return part
+
+
 def _tool_call_to_provider_dict(call: LMToolCallPart) -> dict[str, Any]:
     data = {
         "type": "function",
@@ -1875,3 +1978,15 @@ def _parse_json_object(value: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _parse_json_object_strict(value: str) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Streamed tool-call arguments must be a JSON object.") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("Streamed tool-call arguments must be a JSON object.")
+    return parsed
