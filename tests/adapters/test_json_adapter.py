@@ -906,6 +906,50 @@ def test_json_adapter_parse_raise_error_on_mismatch_fields():
     )
 
 
+@pytest.mark.parametrize(
+    "completion",
+    [
+        '{"json_input": {"reasoning": "general analysis", "actors": ["EntityA"], "details": "scenario details"}}',
+        '{"json_object": {"reasoning": "internal process", "actors": ["EntityD", "EntityE"], "details": "procedural details"}}',
+        '{"json": "{\\n\\"reasoning\\": \\"interaction analysis\\",\\n\\"actors\\": [\\"EntityB\\", \\"EntityC\\"],\\n\\"details\\": \\"possible behavior\\"\\n}\\n</invoke>"}',
+    ],
+)
+def test_json_adapter_parse_unwraps_nested_json_output_fields(completion):
+    class AnalysisSignature(dspy.Signature):
+        prompt: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        actors: list[str] = dspy.OutputField()
+        details: str = dspy.OutputField()
+
+    result = dspy.JSONAdapter().parse(AnalysisSignature, completion)
+
+    assert set(result.keys()) == {"reasoning", "actors", "details"}
+    assert isinstance(result["reasoning"], str)
+    assert isinstance(result["actors"], list)
+    assert isinstance(result["details"], str)
+
+
+def test_json_adapter_parse_keeps_top_level_output_fields_when_nested_json_is_present():
+    class AnalysisSignature(dspy.Signature):
+        prompt: str = dspy.InputField()
+        reasoning: str = dspy.OutputField()
+        actors: list[str] = dspy.OutputField()
+        details: str = dspy.OutputField()
+
+    completion = (
+        '{"reasoning": "top-level analysis", "actors": ["Top"], "details": "top-level details", '
+        '"json_input": {"reasoning": "nested analysis", "actors": ["Nested"], "details": "nested details"}}'
+    )
+
+    result = dspy.JSONAdapter().parse(AnalysisSignature, completion)
+
+    assert result == {
+        "reasoning": "top-level analysis",
+        "actors": ["Top"],
+        "details": "top-level details",
+    }
+
+
 def test_json_adapter_formats_image():
     # Test basic image formatting
     image = dspy.Image(url="https://example.com/image.jpg")

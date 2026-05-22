@@ -24,6 +24,38 @@ from dspy.utils.exceptions import AdapterParseError
 logger = logging.getLogger(__name__)
 
 
+def _parse_json_object(value: str) -> Any:
+    parsed = json_repair.loads(value)
+
+    if isinstance(parsed, dict):
+        return parsed
+
+    pattern = r"\{(?:[^{}]|(?R))*\}"
+    match = regex.search(pattern, value, regex.DOTALL)
+    if match:
+        return json_repair.loads(match.group(0))
+
+    return parsed
+
+
+def _find_single_nested_output_fields(fields: dict[str, Any], signature: type[Signature]) -> dict[str, Any]:
+    candidates = []
+
+    for value in fields.values():
+        nested_fields = value
+        if isinstance(value, str):
+            nested_fields = _parse_json_object(value)
+
+        if not isinstance(nested_fields, dict):
+            continue
+
+        output_fields = {k: v for k, v in nested_fields.items() if k in signature.output_fields}
+        if output_fields.keys() == signature.output_fields.keys():
+            candidates.append(output_fields)
+
+    return candidates[0] if len(candidates) == 1 else {}
+
+
 def _has_open_ended_mapping(signature: SignatureMeta) -> bool:
     """
     Check whether any output field in the signature has an open-ended mapping type,
@@ -49,7 +81,11 @@ class JSONAdapter(ChatAdapter):
 
         has_tool_calls = any(field.annotation == ToolCalls for field in signature.output_fields.values())
 
-        if _has_open_ended_mapping(signature) or (not self.use_native_function_calling and has_tool_calls) or not lm.supports_response_schema:
+        if (
+            _has_open_ended_mapping(signature)
+            or (not self.use_native_function_calling and has_tool_calls)
+            or not lm.supports_response_schema
+        ):
             # We found that structured output mode doesn't work well with dspy.ToolCalls as output field.
             # So we fall back to json mode if native function calling is disabled and ToolCalls is present.
             lm_kwargs["response_format"] = {"type": "json_object"}
@@ -146,16 +182,9 @@ class JSONAdapter(ChatAdapter):
         return self.format_field_with_value(fields_with_values, role="assistant")
 
     def parse(self, signature: type[Signature], completion: str) -> dict[str, Any]:
-        fields = json_repair.loads(completion)
+        parsed_fields = _parse_json_object(completion)
 
-        if not isinstance(fields, dict):
-            pattern = r"\{(?:[^{}]|(?R))*\}"
-            match = regex.search(pattern, completion, regex.DOTALL)
-            if match:
-                completion = match.group(0)
-                fields = json_repair.loads(completion)
-
-        if not isinstance(fields, dict):
+        if not isinstance(parsed_fields, dict):
             raise AdapterParseError(
                 adapter_name="JSONAdapter",
                 signature=signature,
@@ -163,7 +192,9 @@ class JSONAdapter(ChatAdapter):
                 message="LM response cannot be serialized to a JSON object.",
             )
 
-        fields = {k: v for k, v in fields.items() if k in signature.output_fields}
+        fields = {k: v for k, v in parsed_fields.items() if k in signature.output_fields}
+        if not fields:
+            fields = _find_single_nested_output_fields(parsed_fields, signature)
 
         # Attempt to cast each value to type signature.output_fields[k].annotation.
         for k, v in fields.items():
